@@ -39,17 +39,14 @@ by the `Sprig.Cli` harness.
 - [x] **M2.1.7** 7 tests over `TempGitRepo` fixture: round-trip, force-remove-with-untracked,
       Drift-A prunable→prune, branch survives removal, delete-branch, porcelain parsing.
 
-## M2.2 — Env clobber writer
-- [ ] **M2.2.1** `EnvClobberService` in `Sprig.Core/Env/`. For each `EnvOverride` in config:
-      resolve each `Set` value via `SubstitutionEngine` + the workspace scope.
-- [ ] **M2.2.2** **Seed**: if the targeted file exists in the **source repo**, copy it into the
-      worktree first; else start empty. (S1: only the targeted files; never touch the source.)
-- [ ] **M2.2.3** **Clobber**: write the resolved keys in a marker block **at the top and the
-      bottom** (`# >>> sprig >>>` … `# <<< sprig <<<`), identical values both ends, original
-      seeded content preserved between. **Idempotent** (replace existing sprig blocks).
-- [ ] **M2.2.4** `Strip(file)` removes sprig blocks (for reconcile/manual cleanup).
-- [ ] **M2.2.5** Unit tests (temp dirs): seed-from-source, top+bottom present, re-apply replaces
-      (no duplication), strip restores, non-targeted files untouched, source repo never written.
+## M2.2 — Env clobber writer ✅ DONE
+- [x] **M2.2.1** `EnvClobberService.Apply` resolves each `Set` value via `SubstitutionEngine`.
+- [x] **M2.2.2** Seeds from the source file if present, else writes blocks only.
+- [x] **M2.2.3** Top+bottom identical marker blocks, seeded content between; idempotent
+      (re-seeds from source + strips any blocks, so no growth).
+- [x] **M2.2.4** `Strip` removes sprig blocks (list-and-join, faithful newlines).
+- [x] **M2.2.5** 6 tests: seed+wrap, source untouched, absent-source, idempotent re-apply,
+      strip restores, only-targeted-files.
 
 ## M2.3 — Workspace create (single repo)
 - [ ] **M2.3.1** `WorkspaceService.Create(repoPath, workspace, ...)` orchestration:

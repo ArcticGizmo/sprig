@@ -16,20 +16,14 @@ M4, so M5 focuses on detection + authoring ergonomics + the named-volume hint fr
 
 ---
 
-## M5.0 — Detection engine (`InitInspector`)  *(pure logic)*
-- [ ] **M5.0.1** `InitInspector.Inspect(repoRoot)` → `InitProposal(SprigRepoConfig Config,
-      IReadOnlyList<string> Notes)`. Repo `name` from the folder name.
-- [ ] **M5.0.2** **Env detection**: scan `.env` / `.env.local` (+ `.env.*`), collect keys that are
-      port candidates (name matches `/port/i`, or value is a bare int in 1024–65535). Propose a
-      named port per candidate + an env override `KEY=${sprig.ports.<name>}`. Note embedded ports
-      in connection-string-like values (don't auto-rewrite).
-- [ ] **M5.0.3** **Compose detection**: find `docker-compose.y*ml` / `compose.y*ml`; for each
-      service propose `container_name` suffix override and, for the first published port,
-      a named port `<service>` + `ports[0]` override `${sprig.ports.<service>}:<container>`.
-- [ ] **M5.0.4** **Named-volume note**: if the compose declares named volumes, add the M3 hint
-      (project-name scoping won't isolate them; data won't persist across `down` without one, etc.).
-- [ ] **M5.0.5** De-duplicate proposed port names across env + compose; keep it a *proposal*
-      (notes tell the user to review/rename).
+## M5.0 — Detection engine (`InitInspector`) ✅ DONE
+- [x] **M5.0.1** `InitInspector.Inspect` → `InitProposal(Config, Notes)`; name from folder.
+- [x] **M5.0.2** Env: bare-int-in-range keys → named port + `KEY=${sprig.ports.<name>}`;
+      connection-string/URL values → advisory note (no auto-rewrite).
+- [x] **M5.0.3** Compose: per-service `container_name` suffix + first port → named port `<svc>`
+      + `ports[0]` override.
+- [x] **M5.0.4** Named-volume note (M3 hint).
+- [x] **M5.0.5** Port-name dedup across env + compose.
 
 ## M5.1 — CLI `init`
 - [ ] **M5.1.1** `init [--repo <path>] [--print] [--force]` (default repo = cwd). Runs the
@@ -43,10 +37,10 @@ M4, so M5 focuses on detection + authoring ergonomics + the named-volume hint fr
 - [ ] **M5.2.2** Friendlier empty-states / errors already present in `ls`/`create`; audit and
       fill gaps (e.g. `create --stack` with an unregistered repo → actionable message).
 
-## M5.3 — Tests
-- [ ] **M5.3.1** `InitInspector` unit tests over fixture dirs: vue-like (env `PORT`), dotnet-like
-      (compose service + ports + container_name + connection string), named-volume note,
-      no-overwrite behavior.
+## M5.3 — Tests ✅ DONE (detection)
+- [x] **M5.3.1** 7 `InitInspector` tests: bare-port env, embedded-port note, compose
+      container_name+port, named-volume note, folder name, dedup, `ParseEnv`. (CLI no-overwrite
+      covered by the M5.1 walkthrough.)
 
 ## M5.4 — Verification
 - [ ] **M5.4.1** Run `init --print` against both example repos; confirm the proposal matches the

@@ -75,23 +75,27 @@ Fixtures: `../sprig-example-vue` (Vite, reads `env.PORT`), `../sprig-example-dot
 - [x] **M1.2.4** 13 unit tests green (named port, var-to-var, provides, cycle/self-cycle,
       unknown, unterminated/empty, passthrough, trimming).
 
-### M1.3 — Port-allocation store
-- [ ] **M1.3.1** `IPortStore` + file-backed impl under the central store. Allocation from a
-      configurable base range; **deterministic per instance** (same workspace → same ports
-      across restarts, persisted); **non-colliding across live instances**; **reclaim on
-      release**.
-- [ ] **M1.3.2** Concurrency: safe against two creates racing (file lock / atomic write).
-- [ ] **M1.3.3** Unit tests: two workspaces never overlap; re-request returns the same set;
-      release frees the range; exhaustion of range → clear error.
+### M1.3 — Port-allocation store ✅ DONE
+- [x] **M1.3.1** `IPortStore` + `FilePortStore` (configurable range, deterministic per instance,
+      persisted, non-colliding, reclaim on `Release`, `Peek`).
+- [x] **M1.3.2** Cross-process file lock + atomic write; 50-way `Parallel.For` test confirms no
+      double-allocation. (Fixed a Windows rename race with retry-backoff in `JsonFile` — see
+      S3 "locked files" note.)
+- [x] **M1.3.3** Unit tests: no overlap, deterministic reuse (incl. across new store objects),
+      release frees, add-name preserves, exhaustion throws `PortAllocationException`.
 
-### M1.4 — Central store layout
-- [ ] **M1.4.1** `ISprigPaths` abstraction (root = `%LOCALAPPDATA%\sprig`, overridable for
-      tests) — keeps Core OS-agnostic. Layout: `instances/<ws>/`, `stacks/`, `repos.json`,
-      `ports.json`.
-- [ ] **M1.4.2** Instance-record read/write (JSON): repos, worktree paths, assigned ports,
-      generated-compose path, last-known status. Source of truth for teardown.
-- [ ] **M1.4.3** Unit tests over a temp-dir root: round-trip records; tolerate missing/partial
-      store; atomic writes (no corruption on interrupted write).
+### M1.4 — Central store layout ✅ DONE
+- [x] **M1.4.1** `ISprigPaths` + `SprigPaths` (root default `%LOCALAPPDATA%\sprig`, overridable;
+      `instances/<ws>/`, `stacks/`, `repos.json`, `ports.json`).
+- [x] **M1.4.2** `InstanceRecord`/`InstanceRepo` + `InstanceStore` (save/tryload/loadall/delete).
+- [x] **M1.4.3** Tests over temp root: round-trip, missing→null, load-all, idempotent delete,
+      atomic write leaves no temp files.
+
+### M1 capstone ✅ DONE
+- [x] `SprigScope.ForWorkspace` builds the `IVariableSource` (workspace + ports + computed +
+      provides). `CoreSpineTests` proves the M1 exit criterion end-to-end (resolve a fixture
+      config's env/provides/workspace templates with allocated, non-colliding ports; central
+      store only). **43 tests green, 0 warnings.**
 
 ---
 

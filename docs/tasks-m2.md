@@ -21,15 +21,12 @@ by the `Sprig.Cli` harness.
 
 ---
 
-## M2.0 — Process runner  *(foundation for git now, docker in M3)*
-- [ ] **M2.0.1** `IProcessRunner` in `Sprig.Core/Processes/`: `ProcessResult Run(string exe,
-      IReadOnlyList<string> args, string? workingDir = null, CancellationToken ct = default)`
-      capturing stdout, stderr, exit code. Arg-array (no shell string) to avoid quoting bugs.
-- [ ] **M2.0.2** `ProcessRunner` implementation (`System.Diagnostics.Process`, UTF-8, no window).
-- [ ] **M2.0.3** `ProcessResult` helper: `EnsureSuccess()` throws `ProcessException` including
-      exe, args, exit code, and captured stderr (so failures are legible).
-- [ ] **M2.0.4** Unit tests using a trivial cross-platform exe (e.g. `dotnet --version`, or
-      `git --version`) to confirm capture + non-zero handling.
+## M2.0 — Process runner  ✅ DONE
+- [x] **M2.0.1** `IProcessRunner.Run(exe, args[], workingDir?, ct)` capturing stdout/stderr/exit.
+- [x] **M2.0.2** `ProcessRunner` (System.Diagnostics.Process, UTF-8, no window, async-read,
+      cancellation kills the tree).
+- [x] **M2.0.3** `ProcessResult.EnsureSuccess()` → `ProcessException` with cmdline + stderr.
+- [x] **M2.0.4** 4 tests: stdout capture, non-zero+throw, missing exe, working-dir honoured.
 
 ## M2.1 — Git worktree service
 - [ ] **M2.1.1** `IGitService` + `GitService` (over `IProcessRunner`) in `Sprig.Core/Git/`.

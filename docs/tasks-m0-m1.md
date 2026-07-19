@@ -66,16 +66,14 @@ Fixtures: `../sprig-example-vue` (Vite, reads `env.PORT`), `../sprig-example-dot
       names, env file+keys, compose path/template, unknown top-level keys via `JsonExtensionData`).
 - [x] **M1.1.4** 12 unit tests green (valid fixture + each malformed case).
 
-### M1.2 — Substitution engine
-- [ ] **M1.2.1** Tokenizer for `${sprig.<path>}` (literal text + refs); tolerant of `$` that
-      isn't a sprig ref.
-- [ ] **M1.2.2** Scope model: `workspace` (slug), `ports.<name>`, `provides.<repo>.<key>`,
-      plus stack-level computed vars.
-- [ ] **M1.2.3** Resolver with **dependency ordering** (var→var refs) and **cycle detection**;
-      unresolved ref or unsatisfied declared input → **hard error** (typed exception listing
-      the offending key).
-- [ ] **M1.2.4** Unit tests: named-port resolution, var-to-var (`API_URL` from `ports.api`),
-      cross-repo `provides`, cycle → error, missing → error, non-ref `$` passthrough.
+### M1.2 — Substitution engine ✅ DONE
+- [x] **M1.2.1** Tokenizer for `${sprig.<path>}`; non-sprig `${...}` / bare `$` pass through.
+- [x] **M1.2.2** Scope keys are dotted paths (`workspace`, `ports.<name>`, `provides.<repo>.<key>`,
+      computed vars) resolved via `IVariableSource` (+ `DictionaryVariableSource`).
+- [x] **M1.2.3** Recursive resolver with dependency-chain following + cycle detection;
+      unknown/cyclic/malformed → typed `SubstitutionException` naming the offender.
+- [x] **M1.2.4** 13 unit tests green (named port, var-to-var, provides, cycle/self-cycle,
+      unknown, unterminated/empty, passthrough, trimming).
 
 ### M1.3 — Port-allocation store
 - [ ] **M1.3.1** `IPortStore` + file-backed impl under the central store. Allocation from a

@@ -66,14 +66,20 @@ registry** and **stack definitions**, generalize the workspace lifecycle to N re
 - [x] **M4.5.2** `StackScopeBuilder` unit tests (M4.2).
 - [x] **M4.5.3** Multi-repo create/teardown integration (M4.3 `WorkspaceStackTests`).
 
-## M4.6 — Verification: vue + dotnet in one workspace
-- [ ] **M4.6.1** Extend `sprig-example-vue/.sprig.json` to consume the API: env
-      `VITE_API_URL=${sprig.provides.dotnet-api.baseUrl}`; ensure `dotnet-api` provides `baseUrl`.
-- [ ] **M4.6.2** `repo add` both; `stack create web+api --repos ...`; `create demo --stack web+api`.
-- [ ] **M4.6.3** Confirm: both worktrees exist; vue `.env` has `VITE_API_URL` = the dotnet API's
-      allocated port; `up` brings the postgres container; ports/containers/networks isolated.
-- [ ] **M4.6.4** Second workspace `demo2` — fully non-colliding; both stacks coexist.
-- [ ] **M4.6.5** Teardown both; source repos pristine. Note in `docs/m4-verification.md`.
+## M4.6 — Verification: vue + dotnet in one workspace ✅ DONE (see `docs/m4-verification.md`)
+- [x] **M4.6.1** vue consumes `${sprig.provides.dotnet-api.baseUrl}`; dotnet provides `baseUrl`.
+- [x] **M4.6.2** `repo add` both; `stack create web+api`; `create demo --stack web+api`.
+- [x] **M4.6.3** Both worktrees; vue `.env` `VITE_API_URL=http://localhost:20001` (API's port);
+      `up` → `librarydb_postgres--demo` running.
+- [x] **M4.6.4** `demo2` fully non-colliding (20003-20005; VITE_API_URL→20004); both coexisted.
+- [x] **M4.6.5** Teardown clean; both source repos pristine. Note written.
+
+---
+
+## M4 complete ✅
+Multi-repo stacks work: two repos in one isolated workspace, the frontend cross-wired to the
+API's allocated port via `provides`; a second concurrent workspace with zero collisions; clean
+teardown; source repos pristine. **111 tests green.** Next: **M5** (init/registry onramp).
 
 ---
 

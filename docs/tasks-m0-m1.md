@@ -24,22 +24,15 @@ Fixtures: `../sprig-example-vue` (Vite, reads `env.PORT`), `../sprig-example-dot
       hypothetical error-on-duplicate frameworks (not needed for v1 targets).
 - [x] **S1.6** Findings recorded in `docs/spike-findings.md`.
 
-### S2 — Centrally-stored compose via `--project-directory`
-- [ ] **S2.1** Create a throwaway worktree of the dotnet repo; copy its `docker-compose.yml`
-      to a temp "central" dir as `docker-compose.sprig.yml`; apply the objective's overrides
-      by hand (`container_name` suffix, `ports[0]` → a free host port).
-- [ ] **S2.2** Run `docker compose -f <central>/docker-compose.sprig.yml --project-directory
-      <worktree> -p sprig-spike up -d`; confirm container comes up with the suffixed name and
-      remapped port; `docker compose -p sprig-spike ps`.
-- [ ] **S2.3** **Relative-path stress test** (the flagged wrinkle): add a bind mount
-      (e.g. `./init.sql:/docker-entrypoint-initdb.d/init.sql`) to the source compose,
-      regenerate centrally, and confirm the relative path resolves against the **worktree**
-      (via `--project-directory`), not the central file's dir.
-- [ ] **S2.4** Confirm teardown: `docker compose -p sprig-spike down` (keeps volume) and
-      `down -v` (wipes). Confirm project-name scoping isolates network/volumes from a second
-      `sprig-spike2`.
-- [ ] **S2.5** Findings note: does the central-only compose model hold, or is a
-      per-worktree/rewritten-paths fallback needed? (This is the design's biggest risk.)
+### S2 — Centrally-stored compose via `--project-directory` ✅ DONE (see `spike-findings.md`)
+- [x] **S2.1** Central compose built with hand-applied overrides (name suffix, `ports[0]`→25432).
+- [x] **S2.2** Came up with suffixed name + remapped port via `--project-directory`.
+- [x] **S2.3** Relative bind mount resolved to the **worktree** and the init script executed
+      (marker row `resolved-against-worktree` returned from the DB).
+- [x] **S2.4** Teardown by project name (`down` / `down -v`); two instances isolated by
+      name/port/network; clean afterward.
+- [x] **S2.5** Central-only model **holds** — no fallback needed. `--project-directory
+      <worktree>` is mandatory on every compose call.
 
 ### S3 — git worktree lifecycle + drift on Windows
 - [ ] **S3.1** `git worktree add ../<repo>--spike -b sprig/spike` off `HEAD`; confirm clean

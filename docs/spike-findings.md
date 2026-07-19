@@ -50,6 +50,41 @@ the targeted file beat a sibling `.env`?
 
 ---
 
-## S2 — Centrally-stored compose via `--project-directory` ⏳ TODO
+## S2 — Centrally-stored compose via `--project-directory` ✅ DONE
+
+**Question (biggest design risk):** can the generated compose live *only* in the central
+store, run against a worktree, and still resolve relative paths (bind mounts, build contexts)
+correctly? And does per-workspace project-name scoping isolate two instances?
+
+**Method:** real docker (29.5.3). Created a git worktree of the dotnet repo
+(`sprig-example-dotnet--spike`), a central compose at
+`…/central/sprig-spike/docker-compose.sprig.yml` with overrides applied by hand
+(`container_name` suffixed, `ports[0]` → `25432:5432`) **plus a relative bind mount**
+`./initdb/init.sql:…:ro`. The `init.sql` lived **only in the worktree**. Ran with
+`docker compose -f <central>/…yml --project-directory <worktree> -p sprig-spike`.
+
+**Results:**
+- `compose config` resolved the relative mount to the **worktree** path
+  (`…\sprig-example-dotnet--spike\initdb\init.sql`) — *not* the central file's dir. ✅
+- At runtime the worktree-mounted `init.sql` **executed** — querying the DB returned the
+  marker row `resolved-against-worktree`. ✅ (Proves the mount resolved correctly end-to-end.)
+- Container came up with the suffixed name and remapped host port `25432`. ✅
+- **Isolation:** a second instance (`-p sprig-spike2`, port `25433`, name suffix `spike2`)
+  ran concurrently with separate containers, ports, and networks
+  (`sprig-spike_default` vs `sprig-spike2_default`). ✅
+- **Teardown:** `down` (keeps volumes) and `down -v` (wipes) both worked by project name;
+  no containers/networks left behind. ✅
+
+**Conclusion:** the central-only generated-compose model is validated. The `--project-directory
+<worktree>` flag is **mandatory** and must always point at the worktree so relative paths
+resolve there. Per-workspace `-p sprig-<workspace>` gives baseline network/volume isolation
+for free, on top of the explicit name/port overrides.
+
+**Impact on plan:** none — §3.3 holds. Reinforced requirement: sprig must *always* pass
+`--project-directory <worktree>` on every compose invocation (up/down/ps/config).
+
+**Windows note:** Git Bash mangles container-internal paths passed to `docker exec`
+(MSYS path conversion, e.g. `/docker-entrypoint-initdb.d/...`). Irrelevant to sprig itself
+(it shells out from .NET, not Git Bash) but worth remembering when hand-testing.
 
 ## S3 — git worktree lifecycle + drift on Windows ⏳ TODO

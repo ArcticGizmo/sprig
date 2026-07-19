@@ -34,6 +34,12 @@ internal static class HeadlessRenderer
                 // Select the first repo so the config panel renders populated.
                 if (page is ReposViewModel repos)
                     repos.Selected = repos.Repos.FirstOrDefault();
+                // Check the repos so the stack variable editor shows auto-detected vars.
+                if (page is StacksViewModel stacks)
+                {
+                    stacks.NewName = "web+api";
+                    foreach (var c in stacks.RepoChoices) c.IsSelected = true;
+                }
                 Capture(vm, Path.Combine(outDir, $"main_{page.Title.ToLowerInvariant()}.png"));
             }
 

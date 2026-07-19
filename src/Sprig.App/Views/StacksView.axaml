@@ -4,7 +4,7 @@
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
              x:Class="Sprig.App.Views.StacksView"
              x:DataType="vm:StacksViewModel">
-    <Grid ColumnDefinitions="*,320" Margin="28,20,24,16">
+    <Grid ColumnDefinitions="*,380" Margin="28,20,24,16">
 
         <!-- Existing stacks -->
         <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="0,0,16,0">
@@ -13,7 +13,7 @@
             <ListBox Grid.Row="1" ItemsSource="{Binding Stacks}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="core:StackDefinition">
-                        <StackPanel Spacing="2" Margin="2,6">
+                        <StackPanel Spacing="3" Margin="2,6">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                             <ItemsControl ItemsSource="{Binding Repos}">
                                 <ItemsControl.ItemsPanel>
@@ -21,6 +21,15 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate><TextBlock Text="{Binding}" FontSize="11" Foreground="{StaticResource MutedBrush}" /></DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <ItemsControl ItemsSource="{Binding Vars}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource AccentBrush}">
+                                            <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" />
+                                        </TextBlock>
+                                    </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
@@ -34,29 +43,58 @@
         <!-- New stack -->
         <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="8" Padding="18">
-            <StackPanel Spacing="12">
-                <TextBlock Text="New stack" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                <StackPanel Spacing="4">
-                    <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                    <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+            <ScrollViewer>
+                <StackPanel Spacing="14">
+                    <TextBlock Text="New stack" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <ItemsControl ItemsSource="{Binding RepoChoices}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:RepoChoiceViewModel">
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Variables -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Variables" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="Values the chosen repos need (${sprig.NAME}). Use a literal (http://localhost:4000) or a template like ${sprig.provides.dotnet-api.baseUrl}. Starred = required." />
+                        <ItemsControl ItemsSource="{Binding Vars}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StackVarRow">
+                                    <Grid ColumnDefinitions="Auto,130,*,Auto" Margin="0,2">
+                                        <TextBlock Grid.Column="0" Text="*" Foreground="{StaticResource DangerBrush}"
+                                                   IsVisible="{Binding Required}" Width="10" VerticalAlignment="Center" />
+                                        <TextBox Grid.Column="1" Text="{Binding Key, Mode=TwoWay}" PlaceholderText="name"
+                                                 FontSize="12" Margin="0,0,6,0" />
+                                        <TextBox Grid.Column="2" Text="{Binding Value, Mode=TwoWay}"
+                                                 PlaceholderText="literal or ${sprig...}" FontSize="12" />
+                                        <Button Grid.Column="3" Content="✕" Command="{Binding $parent[ItemsControl].((vm:StacksViewModel)DataContext).RemoveVarCommand}"
+                                                CommandParameter="{Binding}" Margin="6,0,0,0" Padding="8,4" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="+ Add variable" Command="{Binding AddVarCommand}" HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                    <Button Content="Create stack" Command="{Binding CreateCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Left" />
+                    <TextBlock IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{StaticResource OkBrush}" Text="{Binding Status}" TextWrapping="Wrap" />
+                    <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
                 </StackPanel>
-                <StackPanel Spacing="4">
-                    <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                    <ItemsControl ItemsSource="{Binding RepoChoices}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:RepoChoiceViewModel">
-                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-                <Button Content="Create stack" Command="{Binding CreateCommand}"
-                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Left" />
-                <TextBlock IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Foreground="{StaticResource OkBrush}" Text="{Binding Status}" TextWrapping="Wrap" />
-                <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
-            </StackPanel>
+            </ScrollViewer>
         </Border>
     </Grid>
 </UserControl>

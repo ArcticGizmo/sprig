@@ -44,8 +44,13 @@ send screenshots, but expect a round of visual feedback from you.
       Init &amp; register (writes `.sprig.json` via `InitInspector` + `ConfigJson`); Unregister.
       **+ read-only config panel** (`RepoConfigViewModel`): selecting a repo shows its ports, env
       overrides, compose overrides, and provides (edit is a later stage).
-- [x] **M6.4.2** `StacksViewModel` + view: list stacks; create (name + repo checkboxes); remove.
-      (Export/import kept in the CLI for now — noted as a later UI nicety.)
+- [x] **M6.4.2** `StacksViewModel` + view: list stacks (with their wiring vars); create (name +
+      repo checkboxes + **stack-variables editor**); remove. The editor **auto-detects** required
+      vars from the chosen repos' `${sprig.<var>}` refs (`ConfigReferences.RequiredStackVars`,
+      starred = required); values may be literals or templates (e.g. `${sprig.provides.api.baseUrl}`).
+      This is the stack-level wiring layer — repos reference `${sprig.<var>}`; the stack supplies
+      it, so a frontend-only stack works (literal) and a full stack wires to a provide.
+      (Export/import kept in the CLI for now.)
 
 ## M6.5 — Verification (headless render + VM tests) ✅ DONE
 - [x] **M6.5.1** `HeadlessRenderer` renders all three pages to PNG (`sprig-gui render <dir>`).

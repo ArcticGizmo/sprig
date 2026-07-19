@@ -33,19 +33,14 @@ registry** and **stack definitions**, generalize the workspace lifecycle to N re
 - [x] **M4.1.3** Validates repo names against the registry; name pattern allows `+` (e.g. `web+api`).
 - [x] **M4.1.4** 5 unit tests incl. export→import round-trip and unknown-repo/import validation.
 
-## M4.2 — Multi-repo scope + cross-repo provides  *(pure logic — the heart of M4)*
-- [ ] **M4.2.1** Port **namespacing**: allocate per-repo ports under keys `<repo>.<portName>`
-      so two repos declaring the same port name never collide within a workspace.
-- [ ] **M4.2.2** Two-phase resolution in a `StackScopeBuilder`:
-      - **Phase 1** — for each repo, build a *self scope* (`workspace` + its own local ports) and
-        resolve that repo's `provides` templates → concrete values; collect a global map keyed
-        `<repo>.<key>`.
-      - **Phase 2** — per repo, build the *full scope*: `workspace` + own local ports +
-        `provides.<repo>.<key>` (all repos) + stack `vars`.
-- [ ] **M4.2.3** Hard-fail on unresolved/cyclic refs (reuse `SubstitutionEngine`); a repo
-      consuming a missing `provides` key errors at create.
-- [ ] **M4.2.4** Unit tests: same-named ports isolated; vue consumes `dotnet-api.baseUrl`
-      resolving to the API's allocated port; stack var referencing a provide; missing provide → error.
+## M4.2 — Multi-repo scope + cross-repo provides ✅ DONE
+- [x] **M4.2.1** Per-repo port maps (namespacing happens at the store layer in M4.3; the builder
+      takes each repo's local map so same-named ports are isolated).
+- [x] **M4.2.2** `StackScopeBuilder.Build` two-phase (resolve provides against own ports → global
+      map; then full per-repo scope with all provides + stack vars).
+- [x] **M4.2.3** Unresolved/cyclic refs hard-fail via `SubstitutionEngine`.
+- [x] **M4.2.4** 5 unit tests: isolated same-named ports, cross-repo provide consumption, stack
+      var → provide, missing provide → error, workspace slug everywhere.
 
 ## M4.3 — Generalize the workspace lifecycle to N repos
 - [ ] **M4.3.1** Introduce a `ResolvedStack` (list of `(repoRoot, SprigRepoConfig)`), built from

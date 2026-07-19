@@ -1,0 +1,23 @@
+using Sprig.Core.Git;
+
+namespace Sprig.Tests;
+
+/// <summary>A controllable <see cref="IGitService"/> for deterministic classification tests.</summary>
+public sealed class FakeGitService : IGitService
+{
+    public bool RepoExists { get; set; } = true;
+    public List<WorktreeInfo> Worktrees { get; } = [];
+    public List<string> Pruned { get; } = [];
+    public List<string> RemovedWorktrees { get; } = [];
+    public List<string> DeletedBranches { get; } = [];
+
+    public bool IsGitRepo(string path) => RepoExists;
+    public string ResolveRepoRoot(string path) => path;
+    public bool BranchExists(string repo, string branch) => true;
+    public void AddWorktree(string repo, string worktreePath, string branch)
+        => Worktrees.Add(new WorktreeInfo(worktreePath, "head", branch, false));
+    public IReadOnlyList<WorktreeInfo> ListWorktrees(string repo) => Worktrees;
+    public void RemoveWorktree(string repo, string worktreePath) => RemovedWorktrees.Add(worktreePath);
+    public void Prune(string repo) => Pruned.Add(repo);
+    public void DeleteBranch(string repo, string branch) => DeletedBranches.Add(branch);
+}

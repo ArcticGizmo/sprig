@@ -48,39 +48,30 @@ by the `Sprig.Cli` harness.
 - [x] **M2.2.5** 6 tests: seed+wrap, source untouched, absent-source, idempotent re-apply,
       strip restores, only-targeted-files.
 
-## M2.3 — Workspace create (single repo)
-- [ ] **M2.3.1** `WorkspaceService.Create(repoPath, workspace, ...)` orchestration:
-      load+validate `.sprig.json` → allocate ports (`FilePortStore`) → build `SprigScope` →
-      `AddWorktree` at sibling `<repo>--<workspace>` on branch `sprig/<workspace>` →
-      `EnvClobberService` → persist `InstanceRecord`.
-- [ ] **M2.3.2** Validation gate: refuse if config invalid, workspace name unsafe (path/branch
-      chars), repo not git, worktree path already exists, or workspace record already exists.
-- [ ] **M2.3.3** **Fail-safe rollback**: if any step throws mid-create, undo what was done
-      (remove worktree, release ports, delete partial record) so a failed create leaves no mess.
-- [ ] **M2.3.4** Unit/integration test (temp git fixture): create yields a worktree with a
-      clobbered `.env`, an instance record, and a port lease.
+## M2.3 — Workspace create (single repo) ✅ DONE
+- [x] **M2.3.1** `WorkspaceService.Create` orchestration (load+validate → allocate → scope →
+      worktree+branch → env clobber → persist record).
+- [x] **M2.3.2** Validation gate: name pattern, not-a-repo, worktree exists, workspace exists,
+      invalid config.
+- [x] **M2.3.3** Fail-safe rollback (remove worktree+branch, release ports, delete record).
+- [x] **M2.3.4** Tests over `TempGitRepo`: worktree+branch+clobbered .env+record+port lease;
+      two non-colliding workspaces; rollback on missing config.
 
-## M2.4 — Workspace teardown
-- [ ] **M2.4.1** `WorkspaceService.Remove(workspace, force)` — layered & idempotent per the S3
-      matrix: (1) [infra: none in M2] (2) `RemoveWorktree --force` / `prune` / `rm` orphan as
-      the state dictates (3) delete branch **only if `force`** (4) `FilePortStore.Release`
-      (5) `InstanceStore.Delete` last (resumable).
-- [ ] **M2.4.2** Tolerate every piece already gone (folder missing, branch missing, record
-      missing) without throwing.
-- [ ] **M2.4.3** Windows lock tolerance: retry `rm` of the worktree folder on `IOException`
-      (S3 locked-files note), after worktree removal.
-- [ ] **M2.4.4** Tests: happy teardown; teardown with folder already deleted; teardown twice
-      (idempotent); `force` deletes branch, non-force keeps it.
+## M2.4 — Workspace teardown ✅ DONE
+- [x] **M2.4.1** `WorkspaceService.Remove(force)` layered per state (RemoveWorktree/prune/rm),
+      branch only on `force`, release ports, delete record last.
+- [x] **M2.4.2** Tolerates every piece already gone; unknown workspace = no-op.
+- [x] **M2.4.3** Folder deletion via `WorktreeInspector.TryDeleteDirectory` (lock-retry).
+- [x] **M2.4.4** Tests: keep-branch default, force-deletes-branch, deleted-folder tolerance,
+      idempotent second teardown.
 
-## M2.5 — Reconcile / doctor
-- [ ] **M2.5.1** `WorkspaceReconciler.Inspect(workspace)` → `ReconcileReport` classifying each
-      repo into the 4 states (Healthy / Drift A prunable / Drift B orphan / Gone) by comparing
-      the `InstanceRecord` against `ListWorktrees` + disk.
-- [ ] **M2.5.2** `Repair(report, ...)` applies the matrix action per state; also detects
-      **record-vs-store drift** (leased ports with no record, records with no worktree).
-- [ ] **M2.5.3** `InspectAll()` for a whole-store sweep (`doctor`).
-- [ ] **M2.5.4** Tests with a **fake `IGitService`** to drive each state deterministically, plus
-      one integration test that deletes a real worktree folder and confirms repair.
+## M2.5 — Reconcile / doctor ✅ DONE
+- [x] **M2.5.1** `WorkspaceReconciler.Inspect` → `WorkspaceReconcile` (per-repo `WorktreeState`).
+- [x] **M2.5.2** `Repair` applies the matrix (prune Drift A, remove Drift B orphan). (Deep
+      port-store-vs-record sweep deferred — needs a lease-enumeration API; noted for later.)
+- [x] **M2.5.3** `InspectAll()` whole-store sweep.
+- [x] **M2.5.4** `[Theory]` fake-git covers all 4 states; real-git integration repairs Drift A
+      (prune) and Drift B (orphan removal).
 
 ## M2.6 — CLI wiring (`Sprig.Cli`)
 - [ ] **M2.6.1** `create <workspace> --repo <path>` — drives `WorkspaceService.Create`, prints

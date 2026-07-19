@@ -64,20 +64,25 @@ allocated port into both the compose host-port and the app's `.env` connection s
       end-to-end docker exercised in M3.6 (docker present here). (No hard `IsAvailable` skip
       needed — daemon is available.)
 
-## M3.6 — Verification against `sprig-example-dotnet`
-- [ ] **M3.6.1** Author `sprig-example-dotnet/.sprig.json`: ports `api`+`postgres`; env `.env`
-      (`PORT`, `ConnectionStrings__Default` with `Port=${sprig.ports.postgres}`); compose
-      overrides (`container_name` suffix, `ports[0]` → `${sprig.ports.postgres}:5432`).
-- [ ] **M3.6.2** `create` + `up`; confirm a postgres container with the suffixed name on the
-      allocated host port; `psql` connects on that port; `.env` connection string matches.
-- [ ] **M3.6.3** Second workspace: non-colliding container/port/network, both up together.
-- [ ] **M3.6.4** `down` keeps the volume (data survives a down/up); `rm` wipes it (`down -v`).
-- [ ] **M3.6.5** Verification note in `docs/m3-verification.md`.
+## M3.6 — Verification against `sprig-example-dotnet` ✅ DONE (see `docs/m3-verification.md`)
+- [x] **M3.6.1** Authored `sprig-example-dotnet/.sprig.json`.
+- [x] **M3.6.2** `create` + `up` → `librarydb_postgres--feat-a` on host port 20001; `psql`
+      reached `librarydb`; `.env` connection string = `Port=20001` (matches).
+- [x] **M3.6.3** `feat-b` (postgres 20003) ran concurrently — distinct name/port/network.
+- [x] **M3.6.4** Teardown (`rm --force` → `down -v`) clean. **Caveat:** "down keeps volumes"
+      needs a *named* volume; the example compose has none, so data is anonymous-volume ephemeral
+      across down/up (docker behavior). sprig's down vs down -v wiring is unit-verified.
+- [x] **M3.6.5** Note in `docs/m3-verification.md` (incl. the volume caveat → M5 `init` hint).
 
 ---
+
+## M3 complete ✅
+`sprig-example-dotnet` runs fully isolated (own postgres, non-colliding port, matching
+connection string); second workspace concurrent; teardown clean; source repo pristine.
+**93 tests green.** Multi-repo stacks are next (**M4**).
 
 ## Notes
 - **New Core folders:** `Compose/`, `Docker/`.
 - Docker calls are best-effort in teardown — a missing/stopped daemon must never block worktree
   cleanup.
-- Commit per sub-milestone; local only.
+- Follow-up for M5 `init`: encourage a named volume when infra is detected (see verification note).

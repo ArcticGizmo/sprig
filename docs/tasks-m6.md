@@ -34,16 +34,16 @@ send screenshots, but expect a round of visual feedback from you.
 - [x] **M6.2.3** Async Up/Down/Reset/Reconcile/Repair/Open-folder/Remove (with confirm bar + force).
 - [x] **M6.2.4** Indeterminate progress while busy; green status / red error text. Verified via render.
 
-## M6.3 — Create workspace flow
-- [ ] **M6.3.1** `CreateWorkspaceViewModel`: pick a stack (or ad-hoc repo path), enter a name
-      (validated), create; on success select the new workspace.
-- [ ] **M6.3.2** Surface create errors (invalid name, missing config, worktree exists) inline.
+## M6.3 — Create workspace flow ✅ DONE
+- [x] **M6.3.1** Create overlay in `WorkspacesViewModel`: stack picker + name, creates via
+      `StackResolver` + `WorkspaceService.Create`, selects the new workspace on success.
+- [x] **M6.3.2** Inline create errors (invalid name, missing config, worktree exists).
 
-## M6.4 — Repos + Stacks management
-- [ ] **M6.4.1** `ReposViewModel`: list registry; add repo (folder picker) with optional `init`
-      first; remove. Show detected/validated config summary.
-- [ ] **M6.4.2** `StacksViewModel`: list stacks; create (pick registered repos, add vars); remove;
-      export/import (file pickers).
+## M6.4 — Repos + Stacks management ✅ DONE
+- [x] **M6.4.1** `ReposViewModel` + view: list registry; Register (existing `.sprig.json`) and
+      Init &amp; register (writes `.sprig.json` via `InitInspector` + `ConfigJson`); Unregister.
+- [x] **M6.4.2** `StacksViewModel` + view: list stacks; create (name + repo checkboxes); remove.
+      (Export/import kept in the CLI for now — noted as a later UI nicety.)
 
 ## M6.5 — Verification (headless render + VM tests)
 - [ ] **M6.5.1** `HeadlessRenderer` renders the main views (with synthetic data) to PNG at 1x/1.5x.

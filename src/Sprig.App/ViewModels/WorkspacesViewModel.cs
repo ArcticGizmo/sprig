@@ -31,7 +31,7 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(OpenCommand), nameof(RemoveCommand),
-        nameof(RefreshCommand))]
+        nameof(RefreshCommand), nameof(NewWorkspaceCommand))]
     private bool _busy;
 
     [ObservableProperty] private string? _error;
@@ -40,6 +40,13 @@ public partial class WorkspacesViewModel : PageViewModel
     // Remove confirmation state.
     [ObservableProperty] private bool _confirmingRemove;
     [ObservableProperty] private bool _removeForce;
+
+    // Create-workspace flow.
+    [ObservableProperty] private bool _isCreating;
+    [ObservableProperty] private string? _newStack;
+    [ObservableProperty] private string _newName = "";
+    [ObservableProperty] private string? _createError;
+    public ObservableCollection<string> AvailableStacks { get; } = [];
 
     bool HasSelection => Selected is not null && !Busy;
     bool NotBusy => !Busy;
@@ -67,6 +74,54 @@ public partial class WorkspacesViewModel : PageViewModel
                 Workspaces.Add(new WorkspaceItemViewModel(r));
             Selected = Workspaces.FirstOrDefault(w => w.Name == previouslySelected) ?? Workspaces.FirstOrDefault();
         }, status: null);
+    }
+
+    [RelayCommand(CanExecute = nameof(NotBusy))]
+    private async Task NewWorkspace()
+    {
+        CreateError = null;
+        NewName = "";
+        NewStack = null;
+        var names = await AppServices.RunAsync(() => Services.Stacks.List().Select(s => s.Name).ToList());
+        AvailableStacks.Clear();
+        foreach (var n in names) AvailableStacks.Add(n);
+        NewStack = AvailableStacks.FirstOrDefault();
+        IsCreating = true;
+    }
+
+    [RelayCommand]
+    private void CancelCreate() => IsCreating = false;
+
+    [RelayCommand]
+    private async Task Create()
+    {
+        var stack = NewStack;
+        var name = NewName.Trim();
+        if (string.IsNullOrEmpty(stack)) { CreateError = "pick a stack (define one in the Stacks tab first)"; return; }
+        if (string.IsNullOrEmpty(name)) { CreateError = "enter a workspace name"; return; }
+
+        Busy = true;
+        CreateError = null;
+        try
+        {
+            await AppServices.RunAsync(() =>
+            {
+                var resolved = Services.StackResolver.Resolve(stack);
+                Services.Workspaces.Create(resolved, name);
+            });
+            IsCreating = false;
+            await RefreshCore();
+            Selected = Workspaces.FirstOrDefault(w => w.Name == name) ?? Selected;
+            StatusMessage = $"created '{name}'";
+        }
+        catch (Exception ex)
+        {
+            CreateError = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]

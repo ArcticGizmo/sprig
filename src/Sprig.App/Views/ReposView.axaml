@@ -1,12 +1,44 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
              x:Class="Sprig.App.Views.ReposView"
              x:DataType="vm:ReposViewModel">
-    <StackPanel Margin="28,24" Spacing="8">
-        <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold"
-                   Foreground="{StaticResource TitleBrush}" />
-        <TextBlock Text="Registered repos will appear here."
-                   Foreground="{StaticResource MutedBrush}" />
-    </StackPanel>
+    <Grid RowDefinitions="Auto,Auto,*" Margin="28,20,24,16">
+        <TextBlock Grid.Row="0" Text="Repos" FontSize="22" FontWeight="SemiBold"
+                   Foreground="{StaticResource TitleBrush}" Margin="0,0,0,12" />
+
+        <!-- Add bar -->
+        <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="Register a repo by path (must contain .sprig.json, or use Init &amp; register to create one)"
+                       Foreground="{StaticResource MutedBrush}" FontSize="12" />
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBox Grid.Column="0" Text="{Binding NewPath, Mode=TwoWay}"
+                         PlaceholderText="C:\path\to\repo" Margin="0,0,8,0" />
+                <Button Grid.Column="1" Content="Init &amp; register" Command="{Binding InitAndAddCommand}" Margin="0,0,8,0" />
+                <Button Grid.Column="2" Content="Register" Command="{Binding AddCommand}"
+                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+            </Grid>
+            <TextBlock IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{StaticResource OkBrush}" Text="{Binding Status}" />
+            <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
+        </StackPanel>
+
+        <!-- List -->
+        <Grid Grid.Row="2" RowDefinitions="*,Auto">
+            <ListBox Grid.Row="0" ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="core:RegisteredRepo">
+                        <StackPanel Spacing="2" Margin="2,6">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Path}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <Button Grid.Row="1" Content="Unregister selected" Command="{Binding RemoveCommand}"
+                    Foreground="{StaticResource DangerBrush}" Margin="0,10,0,0" HorizontalAlignment="Left" />
+        </Grid>
+    </Grid>
 </UserControl>

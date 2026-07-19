@@ -84,8 +84,10 @@
                                 IsVisible="{Binding Selected.HasInfra}" />
                         <Button Content="Reset" Command="{Binding ResetCommand}"
                                 IsVisible="{Binding Selected.HasInfra}" />
-                        <Button Content="Reconcile" Command="{Binding ReconcileCommand}" />
-                        <Button Content="Repair" Command="{Binding RepairCommand}" />
+                        <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
+                                ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
+                        <Button Content="Repair" Command="{Binding RepairCommand}"
+                                ToolTip.Tip="Fix drift: prune stale registrations and remove orphaned folders. Healthy worktrees are never touched." />
                         <Button Content="Open folder" Command="{Binding OpenCommand}" />
                         <Button Content="Remove" Command="{Binding RemoveCommand}"
                                 Foreground="{StaticResource DangerBrush}" />
@@ -126,8 +128,10 @@
                                                        Foreground="{StaticResource TitleBrush}" />
                                             <TextBlock Text="{Binding Branch}" FontSize="11"
                                                        Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding State}" FontSize="11"
-                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
+                                                       IsVisible="{Binding StateHealthy}" Foreground="{StaticResource OkBrush}" />
+                                            <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
+                                                       IsVisible="{Binding StateProblem}" Foreground="{StaticResource DangerBrush}" />
                                         </StackPanel>
                                         <TextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
                                                    Foreground="{StaticResource FgBrush}" />

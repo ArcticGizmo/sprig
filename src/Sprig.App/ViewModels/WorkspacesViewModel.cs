@@ -204,13 +204,12 @@ public partial class WorkspacesViewModel : PageViewModel
 
     static void ApplyDrift(WorkspaceItemViewModel item, WorkspaceReconcile? report)
     {
-        if (report is null) { item.Drift = "no record"; return; }
+        if (report is null) { item.Drift = "not checked"; return; }
         foreach (var line in item.Repos)
-        {
-            var state = report.Repos.FirstOrDefault(r => r.WorktreePath == line.WorktreePath)?.State;
-            line.State = state?.ToString() ?? "?";
-        }
-        item.Drift = report.IsHealthy ? "healthy" : report.HasDrift ? "DRIFT" : "gone";
+            line.DriftState = report.Repos.FirstOrDefault(r => r.WorktreePath == line.WorktreePath)?.State;
+        item.Drift = report.IsHealthy ? "in sync"
+            : report.HasDrift ? "drift detected — run Repair"
+            : "worktrees gone";
     }
 
     async Task RefreshCore()

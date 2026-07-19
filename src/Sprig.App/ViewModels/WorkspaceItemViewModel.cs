@@ -51,5 +51,22 @@ public partial class RepoLineViewModel : ViewModelBase
     public string Inputs { get; }
     public bool HasInfra { get; }
 
-    [ObservableProperty] private string _state = "";
+    /// <summary>Per-repo worktree state from the last reconcile; null until one runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateLabel), nameof(StateKnown), nameof(StateHealthy), nameof(StateProblem))]
+    private WorktreeState? _driftState;
+
+    public bool StateKnown => DriftState is not null;
+    public bool StateHealthy => DriftState == WorktreeState.Healthy;
+    public bool StateProblem => StateKnown && !StateHealthy;
+
+    /// <summary>Plain-language description of <see cref="DriftState"/> (what it means + the fix).</summary>
+    public string StateLabel => DriftState switch
+    {
+        WorktreeState.Healthy => "✓ in sync",
+        WorktreeState.MissingFolder => "worktree folder missing — run Repair to prune it",
+        WorktreeState.Orphaned => "orphaned folder (git lost track) — run Repair to remove it",
+        WorktreeState.Gone => "gone — no worktree on disk or in git",
+        _ => "",
+    };
 }

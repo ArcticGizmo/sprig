@@ -42,12 +42,15 @@
       workspace with **no infra** already hides Up/Down/Reset — confirmed via headless render
       (`example-web-only` shows only Reconcile/Repair/Open/Remove).
 
-## M7.3 — Doctor / reconcile UX in the UI
-- [ ] **M7.3.1** Surface a legible drift/health view: per-repo worktree state
-      (Healthy/MissingFolder/Orphaned/Gone) with plain-language labels; Reconcile (diagnose) and
-      Repair (fix) clearly distinguished. (Commands already exist in `WorkspacesViewModel`.)
-- [ ] **M7.3.2** Optional: a top-level "Doctor" affordance mirroring the CLI `doctor` (docker/compose
-      availability + worktree integrity across all instances). Keep logic in Core.
+## M7.3 — Doctor / reconcile UX in the UI ✅ DONE (essentials)
+- [x] **M7.3.1** Legible drift/health view: per-repo worktree state now shows a plain-language
+      label instead of the raw enum — `✓ in sync` (green) / "worktree folder missing — run Repair" /
+      "orphaned folder (git lost track) — run Repair" / "gone" (red for problems). Overall drift
+      line reads "in sync" / "drift detected — run Repair" / "worktrees gone" / "not checked".
+      Reconcile and Repair carry tooltips spelling out diagnose (read-only) vs fix.
+- [ ] **M7.3.2** *(deferred, optional)* Top-level "Doctor" over all workspaces. The per-workspace
+      surface now distinguishes diagnose vs fix clearly; a global sweep can come later if wanted.
+      The CLI `doctor` (reconcile-all) already covers this need for now.
 
 ## M7.4 — Packaging (Velopack, update-notify only)  ⬅ last
 - [ ] **M7.4.1** Add Velopack to `Sprig.App`; produce an installable Windows build that runs the

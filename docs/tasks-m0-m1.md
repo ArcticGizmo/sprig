@@ -53,23 +53,18 @@ Fixtures: `../sprig-example-vue` (Vite, reads `env.PORT`), `../sprig-example-dot
 > variables and allocates a stable, non-colliding port set — with **zero** filesystem/docker
 > side effects. `dotnet test` green.
 
-### M1.0 — Solution scaffolding
-- [ ] **M1.0.1** `sprig.slnx` with: `src/Sprig.Core/Sprig.Core.csproj` (`net10.0`,
-      `Nullable`+`ImplicitUsings` on, no Windows-only deps), `src/Sprig.Cli/Sprig.Cli.csproj`
-      (`net10.0`, references Core), `tests/Sprig.Tests/Sprig.Tests.csproj` (xUnit, references
-      Core). Mirror perch conventions.
-- [ ] **M1.0.2** `Sprig.Cli` prints `--help` and version; wired to build. (Harness only.)
-- [ ] **M1.0.3** CI-free local build/test scripts (`build.ps1` / `test.ps1`) or documented
-      `dotnet build sprig.slnx` / `dotnet test`.
+### M1.0 — Solution scaffolding ✅ DONE
+- [x] **M1.0.1** `sprig.slnx` + Core/Cli/Tests (`net10.0`, Nullable+ImplicitUsings, refs wired).
+- [x] **M1.0.2** `Sprig.Cli` prints `--help`/`--version`.
+- [x] **M1.0.3** `dotnet build sprig.slnx` / `dotnet test sprig.slnx` (documented; `.gitignore` added).
 
-### M1.1 — `.sprig.json` config model
-- [ ] **M1.1.1** C# records for the repo config: `SprigConfig { int Schema; string Name;
-      PortDecl[] Ports; EnvOverride[] Env; ComposeOverride Compose; Dictionary Provides; }`
-      (shapes per `implementation-plan.md` §2). Use `System.Text.Json` source-gen.
-- [ ] **M1.1.2** Loader with clear errors (missing file, bad JSON, unknown schema version).
-- [ ] **M1.1.3** Validator: unique port names, non-empty `env.file`/`set`, compose paths
-      well-formed, no unknown top-level keys. Returns a structured `ValidationResult`.
-- [ ] **M1.1.4** Unit tests: valid fixture parses; each malformed case yields a specific error.
+### M1.1 — `.sprig.json` config model ✅ DONE
+- [x] **M1.1.1** Records `SprigRepoConfig` + `PortDeclaration`/`EnvOverride`/`ComposeConfig`/
+      `ComposeOverride`. (Reflection-based STJ for now; source-gen deferred to M7 packaging.)
+- [x] **M1.1.2** `SprigConfigLoader` throws `SprigConfigException` for missing file / bad JSON.
+- [x] **M1.1.3** `SprigConfigValidator` → `ValidationResult` (schema, name, unique/valid port
+      names, env file+keys, compose path/template, unknown top-level keys via `JsonExtensionData`).
+- [x] **M1.1.4** 12 unit tests green (valid fixture + each malformed case).
 
 ### M1.2 — Substitution engine
 - [ ] **M1.2.1** Tokenizer for `${sprig.<path>}` (literal text + refs); tolerant of `$` that

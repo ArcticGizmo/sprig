@@ -5,8 +5,8 @@ namespace Sprig.Core.Config;
 /// <summary>
 /// Inspects the <c>${sprig.&lt;path&gt;}</c> references a repo's templates make. A repo may only
 /// reference its own declared <see cref="InputDeclaration"/>s and <c>workspace</c>; anything else
-/// is a mistake the validator flags (repos are pure consumers — they don't know about ports,
-/// provides, or other repos).
+/// is a mistake the validator flags (repos are pure consumers — they don't know about stack
+/// ports or other repos; the stack supplies each input via bindings).
 /// </summary>
 public static partial class ConfigReferences
 {

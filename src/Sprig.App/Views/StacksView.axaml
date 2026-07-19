@@ -4,13 +4,19 @@
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
              x:Class="Sprig.App.Views.StacksView"
              x:DataType="vm:StacksViewModel">
-    <Grid ColumnDefinitions="*,420" Margin="28,20,24,16">
+    <Grid RowDefinitions="Auto,*" Margin="0">
+
+        <!-- Header / toolbar -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="28,20,24,12">
+            <TextBlock Grid.Column="0" Text="Stacks" FontSize="22" FontWeight="SemiBold"
+                       Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="New stack" Command="{Binding NewStackCommand}"
+                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+        </Grid>
 
         <!-- Existing stacks -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="0,0,16,0">
-            <TextBlock Grid.Row="0" Text="Stacks" FontSize="22" FontWeight="SemiBold"
-                       Foreground="{StaticResource TitleBrush}" Margin="0,0,0,12" />
-            <ListBox Grid.Row="1" ItemsSource="{Binding Stacks}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+        <Grid Grid.Row="1" RowDefinitions="*,Auto,Auto" Margin="28,0,24,16">
+            <ListBox Grid.Row="0" ItemsSource="{Binding Stacks}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="core:StackDefinition">
                         <StackPanel Spacing="3" Margin="2,6">
@@ -42,98 +48,107 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+            <TextBlock Grid.Row="1" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{StaticResource OkBrush}" Text="{Binding Status}" TextWrapping="Wrap" Margin="0,10,0,0" />
             <Button Grid.Row="2" Content="Remove selected" Command="{Binding RemoveCommand}"
                     Foreground="{StaticResource DangerBrush}" Margin="0,10,0,0" HorizontalAlignment="Left" />
         </Grid>
 
-        <!-- New stack -->
-        <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1" CornerRadius="8" Padding="18">
-            <ScrollViewer>
-                <StackPanel Spacing="14">
-                    <TextBlock Text="New stack" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                        <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+        <!-- Create overlay -->
+        <Border Grid.Row="1" IsVisible="{Binding IsCreating}" Background="#B0000000">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="22" Width="460" MaxHeight="640"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <DockPanel LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Top" Text="New stack" FontSize="18" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" Margin="0,0,0,14" />
+                    <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,14,0,0">
+                        <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <Button Content="Create stack" Command="{Binding CreateCommand}"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                            <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
+                        </StackPanel>
                     </StackPanel>
+                    <ScrollViewer>
+                        <StackPanel Spacing="14">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                            </StackPanel>
 
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                        <ItemsControl ItemsSource="{Binding RepoChoices}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:RepoChoiceViewModel">
-                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                <ItemsControl ItemsSource="{Binding RepoChoices}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoChoiceViewModel">
+                                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
 
-                    <!-- Ports -->
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Ports" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                        <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="Named ports the stack owns. Each gets a real, non-colliding number per workspace (preview shows they're distinct)." />
-                        <ItemsControl ItemsSource="{Binding Ports}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:StackPortRow">
-                                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
-                                        <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay}" PlaceholderText="e.g. api_port" FontSize="12" />
-                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0"
-                                                   FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource MutedBrush}">
-                                            <Run Text="≈ " /><Run Text="{Binding Preview}" />
-                                        </TextBlock>
-                                        <Button Grid.Column="2" Content="✕" Padding="8,4"
-                                                Command="{Binding $parent[ItemsControl].((vm:StacksViewModel)DataContext).RemovePortCommand}"
-                                                CommandParameter="{Binding}" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button Content="+ Add port" Command="{Binding AddPortCommand}" HorizontalAlignment="Left" />
-                    </StackPanel>
+                            <!-- Ports -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Ports" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                           Text="Named ports the stack owns. Each gets a real, non-colliding number per workspace (preview shows they're distinct)." />
+                                <ItemsControl ItemsSource="{Binding Ports}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:StackPortRow">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay}" PlaceholderText="e.g. api_port" FontSize="12" />
+                                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0"
+                                                           FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource MutedBrush}">
+                                                    <Run Text="≈ " /><Run Text="{Binding Preview}" />
+                                                </TextBlock>
+                                                <Button Grid.Column="2" Content="✕" Padding="8,4"
+                                                        Command="{Binding $parent[ItemsControl].((vm:StacksViewModel)DataContext).RemovePortCommand}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="+ Add port" Command="{Binding AddPortCommand}" HorizontalAlignment="Left" />
+                            </StackPanel>
 
-                    <!-- Bindings -->
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Inputs" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                        <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="Supply each repo's inputs individually — a literal, or a template over ${sprig.ports.NAME} / ${sprig.workspace}." />
-                        <ItemsControl ItemsSource="{Binding Bindings}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:RepoBindingGroup">
-                                    <StackPanel Spacing="4" Margin="0,4,0,8">
-                                        <TextBlock Text="{Binding Repo}" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
-                                        <ItemsControl ItemsSource="{Binding Rows}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:BindingRow">
-                                                    <Grid ColumnDefinitions="120,*" Margin="8,2,0,2">
-                                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
-                                                                       Foreground="{StaticResource FgBrush}" />
-                                                            <TextBlock FontSize="10" Foreground="{StaticResource MutedBrush}">
-                                                                <Run Text="e.g. " /><Run Text="{Binding Example}" />
-                                                            </TextBlock>
-                                                        </StackPanel>
-                                                        <TextBox Grid.Column="1" Text="{Binding Expression, Mode=TwoWay}"
-                                                                 PlaceholderText="literal or ${sprig.ports.NAME}" FontSize="12" />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-
-                    <Button Content="Create stack" Command="{Binding CreateCommand}"
-                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Left" />
-                    <TextBlock IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                               Foreground="{StaticResource OkBrush}" Text="{Binding Status}" TextWrapping="Wrap" />
-                    <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                               Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
-                </StackPanel>
-            </ScrollViewer>
+                            <!-- Bindings -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Inputs" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                           Text="Supply each repo's inputs individually — a literal, or a template over ${sprig.ports.NAME} / ${sprig.workspace}." />
+                                <ItemsControl ItemsSource="{Binding Bindings}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoBindingGroup">
+                                            <StackPanel Spacing="4" Margin="0,4,0,8">
+                                                <TextBlock Text="{Binding Repo}" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
+                                                <ItemsControl ItemsSource="{Binding Rows}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:BindingRow">
+                                                            <Grid ColumnDefinitions="120,*" Margin="8,2,0,2">
+                                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
+                                                                               Foreground="{StaticResource FgBrush}" />
+                                                                    <TextBlock FontSize="10" Foreground="{StaticResource MutedBrush}">
+                                                                        <Run Text="e.g. " /><Run Text="{Binding Example}" />
+                                                                    </TextBlock>
+                                                                </StackPanel>
+                                                                <TextBox Grid.Column="1" Text="{Binding Expression, Mode=TwoWay}"
+                                                                         PlaceholderText="literal or ${sprig.ports.NAME}" FontSize="12" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
         </Border>
     </Grid>
 </UserControl>

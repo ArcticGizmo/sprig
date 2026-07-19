@@ -66,9 +66,12 @@
                                 <Setter Property="Margin" Value="0,0,8,8" />
                             </Style>
                         </WrapPanel.Styles>
-                        <Button Content="Up" Command="{Binding UpCommand}" />
-                        <Button Content="Down" Command="{Binding DownCommand}" />
-                        <Button Content="Reset" Command="{Binding ResetCommand}" />
+                        <Button Content="Up" Command="{Binding UpCommand}"
+                                IsVisible="{Binding Selected.HasInfra}" />
+                        <Button Content="Down" Command="{Binding DownCommand}"
+                                IsVisible="{Binding Selected.HasInfra}" />
+                        <Button Content="Reset" Command="{Binding ResetCommand}"
+                                IsVisible="{Binding Selected.HasInfra}" />
                         <Button Content="Reconcile" Command="{Binding ReconcileCommand}" />
                         <Button Content="Repair" Command="{Binding RepairCommand}" />
                         <Button Content="Open folder" Command="{Binding OpenCommand}" />

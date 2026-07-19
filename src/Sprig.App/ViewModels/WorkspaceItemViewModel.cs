@@ -23,6 +23,10 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     public string ReposSummary => string.Join(", ", Record.Repos.Select(r => r.Name));
     public IReadOnlyList<RepoLineViewModel> Repos { get; }
 
+    /// <summary>True when any repo declares docker infrastructure. Mirrors the core's
+    /// RequireWithInfra gate so Up/Down/Reset only show when they can actually run.</summary>
+    public bool HasInfra => Record.Repos.Any(r => r.GeneratedComposePath is not null);
+
     [ObservableProperty] private string _status;
     [ObservableProperty] private string? _drift;
 }

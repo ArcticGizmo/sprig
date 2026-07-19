@@ -38,6 +38,22 @@ public partial class StacksViewModel : PageViewModel
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
+    [ObservableProperty] private bool _isCreating;
+
+    /// <summary>Open the create-stack modal with a fresh, empty form.</summary>
+    [RelayCommand]
+    private void NewStack()
+    {
+        NewName = "";
+        foreach (var c in RepoChoices) c.IsSelected = false;
+        Ports.Clear();
+        Bindings.Clear();
+        Error = null; Status = null;
+        IsCreating = true;
+    }
+
+    [RelayCommand]
+    private void CancelCreate() { IsCreating = false; Error = null; }
 
     [RelayCommand]
     private void AddPort() { Ports.Add(new StackPortRow()); ReindexPortPreviews(); }
@@ -65,6 +81,7 @@ public partial class StacksViewModel : PageViewModel
             foreach (var c in RepoChoices) c.IsSelected = false;
             Ports.Clear();
             Bindings.Clear();
+            IsCreating = false;
             Status = $"created stack '{name}'";
             Reload();
         }

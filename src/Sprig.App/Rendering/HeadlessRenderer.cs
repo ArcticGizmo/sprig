@@ -1,3 +1,4 @@
+using System.Linq;
 using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -30,6 +31,9 @@ internal static class HeadlessRenderer
             foreach (var page in vm.Pages)
             {
                 vm.CurrentPage = page;
+                // Select the first repo so the config panel renders populated.
+                if (page is ReposViewModel repos)
+                    repos.Selected = repos.Repos.FirstOrDefault();
                 Capture(vm, Path.Combine(outDir, $"main_{page.Title.ToLowerInvariant()}.png"));
             }
 

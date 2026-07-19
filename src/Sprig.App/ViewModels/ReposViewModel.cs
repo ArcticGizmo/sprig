@@ -23,10 +23,19 @@ public partial class ReposViewModel : PageViewModel
     public ObservableCollection<RegisteredRepo> Repos { get; } = [];
 
     [ObservableProperty] private RegisteredRepo? _selected;
+    [ObservableProperty] private RepoConfigViewModel? _selectedConfig;
     [ObservableProperty] private string _newPath = "";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _busy;
+
+    public bool HasSelected => Selected is not null;
+
+    partial void OnSelectedChanged(RegisteredRepo? value)
+    {
+        SelectedConfig = value is null ? null : RepoConfigViewModel.Load(value.Path);
+        OnPropertyChanged(nameof(HasSelected));
+    }
 
     [RelayCommand]
     private Task Add() => AddInternal(runInit: false);

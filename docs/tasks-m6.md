@@ -42,6 +42,8 @@ send screenshots, but expect a round of visual feedback from you.
 ## M6.4 — Repos + Stacks management ✅ DONE
 - [x] **M6.4.1** `ReposViewModel` + view: list registry; Register (existing `.sprig.json`) and
       Init &amp; register (writes `.sprig.json` via `InitInspector` + `ConfigJson`); Unregister.
+      **+ read-only config panel** (`RepoConfigViewModel`): selecting a repo shows its ports, env
+      overrides, compose overrides, and provides (edit is a later stage).
 - [x] **M6.4.2** `StacksViewModel` + view: list stacks; create (name + repo checkboxes); remove.
       (Export/import kept in the CLI for now — noted as a later UI nicety.)
 

@@ -28,13 +28,11 @@ send screenshots, but expect a round of visual feedback from you.
 - [x] **M6.1.1** `AppServices` wires the full real Core graph.
 - [x] **M6.1.2** `AppServices.RunAsync` runs blocking Core calls off the UI thread.
 
-## M6.2 — Workspaces (list + detail + lifecycle)
-- [ ] **M6.2.1** `WorkspacesViewModel`: observable list from `InstanceStore`; refresh; select.
-- [ ] **M6.2.2** Detail: repos, per-repo ports, branch, worktree path, live infra status + drift
-      (via reconciler), last status.
-- [ ] **M6.2.3** Lifecycle async commands: Up / Down / Reset / Reconcile(+repair) / Open worktree
-      (explorer/editor) / Remove (with confirm + force).
-- [ ] **M6.2.4** Busy/error surfacing (spinner while a command runs; error banner on failure).
+## M6.2 — Workspaces (list + detail + lifecycle) ✅ DONE
+- [x] **M6.2.1** `WorkspacesViewModel` observable list from `InstanceStore`; refresh; select.
+- [x] **M6.2.2** Detail: per-repo cards (ports, branch, worktree path, drift state); status/drift line.
+- [x] **M6.2.3** Async Up/Down/Reset/Reconcile/Repair/Open-folder/Remove (with confirm bar + force).
+- [x] **M6.2.4** Indeterminate progress while busy; green status / red error text. Verified via render.
 
 ## M6.3 — Create workspace flow
 - [ ] **M6.3.1** `CreateWorkspaceViewModel`: pick a stack (or ad-hoc repo path), enter a name

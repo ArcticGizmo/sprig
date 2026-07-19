@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.WorkspacesView"
+             x:DataType="vm:WorkspacesViewModel">
+    <StackPanel Margin="28,24" Spacing="8">
+        <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold"
+                   Foreground="{StaticResource TitleBrush}" />
+        <TextBlock Text="Your isolated workspaces will appear here."
+                   Foreground="{StaticResource MutedBrush}" />
+    </StackPanel>
+</UserControl>

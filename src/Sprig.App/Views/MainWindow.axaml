@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        x:Class="Sprig.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1000" Height="680"
+        MinWidth="720" MinHeight="480"
+        Background="{StaticResource FormBgBrush}"
+        Title="Sprig">
+
+    <Grid ColumnDefinitions="200,*">
+
+        <!-- Left nav -->
+        <Border Grid.Column="0" Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="18,20,18,18">
+                    <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock Text="worktree + infra isolation"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0" Margin="8,4">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PageViewModel">
+                            <TextBlock Text="{Binding Title}" FontSize="14" Padding="8,6" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- Content -->
+        <ContentControl Grid.Column="1" Content="{Binding CurrentPage}" Margin="0" />
+    </Grid>
+</Window>

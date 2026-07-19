@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Sprig.Core/Sprig.Core.csproj" />
+    <Project Path="src/Sprig.App/Sprig.App.csproj" />
     <Project Path="src/Sprig.Cli/Sprig.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">

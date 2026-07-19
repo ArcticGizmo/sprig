@@ -17,23 +17,16 @@ send screenshots, but expect a round of visual feedback from you.
 
 ---
 
-## M6.0 — App scaffold + shell + theme
-- [ ] **M6.0.1** `src/Sprig.App/Sprig.App.csproj` (`net10.0`, `WinExe` on Windows/`Exe` else,
-      Avalonia 12 + Desktop + Themes.Fluent + Fonts.Inter + CommunityToolkit.Mvvm + Avalonia.Headless;
-      compiled bindings on; references `Sprig.Core`). Add to `sprig.slnx`.
-- [ ] **M6.0.2** `Program.cs` (BuildAvaloniaApp + classic desktop lifetime; `render <dir>` arg for
-      headless PNG dump), `App.axaml(.cs)` (Dark Fluent + shared palette from perch), `app.manifest`.
-- [ ] **M6.0.3** `MainWindow` shell: left nav (Workspaces / Repos / Stacks) + content region;
-      dark palette; `ViewLocator` for VM→View.
-- [ ] **M6.0.4** Builds and launches to an empty shell (verified via headless render).
+## M6.0 — App scaffold + shell + theme ✅ DONE
+- [x] **M6.0.1** `Sprig.App.csproj` (net10.0, WinExe, Avalonia 12 + Desktop + Fluent + Inter +
+      Headless + CommunityToolkit.Mvvm, compiled bindings, refs Core); in `sprig.slnx`.
+- [x] **M6.0.2** `Program` (+ `render` arg), `App.axaml(.cs)` (Dark Fluent + palette), `app.manifest`.
+- [x] **M6.0.3** `MainWindow` shell (branded left nav + content), `ViewLocator` VM→View.
+- [x] **M6.0.4** Builds; headless render confirms the dark shell + nav highlight.
 
-## M6.1 — Composition root (`AppServices`)
-- [ ] **M6.1.1** `AppServices` wires the real Core graph (`SprigPaths`, `ProcessRunner`,
-      `GitService`, `FilePortStore`, `InstanceStore`, `EnvClobberService`, `ComposeGenerator`,
-      `DockerService`, `WorkspaceService`, `WorkspaceReconciler`, `RepoRegistryStore`, `StackStore`,
-      `StackResolver`, `InitInspector`).
-- [ ] **M6.1.2** An async run helper: Core calls execute on a background thread; results/errors
-      marshalled back for the VM (UI never blocks on git/docker).
+## M6.1 — Composition root (`AppServices`) ✅ DONE
+- [x] **M6.1.1** `AppServices` wires the full real Core graph.
+- [x] **M6.1.2** `AppServices.RunAsync` runs blocking Core calls off the UI thread.
 
 ## M6.2 — Workspaces (list + detail + lifecycle)
 - [ ] **M6.2.1** `WorkspacesViewModel`: observable list from `InstanceStore`; refresh; select.

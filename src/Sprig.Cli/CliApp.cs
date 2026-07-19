@@ -1,8 +1,11 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Sprig.Core.Compose;
+using Sprig.Core.Config;
 using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
+using Sprig.Core.Init;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Stacks;
@@ -55,6 +58,7 @@ public static class CliApp
                 "repo" => Repo(registry, rest, json),
                 "stack" => Stack(stacks, rest, json),
                 "templates" => Templates(stacks, json),
+                "init" => Init(registry, rest, json),
                 _ => Unknown(command),
             };
         }
@@ -166,6 +170,60 @@ public static class CliApp
                 Console.Error.WriteLine($"unknown stack subcommand '{sub}' (create|ls|show|rm|export|import)");
                 return 1;
         }
+    }
+
+    static readonly JsonSerializerOptions ConfigJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    static int Init(RepoRegistryStore registry, string[] args, bool json)
+    {
+        var print = Args.TakeFlag(ref args, "--print");
+        var force = Args.TakeFlag(ref args, "--force");
+        var register = Args.TakeFlag(ref args, "--register");
+        var repo = Args.TakeOption(ref args, "--repo") ?? Args.FirstPositional(args) ?? Environment.CurrentDirectory;
+        var root = Path.GetFullPath(repo);
+
+        if (!Directory.Exists(root))
+            throw new ArgumentException($"path does not exist: {root}");
+
+        var proposal = new InitInspector().Inspect(root);
+        var text = JsonSerializer.Serialize(proposal.Config, ConfigJsonOptions);
+
+        if (json) { WriteJson(proposal); return 0; }
+
+        foreach (var note in proposal.Notes)
+            Console.WriteLine($"note: {note}");
+
+        if (print)
+        {
+            Console.WriteLine(text);
+            return 0;
+        }
+
+        var target = Path.Combine(root, ".sprig.json");
+        if (File.Exists(target) && !force)
+        {
+            Console.Error.WriteLine($".sprig.json already exists at {target} — pass --force to overwrite, or --print to preview");
+            return 1;
+        }
+
+        File.WriteAllText(target, text + "\n");
+        Console.WriteLine($"wrote {target}");
+
+        if (register)
+        {
+            var added = registry.Add(root);
+            Console.WriteLine($"registered '{added.Name}'");
+        }
+        else
+        {
+            Console.WriteLine($"next: sprig repo add \"{root}\"   (then add it to a stack, or: sprig create <name> --repo \"{root}\")");
+        }
+        return 0;
     }
 
     static int Templates(StackStore stacks, bool json)
@@ -322,6 +380,7 @@ public static class CliApp
                 rm <name> [--force] [--yes]   Tear down a workspace (--force also deletes the branch)
                 reconcile [<name>] [--repair] Detect (and optionally repair) drift
                 doctor                        Alias for reconcile over all workspaces
+                init [--repo <path>] [--print] [--force] [--register]   Detect & propose .sprig.json
                 repo add <path> [--name x]    Register a repo (also: repo ls, repo rm <name>)
                 stack create <name> --repos a,b [--var k=tmpl]   Define a stack
                 stack ls | show <name> | rm <name> | export <name> <path> | import <path>

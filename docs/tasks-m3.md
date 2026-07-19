@@ -20,16 +20,14 @@ allocated port into both the compose host-port and the app's `.env` connection s
 
 ---
 
-## M3.0 — Compose generation
-- [ ] **M3.0.1** Add **YamlDotNet** to `Sprig.Core`.
-- [ ] **M3.0.2** `ComposeGenerator` in `Sprig.Core/Compose/`: load the source compose YAML,
-      apply each `ComposeOverride` by walking `Path` segments (incl. numeric list indices like
-      `["services","postgres","ports","0"]`) and setting the scalar to the resolved `Template`.
-- [ ] **M3.0.3** Resolve templates via `SubstitutionEngine` + the workspace scope before setting.
-- [ ] **M3.0.4** Serialize to the central store (`instances/<ws>/docker-compose.sprig.yml`);
-      return the path. Fail clearly if a path segment doesn't exist in the source YAML.
-- [ ] **M3.0.5** Unit tests (no docker): container_name suffixed, `ports[0]` remapped, untouched
-      keys preserved, missing-path → error, template resolution wired.
+## M3.0 — Compose generation ✅ DONE
+- [x] **M3.0.1** YamlDotNet 18.1.0 added to `Sprig.Core`.
+- [x] **M3.0.2** `ComposeGenerator` walks `Path` segments (maps + numeric seq indices) and sets
+      the scalar.
+- [x] **M3.0.3** Templates resolved via `SubstitutionEngine` + scope.
+- [x] **M3.0.4** `GenerateToFile` writes to the central store; missing path/index → `ComposeException`.
+- [x] **M3.0.5** 5 unit tests: name+port override, untouched keys preserved, missing path,
+      out-of-range index, GenerateToFile.
 
 ## M3.1 — Docker service
 - [ ] **M3.1.1** `IDockerService` + `DockerService` over `IProcessRunner`.

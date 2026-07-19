@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Sprig.Core.Compose;
+using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
@@ -23,10 +25,12 @@ public static class CliApp
         }
 
         var paths = new SprigPaths();
-        var git = new GitService(new ProcessRunner());
+        var runner = new ProcessRunner();
+        var git = new GitService(runner);
         var ports = new FilePortStore(paths);
         var instances = new InstanceStore(paths);
-        var svc = new WorkspaceService(git, ports, instances, new EnvClobberService());
+        var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
+            new ComposeGenerator(), new DockerService(runner), paths);
         var reconciler = new WorkspaceReconciler(git, instances);
 
         var command = args[0];
@@ -39,6 +43,10 @@ public static class CliApp
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
+                "up" => Up(svc, rest),
+                "down" => Down(svc, rest),
+                "reset" => Reset(svc, rest),
+                "status" => Status(svc, rest, json),
                 "reconcile" or "doctor" => Reconcile(reconciler, rest, json),
                 _ => Unknown(command),
             };
@@ -114,6 +122,42 @@ public static class CliApp
         return 0;
     }
 
+    static int Up(WorkspaceService svc, string[] args)
+    {
+        var ws = Args.FirstPositional(args) ?? throw new ArgumentException("up requires a workspace name");
+        svc.Up(ws);
+        Console.WriteLine($"infra up for '{ws}'");
+        return 0;
+    }
+
+    static int Down(WorkspaceService svc, string[] args)
+    {
+        var volumes = Args.TakeFlag(ref args, "--volumes");
+        var ws = Args.FirstPositional(args) ?? throw new ArgumentException("down requires a workspace name");
+        svc.Down(ws, volumes);
+        Console.WriteLine($"infra down for '{ws}'{(volumes ? " (volumes removed)" : "")}");
+        return 0;
+    }
+
+    static int Reset(WorkspaceService svc, string[] args)
+    {
+        var ws = Args.FirstPositional(args) ?? throw new ArgumentException("reset requires a workspace name");
+        svc.Reset(ws);
+        Console.WriteLine($"infra reset for '{ws}'");
+        return 0;
+    }
+
+    static int Status(WorkspaceService svc, string[] args, bool json)
+    {
+        var ws = Args.FirstPositional(args) ?? throw new ArgumentException("status requires a workspace name");
+        var containers = svc.Status(ws);
+        if (json) { WriteJson(containers); return 0; }
+        if (containers.Count == 0) { Console.WriteLine("no containers running"); return 0; }
+        foreach (var c in containers)
+            Console.WriteLine($"  {c.Name}  {c.State}");
+        return 0;
+    }
+
     static int Reconcile(WorkspaceReconciler reconciler, string[] args, bool json)
     {
         var repair = Args.TakeFlag(ref args, "--repair");
@@ -168,6 +212,10 @@ public static class CliApp
                 create <name> --repo <path>   Create an isolated workspace from a repo
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift
+                up <name>                     Bring the workspace's docker infra up
+                down <name> [--volumes]       Stop infra (--volumes also wipes data)
+                reset <name>                  Restart infra (down then up)
+                status <name>                 Live container status
                 rm <name> [--force] [--yes]   Tear down a workspace (--force also deletes the branch)
                 reconcile [<name>] [--repair] Detect (and optionally repair) drift
                 doctor                        Alias for reconcile over all workspaces

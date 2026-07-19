@@ -20,7 +20,9 @@ public class WorkspaceServiceTests
         var git = new GitService(new ProcessRunner());
         var ports = new FilePortStore(s.Paths);
         var instances = new InstanceStore(s.Paths);
-        return (new WorkspaceService(git, ports, instances, new EnvClobberService()), instances);
+        var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
+            new Sprig.Core.Compose.ComposeGenerator(), new FakeDockerService { Available = false }, s.Paths);
+        return (svc, instances);
     }
 
     static void SeedRepo(TempGitRepo repo)

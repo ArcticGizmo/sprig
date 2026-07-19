@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
+using Sprig.Core.Compose;
 using Sprig.Core.Config;
+using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
@@ -12,17 +14,23 @@ namespace Sprig.Core.Workspaces;
 public sealed class WorkspaceException(string message) : Exception(message);
 
 /// <summary>
-/// Orchestrates the single-repo workspace lifecycle (M2): create → worktree + branch +
-/// clobbered .env + record; teardown → layered/idempotent per the S3 matrix. Multi-repo stacks
-/// and docker infra are added in M3/M4.
+/// Orchestrates the single-repo workspace lifecycle: create → worktree + branch + clobbered
+/// .env + generated compose + record; infra up/down/reset; teardown → layered/idempotent per
+/// the S3 matrix (infra torn down first). Multi-repo stacks are added in M4.
 /// </summary>
 public sealed partial class WorkspaceService(
     IGitService git,
     IPortStore ports,
     InstanceStore instances,
-    EnvClobberService env)
+    EnvClobberService env,
+    ComposeGenerator compose,
+    IDockerService docker,
+    ISprigPaths paths)
 {
     public const string ConfigFileName = ".sprig.json";
+    public const string GeneratedComposeName = "docker-compose.sprig.yml";
+
+    static string ProjectName(string workspace) => $"sprig-{workspace}";
 
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
@@ -64,6 +72,15 @@ public sealed partial class WorkspaceService(
 
             env.Apply(config, repoRoot, worktree, scope);
 
+            // Generate the per-instance compose file into the central store (not the repo).
+            string? composePath = null;
+            if (config.Compose is { } composeCfg)
+            {
+                composePath = Path.Combine(paths.InstanceDir(workspace), GeneratedComposeName);
+                var sourceCompose = Path.Combine(repoRoot, composeCfg.File);
+                compose.GenerateToFile(sourceCompose, composeCfg, scope, composePath);
+            }
+
             var record = new InstanceRecord
             {
                 Workspace = workspace,
@@ -75,6 +92,7 @@ public sealed partial class WorkspaceService(
                         SourcePath = repoRoot,
                         WorktreePath = worktree,
                         Branch = branch,
+                        GeneratedComposePath = composePath,
                     }
                 ],
                 Ports = new Dictionary<string, int>(portMap),
@@ -114,6 +132,13 @@ public sealed partial class WorkspaceService(
             return;
         }
 
+        // Step 1 of the S3 matrix: infra down (and wipe volumes) before touching worktrees.
+        if (docker.IsAvailable())
+        {
+            foreach (var repo in record.Repos.Where(r => r.GeneratedComposePath is not null))
+                TryQuiet(() => docker.Down(repo.GeneratedComposePath!, repo.WorktreePath, ProjectName(workspace), removeVolumes: true));
+        }
+
         foreach (var repo in record.Repos)
         {
             var isRepo = git.IsGitRepo(repo.SourcePath);
@@ -144,6 +169,53 @@ public sealed partial class WorkspaceService(
 
         TryQuiet(() => ports.Release(workspace));
         instances.Delete(workspace);
+    }
+
+    /// <summary>Bring the workspace's infra up.</summary>
+    public void Up(string workspace)
+    {
+        var record = RequireWithInfra(workspace, out var infraRepos);
+        foreach (var repo in infraRepos)
+            docker.Up(repo.GeneratedComposePath!, repo.WorktreePath, ProjectName(workspace));
+        instances.Save(record with { LastStatus = "running" });
+    }
+
+    /// <summary>Stop the workspace's infra; <paramref name="removeVolumes"/> wipes data.</summary>
+    public void Down(string workspace, bool removeVolumes = false)
+    {
+        var record = RequireWithInfra(workspace, out var infraRepos);
+        foreach (var repo in infraRepos)
+            docker.Down(repo.GeneratedComposePath!, repo.WorktreePath, ProjectName(workspace), removeVolumes);
+        instances.Save(record with { LastStatus = "stopped" });
+    }
+
+    /// <summary>Restart the workspace's infra (down then up, keeping volumes).</summary>
+    public void Reset(string workspace)
+    {
+        Down(workspace);
+        Up(workspace);
+    }
+
+    /// <summary>Live container status across the workspace's infra repos.</summary>
+    public IReadOnlyList<ContainerStatus> Status(string workspace)
+    {
+        var record = RequireWithInfra(workspace, out var infraRepos);
+        _ = record;
+        return infraRepos
+            .SelectMany(r => docker.Ps(r.GeneratedComposePath!, r.WorktreePath, ProjectName(workspace)))
+            .ToList();
+    }
+
+    InstanceRecord RequireWithInfra(string workspace, out IReadOnlyList<InstanceRepo> infraRepos)
+    {
+        var record = instances.TryLoad(workspace)
+            ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        infraRepos = record.Repos.Where(r => r.GeneratedComposePath is not null).ToList();
+        if (infraRepos.Count == 0)
+            throw new WorkspaceException($"workspace '{workspace}' has no docker infrastructure");
+        if (!docker.IsAvailable())
+            throw new WorkspaceException("docker compose is not available on this machine");
+        return record;
     }
 
     SprigRepoConfig LoadValidConfig(string repoRoot)

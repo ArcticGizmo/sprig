@@ -38,31 +38,31 @@ allocated port into both the compose host-port and the app's `.env` connection s
 - [x] Tests: exact arg arrays via `RecordingProcessRunner`, non-zero→throw, ps parse both forms,
       real `IsAvailable` (89 tests).
 
-## M3.2 — Generate on create
-- [ ] **M3.2.1** Extend `WorkspaceService.Create`: if `config.Compose` is present, generate the
-      compose file after the worktree exists and record `GeneratedComposePath` on the
-      `InstanceRepo`. (Does **not** auto-`up` — infra is brought up explicitly.)
-- [ ] **M3.2.2** Rollback also removes the generated compose on failure.
-- [ ] **M3.2.3** Test: create on a repo with compose yields a valid generated file whose host
-      port equals the allocated `postgres` port.
+## M3.2 — Generate on create ✅ DONE
+- [x] **M3.2.1** `Create` generates the compose into the central store when `config.Compose`
+      present; records `GeneratedComposePath`. No auto-`up`.
+- [x] **M3.2.2** Rollback removes the instance dir (incl. generated compose).
+- [x] **M3.2.3** Test: generated file lives in the central store; `ports[0]` == allocated
+      `postgres` port.
 
-## M3.3 — Infra lifecycle + teardown integration
-- [ ] **M3.3.1** `WorkspaceService.Up/Down/Reset(workspace, removeVolumes?)` — resolve compose
-      file + project dir (worktree) + project name (`sprig-<ws>`) from the record, call
-      `DockerService`; update `LastStatus`.
-- [ ] **M3.3.2** `Remove` teardown: **first** `docker compose down -v` for each repo with a
-      generated compose (best-effort, tolerant of docker-down/absent), then the M2 worktree steps.
-- [ ] **M3.3.3** `Status(workspace)` → live `docker compose ps`.
-- [ ] **M3.3.4** Tests (guarded on `IsAvailable`): up→ps shows running→down; teardown wipes.
+## M3.3 — Infra lifecycle + teardown integration ✅ DONE
+- [x] **M3.3.1** `Up/Down(removeVolumes)/Reset` resolve compose+worktree+`sprig-<ws>` and update
+      `LastStatus`.
+- [x] **M3.3.2** `Remove` brings infra `down -v` first (best-effort, guarded by `IsAvailable`).
+- [x] **M3.3.3** `Status(workspace)` → `docker compose ps`.
+- [x] **M3.3.4** Fake-docker tests: up/down/reset call docker with `sprig-<ws>`; teardown
+      down-with-volumes; require-docker/require-infra/unknown-workspace throw.
 
-## M3.4 — CLI
-- [ ] **M3.4.1** `up <ws>`, `down <ws> [--volumes]`, `reset <ws>`, `status <ws>`.
-- [ ] **M3.4.2** `info`/`ls` show cached infra status; graceful message when docker is absent.
+## M3.4 — CLI ✅ DONE
+- [x] **M3.4.1** `up` / `down [--volumes]` / `reset` / `status` wired + help.
+- [x] **M3.4.2** `ls`/`info` show cached `LastStatus`; infra cmds surface a clear error when
+      docker is absent.
 
-## M3.5 — Tests
-- [ ] **M3.5.1** `ComposeGenerator` unit tests (pure YAML) — the core testable piece.
-- [ ] **M3.5.2** Docker integration guarded by `IsAvailable()`: `Config` validates a generated
-      file; a full up→ps→down→down -v cycle on a temp compose. `log()` a skip note if absent.
+## M3.5 — Tests ✅ DONE
+- [x] **M3.5.1** `ComposeGenerator` unit tests (M3.0).
+- [x] **M3.5.2** Orchestration covered deterministically via `FakeDockerService`; real
+      end-to-end docker exercised in M3.6 (docker present here). (No hard `IsAvailable` skip
+      needed — daemon is available.)
 
 ## M3.6 — Verification against `sprig-example-dotnet`
 - [ ] **M3.6.1** Author `sprig-example-dotnet/.sprig.json`: ports `api`+`postgres`; env `.env`

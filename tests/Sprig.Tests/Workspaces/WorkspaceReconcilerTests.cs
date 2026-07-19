@@ -65,7 +65,8 @@ public class WorkspaceReconcilerTests
 
     static WorkspaceService BuildService(TempStore s) =>
         new(new GitService(new ProcessRunner()), new FilePortStore(s.Paths),
-            new InstanceStore(s.Paths), new EnvClobberService());
+            new InstanceStore(s.Paths), new EnvClobberService(),
+            new Sprig.Core.Compose.ComposeGenerator(), new FakeDockerService { Available = false }, s.Paths);
 
     static void SeedRepo(TempGitRepo repo)
     {

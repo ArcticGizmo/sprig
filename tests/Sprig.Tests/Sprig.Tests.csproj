@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sprig.Core\Sprig.Core.csproj" />
+    <ProjectReference Include="..\..\src\Sprig.App\Sprig.App.csproj" />
   </ItemGroup>
 
 </Project>

@@ -82,16 +82,19 @@ by the `Sprig.Cli` harness.
 - [x] **M2.6.6** `--json` on read commands; error→stderr, exit 1. (Thin dispatch — covered by the
       M2.7 end-to-end walkthrough rather than unit tests.)
 
-## M2.7 — Verification against the real example
-- [ ] **M2.7.1** Author a schema-v1 `.sprig.json` for `sprig-example-vue` (port `frontend`, env
-      `.env`/`.env.local` → `PORT`). (This is the one file sprig adds to the repo.)
-- [ ] **M2.7.2** `sprig create feat-a --repo ../sprig-example-vue`; `npm run dev` in the
-      worktree; confirm it binds the **allocated** port (not 6010).
-- [ ] **M2.7.3** Create a **second** workspace; confirm non-colliding port; both dev servers run.
-- [ ] **M2.7.4** Delete a worktree folder by hand → `sprig reconcile --repair` fixes it;
-      `sprig rm` leaves the source repo pristine (`git status` clean, only `.sprig.json`).
-- [ ] **M2.7.5** Record a short verification note in `docs/spike-findings.md` (or a new
-      `docs/m2-verification.md`).
+## M2.7 — Verification against the real example ✅ DONE (see `docs/m2-verification.md`)
+- [x] **M2.7.1** Authored `sprig-example-vue/.sprig.json` (schema 1).
+- [x] **M2.7.2** `create feat-a` → Vite bound `http://localhost:20000` (allocated, not 6010).
+- [x] **M2.7.3** `create feat-b` → `frontend=20001`, non-colliding.
+- [x] **M2.7.4** Deleted worktree folder → `reconcile --repair` pruned; `rm --force` left the
+      source repo pristine (only `.sprig.json` untracked, `.env` unchanged, no branches/worktrees).
+- [x] **M2.7.5** Verification note written to `docs/m2-verification.md`.
+
+---
+
+## M2 complete ✅
+All exit criteria met; **78 tests green**. First functional slice works end-to-end via the CLI
+against the real vue repo. Docker infra is next (**M3**).
 
 ---
 

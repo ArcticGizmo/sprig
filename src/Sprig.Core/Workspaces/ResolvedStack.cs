@@ -6,10 +6,11 @@ namespace Sprig.Core.Workspaces;
 public sealed record ResolvedRepo(string Name, string Root, SprigRepoConfig Config);
 
 /// <summary>
-/// The concrete input to a workspace create: one or more resolved repos plus optional stack-level
-/// variables. Built either from a named stack (registry + stack def) or an ad-hoc single repo.
+/// The concrete input to a workspace create: the repos, the stack's named ports, and the per-repo
+/// input bindings. Built from a named stack (registry + stack def) or an ad-hoc single repo.
 /// </summary>
 public sealed record ResolvedStack(
     string? StackName,
     IReadOnlyList<ResolvedRepo> Repos,
-    IReadOnlyDictionary<string, string> Vars);
+    IReadOnlyList<string> Ports,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Bindings);

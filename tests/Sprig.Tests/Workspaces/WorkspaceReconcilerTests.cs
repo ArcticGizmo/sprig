@@ -70,8 +70,7 @@ public class WorkspaceReconcilerTests
 
     static void SeedRepo(TempGitRepo repo)
     {
-        File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"),
-            """{ "schema":1, "name":"r", "ports":[{"name":"p"}], "env":[] }""");
+        File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), """{ "schema":1, "name":"r" }""");
     }
 
     [Fact]

@@ -3,10 +3,10 @@ using System.Text.RegularExpressions;
 namespace Sprig.Core.Config;
 
 /// <summary>
-/// Extracts the <c>${sprig.&lt;path&gt;}</c> references a repo config makes, and works out which of
-/// them are <b>stack variables</b> the stack must supply — i.e. refs that aren't the repo's own
-/// <c>workspace</c>, <c>ports.*</c>, or cross-repo <c>provides.*</c>. Lets the UI pre-populate a
-/// stack's variable editor with exactly what the chosen repos need.
+/// Inspects the <c>${sprig.&lt;path&gt;}</c> references a repo's templates make. A repo may only
+/// reference its own declared <see cref="InputDeclaration"/>s and <c>workspace</c>; anything else
+/// is a mistake the validator flags (repos are pure consumers — they don't know about ports,
+/// provides, or other repos).
 /// </summary>
 public static partial class ConfigReferences
 {
@@ -20,18 +20,14 @@ public static partial class ConfigReferences
         return found.OrderBy(s => s, StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>The stack-variable names this repo needs the stack to define.</summary>
-    public static IReadOnlyList<string> RequiredStackVars(SprigRepoConfig config)
-        => ReferencedPaths(config)
-            .Where(IsStackVar)
-            .Select(p => p) // the whole path is the var name (stack vars are simple names)
-            .Distinct(StringComparer.Ordinal)
+    /// <summary>References that are neither a declared input nor <c>workspace</c> — i.e. mistakes.</summary>
+    public static IReadOnlyList<string> UndeclaredReferences(SprigRepoConfig config)
+    {
+        var declared = config.Inputs.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
+        return ReferencedPaths(config)
+            .Where(p => p != "workspace" && !declared.Contains(p))
             .ToList();
-
-    static bool IsStackVar(string path)
-        => path != "workspace"
-           && !path.StartsWith("ports.", StringComparison.Ordinal)
-           && !path.StartsWith("provides.", StringComparison.Ordinal);
+    }
 
     static IEnumerable<string> Templates(SprigRepoConfig config)
     {
@@ -41,8 +37,6 @@ public static partial class ConfigReferences
         if (config.Compose is { } compose)
             foreach (var o in compose.Overrides)
                 yield return o.Template;
-        foreach (var v in config.Provides.Values)
-            yield return v;
     }
 
     [GeneratedRegex(@"\$\{sprig\.([^}]+)\}")]

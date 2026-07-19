@@ -13,11 +13,14 @@ public sealed record SprigRepoConfig
     /// <summary>Config schema version. Only <see cref="SprigConfigLoader.SupportedSchema"/> is understood.</summary>
     public int Schema { get; init; } = SprigConfigLoader.SupportedSchema;
 
-    /// <summary>Logical repo name (used in stack wiring and <c>provides</c> namespacing).</summary>
+    /// <summary>Logical repo name (used as the stack's binding key for this repo).</summary>
     public string Name { get; init; } = "";
 
-    /// <summary>Named ports this repo needs; each is allocated a real, non-colliding number per workspace.</summary>
-    public IReadOnlyList<PortDeclaration> Ports { get; init; } = [];
+    /// <summary>
+    /// The values this repo needs to run, referenced as <c>${sprig.&lt;name&gt;}</c> in its env/compose
+    /// templates. A repo is a pure consumer: the stack supplies these per-repo (see StackDefinition).
+    /// </summary>
+    public IReadOnlyList<InputDeclaration> Inputs { get; init; } = [];
 
     /// <summary>Which <c>.env.*</c> files to clobber and which keys to set (values are <c>${sprig...}</c> templates).</summary>
     public IReadOnlyList<EnvOverride> Env { get; init; } = [];
@@ -25,18 +28,20 @@ public sealed record SprigRepoConfig
     /// <summary>Optional docker compose override declaration (path-based edits only).</summary>
     public ComposeConfig? Compose { get; init; }
 
-    /// <summary>Derived values this repo publishes for other repos in the same stack to consume.</summary>
-    public IReadOnlyDictionary<string, string> Provides { get; init; } = new Dictionary<string, string>();
-
     /// <summary>Captures any unrecognised top-level keys so the validator can reject them.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Unknown { get; init; } = new();
 }
 
-/// <summary>A named port the repo needs; referenced as <c>${sprig.ports.&lt;name&gt;}</c>.</summary>
-public sealed record PortDeclaration
+/// <summary>
+/// A value the repo needs from the stack, referenced as <c>${sprig.&lt;name&gt;}</c>. The
+/// <see cref="Example"/> shows the shape the stack should supply (e.g. <c>5000</c> or
+/// <c>http://localhost:5000</c>) so the author knows what to bind.
+/// </summary>
+public sealed record InputDeclaration
 {
     public string Name { get; init; } = "";
+    public string? Example { get; init; }
     public string? Description { get; init; }
 }
 

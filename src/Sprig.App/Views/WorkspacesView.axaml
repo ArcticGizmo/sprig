@@ -114,7 +114,7 @@
                                             <TextBlock Text="{Binding State}" FontSize="11"
                                                        Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                                         </StackPanel>
-                                        <TextBlock Text="{Binding Ports}" FontFamily="Consolas,monospace" FontSize="12"
+                                        <TextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
                                                    Foreground="{StaticResource FgBrush}" />
                                         <TextBlock Text="{Binding WorktreePath}" FontSize="11"
                                                    Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />

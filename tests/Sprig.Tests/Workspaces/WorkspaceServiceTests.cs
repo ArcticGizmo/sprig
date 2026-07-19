@@ -1,3 +1,4 @@
+using Sprig.Core.Compose;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
@@ -9,26 +10,24 @@ namespace Sprig.Tests.Workspaces;
 
 public class WorkspaceServiceTests
 {
+    // Zero-input repo: env references only the workspace slug, so the ad-hoc (stackless) path works.
     const string ConfigJson = """
         { "schema": 1, "name": "vue-app",
-          "ports": [ { "name": "frontend" } ],
-          "env": [ { "file": ".env", "set": { "PORT": "${sprig.ports.frontend}" } } ] }
+          "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ] }
         """;
 
     static (WorkspaceService svc, InstanceStore store) Build(TempStore s)
     {
         var git = new GitService(new ProcessRunner());
-        var ports = new FilePortStore(s.Paths);
-        var instances = new InstanceStore(s.Paths);
-        var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
-            new Sprig.Core.Compose.ComposeGenerator(), new FakeDockerService { Available = false }, s.Paths);
-        return (svc, instances);
+        var svc = new WorkspaceService(git, new FilePortStore(s.Paths), new InstanceStore(s.Paths),
+            new EnvClobberService(), new ComposeGenerator(), new FakeDockerService { Available = false }, s.Paths);
+        return (svc, new InstanceStore(s.Paths));
     }
 
     static void SeedRepo(TempGitRepo repo)
     {
         File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), ConfigJson);
-        File.WriteAllText(Path.Combine(repo.Path, ".env"), "PORT=6010\nOTHER=keep\n");
+        File.WriteAllText(Path.Combine(repo.Path, ".env"), "NAME=original\nOTHER=keep\n");
     }
 
     [Fact]
@@ -43,31 +42,27 @@ public class WorkspaceServiceTests
 
         var wt = repo.SiblingWorktree("feat-a");
         Assert.True(Directory.Exists(wt));
-
-        var git = new GitService(new ProcessRunner());
-        Assert.True(git.BranchExists(repo.Path, "sprig/feat-a"));
+        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig/feat-a"));
 
         var envText = File.ReadAllText(Path.Combine(wt, ".env"));
-        var port = record.Repos[0].Ports["frontend"];
-        Assert.Equal(2, envText.Split('\n').Count(l => l == $"PORT={port}")); // top + bottom
-        Assert.Contains("OTHER=keep", envText);                                // seeded content preserved
+        Assert.Equal(2, envText.Split('\n').Count(l => l == "NAME=app--feat-a")); // top + bottom
+        Assert.Contains("OTHER=keep", envText);
 
         Assert.NotNull(instances.TryLoad("feat-a"));
         Assert.Equal("sprig/feat-a", record.Repos[0].Branch);
     }
 
     [Fact]
-    public void Two_workspaces_get_non_colliding_ports()
+    public void Two_workspaces_get_separate_worktrees()
     {
         using var store = new TempStore();
         using var repo = new TempGitRepo();
         SeedRepo(repo);
         var (svc, _) = Build(store);
 
-        var a = svc.Create(repo.Path, "feat-a");
-        var b = svc.Create(repo.Path, "feat-b");
+        svc.Create(repo.Path, "feat-a");
+        svc.Create(repo.Path, "feat-b");
 
-        Assert.NotEqual(a.Repos[0].Ports["frontend"], b.Repos[0].Ports["frontend"]);
         Assert.True(Directory.Exists(repo.SiblingWorktree("feat-a")));
         Assert.True(Directory.Exists(repo.SiblingWorktree("feat-b")));
     }
@@ -80,7 +75,6 @@ public class WorkspaceServiceTests
         SeedRepo(repo);
         var (svc, _) = Build(store);
         svc.Create(repo.Path, "dupe");
-
         Assert.Throws<WorkspaceException>(() => svc.Create(repo.Path, "dupe"));
     }
 
@@ -91,7 +85,6 @@ public class WorkspaceServiceTests
         using var repo = new TempGitRepo();
         SeedRepo(repo);
         var (svc, _) = Build(store);
-
         Assert.Throws<WorkspaceException>(() => svc.Create(repo.Path, "bad name/slash"));
     }
 
@@ -109,13 +102,12 @@ public class WorkspaceServiceTests
     public void Create_rolls_back_when_config_missing()
     {
         using var store = new TempStore();
-        using var repo = new TempGitRepo(); // no .sprig.json written
+        using var repo = new TempGitRepo(); // no .sprig.json
         var (svc, instances) = Build(store);
 
         Assert.ThrowsAny<Exception>(() => svc.Create(repo.Path, "feat-a"));
         Assert.Null(instances.TryLoad("feat-a"));
         Assert.False(Directory.Exists(repo.SiblingWorktree("feat-a")));
-        Assert.Null(new FilePortStore(store.Paths).Peek("feat-a")); // ports released
     }
 
     [Fact]
@@ -131,8 +123,7 @@ public class WorkspaceServiceTests
 
         Assert.False(Directory.Exists(repo.SiblingWorktree("feat-a")));
         Assert.Null(instances.TryLoad("feat-a"));
-        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig/feat-a")); // kept
-        Assert.Null(new FilePortStore(store.Paths).Peek("feat-a"));                                // released
+        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig/feat-a"));
     }
 
     [Fact]
@@ -158,13 +149,11 @@ public class WorkspaceServiceTests
         var (svc, instances) = Build(store);
         svc.Create(repo.Path, "feat-a");
 
-        // Drift A: delete the worktree folder out from under git, then tear down.
         WorktreeInspectorProxy.DeleteDir(repo.SiblingWorktree("feat-a"));
         svc.Remove("feat-a");
         Assert.Null(instances.TryLoad("feat-a"));
 
-        // Second teardown is a no-op, not a throw.
-        svc.Remove("feat-a");
+        svc.Remove("feat-a"); // no throw
     }
 
     [Fact]
@@ -172,7 +161,7 @@ public class WorkspaceServiceTests
     {
         using var store = new TempStore();
         var (svc, _) = Build(store);
-        svc.Remove("never-existed"); // no throw
+        svc.Remove("never-existed");
     }
 }
 

@@ -4,26 +4,25 @@ namespace Sprig.Tests.Config;
 
 public class SprigConfigLoaderTests
 {
-    // A realistic, valid config modelled on the objective's examples.
+    // A realistic, valid config: repo declares the inputs it needs; env/compose reference them.
     const string ValidJson = """
         {
           "schema": 1,
           "name": "dotnet-api",
-          "ports": [
-            { "name": "api", "description": "web host" },
-            { "name": "postgres" }
+          "inputs": [
+            { "name": "port", "example": "5000", "description": "web host" },
+            { "name": "dbPort", "example": "5432" }
           ],
           "env": [
-            { "file": ".env.local", "set": { "PORT": "${sprig.ports.api}" } }
+            { "file": ".env.local", "set": { "PORT": "${sprig.port}" } }
           ],
           "compose": {
             "file": "docker-compose.yml",
             "overrides": [
               { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-              { "path": ["services","postgres","ports","0"], "template": "${sprig.ports.postgres}:5432" }
+              { "path": ["services","postgres","ports","0"], "template": "${sprig.dbPort}:5432" }
             ]
-          },
-          "provides": { "baseUrl": "http://localhost:${sprig.ports.api}" }
+          }
         }
         """;
 
@@ -34,15 +33,14 @@ public class SprigConfigLoaderTests
 
         Assert.Equal(1, c.Schema);
         Assert.Equal("dotnet-api", c.Name);
-        Assert.Equal(["api", "postgres"], c.Ports.Select(p => p.Name));
-        Assert.Equal("web host", c.Ports[0].Description);
+        Assert.Equal(["port", "dbPort"], c.Inputs.Select(i => i.Name));
+        Assert.Equal("5000", c.Inputs[0].Example);
         Assert.Single(c.Env);
         Assert.Equal(".env.local", c.Env[0].File);
-        Assert.Equal("${sprig.ports.api}", c.Env[0].Set["PORT"]);
+        Assert.Equal("${sprig.port}", c.Env[0].Set["PORT"]);
         Assert.NotNull(c.Compose);
         Assert.Equal(2, c.Compose!.Overrides.Count);
         Assert.Equal(["services", "postgres", "ports", "0"], c.Compose.Overrides[1].Path);
-        Assert.Equal("http://localhost:${sprig.ports.api}", c.Provides["baseUrl"]);
     }
 
     [Fact]
@@ -75,39 +73,51 @@ public class SprigConfigValidatorTests
     [Fact]
     public void Valid_config_has_no_issues()
     {
-        var c = SprigConfigLoader.Parse(SprigConfigLoaderTests_ValidJson);
+        var c = SprigConfigLoader.Parse("""
+            {
+              "schema": 1, "name": "dotnet-api",
+              "inputs": [ { "name": "port" }, { "name": "dbPort" } ],
+              "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.port}" } } ],
+              "compose": { "file": "docker-compose.yml", "overrides": [
+                { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] }
+            }
+            """);
         Assert.True(SprigConfigValidator.Validate(c).IsValid);
     }
 
     [Fact]
     public void Unsupported_schema_is_flagged()
-    {
-        var r = SprigConfigValidator.Validate(Base() with { Schema = 99 });
-        Assert.Contains(r.Issues, i => i.Path == "schema");
-    }
+        => Assert.Contains(SprigConfigValidator.Validate(Base() with { Schema = 99 }).Issues, i => i.Path == "schema");
 
     [Fact]
     public void Empty_name_is_flagged()
-    {
-        var r = SprigConfigValidator.Validate(new SprigRepoConfig { Name = "" });
-        Assert.Contains(r.Issues, i => i.Path == "name");
-    }
+        => Assert.Contains(SprigConfigValidator.Validate(new SprigRepoConfig { Name = "" }).Issues, i => i.Path == "name");
 
     [Fact]
-    public void Duplicate_port_names_are_flagged_case_insensitively()
+    public void Duplicate_input_names_are_flagged_case_insensitively()
     {
         var r = SprigConfigValidator.Validate(Base() with
         {
-            Ports = [new() { Name = "api" }, new() { Name = "API" }]
+            Inputs = [new() { Name = "port" }, new() { Name = "PORT" }]
         });
         Assert.Contains(r.Issues, i => i.Message.Contains("duplicate"));
     }
 
     [Fact]
-    public void Invalid_port_name_chars_are_flagged()
+    public void Invalid_input_name_chars_are_flagged()
     {
-        var r = SprigConfigValidator.Validate(Base() with { Ports = [new() { Name = "has space" }] });
-        Assert.Contains(r.Issues, i => i.Path == "ports[0].name");
+        var r = SprigConfigValidator.Validate(Base() with { Inputs = [new() { Name = "has space" }] });
+        Assert.Contains(r.Issues, i => i.Path == "inputs[0].name");
+    }
+
+    [Fact]
+    public void Template_referencing_undeclared_input_is_flagged()
+    {
+        var r = SprigConfigValidator.Validate(Base() with
+        {
+            Env = [new() { File = ".env", Set = new Dictionary<string, string> { ["X"] = "${sprig.nope}" } }]
+        });
+        Assert.Contains(r.Issues, i => i.Path == "template" && i.Message.Contains("nope"));
     }
 
     [Fact]
@@ -126,11 +136,7 @@ public class SprigConfigValidatorTests
     {
         var r = SprigConfigValidator.Validate(Base() with
         {
-            Compose = new ComposeConfig
-            {
-                File = "docker-compose.yml",
-                Overrides = [new() { Path = [], Template = "" }]
-            }
+            Compose = new ComposeConfig { File = "docker-compose.yml", Overrides = [new() { Path = [], Template = "" }] }
         });
         Assert.Contains(r.Issues, i => i.Path == "compose.overrides[0].path");
         Assert.Contains(r.Issues, i => i.Path == "compose.overrides[0].template");
@@ -140,19 +146,6 @@ public class SprigConfigValidatorTests
     public void Unknown_top_level_key_is_flagged()
     {
         var c = SprigConfigLoader.Parse("""{ "schema": 1, "name": "x", "bogus": 1 }""");
-        var r = SprigConfigValidator.Validate(c);
-        Assert.Contains(r.Issues, i => i.Path == "bogus" && i.Message.Contains("unknown"));
+        Assert.Contains(SprigConfigValidator.Validate(c).Issues, i => i.Path == "bogus" && i.Message.Contains("unknown"));
     }
-
-    // shared fixture reused from the loader tests
-    const string SprigConfigLoaderTests_ValidJson = """
-        {
-          "schema": 1, "name": "dotnet-api",
-          "ports": [ { "name": "api" }, { "name": "postgres" } ],
-          "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.ports.api}" } } ],
-          "compose": { "file": "docker-compose.yml", "overrides": [
-            { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] },
-          "provides": { "baseUrl": "http://localhost:${sprig.ports.api}" }
-        }
-        """;
 }

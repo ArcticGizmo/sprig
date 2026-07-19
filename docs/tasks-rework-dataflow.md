@@ -20,35 +20,34 @@ stack port) and `web-only` (frontend URL = literal) both stand up; source repos 
 
 ---
 
-## R0 — Config model + validator
-- [ ] Repo: drop `Ports`/`Provides`; add `Inputs: [{Name, Example?, Description?}]`.
-- [ ] Stack: drop `Vars`; add `Ports: [name…]` and `Bindings: {repo: {input: expr}}`. Keep `Repos`.
-- [ ] Validators for both; `ConfigReferences` → `DeclaredInputs`/unbound-input checks.
-- [ ] Tests.
+## R0 — Config model + validator ✅ DONE
+- [x] Repo: dropped `Ports`/`Provides`; added `Inputs: [{Name, Example?, Description?}]`.
+- [x] Stack: dropped `Vars`; added `Ports: [name…]` and `Bindings: {repo: {input: expr}}`.
+- [x] Validators updated; `ConfigReferences.UndeclaredReferences` flags refs that aren't a
+      declared input/`workspace` (validator rejects them). Tests updated.
 
-## R1 — Resolution + WorkspaceService
-- [ ] New `StackWiring`/scope builder: allocate stack ports → per-repo input scope from bindings.
-- [ ] Delete `StackScopeBuilder`, `SprigScope` provides path (keep a simple scope helper).
-- [ ] `WorkspaceService.Create` uses the new resolver; record stores allocated ports + resolved
-      per-repo inputs. Hard-fail on unbound input.
-- [ ] Tests (single repo, two repos sharing a port, vue-only literal, missing binding → throw).
+## R1 — Resolution + WorkspaceService ✅ DONE
+- [x] New `StackWiring.Resolve`: allocate stack ports → per-repo input scope from bindings.
+- [x] Deleted `StackScopeBuilder` + the `SprigScope` provides path (kept a minimal scope helper).
+- [x] `WorkspaceService.Create` uses the new resolver; record stores allocated ports + per-repo
+      resolved `Inputs`. Unbound input → hard-fail + rollback. Tests cover single/shared/literal/throw.
 
-## R2 — CLI
-- [ ] `repo init`/view reflects inputs. `stack create` gains `--port <name>` (repeatable) and
-      `--bind <repo>:<input>=<expr>` (repeatable). `info`/`ls` show resolved inputs.
+## R2 — CLI ✅ DONE
+- [x] `stack create --port <name> --bind <repo>:<input>=<expr>` (both repeatable). `create` prints
+      the stack ports + each repo's resolved inputs.
 
-## R3 — UI
-- [ ] Repos config view: show declared **inputs** (name + example) instead of ports/provides.
-- [ ] Stacks editor: **ports** section (add named ports, incrementing preview) + **per-repo
-      bindings** (each selected repo lists its inputs with example hints + an expression field,
-      auto-added). Existing stacks show ports + bindings.
-- [ ] Workspaces detail: show resolved per-repo input values.
-- [ ] VM tests.
+## R3 — UI ✅ DONE
+- [x] Repos config view shows declared **inputs** (name + example, "supplied by the stack").
+- [x] Stacks editor: **Ports** section (add named ports, ≈ incrementing preview) + per-repo
+      **Inputs** bindings (each repo's inputs auto-listed with example hints + expression field);
+      existing stacks show their ports.
+- [x] Workspaces detail shows resolved per-repo inputs.
 
-## R4 — Migrate examples + verify
-- [ ] Rewrite `sprig-example-vue` (inputs: `apiUrl`) and `sprig-example-dotnet` (inputs: `port`,
-      `dbPort`) `.sprig.json`. Recreate `web+api` (shared `api_port`) and `web-only` (literal).
-- [ ] End-to-end re-verification; note in `docs/rework-dataflow-verification.md`.
+## R4 — Migrate examples + verify ✅ DONE
+- [x] Rewrote both example `.sprig.json` to `inputs`. Recreated `web+api` (shared `api_port`
+      wires the API's listen port + the web's URL) and `web-only` (literal `apiUrl`).
+- [x] End-to-end verified via CLI: web+api → web URL & API port both = 20001 (shared); web-only →
+      URL literal, vue-only workspace stands up. **119 tests green.**
 
 ---
 Commit per step; local only. Net effect: **smaller core** (no provides / two-phase resolver /

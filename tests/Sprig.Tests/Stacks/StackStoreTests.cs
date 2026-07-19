@@ -21,7 +21,11 @@ public class StackStoreTests
     {
         Name = "web+api",
         Repos = ["vue", "api"],
-        Vars = new Dictionary<string, string> { ["env"] = "dev" },
+        Ports = ["api_port"],
+        Bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
+        {
+            ["vue"] = new Dictionary<string, string> { ["apiUrl"] = "http://localhost:${sprig.ports.api_port}" },
+        },
     };
 
     [Fact]
@@ -35,7 +39,8 @@ public class StackStoreTests
         var got = stacks.Get("web+api");
         Assert.NotNull(got);
         Assert.Equal(["vue", "api"], got!.Repos);
-        Assert.Equal("dev", got.Vars["env"]);
+        Assert.Equal(["api_port"], got.Ports);
+        Assert.Equal("http://localhost:${sprig.ports.api_port}", got.Bindings["vue"]["apiUrl"]);
         Assert.Single(stacks.List());
 
         stacks.Remove("web+api");

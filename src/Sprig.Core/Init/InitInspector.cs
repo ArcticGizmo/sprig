@@ -8,9 +8,10 @@ namespace Sprig.Core.Init;
 public sealed record InitProposal(SprigRepoConfig Config, IReadOnlyList<string> Notes);
 
 /// <summary>
-/// Detects a repo's isolation surface and proposes a <c>.sprig.json</c>: port-shaped env keys,
-/// compose services (container name + first published port), and named-volume hints. Heuristic
-/// and advisory — always a starting point the user edits.
+/// Detects a repo's isolation surface and proposes a <c>.sprig.json</c>: it turns port-shaped env
+/// keys and compose ports into declared <b>inputs</b> (with example shapes) that the stack will
+/// supply, and rewrites the matching env/compose values to reference those inputs. Heuristic and
+/// advisory — a starting point the user edits.
 /// </summary>
 public sealed class InitInspector
 {
@@ -22,29 +23,29 @@ public sealed class InitInspector
     public InitProposal Inspect(string repoRoot)
     {
         var notes = new List<string>();
-        var ports = new List<PortDeclaration>();
+        var inputs = new List<InputDeclaration>();
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var envOverrides = new List<EnvOverride>();
 
-        DetectEnv(repoRoot, ports, used, envOverrides, notes);
-        var compose = DetectCompose(repoRoot, ports, used, notes);
+        DetectEnv(repoRoot, inputs, used, envOverrides, notes);
+        var compose = DetectCompose(repoRoot, inputs, used, notes);
 
         var name = Path.GetFileName(repoRoot.TrimEnd('\\', '/'));
         var config = new SprigRepoConfig
         {
             Name = name,
-            Ports = ports,
+            Inputs = inputs,
             Env = envOverrides,
             Compose = compose,
         };
 
-        if (ports.Count == 0 && compose is null)
+        if (inputs.Count == 0 && compose is null)
             notes.Add("no ports or compose detected — you'll likely need to author .sprig.json by hand");
-        notes.Add("review the proposal (port names, which keys to override) before using it");
+        notes.Add("review the proposed inputs (names + examples) — the stack will supply their values");
         return new InitProposal(config, notes);
     }
 
-    void DetectEnv(string repoRoot, List<PortDeclaration> ports, HashSet<string> used,
+    void DetectEnv(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used,
         List<EnvOverride> envOverrides, List<string> notes)
     {
         foreach (var file in EnvFileNames)
@@ -57,13 +58,13 @@ public sealed class InitInspector
             {
                 if (IsBarePort(value))
                 {
-                    var portName = UniqueName(Sanitize(key), used);
-                    ports.Add(new PortDeclaration { Name = portName, Description = $"from {file} {key}" });
-                    set[key] = $"${{sprig.ports.{portName}}}";
+                    var inputName = UniqueName(Sanitize(key), used);
+                    inputs.Add(new InputDeclaration { Name = inputName, Example = value, Description = $"from {file} {key}" });
+                    set[key] = $"${{sprig.{inputName}}}";
                 }
                 else if (LooksLikeEmbeddedPort(key, value))
                 {
-                    notes.Add($"'{key}' in {file} may embed a port/URL — parameterize it by hand (e.g. Port=${{sprig.ports.…}})");
+                    notes.Add($"'{key}' in {file} may embed a port/URL — declare an input and reference it by hand (e.g. ${{sprig.apiUrl}})");
                 }
             }
             if (set.Count > 0)
@@ -71,7 +72,7 @@ public sealed class InitInspector
         }
     }
 
-    ComposeConfig? DetectCompose(string repoRoot, List<PortDeclaration> ports, HashSet<string> used, List<string> notes)
+    ComposeConfig? DetectCompose(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
     {
         var file = ComposeNames.FirstOrDefault(n => File.Exists(Path.Combine(repoRoot, n)));
         if (file is null) return null;
@@ -99,6 +100,7 @@ public sealed class InitInspector
                 var svc = ((YamlScalarNode)entry.Key).Value!;
                 if (entry.Value is not YamlMappingNode svcNode) continue;
 
+                // container_name: suffix with the workspace slug (always available, not an input).
                 if (TryGetScalar(svcNode, "container_name", out var cname))
                     overrides.Add(new ComposeOverride
                     {
@@ -110,13 +112,13 @@ public sealed class InitInspector
                     && portsNode is YamlSequenceNode { Children.Count: > 0 } seq
                     && seq.Children[0] is YamlScalarNode { Value: { } mapping })
                 {
-                    var container = ContainerPort(mapping);
-                    var portName = UniqueName(Sanitize(svc), used);
-                    ports.Add(new PortDeclaration { Name = portName, Description = $"{svc} published port" });
+                    var (host, container) = SplitPort(mapping);
+                    var inputName = UniqueName(Sanitize(svc) + "_port", used);
+                    inputs.Add(new InputDeclaration { Name = inputName, Example = host, Description = $"{svc} host port" });
                     overrides.Add(new ComposeOverride
                     {
                         Path = ["services", svc, "ports", "0"],
-                        Template = $"${{sprig.ports.{portName}}}:{container}",
+                        Template = $"${{sprig.{inputName}}}:{container}",
                     });
                 }
             }
@@ -152,12 +154,12 @@ public sealed class InitInspector
            || value.Contains("://", StringComparison.Ordinal)
            || value.Contains("Port=", StringComparison.OrdinalIgnoreCase);
 
-    static string ContainerPort(string mapping)
+    static (string Host, string Container) SplitPort(string mapping)
     {
         // "6050:5432", "6050:5432/tcp", "127.0.0.1:6050:5432", or bare "5432"
         var proto = mapping.Split('/')[0];
         var parts = proto.Split(':');
-        return parts[^1];
+        return parts.Length >= 2 ? (parts[^2], parts[^1]) : (parts[^1], parts[^1]);
     }
 
     static string Sanitize(string key)
@@ -165,7 +167,7 @@ public sealed class InitInspector
         var chars = key.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray();
         var slug = new string(chars).Trim('-');
         while (slug.Contains("--")) slug = slug.Replace("--", "-");
-        return slug.Length > 0 ? slug : "port";
+        return slug.Length > 0 ? slug : "value";
     }
 
     static string UniqueName(string baseName, HashSet<string> used)

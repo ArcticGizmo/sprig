@@ -67,27 +67,18 @@ public sealed partial class WorkspaceService(
         var addedWorktrees = new List<(string root, string worktree)>();
         try
         {
-            // Allocate all ports at once under namespaced keys "<repo>.<port>".
-            var namespaced = plans
-                .SelectMany(p => p.Repo.Config.Ports.Select(port => $"{p.Repo.Name}.{port.Name}"))
-                .ToList();
-            var allPorts = ports.Acquire(workspace, namespaced);
+            // The stack owns the ports; allocate one real non-colliding number per named port.
+            var allPorts = ports.Acquire(workspace, stack.Ports);
             portsAcquired = true;
 
-            // Split back into per-repo local maps for scope building.
-            var portsByRepo = plans.ToDictionary(
-                p => p.Repo.Name,
-                p => (IReadOnlyDictionary<string, int>)p.Repo.Config.Ports.ToDictionary(
-                    port => port.Name, port => allPorts[$"{p.Repo.Name}.{port.Name}"]));
-
-            var scope = StackScopeBuilder.Build(
-                workspace, plans.Select(p => (p.Repo.Name, p.Repo.Config)).ToList(), portsByRepo, stack.Vars);
+            // Resolve per-repo input scopes from the stack's bindings (hard-fails on an unbound input).
+            var wired = StackWiring.Resolve(workspace, allPorts, stack.Repos, stack.Bindings);
 
             var repoRecords = new List<InstanceRepo>();
             foreach (var plan in plans)
             {
                 var repo = plan.Repo;
-                var repoScope = scope.For(repo.Name);
+                var repoScope = wired.ScopeFor(repo.Name);
 
                 git.AddWorktree(repo.Root, plan.Worktree, branch);
                 addedWorktrees.Add((repo.Root, plan.Worktree));
@@ -108,7 +99,7 @@ public sealed partial class WorkspaceService(
                     WorktreePath = plan.Worktree,
                     Branch = branch,
                     GeneratedComposePath = composePath,
-                    Ports = portsByRepo[repo.Name],
+                    Inputs = wired.Inputs[repo.Name],
                 });
             }
 
@@ -146,7 +137,9 @@ public sealed partial class WorkspaceService(
             throw new WorkspaceException($"'{repoPath}' is not a git repository");
         var root = git.ResolveRepoRoot(repoPath);
         var config = LoadValidConfig(root);
-        return new ResolvedStack(null, [new ResolvedRepo(config.Name, root, config)], new Dictionary<string, string>());
+        // Ad-hoc single repo: no stack, so only zero-input repos can stand up this way.
+        return new ResolvedStack(null, [new ResolvedRepo(config.Name, root, config)],
+            [], new Dictionary<string, IReadOnlyDictionary<string, string>>());
     }
 
     sealed record RepoPlan(ResolvedRepo Repo, string Worktree);

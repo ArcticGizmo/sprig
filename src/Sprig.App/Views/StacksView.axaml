@@ -4,7 +4,7 @@
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
              x:Class="Sprig.App.Views.StacksView"
              x:DataType="vm:StacksViewModel">
-    <Grid ColumnDefinitions="*,380" Margin="28,20,24,16">
+    <Grid ColumnDefinitions="*,420" Margin="28,20,24,16">
 
         <!-- Existing stacks -->
         <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="0,0,16,0">
@@ -20,15 +20,21 @@
                                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate><TextBlock Text="{Binding}" FontSize="11" Foreground="{StaticResource MutedBrush}" /></DataTemplate>
+                                    <DataTemplate x:CompileBindings="False">
+                                        <TextBlock Text="{Binding}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                    </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <ItemsControl ItemsSource="{Binding Vars}">
+                            <ItemsControl ItemsSource="{Binding Ports}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource AccentBrush}">
-                                            <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" />
-                                        </TextBlock>
+                                    <DataTemplate x:CompileBindings="False">
+                                        <Border Background="{StaticResource ButtonBgBrush}" CornerRadius="3" Padding="6,1">
+                                            <TextBlock Text="{Binding}" FontSize="10" FontFamily="Consolas,monospace"
+                                                       Foreground="{StaticResource AccentBrush}" />
+                                        </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -63,28 +69,61 @@
                         </ItemsControl>
                     </StackPanel>
 
-                    <!-- Variables -->
+                    <!-- Ports -->
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Variables" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBlock Text="Ports" Foreground="{StaticResource MutedBrush}" FontSize="12" />
                         <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="Values the chosen repos need (${sprig.NAME}). Use a literal (http://localhost:4000) or a template like ${sprig.provides.dotnet-api.baseUrl}. Starred = required." />
-                        <ItemsControl ItemsSource="{Binding Vars}">
+                                   Text="Named ports the stack owns. Each gets a real, non-colliding number per workspace (preview shows they're distinct)." />
+                        <ItemsControl ItemsSource="{Binding Ports}">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:StackVarRow">
-                                    <Grid ColumnDefinitions="Auto,130,*,Auto" Margin="0,2">
-                                        <TextBlock Grid.Column="0" Text="*" Foreground="{StaticResource DangerBrush}"
-                                                   IsVisible="{Binding Required}" Width="10" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="1" Text="{Binding Key, Mode=TwoWay}" PlaceholderText="name"
-                                                 FontSize="12" Margin="0,0,6,0" />
-                                        <TextBox Grid.Column="2" Text="{Binding Value, Mode=TwoWay}"
-                                                 PlaceholderText="literal or ${sprig...}" FontSize="12" />
-                                        <Button Grid.Column="3" Content="✕" Command="{Binding $parent[ItemsControl].((vm:StacksViewModel)DataContext).RemoveVarCommand}"
-                                                CommandParameter="{Binding}" Margin="6,0,0,0" Padding="8,4" />
+                                <DataTemplate x:DataType="vm:StackPortRow">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+                                        <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay}" PlaceholderText="e.g. api_port" FontSize="12" />
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0"
+                                                   FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource MutedBrush}">
+                                            <Run Text="≈ " /><Run Text="{Binding Preview}" />
+                                        </TextBlock>
+                                        <Button Grid.Column="2" Content="✕" Padding="8,4"
+                                                Command="{Binding $parent[ItemsControl].((vm:StacksViewModel)DataContext).RemovePortCommand}"
+                                                CommandParameter="{Binding}" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button Content="+ Add variable" Command="{Binding AddVarCommand}" HorizontalAlignment="Left" />
+                        <Button Content="+ Add port" Command="{Binding AddPortCommand}" HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                    <!-- Bindings -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Inputs" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="Supply each repo's inputs individually — a literal, or a template over ${sprig.ports.NAME} / ${sprig.workspace}." />
+                        <ItemsControl ItemsSource="{Binding Bindings}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:RepoBindingGroup">
+                                    <StackPanel Spacing="4" Margin="0,4,0,8">
+                                        <TextBlock Text="{Binding Repo}" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
+                                        <ItemsControl ItemsSource="{Binding Rows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:BindingRow">
+                                                    <Grid ColumnDefinitions="120,*" Margin="8,2,0,2">
+                                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
+                                                                       Foreground="{StaticResource FgBrush}" />
+                                                            <TextBlock FontSize="10" Foreground="{StaticResource MutedBrush}">
+                                                                <Run Text="e.g. " /><Run Text="{Binding Example}" />
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <TextBox Grid.Column="1" Text="{Binding Expression, Mode=TwoWay}"
+                                                                 PlaceholderText="literal or ${sprig.ports.NAME}" FontSize="12" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
 
                     <Button Content="Create stack" Command="{Binding CreateCommand}"

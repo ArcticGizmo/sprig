@@ -82,10 +82,13 @@ public static class CliApp
 
         if (json) { WriteJson(record); return 0; }
         Console.WriteLine($"created workspace '{record.Workspace}'{(record.Stack is { } st ? $" from stack '{st}'" : "")}");
+        if (record.Ports.Count > 0)
+            Console.WriteLine($"  ports: {FormatPorts(record.Ports)}");
         foreach (var r in record.Repos)
         {
             Console.WriteLine($"  {r.Name}: {r.WorktreePath}  [{r.Branch}]");
-            Console.WriteLine($"    ports: {FormatPorts(r.Ports)}");
+            if (r.Inputs.Count > 0)
+                Console.WriteLine($"    inputs: {FormatKv(r.Inputs)}");
         }
         return 0;
     }
@@ -128,15 +131,15 @@ public static class CliApp
             case "create":
                 var reposCsv = Args.TakeOption(ref tail, "--repos")
                     ?? throw new ArgumentException("stack create requires --repos a,b");
-                var vars = Args.TakeAll(ref tail, "--var")
-                    .Select(v => v.Split('=', 2))
-                    .ToDictionary(kv => kv[0], kv => kv.Length > 1 ? kv[1] : "");
+                var portList = Args.TakeAll(ref tail, "--port");
+                var bindings = ParseBindings(Args.TakeAll(ref tail, "--bind"));
                 var name = Args.FirstPositional(tail) ?? throw new ArgumentException("stack create requires a name");
                 stacks.Save(new StackDefinition
                 {
                     Name = name,
                     Repos = reposCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                    Vars = vars,
+                    Ports = portList,
+                    Bindings = bindings,
                 });
                 Console.WriteLine($"created stack '{name}'");
                 return 0;
@@ -224,6 +227,25 @@ public static class CliApp
             Console.WriteLine($"next: sprig repo add \"{root}\"   (then add it to a stack, or: sprig create <name> --repo \"{root}\")");
         }
         return 0;
+    }
+
+    // Parse "--bind repo:input=expr" args into Bindings[repo][input] = expr.
+    static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> ParseBindings(IReadOnlyList<string> binds)
+    {
+        var raw = new Dictionary<string, Dictionary<string, string>>();
+        foreach (var b in binds)
+        {
+            var colon = b.IndexOf(':');
+            var eq = colon < 0 ? -1 : b.IndexOf('=', colon + 1);
+            if (colon <= 0 || eq < 0)
+                throw new ArgumentException($"--bind must be repo:input=expr, got '{b}'");
+            var repo = b[..colon];
+            var input = b[(colon + 1)..eq];
+            var expr = b[(eq + 1)..];
+            if (!raw.TryGetValue(repo, out var d)) raw[repo] = d = new Dictionary<string, string>();
+            d[input] = expr;
+        }
+        return raw.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value);
     }
 
     static int Templates(StackStore stacks, bool json)
@@ -355,6 +377,9 @@ public static class CliApp
     static string FormatPorts(IReadOnlyDictionary<string, int> ports)
         => ports.Count == 0 ? "-" : string.Join(",", ports.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
 
+    static string FormatKv(IReadOnlyDictionary<string, string> kv)
+        => kv.Count == 0 ? "-" : string.Join("  ", kv.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
+
     static void WriteJson<T>(T value)
         => Console.WriteLine(JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
 
@@ -382,7 +407,7 @@ public static class CliApp
                 doctor                        Alias for reconcile over all workspaces
                 init [--repo <path>] [--print] [--force] [--register]   Detect & propose .sprig.json
                 repo add <path> [--name x]    Register a repo (also: repo ls, repo rm <name>)
-                stack create <name> --repos a,b [--var k=tmpl]   Define a stack
+                stack create <name> --repos a,b [--port p] [--bind repo:input=expr]   Define a stack
                 stack ls | show <name> | rm <name> | export <name> <path> | import <path>
                 templates                     List stacks and their repos
 

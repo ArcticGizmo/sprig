@@ -64,17 +64,19 @@
                         <TextBlock IsVisible="{Binding !SelectedConfig.Ok}" Foreground="{StaticResource DangerBrush}"
                                    TextWrapping="Wrap" Text="{Binding SelectedConfig.Error}" />
 
-                        <!-- ports -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasPorts}">
-                            <TextBlock Text="PORTS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Ports}">
+                        <!-- inputs -->
+                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasInputs}">
+                            <TextBlock Text="INPUTS (supplied by the stack)" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource MutedBrush}" />
+                            <ItemsControl ItemsSource="{Binding SelectedConfig.Inputs}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:PortRow">
+                                    <DataTemplate x:DataType="vm:InputRow">
                                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,1">
                                             <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace"
                                                        Foreground="{StaticResource FgBrush}" MinWidth="90" />
-                                            <TextBlock Text="{Binding Description}" FontSize="11"
-                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center">
+                                                <Run Text="e.g. " /><Run Text="{Binding Example}" />
+                                            </TextBlock>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -121,20 +123,6 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <!-- provides -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasProvides}">
-                            <TextBlock Text="PROVIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Provides}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:KvRow">
-                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12"
-                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                            <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Panel>

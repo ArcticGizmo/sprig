@@ -35,16 +35,16 @@ public partial class RepoLineViewModel : ViewModelBase
         Name = repo.Name;
         Branch = repo.Branch ?? "";
         WorktreePath = repo.WorktreePath;
-        Ports = repo.Ports.Count == 0
+        Inputs = repo.Inputs.Count == 0
             ? "-"
-            : string.Join("  ", repo.Ports.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
+            : string.Join("  ", repo.Inputs.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
         HasInfra = repo.GeneratedComposePath is not null;
     }
 
     public string Name { get; }
     public string Branch { get; }
     public string WorktreePath { get; }
-    public string Ports { get; }
+    public string Inputs { get; }
     public bool HasInfra { get; }
 
     [ObservableProperty] private string _state = "";

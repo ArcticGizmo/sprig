@@ -17,11 +17,12 @@ public class InitInspectorTests : IDisposable
         Write(".env", "PORT=6010\nOTHER=hello\n");
         var p = new InitInspector().Inspect(_repo);
 
-        Assert.Single(p.Config.Ports);
+        Assert.Single(p.Config.Inputs);
         Assert.Single(p.Config.Env);
         Assert.Equal(".env", p.Config.Env[0].File);
-        var portName = p.Config.Ports[0].Name;
-        Assert.Equal($"${{sprig.ports.{portName}}}", p.Config.Env[0].Set["PORT"]);
+        var input = p.Config.Inputs[0];
+        Assert.Equal("6010", input.Example);
+        Assert.Equal($"${{sprig.{input.Name}}}", p.Config.Env[0].Set["PORT"]);
     }
 
     [Fact]
@@ -30,7 +31,7 @@ public class InitInspectorTests : IDisposable
         Write(".env", "ConnectionStrings__Default=Host=localhost;Port=6050;Database=db\n");
         var p = new InitInspector().Inspect(_repo);
 
-        Assert.Empty(p.Config.Ports); // not a bare int → not auto-detected
+        Assert.Empty(p.Config.Inputs); // not a bare int → not auto-detected
         Assert.Contains(p.Notes, n => n.Contains("ConnectionStrings__Default"));
     }
 
@@ -52,8 +53,8 @@ public class InitInspectorTests : IDisposable
         Assert.Contains(ovr, o => o.Path.SequenceEqual(["services", "postgres", "container_name"])
                                   && o.Template == "librarydb_postgres--${sprig.workspace}");
         Assert.Contains(ovr, o => o.Path.SequenceEqual(["services", "postgres", "ports", "0"])
-                                  && o.Template == "${sprig.ports.postgres}:5432");
-        Assert.Contains(p.Config.Ports, pd => pd.Name == "postgres");
+                                  && o.Template == "${sprig.postgres_port}:5432");
+        Assert.Contains(p.Config.Inputs, i => i.Name == "postgres_port" && i.Example == "6050");
     }
 
     [Fact]
@@ -81,10 +82,10 @@ public class InitInspectorTests : IDisposable
     }
 
     [Fact]
-    public void Deduplicates_port_names_across_env_and_compose()
+    public void Deduplicates_input_names_across_env_and_compose()
     {
-        // env key "postgres" (bare int) collides with a compose service named "postgres"
-        Write(".env", "postgres=6432\n");
+        // env key "postgres_port" and a compose service "postgres" (→ postgres_port) would collide
+        Write(".env", "postgres_port=6432\n");
         Write("docker-compose.yml", """
             services:
               postgres:
@@ -92,7 +93,7 @@ public class InitInspectorTests : IDisposable
                   - "6050:5432"
             """);
         var p = new InitInspector().Inspect(_repo);
-        Assert.Equal(p.Config.Ports.Select(x => x.Name).Distinct().Count(), p.Config.Ports.Count);
+        Assert.Equal(p.Config.Inputs.Select(x => x.Name).Distinct().Count(), p.Config.Inputs.Count);
     }
 
     [Fact]

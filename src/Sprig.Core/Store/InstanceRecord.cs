@@ -27,6 +27,6 @@ public sealed record InstanceRepo
     public string? Branch { get; init; }
     /// <summary>The generated compose file in the central store, if this repo has infra.</summary>
     public string? GeneratedComposePath { get; init; }
-    /// <summary>This repo's allocated ports by their local (un-namespaced) names.</summary>
-    public IReadOnlyDictionary<string, int> Ports { get; init; } = new Dictionary<string, int>();
+    /// <summary>This repo's resolved input values (input name → value) as supplied by the stack.</summary>
+    public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
 }

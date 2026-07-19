@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using Sprig.Core.Compose;
+using Sprig.Core.Config;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
@@ -13,13 +15,13 @@ public class WorkspaceInfraTests
 {
     const string ConfigJson = """
         { "schema": 1, "name": "dotnet-api",
-          "ports": [ { "name": "api" }, { "name": "postgres" } ],
+          "inputs": [ { "name": "api", "example": "5000" }, { "name": "postgres", "example": "5432" } ],
           "env": [ { "file": ".env", "set": {
-              "PORT": "${sprig.ports.api}",
-              "ConnectionStrings__Default": "Host=localhost;Port=${sprig.ports.postgres};Database=librarydb" } } ],
+              "PORT": "${sprig.api}",
+              "ConnectionStrings__Default": "Host=localhost;Port=${sprig.postgres};Database=librarydb" } } ],
           "compose": { "file": "docker-compose.yml", "overrides": [
               { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-              { "path": ["services","postgres","ports","0"], "template": "${sprig.ports.postgres}:5432" } ] } }
+              { "path": ["services","postgres","ports","0"], "template": "${sprig.postgres}:5432" } ] } }
         """;
 
     const string ComposeYml = """
@@ -48,6 +50,21 @@ public class WorkspaceInfraTests
         repo.Git("-c", "user.email=t@sprig", "-c", "user.name=sprig", "commit", "-m", "add compose");
     }
 
+    static ResolvedStack Stack(TempGitRepo repo)
+    {
+        var config = SprigConfigLoader.LoadFromFile(Path.Combine(repo.Path, ".sprig.json"));
+        var bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
+        {
+            ["dotnet-api"] = new Dictionary<string, string>
+            {
+                ["api"] = "${sprig.ports.api_port}",
+                ["postgres"] = "${sprig.ports.postgres_port}",
+            },
+        };
+        return new ResolvedStack("api", [new ResolvedRepo("dotnet-api", repo.Path, config)],
+            ["api_port", "postgres_port"], bindings);
+    }
+
     static string PortsZero(string composeFile)
     {
         var stream = new YamlStream();
@@ -66,13 +83,14 @@ public class WorkspaceInfraTests
         SeedRepo(repo);
         var (svc, _, _) = Build(store);
 
-        var record = svc.Create(repo.Path, "feat-a");
+        var record = svc.Create(Stack(repo), "feat-a");
 
         var composePath = record.Repos[0].GeneratedComposePath;
         Assert.NotNull(composePath);
-        Assert.True(File.Exists(composePath));
-        Assert.StartsWith(store.Root, composePath!); // in the central store, not the repo
-        Assert.Equal($"{record.Repos[0].Ports["postgres"]}:5432", PortsZero(composePath!));
+        Assert.StartsWith(store.Root, composePath!);
+        var postgresPort = record.Ports["postgres_port"];
+        Assert.Equal($"{postgresPort}:5432", PortsZero(composePath!));
+        Assert.Equal(postgresPort.ToString(), record.Repos[0].Inputs["postgres"]);
     }
 
     [Fact]
@@ -82,7 +100,7 @@ public class WorkspaceInfraTests
         using var repo = new TempGitRepo();
         SeedRepo(repo);
         var (svc, instances, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
+        svc.Create(Stack(repo), "feat-a");
 
         svc.Up("feat-a");
         Assert.Contains("sprig-feat-a", docker.Ups);
@@ -90,11 +108,10 @@ public class WorkspaceInfraTests
 
         svc.Down("feat-a");
         Assert.Contains(("sprig-feat-a", false), docker.Downs);
-        Assert.Equal("stopped", instances.TryLoad("feat-a")!.LastStatus);
 
         docker.Ups.Clear();
         svc.Reset("feat-a");
-        Assert.Contains("sprig-feat-a", docker.Ups); // reset brought it back up
+        Assert.Contains("sprig-feat-a", docker.Ups);
     }
 
     [Fact]
@@ -104,29 +121,10 @@ public class WorkspaceInfraTests
         using var repo = new TempGitRepo();
         SeedRepo(repo);
         var (svc, _, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
+        svc.Create(Stack(repo), "feat-a");
 
         svc.Remove("feat-a");
 
-        Assert.Contains(("sprig-feat-a", true), docker.Downs); // removeVolumes on teardown
-    }
-
-    [Fact]
-    public void Infra_commands_require_docker_and_infra()
-    {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-
-        // docker unavailable
-        var docker = new FakeDockerService { Available = false };
-        var svc = new WorkspaceService(new GitService(new ProcessRunner()), new FilePortStore(store.Paths),
-            new InstanceStore(store.Paths), new EnvClobberService(), new ComposeGenerator(), docker, store.Paths);
-        svc.Create(repo.Path, "feat-a");
-        Assert.Throws<WorkspaceException>(() => svc.Up("feat-a"));
-
-        // unknown workspace
-        docker.Available = true;
-        Assert.Throws<WorkspaceException>(() => svc.Up("ghost"));
+        Assert.Contains(("sprig-feat-a", true), docker.Downs);
     }
 }

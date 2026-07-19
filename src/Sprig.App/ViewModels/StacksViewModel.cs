@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -13,6 +15,7 @@ namespace Sprig.App.ViewModels;
 public partial class StacksViewModel : PageViewModel
 {
     protected readonly AppServices Services;
+    const int PortPreviewBase = 20000;
 
     public StacksViewModel(AppServices services)
     {
@@ -25,8 +28,11 @@ public partial class StacksViewModel : PageViewModel
     public ObservableCollection<StackDefinition> Stacks { get; } = [];
     public ObservableCollection<RepoChoiceViewModel> RepoChoices { get; } = [];
 
-    /// <summary>The stack-level variables being authored (name → template/literal).</summary>
-    public ObservableCollection<StackVarRow> Vars { get; } = [];
+    /// <summary>The stack's named ports (auto-allocated at create; shown with an incrementing preview).</summary>
+    public ObservableCollection<StackPortRow> Ports { get; } = [];
+
+    /// <summary>Per-repo input bindings for the selected repos.</summary>
+    public ObservableCollection<RepoBindingGroup> Bindings { get; } = [];
 
     [ObservableProperty] private StackDefinition? _selected;
     [ObservableProperty] private string _newName = "";
@@ -34,27 +40,31 @@ public partial class StacksViewModel : PageViewModel
     [ObservableProperty] private string? _status;
 
     [RelayCommand]
-    private void AddVar() => Vars.Add(new StackVarRow { IsAuto = false });
+    private void AddPort() { Ports.Add(new StackPortRow()); ReindexPortPreviews(); }
 
     [RelayCommand]
-    private void RemoveVar(StackVarRow row) => Vars.Remove(row);
+    private void RemovePort(StackPortRow row) { Ports.Remove(row); ReindexPortPreviews(); }
 
     [RelayCommand]
     private void Create()
     {
         var name = NewName.Trim();
         var repos = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
-        var vars = Vars
-            .Where(v => !string.IsNullOrWhiteSpace(v.Key) && !string.IsNullOrWhiteSpace(v.Value))
-            .ToDictionary(v => v.Key.Trim(), v => v.Value.Trim());
+        var ports = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var bindings = Bindings.ToDictionary(
+            g => g.Repo,
+            g => (IReadOnlyDictionary<string, string>)g.Rows
+                .Where(r => !string.IsNullOrWhiteSpace(r.Expression))
+                .ToDictionary(r => r.Input, r => r.Expression.Trim()));
 
         Error = null; Status = null;
         try
         {
-            Services.Stacks.Save(new StackDefinition { Name = name, Repos = repos, Vars = vars });
+            Services.Stacks.Save(new StackDefinition { Name = name, Repos = repos, Ports = ports, Bindings = bindings });
             NewName = "";
             foreach (var c in RepoChoices) c.IsSelected = false;
-            Vars.Clear();
+            Ports.Clear();
+            Bindings.Clear();
             Status = $"created stack '{name}'";
             Reload();
         }
@@ -71,6 +81,12 @@ public partial class StacksViewModel : PageViewModel
         Reload();
     }
 
+    void ReindexPortPreviews()
+    {
+        for (var i = 0; i < Ports.Count; i++)
+            Ports[i].Preview = (PortPreviewBase + i).ToString(CultureInfo.InvariantCulture);
+    }
+
     void Reload()
     {
         Stacks.Clear();
@@ -83,43 +99,41 @@ public partial class StacksViewModel : PageViewModel
             choice.PropertyChanged += OnChoiceChanged;
             RepoChoices.Add(choice);
         }
-        RecomputeRequiredVars();
+        RecomputeBindingGroups();
     }
 
     void OnChoiceChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(RepoChoiceViewModel.IsSelected))
-            RecomputeRequiredVars();
+            RecomputeBindingGroups();
     }
 
-    /// <summary>Detect which stack vars the checked repos need and reflect them in the editor.</summary>
-    void RecomputeRequiredVars()
+    /// <summary>Build a binding group per selected repo, one row per declared input (with its example hint).</summary>
+    void RecomputeBindingGroups()
     {
-        var required = new List<string>();
-        foreach (var choice in RepoChoices.Where(c => c.IsSelected))
+        var desired = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+
+        foreach (var group in Bindings.Where(g => !desired.Contains(g.Repo)).ToList())
+            Bindings.Remove(group);
+
+        foreach (var repoName in desired)
         {
-            var reg = Services.Repos.Get(choice.Name);
+            var reg = Services.Repos.Get(repoName);
             if (reg is null) continue;
-            try
-            {
-                var cfg = SprigConfigLoader.LoadFromFile(Path.Combine(reg.Path, ".sprig.json"));
-                required.AddRange(ConfigReferences.RequiredStackVars(cfg));
-            }
-            catch { /* a bad config just contributes no vars */ }
+
+            List<InputDeclaration> inputs;
+            try { inputs = SprigConfigLoader.LoadFromFile(Path.Combine(reg.Path, ".sprig.json")).Inputs.ToList(); }
+            catch { inputs = []; }
+
+            var group = Bindings.FirstOrDefault(g => g.Repo == repoName);
+            if (group is null) { group = new RepoBindingGroup(repoName); Bindings.Add(group); }
+
+            foreach (var row in group.Rows.Where(r => inputs.All(i => i.Name != r.Input)).ToList())
+                group.Rows.Remove(row);
+            foreach (var input in inputs)
+                if (group.Rows.All(r => r.Input != input.Name))
+                    group.Rows.Add(new BindingRow(input.Name, input.Example));
         }
-        var need = required.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
-
-        // Drop auto rows no longer needed and still empty; keep user rows and filled rows.
-        foreach (var row in Vars.Where(v => v.IsAuto && !need.Contains(v.Key) && string.IsNullOrEmpty(v.Value)).ToList())
-            Vars.Remove(row);
-
-        // Add any newly-needed vars as empty auto rows.
-        foreach (var name in need)
-            if (!Vars.Any(v => v.Key == name))
-                Vars.Add(new StackVarRow { Key = name, IsAuto = true });
-
-        foreach (var row in Vars)
-            row.Required = need.Contains(row.Key);
     }
 }
 
@@ -129,12 +143,21 @@ public partial class RepoChoiceViewModel(string name) : ViewModelBase
     [ObservableProperty] private bool _isSelected;
 }
 
-public partial class StackVarRow : ViewModelBase
+public partial class StackPortRow : ViewModelBase
 {
-    [ObservableProperty] private string _key = "";
-    [ObservableProperty] private string _value = "";
-    [ObservableProperty] private bool _required;
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _preview = "";
+}
 
-    /// <summary>True if sprig added this row from detection (vs. the user adding it manually).</summary>
-    public bool IsAuto { get; init; }
+public sealed class RepoBindingGroup(string repo) : ViewModelBase
+{
+    public string Repo { get; } = repo;
+    public ObservableCollection<BindingRow> Rows { get; } = [];
+}
+
+public partial class BindingRow(string input, string? example) : ViewModelBase
+{
+    public string Input { get; } = input;
+    public string? Example { get; } = example;
+    [ObservableProperty] private string _expression = "";
 }

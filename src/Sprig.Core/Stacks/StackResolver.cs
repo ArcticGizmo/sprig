@@ -30,6 +30,6 @@ public sealed class StackResolver(RepoRegistryStore registry, StackStore stacks,
             repos.Add(new ResolvedRepo(config.Name, root, config));
         }
 
-        return new ResolvedStack(stackName, repos, stack.Vars);
+        return new ResolvedStack(stackName, repos, stack.Ports, stack.Bindings);
     }
 }

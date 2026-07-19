@@ -33,27 +33,30 @@ public static class SprigConfigValidator
         foreach (var key in config.Unknown.Keys)
             issues.Add(new(key, "unknown top-level key"));
 
-        ValidatePorts(config, issues);
+        ValidateInputs(config, issues);
         ValidateEnv(config, issues);
         ValidateCompose(config, issues);
-        ValidateProvides(config, issues);
+
+        foreach (var reference in ConfigReferences.UndeclaredReferences(config))
+            issues.Add(new("template",
+                $"references '${{sprig.{reference}}}' which is not a declared input (add it to \"inputs\")"));
 
         return new ValidationResult(issues);
     }
 
-    static void ValidatePorts(SprigRepoConfig config, List<ValidationIssue> issues)
+    static void ValidateInputs(SprigRepoConfig config, List<ValidationIssue> issues)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < config.Ports.Count; i++)
+        for (var i = 0; i < config.Inputs.Count; i++)
         {
-            var p = config.Ports[i];
-            var at = $"ports[{i}]";
-            if (string.IsNullOrWhiteSpace(p.Name))
-                issues.Add(new($"{at}.name", "must be a non-empty port name"));
-            else if (!IsIdentifier(p.Name))
-                issues.Add(new($"{at}.name", $"'{p.Name}' must contain only letters, digits, '-' or '_'"));
-            else if (!seen.Add(p.Name))
-                issues.Add(new($"{at}.name", $"duplicate port name '{p.Name}'"));
+            var input = config.Inputs[i];
+            var at = $"inputs[{i}]";
+            if (string.IsNullOrWhiteSpace(input.Name))
+                issues.Add(new($"{at}.name", "must be a non-empty input name"));
+            else if (!IsIdentifier(input.Name))
+                issues.Add(new($"{at}.name", $"'{input.Name}' must contain only letters, digits, '-' or '_'"));
+            else if (!seen.Add(input.Name))
+                issues.Add(new($"{at}.name", $"duplicate input name '{input.Name}'"));
         }
     }
 
@@ -89,13 +92,6 @@ public static class SprigConfigValidator
             if (string.IsNullOrWhiteSpace(o.Template))
                 issues.Add(new($"{at}.template", "must be a non-empty template"));
         }
-    }
-
-    static void ValidateProvides(SprigRepoConfig config, List<ValidationIssue> issues)
-    {
-        foreach (var k in config.Provides.Keys)
-            if (string.IsNullOrWhiteSpace(k))
-                issues.Add(new("provides", "provided keys must be non-empty"));
     }
 
     static bool IsIdentifier(string s)

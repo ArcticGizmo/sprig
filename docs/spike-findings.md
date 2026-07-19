@@ -87,4 +87,61 @@ for free, on top of the explicit name/port overrides.
 (MSYS path conversion, e.g. `/docker-entrypoint-initdb.d/...`). Irrelevant to sprig itself
 (it shells out from .NET, not Git Bash) but worth remembering when hand-testing.
 
-## S3 — git worktree lifecycle + drift on Windows ⏳ TODO
+## S3 — git worktree lifecycle + drift on Windows ✅ DONE
+
+**Question:** how does `git worktree` behave on Windows for create/remove and the two drift
+cases the objective demands tolerance for, and what exact commands reconcile each?
+
+**Method:** real git against `sprig-example-dotnet`, walking each scenario.
+
+**Facts established:**
+- `git worktree add <path> -b sprig/<ws>` off `HEAD` gives a clean checkout with **no `.env`**
+  (untracked files aren't copied) — confirms **seeding is required** (§3.2).
+- A worktree's `.git` is a **file**, not a dir: `gitdir: <repo>/.git/worktrees/<name>`.
+- `git worktree list --porcelain` is the parse source; it emits `worktree`/`HEAD`/`branch`
+  lines per entry **and a `prunable` line** when the folder is missing.
+- `git worktree remove` **refuses (exit 128)** when the worktree has untracked/modified files.
+  Sprig worktrees always have a clobbered `.env`, so **sprig must use `remove --force`**.
+- Removing a worktree **keeps the branch** (`sprig/<ws>` survived) — matches the "keep branch
+  unless `--force`" decision; delete the branch as a separate, explicit step.
+
+**Reconciliation matrix (drives M2's `reconcile`/teardown):**
+
+| State | Detection | Action |
+|---|---|---|
+| Healthy | in `list`, not `prunable`, folder exists | `worktree remove --force` |
+| **Drift A** — folder deleted, admin remains | in `list`, flagged **`prunable`** | `worktree prune` |
+| **Drift B** — admin gone, folder remains (objective's example) | **not** in `list`, folder on disk (per central record) | plain `rm -rf` folder (nothing registered to corrupt) |
+| Both gone | not in `list`, not on disk | no-op |
+
+- Drift A verified: `prune --dry-run -v` reports *"gitdir file points to non-existent
+  location"*; `prune` clears the stale entry.
+- Drift B verified: with the admin entry deleted, `list` omits the folder and `prune` finds
+  nothing, so detection must come from **sprig's own central record** cross-checked against
+  `list` + disk.
+
+**Windows gotchas:**
+- `remove` needs `--force` (untracked `.env`) — the main one; already designed for.
+- **Locked files** (a running dev server / docker holding `node_modules`, `bin/obj`) can block
+  folder removal. Teardown must **stop infra (and any spawned processes) first**, and should
+  **retry with backoff** on `rm`. (Flagged; not exhaustively reproduced.)
+- **Long paths:** worktree path + `node_modules` can exceed 260 chars. Enable long-path
+  support / use extended-length paths from .NET. (Flagged.)
+
+**Impact on plan:** none conceptually; §3.4 holds. Adds concrete requirements for M2:
+`remove --force`, parse `--porcelain` incl. `prunable`, and the 4-state matrix above.
+
+---
+
+## M0 summary
+
+All three spikes passed with **no design changes** to `implementation-plan.md`. The biggest
+risk (S2, central-only compose) is cleared. Ready to start **M1 — Core spine**.
+
+Concrete requirements harvested for later milestones:
+- **M2:** always `git worktree remove --force`; parse `worktree list --porcelain` including
+  `prunable`; implement the 4-state reconciliation matrix; stop infra/processes before folder
+  removal, retry `rm` on lock; keep branch unless forced.
+- **M3:** always pass `--project-directory <worktree>` and `-p sprig-<workspace>` on every
+  compose call.
+- **Env writer:** top+bottom marker block in the targeted file(s); values identical top/bottom.

@@ -34,19 +34,16 @@ Fixtures: `../sprig-example-vue` (Vite, reads `env.PORT`), `../sprig-example-dot
 - [x] **S2.5** Central-only model **holds** — no fallback needed. `--project-directory
       <worktree>` is mandatory on every compose call.
 
-### S3 — git worktree lifecycle + drift on Windows
-- [ ] **S3.1** `git worktree add ../<repo>--spike -b sprig/spike` off `HEAD`; confirm clean
-      checkout, branch created, untracked `.env` **absent** (validates the seeding requirement).
-- [ ] **S3.2** Happy-path removal: `git worktree remove` + branch delete; confirm clean.
-- [ ] **S3.3** Drift A — **folder deleted manually**: `rm -rf` the worktree dir, then
-      `git worktree list` (stale entry) → `git worktree prune`; confirm reconciliation.
-- [ ] **S3.4** Drift B — **orphan folder** (git unaware, like the `--my-third-workspace` dir
-      found on disk): a dir that looks like a worktree but isn't in `git worktree list`;
-      confirm detection (list vs. disk) and that a plain `rm` is safe.
-- [ ] **S3.5** Windows gotchas: locked files while `npm`/docker hold handles; long paths;
-      `.git` file vs dir. Record any that affect removal.
-- [ ] **S3.6** Findings note: the exact command sequence for each drift case → feeds the M2
-      reconcile implementation.
+### S3 — git worktree lifecycle + drift on Windows ✅ DONE (see `spike-findings.md`)
+- [x] **S3.1** `worktree add -b sprig/spike` gives clean checkout, **no `.env`** (seeding required).
+- [x] **S3.2** Removal refuses without `--force` when untracked files exist; `--force` works;
+      branch survives.
+- [x] **S3.3** Drift A: folder deleted → `list` flags `prunable` → `prune` reconciles.
+- [x] **S3.4** Drift B: admin gone/folder remains → not in `list`; detect via central record +
+      disk; plain `rm` safe.
+- [x] **S3.5** Gotchas: `remove --force` needed; `.git` is a file; locked files + long paths
+      flagged for M2.
+- [x] **S3.6** 4-state reconciliation matrix recorded in `docs/spike-findings.md`.
 
 ---
 

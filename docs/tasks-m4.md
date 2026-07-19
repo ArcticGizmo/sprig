@@ -21,13 +21,11 @@ registry** and **stack definitions**, generalize the workspace lifecycle to N re
 
 ---
 
-## M4.0 — Repo registry
-- [ ] **M4.0.1** `RepoRegistry` model (central `repos.json`): `name → absolute path`.
-- [ ] **M4.0.2** `RepoRegistryStore` (atomic JSON via `JsonFile`): `Add(name, path)`,
-      `Remove(name)`, `Get(name)`, `List()`. Validate path is a git repo with a `.sprig.json`;
-      derive default name from the repo's `.sprig.json` `name` (or folder).
-- [ ] **M4.0.3** Unit tests over a temp store: add/list/remove, duplicate-name rejection,
-      missing-repo rejection.
+## M4.0 — Repo registry ✅ DONE
+- [x] **M4.0.1** `repos.json` model (`name → absolute path`).
+- [x] **M4.0.2** `RepoRegistryStore` Add/Remove/Get/List; validates `.sprig.json` presence,
+      derives name from config, idempotent same-path add, rejects name-collision.
+- [x] **M4.0.3** 6 unit tests over a temp store.
 
 ## M4.1 — Stack definitions
 - [ ] **M4.1.1** `StackDefinition` model (central `stacks/<name>.json`): `name`, `repos: string[]`

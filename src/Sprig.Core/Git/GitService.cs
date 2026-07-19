@@ -1,0 +1,91 @@
+using Sprig.Core.Processes;
+
+namespace Sprig.Core.Git;
+
+/// <summary>Default <see cref="IGitService"/> that shells out to <c>git</c>.</summary>
+public sealed class GitService(IProcessRunner runner) : IGitService
+{
+    public bool IsGitRepo(string path)
+    {
+        if (!Directory.Exists(path)) return false;
+        var r = runner.Run("git", ["-C", path, "rev-parse", "--is-inside-work-tree"], path);
+        return r.Success && r.StdOut.Trim() == "true";
+    }
+
+    public string ResolveRepoRoot(string path)
+    {
+        var r = runner.Run("git", ["-C", path, "rev-parse", "--show-toplevel"], path).EnsureSuccess();
+        return r.StdOut.Trim();
+    }
+
+    public bool BranchExists(string repo, string branch)
+    {
+        var r = runner.Run("git", ["-C", repo, "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}"], repo);
+        return r.Success;
+    }
+
+    public void AddWorktree(string repo, string worktreePath, string branch)
+        => runner.Run("git", ["-C", repo, "worktree", "add", worktreePath, "-b", branch], repo).EnsureSuccess();
+
+    public IReadOnlyList<WorktreeInfo> ListWorktrees(string repo)
+    {
+        var r = runner.Run("git", ["-C", repo, "worktree", "list", "--porcelain"], repo).EnsureSuccess();
+        return ParsePorcelain(r.StdOut);
+    }
+
+    public void RemoveWorktree(string repo, string worktreePath)
+        => runner.Run("git", ["-C", repo, "worktree", "remove", "--force", worktreePath], repo).EnsureSuccess();
+
+    public void Prune(string repo)
+        => runner.Run("git", ["-C", repo, "worktree", "prune"], repo).EnsureSuccess();
+
+    public void DeleteBranch(string repo, string branch)
+        => runner.Run("git", ["-C", repo, "branch", "-D", branch], repo).EnsureSuccess();
+
+    // Porcelain format: attribute lines per worktree, blocks separated by a blank line.
+    //   worktree <path>
+    //   HEAD <sha>
+    //   branch refs/heads/<name>   |   detached   |   bare
+    //   prunable <reason>          (optional)
+    internal static IReadOnlyList<WorktreeInfo> ParsePorcelain(string output)
+    {
+        var results = new List<WorktreeInfo>();
+        string? path = null, head = null, branch = null;
+        bool prunable = false, bare = false, detached = false;
+
+        void Flush()
+        {
+            if (path is not null)
+                results.Add(new WorktreeInfo(path, head, branch, prunable, bare, detached));
+            path = head = branch = null;
+            prunable = bare = detached = false;
+        }
+
+        foreach (var rawLine in output.Split('\n'))
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (line.Length == 0) { Flush(); continue; }
+
+            var space = line.IndexOf(' ');
+            var key = space < 0 ? line : line[..space];
+            var value = space < 0 ? "" : line[(space + 1)..];
+
+            switch (key)
+            {
+                case "worktree": Flush(); path = value; break;
+                case "HEAD": head = value; break;
+                case "branch": branch = StripRefPrefix(value); break;
+                case "detached": detached = true; break;
+                case "bare": bare = true; break;
+                case "prunable": prunable = true; break;
+            }
+        }
+        Flush();
+        return results;
+    }
+
+    static string StripRefPrefix(string reference)
+        => reference.StartsWith("refs/heads/", StringComparison.Ordinal)
+            ? reference["refs/heads/".Length..]
+            : reference;
+}

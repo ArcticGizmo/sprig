@@ -28,20 +28,16 @@ by the `Sprig.Cli` harness.
 - [x] **M2.0.3** `ProcessResult.EnsureSuccess()` → `ProcessException` with cmdline + stderr.
 - [x] **M2.0.4** 4 tests: stdout capture, non-zero+throw, missing exe, working-dir honoured.
 
-## M2.1 — Git worktree service
-- [ ] **M2.1.1** `IGitService` + `GitService` (over `IProcessRunner`) in `Sprig.Core/Git/`.
-- [ ] **M2.1.2** `AddWorktree(repo, path, branch)` → `git -C <repo> worktree add <path> -b <branch>`
-      (off current HEAD). Fail clearly if branch/path exists.
-- [ ] **M2.1.3** `ListWorktrees(repo)` → parse `worktree list --porcelain`, including the
-      **`prunable`** flag → `WorktreeInfo(Path, Head, Branch, IsPrunable)`.
-- [ ] **M2.1.4** `RemoveWorktree(repo, path)` → always `worktree remove --force <path>`
-      (S3: sprig worktrees always carry an untracked `.env`).
-- [ ] **M2.1.5** `Prune(repo)` → `worktree prune`; `DeleteBranch(repo, branch)` → `branch -D`
-      (called only on forced teardown).
-- [ ] **M2.1.6** `IsGitRepo(path)` / `ResolveRepoRoot(path)` guard for `create`.
-- [ ] **M2.1.7** Unit tests over a **temp git repo fixture** (helper that `git init`s, commits a
-      seed file): add → list shows it → remove --force → gone; delete-folder → list `prunable`
-      → prune clears.
+## M2.1 — Git worktree service ✅ DONE
+- [x] **M2.1.1** `IGitService` + `GitService` over `IProcessRunner`.
+- [x] **M2.1.2** `AddWorktree` (`-b` off HEAD).
+- [x] **M2.1.3** `ListWorktrees` porcelain parse → `WorktreeInfo` (incl. `prunable`/bare/detached);
+      parser unit-tested directly (via `InternalsVisibleTo`).
+- [x] **M2.1.4** `RemoveWorktree` always `--force`.
+- [x] **M2.1.5** `Prune` + `DeleteBranch`.
+- [x] **M2.1.6** `IsGitRepo` / `ResolveRepoRoot` / `BranchExists`.
+- [x] **M2.1.7** 7 tests over `TempGitRepo` fixture: round-trip, force-remove-with-untracked,
+      Drift-A prunable→prune, branch survives removal, delete-branch, porcelain parsing.
 
 ## M2.2 — Env clobber writer
 - [ ] **M2.2.1** `EnvClobberService` in `Sprig.Core/Env/`. For each `EnvOverride` in config:

@@ -73,14 +73,14 @@ by the `Sprig.Cli` harness.
 - [x] **M2.5.4** `[Theory]` fake-git covers all 4 states; real-git integration repairs Drift A
       (prune) and Drift B (orphan removal).
 
-## M2.6 — CLI wiring (`Sprig.Cli`)
-- [ ] **M2.6.1** `create <workspace> --repo <path>` — drives `WorkspaceService.Create`, prints
-      worktree path + allocated ports.
-- [ ] **M2.6.2** `ls` — table of workspaces from `InstanceStore` (name, repo, ports, status).
-- [ ] **M2.6.3** `info <workspace>` — repos, worktree path, ports, reconcile state.
-- [ ] **M2.6.4** `rm <workspace> [--force] [--yes]` — teardown; `--yes` required to proceed.
-- [ ] **M2.6.5** `reconcile [<workspace>] [--repair]` / `doctor` — show drift, optionally repair.
-- [ ] **M2.6.6** Consistent exit codes + `--json` output option (harness-friendly, mirrors plan).
+## M2.6 — CLI wiring (`Sprig.Cli`) ✅ DONE
+- [x] **M2.6.1** `create <name> --repo <path>` → prints worktree + ports.
+- [x] **M2.6.2** `ls` (table + empty-state hint).
+- [x] **M2.6.3** `info <name>` (repos, ports, per-repo drift state).
+- [x] **M2.6.4** `rm <name> [--force] [--yes]` (refuses without `--yes`).
+- [x] **M2.6.5** `reconcile [<name>] [--repair]` / `doctor`.
+- [x] **M2.6.6** `--json` on read commands; error→stderr, exit 1. (Thin dispatch — covered by the
+      M2.7 end-to-end walkthrough rather than unit tests.)
 
 ## M2.7 — Verification against the real example
 - [ ] **M2.7.1** Author a schema-v1 `.sprig.json` for `sprig-example-vue` (port `frontend`, env

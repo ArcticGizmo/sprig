@@ -42,18 +42,17 @@ registry** and **stack definitions**, generalize the workspace lifecycle to N re
 - [x] **M4.2.4** 5 unit tests: isolated same-named ports, cross-repo provide consumption, stack
       var → provide, missing provide → error, workspace slug everywhere.
 
-## M4.3 — Generalize the workspace lifecycle to N repos
-- [ ] **M4.3.1** Introduce a `ResolvedStack` (list of `(repoRoot, SprigRepoConfig)`), built from
-      either a **stack name** (registry + stack def) or an ad-hoc single `--repo <path>`.
-- [ ] **M4.3.2** `WorkspaceService.Create` over N repos: allocate all namespaced ports → build
-      scopes (M4.2) → per repo: worktree + branch + env clobber + compose generation → one
-      `InstanceRecord` with N `InstanceRepo`s + the `Stack` name.
-- [ ] **M4.3.3** Rollback unwinds **all** repos created so far on any failure.
-- [ ] **M4.3.4** Confirm `Remove`/`Reconciler`/`Up`/`Down` already loop over `record.Repos`
-      (they do) — add multi-repo tests; per-repo compose uses project name `sprig-<ws>` (shared
-      project groups the stack's containers).
-- [ ] **M4.3.5** Integration test (two temp git repos, one providing to the other): create →
-      both worktrees, both `.env`s, cross-repo value resolved; teardown clears both.
+## M4.3 — Generalize the workspace lifecycle to N repos ✅ DONE
+- [x] **M4.3.1** `ResolvedStack`/`ResolvedRepo`; `Create(ResolvedStack, ws)` + single-repo
+      overload via `ResolveSingleRepo`.
+- [x] **M4.3.2** N-repo create: allocate namespaced `<repo>.<port>` → `StackScopeBuilder` → per
+      repo worktree+branch+env+compose → one record (N `InstanceRepo`s, per-repo local `Ports`,
+      `Stack` name).
+- [x] **M4.3.3** Rollback unwinds every worktree/branch created so far + releases ports.
+- [x] **M4.3.4** `Remove`/`Reconciler`/`Up`/`Down` already loop over `record.Repos`; per-repo
+      compose file `docker-compose.<repo>.sprig.yml`, shared project `sprig-<ws>`.
+- [x] **M4.3.5** Integration test: two temp repos, web consumes `api.baseUrl` → correct port in
+      `.env`; namespaced non-colliding ports; teardown clears both; second workspace no collision.
 
 ## M4.4 — CLI
 - [ ] **M4.4.1** `repo add <path> [--name]` / `repo ls` / `repo rm <name>`.

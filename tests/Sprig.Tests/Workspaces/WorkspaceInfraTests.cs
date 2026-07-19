@@ -72,7 +72,7 @@ public class WorkspaceInfraTests
         Assert.NotNull(composePath);
         Assert.True(File.Exists(composePath));
         Assert.StartsWith(store.Root, composePath!); // in the central store, not the repo
-        Assert.Equal($"{record.Ports["postgres"]}:5432", PortsZero(composePath!));
+        Assert.Equal($"{record.Repos[0].Ports["postgres"]}:5432", PortsZero(composePath!));
     }
 
     [Fact]

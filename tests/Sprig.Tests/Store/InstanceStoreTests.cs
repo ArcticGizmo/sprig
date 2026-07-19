@@ -42,7 +42,12 @@ public class InstanceStoreTests
         Assert.Equal(record.CreatedAt, loaded.CreatedAt);
         Assert.Equal(record.Ports, loaded.Ports);
         Assert.Single(loaded.Repos);
-        Assert.Equal(record.Repos[0], loaded.Repos[0]); // InstanceRepo has only scalar fields
+        var (a, b) = (record.Repos[0], loaded.Repos[0]);
+        Assert.Equal(a.Name, b.Name);
+        Assert.Equal(a.SourcePath, b.SourcePath);
+        Assert.Equal(a.WorktreePath, b.WorktreePath);
+        Assert.Equal(a.Branch, b.Branch);
+        Assert.Equal(a.GeneratedComposePath, b.GeneratedComposePath);
     }
 
     [Fact]

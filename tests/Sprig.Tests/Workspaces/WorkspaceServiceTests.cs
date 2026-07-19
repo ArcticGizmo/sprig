@@ -48,7 +48,7 @@ public class WorkspaceServiceTests
         Assert.True(git.BranchExists(repo.Path, "sprig/feat-a"));
 
         var envText = File.ReadAllText(Path.Combine(wt, ".env"));
-        var port = record.Ports["frontend"];
+        var port = record.Repos[0].Ports["frontend"];
         Assert.Equal(2, envText.Split('\n').Count(l => l == $"PORT={port}")); // top + bottom
         Assert.Contains("OTHER=keep", envText);                                // seeded content preserved
 
@@ -67,7 +67,7 @@ public class WorkspaceServiceTests
         var a = svc.Create(repo.Path, "feat-a");
         var b = svc.Create(repo.Path, "feat-b");
 
-        Assert.NotEqual(a.Ports["frontend"], b.Ports["frontend"]);
+        Assert.NotEqual(a.Repos[0].Ports["frontend"], b.Repos[0].Ports["frontend"]);
         Assert.True(Directory.Exists(repo.SiblingWorktree("feat-a")));
         Assert.True(Directory.Exists(repo.SiblingWorktree("feat-b")));
     }

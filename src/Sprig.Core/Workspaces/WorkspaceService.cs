@@ -5,8 +5,8 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
+using Sprig.Core.Stacks;
 using Sprig.Core.Store;
-using Sprig.Core.Substitution;
 
 namespace Sprig.Core.Workspaces;
 
@@ -35,67 +35,89 @@ public sealed partial class WorkspaceService(
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
 
-    /// <summary>Create an isolated workspace from a single repo. Rolls back on failure.</summary>
+    /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
     public InstanceRecord Create(string repoPath, string workspace)
+        => Create(ResolveSingleRepo(repoPath), workspace);
+
+    /// <summary>Create an isolated workspace from a resolved stack (1+ repos). Rolls back on failure.</summary>
+    public InstanceRecord Create(ResolvedStack stack, string workspace)
     {
         ValidateName(workspace);
-
-        if (!git.IsGitRepo(repoPath))
-            throw new WorkspaceException($"'{repoPath}' is not a git repository");
-        var repoRoot = git.ResolveRepoRoot(repoPath);
-
-        var config = LoadValidConfig(repoRoot);
-
+        if (stack.Repos.Count == 0)
+            throw new WorkspaceException("nothing to create: the stack has no repos");
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
 
-        var repoName = Path.GetFileName(repoRoot.TrimEnd('\\', '/'));
-        var parent = Directory.GetParent(repoRoot)?.FullName
-            ?? throw new WorkspaceException($"repo '{repoRoot}' has no parent directory for a sibling worktree");
-        var worktree = Path.Combine(parent, $"{repoName}--{workspace}");
         var branch = $"sprig/{workspace}";
 
-        if (Directory.Exists(worktree))
-            throw new WorkspaceException($"worktree path already exists: {worktree}");
+        // Pre-compute each repo's sibling worktree path and guard against collisions.
+        var plans = new List<RepoPlan>();
+        foreach (var repo in stack.Repos)
+        {
+            var parent = Directory.GetParent(repo.Root)?.FullName
+                ?? throw new WorkspaceException($"repo '{repo.Root}' has no parent directory for a sibling worktree");
+            var dirName = Path.GetFileName(repo.Root.TrimEnd('\\', '/'));
+            var worktree = Path.Combine(parent, $"{dirName}--{workspace}");
+            if (Directory.Exists(worktree))
+                throw new WorkspaceException($"worktree path already exists: {worktree}");
+            plans.Add(new RepoPlan(repo, worktree));
+        }
 
         var portsAcquired = false;
-        var worktreeAdded = false;
+        var addedWorktrees = new List<(string root, string worktree)>();
         try
         {
-            var portMap = ports.Acquire(workspace, config.Ports.Select(p => p.Name).ToList());
+            // Allocate all ports at once under namespaced keys "<repo>.<port>".
+            var namespaced = plans
+                .SelectMany(p => p.Repo.Config.Ports.Select(port => $"{p.Repo.Name}.{port.Name}"))
+                .ToList();
+            var allPorts = ports.Acquire(workspace, namespaced);
             portsAcquired = true;
 
-            var scope = SprigScope.ForWorkspace(workspace, portMap);
+            // Split back into per-repo local maps for scope building.
+            var portsByRepo = plans.ToDictionary(
+                p => p.Repo.Name,
+                p => (IReadOnlyDictionary<string, int>)p.Repo.Config.Ports.ToDictionary(
+                    port => port.Name, port => allPorts[$"{p.Repo.Name}.{port.Name}"]));
 
-            git.AddWorktree(repoRoot, worktree, branch);
-            worktreeAdded = true;
+            var scope = StackScopeBuilder.Build(
+                workspace, plans.Select(p => (p.Repo.Name, p.Repo.Config)).ToList(), portsByRepo, stack.Vars);
 
-            env.Apply(config, repoRoot, worktree, scope);
-
-            // Generate the per-instance compose file into the central store (not the repo).
-            string? composePath = null;
-            if (config.Compose is { } composeCfg)
+            var repoRecords = new List<InstanceRepo>();
+            foreach (var plan in plans)
             {
-                composePath = Path.Combine(paths.InstanceDir(workspace), GeneratedComposeName);
-                var sourceCompose = Path.Combine(repoRoot, composeCfg.File);
-                compose.GenerateToFile(sourceCompose, composeCfg, scope, composePath);
+                var repo = plan.Repo;
+                var repoScope = scope.For(repo.Name);
+
+                git.AddWorktree(repo.Root, plan.Worktree, branch);
+                addedWorktrees.Add((repo.Root, plan.Worktree));
+
+                env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
+
+                string? composePath = null;
+                if (repo.Config.Compose is { } composeCfg)
+                {
+                    composePath = Path.Combine(paths.InstanceDir(workspace), $"docker-compose.{repo.Name}.sprig.yml");
+                    compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, composePath);
+                }
+
+                repoRecords.Add(new InstanceRepo
+                {
+                    Name = repo.Name,
+                    SourcePath = repo.Root,
+                    WorktreePath = plan.Worktree,
+                    Branch = branch,
+                    GeneratedComposePath = composePath,
+                    Ports = portsByRepo[repo.Name],
+                });
             }
 
             var record = new InstanceRecord
             {
                 Workspace = workspace,
-                Repos =
-                [
-                    new InstanceRepo
-                    {
-                        Name = config.Name,
-                        SourcePath = repoRoot,
-                        WorktreePath = worktree,
-                        Branch = branch,
-                        GeneratedComposePath = composePath,
-                    }
-                ],
-                Ports = new Dictionary<string, int>(portMap),
+                Stack = stack.StackName,
+                Repos = repoRecords,
+                Ports = new Dictionary<string, int>(allPorts),
                 LastStatus = "created",
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -104,18 +126,30 @@ public sealed partial class WorkspaceService(
         }
         catch
         {
-            // Best-effort rollback so a failed create leaves no mess.
-            if (worktreeAdded)
+            // Best-effort rollback across every repo materialised so far.
+            foreach (var (root, worktree) in addedWorktrees)
             {
-                TryQuiet(() => git.RemoveWorktree(repoRoot, worktree));
-                TryQuiet(() => git.DeleteBranch(repoRoot, branch));
+                TryQuiet(() => git.RemoveWorktree(root, worktree));
+                TryQuiet(() => git.DeleteBranch(root, branch));
+                WorktreeInspector.TryDeleteDirectory(worktree);
             }
-            WorktreeInspector.TryDeleteDirectory(worktree);
             if (portsAcquired) TryQuiet(() => ports.Release(workspace));
             TryQuiet(() => instances.Delete(workspace));
             throw;
         }
     }
+
+    /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>
+    public ResolvedStack ResolveSingleRepo(string repoPath)
+    {
+        if (!git.IsGitRepo(repoPath))
+            throw new WorkspaceException($"'{repoPath}' is not a git repository");
+        var root = git.ResolveRepoRoot(repoPath);
+        var config = LoadValidConfig(root);
+        return new ResolvedStack(null, [new ResolvedRepo(config.Name, root, config)], new Dictionary<string, string>());
+    }
+
+    sealed record RepoPlan(ResolvedRepo Repo, string Worktree);
 
     /// <summary>
     /// Tear down a workspace. Layered and idempotent: each step tolerates its target already

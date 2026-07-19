@@ -28,6 +28,9 @@ public partial class StacksViewModel : PageViewModel
     public ObservableCollection<StackDefinition> Stacks { get; } = [];
     public ObservableCollection<RepoChoiceViewModel> RepoChoices { get; } = [];
 
+    /// <summary>False when no stacks are defined yet — drives the first-run empty state.</summary>
+    public bool HasStacks => Stacks.Count > 0;
+
     /// <summary>The stack's named ports (auto-allocated at create; shown with an incrementing preview).</summary>
     public ObservableCollection<StackPortRow> Ports { get; } = [];
 
@@ -108,6 +111,7 @@ public partial class StacksViewModel : PageViewModel
     {
         Stacks.Clear();
         foreach (var s in Services.Stacks.List()) Stacks.Add(s);
+        OnPropertyChanged(nameof(HasStacks));
 
         RepoChoices.Clear();
         foreach (var r in Services.Repos.List())

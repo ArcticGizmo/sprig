@@ -28,7 +28,11 @@
             </StackPanel>
 
             <Grid Grid.Row="2" RowDefinitions="*,Auto">
-                <ListBox Grid.Row="0" ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+                <TextBlock Grid.Row="0" IsVisible="{Binding !HasRepos}" Margin="4,4"
+                           VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                           Text="No repos registered yet. Add one above to make it available to stacks." />
+                <ListBox Grid.Row="0" IsVisible="{Binding HasRepos}"
+                         ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="core:RegisteredRepo">
                             <StackPanel Spacing="2" Margin="2,6">

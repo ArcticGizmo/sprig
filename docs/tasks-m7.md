@@ -31,12 +31,16 @@
 - [x] **M7.1.4** Purged stale model language: fixed the two `provides` doc-comments in Core
       (`ConfigReferences.cs`, `IVariableSource.cs`). Historical milestone docs left as-is (a record).
 
-## M7.2 — Error-message + empty-state pass
-- [ ] **M7.2.1** Audit user-facing exception/error strings across Core + App for a clean-machine
-      user (no docker, no git, unregistered repo, unbound input, name collision) — make each
-      actionable. Verify the unbound-input failure names repo + input + example.
-- [ ] **M7.2.2** UI empty/edge states: no repos, no stacks, no workspaces, docker-unavailable,
-      a workspace with **no infra** (Up/Down/Reset already hidden — confirm the detail reads well).
+## M7.2 — Error-message + empty-state pass ✅ DONE
+- [x] **M7.2.1** Audited user-facing error strings across Core + App. Most were already actionable
+      (unbound-input names repo + input + example ✓; unknown repo/stack/workspace, name collision,
+      "not a git repository", "register it first" all clear). Improved the docker-unavailable
+      message to "docker compose is not available — is Docker Desktop installed and running?".
+- [x] **M7.2.2** UI empty/edge states: added first-run empty hints for **no repos**, **no stacks**,
+      and **no workspaces** (each points at the relevant add/new action, and stale "use the CLI"
+      copy replaced). Docker-unavailable surfaces via the improved Core message + error text. A
+      workspace with **no infra** already hides Up/Down/Reset — confirmed via headless render
+      (`example-web-only` shows only Reconcile/Repair/Open/Remove).
 
 ## M7.3 — Doctor / reconcile UX in the UI
 - [ ] **M7.3.1** Surface a legible drift/health view: per-repo worktree state

@@ -241,7 +241,8 @@ public sealed partial class WorkspaceService(
         if (infraRepos.Count == 0)
             throw new WorkspaceException($"workspace '{workspace}' has no docker infrastructure");
         if (!docker.IsAvailable())
-            throw new WorkspaceException("docker compose is not available on this machine");
+            throw new WorkspaceException(
+                "docker compose is not available — is Docker Desktop installed and running?");
         return record;
     }
 

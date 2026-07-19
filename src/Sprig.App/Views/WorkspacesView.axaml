@@ -38,11 +38,23 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Empty state -->
+            <!-- Empty state: nothing created yet -->
+            <TextBlock Grid.Column="1" Margin="24" VerticalAlignment="Top"
+                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       IsVisible="{Binding !HasWorkspaces}"
+                       Text="No workspaces yet. Click &quot;New workspace&quot; above to create your first isolated workspace from a stack." />
+
+            <!-- Empty state: have workspaces, none selected -->
             <TextBlock Grid.Column="1" Margin="24" VerticalAlignment="Top"
                        Foreground="{StaticResource MutedBrush}"
-                       IsVisible="{Binding !HasSelected}"
-                       Text="No workspace selected. Create one with the CLI (sprig create …) or select one from the list." />
+                       Text="Select a workspace from the list.">
+                <TextBlock.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasWorkspaces" />
+                        <Binding Path="!HasSelected" />
+                    </MultiBinding>
+                </TextBlock.IsVisible>
+            </TextBlock>
 
             <!-- Detail -->
             <ScrollViewer Grid.Column="1" IsVisible="{Binding HasSelected}" Margin="16,0,24,16">

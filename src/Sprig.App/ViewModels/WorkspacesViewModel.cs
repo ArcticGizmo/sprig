@@ -54,6 +54,9 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>Bound by the view to toggle the empty-state vs. detail panel.</summary>
     public bool HasSelected => Selected is not null;
 
+    /// <summary>False when no workspaces exist at all — drives the first-run empty state.</summary>
+    public bool HasWorkspaces => Workspaces.Count > 0;
+
     partial void OnSelectedChanged(WorkspaceItemViewModel? value)
     {
         ConfirmingRemove = false;
@@ -72,6 +75,7 @@ public partial class WorkspacesViewModel : PageViewModel
             Workspaces.Clear();
             foreach (var r in records.OrderBy(r => r.Workspace))
                 Workspaces.Add(new WorkspaceItemViewModel(r));
+            OnPropertyChanged(nameof(HasWorkspaces));
             Selected = Workspaces.FirstOrDefault(w => w.Name == previouslySelected) ?? Workspaces.FirstOrDefault();
         }, status: null);
     }

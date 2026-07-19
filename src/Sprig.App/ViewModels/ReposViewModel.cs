@@ -31,6 +31,9 @@ public partial class ReposViewModel : PageViewModel
 
     public bool HasSelected => Selected is not null;
 
+    /// <summary>False when no repos are registered yet — drives the first-run empty state.</summary>
+    public bool HasRepos => Repos.Count > 0;
+
     partial void OnSelectedChanged(RegisteredRepo? value)
     {
         SelectedConfig = value is null ? null : RepoConfigViewModel.Load(value.Path);
@@ -81,5 +84,6 @@ public partial class ReposViewModel : PageViewModel
     {
         Repos.Clear();
         foreach (var r in Services.Repos.List()) Repos.Add(r);
+        OnPropertyChanged(nameof(HasRepos));
     }
 }

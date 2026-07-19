@@ -27,13 +27,11 @@ registry** and **stack definitions**, generalize the workspace lifecycle to N re
       derives name from config, idempotent same-path add, rejects name-collision.
 - [x] **M4.0.3** 6 unit tests over a temp store.
 
-## M4.1 — Stack definitions
-- [ ] **M4.1.1** `StackDefinition` model (central `stacks/<name>.json`): `name`, `repos: string[]`
-      (registry names), optional `vars: {name → template}` (stack-level computed variables).
-- [ ] **M4.1.2** `StackStore`: `Save`, `Get`, `List`, `Remove`; `Export(name, path)` /
-      `Import(path)` (copy the JSON out/in) as the sharing escape hatch.
-- [ ] **M4.1.3** Validation: every referenced repo exists in the registry; unique stack name.
-- [ ] **M4.1.4** Unit tests: save/get/list/remove, export→import round-trip, unknown-repo error.
+## M4.1 — Stack definitions ✅ DONE
+- [x] **M4.1.1** `StackDefinition` (`name`, `repos[]`, `vars`).
+- [x] **M4.1.2** `StackStore` Save/Get/List/Remove + Export/Import.
+- [x] **M4.1.3** Validates repo names against the registry; name pattern allows `+` (e.g. `web+api`).
+- [x] **M4.1.4** 5 unit tests incl. export→import round-trip and unknown-repo/import validation.
 
 ## M4.2 — Multi-repo scope + cross-repo provides  *(pure logic — the heart of M4)*
 - [ ] **M4.2.1** Port **namespacing**: allocate per-repo ports under keys `<repo>.<portName>`

@@ -29,14 +29,14 @@ allocated port into both the compose host-port and the app's `.env` connection s
 - [x] **M3.0.5** 5 unit tests: name+port override, untouched keys preserved, missing path,
       out-of-range index, GenerateToFile.
 
-## M3.1 — Docker service
-- [ ] **M3.1.1** `IDockerService` + `DockerService` over `IProcessRunner`.
-- [ ] **M3.1.2** `Up(composeFile, projectDir, projectName)` →
-      `docker compose -f <file> --project-directory <dir> -p <name> up -d`.
-- [ ] **M3.1.3** `Down(..., removeVolumes)` → `down` / `down -v`; `Ps(...)` → parsed status;
-      `Config(...)` → validate the generated file resolves.
-- [ ] **M3.1.4** `IsAvailable()` probe (`docker compose version`) so callers degrade gracefully
-      when docker is absent.
+## M3.1 — Docker service ✅ DONE
+- [x] **M3.1.1** `IDockerService` + `DockerService` over `IProcessRunner`.
+- [x] **M3.1.2** `Up` → `compose -f … --project-directory … -p … up -d` (S2 prefix on every call).
+- [x] **M3.1.3** `Down(removeVolumes)` → `down` / `down -v`; `Ps` parses NDJSON *and* array forms.
+      (Dropped a separate `Config` method — `Up`/`Ps` failures already surface via `ProcessException`.)
+- [x] **M3.1.4** `IsAvailable()` probe.
+- [x] Tests: exact arg arrays via `RecordingProcessRunner`, non-zero→throw, ps parse both forms,
+      real `IsAvailable` (89 tests).
 
 ## M3.2 — Generate on create
 - [ ] **M3.2.1** Extend `WorkspaceService.Create`: if `config.Compose` is present, generate the

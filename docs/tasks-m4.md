@@ -54,18 +54,17 @@ registry** and **stack definitions**, generalize the workspace lifecycle to N re
 - [x] **M4.3.5** Integration test: two temp repos, web consumes `api.baseUrl` → correct port in
       `.env`; namespaced non-colliding ports; teardown clears both; second workspace no collision.
 
-## M4.4 — CLI
-- [ ] **M4.4.1** `repo add <path> [--name]` / `repo ls` / `repo rm <name>`.
-- [ ] **M4.4.2** `stack create <name> --repos a,b [--var k=tmpl]` / `stack ls` / `stack show <name>`
-      / `stack rm <name>` / `stack export <name> <path>` / `stack import <path>`.
-- [ ] **M4.4.3** `templates` — list stacks and the repos they include (objective's wording).
-- [ ] **M4.4.4** `create <ws> --stack <name>` (keep `--repo <path>` for ad-hoc single repo).
-- [ ] **M4.4.5** `ls`/`info` render multiple repos + namespaced ports.
+## M4.4 — CLI ✅ DONE
+- [x] **M4.4.1** `repo add [--name]` / `repo ls` / `repo rm`.
+- [x] **M4.4.2** `stack create --repos --var` / `ls` / `show` / `rm` / `export` / `import`.
+- [x] **M4.4.3** `templates` lists stacks + repos.
+- [x] **M4.4.4** `create --stack <name>` (via `StackResolver`); `--repo <path>` preserved.
+- [x] **M4.4.5** `create` prints per-repo worktree + ports; `info` iterates repos.
 
-## M4.5 — Tests
-- [ ] **M4.5.1** Registry + stack store unit tests (M4.0/M4.1).
-- [ ] **M4.5.2** `StackScopeBuilder` unit tests (M4.2) — the core logic.
-- [ ] **M4.5.3** Multi-repo create/teardown integration over temp git repos.
+## M4.5 — Tests ✅ DONE
+- [x] **M4.5.1** Registry + stack store unit tests (M4.0/M4.1).
+- [x] **M4.5.2** `StackScopeBuilder` unit tests (M4.2).
+- [x] **M4.5.3** Multi-repo create/teardown integration (M4.3 `WorkspaceStackTests`).
 
 ## M4.6 — Verification: vue + dotnet in one workspace
 - [ ] **M4.6.1** Extend `sprig-example-vue/.sprig.json` to consume the API: env

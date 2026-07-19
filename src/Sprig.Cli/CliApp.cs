@@ -5,6 +5,7 @@ using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
+using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -32,6 +33,9 @@ public static class CliApp
         var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
             new ComposeGenerator(), new DockerService(runner), paths);
         var reconciler = new WorkspaceReconciler(git, instances);
+        var registry = new RepoRegistryStore(paths);
+        var stacks = new StackStore(paths, registry);
+        var resolver = new StackResolver(registry, stacks, git);
 
         var command = args[0];
         var rest = args[1..];
@@ -39,7 +43,7 @@ public static class CliApp
         {
             return command switch
             {
-                "create" => Create(svc, rest, json),
+                "create" => Create(svc, resolver, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
@@ -48,6 +52,9 @@ public static class CliApp
                 "reset" => Reset(svc, rest),
                 "status" => Status(svc, rest, json),
                 "reconcile" or "doctor" => Reconcile(reconciler, rest, json),
+                "repo" => Repo(registry, rest, json),
+                "stack" => Stack(stacks, rest, json),
+                "templates" => Templates(stacks, json),
                 _ => Unknown(command),
             };
         }
@@ -58,20 +65,116 @@ public static class CliApp
         }
     }
 
-    static int Create(WorkspaceService svc, string[] args, bool json)
+    static int Create(WorkspaceService svc, StackResolver resolver, string[] args, bool json)
     {
-        var repo = Args.TakeOption(ref args, "--repo")
-            ?? throw new ArgumentException("create requires --repo <path>");
+        var stackName = Args.TakeOption(ref args, "--stack");
+        var repo = Args.TakeOption(ref args, "--repo");
         var workspace = Args.FirstPositional(args)
             ?? throw new ArgumentException("create requires a workspace name");
 
-        var record = svc.Create(repo, workspace);
+        var record = stackName is not null ? svc.Create(resolver.Resolve(stackName), workspace)
+            : repo is not null ? svc.Create(repo, workspace)
+            : throw new ArgumentException("create requires --stack <name> or --repo <path>");
 
         if (json) { WriteJson(record); return 0; }
-        Console.WriteLine($"created workspace '{record.Workspace}'");
+        Console.WriteLine($"created workspace '{record.Workspace}'{(record.Stack is { } st ? $" from stack '{st}'" : "")}");
         foreach (var r in record.Repos)
+        {
             Console.WriteLine($"  {r.Name}: {r.WorktreePath}  [{r.Branch}]");
-        Console.WriteLine($"  ports: {FormatPorts(record.Ports)}");
+            Console.WriteLine($"    ports: {FormatPorts(r.Ports)}");
+        }
+        return 0;
+    }
+
+    static int Repo(RepoRegistryStore registry, string[] args, bool json)
+    {
+        var sub = Args.FirstPositional(args) ?? "ls";
+        var tail = args.Where(a => a != sub).ToArray();
+        switch (sub)
+        {
+            case "add":
+                var name = Args.TakeOption(ref tail, "--name");
+                var path = Args.FirstPositional(tail) ?? throw new ArgumentException("repo add requires a path");
+                var added = registry.Add(path, name);
+                Console.WriteLine($"registered '{added.Name}' -> {added.Path}");
+                return 0;
+            case "ls":
+                var repos = registry.List();
+                if (json) { WriteJson(repos); return 0; }
+                if (repos.Count == 0) { Console.WriteLine("no repos registered"); return 0; }
+                foreach (var r in repos) Console.WriteLine($"  {r.Name,-24} {r.Path}");
+                return 0;
+            case "rm":
+                var target = Args.FirstPositional(tail) ?? throw new ArgumentException("repo rm requires a name");
+                registry.Remove(target);
+                Console.WriteLine($"unregistered '{target}'");
+                return 0;
+            default:
+                Console.Error.WriteLine($"unknown repo subcommand '{sub}' (add|ls|rm)");
+                return 1;
+        }
+    }
+
+    static int Stack(StackStore stacks, string[] args, bool json)
+    {
+        var sub = Args.FirstPositional(args) ?? "ls";
+        var tail = args.Where(a => a != sub).ToArray();
+        switch (sub)
+        {
+            case "create":
+                var reposCsv = Args.TakeOption(ref tail, "--repos")
+                    ?? throw new ArgumentException("stack create requires --repos a,b");
+                var vars = Args.TakeAll(ref tail, "--var")
+                    .Select(v => v.Split('=', 2))
+                    .ToDictionary(kv => kv[0], kv => kv.Length > 1 ? kv[1] : "");
+                var name = Args.FirstPositional(tail) ?? throw new ArgumentException("stack create requires a name");
+                stacks.Save(new StackDefinition
+                {
+                    Name = name,
+                    Repos = reposCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    Vars = vars,
+                });
+                Console.WriteLine($"created stack '{name}'");
+                return 0;
+            case "ls":
+                var all = stacks.List();
+                if (json) { WriteJson(all); return 0; }
+                if (all.Count == 0) { Console.WriteLine("no stacks defined"); return 0; }
+                foreach (var s in all) Console.WriteLine($"  {s.Name,-20} {string.Join(", ", s.Repos)}");
+                return 0;
+            case "show":
+                var showName = Args.FirstPositional(tail) ?? throw new ArgumentException("stack show requires a name");
+                var stack = stacks.Get(showName) ?? throw new ArgumentException($"unknown stack '{showName}'");
+                WriteJson(stack);
+                return 0;
+            case "rm":
+                var rmName = Args.FirstPositional(tail) ?? throw new ArgumentException("stack rm requires a name");
+                stacks.Remove(rmName);
+                Console.WriteLine($"removed stack '{rmName}'");
+                return 0;
+            case "export":
+                var exp = tail.Where(a => !a.StartsWith('-')).ToArray();
+                if (exp.Length < 2) throw new ArgumentException("stack export requires <name> <path>");
+                Console.WriteLine($"exported to {stacks.Export(exp[0], exp[1])}");
+                return 0;
+            case "import":
+                var importPath = Args.FirstPositional(tail) ?? throw new ArgumentException("stack import requires a path");
+                var imported = stacks.Import(importPath);
+                Console.WriteLine($"imported stack '{imported.Name}'");
+                return 0;
+            default:
+                Console.Error.WriteLine($"unknown stack subcommand '{sub}' (create|ls|show|rm|export|import)");
+                return 1;
+        }
+    }
+
+    static int Templates(StackStore stacks, bool json)
+    {
+        var all = stacks.List();
+        if (json) { WriteJson(all); return 0; }
+        if (all.Count == 0) { Console.WriteLine("no templates (stacks) defined"); return 0; }
+        Console.WriteLine($"{"TEMPLATE",-20} REPOS");
+        foreach (var s in all) Console.WriteLine($"{s.Name,-20} {string.Join(", ", s.Repos)}");
         return 0;
     }
 
@@ -209,7 +312,7 @@ public static class CliApp
                 sprig <command> [options] [--json]
 
             COMMANDS:
-                create <name> --repo <path>   Create an isolated workspace from a repo
+                create <name> --stack <s> | --repo <path>   Create an isolated workspace
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift
                 up <name>                     Bring the workspace's docker infra up
@@ -219,6 +322,10 @@ public static class CliApp
                 rm <name> [--force] [--yes]   Tear down a workspace (--force also deletes the branch)
                 reconcile [<name>] [--repair] Detect (and optionally repair) drift
                 doctor                        Alias for reconcile over all workspaces
+                repo add <path> [--name x]    Register a repo (also: repo ls, repo rm <name>)
+                stack create <name> --repos a,b [--var k=tmpl]   Define a stack
+                stack ls | show <name> | rm <name> | export <name> <path> | import <path>
+                templates                     List stacks and their repos
 
             OPTIONS:
                 --json           Machine-readable output
@@ -247,6 +354,15 @@ static class Args
         var value = args[idx + 1];
         args = args.Where((_, i) => i != idx && i != idx + 1).ToArray();
         return value;
+    }
+
+    /// <summary>Take every <c>--name value</c> pair (repeated flags), returning the values.</summary>
+    public static List<string> TakeAll(ref string[] args, string name)
+    {
+        var values = new List<string>();
+        string? v;
+        while ((v = TakeOption(ref args, name)) is not null) values.Add(v);
+        return values;
     }
 
     public static string? FirstPositional(string[] args)

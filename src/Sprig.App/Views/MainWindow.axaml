@@ -3,7 +3,7 @@
         xmlns:vm="clr-namespace:Sprig.App.ViewModels"
         x:Class="Sprig.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Width="1000" Height="680"
+        Width="1280" Height="820"
         MinWidth="720" MinHeight="480"
         Background="{StaticResource FormBgBrush}"
         Icon="/Assets/sprig.ico"

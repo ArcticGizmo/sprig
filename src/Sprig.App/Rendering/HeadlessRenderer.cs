@@ -41,6 +41,14 @@ internal static class HeadlessRenderer
                     foreach (var c in stacks.RepoChoices) c.IsSelected = true;
                 }
                 Capture(vm, Path.Combine(outDir, $"main_{page.Title.ToLowerInvariant()}.png"));
+
+                // Also capture the repos edit form when a repo is available.
+                if (page is ReposViewModel { Selected: not null } editable && editable.BeginEditCommand.CanExecute(null))
+                {
+                    editable.BeginEditCommand.Execute(null);
+                    Capture(vm, Path.Combine(outDir, "main_repos_edit.png"));
+                    editable.CancelEditCommand.Execute(null);
+                }
             }
 
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");

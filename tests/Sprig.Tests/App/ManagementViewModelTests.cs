@@ -96,6 +96,69 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public async Task Repos_edit_changes_a_value_and_saves_it_back()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
+            { "schema":1, "name":"api",
+              "inputs":[ { "name":"port", "example":"5000" } ],
+              "env":[ { "file":".env", "set":{ "PORT":"${sprig.port}" } } ] }
+            """);
+
+        var vm = new ReposViewModel(services) { NewPath = dir };
+        await vm.AddCommand.ExecuteAsync(null);
+        vm.Selected = vm.Repos.First(r => r.Name == "api");
+
+        vm.BeginEditCommand.Execute(null);
+        Assert.True(vm.IsEditing);
+        Assert.Equal("api", vm.Editor!.Name);
+
+        // change the input's example and add a new env key
+        vm.Editor.Inputs.First().Example = "6000";
+        var env = vm.Editor.Env.First();
+        env.AddKeyCommand.Execute(null);
+        env.Set.Last().Key = "HOST";
+        env.Set.Last().Value = "localhost";
+
+        vm.SaveEditCommand.Execute(null);
+
+        Assert.False(vm.IsEditing);            // form closes on success
+        Assert.Contains("saved", vm.Status);
+
+        // re-read from disk to prove it persisted
+        var reloaded = RepoEditViewModel.Load(dir);
+        Assert.Equal("6000", reloaded.Inputs.First().Example);
+        Assert.Contains(reloaded.Env.First().Set, k => k.Key == "HOST" && k.Value == "localhost");
+    }
+
+    [Fact]
+    public void Repos_edit_with_invalid_input_name_surfaces_error_and_does_not_write()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        var configPath = Path.Combine(dir, ".sprig.json");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api", "inputs":[ { "name":"port" } ] }""");
+        var before = File.ReadAllText(configPath);
+
+        services.Repos.Add(dir);
+        var vm = new ReposViewModel(services);
+        vm.Selected = vm.Repos.First(r => r.Name == "api");
+        vm.BeginEditCommand.Execute(null);
+
+        vm.Editor!.Inputs.First().Name = "bad name!"; // spaces/'!' are not identifier chars
+        vm.SaveEditCommand.Execute(null);
+
+        Assert.True(vm.IsEditing);              // stays in edit mode
+        Assert.NotNull(vm.Editor.Error);
+        Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
+    }
+
+    [Fact]
     public void Stacks_create_from_checked_repos_and_remove()
     {
         using var s = new TempStore();

@@ -49,13 +49,17 @@
                            VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"
                            Text="Select a repo to view its&#x0a;.sprig.json configuration" />
 
-                <ScrollViewer IsVisible="{Binding HasSelected}">
+                <ScrollViewer IsVisible="{Binding ShowReadOnly}">
                     <StackPanel Spacing="16">
-                        <StackPanel Spacing="2">
-                            <TextBlock Text="Configuration" FontSize="16" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TitleBrush}" />
-                            <TextBlock Text="{Binding SelectedConfig.Name}" Foreground="{StaticResource AccentBrush}" />
-                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Configuration" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Text="{Binding SelectedConfig.Name}" Foreground="{StaticResource AccentBrush}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="Edit" Command="{Binding BeginEditCommand}"
+                                    IsVisible="{Binding CanEdit}" VerticalAlignment="Top" />
+                        </Grid>
 
                         <!-- error -->
                         <TextBlock IsVisible="{Binding !SelectedConfig.Ok}" Foreground="{StaticResource DangerBrush}"
@@ -120,6 +124,136 @@
                             </ItemsControl>
                         </StackPanel>
 
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Edit form -->
+                <ScrollViewer IsVisible="{Binding IsEditing}">
+                    <StackPanel Spacing="16" DataContext="{Binding Editor}"
+                                x:CompileBindings="True" x:DataType="vm:RepoEditViewModel">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Edit configuration" FontSize="16" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" />
+                            <TextBlock Text="{Binding Name}" Foreground="{StaticResource AccentBrush}" />
+                        </StackPanel>
+
+                        <!-- inputs -->
+                        <StackPanel Spacing="6">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="INPUTS (supplied by the stack)" FontSize="11"
+                                           FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="+ Add input" Command="{Binding AddInputCommand}"
+                                        FontSize="11" Padding="6,2" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Inputs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:InputEditRow">
+                                        <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
+                                                Padding="8" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                                <TextBox Grid.Row="0" Grid.Column="0" Text="{Binding Name, Mode=TwoWay}"
+                                                         PlaceholderText="input name" FontFamily="Consolas,monospace"
+                                                         Margin="0,0,6,4" />
+                                                <Button Grid.Row="0" Grid.Column="1" Content="✕"
+                                                        Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding Example, Mode=TwoWay}"
+                                                         PlaceholderText="example (e.g. 5000)" Margin="0,0,6,0" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- env -->
+                        <StackPanel Spacing="6">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="ENV OVERRIDES" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="+ Add file" Command="{Binding AddEnvFileCommand}"
+                                        FontSize="11" Padding="6,2" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Env}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:EnvFileEditRow">
+                                        <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
+                                                Padding="8" Margin="0,0,0,8">
+                                            <StackPanel Spacing="4">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBox Grid.Column="0" Text="{Binding File, Mode=TwoWay}"
+                                                             PlaceholderText=".env file (e.g. .env.local)" Margin="0,0,6,0" />
+                                                    <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
+                                                            Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding Set}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:KvEditRow">
+                                                            <Grid ColumnDefinitions="*,*,Auto" Margin="12,2,0,0">
+                                                                <TextBox Grid.Column="0" Text="{Binding Key, Mode=TwoWay}"
+                                                                         PlaceholderText="KEY" FontFamily="Consolas,monospace"
+                                                                         Margin="0,0,6,0" />
+                                                                <TextBox Grid.Column="1" Text="{Binding Value, Mode=TwoWay}"
+                                                                         PlaceholderText="${sprig.input}" FontFamily="Consolas,monospace"
+                                                                         Margin="0,0,6,0" />
+                                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                                        Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <Button Content="+ Add key" Command="{Binding AddKeyCommand}"
+                                                        FontSize="11" Padding="6,2" Margin="12,2,0,0"
+                                                        HorizontalAlignment="Left" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- compose -->
+                        <StackPanel Spacing="6">
+                            <CheckBox Content="Overrides a docker compose file" IsChecked="{Binding HasCompose, Mode=TwoWay}" />
+                            <StackPanel Spacing="6" IsVisible="{Binding HasCompose}">
+                                <TextBox Text="{Binding ComposeFile, Mode=TwoWay}"
+                                         PlaceholderText="compose file (e.g. docker-compose.yml)" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="OVERRIDES (yaml path → template)" FontSize="11"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
+                                               VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="+ Add override" Command="{Binding AddComposeOverrideCommand}"
+                                            FontSize="11" Padding="6,2" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding ComposeOverrides}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ComposeOverrideEditRow">
+                                            <Grid ColumnDefinitions="*,*,Auto" Margin="0,0,0,6">
+                                                <TextBox Grid.Column="0" Text="{Binding Path, Mode=TwoWay}"
+                                                         PlaceholderText="services.db.ports.0" FontFamily="Consolas,monospace"
+                                                         Margin="0,0,6,0" />
+                                                <TextBox Grid.Column="1" Text="{Binding Template, Mode=TwoWay}"
+                                                         PlaceholderText="${sprig.ports.db}:5432" FontFamily="Consolas,monospace"
+                                                         Margin="0,0,6,0" />
+                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- validation / write error -->
+                        <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Save" Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).SaveEditCommand}"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                            <Button Content="Cancel" Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).CancelEditCommand}" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Panel>

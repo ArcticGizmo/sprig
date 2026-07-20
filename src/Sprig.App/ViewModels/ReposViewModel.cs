@@ -24,6 +24,9 @@ public partial class ReposViewModel : PageViewModel
 
     [ObservableProperty] private RegisteredRepo? _selected;
     [ObservableProperty] private RepoConfigViewModel? _selectedConfig;
+
+    /// <summary>Non-null while the selected repo's config is being edited in place.</summary>
+    [ObservableProperty] private RepoEditViewModel? _editor;
     [ObservableProperty] private string _newPath = "";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
@@ -40,6 +43,15 @@ public partial class ReposViewModel : PageViewModel
 
     public bool HasSelected => Selected is not null;
 
+    /// <summary>True while the edit form is shown (hides the read-only config view).</summary>
+    public bool IsEditing => Editor is not null;
+
+    /// <summary>Show the read-only config view: a repo is selected and we're not editing.</summary>
+    public bool ShowReadOnly => HasSelected && !IsEditing;
+
+    /// <summary>A repo is selected, its config loaded cleanly, and we're not already editing.</summary>
+    public bool CanEdit => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
+
     /// <summary>False when no repos are registered yet — drives the first-run empty state.</summary>
     public bool HasRepos => Repos.Count > 0;
 
@@ -48,8 +60,46 @@ public partial class ReposViewModel : PageViewModel
 
     partial void OnSelectedChanged(RegisteredRepo? value)
     {
+        Editor = null; // leave edit mode when switching repos
         SelectedConfig = value is null ? null : RepoConfigViewModel.Load(value.Path);
         OnPropertyChanged(nameof(HasSelected));
+        OnPropertyChanged(nameof(ShowReadOnly));
+        OnPropertyChanged(nameof(CanEdit));
+    }
+
+    partial void OnSelectedConfigChanged(RepoConfigViewModel? value) => OnPropertyChanged(nameof(CanEdit));
+
+    partial void OnEditorChanged(RepoEditViewModel? value)
+    {
+        OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(ShowReadOnly));
+        OnPropertyChanged(nameof(CanEdit));
+    }
+
+    [RelayCommand]
+    private void BeginEdit()
+    {
+        if (Selected is null) return;
+        Error = null;
+        Status = null;
+        try { Editor = RepoEditViewModel.Load(Selected.Path); }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    [RelayCommand]
+    private void CancelEdit() => Editor = null;
+
+    [RelayCommand]
+    private void SaveEdit()
+    {
+        if (Editor is null) return;
+        if (!Editor.Save()) return; // Editor.Error surfaces the validation/write failure in the form
+
+        var name = Editor.Name;
+        Editor = null;
+        // Reload the read-only view so the saved values show immediately.
+        SelectedConfig = Selected is null ? null : RepoConfigViewModel.Load(Selected.Path);
+        Status = $"saved changes to '{name}'";
     }
 
     partial void OnPathHasConfigChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));

@@ -37,6 +37,50 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public async Task Repos_modal_detects_existing_config_and_registers()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var repoDir = MakeRepo(s.Root, "vue");
+
+        var vm = new ReposViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        Assert.True(vm.IsAdding);
+
+        vm.NewPath = repoDir;
+        Assert.True(vm.PathHasConfig);
+        Assert.Equal("Register", vm.AddButtonLabel);
+
+        await vm.ConfirmAddCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsAdding); // modal closes on success
+        Assert.Contains(vm.Repos, r => r.Name == "vue");
+    }
+
+    [Fact]
+    public async Task Repos_modal_inits_a_config_when_none_present()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var bare = Path.Combine(s.Root, "bare");
+        Directory.CreateDirectory(bare);
+
+        var vm = new ReposViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = bare;
+
+        Assert.False(vm.PathHasConfig);
+        Assert.Equal("Initialize & register", vm.AddButtonLabel);
+
+        await vm.ConfirmAddCommand.ExecuteAsync(null);
+
+        Assert.Null(vm.Error);
+        Assert.False(vm.IsAdding);
+        Assert.True(File.Exists(Path.Combine(bare, ".sprig.json"))); // init wrote it
+        Assert.Contains(vm.Repos, r => r.Name == "bare");
+    }
+
+    [Fact]
     public async Task Repos_add_surfaces_error_for_non_sprig_path()
     {
         using var s = new TempStore();

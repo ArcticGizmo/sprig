@@ -1,3 +1,5 @@
+<img src="landing-icon.png" alt="sprig logo" width="110" align="right" />
+
 # sprig
 
 **Worktree + infrastructure isolation for any git repo.**

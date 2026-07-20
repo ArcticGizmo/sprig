@@ -16,10 +16,14 @@
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="18,20,18,18">
-                    <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold"
-                               Foreground="{StaticResource TitleBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <!-- Source set in code-behind: SprigLogo.Create() → a Skia-rendered vector, crisp at any DPI. -->
+                        <Image x:Name="LogoImage" Width="30" Height="30" VerticalAlignment="Center" />
+                        <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TitleBrush}" />
+                    </StackPanel>
                     <TextBlock Text="worktree + infra isolation"
-                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0" />
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
 
                 <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage, Mode=TwoWay}"

@@ -75,6 +75,7 @@ lifecycle with a drift/reconcile surface). Everything the CLI does is reachable 
 
 - **[Configuration reference](docs/config-reference.md)** — the `.sprig.json` and stack schemas.
 - **[User guide](docs/user-guide.md)** — end-to-end walkthrough for the UI and the CLI.
+- **[Packaging & updates](docs/packaging.md)** — building the installer and the update-notify flow.
 
 ## Requirements
 

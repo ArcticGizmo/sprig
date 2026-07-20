@@ -6,6 +6,7 @@
         Width="1000" Height="680"
         MinWidth="720" MinHeight="480"
         Background="{StaticResource FormBgBrush}"
+        Icon="/Assets/sprig.ico"
         Title="Sprig">
 
     <Grid ColumnDefinitions="200,*">
@@ -33,6 +34,18 @@
         </Border>
 
         <!-- Content -->
-        <ContentControl Grid.Column="1" Content="{Binding CurrentPage}" Margin="0" />
+        <DockPanel Grid.Column="1" LastChildFill="True">
+            <!-- Update-available notice (notification only; does not auto-update) -->
+            <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
+                    IsVisible="{Binding UpdateNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding UpdateNotice}" Foreground="#0B1220"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <Button Grid.Column="1" Content="Dismiss" Command="{Binding DismissUpdateNoticeCommand}"
+                            Background="Transparent" Foreground="#0B1220" />
+                </Grid>
+            </Border>
+            <ContentControl Content="{Binding CurrentPage}" Margin="0" />
+        </DockPanel>
     </Grid>
 </Window>

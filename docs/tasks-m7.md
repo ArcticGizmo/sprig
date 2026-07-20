@@ -52,13 +52,28 @@
       surface now distinguishes diagnose vs fix clearly; a global sweep can come later if wanted.
       The CLI `doctor` (reconcile-all) already covers this need for now.
 
-## M7.4 — Packaging (Velopack, update-notify only)  ⬅ last
-- [ ] **M7.4.1** Add Velopack to `Sprig.App`; produce an installable Windows build that runs the
-      full flow on a clean machine. **No code signing** this milestone.
-- [ ] **M7.4.2** Update **notification** only: on launch, check the release feed and, if a newer
-      version exists, surface a non-blocking "update available" notice. **Do not** download/apply
-      automatically. (Feed source TBD — GitHub releases or a local/file feed for now.)
-- [ ] **M7.4.3** App identity polish for the installer: app id, product name, icon, version stamp.
+## M7.4 — Packaging (Velopack, update-notify only) ✅ DONE
+- [x] **M7.4.1** Added Velopack 1.2.0 + `VelopackApp.Build().Run()` as the first call in
+      `Program.Main` (vpk verified the hook). Published self-contained win-x64 and packed with
+      `vpk` → `Setup.exe` + portable zip + release feed. **Verified end-to-end**: silent install to
+      `%LocalAppData%\Sprig`, ran the installed build headlessly (`render`), then cleanly
+      uninstalled. **No code signing** (vpk warns; deferred). See `docs/packaging.md`.
+- [x] **M7.4.2** Notify-only update check (`Updates/UpdateChecker.cs`): on launch checks the feed
+      from `SPRIG_UPDATE_FEED`; a newer release shows a dismissible top bar. No-op when the var is
+      unset or the app isn't Velopack-installed; failures swallowed so a flaky feed can't block
+      launch. **Never downloads/applies.** Verified via the `check-update` probe: an installed
+      v0.1.0 against a feed containing v0.2.0 prints "Update available: v0.2.0 — you have v0.1.0".
+- [x] **M7.4.3** App identity: `Company`/`Description`, generated multi-size `Assets/sprig.ico`
+      (sprout motif, accent on dark), wired as `<ApplicationIcon>` + the window `Icon`.
+
+---
+
+## M7 complete ✅
+Docs (README + config-reference + user-guide + packaging), an error-message + empty-state pass,
+a legible drift/reconcile UX, and a Velopack-packaged Windows build with notify-only updates.
+**119 tests green throughout; verified via headless render + a real install/uninstall cycle.**
+Deferred (optional/next): code signing, a hosted update feed, applying updates, and a top-level
+"Doctor" over all workspaces.
 
 ---
 

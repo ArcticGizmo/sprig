@@ -159,6 +159,56 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void Repos_add_flags_missing_git_repo()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = new ReposViewModel(services);
+
+        // empty path: no highlight either way
+        Assert.False(vm.PathEntered);
+        Assert.False(vm.GitOk);
+        Assert.False(vm.GitMissing);
+
+        // a plain folder with no .git
+        var plain = Path.Combine(s.Root, "plain");
+        Directory.CreateDirectory(plain);
+        vm.NewPath = plain;
+        Assert.True(vm.PathEntered);
+        Assert.False(vm.PathIsGitRepo);
+        Assert.True(vm.GitMissing);
+        Assert.False(vm.GitOk);
+
+        // add a .git dir → now it reads as a git repo
+        Directory.CreateDirectory(Path.Combine(plain, ".git"));
+        vm.NewPath = plain + " "; // change value to retrigger detection
+        Assert.True(vm.PathIsGitRepo);
+        Assert.True(vm.GitOk);
+        Assert.False(vm.GitMissing);
+    }
+
+    [Fact]
+    public void Repos_path_suggestions_match_the_typed_prefix()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = new ReposViewModel(services);
+
+        var root = Path.Combine(s.Root, "code");
+        Directory.CreateDirectory(Path.Combine(root, "proj-a"));
+        Directory.CreateDirectory(Path.Combine(root, "proj-b"));
+        Directory.CreateDirectory(Path.Combine(root, "other"));
+
+        var hits = vm.SuggestPaths(Path.Combine(root, "proj"));
+
+        Assert.Equal(2, hits.Count);
+        Assert.Contains(hits, h => h.EndsWith("proj-a"));
+        Assert.Contains(hits, h => h.EndsWith("proj-b"));
+        Assert.DoesNotContain(hits, h => h.EndsWith("other"));
+        Assert.Empty(vm.SuggestPaths("")); // nothing typed → no suggestions
+    }
+
+    [Fact]
     public void Stacks_create_from_checked_repos_and_remove()
     {
         using var s = new TempStore();

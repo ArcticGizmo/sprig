@@ -49,6 +49,17 @@ internal static class HeadlessRenderer
                     Capture(vm, Path.Combine(outDir, "main_repos_edit.png"));
                     editable.CancelEditCommand.Execute(null);
                 }
+
+                // Capture the add-repo modal in both git states (a real repo path vs a non-repo folder).
+                if (page is ReposViewModel { Repos.Count: > 0 } adder)
+                {
+                    adder.OpenAddCommand.Execute(null);
+                    adder.NewPath = adder.Repos[0].Path;      // a real git repo → green highlight
+                    Capture(vm, Path.Combine(outDir, "main_repos_add_git.png"));
+                    adder.NewPath = outDir;                    // not a git repo → red warning
+                    Capture(vm, Path.Combine(outDir, "main_repos_add_nogit.png"));
+                    adder.CancelAddCommand.Execute(null);
+                }
             }
 
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");

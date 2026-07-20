@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -38,6 +40,10 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>True when the entered path already contains a <c>.sprig.json</c>.</summary>
     [ObservableProperty] private bool _pathHasConfig;
 
+    /// <summary>True when the entered path looks like a git repo (has a <c>.git</c>). Sprig can't
+    /// create worktrees without one, so the modal highlights this loudly.</summary>
+    [ObservableProperty] private bool _pathIsGitRepo;
+
     /// <summary>Plain-language explanation of what "Add" will do for the entered path.</summary>
     [ObservableProperty] private string _detectHint = "";
 
@@ -57,6 +63,15 @@ public partial class ReposViewModel : PageViewModel
 
     /// <summary>Adapts the modal's primary button to what the path actually needs.</summary>
     public string AddButtonLabel => PathHasConfig ? "Register" : "Initialize & register";
+
+    /// <summary>A path has been entered — drives the git-status highlight in the modal.</summary>
+    public bool PathEntered => !string.IsNullOrWhiteSpace(NewPath);
+
+    /// <summary>Entered path is a git repo — safe to register.</summary>
+    public bool GitOk => PathEntered && PathIsGitRepo;
+
+    /// <summary>Entered path is NOT a git repo — sprig won't be able to create worktrees here.</summary>
+    public bool GitMissing => PathEntered && !PathIsGitRepo;
 
     partial void OnSelectedChanged(RegisteredRepo? value)
     {
@@ -104,19 +119,64 @@ public partial class ReposViewModel : PageViewModel
 
     partial void OnPathHasConfigChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));
 
+    partial void OnPathIsGitRepoChanged(bool value)
+    {
+        OnPropertyChanged(nameof(GitOk));
+        OnPropertyChanged(nameof(GitMissing));
+    }
+
     partial void OnNewPathChanged(string value)
     {
+        OnPropertyChanged(nameof(PathEntered));
+        OnPropertyChanged(nameof(GitOk));
+        OnPropertyChanged(nameof(GitMissing));
+
         var p = value.Trim();
-        if (p.Length == 0) { PathHasConfig = false; DetectHint = ""; return; }
+        if (p.Length == 0) { PathHasConfig = false; PathIsGitRepo = false; DetectHint = ""; return; }
 
-        bool has;
-        try { has = File.Exists(Path.Combine(p, ".sprig.json")); }
-        catch { has = false; }
+        bool hasConfig, isGit;
+        try { hasConfig = File.Exists(Path.Combine(p, ".sprig.json")); }
+        catch { hasConfig = false; }
+        // A normal repo has a .git directory; worktrees/submodules use a .git file. Either counts.
+        try { isGit = Directory.Exists(Path.Combine(p, ".git")) || File.Exists(Path.Combine(p, ".git")); }
+        catch { isGit = false; }
 
-        PathHasConfig = has;
-        DetectHint = has
+        PathHasConfig = hasConfig;
+        PathIsGitRepo = isGit;
+        DetectHint = hasConfig
             ? "Found a .sprig.json here — it will be registered as-is."
             : "No .sprig.json here — sprig will inspect the repo, create one, then register it.";
+    }
+
+    /// <summary>
+    /// Directory suggestions for the path auto-complete: children of the typed-so-far directory
+    /// whose name starts with the trailing fragment. Pure + best-effort (never throws).
+    /// </summary>
+    public IReadOnlyList<string> SuggestPaths(string input)
+    {
+        input = (input ?? "").Trim();
+        if (input.Length == 0) return [];
+        try
+        {
+            string dir, prefix;
+            if (Directory.Exists(input) && (input.EndsWith('\\') || input.EndsWith('/')))
+            {
+                dir = input;
+                prefix = "";
+            }
+            else
+            {
+                dir = Path.GetDirectoryName(input) ?? "";
+                prefix = Path.GetFileName(input);
+            }
+            if (dir.Length == 0 || !Directory.Exists(dir)) return [];
+
+            return Directory.EnumerateDirectories(dir)
+                .Where(d => Path.GetFileName(d).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                .Take(25)
+                .ToList();
+        }
+        catch { return []; }
     }
 
     [RelayCommand]

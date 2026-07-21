@@ -20,6 +20,7 @@ public partial class HomeViewModel : PageViewModel
     {
         _services = services;
         _nav = nav;
+        _services.StoreChanged += () => _ = RefreshAsync();
     }
 
     public override string Title => "Home";
@@ -79,6 +80,9 @@ public partial class HomeViewModel : PageViewModel
     }
 
     [RelayCommand] private void ToggleModelCard() => ShowModelCard = !ShowModelCard;
+
+    /// <summary>Launch the guided setup strip (first-run "walk me through setup").</summary>
+    [RelayCommand] private void StartGuide() => _nav.StartSetupGuide();
 
     // Quick actions / links.
     [RelayCommand] private void NewWorkspace() => _nav.NewWorkspace();

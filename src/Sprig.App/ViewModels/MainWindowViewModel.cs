@@ -14,6 +14,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>Left-nav rows: page entries interleaved with section headers ("Set up" / "Run").</summary>
     public IReadOnlyList<object> NavItems { get; }
 
+    /// <summary>The guided "Set up sprig" strip (opt-in from Home).</summary>
+    public SetupGuideViewModel Guide { get; }
+
     [ObservableProperty]
     private PageViewModel _currentPage;
 
@@ -29,6 +32,9 @@ public partial class MainWindowViewModel : ViewModelBase
         var workspaces = new WorkspacesViewModel(services, nav);
         var home = new HomeViewModel(services, nav);
         nav.Configure(Navigate, home, repos, stacks, workspaces);
+
+        Guide = new SetupGuideViewModel(services, nav);
+        nav.SetGuideLauncher(Guide.Start);
 
         Pages = [home, repos, stacks, workspaces];
         NavItems =

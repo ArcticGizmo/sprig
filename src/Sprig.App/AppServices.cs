@@ -45,6 +45,15 @@ public sealed class AppServices
         Init = new InitInspector();
     }
 
+    /// <summary>
+    /// Raised after any repo/stack/workspace mutation, so state-driven surfaces (Home's rail, the
+    /// setup guide) can refresh without polling. A lightweight in-process signal, not a store watch.
+    /// </summary>
+    public event Action? StoreChanged;
+
+    /// <summary>Announce that the repo/stack/workspace stores changed.</summary>
+    public void NotifyStoreChanged() => StoreChanged?.Invoke();
+
     /// <summary>Run a blocking Core call on a background thread (keeps the UI responsive).</summary>
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);
 

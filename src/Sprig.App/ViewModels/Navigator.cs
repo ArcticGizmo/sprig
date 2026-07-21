@@ -10,6 +10,7 @@ namespace Sprig.App.ViewModels;
 public sealed class Navigator
 {
     Action<PageViewModel> _navigate = static _ => { };
+    Action _startGuide = static () => { };
     PageViewModel? _home;
     ReposViewModel? _repos;
     StacksViewModel? _stacks;
@@ -24,6 +25,12 @@ public sealed class Navigator
         _stacks = stacks;
         _workspaces = workspaces;
     }
+
+    /// <summary>Wire the setup-guide launcher (owned by the main window).</summary>
+    public void SetGuideLauncher(Action start) => _startGuide = start;
+
+    /// <summary>Open the guided setup strip.</summary>
+    public void StartSetupGuide() => _startGuide();
 
     public void GoHome() => Go(_home);
     public void GoToRepos() => Go(_repos);

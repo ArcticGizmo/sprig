@@ -71,6 +71,12 @@ internal static class HeadlessRenderer
             // states the live store can't show at once: first-run (empty) and running.
             RenderHomeStates(outDir);
 
+            // The guided setup strip, active over Home.
+            var guideVm = new MainWindowViewModel(services);
+            guideVm.CurrentPage = guideVm.Pages[0];
+            guideVm.Guide.Start();
+            Capture(guideVm, Path.Combine(outDir, "main_guide.png"));
+
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
             return 0;
         }

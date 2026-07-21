@@ -73,6 +73,8 @@
                            Foreground="{StaticResource TitleBrush}" />
                 <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource MutedBrush}"
                            Text="sprig gives each workspace its own git worktree, branch, ports and docker infra — so you can build a feature and a hotfix side by side, and never touch your main checkout." />
+                <Button Classes="link" Content="Walk me through setup  →" Command="{Binding StartGuideCommand}"
+                        HorizontalAlignment="Left" Margin="0,4,0,0" />
             </StackPanel>
 
             <!-- Compact header (configured) -->

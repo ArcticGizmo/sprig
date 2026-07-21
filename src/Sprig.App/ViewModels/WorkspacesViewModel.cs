@@ -127,6 +127,7 @@ public partial class WorkspacesViewModel : PageViewModel
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == name) ?? Selected;
             StatusMessage = $"created '{name}'";
+            Services.NotifyStoreChanged();
         }
         catch (Exception ex)
         {
@@ -198,6 +199,7 @@ public partial class WorkspacesViewModel : PageViewModel
         {
             await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force));
             await RefreshCore();
+            Services.NotifyStoreChanged();
         }, status: $"removed '{item.Name}'");
     }
 

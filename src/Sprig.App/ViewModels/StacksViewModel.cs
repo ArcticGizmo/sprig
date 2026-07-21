@@ -95,6 +95,7 @@ public partial class StacksViewModel : PageViewModel
             IsCreating = false;
             Status = $"created stack '{name}'";
             Reload();
+            Services.NotifyStoreChanged();
         }
         catch (Exception ex) { Error = ex.Message; }
     }
@@ -107,6 +108,7 @@ public partial class StacksViewModel : PageViewModel
         Services.Stacks.Remove(name);
         Status = $"removed stack '{name}'";
         Reload();
+        Services.NotifyStoreChanged();
     }
 
     void ReindexPortPreviews()

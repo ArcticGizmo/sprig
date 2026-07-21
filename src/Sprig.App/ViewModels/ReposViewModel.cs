@@ -227,6 +227,7 @@ public partial class ReposViewModel : PageViewModel
             Status = $"registered '{added.Name}'";
             IsAdding = false;
             Reload();
+            Services.NotifyStoreChanged();
         }
         catch (Exception ex) { Error = ex.Message; }
         finally { Busy = false; }
@@ -278,6 +279,7 @@ public partial class ReposViewModel : PageViewModel
         Services.Repos.Remove(Selected.Name);
         Status = $"unregistered '{Selected.Name}'";
         Reload();
+        Services.NotifyStoreChanged();
     }
 
     void Reload()

@@ -77,6 +77,37 @@
                         <TextBlock IsVisible="{Binding !SelectedConfig.Ok}" Foreground="{StaticResource DangerBrush}"
                                    TextWrapping="Wrap" Text="{Binding SelectedConfig.Error}" />
 
+                        <!-- Fast path: a zero-input repo can stand up on its own, no stack needed. -->
+                        <Border IsVisible="{Binding CanIsolate}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10"
+                                Padding="14,12">
+                            <StackPanel Spacing="10">
+                                <StackPanel Spacing="2" IsVisible="{Binding !IsIsolating}">
+                                    <TextBlock Text="This repo needs no inputs" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                               Text="Spin up an isolated workspace straight from it — no stack required." />
+                                </StackPanel>
+                                <Button Content="Isolate this repo  →" Command="{Binding BeginIsolateCommand}"
+                                        IsVisible="{Binding !IsIsolating}" HorizontalAlignment="Left"
+                                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+
+                                <!-- inline workspace-name prompt -->
+                                <StackPanel Spacing="8" IsVisible="{Binding IsIsolating}">
+                                    <TextBlock Text="Workspace name" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBox Text="{Binding IsolateName}" PlaceholderText="feature-x" />
+                                    <TextBlock IsVisible="{Binding IsolateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                               Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap"
+                                               Text="{Binding IsolateError}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Create" Command="{Binding ConfirmIsolateCommand}"
+                                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                                        <Button Content="Cancel" Command="{Binding CancelIsolateCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- inputs -->
                         <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasInputs}">
                             <TextBlock Text="INPUTS (supplied by the stack)" FontSize="11" FontWeight="SemiBold"

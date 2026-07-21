@@ -59,6 +59,14 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>A repo is selected, its config loaded cleanly, and we're not already editing.</summary>
     public bool CanEdit => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
 
+    /// <summary>A zero-input repo can stand up on its own (the ad-hoc create path) — no stack needed.</summary>
+    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true, HasInputs: false } && !IsEditing;
+
+    /// <summary>True while the inline "name this workspace" prompt of the fast path is open.</summary>
+    [ObservableProperty] private bool _isIsolating;
+    [ObservableProperty] private string _isolateName = "";
+    [ObservableProperty] private string? _isolateError;
+
     /// <summary>False when no repos are registered yet — drives the first-run empty state.</summary>
     public bool HasRepos => Repos.Count > 0;
 
@@ -77,19 +85,59 @@ public partial class ReposViewModel : PageViewModel
     partial void OnSelectedChanged(RegisteredRepo? value)
     {
         Editor = null; // leave edit mode when switching repos
+        IsIsolating = false;
         SelectedConfig = value is null ? null : RepoConfigViewModel.Load(value.Path);
         OnPropertyChanged(nameof(HasSelected));
         OnPropertyChanged(nameof(ShowReadOnly));
         OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanIsolate));
     }
 
-    partial void OnSelectedConfigChanged(RepoConfigViewModel? value) => OnPropertyChanged(nameof(CanEdit));
+    partial void OnSelectedConfigChanged(RepoConfigViewModel? value)
+    {
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanIsolate));
+    }
 
     partial void OnEditorChanged(RepoEditViewModel? value)
     {
         OnPropertyChanged(nameof(IsEditing));
         OnPropertyChanged(nameof(ShowReadOnly));
         OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanIsolate));
+    }
+
+    /// <summary>Open the inline "name this workspace" prompt for the single-repo fast path.</summary>
+    [RelayCommand]
+    private void BeginIsolate()
+    {
+        IsolateError = null;
+        IsolateName = Selected?.Name ?? "";
+        IsIsolating = true;
+    }
+
+    [RelayCommand]
+    private void CancelIsolate() => IsIsolating = false;
+
+    /// <summary>Create an isolated workspace directly from this repo — no stack (ad-hoc engine path).</summary>
+    [RelayCommand]
+    private async Task ConfirmIsolate()
+    {
+        var repo = Selected;
+        var name = IsolateName.Trim();
+        if (repo is null) return;
+        if (name.Length == 0) { IsolateError = "enter a workspace name"; return; }
+
+        Busy = true; IsolateError = null; Status = null;
+        try
+        {
+            await AppServices.RunAsync(() => Services.Workspaces.Create(repo.Path, name));
+            IsIsolating = false;
+            Status = $"created workspace '{name}' — open the Workspaces tab to run or remove it";
+            Services.NotifyStoreChanged();
+        }
+        catch (Exception ex) { IsolateError = ex.Message; }
+        finally { Busy = false; }
     }
 
     [RelayCommand]

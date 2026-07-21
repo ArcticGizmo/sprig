@@ -21,4 +21,12 @@ public abstract partial class PageViewModel : ViewModelBase
     public bool ShowNavCount => NavCount > 0;
 
     partial void OnNavCountChanged(int value) => OnPropertyChanged(nameof(ShowNavCount));
+
+    partial void OnIsActiveChanged(bool value)
+    {
+        if (value) OnActivated();
+    }
+
+    /// <summary>Called when this page becomes the current page. Override to refresh live data.</summary>
+    protected virtual void OnActivated() { }
 }

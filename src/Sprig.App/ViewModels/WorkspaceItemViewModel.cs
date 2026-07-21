@@ -21,6 +21,9 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     public string Name => Record.Workspace;
     public string Stack => Record.Stack ?? "(ad-hoc)";
     public string ReposSummary => string.Join(", ", Record.Repos.Select(r => r.Name));
+
+    /// <summary>Allocated ports as a compact ":5173 :5080" summary (empty when none).</summary>
+    public string PortsSummary => string.Join(" ", Record.Ports.OrderBy(p => p.Key).Select(p => ":" + p.Value));
     public IReadOnlyList<RepoLineViewModel> Repos { get; }
 
     /// <summary>True when any repo declares docker infrastructure. Mirrors the core's

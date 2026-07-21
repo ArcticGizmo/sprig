@@ -26,7 +26,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var repos = new ReposViewModel(services);
         var stacks = new StacksViewModel(services);
         var workspaces = new WorkspacesViewModel(services);
-        var home = new HomeViewModel(Navigate, repos, stacks, workspaces);
+        var home = new HomeViewModel(services, Navigate, repos, stacks, workspaces);
 
         Pages = [home, repos, stacks, workspaces];
         NavItems =

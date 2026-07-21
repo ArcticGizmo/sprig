@@ -1,9 +1,14 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Sprig.App.ViewModels;
 using Sprig.App.Views;
+using Sprig.Core.Store;
 
 namespace Sprig.App.Rendering;
 
@@ -62,6 +67,10 @@ internal static class HeadlessRenderer
                 }
             }
 
+            // Home's journey rail + next-best-action depend on store state, so render the two
+            // states the live store can't show at once: first-run (empty) and running.
+            RenderHomeStates(outDir);
+
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
             return 0;
         }
@@ -75,6 +84,64 @@ internal static class HeadlessRenderer
     static void Capture(MainWindowViewModel vm, string path)
     {
         var window = new MainWindow { DataContext = vm };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var frame = window.CaptureRenderedFrame();
+        frame?.Save(path);
+        window.Close();
+    }
+
+    /// <summary>
+    /// Renders Home in the states the live store can't show at once. Builds the view-model with a
+    /// synthetic <see cref="SetupState"/> and never activates it, so <c>OnActivated</c> can't
+    /// overwrite the state with real-store data.
+    /// </summary>
+    static void RenderHomeStates(string outDir)
+    {
+        var services = new AppServices();
+
+        HomeViewModel Home(SetupState state, IReadOnlyList<InstanceRecord> recent)
+        {
+            var vm = new HomeViewModel(services, _ => { },
+                new ReposViewModel(services), new StacksViewModel(services), new WorkspacesViewModel(services))
+            {
+                State = state,
+            };
+            foreach (var r in recent) vm.Recent.Add(new WorkspaceItemViewModel(r));
+            return vm;
+        }
+
+        CaptureControl(new HomeView { DataContext = Home(new SetupState(0, 0, 0), []) },
+            Path.Combine(outDir, "home_empty.png"));
+
+        IReadOnlyList<InstanceRecord> running =
+        [
+            Rec("feature-auth", "web+api", "infra up", ("frontend_port", 5173), ("api_port", 5080)),
+            Rec("hotfix-invoices", "web+api", "created", ("frontend_port", 5174), ("api_port", 5081)),
+        ];
+        CaptureControl(new HomeView { DataContext = Home(new SetupState(2, 1, 2), running) },
+            Path.Combine(outDir, "home_running.png"));
+    }
+
+    static InstanceRecord Rec(string workspace, string stack, string status, params (string Name, int Port)[] ports)
+        => new()
+        {
+            Workspace = workspace,
+            Stack = stack,
+            LastStatus = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Ports = ports.ToDictionary(p => p.Name, p => p.Port),
+        };
+
+    static void CaptureControl(Control content, string path)
+    {
+        var window = new Avalonia.Controls.Window
+        {
+            Width = 1100,
+            Height = 760,
+            Background = new SolidColorBrush(Color.Parse("#181820")),
+            Content = content,
+        };
         window.Show();
         Dispatcher.UIThread.RunJobs();
         var frame = window.CaptureRenderedFrame();

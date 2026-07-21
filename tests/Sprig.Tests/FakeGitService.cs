@@ -6,12 +6,16 @@ namespace Sprig.Tests;
 public sealed class FakeGitService : IGitService
 {
     public bool RepoExists { get; set; } = true;
+    public List<string> TrackedFiles { get; } = [];
+    public List<string> IgnoredFiles { get; } = [];
     public List<WorktreeInfo> Worktrees { get; } = [];
     public List<string> Pruned { get; } = [];
     public List<string> RemovedWorktrees { get; } = [];
     public List<string> DeletedBranches { get; } = [];
 
     public bool IsGitRepo(string path) => RepoExists;
+    public IReadOnlyCollection<string> ListTrackedFiles(string repo) => TrackedFiles;
+    public bool IsIgnored(string repo, string relativePath) => IgnoredFiles.Contains(relativePath);
     public string ResolveRepoRoot(string path) => path;
     public bool BranchExists(string repo, string branch) => true;
     public void AddWorktree(string repo, string worktreePath, string branch)

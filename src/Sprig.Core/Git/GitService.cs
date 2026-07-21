@@ -12,6 +12,25 @@ public sealed class GitService(IProcessRunner runner) : IGitService
         return r.Success && r.StdOut.Trim() == "true";
     }
 
+    public IReadOnlyCollection<string> ListTrackedFiles(string repo)
+    {
+        if (!Directory.Exists(repo)) return [];
+        // -z: NUL-separated and never quoted, so paths with spaces/unicode come through verbatim.
+        // git reports paths relative to the repo root with forward slashes on every platform.
+        var r = runner.Run("git", ["-C", repo, "ls-files", "-z"], repo);
+        if (!r.Success) return [];
+        return r.StdOut.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    public bool IsIgnored(string repo, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath) || !Directory.Exists(repo)) return false;
+        // --no-index: apply gitignore rules regardless of index/working-tree state, so we get the
+        // answer for a file that doesn't exist yet. Exit 0 = ignored, 1 = not ignored, 128 = error.
+        var r = runner.Run("git", ["-C", repo, "check-ignore", "-q", "--no-index", "--", relativePath], repo);
+        return r.Success;
+    }
+
     public string ResolveRepoRoot(string path)
     {
         var r = runner.Run("git", ["-C", path, "rev-parse", "--show-toplevel"], path).EnsureSuccess();

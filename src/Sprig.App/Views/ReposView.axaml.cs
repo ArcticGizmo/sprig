@@ -27,6 +27,20 @@ public partial class ReposView : UserControl
         return Task.FromResult(items);
     }
 
+    // The env-file and compose-file boxes are created inside data templates, so we can't wire their
+    // populators by name from the constructor. Attach as each loads; suggestions come from the active
+    // editor (repo-rooted), read lazily so they survive the editor being swapped out.
+    void RepoPathBoxLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not AutoCompleteBox box) return;
+        box.AsyncPopulator = (text, ct) =>
+        {
+            var editor = (DataContext as ReposViewModel)?.Editor;
+            IEnumerable<object> items = editor is null ? [] : editor.SuggestRepoPaths(text ?? "").Cast<object>();
+            return Task.FromResult(items);
+        };
+    }
+
     async void BrowseRepoFolder(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not ReposViewModel vm) return;

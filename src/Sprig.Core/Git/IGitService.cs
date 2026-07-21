@@ -6,6 +6,19 @@ public interface IGitService
     /// <summary>True if <paramref name="path"/> is inside a git working tree.</summary>
     bool IsGitRepo(string path);
 
+    /// <summary>
+    /// Relative paths (forward-slash, from the repo root) of every file tracked in the index.
+    /// Best-effort: returns empty if <paramref name="repo"/> is not a repo or git fails.
+    /// </summary>
+    IReadOnlyCollection<string> ListTrackedFiles(string repo);
+
+    /// <summary>
+    /// True if <paramref name="relativePath"/> would be excluded by the repo's gitignore rules —
+    /// answered from the rules alone (<c>check-ignore --no-index</c>), so it holds even for a path
+    /// that doesn't exist yet. Best-effort: false on any error.
+    /// </summary>
+    bool IsIgnored(string repo, string relativePath);
+
     /// <summary>Absolute top-level directory of the repo containing <paramref name="path"/>.</summary>
     string ResolveRepoRoot(string path);
 

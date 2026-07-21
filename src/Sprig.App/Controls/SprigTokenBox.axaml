@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Sprig.App.Controls.SprigTokenBox"
+             x:CompileBindings="False"
+             x:Name="Root">
+
+  <Grid>
+    <!-- Idle: the value with each ${sprig.*} token coloured (green = known, red = unknown). Click or
+         tab in to edit. -->
+    <Border x:Name="Display" Focusable="True" Cursor="Ibeam" MinHeight="32"
+            Background="{DynamicResource TextControlBackground}"
+            BorderBrush="{DynamicResource TextControlBorderBrush}" BorderThickness="1"
+            CornerRadius="{DynamicResource ControlCornerRadius}" Padding="10,0">
+      <Panel VerticalAlignment="Center">
+        <TextBlock x:Name="Highlight" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                   FontFamily="Consolas,monospace" FontSize="12" Foreground="{StaticResource FgBrush}" />
+        <TextBlock Text="{Binding #Root.Watermark}" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                   TextTrimming="CharacterEllipsis"
+                   IsVisible="{Binding #Root.Value, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+      </Panel>
+    </Border>
+
+    <!-- Editing: a plain text box (revealed on focus) with inline ${sprig.*} completion. -->
+    <TextBox x:Name="Editor" IsVisible="False" MinHeight="32" MinWidth="0"
+             TextWrapping="NoWrap" VerticalContentAlignment="Center"
+             FontFamily="Consolas,monospace" FontSize="12"
+             PlaceholderText="{Binding #Root.Watermark}"
+             Text="{Binding #Root.Value, Mode=TwoWay}" />
+
+    <Popup x:Name="CompletionPopup" PlacementTarget="{Binding #Editor}"
+           Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="False">
+      <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+              BorderThickness="1" CornerRadius="6" Padding="2" MaxHeight="220" MinWidth="220">
+        <!-- Not focusable so picking a suggestion doesn't steal focus from the editor. -->
+        <ListBox x:Name="CompletionList" Focusable="False" Background="Transparent" BorderThickness="0"
+                 FontFamily="Consolas,monospace" FontSize="12.5">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Focusable" Value="False" />
+              <Setter Property="Padding" Value="8,4" />
+            </Style>
+          </ListBox.Styles>
+        </ListBox>
+      </Border>
+    </Popup>
+  </Grid>
+</UserControl>

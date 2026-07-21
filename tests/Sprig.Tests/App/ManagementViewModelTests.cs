@@ -209,6 +209,154 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void Compose_override_requires_the_target_file_to_exist()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        var configPath = Path.Combine(dir, ".sprig.json");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
+        var before = File.ReadAllText(configPath);
+        File.WriteAllText(Path.Combine(dir, "docker-compose.yml"),
+            "services:\n  db:\n    image: postgres:16\n");
+
+        var editor = RepoEditViewModel.Load(dir);
+        editor.HasCompose = true;
+
+        // a path with no matching file is flagged and blocks the save
+        editor.ComposeFile = "nope.yml";
+        Assert.True(editor.ShowComposeMissing);
+        Assert.False(editor.Save());
+        Assert.Contains("not found", editor.Error);
+        Assert.Equal(before, File.ReadAllText(configPath)); // untouched
+
+        // pointing at the real file clears the block and saves
+        editor.ComposeFile = "docker-compose.yml";
+        Assert.True(editor.ShowComposeFound);
+        Assert.True(editor.Save());
+    }
+
+    [Fact]
+    public void Repo_path_suggestions_are_repo_relative_and_include_files()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".env.local"), "");
+        File.WriteAllText(Path.Combine(dir, ".env.example"), "");
+        File.WriteAllText(Path.Combine(dir, "README.md"), "");
+        Directory.CreateDirectory(Path.Combine(dir, "backend"));
+        File.WriteAllText(Path.Combine(dir, "backend", ".env"), "");
+
+        var editor = RepoEditViewModel.Load(dir);
+
+        // prefix match, repo-relative, files included
+        var envHits = editor.SuggestRepoPaths(".env");
+        Assert.Contains(".env.local", envHits);
+        Assert.Contains(".env.example", envHits);
+        Assert.DoesNotContain("README.md", envHits);
+
+        // empty input lists the repo root, directories carry a trailing slash
+        Assert.Contains("backend/", editor.SuggestRepoPaths(""));
+
+        // drilling into a subdirectory returns nested repo-relative paths
+        Assert.Contains("backend/.env", editor.SuggestRepoPaths("backend/"));
+    }
+
+    [Fact]
+    public async Task Env_override_of_a_git_tracked_file_is_blocked()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        var configPath = Path.Combine(dir, ".sprig.json");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
+        var before = File.ReadAllText(configPath);
+
+        var git = new FakeGitService();
+        git.TrackedFiles.Add(".env");       // committed → off-limits
+        git.IgnoredFiles.Add(".env.local"); // gitignored → safe
+        var editor = RepoEditViewModel.Load(dir, git);
+
+        editor.AddEnvFileCommand.Execute(null);
+        var row = editor.Env.First();
+        row.Set.First().Key = "PORT";
+        row.Set.First().Value = "5000";
+
+        row.File = ".env";
+        await row.StatusReady;
+        Assert.Equal(EnvFileStatus.Tracked, row.Status);
+        Assert.True(row.ShowTrackedWarning);
+
+        Assert.False(editor.Save());                        // save refused
+        Assert.Contains("tracked", editor.Error);
+        Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
+
+        // pointing at a gitignored file clears the block and saves
+        row.File = ".env.local";
+        await row.StatusReady;
+        Assert.Equal(EnvFileStatus.Ignored, row.Status);
+        Assert.True(row.ShowIgnoredOk);
+        Assert.True(editor.Save());
+    }
+
+    [Fact]
+    public async Task Env_row_suggests_keys_from_the_file_and_its_template()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
+        File.WriteAllText(Path.Combine(dir, ".env.template"), "PORT=\nDATABASE_URL=\n");
+
+        var editor = RepoEditViewModel.Load(dir);
+        editor.AddEnvFileCommand.Execute(null);
+        var row = editor.Env.First();
+
+        row.File = ".env.local";
+        await row.StatusReady;
+
+        Assert.Contains("PORT", row.AvailableKeys);
+        Assert.Contains("DATABASE_URL", row.AvailableKeys); // from the committed template
+    }
+
+    [Fact]
+    public async Task Env_file_that_is_not_gitignored_is_flagged_even_when_missing()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".env.present"), ""); // exists on disk, but not ignored
+
+        var git = new FakeGitService();
+        git.IgnoredFiles.Add(".env.local");
+        var editor = RepoEditViewModel.Load(dir, git);
+        editor.AddEnvFileCommand.Execute(null);
+        var row = editor.Env.First();
+
+        // gitignored → safe
+        row.File = ".env.local";
+        await row.StatusReady;
+        Assert.Equal(EnvFileStatus.Ignored, row.Status);
+
+        // exists but not ignored → amber warning (would surface as a worktree change)
+        row.File = ".env.present";
+        await row.StatusReady;
+        Assert.Equal(EnvFileStatus.NotIgnored, row.Status);
+        Assert.True(row.ShowNotIgnoredWarning);
+
+        // no matching file AND not ignored → still warned (the case naive existence detection missed)
+        row.File = ".env.ghost";
+        await row.StatusReady;
+        Assert.Equal(EnvFileStatus.NotIgnoredNew, row.Status);
+        Assert.True(row.ShowNotIgnoredWarning);
+        Assert.Contains("No matching file", row.NotIgnoredMessage);
+    }
+
+    [Fact]
     public void Stacks_create_from_checked_repos_and_remove()
     {
         using var s = new TempStore();

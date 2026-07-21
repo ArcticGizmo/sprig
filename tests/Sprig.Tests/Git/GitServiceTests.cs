@@ -21,6 +21,34 @@ public class GitServiceTests
     }
 
     [Fact]
+    public void ListTrackedFiles_returns_committed_paths_and_empty_for_non_repo()
+    {
+        using var repo = new TempGitRepo();
+        var git = NewService();
+
+        Assert.Contains("README.md", git.ListTrackedFiles(repo.Path)); // the seed commit
+
+        var plain = Directory.CreateTempSubdirectory("sprig-plain-");
+        try { Assert.Empty(git.ListTrackedFiles(plain.FullName)); } // not a repo → empty, no throw
+        finally { plain.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public void IsIgnored_applies_gitignore_rules_even_for_paths_that_do_not_exist()
+    {
+        using var repo = new TempGitRepo();
+        var git = NewService();
+        File.WriteAllText(Path.Combine(repo.Path, ".gitignore"), ".env.local\n");
+
+        // matched by a rule though the file was never created — the --no-index answer we rely on
+        Assert.True(git.IsIgnored(repo.Path, ".env.local"));
+        // not matched by any rule
+        Assert.False(git.IsIgnored(repo.Path, ".env.shared"));
+        // a committed, non-ignored file is not "ignored"
+        Assert.False(git.IsIgnored(repo.Path, "README.md"));
+    }
+
+    [Fact]
     public void Add_list_remove_worktree_round_trip()
     {
         using var repo = new TempGitRepo();

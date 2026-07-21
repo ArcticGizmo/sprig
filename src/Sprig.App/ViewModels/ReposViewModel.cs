@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -97,7 +98,7 @@ public partial class ReposViewModel : PageViewModel
         if (Selected is null) return;
         Error = null;
         Status = null;
-        try { Editor = RepoEditViewModel.Load(Selected.Path); }
+        try { Editor = RepoEditViewModel.Load(Selected.Path, Services.Git); }
         catch (Exception ex) { Error = ex.Message; }
     }
 
@@ -229,6 +230,45 @@ public partial class ReposViewModel : PageViewModel
         }
         catch (Exception ex) { Error = ex.Message; }
         finally { Busy = false; }
+    }
+
+    /// <summary>Open the selected repo's folder in the OS file manager, for a quick look inside.</summary>
+    [RelayCommand]
+    private void OpenInExplorer()
+        => Launch(p => new ProcessStartInfo { FileName = p, UseShellExecute = true });
+
+    /// <summary>Open the selected repo in VS Code (<c>code &lt;path&gt;</c> on the PATH).</summary>
+    [RelayCommand]
+    private void OpenInVsCode()
+        => Launch(p => new ProcessStartInfo { FileName = "code", Arguments = $"\"{p}\"", UseShellExecute = true });
+
+    /// <summary>Open a terminal at the selected repo's folder (Windows Terminal, else a shell).</summary>
+    [RelayCommand]
+    private void OpenInTerminal()
+    {
+        var path = Selected?.Path;
+        if (string.IsNullOrEmpty(path)) return;
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                // Prefer Windows Terminal; fall back to PowerShell if wt isn't installed.
+                try { Process.Start(new ProcessStartInfo { FileName = "wt.exe", Arguments = $"-d \"{path}\"", UseShellExecute = true }); }
+                catch { Process.Start(new ProcessStartInfo { FileName = "powershell.exe", WorkingDirectory = path, UseShellExecute = true }); }
+            else if (OperatingSystem.IsMacOS())
+                Process.Start(new ProcessStartInfo { FileName = "open", Arguments = $"-a Terminal \"{path}\"" });
+            else
+                Process.Start(new ProcessStartInfo { FileName = "x-terminal-emulator", WorkingDirectory = path });
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    /// <summary>Launch a process for the selected repo path; surfaces any failure in <see cref="Error"/>.</summary>
+    void Launch(Func<string, ProcessStartInfo> build)
+    {
+        var path = Selected?.Path;
+        if (string.IsNullOrEmpty(path)) return;
+        try { Process.Start(build(path)); }
+        catch (Exception ex) { Error = ex.Message; }
     }
 
     [RelayCommand]

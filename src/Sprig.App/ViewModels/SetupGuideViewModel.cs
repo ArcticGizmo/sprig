@@ -34,6 +34,7 @@ public partial class SetupGuideViewModel : ViewModelBase
         OnPropertyChanged(nameof(Hint));
         OnPropertyChanged(nameof(Cta));
         OnPropertyChanged(nameof(IsComplete));
+        OnPropertyChanged(nameof(CanGoBack));
     }
 
     public bool IsComplete => State.Stage == SetupStage.Running;
@@ -44,6 +45,9 @@ public partial class SetupGuideViewModel : ViewModelBase
         SetupStage.ReposReady => 2,
         _ => 3,
     };
+
+    /// <summary>A previous step exists to revisit (e.g. add another repo while wiring a stack).</summary>
+    public bool CanGoBack => StepNumber > 1;
 
     public string StepCounter => IsComplete ? "All done" : $"Step {StepNumber} of 3";
     public string Heading => IsComplete ? "You're all set" : State.NextTitle;
@@ -78,6 +82,17 @@ public partial class SetupGuideViewModel : ViewModelBase
             case SetupStage.ReposReady: _nav.NewStack(); break;
             case SetupStage.StackReady: _nav.NewWorkspace(); break;
             default: IsActive = false; break;
+        }
+    }
+
+    /// <summary>Revisit the previous step's flow — e.g. add another repo while wiring a stack.</summary>
+    [RelayCommand]
+    private void Back()
+    {
+        switch (StepNumber)
+        {
+            case 3: _nav.NewStack(); break;
+            case 2: _nav.AddRepo(); break;
         }
     }
 

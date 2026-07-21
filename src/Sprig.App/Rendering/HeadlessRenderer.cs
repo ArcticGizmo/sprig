@@ -42,8 +42,11 @@ internal static class HeadlessRenderer
                 // Check the repos so the stack variable editor shows auto-detected vars.
                 if (page is StacksViewModel stacks)
                 {
-                    stacks.NewName = "web+api";
+                    stacks.NewDisplayName = "web api";
                     foreach (var c in stacks.RepoChoices) c.IsSelected = true;
+                    stacks.AddPortCommand.Execute(null);
+                    if (stacks.Ports.Count > 0) stacks.Ports[0].Name = "api_port";
+                    stacks.IsCreating = true;
                 }
                 Capture(vm, Path.Combine(outDir, $"main_{page.Title.ToLowerInvariant()}.png"));
 

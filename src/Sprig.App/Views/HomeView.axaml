@@ -20,6 +20,23 @@
             <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
         </Style>
 
+        <!-- Journey-rail tile (chromeless button wrapping a step card) -->
+        <Style Selector="Button.tile">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.tile /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.tile:pointerover Border.step">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+
         <!-- Next-best-action banner -->
         <Style Selector="Border.nba">
             <Setter Property="Background" Value="#1460A5FA" />
@@ -91,49 +108,55 @@
 
             <!-- Journey rail -->
             <Grid ColumnDefinitions="*,Auto,*,Auto,*" VerticalAlignment="Stretch">
-                <Border Grid.Column="0" Classes="step"
-                        Classes.done="{Binding State.ReposDone}" Classes.next="{Binding State.ReposNext}">
-                    <StackPanel Spacing="3">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="Repos" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                            <TextBlock Grid.Column="1" Text="01" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                        </Grid>
-                        <TextBlock Text="Registered &amp; isolation-ready." FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                        <TextBlock Classes="count" Text="{Binding State.ReposCountLabel}" FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                    </StackPanel>
-                </Border>
+                <Button Grid.Column="0" Classes="tile" Command="{Binding GoToReposCommand}">
+                    <Border Classes="step"
+                            Classes.done="{Binding State.ReposDone}" Classes.next="{Binding State.ReposNext}">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Repos" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="1" Text="01" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <TextBlock Text="Registered &amp; isolation-ready." FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Classes="count" Text="{Binding State.ReposCountLabel}" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Button>
                 <TextBlock Grid.Column="1" Text="→" VerticalAlignment="Center" Margin="8,0"
                            Foreground="{StaticResource MutedBrush}" />
-                <Border Grid.Column="2" Classes="step"
-                        Classes.done="{Binding State.StacksDone}" Classes.next="{Binding State.StacksNext}">
-                    <StackPanel Spacing="3">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="Stacks" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                            <TextBlock Grid.Column="1" Text="02" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                        </Grid>
-                        <TextBlock Text="Repos wired with ports." FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                        <TextBlock Classes="count" Text="{Binding State.StacksCountLabel}" FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                    </StackPanel>
-                </Border>
+                <Button Grid.Column="2" Classes="tile" Command="{Binding GoToStacksCommand}">
+                    <Border Classes="step"
+                            Classes.done="{Binding State.StacksDone}" Classes.next="{Binding State.StacksNext}">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Stacks" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="1" Text="02" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <TextBlock Text="Repos wired with ports." FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Classes="count" Text="{Binding State.StacksCountLabel}" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Button>
                 <TextBlock Grid.Column="3" Text="→" VerticalAlignment="Center" Margin="8,0"
                            Foreground="{StaticResource MutedBrush}" />
-                <Border Grid.Column="4" Classes="step"
-                        Classes.done="{Binding State.WorkspacesDone}" Classes.next="{Binding State.WorkspacesNext}">
-                    <StackPanel Spacing="3">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="Workspaces" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                            <TextBlock Grid.Column="1" Text="03" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                        </Grid>
-                        <TextBlock Text="Live, isolated copies." FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                        <TextBlock Classes="count" Text="{Binding State.WorkspacesCountLabel}" FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                    </StackPanel>
-                </Border>
+                <Button Grid.Column="4" Classes="tile" Command="{Binding GoToWorkspacesCommand}">
+                    <Border Classes="step"
+                            Classes.done="{Binding State.WorkspacesDone}" Classes.next="{Binding State.WorkspacesNext}">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Workspaces" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="1" Text="03" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <TextBlock Text="Live, isolated copies." FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Classes="count" Text="{Binding State.WorkspacesCountLabel}" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Button>
             </Grid>
 
             <!-- Next best action -->

@@ -87,6 +87,9 @@ public partial class HomeViewModel : PageViewModel
     // Quick actions / links.
     [RelayCommand] private void NewWorkspace() => _nav.NewWorkspace();
     [RelayCommand] private void AddRepo() => _nav.AddRepo();
+
+    // Journey-rail tiles navigate to their page.
+    [RelayCommand] private void GoToRepos() => _nav.GoToRepos();
     [RelayCommand] private void GoToStacks() => _nav.GoToStacks();
     [RelayCommand] private void GoToWorkspaces() => _nav.GoToWorkspaces();
 }

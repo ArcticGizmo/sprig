@@ -5,6 +5,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Config;
@@ -45,20 +47,48 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>Per-repo input bindings for the selected repos.</summary>
     public ObservableCollection<RepoBindingGroup> Bindings { get; } = [];
 
+    /// <summary>The tokens the binding expressions can autosuggest: <c>workspace</c> + one per named port.</summary>
+    public ObservableCollection<string> BindingVariables { get; } = ["workspace"];
+
     [ObservableProperty] private StackDefinition? _selected;
+
+    /// <summary>Friendly stack name (free text). Drives <see cref="NewName"/> until the id is edited by hand.</summary>
+    [ObservableProperty] private string _newDisplayName = "";
+
+    /// <summary>The stack id — slug-safe, used as the filename/key. Derived from the name, editable.</summary>
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _isCreating;
 
+    // Keep the id auto-deriving from the name until the user edits the id directly.
+    bool _idEdited;
+    bool _derivingId;
+
+    partial void OnNewDisplayNameChanged(string value)
+    {
+        if (_idEdited) return;
+        _derivingId = true;
+        NewName = Slug(value);
+        _derivingId = false;
+    }
+
+    partial void OnNewNameChanged(string value)
+    {
+        if (!_derivingId) _idEdited = true;
+    }
+
     /// <summary>Open the create-stack modal with a fresh, empty form.</summary>
     [RelayCommand]
     private void NewStack()
     {
+        _idEdited = false;
+        NewDisplayName = "";
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
         Ports.Clear();
         Bindings.Clear();
+        RebuildBindingVariables();
         Error = null; Status = null;
         IsCreating = true;
     }
@@ -67,10 +97,54 @@ public partial class StacksViewModel : PageViewModel
     private void CancelCreate() { IsCreating = false; Error = null; }
 
     [RelayCommand]
-    private void AddPort() { Ports.Add(new StackPortRow()); ReindexPortPreviews(); }
+    private void AddPort()
+    {
+        var row = new StackPortRow();
+        row.PropertyChanged += OnPortRowChanged;
+        Ports.Add(row);
+        ReindexPortPreviews();
+        RebuildBindingVariables();
+    }
 
     [RelayCommand]
-    private void RemovePort(StackPortRow row) { Ports.Remove(row); ReindexPortPreviews(); }
+    private void RemovePort(StackPortRow row)
+    {
+        row.PropertyChanged -= OnPortRowChanged;
+        Ports.Remove(row);
+        ReindexPortPreviews();
+        RebuildBindingVariables();
+    }
+
+    void OnPortRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(StackPortRow.Name)) RebuildBindingVariables();
+    }
+
+    /// <summary>Rebuild the autosuggest tokens for binding expressions from the current named ports.</summary>
+    void RebuildBindingVariables()
+    {
+        BindingVariables.Clear();
+        BindingVariables.Add("workspace");
+        foreach (var p in Ports)
+        {
+            var n = p.Name.Trim();
+            if (n.Length > 0) BindingVariables.Add("ports." + n);
+        }
+    }
+
+    /// <summary>Derive a slug-safe stack id from a free-text name (spaces → '-', invalid chars dropped).</summary>
+    static string Slug(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "";
+        var sb = new StringBuilder();
+        foreach (var ch in s.Trim())
+        {
+            if (char.IsWhiteSpace(ch)) sb.Append('-');
+            else if (ch is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '.' or '_' or '+' or '-')
+                sb.Append(ch);
+        }
+        return Regex.Replace(sb.ToString(), "-{2,}", "-").Trim('-');
+    }
 
     [RelayCommand]
     private void Create()

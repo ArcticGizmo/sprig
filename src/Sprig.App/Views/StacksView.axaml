@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
+             xmlns:controls="clr-namespace:Sprig.App.Controls"
              x:Class="Sprig.App.Views.StacksView"
              x:DataType="vm:StacksViewModel">
     <Grid RowDefinitions="Auto,*" Margin="0">
@@ -86,7 +87,7 @@
         <!-- Create overlay -->
         <Border Grid.Row="1" IsVisible="{Binding IsCreating}" Background="#B0000000">
             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="22" Width="460" MaxHeight="640"
+                    BorderThickness="1" CornerRadius="8" Padding="22" Width="720" MaxHeight="680"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
                 <DockPanel LastChildFill="True">
                     <TextBlock DockPanel.Dock="Top" Text="New stack" FontSize="18" FontWeight="SemiBold"
@@ -104,7 +105,15 @@
                         <StackPanel Spacing="14">
                             <StackPanel Spacing="4">
                                 <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                                <TextBox Text="{Binding NewDisplayName, Mode=TwoWay}" PlaceholderText="e.g. Web + API" />
+                            </StackPanel>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Stack id" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web-api"
+                                         FontFamily="Consolas,monospace" />
+                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                           Text="Derived from the name; used for the worktree folder, branch and CLI. Letters, numbers, . _ + - only — edit if you like." />
                             </StackPanel>
 
                             <StackPanel Spacing="4">
@@ -155,17 +164,17 @@
                                                 <ItemsControl ItemsSource="{Binding Rows}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate x:DataType="vm:BindingRow">
-                                                            <Grid ColumnDefinitions="120,*" Margin="8,2,0,2">
-                                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                                    <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
-                                                                               Foreground="{StaticResource FgBrush}" />
-                                                                    <TextBlock FontSize="10" Foreground="{StaticResource MutedBrush}">
-                                                                        <Run Text="e.g. " /><Run Text="{Binding Example}" />
-                                                                    </TextBlock>
-                                                                </StackPanel>
-                                                                <TextBox Grid.Column="1" Text="{Binding Expression, Mode=TwoWay}"
-                                                                         PlaceholderText="literal or ${sprig.ports.NAME}" FontSize="12" />
-                                                            </Grid>
+                                                            <StackPanel Spacing="3" Margin="8,4,0,10">
+                                                                <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
+                                                                           Foreground="{StaticResource FgBrush}" />
+                                                                <controls:SprigTokenBox Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
+                                                                         Watermark="literal or ${sprig.ports.NAME}"
+                                                                         Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />
+                                                                <SelectableTextBlock IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                                           FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="e.g. " /><Run Text="{Binding Example}" />
+                                                                </SelectableTextBlock>
+                                                            </StackPanel>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>

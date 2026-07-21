@@ -140,7 +140,7 @@
             <Border DockPanel.Dock="Top" IsVisible="{Binding Guide.IsActive}"
                     Background="#1460A5FA" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1"
                     Padding="24,12">
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="18">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="18">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <Border Classes="wstep" Classes.done="{Binding Guide.State.ReposDone}">
                             <TextBlock Text="Repos" />
@@ -164,10 +164,12 @@
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <Button Grid.Column="2" Content="{Binding Guide.Cta}" Command="{Binding Guide.DoStepCommand}"
+                    <Button Grid.Column="2" Classes="link" Content="Back" Command="{Binding Guide.BackCommand}"
+                            IsVisible="{Binding Guide.CanGoBack}" VerticalAlignment="Center" />
+                    <Button Grid.Column="3" Content="{Binding Guide.Cta}" Command="{Binding Guide.DoStepCommand}"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold"
                             Padding="14,8" VerticalAlignment="Center" />
-                    <Button Grid.Column="3" Classes="link" Content="Skip" Command="{Binding Guide.SkipCommand}"
+                    <Button Grid.Column="4" Classes="link" Content="Skip" Command="{Binding Guide.SkipCommand}"
                             VerticalAlignment="Center" />
                 </Grid>
             </Border>

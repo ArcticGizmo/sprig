@@ -389,4 +389,18 @@ public class ManagementViewModelTests
         Assert.NotNull(vm.Error);
         Assert.Empty(vm.Stacks);
     }
+
+    [Theory]
+    [InlineData("web+api", false)]     // '+' is allowed (filename, not a branch)
+    [InlineData("web-api.v2", false)]
+    [InlineData("", false)]            // empty: don't nag before typing
+    [InlineData("web api", true)]      // space
+    [InlineData("web/api", true)]      // path separator
+    [InlineData("café", true)]         // non-ASCII
+    public void Stack_name_validation_flags_bad_characters(string name, bool expectError)
+    {
+        using var s = new TempStore();
+        var vm = new StacksViewModel(new AppServices(s.Root), new Navigator()) { NewName = name };
+        Assert.Equal(expectError, vm.HasNameError);
+    }
 }

@@ -5,8 +5,6 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Config;
@@ -52,38 +50,44 @@ public partial class StacksViewModel : PageViewModel
 
     [ObservableProperty] private StackDefinition? _selected;
 
-    /// <summary>Friendly stack name (free text). Drives <see cref="NewName"/> until the id is edited by hand.</summary>
-    [ObservableProperty] private string _newDisplayName = "";
-
-    /// <summary>The stack id — slug-safe, used as the filename/key. Derived from the name, editable.</summary>
+    /// <summary>The stack name — path-compatible, used as the filename/key, worktree folder and branch.</summary>
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _isCreating;
 
-    // Keep the id auto-deriving from the name until the user edits the id directly.
-    bool _idEdited;
-    bool _derivingId;
-
-    partial void OnNewDisplayNameChanged(string value)
-    {
-        if (_idEdited) return;
-        _derivingId = true;
-        NewName = Slug(value);
-        _derivingId = false;
-    }
+    /// <summary>Live validation of the name — non-null while it contains a disallowed character.</summary>
+    public string? NameError { get; private set; }
+    public bool HasNameError => NameError is not null;
 
     partial void OnNewNameChanged(string value)
     {
-        if (!_derivingId) _idEdited = true;
+        NameError = ValidateName(value);
+        OnPropertyChanged(nameof(NameError));
+        OnPropertyChanged(nameof(HasNameError));
+    }
+
+    /// <summary>
+    /// Null when the name is valid (or still empty); otherwise a message naming the bad character(s).
+    /// Mirrors StackStore's <c>^[A-Za-z0-9._+-]+$</c> rule so "valid here" matches "valid on save".
+    /// </summary>
+    static string? ValidateName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        var invalid = name
+            .Where(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '+' or '-'))
+            .Distinct()
+            .Select(c => char.IsWhiteSpace(c) ? "space" : c.ToString())
+            .ToList();
+        return invalid.Count == 0
+            ? null
+            : $"Can't use: {string.Join("  ", invalid)}  —  only letters, numbers, and . _ + -";
     }
 
     /// <summary>Open the create-stack modal with a fresh, empty form.</summary>
     [RelayCommand]
     private void NewStack()
     {
-        _idEdited = false;
-        NewDisplayName = "";
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
         Ports.Clear();
@@ -130,20 +134,6 @@ public partial class StacksViewModel : PageViewModel
             var n = p.Name.Trim();
             if (n.Length > 0) BindingVariables.Add("ports." + n);
         }
-    }
-
-    /// <summary>Derive a slug-safe stack id from a free-text name (spaces → '-', invalid chars dropped).</summary>
-    static string Slug(string s)
-    {
-        if (string.IsNullOrWhiteSpace(s)) return "";
-        var sb = new StringBuilder();
-        foreach (var ch in s.Trim())
-        {
-            if (char.IsWhiteSpace(ch)) sb.Append('-');
-            else if (ch is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '.' or '_' or '+' or '-')
-                sb.Append(ch);
-        }
-        return Regex.Replace(sb.ToString(), "-{2,}", "-").Trim('-');
     }
 
     [RelayCommand]

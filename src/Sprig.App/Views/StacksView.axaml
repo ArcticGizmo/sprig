@@ -105,15 +105,12 @@
                         <StackPanel Spacing="14">
                             <StackPanel Spacing="4">
                                 <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                                <TextBox Text="{Binding NewDisplayName, Mode=TwoWay}" PlaceholderText="e.g. Web + API" />
-                            </StackPanel>
-
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Stack id" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web-api"
-                                         FontFamily="Consolas,monospace" />
-                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Derived from the name; used for the worktree folder, branch and CLI. Letters, numbers, . _ + - only — edit if you like." />
+                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                                <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
+                                <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
                             </StackPanel>
 
                             <StackPanel Spacing="4">

@@ -1,0 +1,205 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.WorkspacesView"
+             x:DataType="vm:WorkspacesViewModel">
+    <Grid Margin="28,20,24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: header + list -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="Workspaces" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <ProgressBar IsIndeterminate="True" Width="90" Height="4" VerticalAlignment="Center"
+                                 IsVisible="{Binding Busy}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Button Content="New workspace" Command="{Binding NewWorkspaceCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                    <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                </StackPanel>
+            </Grid>
+
+            <ListBox Grid.Row="1" IsVisible="{Binding HasWorkspaces}"
+                     ItemsSource="{Binding Workspaces}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
+                        <StackPanel Spacing="2" Margin="4,6">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" />
+                            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
+                                <Run Text="{Binding Stack}" /><Run Text="  ·  " /><Run Text="{Binding Status}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- Right: detail card -->
+        <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1" CornerRadius="8" Padding="18">
+            <Panel>
+                <!-- empty: no stacks upstream — point back to Stacks -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440" Spacing="12">
+                    <StackPanel.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!HasWorkspaces" />
+                            <Binding Path="!HasAnyStacks" />
+                        </MultiBinding>
+                    </StackPanel.IsVisible>
+                    <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                               Text="Workspaces are created from a stack — and you don't have one yet. Build a stack first, then spin up a workspace from it." />
+                    <Button Content="Build a stack  →" Command="{Binding BuildStackCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- empty: stacks exist, no workspaces yet -->
+                <TextBlock VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                           MaxWidth="440" Foreground="{StaticResource MutedBrush}"
+                           Text="No workspaces yet.&#x0a;Click &quot;New workspace&quot; to create your first isolated workspace from a stack.">
+                    <TextBlock.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="!HasWorkspaces" />
+                            <Binding Path="HasAnyStacks" />
+                        </MultiBinding>
+                    </TextBlock.IsVisible>
+                </TextBlock>
+
+                <!-- select prompt -->
+                <TextBlock VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"
+                           Foreground="{StaticResource MutedBrush}" Text="Select a workspace to see its detail.">
+                    <TextBlock.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="HasWorkspaces" />
+                            <Binding Path="!HasSelected" />
+                        </MultiBinding>
+                    </TextBlock.IsVisible>
+                </TextBlock>
+
+                <!-- detail -->
+                <ScrollViewer IsVisible="{Binding HasSelected}">
+                    <StackPanel Spacing="16">
+
+                        <!-- title + drift -->
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding Selected.Name}" FontSize="20" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" />
+                            <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}">
+                                <Run Text="stack: " /><Run Text="{Binding Selected.Stack}" />
+                                <Run Text="   status: " /><Run Text="{Binding Selected.Status}" />
+                                <Run Text="   drift: " /><Run Text="{Binding Selected.Drift, FallbackValue='—'}" />
+                            </TextBlock>
+                        </StackPanel>
+
+                        <!-- lifecycle toolbar -->
+                        <WrapPanel Orientation="Horizontal">
+                            <WrapPanel.Styles>
+                                <Style Selector="Button">
+                                    <Setter Property="Margin" Value="0,0,8,8" />
+                                </Style>
+                            </WrapPanel.Styles>
+                            <Button Content="Up" Command="{Binding UpCommand}"
+                                    IsVisible="{Binding Selected.HasInfra}" />
+                            <Button Content="Down" Command="{Binding DownCommand}"
+                                    IsVisible="{Binding Selected.HasInfra}" />
+                            <Button Content="Reset" Command="{Binding ResetCommand}"
+                                    IsVisible="{Binding Selected.HasInfra}" />
+                            <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
+                                    ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
+                            <Button Content="Repair" Command="{Binding RepairCommand}"
+                                    ToolTip.Tip="Fix drift: prune stale registrations and remove orphaned folders. Healthy worktrees are never touched." />
+                            <Button Content="Open folder" Command="{Binding OpenCommand}" />
+                            <Button Content="Remove" Command="{Binding RemoveCommand}"
+                                    Foreground="{StaticResource DangerBrush}" />
+                        </WrapPanel>
+
+                        <!-- remove confirm bar -->
+                        <Border IsVisible="{Binding ConfirmingRemove}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource DangerBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
+                                           Text="Tear down this workspace? Infra is stopped and volumes wiped; worktrees removed." />
+                                <CheckBox IsChecked="{Binding RemoveForce, Mode=TwoWay}"
+                                          Content="Also delete the sprig/&lt;workspace&gt; branch (loses commits made in the worktree)" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Confirm teardown" Command="{Binding ConfirmRemoveCommand}"
+                                            Foreground="{StaticResource DangerBrush}" />
+                                    <Button Content="Cancel" Command="{Binding CancelRemoveCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- status / error -->
+                        <TextBlock IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource OkBrush}" Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+                        <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
+
+                        <!-- repos -->
+                        <ItemsControl ItemsSource="{Binding Selected.Repos}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:RepoLineViewModel">
+                                    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,8">
+                                        <StackPanel Spacing="4">
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TitleBrush}" />
+                                                <TextBlock Text="{Binding Branch}" FontSize="11"
+                                                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
+                                                           IsVisible="{Binding StateHealthy}" Foreground="{StaticResource OkBrush}" />
+                                                <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
+                                                           IsVisible="{Binding StateProblem}" Foreground="{StaticResource DangerBrush}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
+                                                       Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding WorktreePath}" FontSize="11"
+                                                       Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Panel>
+        </Border>
+
+        <!-- Create overlay -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsCreating}" Background="#B0000000"
+                Margin="-28,-20,-24,-16">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="22" Width="420"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="New workspace" FontSize="18" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Stack" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <ComboBox ItemsSource="{Binding AvailableStacks}" SelectedItem="{Binding NewStack, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Workspace name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. feature-x" />
+                    </StackPanel>
+                    <TextBlock IsVisible="{Binding CreateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding CreateError}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Create" Command="{Binding CreateCommand}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                        <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

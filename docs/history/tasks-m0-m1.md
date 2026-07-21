@@ -1,0 +1,105 @@
+# Sprig — Task Breakdown: M0 & M1
+
+Concrete, executable tasks for the two immediately-actionable milestones. Later milestones
+(M2+) are intentionally **not** decomposed yet — M0 spikes may revise design decisions, and
+we avoid over-planning work the spikes could invalidate.
+
+Environment confirmed on this machine: **docker 29.5.3**, **.NET SDK 10.0.302**.
+Fixtures: `../sprig-example-vue` (Vite, reads `env.PORT`), `../sprig-example-dotnet`
+(DotNetEnv → `Configuration["PORT"]` + `ConnectionStrings:Default`, postgres compose).
+
+---
+
+## M0 — De-risking spikes  *(throwaway code; goal is findings, not production)*
+
+> Each spike ends in a short **findings note** appended to `docs/spike-findings.md`. If a
+> spike disproves a decision in `implementation-plan.md`, update the plan before M1.
+
+### S1 — `.env` clobber wins in Vite *and* DotNetEnv ✅ DONE (see `spike-findings.md`)
+- [x] **S1.1** Duplicate-key semantics — both **last-wins**, neither errors.
+- [x] **S1.2** Vite confirmed via `loadEnv` (the exact `vite.config.ts` code path): `PORT=2222`.
+- [x] **S1.3** DotNetEnv confirmed via throwaway console: `PORT=2222`, `DUP=second`.
+- [x] **S1.4** Inter-file precedence confirmed: targeted `.env.local` beats sibling `.env` in both.
+- [x] **S1.5** Recipe locked: top+bottom block, same value; strip-and-replace fallback noted for
+      hypothetical error-on-duplicate frameworks (not needed for v1 targets).
+- [x] **S1.6** Findings recorded in `docs/spike-findings.md`.
+
+### S2 — Centrally-stored compose via `--project-directory` ✅ DONE (see `spike-findings.md`)
+- [x] **S2.1** Central compose built with hand-applied overrides (name suffix, `ports[0]`→25432).
+- [x] **S2.2** Came up with suffixed name + remapped port via `--project-directory`.
+- [x] **S2.3** Relative bind mount resolved to the **worktree** and the init script executed
+      (marker row `resolved-against-worktree` returned from the DB).
+- [x] **S2.4** Teardown by project name (`down` / `down -v`); two instances isolated by
+      name/port/network; clean afterward.
+- [x] **S2.5** Central-only model **holds** — no fallback needed. `--project-directory
+      <worktree>` is mandatory on every compose call.
+
+### S3 — git worktree lifecycle + drift on Windows ✅ DONE (see `spike-findings.md`)
+- [x] **S3.1** `worktree add -b sprig/spike` gives clean checkout, **no `.env`** (seeding required).
+- [x] **S3.2** Removal refuses without `--force` when untracked files exist; `--force` works;
+      branch survives.
+- [x] **S3.3** Drift A: folder deleted → `list` flags `prunable` → `prune` reconciles.
+- [x] **S3.4** Drift B: admin gone/folder remains → not in `list`; detect via central record +
+      disk; plain `rm` safe.
+- [x] **S3.5** Gotchas: `remove --force` needed; `.git` is a file; locked files + long paths
+      flagged for M2.
+- [x] **S3.6** 4-state reconciliation matrix recorded in `docs/spike-findings.md`.
+
+---
+
+## M1 — Core spine  *(pure logic, no side effects; fully unit-tested)*
+
+> Exit criterion: given a fixture `.sprig.json` + a workspace name, the engine resolves all
+> variables and allocates a stable, non-colliding port set — with **zero** filesystem/docker
+> side effects. `dotnet test` green.
+
+### M1.0 — Solution scaffolding ✅ DONE
+- [x] **M1.0.1** `sprig.slnx` + Core/Cli/Tests (`net10.0`, Nullable+ImplicitUsings, refs wired).
+- [x] **M1.0.2** `Sprig.Cli` prints `--help`/`--version`.
+- [x] **M1.0.3** `dotnet build sprig.slnx` / `dotnet test sprig.slnx` (documented; `.gitignore` added).
+
+### M1.1 — `.sprig.json` config model ✅ DONE
+- [x] **M1.1.1** Records `SprigRepoConfig` + `PortDeclaration`/`EnvOverride`/`ComposeConfig`/
+      `ComposeOverride`. (Reflection-based STJ for now; source-gen deferred to M7 packaging.)
+- [x] **M1.1.2** `SprigConfigLoader` throws `SprigConfigException` for missing file / bad JSON.
+- [x] **M1.1.3** `SprigConfigValidator` → `ValidationResult` (schema, name, unique/valid port
+      names, env file+keys, compose path/template, unknown top-level keys via `JsonExtensionData`).
+- [x] **M1.1.4** 12 unit tests green (valid fixture + each malformed case).
+
+### M1.2 — Substitution engine ✅ DONE
+- [x] **M1.2.1** Tokenizer for `${sprig.<path>}`; non-sprig `${...}` / bare `$` pass through.
+- [x] **M1.2.2** Scope keys are dotted paths (`workspace`, `ports.<name>`, `provides.<repo>.<key>`,
+      computed vars) resolved via `IVariableSource` (+ `DictionaryVariableSource`).
+- [x] **M1.2.3** Recursive resolver with dependency-chain following + cycle detection;
+      unknown/cyclic/malformed → typed `SubstitutionException` naming the offender.
+- [x] **M1.2.4** 13 unit tests green (named port, var-to-var, provides, cycle/self-cycle,
+      unknown, unterminated/empty, passthrough, trimming).
+
+### M1.3 — Port-allocation store ✅ DONE
+- [x] **M1.3.1** `IPortStore` + `FilePortStore` (configurable range, deterministic per instance,
+      persisted, non-colliding, reclaim on `Release`, `Peek`).
+- [x] **M1.3.2** Cross-process file lock + atomic write; 50-way `Parallel.For` test confirms no
+      double-allocation. (Fixed a Windows rename race with retry-backoff in `JsonFile` — see
+      S3 "locked files" note.)
+- [x] **M1.3.3** Unit tests: no overlap, deterministic reuse (incl. across new store objects),
+      release frees, add-name preserves, exhaustion throws `PortAllocationException`.
+
+### M1.4 — Central store layout ✅ DONE
+- [x] **M1.4.1** `ISprigPaths` + `SprigPaths` (root default `%LOCALAPPDATA%\sprig`, overridable;
+      `instances/<ws>/`, `stacks/`, `repos.json`, `ports.json`).
+- [x] **M1.4.2** `InstanceRecord`/`InstanceRepo` + `InstanceStore` (save/tryload/loadall/delete).
+- [x] **M1.4.3** Tests over temp root: round-trip, missing→null, load-all, idempotent delete,
+      atomic write leaves no temp files.
+
+### M1 capstone ✅ DONE
+- [x] `SprigScope.ForWorkspace` builds the `IVariableSource` (workspace + ports + computed +
+      provides). `CoreSpineTests` proves the M1 exit criterion end-to-end (resolve a fixture
+      config's env/provides/workspace templates with allocated, non-colliding ports; central
+      store only). **43 tests green, 0 warnings.**
+
+---
+
+## Working agreement
+- Commit locally only (never push / never delete branches) — per project memory.
+- Update `docs/implementation-plan.md` if a spike revises a decision.
+- Decompose M2 into tasks **after** M1 exits and M0 findings are in.

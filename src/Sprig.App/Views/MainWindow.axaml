@@ -1,0 +1,180 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        x:Class="Sprig.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1280" Height="820"
+        MinWidth="720" MinHeight="480"
+        Background="{StaticResource FormBgBrush}"
+        Icon="/Assets/sprig.ico"
+        Title="Sprig">
+
+    <Window.Styles>
+        <!-- Left-nav items: chromeless buttons whose inner Border carries hover + active state. -->
+        <Style Selector="Button.nav">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.nav /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.nav:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.navitem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="10,8" />
+        </Style>
+        <Style Selector="Button.nav:pointerover Border.navitem">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="Border.navitem.active">
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="Border.navitem.active > Grid > TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+
+        <!-- Setup-guide spine pills -->
+        <Style Selector="Border.wstep">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="CornerRadius" Value="20" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+        <Style Selector="Border.wstep TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Border.wstep.done">
+            <Setter Property="Background" Value="#264ADE80" />
+        </Style>
+        <Style Selector="Border.wstep.done TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+
+        <!-- Inline link button (guide strip) -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="200,*">
+
+        <!-- Left nav -->
+        <Border Grid.Column="0" Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="18,20,18,18">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <!-- Source set in code-behind: SprigLogo.Create() → a Skia-rendered vector, crisp at any DPI. -->
+                        <Image x:Name="LogoImage" Width="30" Height="30" VerticalAlignment="Center" />
+                        <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TitleBrush}" />
+                    </StackPanel>
+                    <TextBlock Text="worktree + infra isolation"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" />
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding NavItems}" Margin="8,4">
+                        <ItemsControl.DataTemplates>
+                            <!-- Section label ("Set up" / "Run") -->
+                            <DataTemplate DataType="vm:NavHeaderViewModel" x:CompileBindings="False">
+                                <TextBlock Text="{Binding Label}" FontSize="10" FontWeight="SemiBold"
+                                           LetterSpacing="1.5" Foreground="{StaticResource MutedBrush}"
+                                           Margin="12,14,12,4" />
+                            </DataTemplate>
+                            <!-- Navigable page (matches any PageViewModel subclass) -->
+                            <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
+                                <Button Classes="nav"
+                                        Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Border Classes="navitem" Classes.active="{Binding IsActive}">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="14"
+                                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                                            <Border Grid.Column="1" IsVisible="{Binding ShowNavCount}"
+                                                    Background="{StaticResource ButtonBgBrush}" CornerRadius="10"
+                                                    Padding="7,1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding NavCount}" FontSize="11"
+                                                           Foreground="{StaticResource MutedBrush}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.DataTemplates>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- Content -->
+        <DockPanel Grid.Column="1" LastChildFill="True">
+            <!-- Update-available notice (notification only; does not auto-update) -->
+            <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
+                    IsVisible="{Binding UpdateNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding UpdateNotice}" Foreground="#0B1220"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <Button Grid.Column="1" Content="Dismiss" Command="{Binding DismissUpdateNoticeCommand}"
+                            Background="Transparent" Foreground="#0B1220" />
+                </Grid>
+            </Border>
+            <!-- Guided setup strip (opt-in from Home; auto-advances as the store changes) -->
+            <Border DockPanel.Dock="Top" IsVisible="{Binding Guide.IsActive}"
+                    Background="#1460A5FA" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1"
+                    Padding="24,12">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="18">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <Border Classes="wstep" Classes.done="{Binding Guide.State.ReposDone}">
+                            <TextBlock Text="Repos" />
+                        </Border>
+                        <TextBlock Text="→" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <Border Classes="wstep" Classes.done="{Binding Guide.State.StacksDone}">
+                            <TextBlock Text="Stacks" />
+                        </Border>
+                        <TextBlock Text="→" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <Border Classes="wstep" Classes.done="{Binding Guide.State.WorkspacesDone}">
+                            <TextBlock Text="Workspaces" />
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding Guide.StepCounter}" FontSize="10" FontWeight="SemiBold"
+                                   LetterSpacing="1.5" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="{Binding Guide.Heading}" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Guide.Hint}" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Button Grid.Column="2" Classes="link" Content="Back" Command="{Binding Guide.BackCommand}"
+                            IsVisible="{Binding Guide.CanGoBack}" VerticalAlignment="Center" />
+                    <Button Grid.Column="3" Content="{Binding Guide.Cta}" Command="{Binding Guide.DoStepCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold"
+                            Padding="14,8" VerticalAlignment="Center" />
+                    <Button Grid.Column="4" Classes="link" Content="Skip" Command="{Binding Guide.SkipCommand}"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <ContentControl Content="{Binding CurrentPage}" Margin="0" />
+        </DockPanel>
+    </Grid>
+</Window>

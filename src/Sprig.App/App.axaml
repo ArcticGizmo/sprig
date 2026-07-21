@@ -1,0 +1,33 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="using:System"
+             xmlns:local="clr-namespace:Sprig.App"
+             x:Class="Sprig.App.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <Application.Resources>
+        <!-- Max width of the list pane on every page; past this only the detail pane grows. -->
+        <sys:Double x:Key="ListPaneMaxWidth">600</sys:Double>
+
+        <!-- Dark palette (shared with perch's look). -->
+        <SolidColorBrush x:Key="FormBgBrush" Color="#181820" />
+        <SolidColorBrush x:Key="PanelBgBrush" Color="#1F1F2A" />
+        <SolidColorBrush x:Key="FgBrush" Color="#E1E1EB" />
+        <SolidColorBrush x:Key="TitleBrush" Color="#F5F5FA" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#8C8CA0" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#60A5FA" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#2D2D3C" />
+        <SolidColorBrush x:Key="ButtonBgBrush" Color="#2D2D3C" />
+        <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
+        <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#F87171" />
+    </Application.Resources>
+</Application>

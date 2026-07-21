@@ -1,0 +1,130 @@
+using System.Collections.Generic;
+using Sprig.Core.Compose;
+using Sprig.Core.Config;
+using Sprig.Core.Env;
+using Sprig.Core.Git;
+using Sprig.Core.Ports;
+using Sprig.Core.Processes;
+using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
+using YamlDotNet.RepresentationModel;
+
+namespace Sprig.Tests.Workspaces;
+
+public class WorkspaceInfraTests
+{
+    const string ConfigJson = """
+        { "schema": 1, "name": "dotnet-api",
+          "inputs": [ { "name": "api", "example": "5000" }, { "name": "postgres", "example": "5432" } ],
+          "env": [ { "file": ".env", "set": {
+              "PORT": "${sprig.api}",
+              "ConnectionStrings__Default": "Host=localhost;Port=${sprig.postgres};Database=librarydb" } } ],
+          "compose": { "file": "docker-compose.yml", "overrides": [
+              { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
+              { "path": ["services","postgres","ports","0"], "template": "${sprig.postgres}:5432" } ] } }
+        """;
+
+    const string ComposeYml = """
+        services:
+          postgres:
+            image: postgres:17
+            container_name: librarydb_postgres
+            ports:
+              - "6050:5432"
+        """;
+
+    static (WorkspaceService svc, InstanceStore instances, FakeDockerService docker) Build(TempStore s)
+    {
+        var docker = new FakeDockerService { Available = true };
+        var svc = new WorkspaceService(
+            new GitService(new ProcessRunner()), new FilePortStore(s.Paths), new InstanceStore(s.Paths),
+            new EnvClobberService(), new ComposeGenerator(), docker, s.Paths);
+        return (svc, new InstanceStore(s.Paths), docker);
+    }
+
+    static void SeedRepo(TempGitRepo repo)
+    {
+        File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), ConfigJson);
+        File.WriteAllText(Path.Combine(repo.Path, "docker-compose.yml"), ComposeYml);
+        repo.Git("add", "-A");
+        repo.Git("-c", "user.email=t@sprig", "-c", "user.name=sprig", "commit", "-m", "add compose");
+    }
+
+    static ResolvedStack Stack(TempGitRepo repo)
+    {
+        var config = SprigConfigLoader.LoadFromFile(Path.Combine(repo.Path, ".sprig.json"));
+        var bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
+        {
+            ["dotnet-api"] = new Dictionary<string, string>
+            {
+                ["api"] = "${sprig.ports.api_port}",
+                ["postgres"] = "${sprig.ports.postgres_port}",
+            },
+        };
+        return new ResolvedStack("api", [new ResolvedRepo("dotnet-api", repo.Path, config)],
+            ["api_port", "postgres_port"], bindings);
+    }
+
+    static string PortsZero(string composeFile)
+    {
+        var stream = new YamlStream();
+        using var r = new StringReader(File.ReadAllText(composeFile));
+        stream.Load(r);
+        var root = (YamlMappingNode)stream.Documents[0].RootNode;
+        var seq = (YamlSequenceNode)((YamlMappingNode)((YamlMappingNode)root["services"])["postgres"])["ports"];
+        return ((YamlScalarNode)seq.Children[0]).Value!;
+    }
+
+    [Fact]
+    public void Create_generates_central_compose_with_allocated_postgres_port()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, _, _) = Build(store);
+
+        var record = svc.Create(Stack(repo), "feat-a");
+
+        var composePath = record.Repos[0].GeneratedComposePath;
+        Assert.NotNull(composePath);
+        Assert.StartsWith(store.Root, composePath!);
+        var postgresPort = record.Ports["postgres_port"];
+        Assert.Equal($"{postgresPort}:5432", PortsZero(composePath!));
+        Assert.Equal(postgresPort.ToString(), record.Repos[0].Inputs["postgres"]);
+    }
+
+    [Fact]
+    public void Up_down_reset_call_docker_with_project_name()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances, docker) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+
+        svc.Up("feat-a");
+        Assert.Contains("sprig-feat-a", docker.Ups);
+        Assert.Equal("running", instances.TryLoad("feat-a")!.LastStatus);
+
+        svc.Down("feat-a");
+        Assert.Contains(("sprig-feat-a", false), docker.Downs);
+
+        docker.Ups.Clear();
+        svc.Reset("feat-a");
+        Assert.Contains("sprig-feat-a", docker.Ups);
+    }
+
+    [Fact]
+    public void Teardown_brings_infra_down_with_volumes_first()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, _, docker) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+
+        svc.Remove("feat-a");
+
+        Assert.Contains(("sprig-feat-a", true), docker.Downs);
+    }
+}

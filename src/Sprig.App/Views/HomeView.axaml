@@ -1,0 +1,244 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+
+    <UserControl.Styles>
+        <!-- Journey-rail step card -->
+        <Style Selector="Border.step">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16,14" />
+        </Style>
+        <Style Selector="Border.step.next">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Border.step.done TextBlock.count">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+
+        <!-- Journey-rail tile (chromeless button wrapping a step card) -->
+        <Style Selector="Button.tile">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.tile /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.tile:pointerover Border.step">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+
+        <!-- Next-best-action banner -->
+        <Style Selector="Border.nba">
+            <Setter Property="Background" Value="#1460A5FA" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+
+        <!-- Panels -->
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+
+        <!-- Inline link button -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <!-- Quick-action button -->
+        <Style Selector="Button.qa">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="760" Margin="32,36,32,32" HorizontalAlignment="Stretch" Spacing="20">
+
+            <!-- Hero (first run) -->
+            <StackPanel Spacing="10" IsVisible="{Binding IsEmptyStage}">
+                <TextBlock Text="GET STARTED" FontSize="11" FontWeight="SemiBold" LetterSpacing="2"
+                           Foreground="{StaticResource AccentBrush}" />
+                <TextBlock Text="Run an isolated copy of your project in three steps."
+                           FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Foreground="{StaticResource TitleBrush}" />
+                <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                           Text="sprig gives each workspace its own git worktree, branch, ports and docker infra — so you can build a feature and a hotfix side by side, and never touch your main checkout." />
+                <Button Classes="link" Content="Walk me through setup  →" Command="{Binding StartGuideCommand}"
+                        HorizontalAlignment="Left" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!-- Compact header (configured) -->
+            <Grid IsVisible="{Binding !IsEmptyStage}" ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="3">
+                    <TextBlock Text="Home" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource MutedBrush}"
+                               Text="Where you are along the repo → stack → workspace pipeline, and the next step." />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="link" Content="How it works" VerticalAlignment="Center"
+                        Command="{Binding ToggleModelCardCommand}" />
+            </Grid>
+
+            <!-- Journey rail -->
+            <Grid ColumnDefinitions="*,Auto,*,Auto,*" VerticalAlignment="Stretch">
+                <Button Grid.Column="0" Classes="tile" Command="{Binding GoToReposCommand}">
+                    <Border Classes="step"
+                            Classes.done="{Binding State.ReposDone}" Classes.next="{Binding State.ReposNext}">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Repos" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="1" Text="01" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <TextBlock Text="Registered &amp; isolation-ready." FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Classes="count" Text="{Binding State.ReposCountLabel}" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Button>
+                <TextBlock Grid.Column="1" Text="→" VerticalAlignment="Center" Margin="8,0"
+                           Foreground="{StaticResource MutedBrush}" />
+                <Button Grid.Column="2" Classes="tile" Command="{Binding GoToStacksCommand}">
+                    <Border Classes="step"
+                            Classes.done="{Binding State.StacksDone}" Classes.next="{Binding State.StacksNext}">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Stacks" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="1" Text="02" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <TextBlock Text="Repos wired with ports." FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Classes="count" Text="{Binding State.StacksCountLabel}" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Button>
+                <TextBlock Grid.Column="3" Text="→" VerticalAlignment="Center" Margin="8,0"
+                           Foreground="{StaticResource MutedBrush}" />
+                <Button Grid.Column="4" Classes="tile" Command="{Binding GoToWorkspacesCommand}">
+                    <Border Classes="step"
+                            Classes.done="{Binding State.WorkspacesDone}" Classes.next="{Binding State.WorkspacesNext}">
+                        <StackPanel Spacing="3">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Workspaces" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="1" Text="03" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <TextBlock Text="Live, isolated copies." FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Classes="count" Text="{Binding State.WorkspacesCountLabel}" FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Button>
+            </Grid>
+
+            <!-- Next best action -->
+            <Border Classes="nba">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding State.NextKicker}" FontSize="10" FontWeight="SemiBold"
+                                   LetterSpacing="1.5" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="{Binding State.NextTitle}" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding State.NextSub}" FontSize="13"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="{Binding State.NextCta}" Command="{Binding PrimaryActionCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" Padding="16,10"
+                            FontWeight="SemiBold" VerticalAlignment="Center" Margin="16,0,0,0" />
+                </Grid>
+            </Border>
+
+            <!-- The model in one picture (first run, or toggled via "How it works") -->
+            <Border Classes="panel" IsVisible="{Binding ShowModel}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="HOW IT FITS TOGETHER" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
+                               Foreground="{StaticResource MutedBrush}" />
+                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Repo" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="declares the inputs it needs" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Stack" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="owns the ports and supplies every value" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Workspace" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="a live, isolated copy you actually run" />
+                    </Grid>
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                               Text="Values flow one way: the stack supplies every value a repo declares — stack → repo." />
+                </StackPanel>
+            </Border>
+
+            <!-- Configured: your workspaces + quick actions -->
+            <Grid ColumnDefinitions="*,250" ColumnSpacing="16" IsVisible="{Binding HasAnyWorkspaces}">
+                <Border Grid.Column="0" Classes="panel">
+                    <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="Your workspaces" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" />
+                            <Button Grid.Column="1" Classes="link" Content="View all  →"
+                                    Command="{Binding GoToWorkspacesCommand}" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Recent}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,6">
+                                        <StackPanel Grid.Column="0" Spacing="1">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource FgBrush}" />
+                                            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
+                                                <Run Text="{Binding Stack}" /><Run Text="   " /><Run Text="{Binding PortsSummary}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Background="{StaticResource ButtonBgBrush}"
+                                                CornerRadius="10" Padding="9,2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Status}" FontSize="11"
+                                                       Foreground="{StaticResource MutedBrush}" />
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Classes="panel">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Quick actions" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <Button Classes="qa" Content="New workspace" Command="{Binding NewWorkspaceCommand}" />
+                        <Button Classes="qa" Content="Add a repo" Command="{Binding AddRepoCommand}" />
+                        <Button Classes="qa" Content="Manage stacks" Command="{Binding GoToStacksCommand}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

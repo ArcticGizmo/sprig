@@ -15,11 +15,13 @@ namespace Sprig.App.ViewModels;
 public partial class StacksViewModel : PageViewModel
 {
     protected readonly AppServices Services;
+    readonly Navigator _nav;
     const int PortPreviewBase = 20000;
 
-    public StacksViewModel(AppServices services)
+    public StacksViewModel(AppServices services, Navigator nav)
     {
         Services = services;
+        _nav = nav;
         Reload();
     }
 
@@ -30,6 +32,12 @@ public partial class StacksViewModel : PageViewModel
 
     /// <summary>False when no stacks are defined yet — drives the first-run empty state.</summary>
     public bool HasStacks => Stacks.Count > 0;
+
+    /// <summary>False when no repos are registered — a stack can't be built without one (upstream empty state).</summary>
+    public bool HasAnyRepos => RepoChoices.Count > 0;
+
+    /// <summary>Empty-state shortcut: jump to Repos and open Add.</summary>
+    [RelayCommand] private void AddRepo() => _nav.AddRepo();
 
     /// <summary>The stack's named ports (auto-allocated at create; shown with an incrementing preview).</summary>
     public ObservableCollection<StackPortRow> Ports { get; } = [];
@@ -121,6 +129,7 @@ public partial class StacksViewModel : PageViewModel
             choice.PropertyChanged += OnChoiceChanged;
             RepoChoices.Add(choice);
         }
+        OnPropertyChanged(nameof(HasAnyRepos));
         RecomputeBindingGroups();
     }
 

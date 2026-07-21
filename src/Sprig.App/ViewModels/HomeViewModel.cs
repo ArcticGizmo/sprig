@@ -1,4 +1,3 @@
-using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,19 +14,12 @@ namespace Sprig.App.ViewModels;
 public partial class HomeViewModel : PageViewModel
 {
     readonly AppServices _services;
-    readonly Action<PageViewModel> _navigate;
-    readonly PageViewModel _repos;
-    readonly PageViewModel _stacks;
-    readonly PageViewModel _workspaces;
+    readonly Navigator _nav;
 
-    public HomeViewModel(AppServices services, Action<PageViewModel> navigate,
-        PageViewModel repos, PageViewModel stacks, PageViewModel workspaces)
+    public HomeViewModel(AppServices services, Navigator nav)
     {
         _services = services;
-        _navigate = navigate;
-        _repos = repos;
-        _stacks = stacks;
-        _workspaces = workspaces;
+        _nav = nav;
     }
 
     public override string Title => "Home";
@@ -38,17 +30,26 @@ public partial class HomeViewModel : PageViewModel
     /// <summary>The most recent workspaces, for the configured-state panel.</summary>
     public ObservableCollection<WorkspaceItemViewModel> Recent { get; } = [];
 
+    /// <summary>Toggles the model-picture card open when the user isn't in the first-run state.</summary>
+    [ObservableProperty] private bool _showModelCard;
+
     /// <summary>First-run: nothing registered yet — show the teaching hero + model picture.</summary>
     public bool IsEmptyStage => State.Stage == SetupStage.Empty;
 
     /// <summary>Show the "your workspaces" + quick-actions panels once anything is running.</summary>
     public bool HasAnyWorkspaces => State.Workspaces > 0;
 
+    /// <summary>The model picture shows automatically on first run, or on demand via "How it works".</summary>
+    public bool ShowModel => IsEmptyStage || ShowModelCard;
+
     partial void OnStateChanged(SetupState value)
     {
         OnPropertyChanged(nameof(IsEmptyStage));
         OnPropertyChanged(nameof(HasAnyWorkspaces));
+        OnPropertyChanged(nameof(ShowModel));
     }
+
+    partial void OnShowModelCardChanged(bool value) => OnPropertyChanged(nameof(ShowModel));
 
     protected override void OnActivated() => _ = RefreshAsync();
 
@@ -65,16 +66,23 @@ public partial class HomeViewModel : PageViewModel
             Recent.Add(new WorkspaceItemViewModel(r));
     }
 
-    /// <summary>The one recommended step — routes to the right page for the current stage.</summary>
+    /// <summary>The one recommended step — opens the right flow for the current stage.</summary>
     [RelayCommand]
-    private void PrimaryAction() => _navigate(State.Stage switch
+    private void PrimaryAction()
     {
-        SetupStage.Empty => _repos,
-        SetupStage.ReposReady => _stacks,
-        _ => _workspaces,
-    });
+        switch (State.Stage)
+        {
+            case SetupStage.Empty: _nav.AddRepo(); break;
+            case SetupStage.ReposReady: _nav.NewStack(); break;
+            default: _nav.NewWorkspace(); break;
+        }
+    }
 
-    [RelayCommand] private void GoToRepos() => _navigate(_repos);
-    [RelayCommand] private void GoToStacks() => _navigate(_stacks);
-    [RelayCommand] private void GoToWorkspaces() => _navigate(_workspaces);
+    [RelayCommand] private void ToggleModelCard() => ShowModelCard = !ShowModelCard;
+
+    // Quick actions / links.
+    [RelayCommand] private void NewWorkspace() => _nav.NewWorkspace();
+    [RelayCommand] private void AddRepo() => _nav.AddRepo();
+    [RelayCommand] private void GoToStacks() => _nav.GoToStacks();
+    [RelayCommand] private void GoToWorkspaces() => _nav.GoToWorkspaces();
 }

@@ -364,7 +364,7 @@ public class ManagementViewModelTests
         services.Repos.Add(MakeRepo(s.Root, "vue"));
         services.Repos.Add(MakeRepo(s.Root, "api"));
 
-        var vm = new StacksViewModel(services) { NewName = "web+api" };
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
         Assert.Equal(2, vm.RepoChoices.Count);
         foreach (var c in vm.RepoChoices) c.IsSelected = true;
 
@@ -382,7 +382,7 @@ public class ManagementViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        var vm = new StacksViewModel(services) { NewName = "empty" };
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "empty" };
 
         vm.CreateCommand.Execute(null); // no repos checked
 

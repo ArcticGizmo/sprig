@@ -102,11 +102,7 @@ internal static class HeadlessRenderer
 
         HomeViewModel Home(SetupState state, IReadOnlyList<InstanceRecord> recent)
         {
-            var vm = new HomeViewModel(services, _ => { },
-                new ReposViewModel(services), new StacksViewModel(services), new WorkspacesViewModel(services))
-            {
-                State = state,
-            };
+            var vm = new HomeViewModel(services, new Navigator()) { State = state };
             foreach (var r in recent) vm.Recent.Add(new WorkspaceItemViewModel(r));
             return vm;
         }

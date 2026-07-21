@@ -23,10 +23,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public MainWindowViewModel(AppServices services)
     {
+        var nav = new Navigator();
         var repos = new ReposViewModel(services);
-        var stacks = new StacksViewModel(services);
-        var workspaces = new WorkspacesViewModel(services);
-        var home = new HomeViewModel(services, Navigate, repos, stacks, workspaces);
+        var stacks = new StacksViewModel(services, nav);
+        var workspaces = new WorkspacesViewModel(services, nav);
+        var home = new HomeViewModel(services, nav);
+        nav.Configure(Navigate, home, repos, stacks, workspaces);
 
         Pages = [home, repos, stacks, workspaces];
         NavItems =

@@ -38,11 +38,31 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Empty state: nothing created yet -->
+            <!-- Empty state: no stack upstream — a workspace needs one, so point back to Stacks. -->
+            <StackPanel Grid.Column="1" Margin="24" VerticalAlignment="Top" MaxWidth="460" Spacing="12">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="!HasWorkspaces" />
+                        <Binding Path="!HasAnyStacks" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                           Text="Workspaces are created from a stack — and you don't have one yet. Build a stack first, then spin up a workspace from it." />
+                <Button Content="Build a stack  →" Command="{Binding BuildStackCommand}"
+                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Left" />
+            </StackPanel>
+
+            <!-- Empty state: stacks exist, just no workspaces yet. -->
             <TextBlock Grid.Column="1" Margin="24" VerticalAlignment="Top"
                        Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                       IsVisible="{Binding !HasWorkspaces}"
-                       Text="No workspaces yet. Click &quot;New workspace&quot; above to create your first isolated workspace from a stack." />
+                       Text="No workspaces yet. Click &quot;New workspace&quot; above to create your first isolated workspace from a stack.">
+                <TextBlock.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="!HasWorkspaces" />
+                        <Binding Path="HasAnyStacks" />
+                    </MultiBinding>
+                </TextBlock.IsVisible>
+            </TextBlock>
 
             <!-- Empty state: have workspaces, none selected -->
             <TextBlock Grid.Column="1" Margin="24" VerticalAlignment="Top"

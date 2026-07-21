@@ -12,14 +12,22 @@ namespace Sprig.App.ViewModels;
 public partial class WorkspacesViewModel : PageViewModel
 {
     protected readonly AppServices Services;
+    readonly Navigator _nav;
 
-    public WorkspacesViewModel(AppServices services)
+    public WorkspacesViewModel(AppServices services, Navigator nav)
     {
         Services = services;
+        _nav = nav;
         _ = RefreshAsync();
     }
 
     public override string Title => "Workspaces";
+
+    /// <summary>False when no stacks exist — a workspace can't be created without one (upstream empty state).</summary>
+    [ObservableProperty] private bool _hasAnyStacks;
+
+    /// <summary>Empty-state shortcut: jump to Stacks and open the builder.</summary>
+    [RelayCommand] private void BuildStack() => _nav.NewStack();
 
     public ObservableCollection<WorkspaceItemViewModel> Workspaces { get; } = [];
 
@@ -72,6 +80,7 @@ public partial class WorkspacesViewModel : PageViewModel
         await Guard(async () =>
         {
             var records = await AppServices.RunAsync(() => Services.Workspaces.List());
+            HasAnyStacks = await AppServices.RunAsync(() => Services.Stacks.List().Count) > 0;
             Workspaces.Clear();
             foreach (var r in records.OrderBy(r => r.Workspace))
                 Workspaces.Add(new WorkspaceItemViewModel(r));
@@ -217,6 +226,7 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         var keep = Selected?.Name;
         var records = await AppServices.RunAsync(() => Services.Workspaces.List());
+        HasAnyStacks = await AppServices.RunAsync(() => Services.Stacks.List().Count) > 0;
         Workspaces.Clear();
         foreach (var r in records.OrderBy(r => r.Workspace))
             Workspaces.Add(new WorkspaceItemViewModel(r));

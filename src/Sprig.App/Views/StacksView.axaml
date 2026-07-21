@@ -16,9 +16,33 @@
 
         <!-- Existing stacks -->
         <Grid Grid.Row="1" RowDefinitions="*,Auto,Auto" Margin="28,0,24,16">
-            <TextBlock Grid.Row="0" IsVisible="{Binding !HasStacks}" Margin="4,8"
-                       VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                       Text="No stacks yet. Click &quot;New stack&quot; above to compose one or more repos into a stack." />
+            <!-- Empty state: no repos upstream — a stack can't be built yet, so point back to Repos. -->
+            <StackPanel Grid.Row="0" Margin="4,8" VerticalAlignment="Top" HorizontalAlignment="Left"
+                        MaxWidth="440" Spacing="12">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="!HasStacks" />
+                        <Binding Path="!HasAnyRepos" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                           Text="A stack composes registered repos — and you have none yet. Add a repo first, then come back to wire it into a stack." />
+                <Button Content="Add a repo  →" Command="{Binding AddRepoCommand}"
+                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Left" />
+            </StackPanel>
+
+            <!-- Empty state: repos exist, just no stacks yet. -->
+            <TextBlock Grid.Row="0" Margin="4,8" VerticalAlignment="Top"
+                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       Text="No stacks yet. Click &quot;New stack&quot; above to compose one or more repos into a stack.">
+                <TextBlock.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="!HasStacks" />
+                        <Binding Path="HasAnyRepos" />
+                    </MultiBinding>
+                </TextBlock.IsVisible>
+            </TextBlock>
+
             <ListBox Grid.Row="0" IsVisible="{Binding HasStacks}"
                      ItemsSource="{Binding Stacks}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                 <ListBox.ItemTemplate>

@@ -76,12 +76,16 @@
             </StackPanel>
 
             <!-- Compact header (configured) -->
-            <StackPanel Spacing="3" IsVisible="{Binding !IsEmptyStage}">
-                <TextBlock Text="Home" FontSize="22" FontWeight="SemiBold"
-                           Foreground="{StaticResource TitleBrush}" />
-                <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource MutedBrush}"
-                           Text="Where you are along the repo → stack → workspace pipeline, and the next step." />
-            </StackPanel>
+            <Grid IsVisible="{Binding !IsEmptyStage}" ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="3">
+                    <TextBlock Text="Home" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource MutedBrush}"
+                               Text="Where you are along the repo → stack → workspace pipeline, and the next step." />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="link" Content="How it works" VerticalAlignment="Center"
+                        Command="{Binding ToggleModelCardCommand}" />
+            </Grid>
 
             <!-- Journey rail -->
             <Grid ColumnDefinitions="*,Auto,*,Auto,*" VerticalAlignment="Stretch">
@@ -147,8 +151,8 @@
                 </Grid>
             </Border>
 
-            <!-- The model in one picture (first run) -->
-            <Border Classes="panel" IsVisible="{Binding IsEmptyStage}">
+            <!-- The model in one picture (first run, or toggled via "How it works") -->
+            <Border Classes="panel" IsVisible="{Binding ShowModel}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="HOW IT FITS TOGETHER" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
                                Foreground="{StaticResource MutedBrush}" />
@@ -203,8 +207,8 @@
                 <Border Grid.Column="1" Classes="panel">
                     <StackPanel Spacing="8">
                         <TextBlock Text="Quick actions" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                        <Button Classes="qa" Content="New workspace" Command="{Binding GoToWorkspacesCommand}" />
-                        <Button Classes="qa" Content="Add a repo" Command="{Binding GoToReposCommand}" />
+                        <Button Classes="qa" Content="New workspace" Command="{Binding NewWorkspaceCommand}" />
+                        <Button Classes="qa" Content="Add a repo" Command="{Binding AddRepoCommand}" />
                         <Button Classes="qa" Content="Manage stacks" Command="{Binding GoToStacksCommand}" />
                     </StackPanel>
                 </Border>

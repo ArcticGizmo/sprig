@@ -285,5 +285,6 @@ public partial class ReposViewModel : PageViewModel
         Repos.Clear();
         foreach (var r in Services.Repos.List()) Repos.Add(r);
         OnPropertyChanged(nameof(HasRepos));
+        NavCount = Repos.Count;
     }
 }

@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="620" Margin="32,44,32,32" HorizontalAlignment="Center" Spacing="20">
+
+            <StackPanel Spacing="10">
+                <TextBlock Text="GET STARTED" FontSize="11" FontWeight="SemiBold" LetterSpacing="2"
+                           Foreground="{StaticResource AccentBrush}" />
+                <TextBlock Text="Run an isolated copy of your project in three steps."
+                           FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Foreground="{StaticResource TitleBrush}" />
+                <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                           Text="sprig gives each workspace its own git worktree, branch, ports and docker infra — so you can build a feature and a hotfix side by side, and never touch your main checkout." />
+            </StackPanel>
+
+            <!-- The model in one picture -->
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="10" Padding="20,16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="HOW IT FITS TOGETHER" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
+                               Foreground="{StaticResource MutedBrush}" />
+                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Repo" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="declares the inputs it needs" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Stack" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="owns the ports and supplies every value" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Workspace" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="a live, isolated copy you actually run" />
+                    </Grid>
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                               Text="Values flow one way: the stack supplies every value a repo declares — stack → repo." />
+                </StackPanel>
+            </Border>
+
+            <!-- First step -->
+            <StackPanel Spacing="10">
+                <Button Content="Add a repo  →" Command="{Binding GoToReposCommand}"
+                        Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                        Padding="18,10" FontSize="14" FontWeight="SemiBold"
+                        HorizontalAlignment="Left" />
+                <TextBlock FontSize="13" Foreground="{StaticResource MutedBrush}"
+                           Text="Step 1 of 3 — point sprig at a git repo you want to isolate." />
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

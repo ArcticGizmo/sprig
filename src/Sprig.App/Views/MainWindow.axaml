@@ -9,6 +9,42 @@
         Icon="/Assets/sprig.ico"
         Title="Sprig">
 
+    <Window.Styles>
+        <!-- Left-nav items: chromeless buttons whose inner Border carries hover + active state. -->
+        <Style Selector="Button.nav">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.nav /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.nav:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.navitem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="10,8" />
+        </Style>
+        <Style Selector="Button.nav:pointerover Border.navitem">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="Border.navitem.active">
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="Border.navitem.active > Grid > TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+    </Window.Styles>
+
     <Grid ColumnDefinitions="200,*">
 
         <!-- Left nav -->
@@ -26,14 +62,37 @@
                                Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
 
-                <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage, Mode=TwoWay}"
-                         Background="Transparent" BorderThickness="0" Margin="8,4">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:PageViewModel">
-                            <TextBlock Text="{Binding Title}" FontSize="14" Padding="8,6" />
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding NavItems}" Margin="8,4">
+                        <ItemsControl.DataTemplates>
+                            <!-- Section label ("Set up" / "Run") -->
+                            <DataTemplate DataType="vm:NavHeaderViewModel" x:CompileBindings="False">
+                                <TextBlock Text="{Binding Label}" FontSize="10" FontWeight="SemiBold"
+                                           LetterSpacing="1.5" Foreground="{StaticResource MutedBrush}"
+                                           Margin="12,14,12,4" />
+                            </DataTemplate>
+                            <!-- Navigable page (matches any PageViewModel subclass) -->
+                            <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
+                                <Button Classes="nav"
+                                        Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Border Classes="navitem" Classes.active="{Binding IsActive}">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="14"
+                                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                                            <Border Grid.Column="1" IsVisible="{Binding ShowNavCount}"
+                                                    Background="{StaticResource ButtonBgBrush}" CornerRadius="10"
+                                                    Padding="7,1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding NavCount}" FontSize="11"
+                                                           Foreground="{StaticResource MutedBrush}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.DataTemplates>
+                    </ItemsControl>
+                </ScrollViewer>
             </DockPanel>
         </Border>
 

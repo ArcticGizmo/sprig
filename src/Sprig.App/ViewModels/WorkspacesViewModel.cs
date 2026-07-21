@@ -76,6 +76,7 @@ public partial class WorkspacesViewModel : PageViewModel
             foreach (var r in records.OrderBy(r => r.Workspace))
                 Workspaces.Add(new WorkspaceItemViewModel(r));
             OnPropertyChanged(nameof(HasWorkspaces));
+            NavCount = Workspaces.Count;
             Selected = Workspaces.FirstOrDefault(w => w.Name == previouslySelected) ?? Workspaces.FirstOrDefault();
         }, status: null);
     }
@@ -219,6 +220,8 @@ public partial class WorkspacesViewModel : PageViewModel
         Workspaces.Clear();
         foreach (var r in records.OrderBy(r => r.Workspace))
             Workspaces.Add(new WorkspaceItemViewModel(r));
+        OnPropertyChanged(nameof(HasWorkspaces));
+        NavCount = Workspaces.Count;
         Selected = Workspaces.FirstOrDefault(w => w.Name == keep) ?? Workspaces.FirstOrDefault();
     }
 

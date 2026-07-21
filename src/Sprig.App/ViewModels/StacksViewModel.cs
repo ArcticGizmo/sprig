@@ -112,6 +112,7 @@ public partial class StacksViewModel : PageViewModel
         Stacks.Clear();
         foreach (var s in Services.Stacks.List()) Stacks.Add(s);
         OnPropertyChanged(nameof(HasStacks));
+        NavCount = Stacks.Count;
 
         RepoChoices.Clear();
         foreach (var r in Services.Repos.List())

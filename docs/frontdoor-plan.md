@@ -8,6 +8,11 @@ This plan is the build breakdown of the design proposal in
 [`frontdoor-proposal.html`](./frontdoor-proposal.html) (open it in a browser). Artefact letters
 below (A–G) map 1:1 to that proposal.
 
+> **Status: M1–M5 shipped.** All five milestones are implemented on `lets-try-again`
+> (one commit each), engine untouched, 176 tests green, verified via headless render
+> (`sprig-gui render <dir>` → `main_home`, `home_empty`, `home_running`, `main_guide`, and the
+> upstream-aware empty states). See the per-milestone notes below for what landed.
+
 ---
 
 ## 0. Framing & guiding principles

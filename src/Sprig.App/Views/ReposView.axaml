@@ -5,7 +5,11 @@
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              x:Class="Sprig.App.Views.ReposView"
              x:DataType="vm:ReposViewModel">
-    <Grid ColumnDefinitions="*,380" Margin="28,20,24,16">
+    <Grid Margin="28,20,24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MaxWidth="600" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
         <!-- Left: add + list -->
         <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0">
@@ -22,9 +26,6 @@
             </StackPanel>
 
             <Grid Grid.Row="2" RowDefinitions="*,Auto">
-                <TextBlock Grid.Row="0" IsVisible="{Binding !HasRepos}" Margin="4,4"
-                           VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                           Text="No repos registered yet. Add one above to make it available to stacks." />
                 <ListBox Grid.Row="0" IsVisible="{Binding HasRepos}"
                          ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                     <ListBox.ItemTemplate>
@@ -46,9 +47,23 @@
         <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="8" Padding="18">
             <Panel>
-                <TextBlock IsVisible="{Binding !HasSelected}" Foreground="{StaticResource MutedBrush}"
+                <TextBlock Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                            VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"
-                           Text="Select a repo to view its&#x0a;.sprig.json configuration" />
+                           Text="No repos registered yet.&#x0a;Click &quot;Add repo&quot; to point sprig at a git repo.">
+                    <TextBlock.IsVisible>
+                        <Binding Path="!HasRepos" />
+                    </TextBlock.IsVisible>
+                </TextBlock>
+                <TextBlock Foreground="{StaticResource MutedBrush}"
+                           VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"
+                           Text="Select a repo to view its&#x0a;.sprig.json configuration">
+                    <TextBlock.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="HasRepos" />
+                            <Binding Path="!HasSelected" />
+                        </MultiBinding>
+                    </TextBlock.IsVisible>
+                </TextBlock>
 
                 <ScrollViewer IsVisible="{Binding ShowReadOnly}">
                     <StackPanel Spacing="16">

@@ -23,7 +23,11 @@ public partial class StacksViewModel : PageViewModel
         Services = services;
         _nav = nav;
         Reload();
+        // Workspaces created/removed elsewhere change the edit gate for the selected stack.
+        Services.StoreChanged += RefreshAttached;
     }
+
+    protected override void OnActivated() => RefreshAttached();
 
     public override string Title => "Stacks";
 
@@ -84,10 +88,105 @@ public partial class StacksViewModel : PageViewModel
             : $"Can't use: {string.Join("  ", invalid)}  —  only letters, numbers, and . _ + -";
     }
 
-    /// <summary>Open the create-stack modal with a fresh, empty form.</summary>
+    // --- Selection detail + edit gating -------------------------------------
+
+    /// <summary>How many live workspaces were created from the selected stack (drives the edit gate).</summary>
+    [ObservableProperty] private int _attachedWorkspaces;
+
+    /// <summary>Original name while editing an existing stack; null when creating a new one.</summary>
+    [ObservableProperty] private string? _editingOriginalName;
+
+    /// <summary>The selected stack's per-repo bindings, flattened for the detail panel.</summary>
+    public ObservableCollection<StackBindingView> DetailBindings { get; } = [];
+
+    public bool HasSelected => Selected is not null;
+
+    /// <summary>Editing is allowed only when no workspaces were built from this stack.</summary>
+    public bool CanEditSelected => Selected is not null && AttachedWorkspaces == 0;
+    public bool EditBlocked => Selected is not null && AttachedWorkspaces > 0;
+
+    public string? EditBlockedReason => EditBlocked
+        ? $"{AttachedWorkspaces} workspace{(AttachedWorkspaces == 1 ? "" : "s")} use this stack — remove them before editing."
+        : null;
+
+    public bool IsEditing => EditingOriginalName is not null;
+    public string OverlayTitle => IsEditing ? "Edit stack" : "New stack";
+    public string OverlayCta => IsEditing ? "Save changes" : "Create stack";
+
+    partial void OnEditingOriginalNameChanged(string? value)
+    {
+        OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(OverlayTitle));
+        OnPropertyChanged(nameof(OverlayCta));
+    }
+
+    partial void OnSelectedChanged(StackDefinition? value)
+    {
+        DetailBindings.Clear();
+        if (value is not null)
+            foreach (var repo in value.Repos)
+            {
+                var rows = value.Bindings.TryGetValue(repo, out var b)
+                    ? b.OrderBy(kv => kv.Key).Select(kv => new StackBindingRowView(kv.Key, kv.Value)).ToList()
+                    : new List<StackBindingRowView>();
+                DetailBindings.Add(new StackBindingView(repo, rows));
+            }
+
+        OnPropertyChanged(nameof(HasSelected));
+        RefreshAttached();
+    }
+
+    /// <summary>Recompute how many workspaces use the selected stack.</summary>
+    void RefreshAttached()
+    {
+        AttachedWorkspaces = Selected is null
+            ? 0
+            : Services.Workspaces.List().Count(w => w.Stack == Selected.Name);
+        OnPropertyChanged(nameof(CanEditSelected));
+        OnPropertyChanged(nameof(EditBlocked));
+        OnPropertyChanged(nameof(EditBlockedReason));
+    }
+
+    /// <summary>Open the builder pre-filled with the selected stack (only when nothing depends on it).</summary>
+    [RelayCommand]
+    private void EditSelected()
+    {
+        var stack = Selected;
+        if (stack is null || !CanEditSelected) return;
+
+        Error = null; Status = null;
+        EditingOriginalName = stack.Name;
+        NewName = stack.Name;
+
+        foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
+        Ports.Clear();
+        foreach (var p in stack.Ports)
+        {
+            var row = new StackPortRow { Name = p };
+            row.PropertyChanged += OnPortRowChanged;
+            Ports.Add(row);
+        }
+        ReindexPortPreviews();
+        RebuildBindingVariables();
+
+        // Reset then check the stack's repos, so RecomputeBindingGroups rebuilds a clean set of rows.
+        foreach (var c in RepoChoices) c.IsSelected = false;
+        foreach (var c in RepoChoices) c.IsSelected = stack.Repos.Contains(c.Name);
+
+        foreach (var group in Bindings)
+            if (stack.Bindings.TryGetValue(group.Repo, out var repoBindings))
+                foreach (var row in group.Rows)
+                    if (repoBindings.TryGetValue(row.Input, out var expr))
+                        row.Expression = expr;
+
+        IsCreating = true;
+    }
+
+    /// <summary>Open the builder with a fresh, empty form for a new stack.</summary>
     [RelayCommand]
     private void NewStack()
     {
+        EditingOriginalName = null;
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
         Ports.Clear();
@@ -152,13 +251,20 @@ public partial class StacksViewModel : PageViewModel
         try
         {
             Services.Stacks.Save(new StackDefinition { Name = name, Repos = repos, Ports = ports, Bindings = bindings });
+
+            // Editing with a changed name: the save wrote the new file, so drop the old one.
+            var edited = EditingOriginalName;
+            if (edited is { } orig && orig != name) Services.Stacks.Remove(orig);
+
             NewName = "";
             foreach (var c in RepoChoices) c.IsSelected = false;
             Ports.Clear();
             Bindings.Clear();
+            EditingOriginalName = null;
             IsCreating = false;
-            Status = $"created stack '{name}'";
+            Status = edited is null ? $"created stack '{name}'" : $"updated stack '{name}'";
             Reload();
+            Selected = Stacks.FirstOrDefault(s => s.Name == name);
             Services.NotifyStoreChanged();
         }
         catch (Exception ex) { Error = ex.Message; }
@@ -258,3 +364,7 @@ public partial class BindingRow(string input, string? example) : ViewModelBase
     public string? Example { get; } = example;
     [ObservableProperty] private string _expression = "";
 }
+
+/// <summary>Read-only projection of a stack's bindings for one repo (detail panel).</summary>
+public sealed record StackBindingView(string Repo, IReadOnlyList<StackBindingRowView> Rows);
+public sealed record StackBindingRowView(string Input, string Expression);

@@ -390,6 +390,48 @@ public class ManagementViewModelTests
         Assert.Empty(vm.Stacks);
     }
 
+    [Fact]
+    public void Selected_stack_is_editable_when_no_workspaces_use_it()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepo(s.Root, "vue"));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "solo" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.CreateCommand.Execute(null);
+        vm.Selected = vm.Stacks.Single();
+
+        Assert.Equal(0, vm.AttachedWorkspaces);
+        Assert.True(vm.CanEditSelected);
+        Assert.False(vm.EditBlocked);
+    }
+
+    [Fact]
+    public void Editing_a_stack_prefills_the_builder_and_rename_drops_the_old()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepo(s.Root, "vue"));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "solo" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.CreateCommand.Execute(null);
+        vm.Selected = vm.Stacks.Single();
+
+        vm.EditSelectedCommand.Execute(null);
+        Assert.True(vm.IsEditing);
+        Assert.Equal("solo", vm.NewName);
+        Assert.Equal("Edit stack", vm.OverlayTitle);
+
+        vm.NewName = "solo2";
+        vm.CreateCommand.Execute(null);
+
+        Assert.False(vm.IsEditing);
+        Assert.Contains(vm.Stacks, st => st.Name == "solo2");
+        Assert.DoesNotContain(vm.Stacks, st => st.Name == "solo");
+    }
+
     [Theory]
     [InlineData("web+api", false)]     // '+' is allowed (filename, not a branch)
     [InlineData("web-api.v2", false)]

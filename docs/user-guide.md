@@ -18,30 +18,55 @@ the file formats, see the [configuration reference](config-reference.md).
 
 ## Desktop app
 
-The app has three areas in the left nav.
+The app opens on **Home** and the left nav is grouped by what you're doing:
+**Home**, then **Set up** (Repos, Stacks), then **Run** (Workspaces) — the order you actually work
+in. Each page is a two-pane layout: a list on the left, detail on the right (the list caps at a
+readable width, and the detail takes the rest on a wide window).
+
+### Home
+The front door. It shows where you are along the **repo → stack → workspace** pipeline as a journey
+rail with live counts, plus a single **next best action** button that always points at the right
+next step (add a repo → wire a stack → spin up a workspace). Clicking a rail tile jumps to that
+page. Once you have workspaces, Home also lists your recent ones with quick actions. **How it
+works** reveals the one-directional model (a stack supplies every value a repo declares).
+
+First time? **Walk me through setup** starts a guided strip across the top that launches the real
+Add-repo → Build-a-stack → Spin-up flows in order and auto-advances as you go, with **Back** and
+**Skip**.
 
 ### Repos
-- **Register** an existing repo (one that already has a `.sprig.json`), or **Init & register** to
-  have sprig inspect the repo, propose a `.sprig.json`, write it, and register in one step.
-- Selecting a repo shows its declared **inputs** (name + example) — the values a stack must supply.
-- **Unregister** removes it from the registry (never touches the repo on disk).
+- **Add repo** — browse to a git folder. If it already has a `.sprig.json` it's registered as-is;
+  if not, sprig inspects the repo, proposes one, writes it, and registers — in one step.
+- Selecting a repo shows its declared **inputs** (name + example) and where they're used (env /
+  compose overrides). **Edit** opens an in-place editor for the `.sprig.json`; **Open in…** launches
+  Explorer / VS Code / a terminal.
+- A repo that declares **no inputs** offers **Isolate this repo** — spin up a workspace straight
+  from it, no stack needed (the ad-hoc path).
+- **Unregister selected** removes it from the registry (never touches the repo on disk).
 
 ### Stacks
-- **New stack** (top button) opens a modal: name it, tick the repos, add named **ports**, and for
-  each repo fill in its **inputs** — each input is auto-listed with its example hint, and you type a
-  literal or a `${sprig.ports.<name>}` template.
-- Existing stacks show their repos and ports. **Remove selected** deletes a stack.
+- **New stack** opens the builder: name it (validated live — path-safe characters only, so you
+  learn the rule as you type), tick the repos, add named **ports** (with a live preview), and bind
+  each repo's **inputs** — a literal or a `${sprig.ports.<name>}` / `${sprig.workspace}` template
+  with `${sprig.*}` autocomplete; each input's example shows underneath for easy copy-and-tweak.
+- Selecting a stack shows its full configuration — repos, ports, and per-repo bindings — with
+  **Edit** and **Remove**. Editing reuses the builder, pre-filled. **Edit is only offered when no
+  workspaces were created from the stack** (otherwise it tells you how many use it): the workspaces
+  you already built won't change if you edit the stack, so editing an in-use one would mislead.
 
 ### Workspaces
-- **New workspace** (top button): pick a stack, name the workspace, Create. sprig makes the
-  worktrees, branches, and allocated ports.
-- Selecting a workspace shows its per-repo detail (branch, worktree path, resolved inputs) and a
-  lifecycle toolbar:
+- **New workspace**: pick a stack, name the workspace, Create. sprig makes the worktrees, branches,
+  and allocated ports.
+- Selecting a workspace shows its per-repo detail (branch, worktree path, resolved inputs, drift
+  state) and a lifecycle toolbar:
   - **Up / Down / Reset** — docker infra (shown only when the stack actually declares infra).
   - **Reconcile** — *diagnose* worktree drift (read-only).
   - **Repair** — *fix* drift (prune stale registrations, remove orphaned folders).
   - **Open folder** — open the worktree.
   - **Remove** — tear down, with a confirm bar and an explicit "also delete the branch" checkbox.
+
+When a downstream page is empty it points you back upstream — Stacks with no repos offers **Add a
+repo**, Workspaces with no stack offers **Build a stack** — so you're never sent to a dead end.
 
 ---
 

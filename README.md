@@ -61,9 +61,12 @@ proposes one.
 
 ## Desktop app
 
-`Sprig.App` is an Avalonia (dark-mode) desktop head over the same engine. It has three areas —
-**Repos** (register / init), **Stacks** (builder), and **Workspaces** (create + per-workspace
-lifecycle with a drift/reconcile surface). Everything the CLI does is reachable from the UI.
+`Sprig.App` is an Avalonia (dark-mode) desktop head over the same engine. It opens on a **Home**
+front door — a journey rail (repo → stack → workspace) with a next-best-action and an optional
+guided setup — behind a left nav grouped **Set up** (Repos, Stacks) / **Run** (Workspaces). Every
+page is a list + detail: register/edit repos, build/edit stacks (editable only while no workspace
+depends on them), and create workspaces with a per-workspace lifecycle + drift/reconcile surface.
+Everything the CLI does is reachable from the UI.
 
 ## Where state lives
 

@@ -373,7 +373,9 @@ public class ManagementViewModelTests
         Assert.Contains(vm.Stacks, st => st.Name == "web+api" && st.Repos.Count == 2);
 
         vm.Selected = vm.Stacks.First(st => st.Name == "web+api");
-        vm.RemoveCommand.Execute(null);
+        vm.RemoveCommand.Execute(null);          // opens the confirm bar
+        Assert.True(vm.ConfirmingRemove);
+        vm.ConfirmRemoveCommand.Execute(null);   // actually removes
         Assert.DoesNotContain(vm.Stacks, st => st.Name == "web+api");
     }
 

@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="using:System"
              xmlns:local="clr-namespace:Sprig.App"
              x:Class="Sprig.App.App"
              RequestedThemeVariant="Dark">
@@ -13,6 +14,9 @@
     </Application.Styles>
 
     <Application.Resources>
+        <!-- Max width of the list pane on every page; past this only the detail pane grows. -->
+        <sys:Double x:Key="ListPaneMaxWidth">600</sys:Double>
+
         <!-- Dark palette (shared with perch's look). -->
         <SolidColorBrush x:Key="FormBgBrush" Color="#181820" />
         <SolidColorBrush x:Key="PanelBgBrush" Color="#1F1F2A" />

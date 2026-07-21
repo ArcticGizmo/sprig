@@ -40,7 +40,7 @@ public sealed class AppServices
             new ComposeGenerator(), Docker, Paths);
         Reconciler = new WorkspaceReconciler(Git, instances);
         Repos = new RepoRegistryStore(Paths);
-        Stacks = new StackStore(Paths, Repos);
+        Stacks = new StackStore(Paths, Repos, instances);
         StackResolver = new StackResolver(Repos, Stacks, Git);
         Init = new InitInspector();
     }

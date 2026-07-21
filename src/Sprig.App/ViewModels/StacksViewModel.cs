@@ -96,6 +96,9 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>Original name while editing an existing stack; null when creating a new one.</summary>
     [ObservableProperty] private string? _editingOriginalName;
 
+    /// <summary>True while the remove-stack confirm bar is showing.</summary>
+    [ObservableProperty] private bool _confirmingRemove;
+
     /// <summary>The selected stack's per-repo bindings, flattened for the detail panel.</summary>
     public ObservableCollection<StackBindingView> DetailBindings { get; } = [];
 
@@ -122,6 +125,7 @@ public partial class StacksViewModel : PageViewModel
 
     partial void OnSelectedChanged(StackDefinition? value)
     {
+        ConfirmingRemove = false;
         DetailBindings.Clear();
         if (value is not null)
             foreach (var repo in value.Repos)
@@ -273,8 +277,18 @@ public partial class StacksViewModel : PageViewModel
     [RelayCommand]
     private void Remove()
     {
+        if (Selected is not null) ConfirmingRemove = true;
+    }
+
+    [RelayCommand]
+    private void CancelRemove() => ConfirmingRemove = false;
+
+    [RelayCommand]
+    private void ConfirmRemove()
+    {
         if (Selected is null) return;
         var name = Selected.Name;
+        ConfirmingRemove = false;
         Services.Stacks.Remove(name);
         Status = $"removed stack '{name}'";
         Reload();

@@ -7,7 +7,7 @@
              x:DataType="vm:StacksViewModel">
     <Grid Margin="28,20,24,16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" MaxWidth="600" />
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -99,6 +99,20 @@
                                    Foreground="{StaticResource WarnBrush}" Text="{Binding EditBlockedReason}" />
                         <TextBlock IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{StaticResource OkBrush}" Text="{Binding Status}" TextWrapping="Wrap" />
+
+                        <!-- remove confirm bar -->
+                        <Border IsVisible="{Binding ConfirmingRemove}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
+                                           Text="Remove this stack definition? Any workspaces already created from it keep working — only the stack is deleted." />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Remove stack" Command="{Binding ConfirmRemoveCommand}"
+                                            Foreground="{StaticResource DangerBrush}" />
+                                    <Button Content="Cancel" Command="{Binding CancelRemoveCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <!-- repos -->
                         <StackPanel Spacing="6">

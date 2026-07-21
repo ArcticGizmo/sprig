@@ -37,7 +37,7 @@ public static class CliApp
             new ComposeGenerator(), new DockerService(runner), paths);
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
-        var stacks = new StackStore(paths, registry);
+        var stacks = new StackStore(paths, registry, instances);
         var resolver = new StackResolver(registry, stacks, git);
 
         var command = args[0];

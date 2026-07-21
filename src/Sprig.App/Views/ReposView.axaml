@@ -7,7 +7,7 @@
              x:DataType="vm:ReposViewModel">
     <Grid Margin="28,20,24,16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" MaxWidth="600" />
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 

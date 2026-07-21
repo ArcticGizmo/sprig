@@ -7,11 +7,24 @@ namespace Sprig.Core.Stacks;
 public sealed class StackException(string message) : Exception(message);
 
 /// <summary>Persists <see cref="StackDefinition"/>s in the central store and handles export/import.</summary>
-public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore registry)
+public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore registry, InstanceStore instances)
 {
     public void Save(StackDefinition stack)
     {
         Validate(stack);
+
+        // A stack that live workspaces were built from is frozen: changing its wiring wouldn't touch
+        // those already-materialised workspaces, so it would only mislead. Creating a new stack, or
+        // re-saving one nothing depends on, is fine. (The desktop app also gates Edit on this.)
+        if (File.Exists(FilePath(stack.Name)))
+        {
+            var users = instances.LoadAll().Count(i => i.Stack == stack.Name);
+            if (users > 0)
+                throw new StackException(
+                    $"can't modify stack '{stack.Name}': {users} workspace{(users == 1 ? "" : "s")} " +
+                    "were created from it — remove them first");
+        }
+
         JsonFile.Write(FilePath(stack.Name), stack);
     }
 

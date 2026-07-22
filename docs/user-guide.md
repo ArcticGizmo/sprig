@@ -68,6 +68,11 @@ Add-repo → Build-a-stack → Spin-up flows in order and auto-advances as you g
 When a downstream page is empty it points you back upstream — Stacks with no repos offers **Add a
 repo**, Workspaces with no stack offers **Build a stack** — so you're never sent to a dead end.
 
+### About
+Pinned to the bottom of the nav (with the running version shown alongside). Shows the installed
+version, links to the **source repo** and its **issue tracker**, and a **Check for updates** button —
+when the release feed has a newer version, **Download & install** applies it and restarts sprig.
+
 ---
 
 ## CLI

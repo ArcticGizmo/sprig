@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.AboutView"
+             x:DataType="vm:AboutViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="20,18" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <!-- Inline link-style button (opens a URL) -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="640" Margin="32,36,32,32" HorizontalAlignment="Stretch" Spacing="20">
+
+            <StackPanel Spacing="3">
+                <TextBlock Text="About" FontSize="22" FontWeight="SemiBold"
+                           Foreground="{StaticResource TitleBrush}" />
+                <TextBlock Text="sprig — worktree + infrastructure isolation for any git repo."
+                           FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- Version -->
+            <Border Classes="panel">
+                <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="sprig" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Text="Installed version" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding Version}" FontSize="18" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                </Grid>
+            </Border>
+
+            <!-- Project links -->
+            <Border Classes="panel">
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="phead" Text="PROJECT" />
+                    <StackPanel Spacing="3">
+                        <Button Classes="link" Content="Source on GitHub  →" Command="{Binding OpenRepoCommand}"
+                                HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding RepoUrlText}" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                    <StackPanel Spacing="3">
+                        <Button Classes="link" Content="Report an issue  →" Command="{Binding OpenIssuesCommand}"
+                                HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding IssuesUrlText}" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Updates -->
+            <Border Classes="panel">
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="phead" Text="UPDATES" />
+                    <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="{StaticResource MutedBrush}"
+                               Text="Check the release feed for a newer version. Installing downloads the update and restarts sprig." />
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Button Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}"
+                                Padding="14,8" />
+                        <Button Content="Download &amp; install" Command="{Binding ApplyUpdateCommand}"
+                                IsVisible="{Binding UpdateAvailable}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                FontWeight="SemiBold" Padding="14,8" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding UpdateStatus}" FontSize="13" TextWrapping="Wrap"
+                               Foreground="{StaticResource FgBrush}"
+                               IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

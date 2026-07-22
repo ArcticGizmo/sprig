@@ -90,6 +90,21 @@
                                Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
 
+                <!-- Pinned to the bottom of the nav, below the workflow pages -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="4">
+                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
+                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding About}">
+                        <Border Classes="navitem" Classes.active="{Binding About.IsActive}">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="About" FontSize="14"
+                                           VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding About.Version}" FontSize="11"
+                                           VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                        </Border>
+                    </Button>
+                </StackPanel>
+
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding NavItems}" Margin="8,4">
                         <ItemsControl.DataTemplates>

@@ -17,6 +17,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The guided "Set up sprig" strip (opt-in from Home).</summary>
     public SetupGuideViewModel Guide { get; }
 
+    /// <summary>The About page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
+    public AboutViewModel About { get; }
+
     [ObservableProperty]
     private PageViewModel _currentPage;
 
@@ -36,7 +39,11 @@ public partial class MainWindowViewModel : ViewModelBase
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
 
-        Pages = [home, repos, stacks, workspaces];
+        About = new AboutViewModel();
+
+        // About is navigable (so it gets active-state highlighting) but lives in the bottom
+        // nav slot rather than the workflow list, so it's not in NavItems.
+        Pages = [home, repos, stacks, workspaces, About];
         NavItems =
         [
             home,

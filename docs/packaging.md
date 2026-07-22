@@ -40,7 +40,10 @@ shortcuts. `--silent` installs without UI. Uninstall via `%LocalAppData%\Sprig\U
 ## Update notifications
 
 On launch the app checks a release feed and, if a newer version exists, shows a dismissible
-"Update available" bar. It does **not** auto-update.
+"Update available" bar — notification only, it does **not** auto-update. The **About** page (bottom
+of the left nav) adds a manual path: it shows the installed version and a **Check for updates**
+button; when the feed has a newer release, a **Download & install** button applies it and restarts
+the app. Both surfaces share `UpdateChecker` and honour `SPRIG_UPDATE_FEED`.
 
 - The feed location comes from the `SPRIG_UPDATE_FEED` environment variable (a directory path or a
   URL). If it's unset — or the app wasn't installed via Velopack (e.g. run from the build output) —
@@ -57,5 +60,3 @@ On launch the app checks a release feed and, if a newer version exists, shows a 
   platform-specific signing flags) once a certificate is available.
 - **A hosted feed** — point `SPRIG_UPDATE_FEED` at a real HTTP release host (e.g. GitHub releases
   via a `GithubSource`) instead of a local directory.
-- **Applying updates** — the download/apply/restart flow is intentionally not wired; only
-  notification is.

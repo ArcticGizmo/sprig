@@ -85,6 +85,9 @@
                         <Image x:Name="LogoImage" Width="30" Height="30" VerticalAlignment="Center" />
                         <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
                                    Foreground="{StaticResource TitleBrush}" />
+                        <!-- Dev instances write to a separate store; flag it so it's obvious at a glance. -->
+                        <TextBlock Text="- DEV" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"
+                                   Foreground="{StaticResource DevBrush}" IsVisible="{Binding IsDevInstance}" />
                     </StackPanel>
                     <TextBlock Text="worktree + infra isolation"
                                Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" />

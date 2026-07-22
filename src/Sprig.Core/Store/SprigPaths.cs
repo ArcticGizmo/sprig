@@ -1,7 +1,8 @@
 namespace Sprig.Core.Store;
 
 /// <summary>
-/// The machine-local central store layout (default root <c>%LOCALAPPDATA%\sprig</c>).
+/// The machine-local central store layout (default root <c>%LOCALAPPDATA%\sprig</c>, or
+/// <c>sprig (Dev)</c> for a dev instance — see <see cref="AppProfile"/>).
 /// An interface so tests can point it at a temp dir and the Core stays OS-agnostic.
 /// </summary>
 public interface ISprigPaths
@@ -29,7 +30,7 @@ public sealed class SprigPaths : ISprigPaths
 {
     public SprigPaths(string? root = null)
         => Root = root ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "sprig");
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProfile.DataFolderName);
 
     public string Root { get; }
     public string InstancesDir => Path.Combine(Root, "instances");

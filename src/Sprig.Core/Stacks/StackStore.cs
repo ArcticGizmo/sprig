@@ -71,9 +71,14 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
             throw new StackException($"invalid stack name '{stack.Name}' (use letters, digits, '.', '-', '_')");
         if (stack.Repos.Count == 0)
             throw new StackException("a stack must reference at least one repo");
-        foreach (var repo in stack.Repos)
-            if (registry.Get(repo) is null)
-                throw new StackException($"stack '{stack.Name}' references unknown repo '{repo}' (register it first)");
+
+        // Stacks reference repos by name, so an imported stack only saves once every repo it names is
+        // registered on this machine. Report all the missing ones at once, so the fix is a single pass.
+        var unknown = stack.Repos.Where(repo => registry.Get(repo) is null).ToList();
+        if (unknown.Count > 0)
+            throw new StackException(
+                $"stack '{stack.Name}' references unregistered repo{(unknown.Count == 1 ? "" : "s")} " +
+                $"{string.Join(", ", unknown.Select(r => $"'{r}'"))} — register {(unknown.Count == 1 ? "it" : "them")} first");
     }
 
     string FilePath(string name) => Path.Combine(paths.StacksDir, name + ".json");

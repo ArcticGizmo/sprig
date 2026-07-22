@@ -19,6 +19,8 @@ public partial class App : Application
         {
             var services = new AppServices();
             var main = new MainWindow { DataContext = new MainWindowViewModel(services) };
+            // A dev instance writes to a separate store; badge the title so it's obvious which one is running.
+            main.Title += Sprig.Core.Store.AppProfile.DisplaySuffix;
             desktop.MainWindow = main;
             MaybeShowChangelog(services, main);
         }

@@ -29,5 +29,6 @@
         <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
         <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
         <SolidColorBrush x:Key="DangerBrush" Color="#F87171" />
+        <SolidColorBrush x:Key="DevBrush" Color="#FF5FB0" />
     </Application.Resources>
 </Application>

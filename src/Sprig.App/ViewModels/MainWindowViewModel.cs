@@ -30,6 +30,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _updateNotice;
 
+    /// <summary>True when this is an isolated dev instance — drives the pink "- DEV" nav badge.</summary>
+    public bool IsDevInstance => Sprig.Core.Store.AppProfile.IsDev;
+
     public MainWindowViewModel(AppServices services)
     {
         var nav = new Navigator();

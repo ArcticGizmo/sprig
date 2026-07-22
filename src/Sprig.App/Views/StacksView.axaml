@@ -12,15 +12,29 @@
         </Grid.ColumnDefinitions>
 
         <!-- Left: header + list -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0">
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <TextBlock Grid.Column="0" Text="Stacks" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="New stack" Command="{Binding NewStackCommand}"
-                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Button Content="Import" Click="ImportStack" />
+                    <Button Content="New stack" Command="{Binding NewStackCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                </StackPanel>
             </Grid>
 
-            <ListBox Grid.Row="1" IsVisible="{Binding HasStacks}"
+            <!-- Import/export feedback: names any repos the imported stack needs registered first. -->
+            <Border Grid.Row="1" Margin="0,0,0,12" Padding="10" CornerRadius="6"
+                    Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1"
+                    IsVisible="{Binding ImportError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding ImportError}" Foreground="{StaticResource DangerBrush}"
+                               FontSize="12" TextWrapping="Wrap" />
+                    <Button Content="Register repos  →" Command="{Binding AddRepoCommand}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
+            <ListBox Grid.Row="2" IsVisible="{Binding HasStacks}"
                      ItemsSource="{Binding Stacks}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="core:StackDefinition">
@@ -90,6 +104,7 @@
                             <TextBlock Grid.Column="0" Text="{Binding Selected.Name}" FontSize="18" FontWeight="SemiBold"
                                        Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <Button Content="Export" Click="ExportStack" />
                                 <Button Content="Edit" Command="{Binding EditSelectedCommand}" IsEnabled="{Binding CanEditSelected}" />
                                 <Button Content="Remove" Command="{Binding RemoveCommand}" Foreground="{StaticResource DangerBrush}" />
                             </StackPanel>

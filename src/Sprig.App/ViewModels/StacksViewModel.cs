@@ -59,6 +59,9 @@ public partial class StacksViewModel : PageViewModel
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _isCreating;
 
+    /// <summary>Set when an import (or export) fails — shown as a banner, with a shortcut to register repos.</summary>
+    [ObservableProperty] private string? _importError;
+
     /// <summary>Live validation of the name — non-null while it contains a disallowed character.</summary>
     public string? NameError { get; private set; }
     public bool HasNameError => NameError is not null;
@@ -195,8 +198,42 @@ public partial class StacksViewModel : PageViewModel
         Ports.Clear();
         Bindings.Clear();
         RebuildBindingVariables();
-        Error = null; Status = null;
+        Error = null; Status = null; ImportError = null;
         IsCreating = true;
+    }
+
+    // --- Import / export ----------------------------------------------------
+    // Stacks live in the central store (a cross-repo concern), not in any repo. Export copies a stack's
+    // JSON out for sharing; import reads one back and saves it — but only once every repo it names is
+    // registered on this machine, since stacks reference repos by name (paths stay machine-local).
+    // The file picking needs the window's TopLevel, so the view code-behind picks the path and calls these.
+
+    /// <summary>Write the selected stack's JSON to the chosen path.</summary>
+    public void ExportTo(string path)
+    {
+        if (Selected is null) return;
+        Error = null; ImportError = null;
+        try
+        {
+            var written = Services.Stacks.Export(Selected.Name, path);
+            Status = $"exported '{Selected.Name}' to {written}";
+        }
+        catch (Exception ex) { Status = null; ImportError = ex.Message; }
+    }
+
+    /// <summary>Read a stack JSON from the chosen path, validate it against the registry, and save it.</summary>
+    public void ImportFrom(string path)
+    {
+        Error = null; Status = null; ImportError = null;
+        try
+        {
+            var imported = Services.Stacks.Import(path);
+            Reload();
+            Selected = Stacks.FirstOrDefault(s => s.Name == imported.Name);
+            Status = $"imported stack '{imported.Name}'";
+            Services.NotifyStoreChanged();
+        }
+        catch (Exception ex) { ImportError = ex.Message; }
     }
 
     [RelayCommand]

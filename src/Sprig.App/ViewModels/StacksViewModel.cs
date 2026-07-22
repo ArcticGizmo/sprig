@@ -16,7 +16,6 @@ public partial class StacksViewModel : PageViewModel
 {
     protected readonly AppServices Services;
     readonly Navigator _nav;
-    const int PortPreviewBase = 20000;
 
     public StacksViewModel(AppServices services, Navigator nav)
     {
@@ -297,8 +296,10 @@ public partial class StacksViewModel : PageViewModel
 
     void ReindexPortPreviews()
     {
+        // Preview from the configured range start, so the hint matches what create will actually allocate.
+        var previewBase = Services.Settings.Get().PortRangeStart;
         for (var i = 0; i < Ports.Count; i++)
-            Ports[i].Preview = (PortPreviewBase + i).ToString(CultureInfo.InvariantCulture);
+            Ports[i].Preview = (previewBase + i).ToString(CultureInfo.InvariantCulture);
     }
 
     void Reload()

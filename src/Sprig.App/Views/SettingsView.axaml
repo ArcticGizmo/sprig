@@ -1,0 +1,126 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="20,18" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.help">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.field">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <!-- Save-status + check-result colouring -->
+        <Style Selector="TextBlock.status.err"><Setter Property="Foreground" Value="{StaticResource DangerBrush}" /></Style>
+        <Style Selector="TextBlock.status.ok"><Setter Property="Foreground" Value="{StaticResource OkBrush}" /></Style>
+        <Style Selector="TextBlock.result.ok"><Setter Property="Foreground" Value="{StaticResource OkBrush}" /></Style>
+        <Style Selector="TextBlock.result.warn"><Setter Property="Foreground" Value="{StaticResource WarnBrush}" /></Style>
+        <Style Selector="TextBlock.result.info"><Setter Property="Foreground" Value="{StaticResource AccentBrush}" /></Style>
+        <Style Selector="TextBlock.result.muted"><Setter Property="Foreground" Value="{StaticResource MutedBrush}" /></Style>
+    </UserControl.Styles>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="680" Margin="32,36,32,32" HorizontalAlignment="Stretch" Spacing="20">
+
+            <StackPanel Spacing="3">
+                <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold"
+                           Foreground="{StaticResource TitleBrush}" />
+                <TextBlock Classes="help"
+                           Text="Control how sprig picks host ports for each workspace." />
+            </StackPanel>
+
+            <!-- Port allocation policy -->
+            <Border Classes="panel">
+                <StackPanel Spacing="16">
+                    <TextBlock Classes="phead" Text="PORT RANGE" />
+                    <TextBlock Classes="help"
+                               Text="sprig allocates each workspace's ports from this range. Changes apply to new workspaces; existing ones keep the ports they already hold." />
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="field" Text="Start port" />
+                            <TextBox Text="{Binding StartText}" Width="130" />
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="field" Text="End port (inclusive)" />
+                            <TextBox Text="{Binding EndText}" Width="130" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,2" />
+
+                    <TextBlock Classes="phead" Text="RESTRICTED PORTS" />
+                    <TextBlock Classes="help"
+                               Text="Ports that are never allocated, even when they fall inside the range — e.g. ones another app on this machine already uses. One per line or comma-separated." />
+                    <TextBox Text="{Binding RestrictedText}" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="80" MaxHeight="160" PlaceholderText="e.g. 8080, 8443" />
+
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Button Content="Save changes" Command="{Binding SaveCommand}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                FontWeight="SemiBold" Padding="14,8" />
+                        <Button Content="Reset to defaults" Command="{Binding ResetDefaultsCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}"
+                                Padding="14,8" />
+                    </StackPanel>
+                    <TextBlock Classes="status" Classes.err="{Binding SaveFailed}" Classes.ok="{Binding !SaveFailed}"
+                               Text="{Binding SaveMessage}" FontSize="13" TextWrapping="Wrap"
+                               IsVisible="{Binding SaveMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Single-port checker -->
+            <Border Classes="panel">
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="phead" Text="CHECK A PORT" />
+                    <TextBlock Classes="help" Text="Type a port to see its status." />
+                    <TextBox Text="{Binding CheckText}" Width="130" HorizontalAlignment="Left"
+                             PlaceholderText="e.g. 8080" />
+                    <TextBlock Classes="result"
+                               Classes.ok="{Binding CheckIsAvailable}" Classes.warn="{Binding CheckIsRestricted}"
+                               Classes.info="{Binding CheckIsInUse}" Classes.muted="{Binding CheckIsOutOfRange}"
+                               Text="{Binding CheckResult}" FontSize="14" FontWeight="SemiBold"
+                               IsVisible="{Binding HasCheckResult}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Ports in use -->
+            <Border Classes="panel">
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="phead" Text="PORTS IN USE" />
+                    <TextBlock Classes="help" Text="No ports are currently allocated to a workspace."
+                               IsVisible="{Binding !HasLeases}" />
+                    <ItemsControl ItemsSource="{Binding Leases}" IsVisible="{Binding HasLeases}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PortUsageItem">
+                                <Grid ColumnDefinitions="90,*" Margin="0,3">
+                                    <TextBlock Grid.Column="0" Text="{Binding PortText}" FontWeight="SemiBold"
+                                               FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding HeldBy}"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

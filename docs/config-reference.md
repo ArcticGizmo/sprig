@@ -130,7 +130,8 @@ that repo's declared inputs. It lives in the central store, never inside a repo.
 
 ### Ports
 
-Just names. At create time each becomes a real, non-colliding number for that workspace. Reference
+Just names. At create time each becomes a real, non-colliding number for that workspace, drawn from
+the range configured in **Settings** (default `8000–8999`), skipping any restricted ports. Reference
 an allocated port from a binding as `${sprig.ports.<name>}`. Two workspaces of the same stack get
 independent port sets, so they run side by side.
 
@@ -199,3 +200,27 @@ When you `create` a workspace from a stack, sprig:
 
 Any declared input without a binding is a **hard failure** (with rollback) — the error names the
 repo, the input, and its example, so you know exactly what to add.
+
+---
+
+## Machine settings — `settings.json`
+
+Machine-local, user-configurable settings, stored centrally
+(`%LOCALAPPDATA%\sprig\settings.json`) and edited from the app's **Settings** page — never inside a
+repo. Both the app and the CLI read them, so allocation behaves the same either way.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `portRangeStart` | int | `8000` | First port sprig may allocate to a workspace (inclusive). |
+| `portRangeEndExclusive` | int | `9000` | One past the last allocatable port (exclusive) — so the default range is `8000–8999`. |
+| `restrictedPorts` | int[] | `[]` | Ports never allocated, even inside the range (deduped + sorted on save). |
+
+```json
+{
+  "portRangeStart": 8000,
+  "portRangeEndExclusive": 9000,
+  "restrictedPorts": [8080, 8443]
+}
+```
+
+Changes apply to **new** allocations; workspaces that already hold ports keep them.

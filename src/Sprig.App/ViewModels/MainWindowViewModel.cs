@@ -17,6 +17,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The guided "Set up sprig" strip (opt-in from Home).</summary>
     public SetupGuideViewModel Guide { get; }
 
+    /// <summary>The Settings page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
+    public SettingsViewModel Settings { get; }
+
     /// <summary>The About page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
     public AboutViewModel About { get; }
 
@@ -39,11 +42,12 @@ public partial class MainWindowViewModel : ViewModelBase
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
 
+        Settings = new SettingsViewModel(services);
         About = new AboutViewModel();
 
-        // About is navigable (so it gets active-state highlighting) but lives in the bottom
-        // nav slot rather than the workflow list, so it's not in NavItems.
-        Pages = [home, repos, stacks, workspaces, About];
+        // Settings + About are navigable (so they get active-state highlighting) but live in the
+        // bottom nav slot rather than the workflow list, so they're not in NavItems.
+        Pages = [home, repos, stacks, workspaces, Settings, About];
         NavItems =
         [
             home,

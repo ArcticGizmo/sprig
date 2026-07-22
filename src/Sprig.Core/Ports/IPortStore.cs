@@ -1,7 +1,35 @@
+using Sprig.Core.Settings;
+
 namespace Sprig.Core.Ports;
 
 /// <summary>Thrown when the configured port range is exhausted.</summary>
 public sealed class PortAllocationException(string message) : Exception(message);
+
+/// <summary>The allocation policy in force: the range sprig may use and the ports it must skip.</summary>
+public sealed record PortPolicy(int RangeStart, int RangeEndExclusive, IReadOnlySet<int> Restricted)
+{
+    public static PortPolicy From(SprigSettings s)
+        => new(s.PortRangeStart, s.PortRangeEndExclusive, new HashSet<int>(s.RestrictedPorts));
+}
+
+/// <summary>One allocated port: which workspace and named port hold it.</summary>
+public sealed record PortLease(string Workspace, string Name, int Port);
+
+/// <summary>The status of a single port relative to the current policy and live leases.</summary>
+public enum PortStatus
+{
+    /// <summary>In range, not restricted, not leased — sprig could allocate it.</summary>
+    Available,
+    /// <summary>Explicitly restricted — sprig will never allocate it.</summary>
+    Restricted,
+    /// <summary>Currently leased to a workspace (see <see cref="PortReport.HeldBy"/>).</summary>
+    InUse,
+    /// <summary>Outside the configured range — sprig doesn't manage it.</summary>
+    OutOfRange,
+}
+
+/// <summary>The result of a single-port status query.</summary>
+public sealed record PortReport(int Port, PortStatus Status, string? HeldBy);
 
 /// <summary>
 /// Allocates real, non-colliding host ports to workspaces from a central store.
@@ -23,4 +51,10 @@ public interface IPortStore
 
     /// <summary>Return the workspace's current lease, or <c>null</c> if it holds none.</summary>
     IReadOnlyDictionary<string, int>? Peek(string workspace);
+
+    /// <summary>Every port currently leased, across all workspaces, ordered by port number.</summary>
+    IReadOnlyList<PortLease> ListLeases();
+
+    /// <summary>Classify a single port against the current policy and live leases.</summary>
+    PortReport Describe(int port);
 }

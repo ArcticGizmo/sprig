@@ -16,6 +16,8 @@ public interface ISprigPaths
     string ReposFile { get; }
     /// <summary>The port-allocation store file.</summary>
     string PortsFile { get; }
+    /// <summary>The user-settings file.</summary>
+    string SettingsFile { get; }
     /// <summary>This instance's folder (generated compose, record).</summary>
     string InstanceDir(string workspace);
     /// <summary>This instance's record file.</summary>
@@ -34,6 +36,7 @@ public sealed class SprigPaths : ISprigPaths
     public string StacksDir => Path.Combine(Root, "stacks");
     public string ReposFile => Path.Combine(Root, "repos.json");
     public string PortsFile => Path.Combine(Root, "ports.json");
+    public string SettingsFile => Path.Combine(Root, "settings.json");
     public string InstanceDir(string workspace) => Path.Combine(InstancesDir, workspace);
     public string InstanceRecordFile(string workspace) => Path.Combine(InstanceDir(workspace), "instance.json");
 }

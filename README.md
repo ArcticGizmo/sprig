@@ -74,7 +74,7 @@ Everything the CLI does is reachable from the UI.
 |---|---|
 | **Source repo** (tracked) | `.sprig.json` only — the single file sprig adds to your repo |
 | **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files; dies with the worktree |
-| **Central store** `%LOCALAPPDATA%\sprig` | repo registry, stack definitions, per-workspace records, allocated ports, generated compose files |
+| **Central store** `%LOCALAPPDATA%\sprig` | repo registry, stack definitions, per-workspace records, allocated ports, generated compose files, user settings (port range) |
 
 ## Docs
 

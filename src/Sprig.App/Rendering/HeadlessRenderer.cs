@@ -61,6 +61,9 @@ internal static class HeadlessRenderer
                     stacks.AddPortCommand.Execute(null);
                     if (stacks.Ports.Count > 0) stacks.Ports[0].Name = "api_port";
                 }
+                // Populate the Settings port-checker so the snapshot shows a status result.
+                if (page is SettingsViewModel settings)
+                    settings.CheckText = "8080";
                 Capture(vm, Path.Combine(outDir, $"main_{page.Title.ToLowerInvariant()}.png"));
 
                 // Also capture the repos edit form when a repo is available.

@@ -1,3 +1,4 @@
+using Sprig.Core.Settings;
 using Sprig.Core.Store;
 
 namespace Sprig.Core.Ports;
@@ -7,23 +8,38 @@ namespace Sprig.Core.Ports;
 /// (<see cref="ISprigPaths.PortsFile"/>); every mutation takes a cross-process file lock and
 /// does an atomic read-modify-write, so concurrent <c>create</c>s cannot double-allocate.
 /// </summary>
+/// <remarks>
+/// The allocation <see cref="PortPolicy"/> (range + restricted ports) is read on every operation,
+/// so edits made in Settings take effect for the next allocation without restarting the app.
+/// </remarks>
 public sealed class FilePortStore : IPortStore
 {
-    readonly ISprigPaths _paths;
-    readonly int _rangeStart;
-    readonly int _rangeEndExclusive;
+    static readonly IReadOnlySet<int> NoRestrictions = new HashSet<int>();
 
-    public FilePortStore(ISprigPaths paths, int rangeStart = 20000, int rangeEndExclusive = 30000)
+    readonly ISprigPaths _paths;
+    readonly Func<PortPolicy> _policy;
+
+    /// <summary>Fixed-range store (used by tests and as a simple default).</summary>
+    public FilePortStore(ISprigPaths paths, int rangeStart = SprigSettings.DefaultRangeStart,
+        int rangeEndExclusive = SprigSettings.DefaultRangeEndExclusive)
     {
         if (rangeEndExclusive <= rangeStart)
             throw new ArgumentException("port range end must be greater than start");
         _paths = paths;
-        _rangeStart = rangeStart;
-        _rangeEndExclusive = rangeEndExclusive;
+        var policy = new PortPolicy(rangeStart, rangeEndExclusive, NoRestrictions);
+        _policy = () => policy;
+    }
+
+    /// <summary>Live store: reads the range + restricted ports from settings on each call.</summary>
+    public FilePortStore(ISprigPaths paths, ISettingsStore settings)
+    {
+        _paths = paths;
+        _policy = () => PortPolicy.From(settings.Get());
     }
 
     public IReadOnlyDictionary<string, int> Acquire(string workspace, IReadOnlyList<string> portNames)
     {
+        var policy = CurrentPolicy();
         using var _ = Lock();
         var data = Load();
 
@@ -45,7 +61,7 @@ public sealed class FilePortStore : IPortStore
                 result[name] = already; // deterministic: reuse existing
                 continue;
             }
-            var port = NextFree(used);
+            var port = NextFree(used, policy);
             mine[name] = port;
             used.Add(port);
             result[name] = port;
@@ -72,13 +88,61 @@ public sealed class FilePortStore : IPortStore
             : null;
     }
 
-    int NextFree(HashSet<int> used)
+    public IReadOnlyList<PortLease> ListLeases()
     {
-        for (var p = _rangeStart; p < _rangeEndExclusive; p++)
-            if (!used.Contains(p))
+        using var _ = Lock();
+        var data = Load();
+        return data.Leases
+            .SelectMany(ws => ws.Value.Select(kv => new PortLease(ws.Key, kv.Key, kv.Value)))
+            .OrderBy(l => l.Port)
+            .ToList();
+    }
+
+    public PortReport Describe(int port)
+    {
+        var policy = CurrentPolicy();
+        if (port < policy.RangeStart || port >= policy.RangeEndExclusive)
+            return new PortReport(port, PortStatus.OutOfRange, null);
+
+        // A live lease wins over the restricted flag — it's genuinely occupied right now.
+        var held = FindLease(port);
+        if (held is not null)
+            return new PortReport(port, PortStatus.InUse, $"{held.Workspace} / {held.Name}");
+
+        if (policy.Restricted.Contains(port))
+            return new PortReport(port, PortStatus.Restricted, null);
+
+        return new PortReport(port, PortStatus.Available, null);
+    }
+
+    PortLease? FindLease(int port)
+    {
+        using var _ = Lock();
+        var data = Load();
+        foreach (var (ws, map) in data.Leases)
+            foreach (var (name, p) in map)
+                if (p == port)
+                    return new PortLease(ws, name, port);
+        return null;
+    }
+
+    PortPolicy CurrentPolicy()
+    {
+        var policy = _policy();
+        if (policy.RangeEndExclusive <= policy.RangeStart)
+            throw new PortAllocationException(
+                "the configured port range is invalid (end must be greater than start) — fix it in Settings");
+        return policy;
+    }
+
+    static int NextFree(HashSet<int> used, PortPolicy policy)
+    {
+        for (var p = policy.RangeStart; p < policy.RangeEndExclusive; p++)
+            if (!used.Contains(p) && !policy.Restricted.Contains(p))
                 return p;
         throw new PortAllocationException(
-            $"port range {_rangeStart}-{_rangeEndExclusive - 1} is exhausted ({used.Count} in use)");
+            $"port range {policy.RangeStart}-{policy.RangeEndExclusive - 1} is exhausted " +
+            $"({used.Count} in use, {policy.Restricted.Count} restricted)");
     }
 
     PortStoreData Load()

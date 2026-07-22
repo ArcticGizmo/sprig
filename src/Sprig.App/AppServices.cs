@@ -5,6 +5,7 @@ using Sprig.Core.Git;
 using Sprig.Core.Init;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
+using Sprig.Core.Settings;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
@@ -27,6 +28,8 @@ public sealed class AppServices
     public StackStore Stacks { get; }
     public StackResolver StackResolver { get; }
     public InitInspector Init { get; }
+    public ISettingsStore Settings { get; }
+    public IPortStore Ports { get; }
 
     public AppServices(string? root = null)
     {
@@ -34,7 +37,9 @@ public sealed class AppServices
         var runner = new ProcessRunner();
         Git = new GitService(runner);
         Docker = new DockerService(runner);
-        var ports = new FilePortStore(Paths);
+        Settings = new FileSettingsStore(Paths);
+        var ports = new FilePortStore(Paths, Settings);
+        Ports = ports;
         var instances = new InstanceStore(Paths);
         Workspaces = new WorkspaceService(Git, ports, instances, new EnvClobberService(),
             new ComposeGenerator(), Docker, Paths);

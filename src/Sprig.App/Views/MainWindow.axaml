@@ -91,8 +91,14 @@
                 </StackPanel>
 
                 <!-- Pinned to the bottom of the nav, below the workflow pages -->
-                <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="4">
+                <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="2">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
+                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}">
+                        <Border Classes="navitem" Classes.active="{Binding Settings.IsActive}">
+                            <TextBlock Text="Settings" FontSize="14"
+                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                        </Border>
+                    </Button>
                     <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding About}">
                         <Border Classes="navitem" Classes.active="{Binding About.IsActive}">
                             <Grid ColumnDefinitions="*,Auto">

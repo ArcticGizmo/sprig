@@ -8,6 +8,7 @@ using Sprig.Core.Git;
 using Sprig.Core.Init;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
+using Sprig.Core.Settings;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
@@ -31,7 +32,7 @@ public static class CliApp
         var paths = new SprigPaths();
         var runner = new ProcessRunner();
         var git = new GitService(runner);
-        var ports = new FilePortStore(paths);
+        var ports = new FilePortStore(paths, new FileSettingsStore(paths));
         var instances = new InstanceStore(paths);
         var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
             new ComposeGenerator(), new DockerService(runner), paths);

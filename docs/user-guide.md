@@ -68,6 +68,16 @@ Add-repo → Build-a-stack → Spin-up flows in order and auto-advances as you g
 When a downstream page is empty it points you back upstream — Stacks with no repos offers **Add a
 repo**, Workspaces with no stack offers **Build a stack** — so you're never sent to a dead end.
 
+### Settings
+Pinned to the bottom of the nav. Controls how sprig picks host ports:
+- **Port range** — the start/end (inclusive) of the range workspace ports are allocated from
+  (default **8000–8999**). Changes apply to *new* workspaces; existing ones keep the ports they hold.
+- **Restricted ports** — ports that are never allocated even when they fall inside the range (e.g.
+  something else on the machine already owns them). One per line or comma-separated.
+- **Check a port** — type a port to see its status: *Available*, *Restricted*, *In use* (by which
+  workspace), or *Outside sprig's range*.
+- **Ports in use** — every port currently leased to a workspace.
+
 ### About
 Pinned to the bottom of the nav (with the running version shown alongside). Shows the installed
 version, links to the **source repo** and its **issue tracker**, and a **Check for updates** button —

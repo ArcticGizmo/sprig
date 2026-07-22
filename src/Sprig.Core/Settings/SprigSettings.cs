@@ -18,6 +18,15 @@ public sealed class SprigSettings
     /// </summary>
     public List<int> RestrictedPorts { get; set; } = new();
 
+    /// <summary>Show the "what's new" changelog window on the first launch after an update.</summary>
+    public bool ShowChangelogOnUpdate { get; set; } = true;
+
+    /// <summary>
+    /// The app version that last ran here — used to pick the "what's new" entries. Null on a fresh
+    /// install (nothing to diff against). Updated to the running version once the check has run.
+    /// </summary>
+    public string? LastSeenVersion { get; set; }
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -29,5 +38,7 @@ public sealed class SprigSettings
         PortRangeStart = PortRangeStart,
         PortRangeEndExclusive = PortRangeEndExclusive,
         RestrictedPorts = new List<int>(RestrictedPorts),
+        ShowChangelogOnUpdate = ShowChangelogOnUpdate,
+        LastSeenVersion = LastSeenVersion,
     };
 }

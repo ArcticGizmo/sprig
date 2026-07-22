@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The changelog is embedded so the app can render it at runtime — the About "What's new"
+         viewer and the post-update window both read it (assembly manifest name "Sprig.CHANGELOG.md"). -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="Sprig.CHANGELOG.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.5" />
     <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />

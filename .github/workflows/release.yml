@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+# Tag-triggered Velopack release. sprig is Windows-only (unlike perch, there's no NativeAOT hook
+# needing a macOS runner), so one job builds, packs, and publishes the GitHub Release.
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Install vpk CLI
+        run: dotnet tool install -g vpk
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
+
+      - name: Publish
+        run: |
+          dotnet publish src/Sprig.App/Sprig.App.csproj -c Release -r win-x64 --self-contained true `
+            -p:Version=${{ steps.version.outputs.VERSION }} `
+            -o publish/
+
+      - name: Pack with Velopack
+        run: >
+          vpk pack
+          --packId Sprig
+          --packTitle "Sprig"
+          --packVersion ${{ steps.version.outputs.VERSION }}
+          --packDir publish/
+          --mainExe sprig-gui.exe
+          --icon src/Sprig.App/Assets/sprig.ico
+          --outputDir releases/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: releases/*
+          generate_release_notes: true

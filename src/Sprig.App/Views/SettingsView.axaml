@@ -100,6 +100,15 @@
                 </StackPanel>
             </Border>
 
+            <!-- Changelog -->
+            <Border Classes="panel">
+                <StackPanel Spacing="10">
+                    <TextBlock Classes="phead" Text="CHANGELOG" />
+                    <CheckBox IsChecked="{Binding ShowChangelogOnUpdate}"
+                              Content="Show what's new after an update" Foreground="{StaticResource FgBrush}" />
+                </StackPanel>
+            </Border>
+
             <!-- Ports in use -->
             <Border Classes="panel">
                 <StackPanel Spacing="12">

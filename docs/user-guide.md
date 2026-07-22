@@ -77,11 +77,13 @@ Pinned to the bottom of the nav. Controls how sprig picks host ports:
 - **Check a port** — type a port to see its status: *Available*, *Restricted*, *In use* (by which
   workspace), or *Outside sprig's range*.
 - **Ports in use** — every port currently leased to a workspace.
+- **Changelog** — toggle whether the "what's new" window appears on the first launch after an update.
 
 ### About
 Pinned to the bottom of the nav (with the running version shown alongside). Shows the installed
-version, links to the **source repo** and its **issue tracker**, and a **Check for updates** button —
-when the release feed has a newer version, **Download & install** applies it and restarts sprig.
+version, a **View changelog** link, links to the **source repo** and its **issue tracker**, and a
+**Check for updates** button — when the release feed has a newer version, **Download & install**
+applies it and restarts sprig.
 
 ---
 

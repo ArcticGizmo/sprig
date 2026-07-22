@@ -31,6 +31,30 @@ and generates a delta.
 > `vpk` verifies that `VelopackApp.Build().Run()` is the first call in `Program.Main` — that hook
 > handles the install/update lifecycle and must stay first.
 
+## Cutting a release (CI)
+
+Releases are automated by [`.github/workflows/release.yml`](../.github/workflows/release.yml),
+triggered by **pushing a `v*` tag**. On a `windows-latest` runner it derives the version from the
+tag, publishes, `vpk pack`s, and creates the GitHub Release with the Velopack feed attached. The
+manual `dotnet publish` + `vpk pack` above is the local equivalent.
+
+The flow for a release:
+
+1. Run the **`/bump-version`** skill — it bumps `<Version>` in `src/Sprig.App/Sprig.App.csproj` and
+   writes a new `CHANGELOG.md` section from the commits since the last tag. It does not commit or tag.
+2. Commit those two files.
+3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag is the source of truth for the
+   version — the skill derives the next version from the last tag, so keep the tag and the csproj in
+   step.
+
+## Changelog
+
+`CHANGELOG.md` (repo root, [Keep a Changelog](https://keepachangelog.com/) format) is **embedded**
+into the app (`Sprig.CHANGELOG.md`) at build time. On the first launch after an update, the app shows
+a "What's new" window listing the entries newer than the version that last ran — driven by the
+`LastSeenVersion` setting and toggleable from **Settings → Changelog**. It's also viewable any time
+from **About → View changelog**. Parsing lives in `Sprig.Core/Changelog/ChangelogParser.cs`.
+
 ## Install
 
 `Setup.exe` installs per-user to `%LocalAppData%\Sprig` (no admin needed) with Start Menu + Desktop

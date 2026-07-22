@@ -27,6 +27,10 @@ public partial class SettingsViewModel : PageViewModel
     [ObservableProperty] private string _saveMessage = "";
     [ObservableProperty] private bool _saveFailed;
 
+    // --- Changelog ---
+    [ObservableProperty] private bool _showChangelogOnUpdate;
+    bool _loadingSettings;
+
     // --- "Ports in use" list ---
     public ObservableCollection<PortUsageItem> Leases { get; } = new();
     [ObservableProperty] private bool _hasLeases;
@@ -59,7 +63,21 @@ public partial class SettingsViewModel : PageViewModel
         StartText = s.PortRangeStart.ToString(CultureInfo.InvariantCulture);
         EndText = (s.PortRangeEndExclusive - 1).ToString(CultureInfo.InvariantCulture);
         RestrictedText = string.Join(", ", s.RestrictedPorts);
+
+        _loadingSettings = true;
+        ShowChangelogOnUpdate = s.ShowChangelogOnUpdate;
+        _loadingSettings = false;
+
         RefreshLeases();
+    }
+
+    // The changelog toggle persists immediately (it's independent of the port-policy Save button).
+    partial void OnShowChangelogOnUpdateChanged(bool value)
+    {
+        if (_loadingSettings) return;
+        var s = _services.Settings.Get();
+        s.ShowChangelogOnUpdate = value;
+        _services.Settings.Save(s);
     }
 
     void RefreshLeases()

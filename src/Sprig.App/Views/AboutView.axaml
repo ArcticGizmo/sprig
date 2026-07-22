@@ -55,6 +55,15 @@
                 </Grid>
             </Border>
 
+            <!-- What's new -->
+            <Border Classes="panel">
+                <StackPanel Spacing="10">
+                    <TextBlock Classes="phead" Text="WHAT'S NEW" />
+                    <Button x:Name="ViewChangelogButton" Classes="link" Content="View changelog  →"
+                            HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
             <!-- Project links -->
             <Border Classes="panel">
                 <StackPanel Spacing="12">

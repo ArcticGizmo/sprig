@@ -96,6 +96,17 @@ internal static class HeadlessRenderer
             guideVm.Guide.Start();
             Capture(guideVm, Path.Combine(outDir, "main_guide.png"));
 
+            // The "what's new" changelog window (the post-update popup / About viewer).
+            var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
+            var sections = markdown is null
+                ? new List<Sprig.Core.Changelog.ChangelogSection>()
+                : Sprig.Core.Changelog.ChangelogParser.Parse(markdown).ToList();
+            var changelog = new ChangelogWindow("What's new in sprig", "Recent releases", sections);
+            changelog.Show();
+            Dispatcher.UIThread.RunJobs();
+            changelog.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "changelog.png"));
+            changelog.Close();
+
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
             return 0;
         }

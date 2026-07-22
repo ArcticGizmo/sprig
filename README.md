@@ -1,11 +1,16 @@
-<img src="landing-icon.png" alt="sprig logo" width="110" align="right" />
+<h1 align="center">Sprig</h1>
+<p align="center">
+ <img src="./landing-icon.png" width="150"  />
+</p>
 
-# sprig
+<p align="center">
+<strong>Worktree + infrastructure isolation for any git repo.</strong>
+</p>
 
-**Worktree + infrastructure isolation for any git repo.**
+<br>
 
 sprig lets you spin up an isolated copy of one or more repos — each on its own git
-*worktree*, its own branch, its own non-colliding ports, and its own docker infrastructure —
+_worktree_, its own branch, its own non-colliding ports, and its own docker infrastructure —
 so you can work on several things in parallel without them stepping on each other. Your source
 repos are never mutated; everything sprig generates lives in a central store or in the
 throwaway worktree.
@@ -16,7 +21,7 @@ throwaway worktree.
   same stack run side by side without port clashes.
 - **Isolated docker infra** — sprig generates a per-workspace compose file (project name
   `sprig-<workspace>`) so containers, networks, and volumes don't collide.
-- **One-directional config** — a repo declares only the *inputs* it needs; a *stack* supplies
+- **One-directional config** — a repo declares only the _inputs_ it needs; a _stack_ supplies
   every value. Easy to trace: values flow one way, stack → repo.
 - **Drift-safe** — `reconcile`/`doctor` detects and repairs record-vs-reality drift (a deleted
   or orphaned worktree), so a half-cleaned-up workspace is always recoverable.
@@ -70,11 +75,11 @@ Everything the CLI does is reachable from the UI.
 
 ## Where state lives
 
-| Location | Contents |
-|---|---|
-| **Source repo** (tracked) | `.sprig.json` only — the single file sprig adds to your repo |
-| **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files; dies with the worktree |
-| **Central store** `%LOCALAPPDATA%\sprig` | repo registry, stack definitions, per-workspace records, allocated ports, generated compose files, user settings (port range) |
+| Location                                         | Contents                                                                                                                      |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Source repo** (tracked)                        | `.sprig.json` only — the single file sprig adds to your repo                                                                  |
+| **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files; dies with the worktree                                                                              |
+| **Central store** `%LOCALAPPDATA%\sprig`         | repo registry, stack definitions, per-workspace records, allocated ports, generated compose files, user settings (port range) |
 
 ## Docs
 

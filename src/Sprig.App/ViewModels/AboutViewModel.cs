@@ -20,7 +20,10 @@ public partial class AboutViewModel : PageViewModel
     public override string Title => "About";
 
     /// <summary>The running version, e.g. "0.1.0" (from the assembly's informational version).</summary>
-    public string Version { get; } = ResolveVersion();
+    public string Version => Current;
+
+    /// <summary>The running version — shared so the launch-time changelog check reads the same value.</summary>
+    public static string Current { get; } = ResolveVersion();
 
     // Bindable copies so the URLs can be shown as text as well as opened.
     public string RepoUrlText => RepoUrl;

@@ -34,13 +34,13 @@ public partial class WorkspacesViewModel : PageViewModel
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
-        nameof(ReconcileCommand), nameof(RepairCommand), nameof(OpenCommand), nameof(RemoveCommand),
+        nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand),
         nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
     private WorkspaceItemViewModel? _selected;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
-        nameof(ReconcileCommand), nameof(RepairCommand), nameof(OpenCommand), nameof(RemoveCommand),
+        nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand),
         nameof(RefreshCommand), nameof(NewWorkspaceCommand),
         nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
     private bool _busy;
@@ -220,12 +220,42 @@ public partial class WorkspacesViewModel : PageViewModel
         }, status: "repaired");
     }
 
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private void Open()
+    /// <summary>Open one repo's worktree folder in the OS file manager.</summary>
+    [RelayCommand]
+    private void OpenRepoInExplorer(RepoLineViewModel? repo)
+        => LaunchRepo(repo, p => new ProcessStartInfo { FileName = p, UseShellExecute = true });
+
+    /// <summary>Open one repo's worktree in VS Code (<c>code &lt;path&gt;</c> on the PATH).</summary>
+    [RelayCommand]
+    private void OpenRepoInVsCode(RepoLineViewModel? repo)
+        => LaunchRepo(repo, p => new ProcessStartInfo { FileName = "code", Arguments = $"\"{p}\"", UseShellExecute = true });
+
+    /// <summary>Open a terminal at one repo's worktree (Windows Terminal, else a shell).</summary>
+    [RelayCommand]
+    private void OpenRepoInTerminal(RepoLineViewModel? repo)
     {
-        var path = Selected?.Repos.FirstOrDefault()?.WorktreePath;
+        var path = repo?.WorktreePath;
         if (string.IsNullOrEmpty(path)) return;
-        try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+        try
+        {
+            if (OperatingSystem.IsWindows())
+                // Prefer Windows Terminal; fall back to PowerShell if wt isn't installed.
+                try { Process.Start(new ProcessStartInfo { FileName = "wt.exe", Arguments = $"-d \"{path}\"", UseShellExecute = true }); }
+                catch { Process.Start(new ProcessStartInfo { FileName = "powershell.exe", WorkingDirectory = path, UseShellExecute = true }); }
+            else if (OperatingSystem.IsMacOS())
+                Process.Start(new ProcessStartInfo { FileName = "open", Arguments = $"-a Terminal \"{path}\"" });
+            else
+                Process.Start(new ProcessStartInfo { FileName = "x-terminal-emulator", WorkingDirectory = path });
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    /// <summary>Launch a process for a repo's worktree path; surfaces any failure in <see cref="Error"/>.</summary>
+    void LaunchRepo(RepoLineViewModel? repo, Func<string, ProcessStartInfo> build)
+    {
+        var path = repo?.WorktreePath;
+        if (string.IsNullOrEmpty(path)) return;
+        try { Process.Start(build(path)); }
         catch (Exception ex) { Error = ex.Message; }
     }
 

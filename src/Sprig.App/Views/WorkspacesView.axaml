@@ -103,17 +103,10 @@
                                     <Setter Property="Margin" Value="0,0,8,8" />
                                 </Style>
                             </WrapPanel.Styles>
-                            <Button Content="Up" Command="{Binding UpCommand}"
-                                    IsVisible="{Binding Selected.HasInfra}" />
-                            <Button Content="Down" Command="{Binding DownCommand}"
-                                    IsVisible="{Binding Selected.HasInfra}" />
-                            <Button Content="Reset" Command="{Binding ResetCommand}"
-                                    IsVisible="{Binding Selected.HasInfra}" />
                             <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
                                     ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
                             <Button Content="Repair" Command="{Binding RepairCommand}"
                                     ToolTip.Tip="Fix drift: prune stale registrations and remove orphaned folders. Healthy worktrees are never touched." />
-                            <Button Content="Open folder" Command="{Binding OpenCommand}" />
                             <Button Content="Remove" Command="{Binding RemoveCommand}"
                                     Foreground="{StaticResource DangerBrush}" />
                         </WrapPanel>
@@ -147,6 +140,15 @@
                                 <TextBlock Grid.Column="0" Text="DOCKER" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Up" Command="{Binding UpCommand}"
+                                            FontSize="11" Padding="8,3"
+                                            ToolTip.Tip="docker compose up — start this workspace's infra." />
+                                    <Button Content="Down" Command="{Binding DownCommand}"
+                                            FontSize="11" Padding="8,3"
+                                            ToolTip.Tip="docker compose down — stop this workspace's infra." />
+                                    <Button Content="Reset" Command="{Binding ResetCommand}"
+                                            FontSize="11" Padding="8,3"
+                                            ToolTip.Tip="Tear the infra down and bring it back up, wiping volumes." />
                                     <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}"
                                             FontSize="11" Padding="8,3" />
                                     <Button Content="Open in Docker" Command="{Binding OpenDockerCommand}"
@@ -192,22 +194,40 @@
                                 <DataTemplate x:DataType="vm:RepoLineViewModel">
                                     <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                             BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,8">
-                                        <StackPanel Spacing="4">
-                                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
-                                                           Foreground="{StaticResource TitleBrush}" />
-                                                <TextBlock Text="{Binding Branch}" FontSize="11"
-                                                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
-                                                           IsVisible="{Binding StateHealthy}" Foreground="{StaticResource OkBrush}" />
-                                                <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
-                                                           IsVisible="{Binding StateProblem}" Foreground="{StaticResource DangerBrush}" />
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0" Spacing="4">
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TitleBrush}" />
+                                                    <TextBlock Text="{Binding Branch}" FontSize="11"
+                                                               Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
+                                                               IsVisible="{Binding StateHealthy}" Foreground="{StaticResource OkBrush}" />
+                                                    <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
+                                                               IsVisible="{Binding StateProblem}" Foreground="{StaticResource DangerBrush}" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
+                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding WorktreePath}" FontSize="11"
+                                                           Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
-                                            <TextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
-                                                       Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" />
-                                            <TextBlock Text="{Binding WorktreePath}" FontSize="11"
-                                                       Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
+                                            <DropDownButton Grid.Column="1" Content="Open in…" VerticalAlignment="Top"
+                                                            FontSize="11" Padding="8,3" Margin="10,0,0,0">
+                                                <DropDownButton.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuItem Header="Explorer"
+                                                                  Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenRepoInExplorerCommand}"
+                                                                  CommandParameter="{Binding}" />
+                                                        <MenuItem Header="VS Code"
+                                                                  Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenRepoInVsCodeCommand}"
+                                                                  CommandParameter="{Binding}" />
+                                                        <MenuItem Header="Terminal"
+                                                                  Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenRepoInTerminalCommand}"
+                                                                  CommandParameter="{Binding}" />
+                                                    </MenuFlyout>
+                                                </DropDownButton.Flyout>
+                                            </DropDownButton>
+                                        </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

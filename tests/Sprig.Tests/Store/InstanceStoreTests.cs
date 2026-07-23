@@ -16,7 +16,7 @@ public class InstanceStoreTests
                 SourcePath = @"C:\repos\dotnet-api",
                 WorktreePath = $@"C:\repos\dotnet-api--{ws}",
                 Branch = $"sprig/{ws}",
-                GeneratedComposePath = $@"C:\store\instances\{ws}\docker-compose.sprig.yml",
+                GeneratedComposePaths = [$@"C:\store\instances\{ws}\docker-compose.sprig.yml"],
             }
         ],
         Ports = new Dictionary<string, int> { ["api"] = 20001, ["postgres"] = 20002 },
@@ -47,7 +47,30 @@ public class InstanceStoreTests
         Assert.Equal(a.SourcePath, b.SourcePath);
         Assert.Equal(a.WorktreePath, b.WorktreePath);
         Assert.Equal(a.Branch, b.Branch);
-        Assert.Equal(a.GeneratedComposePath, b.GeneratedComposePath);
+        Assert.Equal(a.GeneratedComposePaths, b.GeneratedComposePaths);
+        Assert.Equal(a.ComposePaths, b.ComposePaths);
+    }
+
+    [Fact]
+    public void Legacy_single_compose_path_is_read_as_a_list()
+    {
+        // Records written before multi-compose stored a single "GeneratedComposePath".
+        using var s = new TempStore();
+        var store = new InstanceStore(s.Paths);
+        var dir = s.Paths.InstanceDir("legacy");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(s.Paths.InstanceRecordFile("legacy"), """
+            {
+              "Workspace": "legacy",
+              "Repos": [ { "Name": "api", "SourcePath": "C:\\r", "WorktreePath": "C:\\r--legacy",
+                           "GeneratedComposePath": "C:\\store\\legacy\\docker-compose.sprig.yml" } ]
+            }
+            """);
+
+        var loaded = store.TryLoad("legacy");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(["C:\\store\\legacy\\docker-compose.sprig.yml"], loaded!.Repos[0].ComposePaths);
     }
 
     [Fact]

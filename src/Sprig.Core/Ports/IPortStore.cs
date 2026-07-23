@@ -15,6 +15,13 @@ public sealed record PortPolicy(int RangeStart, int RangeEndExclusive, IReadOnly
 /// <summary>One allocated port: which workspace and named port hold it.</summary>
 public sealed record PortLease(string Workspace, string Name, int Port);
 
+/// <summary>
+/// A request for one named port. <see cref="Allowed"/>, when set, restricts the port to that exact
+/// set (drawn from regardless of the settings range, but still skipping restricted/in-use ports);
+/// when null the port is allocated from the settings range as usual.
+/// </summary>
+public sealed record PortRequest(string Name, IReadOnlySet<int>? Allowed = null);
+
 /// <summary>The status of a single port relative to the current policy and live leases.</summary>
 public enum PortStatus
 {
@@ -45,6 +52,13 @@ public interface IPortStore
     /// </summary>
     /// <exception cref="PortAllocationException">The range cannot satisfy the request.</exception>
     IReadOnlyDictionary<string, int> Acquire(string workspace, IReadOnlyList<string> portNames);
+
+    /// <summary>
+    /// As <see cref="Acquire(string,IReadOnlyList{string})"/>, but each request may pin its port to
+    /// a restricted set (see <see cref="PortRequest.Allowed"/>).
+    /// </summary>
+    /// <exception cref="PortAllocationException">A request's range/set cannot be satisfied.</exception>
+    IReadOnlyDictionary<string, int> Acquire(string workspace, IReadOnlyList<PortRequest> requests);
 
     /// <summary>Release every port held by <paramref name="workspace"/> (idempotent).</summary>
     void Release(string workspace);

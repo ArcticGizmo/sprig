@@ -57,6 +57,10 @@ public static class SprigConfigValidator
                 issues.Add(new($"{at}.name", $"'{input.Name}' must contain only letters, digits, '-' or '_'"));
             else if (!seen.Add(input.Name))
                 issues.Add(new($"{at}.name", $"duplicate input name '{input.Name}'"));
+
+            if (!string.IsNullOrWhiteSpace(input.AllowedPorts)
+                && !Ports.PortSetSpec.TryParse(input.AllowedPorts, out _, out var portErr))
+                issues.Add(new($"{at}.allowedPorts", portErr!));
         }
     }
 
@@ -68,6 +72,10 @@ public static class SprigConfigValidator
             var at = $"env[{i}]";
             if (string.IsNullOrWhiteSpace(e.File))
                 issues.Add(new($"{at}.file", "must name a .env file to clobber"));
+            if (e.Templates is { } templates)
+                for (var t = 0; t < templates.Count; t++)
+                    if (string.IsNullOrWhiteSpace(templates[t]))
+                        issues.Add(new($"{at}.templates[{t}]", "template path must be non-empty"));
             if (e.Set.Count == 0)
                 issues.Add(new($"{at}.set", "must set at least one key"));
             foreach (var k in e.Set.Keys)
@@ -78,19 +86,27 @@ public static class SprigConfigValidator
 
     static void ValidateCompose(SprigRepoConfig config, List<ValidationIssue> issues)
     {
-        if (config.Compose is not { } compose) return;
-        if (string.IsNullOrWhiteSpace(compose.File))
-            issues.Add(new("compose.file", "must name the repo's compose file"));
-        for (var i = 0; i < compose.Overrides.Count; i++)
+        var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var c = 0; c < config.Compose.Count; c++)
         {
-            var o = compose.Overrides[i];
-            var at = $"compose.overrides[{i}]";
-            if (o.Path.Count == 0)
-                issues.Add(new($"{at}.path", "must have at least one path segment"));
-            else if (o.Path.Any(string.IsNullOrWhiteSpace))
-                issues.Add(new($"{at}.path", "path segments must be non-empty"));
-            if (string.IsNullOrWhiteSpace(o.Template))
-                issues.Add(new($"{at}.template", "must be a non-empty template"));
+            var compose = config.Compose[c];
+            var atFile = $"compose[{c}].file";
+            if (string.IsNullOrWhiteSpace(compose.File))
+                issues.Add(new(atFile, "must name the repo's compose file"));
+            else if (!seenFiles.Add(compose.File.Trim()))
+                issues.Add(new(atFile, $"duplicate compose file '{compose.File.Trim()}'"));
+
+            for (var i = 0; i < compose.Overrides.Count; i++)
+            {
+                var o = compose.Overrides[i];
+                var at = $"compose[{c}].overrides[{i}]";
+                if (o.Path.Count == 0)
+                    issues.Add(new($"{at}.path", "must have at least one path segment"));
+                else if (o.Path.Any(string.IsNullOrWhiteSpace))
+                    issues.Add(new($"{at}.path", "path segments must be non-empty"));
+                if (string.IsNullOrWhiteSpace(o.Template))
+                    issues.Add(new($"{at}.template", "must be a non-empty template"));
+            }
         }
     }
 

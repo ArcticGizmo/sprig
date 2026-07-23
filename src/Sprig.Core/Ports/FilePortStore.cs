@@ -38,6 +38,9 @@ public sealed class FilePortStore : IPortStore
     }
 
     public IReadOnlyDictionary<string, int> Acquire(string workspace, IReadOnlyList<string> portNames)
+        => Acquire(workspace, portNames.Select(n => new PortRequest(n)).ToList());
+
+    public IReadOnlyDictionary<string, int> Acquire(string workspace, IReadOnlyList<PortRequest> requests)
     {
         var policy = CurrentPolicy();
         using var _ = Lock();
@@ -54,17 +57,17 @@ public sealed class FilePortStore : IPortStore
         foreach (var p in mine.Values) used.Add(p);
 
         var result = new Dictionary<string, int>();
-        foreach (var name in portNames)
+        foreach (var req in requests)
         {
-            if (mine.TryGetValue(name, out var already))
+            if (mine.TryGetValue(req.Name, out var already))
             {
-                result[name] = already; // deterministic: reuse existing
+                result[req.Name] = already; // deterministic: reuse existing
                 continue;
             }
-            var port = NextFree(used, policy);
-            mine[name] = port;
+            var port = NextFree(used, policy, req.Allowed);
+            mine[req.Name] = port;
             used.Add(port);
-            result[name] = port;
+            result[req.Name] = port;
         }
 
         data.Leases[workspace] = mine;
@@ -135,8 +138,21 @@ public sealed class FilePortStore : IPortStore
         return policy;
     }
 
-    static int NextFree(HashSet<int> used, PortPolicy policy)
+    static int NextFree(HashSet<int> used, PortPolicy policy, IReadOnlySet<int>? allowed)
     {
+        // A constrained port draws only from its allowed set (independent of the settings range,
+        // since the point is a pinned set), still skipping restricted and in-use ports.
+        if (allowed is not null)
+        {
+            foreach (var p in allowed.OrderBy(x => x))
+                if (!used.Contains(p) && !policy.Restricted.Contains(p))
+                    return p;
+            throw new PortAllocationException(
+                $"no free port left in the allowed set {PortSetSpec.Describe(allowed)} — " +
+                "every port in it is already in use (or restricted). Register more callback ports, " +
+                "or free an instance that's holding one.");
+        }
+
         for (var p = policy.RangeStart; p < policy.RangeEndExclusive; p++)
             if (!used.Contains(p) && !policy.Restricted.Contains(p))
                 return p;

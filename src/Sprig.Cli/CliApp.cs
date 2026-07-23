@@ -59,7 +59,7 @@ public static class CliApp
                 "repo" => Repo(registry, rest, json),
                 "stack" => Stack(stacks, rest, json),
                 "templates" => Templates(stacks, json),
-                "init" => Init(registry, rest, json),
+                "init" => Init(git, registry, rest, json),
                 _ => Unknown(command),
             };
         }
@@ -183,7 +183,7 @@ public static class CliApp
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    static int Init(RepoRegistryStore registry, string[] args, bool json)
+    static int Init(IGitService git, RepoRegistryStore registry, string[] args, bool json)
     {
         var print = Args.TakeFlag(ref args, "--print");
         var force = Args.TakeFlag(ref args, "--force");
@@ -194,7 +194,7 @@ public static class CliApp
         if (!Directory.Exists(root))
             throw new ArgumentException($"path does not exist: {root}");
 
-        var proposal = new InitInspector().Inspect(root);
+        var proposal = new InitInspector(git).Inspect(root);
         var text = JsonSerializer.Serialize(proposal.Config, ConfigJsonOptions);
 
         if (json) { WriteJson(proposal); return 0; }

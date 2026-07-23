@@ -7,7 +7,7 @@ public class SprigConfigLoaderTests
     // A realistic, valid config: repo declares the inputs it needs; env/compose reference them.
     const string ValidJson = """
         {
-          "schema": 1,
+          "schema": 2,
           "name": "dotnet-api",
           "inputs": [
             { "name": "port", "example": "5000", "description": "web host" },
@@ -16,13 +16,15 @@ public class SprigConfigLoaderTests
           "env": [
             { "file": ".env.local", "set": { "PORT": "${sprig.port}" } }
           ],
-          "compose": {
-            "file": "docker-compose.yml",
-            "overrides": [
-              { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-              { "path": ["services","postgres","ports","0"], "template": "${sprig.dbPort}:5432" }
-            ]
-          }
+          "compose": [
+            {
+              "file": "docker-compose.yml",
+              "overrides": [
+                { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
+                { "path": ["services","postgres","ports","0"], "template": "${sprig.dbPort}:5432" }
+              ]
+            }
+          ]
         }
         """;
 
@@ -31,16 +33,16 @@ public class SprigConfigLoaderTests
     {
         var c = SprigConfigLoader.Parse(ValidJson);
 
-        Assert.Equal(1, c.Schema);
+        Assert.Equal(2, c.Schema);
         Assert.Equal("dotnet-api", c.Name);
         Assert.Equal(["port", "dbPort"], c.Inputs.Select(i => i.Name));
         Assert.Equal("5000", c.Inputs[0].Example);
         Assert.Single(c.Env);
         Assert.Equal(".env.local", c.Env[0].File);
         Assert.Equal("${sprig.port}", c.Env[0].Set["PORT"]);
-        Assert.NotNull(c.Compose);
-        Assert.Equal(2, c.Compose!.Overrides.Count);
-        Assert.Equal(["services", "postgres", "ports", "0"], c.Compose.Overrides[1].Path);
+        Assert.Single(c.Compose);
+        Assert.Equal(2, c.Compose[0].Overrides.Count);
+        Assert.Equal(["services", "postgres", "ports", "0"], c.Compose[0].Overrides[1].Path);
     }
 
     [Fact]
@@ -75,11 +77,11 @@ public class SprigConfigValidatorTests
     {
         var c = SprigConfigLoader.Parse("""
             {
-              "schema": 1, "name": "dotnet-api",
+              "schema": 2, "name": "dotnet-api",
               "inputs": [ { "name": "port" }, { "name": "dbPort" } ],
               "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.port}" } } ],
-              "compose": { "file": "docker-compose.yml", "overrides": [
-                { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] }
+              "compose": [ { "file": "docker-compose.yml", "overrides": [
+                { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] } ]
             }
             """);
         Assert.True(SprigConfigValidator.Validate(c).IsValid);
@@ -136,10 +138,10 @@ public class SprigConfigValidatorTests
     {
         var r = SprigConfigValidator.Validate(Base() with
         {
-            Compose = new ComposeConfig { File = "docker-compose.yml", Overrides = [new() { Path = [], Template = "" }] }
+            Compose = [new ComposeConfig { File = "docker-compose.yml", Overrides = [new() { Path = [], Template = "" }] }]
         });
-        Assert.Contains(r.Issues, i => i.Path == "compose.overrides[0].path");
-        Assert.Contains(r.Issues, i => i.Path == "compose.overrides[0].template");
+        Assert.Contains(r.Issues, i => i.Path == "compose[0].overrides[0].path");
+        Assert.Contains(r.Issues, i => i.Path == "compose[0].overrides[0].template");
     }
 
     [Fact]

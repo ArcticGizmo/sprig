@@ -9,7 +9,7 @@ public sealed class SprigConfigException(string message, Exception? inner = null
 /// <summary>Reads and parses <c>.sprig.json</c> files. Parsing failures throw; content problems are for the validator.</summary>
 public static class SprigConfigLoader
 {
-    public const int SupportedSchema = 1;
+    public const int SupportedSchema = 2;
 
     internal static readonly JsonSerializerOptions Options = new()
     {

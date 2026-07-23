@@ -25,6 +25,9 @@ public partial class InputEditRow : ObservableObject
     [ObservableProperty] private string _example = "";
     [ObservableProperty] private string _description = "";
 
+    /// <summary>Optional port restriction spec (e.g. <c>8100-8103</c>) — see <c>PortSetSpec</c>.</summary>
+    [ObservableProperty] private string _allowedPorts = "";
+
     [RelayCommand] private void Remove() => _remove(this);
 }
 
@@ -36,6 +39,32 @@ public partial class KvEditRow : ObservableObject
 
     [ObservableProperty] private string _key = "";
     [ObservableProperty] private string _value = "";
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
+/// <summary>One editable template file path an env override seeds from.</summary>
+public partial class TemplateFileRow : ObservableObject
+{
+    readonly Action<TemplateFileRow> _remove;
+    readonly Func<string, bool> _exists;
+
+    public TemplateFileRow(Action<TemplateFileRow> remove, Func<string, bool> exists)
+    {
+        _remove = remove;
+        _exists = exists;
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowFound), nameof(ShowMissing))]
+    private string _path = "";
+
+    bool Entered => !string.IsNullOrWhiteSpace(Path);
+
+    /// <summary>Green ✓: the template exists in the repo.</summary>
+    public bool ShowFound => Entered && _exists(Path);
+    /// <summary>Amber ⚠: a path was entered but no such file exists (it'll be skipped when seeding).</summary>
+    public bool ShowMissing => Entered && !_exists(Path);
 
     [RelayCommand] private void Remove() => _remove(this);
 }
@@ -61,20 +90,28 @@ public partial class EnvFileEditRow : ObservableObject
     readonly Action<EnvFileEditRow> _remove;
     readonly Func<string, CancellationToken, Task<EnvFileStatus>> _classify;
     readonly Func<string, IReadOnlyList<string>> _keysFor;
+    readonly Func<string, bool> _exists;
     CancellationTokenSource? _cts;
 
     public EnvFileEditRow(
         Action<EnvFileEditRow> remove,
         Func<string, CancellationToken, Task<EnvFileStatus>> classify,
-        Func<string, IReadOnlyList<string>> keysFor)
+        Func<string, IReadOnlyList<string>> keysFor,
+        Func<string, bool> exists)
     {
         _remove = remove;
         _classify = classify;
         _keysFor = keysFor;
+        _exists = exists;
+        // Seed templates contribute their own keys to the autosuggest, so re-gather when they change.
+        Templates.CollectionChanged += OnTemplatesChanged;
     }
 
     [ObservableProperty] private string _file = "";
     public ObservableCollection<KvEditRow> Set { get; } = [];
+
+    /// <summary>Template files this override seeds the worktree's copy from (optional, ordered).</summary>
+    public ObservableCollection<TemplateFileRow> Templates { get; } = [];
 
     /// <summary>Variable names found in the target file (and its template companions) — feeds the
     /// KEY field's autosuggest. Refreshed off the UI thread whenever <see cref="File"/> changes.</summary>
@@ -106,12 +143,30 @@ public partial class EnvFileEditRow : ObservableObject
         _ => "",
     };
 
-    partial void OnFileChanged(string value)
+    partial void OnFileChanged(string value) => Reclassify();
+
+    /// <summary>Recompute the git status and the key suggestions off the UI thread. Runs on a
+    /// <see cref="File"/> edit and whenever the seed templates change (they add their own keys).</summary>
+    void Reclassify()
     {
         _cts?.Cancel();
         var cts = new CancellationTokenSource();
         _cts = cts;
-        StatusReady = ClassifyAsync(value, cts.Token);
+        StatusReady = ClassifyAsync(File, cts.Token);
+    }
+
+    void OnTemplatesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (TemplateFileRow r in e.OldItems) r.PropertyChanged -= OnTemplateRowChanged;
+        if (e.NewItems is not null)
+            foreach (TemplateFileRow r in e.NewItems) r.PropertyChanged += OnTemplateRowChanged;
+        Reclassify();
+    }
+
+    void OnTemplateRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TemplateFileRow.Path)) Reclassify();
     }
 
     async Task ClassifyAsync(string file, CancellationToken ct)
@@ -121,7 +176,8 @@ public partial class EnvFileEditRow : ObservableObject
         try
         {
             result = await _classify(file, ct);
-            keys = await Task.Run(() => _keysFor(file), ct);
+            var templatePaths = Templates.Select(t => t.Path).ToList();  // snapshot on the UI thread
+            keys = await Task.Run(() => GatherKeys(file, templatePaths), ct);
         }
         catch (OperationCanceledException) { return; }
         if (ct.IsCancellationRequested) return;
@@ -129,6 +185,20 @@ public partial class EnvFileEditRow : ObservableObject
         Status = result;
         AvailableKeys.Clear();
         foreach (var k in keys) AvailableKeys.Add(k);
+    }
+
+    /// <summary>Variable names to suggest for this override's KEY field: the union of those declared
+    /// in the target file and in each configured seed template, in first-seen order.</summary>
+    IReadOnlyList<string> GatherKeys(string file, IReadOnlyList<string> templatePaths)
+    {
+        var keys = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Add(IEnumerable<string> ks) { foreach (var k in ks) if (seen.Add(k)) keys.Add(k); }
+
+        Add(_keysFor(file));
+        foreach (var t in templatePaths)
+            if (!string.IsNullOrWhiteSpace(t)) Add(_keysFor(t));
+        return keys;
     }
 
     partial void OnStatusChanged(EnvFileStatus value)
@@ -141,6 +211,87 @@ public partial class EnvFileEditRow : ObservableObject
 
     [RelayCommand] private void Remove() => _remove(this);
     [RelayCommand] private void AddKey() => Set.Add(new KvEditRow(r => Set.Remove(r)));
+    [RelayCommand] private void AddTemplate() => Templates.Add(new TemplateFileRow(r => Templates.Remove(r), _exists));
+}
+
+/// <summary>One editable docker-compose override: the target file plus its own interactive overlay.</summary>
+public partial class ComposeFileEditRow : ObservableObject
+{
+    readonly Action<ComposeFileEditRow> _remove;
+    readonly Func<string, bool> _exists;
+    readonly Func<string, string> _readText;
+    readonly IEnumerable<string> _variables;
+
+    /// <summary>Overrides loaded from disk — seeds the overlay's first build so a missing/blank path
+    /// doesn't drop them before the file is (re)supplied.</summary>
+    IReadOnlyList<ComposeOverride>? _seed;
+
+    public ComposeFileEditRow(
+        Action<ComposeFileEditRow> remove,
+        Func<string, bool> exists,
+        Func<string, string> readText,
+        IEnumerable<string> variables)
+    {
+        _remove = remove;
+        _exists = exists;
+        _readText = readText;
+        _variables = variables;
+    }
+
+    [ObservableProperty] private string _file = "";
+
+    /// <summary>True when the named compose file exists in the repo — the override target must exist.</summary>
+    [ObservableProperty] private bool _found;
+
+    /// <summary>The interactive compose editor for this file — renders the source with clickable tokens.</summary>
+    [ObservableProperty] private ComposeOverlayViewModel? _overlay;
+
+    public bool FileEntered => !string.IsNullOrWhiteSpace(File);
+    public bool ShowFound => FileEntered && Found;
+    public bool ShowMissing => FileEntered && !Found;
+
+    /// <summary>Whether an overlay exists to show (only once a file path is entered).</summary>
+    public bool HasOverlay => Overlay is not null;
+
+    /// <summary>The overrides to persist: whatever the live overlay holds, else the disk seed.</summary>
+    public IReadOnlyList<ComposeOverride> CurrentOverrides => Overlay?.ToOverrides() ?? _seed ?? [];
+
+    partial void OnFileChanged(string value) => Rebuild();
+
+    partial void OnFoundChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowFound));
+        OnPropertyChanged(nameof(ShowMissing));
+    }
+
+    partial void OnOverlayChanged(ComposeOverlayViewModel? value) => OnPropertyChanged(nameof(HasOverlay));
+
+    /// <summary>Populate the row from a loaded config entry (sets the disk seed, then the file).</summary>
+    public void Seed(string file, IReadOnlyList<ComposeOverride> overrides)
+    {
+        _seed = overrides;
+        if (File == file) Rebuild();   // no OnFileChanged to trigger it
+        else File = file;
+    }
+
+    /// <summary>(Re)build the overlay from the current file, carrying forward any live/seed overrides.</summary>
+    void Rebuild()
+    {
+        var rel = File.Trim();
+        try { Found = rel.Length > 0 && _exists(rel); }
+        catch { Found = false; }
+        OnPropertyChanged(nameof(FileEntered));
+
+        if (rel.Length == 0) { Overlay = null; return; }
+
+        var seed = Overlay?.ToOverrides() ?? _seed;
+        var text = "";
+        try { text = _readText(rel); }
+        catch { /* unreadable → empty overlay; the ✓/⚠ subtext already flags a missing file */ }
+        Overlay = new ComposeOverlayViewModel(text, seed, _variables);
+    }
+
+    [RelayCommand] private void Remove() => _remove(this);
 }
 
 /// <summary>
@@ -159,14 +310,6 @@ public partial class RepoEditViewModel : ObservableObject
     /// <summary>Git, kept for the gitignore probe used while classifying env files. Null in tests
     /// that don't pass one — then a file is only ever "tracked" (set-based) or "not ignored".</summary>
     IGitService? _git;
-
-    /// <summary>The compose overrides as loaded from disk — seeds the overlay's first build so a
-    /// missing/blank compose path doesn't drop them before the file is (re)supplied.</summary>
-    IReadOnlyList<ComposeOverride>? _composeSeed;
-
-    /// <summary>True only while <see cref="Load"/> is populating fields, so the property-change hooks
-    /// don't rebuild the overlay repeatedly mid-load (we do it once at the end).</summary>
-    bool _loading;
 
     RepoEditViewModel(string repoPath)
     {
@@ -190,27 +333,17 @@ public partial class RepoEditViewModel : ObservableObject
     public ObservableCollection<InputEditRow> Inputs { get; } = [];
     public ObservableCollection<EnvFileEditRow> Env { get; } = [];
 
-    /// <summary>The interactive compose editor — renders the source file with clickable value tokens.
-    /// Rebuilt whenever the compose file path changes; null when compose isn't enabled.</summary>
-    [ObservableProperty] private ComposeOverlayViewModel? _composeOverlay;
+    /// <summary>The compose files this repo overrides — one editable card each (add/remove).</summary>
+    public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
 
-    /// <summary>Whether this repo declares a compose override block.</summary>
-    [ObservableProperty] private bool _hasCompose;
-    [ObservableProperty] private string _composeFile = "";
-
-    /// <summary>True when the named compose file exists in the repo — the override target must exist.</summary>
-    [ObservableProperty] private bool _composeFileFound;
+    /// <summary>True when at least one input is declared — gates the inputs column header.</summary>
+    public bool HasInputs => Inputs.Count > 0;
 
     [ObservableProperty] private string? _error;
 
-    /// <summary>A compose file path has been entered (and compose is enabled) — drives the ✓/⚠ subtext.</summary>
-    public bool ComposeFileEntered => HasCompose && !string.IsNullOrWhiteSpace(ComposeFile);
-    public bool ShowComposeFound => ComposeFileEntered && ComposeFileFound;
-    public bool ShowComposeMissing => ComposeFileEntered && !ComposeFileFound;
-
     public static RepoEditViewModel Load(string repoPath, IGitService? git = null)
     {
-        var vm = new RepoEditViewModel(repoPath) { _loading = true };
+        var vm = new RepoEditViewModel(repoPath);
         var c = SprigConfigLoader.LoadFromFile(Path.Combine(repoPath, ".sprig.json"));
 
         vm._schema = c.Schema;
@@ -227,32 +360,33 @@ public partial class RepoEditViewModel : ObservableObject
                 Name = i.Name,
                 Example = i.Example ?? "",
                 Description = i.Description ?? "",
+                AllowedPorts = i.AllowedPorts ?? "",
             });
 
         foreach (var e in c.Env)
         {
-            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor) { File = e.File };
+            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.RepoFileExists)
+                { File = e.File };
+            foreach (var t in e.Templates ?? [])
+                file.Templates.Add(new TemplateFileRow(r => file.Templates.Remove(r), vm.RepoFileExists) { Path = t });
             foreach (var kv in e.Set)
                 file.Set.Add(new KvEditRow(r => file.Set.Remove(r)) { Key = kv.Key, Value = kv.Value });
             vm.Env.Add(file);
         }
 
-        if (c.Compose is { } comp)
+        foreach (var comp in c.Compose)
         {
-            vm.HasCompose = true;
-            vm.ComposeFile = comp.File;
-            vm._composeSeed = comp.Overrides;
+            var row = new ComposeFileEditRow(vm.RemoveComposeRow, vm.RepoFileExists, vm.ReadRepoFile, vm.SprigVariableNames);
+            row.Seed(comp.File, comp.Overrides);
+            vm.Compose.Add(row);
         }
-
-        vm._loading = false;
-        vm.RecomputeComposeFileStatus();
-        vm.RebuildComposeOverlay();
 
         return vm;
     }
 
     void RemoveInputRow(InputEditRow r) => Inputs.Remove(r);
     void RemoveEnvRow(EnvFileEditRow r) => Env.Remove(r);
+    void RemoveComposeRow(ComposeFileEditRow r) => Compose.Remove(r);
 
     // -- ${sprig.*} variables (workspace + declared inputs) --------------------
 
@@ -263,6 +397,7 @@ public partial class RepoEditViewModel : ObservableObject
         if (e.NewItems is not null)
             foreach (InputEditRow r in e.NewItems) r.PropertyChanged += OnInputRowChanged;
         RefreshSprigVariableNames();
+        OnPropertyChanged(nameof(HasInputs));
     }
 
     void OnInputRowChanged(object? sender, PropertyChangedEventArgs e)
@@ -285,63 +420,37 @@ public partial class RepoEditViewModel : ObservableObject
 
     // -- compose ---------------------------------------------------------------
 
-    partial void OnHasComposeChanged(bool value)
-    {
-        OnPropertyChanged(nameof(ComposeFileEntered));
-        OnPropertyChanged(nameof(ShowComposeFound));
-        OnPropertyChanged(nameof(ShowComposeMissing));
-        if (_loading) return;
-        RecomputeComposeFileStatus();
-        RebuildComposeOverlay();
-    }
-
-    partial void OnComposeFileChanged(string value)
-    {
-        if (_loading) return;
-        RecomputeComposeFileStatus();
-        RebuildComposeOverlay();
-    }
-
-    partial void OnComposeFileFoundChanged(bool value)
-    {
-        OnPropertyChanged(nameof(ShowComposeFound));
-        OnPropertyChanged(nameof(ShowComposeMissing));
-    }
-
-    /// <summary>The compose override target must exist in the repo — recompute whether it does.</summary>
-    void RecomputeComposeFileStatus()
-    {
-        var rel = ComposeFile.Trim();
-        bool found;
-        try { found = rel.Length > 0 && System.IO.File.Exists(Path.Combine(RepoPath, rel)); }
-        catch { found = false; }
-        ComposeFileFound = found;
-        OnPropertyChanged(nameof(ComposeFileEntered));
-    }
-
-    /// <summary>(Re)build the overlay from the current compose file, carrying forward whatever
-    /// overrides are already in play (live edits, else the values loaded from disk).</summary>
-    void RebuildComposeOverlay()
-    {
-        if (!HasCompose) { ComposeOverlay = null; return; }
-
-        var seed = ComposeOverlay?.ToOverrides() ?? _composeSeed;
-        var abs = Path.Combine(RepoPath, ComposeFile.Trim());
-        var text = "";
-        try { if (ComposeFile.Trim().Length > 0 && System.IO.File.Exists(abs)) text = System.IO.File.ReadAllText(abs); }
-        catch { /* unreadable → empty overlay; the ✓/⚠ subtext already flags a missing file */ }
-
-        ComposeOverlay = new ComposeOverlayViewModel(text, seed, SprigVariableNames);
-    }
-
     [RelayCommand] private void AddInput() => Inputs.Add(new InputEditRow(RemoveInputRow));
 
     [RelayCommand]
     private void AddEnvFile()
     {
-        var file = new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor);
+        var file = new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, RepoFileExists);
         file.Set.Add(new KvEditRow(r => file.Set.Remove(r)));
         Env.Add(file);
+    }
+
+    [RelayCommand]
+    private void AddComposeFile()
+        => Compose.Add(new ComposeFileEditRow(RemoveComposeRow, RepoFileExists, ReadRepoFile, SprigVariableNames));
+
+    /// <summary>True if a repo-relative path names a file that exists in the repo (cheap, best-effort).</summary>
+    public bool RepoFileExists(string file)
+    {
+        var rel = (file ?? "").Trim();
+        if (rel.Length == 0) return false;
+        try { return System.IO.File.Exists(Path.Combine(RepoPath, rel)); }
+        catch { return false; }
+    }
+
+    /// <summary>Read a repo-relative file's text, or <c>""</c> if it's missing/unreadable (best-effort).</summary>
+    public string ReadRepoFile(string file)
+    {
+        var rel = (file ?? "").Trim();
+        if (rel.Length == 0) return "";
+        var abs = Path.Combine(RepoPath, rel);
+        try { return System.IO.File.Exists(abs) ? System.IO.File.ReadAllText(abs) : ""; }
+        catch { return ""; }
     }
 
     /// <summary>Variable names available for an env-file field — the file's own keys plus any from a
@@ -421,19 +530,26 @@ public partial class RepoEditViewModel : ObservableObject
             Name = i.Name.Trim(),
             Example = Blank(i.Example),
             Description = Blank(i.Description),
+            AllowedPorts = Blank(i.AllowedPorts),
         }).ToList(),
-        Env = Env.Select(e => new EnvOverride
+        Env = Env.Select(e =>
         {
-            File = e.File.Trim(),
-            Set = ToDict(e.Set),
-        }).ToList(),
-        Compose = HasCompose
-            ? new ComposeConfig
+            var templates = e.Templates
+                .Select(t => t.Path.Trim())
+                .Where(p => p.Length > 0)
+                .ToList();
+            return new EnvOverride
             {
-                File = ComposeFile.Trim(),
-                Overrides = ComposeOverlay?.ToOverrides() ?? [],
-            }
-            : null,
+                File = e.File.Trim(),
+                Templates = templates.Count > 0 ? templates : null,
+                Set = ToDict(e.Set),
+            };
+        }).ToList(),
+        Compose = Compose.Select(c => new ComposeConfig
+        {
+            File = c.File.Trim(),
+            Overrides = c.CurrentOverrides,
+        }).ToList(),
     };
 
     /// <summary>Validate the edited config and, if valid, write it back to <c>.sprig.json</c>.</summary>
@@ -451,11 +567,15 @@ public partial class RepoEditViewModel : ObservableObject
             return false;
         }
 
-        // The compose override target must exist in the repo — otherwise generation fails at
+        // Every compose override target must exist in the repo — otherwise generation fails at
         // workspace-creation time with a much less obvious error. (Blank is caught by the validator.)
-        if (config.Compose is { File.Length: > 0 } cc && !System.IO.File.Exists(Path.Combine(RepoPath, cc.File)))
+        var missingCompose = config.Compose
+            .Where(cc => cc.File.Length > 0 && !System.IO.File.Exists(Path.Combine(RepoPath, cc.File)))
+            .Select(cc => cc.File)
+            .ToList();
+        if (missingCompose.Count > 0)
         {
-            Error = $"compose file not found in the repo: {cc.File}";
+            Error = $"compose file(s) not found in the repo: {string.Join(", ", missingCompose)}";
             return false;
         }
 

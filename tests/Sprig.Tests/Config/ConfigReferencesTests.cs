@@ -9,7 +9,7 @@ public class ConfigReferencesTests
     {
         var config = SprigConfigLoader.Parse("""
             {
-              "schema": 1, "name": "vue",
+              "schema": 2, "name": "vue",
               "inputs": [ { "name": "frontend", "example": "3000" } ],
               "env": [ { "file": ".env", "set": {
                   "PORT": "${sprig.frontend}",
@@ -29,9 +29,9 @@ public class ConfigReferencesTests
     public void Scans_compose_templates_too()
     {
         var config = SprigConfigLoader.Parse("""
-            { "schema":1, "name":"api",
-              "compose": { "file":"docker-compose.yml", "overrides":[
-                  { "path":["services","x","image"], "template":"${sprig.imageTag}" } ] } }
+            { "schema":2, "name":"api",
+              "compose": [ { "file":"docker-compose.yml", "overrides":[
+                  { "path":["services","x","image"], "template":"${sprig.imageTag}" } ] } ] }
             """);
         Assert.Equal(["imageTag"], ConfigReferences.UndeclaredReferences(config));
     }
@@ -40,10 +40,10 @@ public class ConfigReferencesTests
     public void Declared_inputs_are_not_flagged()
     {
         var config = SprigConfigLoader.Parse("""
-            { "schema":1, "name":"api",
+            { "schema":2, "name":"api",
               "inputs":[ { "name":"imageTag" } ],
-              "compose": { "file":"docker-compose.yml", "overrides":[
-                  { "path":["services","x","image"], "template":"${sprig.imageTag}" } ] } }
+              "compose": [ { "file":"docker-compose.yml", "overrides":[
+                  { "path":["services","x","image"], "template":"${sprig.imageTag}" } ] } ] }
             """);
         Assert.Empty(ConfigReferences.UndeclaredReferences(config));
     }

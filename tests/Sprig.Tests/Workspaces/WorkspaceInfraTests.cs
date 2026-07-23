@@ -14,14 +14,14 @@ namespace Sprig.Tests.Workspaces;
 public class WorkspaceInfraTests
 {
     const string ConfigJson = """
-        { "schema": 1, "name": "dotnet-api",
+        { "schema": 2, "name": "dotnet-api",
           "inputs": [ { "name": "api", "example": "5000" }, { "name": "postgres", "example": "5432" } ],
           "env": [ { "file": ".env", "set": {
               "PORT": "${sprig.api}",
               "ConnectionStrings__Default": "Host=localhost;Port=${sprig.postgres};Database=librarydb" } } ],
-          "compose": { "file": "docker-compose.yml", "overrides": [
+          "compose": [ { "file": "docker-compose.yml", "overrides": [
               { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-              { "path": ["services","postgres","ports","0"], "template": "${sprig.postgres}:5432" } ] } }
+              { "path": ["services","postgres","ports","0"], "template": "${sprig.postgres}:5432" } ] } ] }
         """;
 
     const string ComposeYml = """
@@ -85,11 +85,10 @@ public class WorkspaceInfraTests
 
         var record = svc.Create(Stack(repo), "feat-a");
 
-        var composePath = record.Repos[0].GeneratedComposePath;
-        Assert.NotNull(composePath);
-        Assert.StartsWith(store.Root, composePath!);
+        var composePath = Assert.Single(record.Repos[0].ComposePaths);
+        Assert.StartsWith(store.Root, composePath);
         var postgresPort = record.Ports["postgres_port"];
-        Assert.Equal($"{postgresPort}:5432", PortsZero(composePath!));
+        Assert.Equal($"{postgresPort}:5432", PortsZero(composePath));
         Assert.Equal(postgresPort.ToString(), record.Repos[0].Inputs["postgres"]);
     }
 

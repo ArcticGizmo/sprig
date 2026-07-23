@@ -12,26 +12,27 @@ public sealed class DockerService(IProcessRunner runner) : IDockerService
         catch (ProcessException) { return false; }
     }
 
-    public void Up(string composeFile, string projectDirectory, string projectName)
-        => runner.Run("docker", [.. Base(composeFile, projectDirectory, projectName), "up", "-d"], projectDirectory)
+    public void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
+        => runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), "up", "-d"], projectDirectory)
                  .EnsureSuccess();
 
-    public void Down(string composeFile, string projectDirectory, string projectName, bool removeVolumes = false)
+    public void Down(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool removeVolumes = false)
     {
         string[] tail = removeVolumes ? ["down", "-v"] : ["down"];
-        runner.Run("docker", [.. Base(composeFile, projectDirectory, projectName), .. tail], projectDirectory)
+        runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), .. tail], projectDirectory)
               .EnsureSuccess();
     }
 
-    public IReadOnlyList<ContainerStatus> Ps(string composeFile, string projectDirectory, string projectName)
+    public IReadOnlyList<ContainerStatus> Ps(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
     {
-        var r = runner.Run("docker", [.. Base(composeFile, projectDirectory, projectName), "ps", "--format", "json"], projectDirectory);
+        var r = runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), "ps", "--format", "json"], projectDirectory);
         return r.Success ? ParsePs(r.StdOut) : [];
     }
 
-    // The mandatory S2 prefix on every compose call.
-    static string[] Base(string composeFile, string projectDirectory, string projectName)
-        => ["compose", "-f", composeFile, "--project-directory", projectDirectory, "-p", projectName];
+    // The mandatory S2 prefix on every compose call: one `-f` per generated file, then the project.
+    static string[] Base(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
+        => ["compose", .. composeFiles.SelectMany(f => new[] { "-f", f }),
+            "--project-directory", projectDirectory, "-p", projectName];
 
     // `docker compose ps --format json` emits either a JSON array or newline-delimited objects
     // depending on the compose version — handle both, tolerantly.

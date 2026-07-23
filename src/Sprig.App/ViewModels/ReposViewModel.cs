@@ -70,8 +70,9 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>False when no repos are registered yet — drives the first-run empty state.</summary>
     public bool HasRepos => Repos.Count > 0;
 
-    /// <summary>Adapts the modal's primary button to what the path actually needs.</summary>
-    public string AddButtonLabel => PathHasConfig ? "Register" : "Initialize & register";
+    /// <summary>Adapts the modal's primary button to what the path actually needs — either way it
+    /// opens the editor afterwards, so the label says so.</summary>
+    public string AddButtonLabel => PathHasConfig ? "Load & edit" : "Create & edit";
 
     /// <summary>A path has been entered — drives the git-status highlight in the modal.</summary>
     public bool PathEntered => !string.IsNullOrWhiteSpace(NewPath);
@@ -193,8 +194,8 @@ public partial class ReposViewModel : PageViewModel
         PathHasConfig = hasConfig;
         PathIsGitRepo = isGit;
         DetectHint = hasConfig
-            ? "Found a .sprig.json here — it will be registered as-is."
-            : "No .sprig.json here — sprig will inspect the repo, create one, then register it.";
+            ? "Found a .sprig.json here — it'll be loaded so you can review and edit it."
+            : "No .sprig.json here — sprig will scaffold one from the repo, then open it for editing.";
     }
 
     /// <summary>
@@ -272,10 +273,17 @@ public partial class ReposViewModel : PageViewModel
                 return Services.Repos.Add(path);
             });
             NewPath = "";
-            Status = $"registered '{added.Name}'";
             IsAdding = false;
             Reload();
             Services.NotifyStoreChanged();
+
+            // Drop straight into the editor for the repo just added — staying in the list view
+            // (with only a status line) was easy to miss and left the config a step away.
+            Selected = Repos.FirstOrDefault(r => r.Name == added.Name);
+            if (Selected is not null) BeginEdit();
+            Status = IsEditing
+                ? $"registered '{added.Name}' — editing its configuration"
+                : $"registered '{added.Name}'";
         }
         catch (Exception ex) { Error = ex.Message; }
         finally { Busy = false; }

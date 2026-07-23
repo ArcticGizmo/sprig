@@ -25,8 +25,8 @@ public sealed record SprigRepoConfig
     /// <summary>Which <c>.env.*</c> files to clobber and which keys to set (values are <c>${sprig...}</c> templates).</summary>
     public IReadOnlyList<EnvOverride> Env { get; init; } = [];
 
-    /// <summary>Optional docker compose override declaration (path-based edits only).</summary>
-    public ComposeConfig? Compose { get; init; }
+    /// <summary>Docker compose override declarations (path-based edits only), one per compose file.</summary>
+    public IReadOnlyList<ComposeConfig> Compose { get; init; } = [];
 
     /// <summary>Captures any unrecognised top-level keys so the validator can reject them.</summary>
     [JsonExtensionData]
@@ -43,12 +43,32 @@ public sealed record InputDeclaration
     public string Name { get; init; } = "";
     public string? Example { get; init; }
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Optional restriction on which host ports the stack port feeding this input may take, as a
+    /// compact spec (e.g. <c>"8100-8103"</c> or <c>"8100,8101,8200"</c>; see <c>PortSetSpec</c>).
+    /// Use it when a value is only valid for a fixed set of ports — e.g. an Auth0 front end whose
+    /// callback URLs are pre-registered per port. sprig traces the input's binding to its stack
+    /// port and only ever allocates from this set, so the set size caps how many instances can
+    /// run at once. Null/blank means unrestricted (the whole settings range).
+    /// </summary>
+    public string? AllowedPorts { get; init; }
 }
 
 /// <summary>An override applied to a single <c>.env.*</c> file: the keys in <see cref="Set"/> are clobbered.</summary>
 public sealed record EnvOverride
 {
     public string File { get; init; } = "";
+
+    /// <summary>
+    /// Optional source file(s), relative to the repo root, to seed the worktree's copy of
+    /// <see cref="File"/> from before sprig's override block is injected — e.g. a committed
+    /// <c>.env.template</c>. When set, these replace the default seed (the target file's own
+    /// content); multiple are concatenated in order. Missing files are skipped. Null/empty means
+    /// the old behaviour: seed from the target file itself if it exists.
+    /// </summary>
+    public IReadOnlyList<string>? Templates { get; init; }
+
     public IReadOnlyDictionary<string, string> Set { get; init; } = new Dictionary<string, string>();
 }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -33,13 +34,15 @@ public partial class WorkspacesViewModel : PageViewModel
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
-        nameof(ReconcileCommand), nameof(RepairCommand), nameof(OpenCommand), nameof(RemoveCommand))]
+        nameof(ReconcileCommand), nameof(RepairCommand), nameof(OpenCommand), nameof(RemoveCommand),
+        nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
     private WorkspaceItemViewModel? _selected;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(OpenCommand), nameof(RemoveCommand),
-        nameof(RefreshCommand), nameof(NewWorkspaceCommand))]
+        nameof(RefreshCommand), nameof(NewWorkspaceCommand),
+        nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
     private bool _busy;
 
     [ObservableProperty] private string? _error;
@@ -54,6 +57,10 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty] private string? _newStack;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _createError;
+
+    /// <summary>Bring the new workspace's infra up right after creating it (default on).</summary>
+    [ObservableProperty] private bool _startInfraOnCreate = true;
+
     public ObservableCollection<string> AvailableStacks { get; } = [];
 
     bool HasSelection => Selected is not null && !Busy;
@@ -71,6 +78,27 @@ public partial class WorkspacesViewModel : PageViewModel
         Error = null;
         StatusMessage = null;
         OnPropertyChanged(nameof(HasSelected));
+        if (value is not null) _ = LoadStatusAsync(value);
+    }
+
+    /// <summary>Probe docker for the workspace's live containers and fill its display flags.</summary>
+    async Task LoadStatusAsync(WorkspaceItemViewModel item)
+    {
+        if (!item.HasInfra) { item.SetContainers([], dockerAvailable: true); return; }
+        try
+        {
+            var list = await AppServices.RunAsync(() => Services.Workspaces.Status(item.Name));
+            item.SetContainers(list, dockerAvailable: true);
+        }
+        catch (WorkspaceException)
+        {
+            // RequireWithInfra throws this when docker compose isn't available.
+            item.SetContainers([], dockerAvailable: false);
+        }
+        catch (Exception)
+        {
+            item.SetContainers([], dockerAvailable: false);
+        }
     }
 
     [RelayCommand(CanExecute = nameof(NotBusy))]
@@ -96,6 +124,7 @@ public partial class WorkspacesViewModel : PageViewModel
         CreateError = null;
         NewName = "";
         NewStack = null;
+        StartInfraOnCreate = true;
         var names = await AppServices.RunAsync(() => Services.Stacks.List().Select(s => s.Name).ToList());
         AvailableStacks.Clear();
         foreach (var n in names) AvailableStacks.Add(n);
@@ -118,15 +147,33 @@ public partial class WorkspacesViewModel : PageViewModel
         CreateError = null;
         try
         {
-            await AppServices.RunAsync(() =>
+            var record = await AppServices.RunAsync(() =>
             {
                 var resolved = Services.StackResolver.Resolve(stack);
-                Services.Workspaces.Create(resolved, name);
+                return Services.Workspaces.Create(resolved, name);
             });
             IsCreating = false;
+
+            // Optionally bring the infra up straight away. A failure here (e.g. Docker not running)
+            // is a soft warning — the workspace itself was created successfully.
+            var hasInfra = record.Repos.Any(r => r.ComposePaths.Count > 0);
+            var started = false;
+            string? infraWarning = null;
+            if (hasInfra && StartInfraOnCreate)
+            {
+                try
+                {
+                    await AppServices.RunAsync(() => Services.Workspaces.Up(name));
+                    started = true;
+                }
+                catch (Exception ex) { infraWarning = ex.Message; }
+            }
+
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == name) ?? Selected;
-            StatusMessage = $"created '{name}'";
+            StatusMessage = started ? $"created '{name}' and started its infra" : $"created '{name}'";
+            Error = infraWarning is null ? null
+                : $"created '{name}', but couldn't start its infra: {infraWarning}";
             Services.NotifyStoreChanged();
         }
         catch (Exception ex)
@@ -180,6 +227,44 @@ public partial class WorkspacesViewModel : PageViewModel
         if (string.IsNullOrEmpty(path)) return;
         try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); }
         catch (Exception ex) { Error = ex.Message; }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private async Task RefreshStatus()
+    {
+        var item = Selected;
+        if (item is not null) await LoadStatusAsync(item);
+    }
+
+    /// <summary>Launch Docker Desktop so the user can inspect this workspace's <c>sprig-&lt;name&gt;</c> project.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void OpenDocker()
+    {
+        try
+        {
+            var exe = DockerDesktopPath();
+            if (exe is null)
+            {
+                Error = "Docker Desktop wasn't found in its default location. Open it manually to see the "
+                      + $"'sprig-{Selected?.Name}' project.";
+                return;
+            }
+            Process.Start(new ProcessStartInfo { FileName = exe, UseShellExecute = true });
+        }
+        catch (Exception ex) { Error = $"couldn't open Docker Desktop: {ex.Message}"; }
+    }
+
+    /// <summary>Docker Desktop's exe in either Program Files location, or null if not installed there.</summary>
+    static string? DockerDesktopPath()
+    {
+        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+        {
+            var root = Environment.GetFolderPath(folder);
+            if (string.IsNullOrEmpty(root)) continue;
+            var exe = Path.Combine(root, "Docker", "Docker", "Docker Desktop.exe");
+            if (File.Exists(exe)) return exe;
+        }
+        return null;
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]

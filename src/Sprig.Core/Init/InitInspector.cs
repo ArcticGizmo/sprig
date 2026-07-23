@@ -1,5 +1,6 @@
 using System.Globalization;
 using Sprig.Core.Config;
+using Sprig.Core.Git;
 using YamlDotNet.RepresentationModel;
 
 namespace Sprig.Core.Init;
@@ -12,13 +13,33 @@ public sealed record InitProposal(SprigRepoConfig Config, IReadOnlyList<string> 
 /// keys and compose ports into declared <b>inputs</b> (with example shapes) that the stack will
 /// supply, and rewrites the matching env/compose values to reference those inputs. Heuristic and
 /// advisory — a starting point the user edits.
+/// <para>
+/// Env detection is git-aware: only <b>untracked</b> env files become override targets (overriding a
+/// tracked file would permanently dirty every worktree). A <b>tracked</b> env file sitting next to an
+/// untracked one — the classic committed <c>.env</c> template beside a gitignored <c>.env.local</c> —
+/// is offered as a seed <b>template</b> for that target rather than clobbered itself.
+/// </para>
 /// </summary>
 public sealed class InitInspector
 {
-    static readonly string[] EnvFileNames =
-        [".env", ".env.local", ".env.development", ".env.development.local"];
     static readonly string[] ComposeNames =
         ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
+
+    /// <summary>Directories never worth scanning for env files (build output, dependency caches, VCS).</summary>
+    static readonly HashSet<string> ExcludedDirs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", "node_modules", "dist", "build", "out", "bin", "obj", ".vs", ".vscode", ".idea",
+        "target", "coverage", ".next", ".nuxt", ".svelte-kit", "vendor", ".venv", "venv",
+        "__pycache__", ".gradle", ".terraform", ".turbo", ".cache",
+    };
+
+    /// <summary>How deep below the repo root to look for env files — enough for a monorepo package,
+    /// shallow enough not to crawl the whole tree.</summary>
+    const int MaxDepth = 5;
+
+    readonly IGitService _git;
+
+    public InitInspector(IGitService git) => _git = git;
 
     public InitProposal Inspect(string repoRoot)
     {
@@ -39,7 +60,7 @@ public sealed class InitInspector
             Compose = compose,
         };
 
-        if (inputs.Count == 0 && compose is null)
+        if (inputs.Count == 0 && compose.Count == 0)
             notes.Add("no ports or compose detected — you'll likely need to author .sprig.json by hand");
         notes.Add("review the proposed inputs (names + examples) — the stack will supply their values");
         return new InitProposal(config, notes);
@@ -48,35 +69,132 @@ public sealed class InitInspector
     void DetectEnv(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used,
         List<EnvOverride> envOverrides, List<string> notes)
     {
-        foreach (var file in EnvFileNames)
-        {
-            var path = Path.Combine(repoRoot, file);
-            if (!File.Exists(path)) continue;
+        var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
+        var envFiles = EnumerateEnvFiles(repoRoot)
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-            var set = new Dictionary<string, string>();
-            foreach (var (key, value) in ParseEnv(File.ReadAllText(path)))
+        // Group by directory so a tracked env file can seed the untracked file that sits next to it.
+        foreach (var dir in envFiles.GroupBy(DirOf, StringComparer.OrdinalIgnoreCase))
+        {
+            var templates = dir.Where(tracked.Contains).ToList();  // committed .env/.env.example → seed source
+            var targets = dir.Where(f => !tracked.Contains(f));    // untracked → safe to override
+
+            foreach (var target in targets)
             {
-                if (IsBarePort(value))
+                var set = new Dictionary<string, string>();
+
+                // Detect port-shaped keys from the target itself first (real values win the example),
+                // then from its tracked templates — the worktree seeds from those, so their ports
+                // need isolating too. A key already claimed by the target is not re-added.
+                void Scan(string relFile)
                 {
-                    var inputName = UniqueName(Sanitize(key), used);
-                    inputs.Add(new InputDeclaration { Name = inputName, Example = value, Description = $"from {file} {key}" });
-                    set[key] = $"${{sprig.{inputName}}}";
+                    var abs = Path.Combine(repoRoot, relFile);
+                    if (!File.Exists(abs)) return;
+                    foreach (var (key, value) in ParseEnv(File.ReadAllText(abs)))
+                    {
+                        if (IsBarePort(value) && !set.ContainsKey(key))
+                        {
+                            var inputName = UniqueName(Sanitize(key), used);
+                            inputs.Add(new InputDeclaration { Name = inputName, Example = value, Description = $"from {relFile} {key}" });
+                            set[key] = $"${{sprig.{inputName}}}";
+                        }
+                        else if (relFile == target && LooksLikeEmbeddedPort(key, value))
+                        {
+                            notes.Add($"'{key}' in {relFile} may embed a port/URL — declare an input and reference it by hand (e.g. ${{sprig.apiUrl}})");
+                        }
+                    }
                 }
-                else if (LooksLikeEmbeddedPort(key, value))
+
+                Scan(target);
+                foreach (var t in templates) Scan(t);
+
+                // Nothing port-shaped to isolate → don't seed an override (an empty one is invalid anyway).
+                if (set.Count == 0) continue;
+
+                envOverrides.Add(new EnvOverride
                 {
-                    notes.Add($"'{key}' in {file} may embed a port/URL — declare an input and reference it by hand (e.g. ${{sprig.apiUrl}})");
-                }
+                    File = target,
+                    Templates = templates.Count > 0 ? templates : null,
+                    Set = set,
+                });
             }
-            if (set.Count > 0)
-                envOverrides.Add(new EnvOverride { File = file, Set = set });
         }
     }
 
-    ComposeConfig? DetectCompose(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
+    /// <summary>Repo-relative (forward-slash) paths of every file under the repo whose name matches
+    /// <paramref name="matches"/>, skipping build/dependency directories and stopping at
+    /// <see cref="MaxDepth"/>. Best-effort — unreadable directories are skipped, never thrown.</summary>
+    static IReadOnlyList<string> EnumerateFiles(string repoRoot, Func<string, bool> matches)
     {
-        var file = ComposeNames.FirstOrDefault(n => File.Exists(Path.Combine(repoRoot, n)));
-        if (file is null) return null;
+        var results = new List<string>();
 
+        void Walk(string dir, int depth)
+        {
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(dir))
+                    if (matches(Path.GetFileName(f)))
+                        results.Add(Path.GetRelativePath(repoRoot, f).Replace('\\', '/'));
+            }
+            catch { /* unreadable dir → skip */ }
+
+            if (depth >= MaxDepth) return;
+
+            IEnumerable<string> subs;
+            try { subs = Directory.EnumerateDirectories(dir); }
+            catch { return; }
+            foreach (var sub in subs)
+                if (!ExcludedDirs.Contains(Path.GetFileName(sub)))
+                    Walk(sub, depth + 1);
+        }
+
+        Walk(repoRoot, 0);
+        return results;
+    }
+
+    /// <summary>Repo-relative paths of every <c>.env</c>-family file under the repo.</summary>
+    static IReadOnlyList<string> EnumerateEnvFiles(string repoRoot)
+        => EnumerateFiles(repoRoot, IsEnvFamily);
+
+    /// <summary>Repo-relative paths of every docker-compose file under the repo.</summary>
+    static IReadOnlyList<string> EnumerateComposeFiles(string repoRoot)
+        => EnumerateFiles(repoRoot, IsComposeFile);
+
+    /// <summary><c>.env</c> or anything shaped <c>.env.*</c> (e.g. <c>.env.local</c>, <c>.env.example</c>).</summary>
+    static bool IsEnvFamily(string fileName)
+        => fileName.Equals(".env", StringComparison.OrdinalIgnoreCase)
+           || fileName.StartsWith(".env.", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>One of the canonical compose file names (<c>docker-compose.yml</c>, <c>compose.yaml</c>, …).</summary>
+    static bool IsComposeFile(string fileName)
+        => ComposeNames.Contains(fileName, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The directory portion of a repo-relative forward-slash path (empty for the repo root).</summary>
+    static string DirOf(string relFile)
+    {
+        var slash = relFile.LastIndexOf('/');
+        return slash < 0 ? "" : relFile[..slash];
+    }
+
+    List<ComposeConfig> DetectCompose(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
+    {
+        // Compose files are recursively discovered (monorepos keep several), and — unlike env — are
+        // never filtered by git: sprig overrides a compose file by generating a separate copy, so a
+        // tracked/committed compose file is a perfectly safe target.
+        var result = new List<ComposeConfig>();
+        foreach (var file in EnumerateComposeFiles(repoRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+        {
+            var overrides = DetectComposeOverrides(repoRoot, file, inputs, used, notes);
+            if (overrides.Count > 0)
+                result.Add(new ComposeConfig { File = file, Overrides = overrides });
+        }
+        return result;
+    }
+
+    List<ComposeOverride> DetectComposeOverrides(string repoRoot, string file,
+        List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
+    {
         YamlMappingNode root;
         try
         {
@@ -88,7 +206,7 @@ public sealed class InitInspector
         catch
         {
             notes.Add($"could not parse {file} — skipping compose detection");
-            return null;
+            return [];
         }
 
         var overrides = new List<ComposeOverride>();
@@ -114,7 +232,7 @@ public sealed class InitInspector
                 {
                     var (host, container) = SplitPort(mapping);
                     var inputName = UniqueName(Sanitize(svc) + "_port", used);
-                    inputs.Add(new InputDeclaration { Name = inputName, Example = host, Description = $"{svc} host port" });
+                    inputs.Add(new InputDeclaration { Name = inputName, Example = host, Description = $"{svc} host port ({file})" });
                     overrides.Add(new ComposeOverride
                     {
                         Path = ["services", svc, "ports", "0"],
@@ -125,10 +243,10 @@ public sealed class InitInspector
         }
 
         if (TryGetMap(root, "volumes", out var volumes) && volumes.Children.Count > 0)
-            notes.Add($"compose declares named volume(s) [{string.Join(", ", volumes.Children.Select(v => ((YamlScalarNode)v.Key).Value))}] — " +
+            notes.Add($"{file} declares named volume(s) [{string.Join(", ", volumes.Children.Select(v => ((YamlScalarNode)v.Key).Value))}] — " +
                       "the per-workspace project name won't isolate these, and data won't persist across 'down' unless bound to a named volume; review");
 
-        return overrides.Count > 0 ? new ComposeConfig { File = file, Overrides = overrides } : null;
+        return overrides;
     }
 
     // --- helpers ---

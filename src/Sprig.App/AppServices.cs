@@ -47,7 +47,7 @@ public sealed class AppServices
         Repos = new RepoRegistryStore(Paths);
         Stacks = new StackStore(Paths, Repos, instances);
         StackResolver = new StackResolver(Repos, Stacks, Git);
-        Init = new InitInspector();
+        Init = new InitInspector(Git);
     }
 
     /// <summary>

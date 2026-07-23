@@ -13,11 +13,11 @@ namespace Sprig.Tests.Workspaces;
 public class WorkspaceStackTests
 {
     const string ApiConfig = """
-        { "schema":1, "name":"api", "inputs":[ { "name":"port", "example":"5000" } ],
+        { "schema":2, "name":"api", "inputs":[ { "name":"port", "example":"5000" } ],
           "env":[ { "file":".env", "set": { "PORT": "${sprig.port}" } } ] }
         """;
     const string WebConfig = """
-        { "schema":1, "name":"web", "inputs":[ { "name":"apiUrl", "example":"http://localhost:5000" } ],
+        { "schema":2, "name":"web", "inputs":[ { "name":"apiUrl", "example":"http://localhost:5000" } ],
           "env":[ { "file":".env", "set": { "VITE_API_URL": "${sprig.apiUrl}" } } ] }
         """;
 

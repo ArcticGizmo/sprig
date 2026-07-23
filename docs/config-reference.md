@@ -17,11 +17,11 @@ isolation surface. Unknown top-level keys are rejected by the validator.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `schema` | int | yes | Config schema version. Currently `1`. |
+| `schema` | int | yes | Config schema version. Currently `2`. |
 | `name` | string | yes | Logical repo name. Used as the stack's binding key for this repo. |
 | `inputs` | array | no | The values this repo needs, referenced as `${sprig.<name>}` in its templates. |
 | `env` | array | no | Which `.env.*` files to clobber and which keys to set. |
-| `compose` | object | no | Docker compose override declaration (path-based). Omit if the repo has no infra. |
+| `compose` | array | no | Docker compose override declarations (path-based), one entry per compose file. Omit or leave empty if the repo has no infra. |
 
 ### `inputs[]` — what the repo consumes
 
@@ -32,9 +32,30 @@ A repo is a pure consumer. Each input is a value the **stack** must supply.
 | `name` | string | yes | Referenced elsewhere in this file as `${sprig.<name>}`. |
 | `example` | string | no | The shape the stack should supply (e.g. `5000`, `http://localhost:5000`). |
 | `description` | string | no | Human hint shown while authoring the binding. |
+| `allowedPorts` | string | no | Restrict the port feeding this input to a fixed set (see below). |
 
 Every declared input **must** be bound by any stack that uses the repo. An unbound input is a hard
 failure at create time (the error names the repo, the input, and its example).
+
+#### `allowedPorts` — pin an input to a fixed set of ports
+
+By default the stack port feeding an input is drawn from the whole range configured in **Settings**.
+Some values are only valid for a *specific* set of ports — the classic case is an Auth0 front end
+whose callback URLs (`http://localhost:<port>/callback`) must be pre-registered per port. Set
+`allowedPorts` on that input and sprig will only ever allocate from the set:
+
+- **Spec syntax:** a comma-separated list of single ports and inclusive ranges — `"8100-8103"`,
+  `"8100,8101,8200"`, or `"8100-8103,8200"`. Whitespace is ignored.
+- **How it's applied:** sprig traces the input through the stack's binding to the single
+  `${sprig.ports.<name>}` port that feeds it, and constrains *that* port's allocation. The binding
+  must reference exactly one stack port — a literal (no port) or a multi-port expression is a hard
+  error at create time, so a restriction is never silently ignored.
+- **Precedence:** the allowed set is used as-is (a port outside the Settings range is still
+  allocatable), but a port marked **restricted** in Settings is still skipped.
+- **Capacity:** the set size caps how many instances can run at once. When every allowed port is
+  taken, `create` fails with a clear "no free port left in the allowed set …" message.
+- Two inputs that resolve to the *same* stack port must agree — sprig intersects their sets and
+  errors if nothing is common.
 
 ### `env[]` — `.env.*` clobbering
 
@@ -43,21 +64,36 @@ Each entry targets one `.env.*` file and sets keys in it. Values are `${sprig...
 | Field | Type | Meaning |
 |---|---|---|
 | `file` | string | The `.env.*` file to seed + clobber (relative to the repo root). |
+| `templates` | string[] | Optional. File(s) to seed the worktree's copy from before the override block. |
 | `set` | object | `KEY: template` pairs. Each template may reference `${sprig.<input>}` / `${sprig.workspace}`. |
 
 sprig seeds the worktree's copy from the source repo, then injects a marker-delimited block at the
 **top and bottom** so its values win regardless of the framework's load order. The source repo is
 never touched.
 
-### `compose` — docker infra overrides (optional)
+**`templates` — seed from a different file.** By default the seed is the target `file`'s own content
+in the source repo (empty if it doesn't exist). That's a problem when the real file is gitignored and
+never committed — the repo instead commits a `.env.template`/`.env.example`. List those here and the
+worktree's copy is seeded from them (concatenated in order; missing ones skipped) before sprig's block
+is injected. Editable per env file in the app's repo editor ("Seed from templates").
 
-Omit this entirely if the repo has no infrastructure. When present, sprig parses the repo's compose
-file, applies the path-based overrides, and writes a full generated compose file into the central
-store for that workspace.
+```jsonc
+{ "file": ".env.local", "templates": [".env.template"], "set": { "PORT": "${sprig.frontend}" } }
+```
+
+### `compose[]` — docker infra overrides (optional)
+
+Omit (or leave empty) if the repo has no infrastructure. `compose` is an **array** — a repo may
+override several compose files (monorepos often keep more than one). For each entry sprig parses that
+compose file, applies its path-based overrides, and writes a separate generated compose file into the
+central store for the workspace; all of a workspace's generated files are brought up together under
+one docker-compose project. `sprig init` discovers compose files recursively (skipping build/vendor
+directories like `node_modules`, `dist`, `obj`) and proposes one entry each — remove any you don't
+want overridden.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `file` | string | Path to the repo's compose file (relative to the repo root). |
+| `file` | string | Path to a compose file (relative to the repo root). Must be unique within the array. |
 | `overrides[]` | array | Path-based value replacements. |
 | `overrides[].path` | string[] | YAML path segments, e.g. `["services","postgres","ports","0"]`. |
 | `overrides[].template` | string | Resolved value to place at that path (a `${sprig...}` template). |
@@ -75,7 +111,7 @@ Any reference that isn't a declared input or `workspace` is rejected by the vali
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "name": "dotnet-api",
   "inputs": [
     { "name": "port",   "example": "5000", "description": "ASP.NET host port" },
@@ -87,10 +123,12 @@ Any reference that isn't a declared input or `workspace` is rejected by the vali
         "ConnectionStrings__Default": "Host=localhost;Port=${sprig.dbPort};Database=librarydb;Username=library;Password=library_pass"
     } }
   ],
-  "compose": { "file": "docker-compose.yml", "overrides": [
-      { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-      { "path": ["services","postgres","ports","0"],       "template": "${sprig.dbPort}:5432" }
-  ] }
+  "compose": [
+    { "file": "docker-compose.yml", "overrides": [
+        { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
+        { "path": ["services","postgres","ports","0"],       "template": "${sprig.dbPort}:5432" }
+    ] }
+  ]
 }
 ```
 
@@ -98,7 +136,7 @@ Any reference that isn't a declared input or `workspace` is rejected by the vali
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "name": "sprig-example-vue",
   "inputs": [
     { "name": "frontend", "example": "3000", "description": "Vite dev host port" },
@@ -109,6 +147,26 @@ Any reference that isn't a declared input or `workspace` is rejected by the vali
         "PORT": "${sprig.frontend}",
         "VITE_API_URL": "${sprig.apiUrl}"
     } }
+  ]
+}
+```
+
+### Example — Auth0 front end with pinned callback ports
+
+The `frontend` port must be one of four pre-registered Auth0 callback ports, so at most four
+instances can run at once — sprig only ever allocates `8100`–`8103` for it. The stack binds
+`frontend` to `${sprig.ports.frontend_port}` as usual; the restriction rides on the repo.
+
+```json
+{
+  "schema": 2,
+  "name": "auth0-spa",
+  "inputs": [
+    { "name": "frontend", "example": "3000", "allowedPorts": "8100-8103",
+      "description": "Vite dev host port — must be a registered Auth0 callback port" }
+  ],
+  "env": [
+    { "file": ".env", "set": { "PORT": "${sprig.frontend}" } }
   ]
 }
 ```

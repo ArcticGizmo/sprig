@@ -32,6 +32,17 @@ public sealed partial class WorkspaceService(
 
     static string ProjectName(string workspace) => $"sprig-{workspace}";
 
+    /// <summary>A filename-safe slug of a repo-relative compose path, so two compose files from
+    /// different directories generate distinct names in the instance dir (e.g.
+    /// <c>apps/web/docker-compose.yml</c> → <c>apps-web-docker-compose-yml</c>).</summary>
+    static string ComposeSlug(string relFile)
+    {
+        var chars = relFile.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray();
+        var slug = new string(chars).Trim('-');
+        while (slug.Contains("--")) slug = slug.Replace("--", "-");
+        return slug.Length > 0 ? slug : "compose";
+    }
+
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
 
@@ -68,7 +79,13 @@ public sealed partial class WorkspaceService(
         try
         {
             // The stack owns the ports; allocate one real non-colliding number per named port.
-            var allPorts = ports.Acquire(workspace, stack.Ports);
+            // A repo input may pin its port to a fixed set (e.g. pre-registered Auth0 callbacks);
+            // resolve those onto the stack ports so allocation only draws from the allowed set.
+            var constraints = PortConstraintResolver.Resolve(stack.Repos, stack.Bindings, stack.Ports);
+            var requests = stack.Ports
+                .Select(p => new PortRequest(p, constraints.GetValueOrDefault(p)))
+                .ToList();
+            var allPorts = ports.Acquire(workspace, requests);
             portsAcquired = true;
 
             // Resolve per-repo input scopes from the stack's bindings (hard-fails on an unbound input).
@@ -85,11 +102,15 @@ public sealed partial class WorkspaceService(
 
                 env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
 
-                string? composePath = null;
-                if (repo.Config.Compose is { } composeCfg)
+                // A repo may override several compose files; generate one isolated copy per file,
+                // named so files from different source paths never collide in the instance dir.
+                var composePaths = new List<string>();
+                foreach (var composeCfg in repo.Config.Compose)
                 {
-                    composePath = Path.Combine(paths.InstanceDir(workspace), $"docker-compose.{repo.Name}.sprig.yml");
-                    compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, composePath);
+                    var dest = Path.Combine(paths.InstanceDir(workspace),
+                        $"docker-compose.{repo.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
+                    compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, dest);
+                    composePaths.Add(dest);
                 }
 
                 repoRecords.Add(new InstanceRepo
@@ -98,7 +119,7 @@ public sealed partial class WorkspaceService(
                     SourcePath = repo.Root,
                     WorktreePath = plan.Worktree,
                     Branch = branch,
-                    GeneratedComposePath = composePath,
+                    GeneratedComposePaths = composePaths,
                     Inputs = wired.Inputs[repo.Name],
                 });
             }
@@ -162,8 +183,8 @@ public sealed partial class WorkspaceService(
         // Step 1 of the S3 matrix: infra down (and wipe volumes) before touching worktrees.
         if (docker.IsAvailable())
         {
-            foreach (var repo in record.Repos.Where(r => r.GeneratedComposePath is not null))
-                TryQuiet(() => docker.Down(repo.GeneratedComposePath!, repo.WorktreePath, ProjectName(workspace), removeVolumes: true));
+            foreach (var repo in record.Repos.Where(r => r.ComposePaths.Count > 0))
+                TryQuiet(() => docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes: true));
         }
 
         foreach (var repo in record.Repos)
@@ -203,7 +224,7 @@ public sealed partial class WorkspaceService(
     {
         var record = RequireWithInfra(workspace, out var infraRepos);
         foreach (var repo in infraRepos)
-            docker.Up(repo.GeneratedComposePath!, repo.WorktreePath, ProjectName(workspace));
+            docker.Up(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
         instances.Save(record with { LastStatus = "running" });
     }
 
@@ -212,7 +233,7 @@ public sealed partial class WorkspaceService(
     {
         var record = RequireWithInfra(workspace, out var infraRepos);
         foreach (var repo in infraRepos)
-            docker.Down(repo.GeneratedComposePath!, repo.WorktreePath, ProjectName(workspace), removeVolumes);
+            docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes);
         instances.Save(record with { LastStatus = "stopped" });
     }
 
@@ -229,7 +250,7 @@ public sealed partial class WorkspaceService(
         var record = RequireWithInfra(workspace, out var infraRepos);
         _ = record;
         return infraRepos
-            .SelectMany(r => docker.Ps(r.GeneratedComposePath!, r.WorktreePath, ProjectName(workspace)))
+            .SelectMany(r => docker.Ps(r.ComposePaths, r.WorktreePath, ProjectName(workspace)))
             .ToList();
     }
 
@@ -237,7 +258,7 @@ public sealed partial class WorkspaceService(
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
-        infraRepos = record.Repos.Where(r => r.GeneratedComposePath is not null).ToList();
+        infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
         if (infraRepos.Count == 0)
             throw new WorkspaceException($"workspace '{workspace}' has no docker infrastructure");
         if (!docker.IsAvailable())

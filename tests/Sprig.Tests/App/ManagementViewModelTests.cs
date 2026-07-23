@@ -14,7 +14,7 @@ public class ManagementViewModelTests
     {
         var dir = Path.Combine(root, name);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":1, "name":"{{name}}" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":2, "name":"{{name}}" }""");
         return dir;
     }
 
@@ -49,12 +49,15 @@ public class ManagementViewModelTests
 
         vm.NewPath = repoDir;
         Assert.True(vm.PathHasConfig);
-        Assert.Equal("Register", vm.AddButtonLabel);
+        Assert.Equal("Load & edit", vm.AddButtonLabel);
 
         await vm.ConfirmAddCommand.ExecuteAsync(null);
 
         Assert.False(vm.IsAdding); // modal closes on success
         Assert.Contains(vm.Repos, r => r.Name == "vue");
+        // Lands straight in the editor for the repo just added.
+        Assert.True(vm.IsEditing);
+        Assert.Equal("vue", vm.Editor!.Name);
     }
 
     [Fact]
@@ -70,7 +73,7 @@ public class ManagementViewModelTests
         vm.NewPath = bare;
 
         Assert.False(vm.PathHasConfig);
-        Assert.Equal("Initialize & register", vm.AddButtonLabel);
+        Assert.Equal("Create & edit", vm.AddButtonLabel);
 
         await vm.ConfirmAddCommand.ExecuteAsync(null);
 
@@ -78,6 +81,9 @@ public class ManagementViewModelTests
         Assert.False(vm.IsAdding);
         Assert.True(File.Exists(Path.Combine(bare, ".sprig.json"))); // init wrote it
         Assert.Contains(vm.Repos, r => r.Name == "bare");
+        // The scaffolded config opens for editing straight away.
+        Assert.True(vm.IsEditing);
+        Assert.Equal("bare", vm.Editor!.Name);
     }
 
     [Fact]
@@ -103,7 +109,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
-            { "schema":1, "name":"api",
+            { "schema":2, "name":"api",
               "inputs":[ { "name":"port", "example":"5000" } ],
               "env":[ { "file":".env", "set":{ "PORT":"${sprig.port}" } } ] }
             """);
@@ -142,7 +148,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":1, "name":"api", "inputs":[ { "name":"port" } ] }""");
+        File.WriteAllText(configPath, """{ "schema":2, "name":"api", "inputs":[ { "name":"port" } ] }""");
         var before = File.ReadAllText(configPath);
 
         services.Repos.Add(dir);
@@ -215,25 +221,48 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(configPath, """{ "schema":2, "name":"api" }""");
         var before = File.ReadAllText(configPath);
         File.WriteAllText(Path.Combine(dir, "docker-compose.yml"),
             "services:\n  db:\n    image: postgres:16\n");
 
         var editor = RepoEditViewModel.Load(dir);
-        editor.HasCompose = true;
+        editor.AddComposeFileCommand.Execute(null);
+        var row = editor.Compose.First();
 
         // a path with no matching file is flagged and blocks the save
-        editor.ComposeFile = "nope.yml";
-        Assert.True(editor.ShowComposeMissing);
+        row.File = "nope.yml";
+        Assert.True(row.ShowMissing);
         Assert.False(editor.Save());
         Assert.Contains("not found", editor.Error);
         Assert.Equal(before, File.ReadAllText(configPath)); // untouched
 
         // pointing at the real file clears the block and saves
-        editor.ComposeFile = "docker-compose.yml";
-        Assert.True(editor.ShowComposeFound);
+        row.File = "docker-compose.yml";
+        Assert.True(row.ShowFound);
         Assert.True(editor.Save());
+    }
+
+    [Fact]
+    public void Compose_files_round_trip_through_load_and_save()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), "services:\n  a:\n    image: x\n");
+        Directory.CreateDirectory(Path.Combine(dir, "web"));
+        File.WriteAllText(Path.Combine(dir, "web", "compose.yaml"), "services:\n  b:\n    image: y\n");
+
+        var editor = RepoEditViewModel.Load(dir);
+        editor.AddComposeFileCommand.Execute(null);
+        editor.Compose[0].File = "docker-compose.yml";
+        editor.AddComposeFileCommand.Execute(null);
+        editor.Compose[1].File = "web/compose.yaml";
+        Assert.True(editor.Save());
+
+        var reloaded = RepoEditViewModel.Load(dir);
+        Assert.Equal(["docker-compose.yml", "web/compose.yaml"], reloaded.Compose.Select(c => c.File));
     }
 
     [Fact]
@@ -242,7 +271,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "");
         File.WriteAllText(Path.Combine(dir, ".env.example"), "");
         File.WriteAllText(Path.Combine(dir, "README.md"), "");
@@ -271,7 +300,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(configPath, """{ "schema":2, "name":"api" }""");
         var before = File.ReadAllText(configPath);
 
         var git = new FakeGitService();
@@ -307,7 +336,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
         File.WriteAllText(Path.Combine(dir, ".env.template"), "PORT=\nDATABASE_URL=\n");
 
@@ -323,12 +352,38 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public async Task Env_row_suggests_keys_from_an_explicitly_added_template()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
+        // A non-conventional name the companion heuristics would never find — only an explicit template does.
+        File.WriteAllText(Path.Combine(dir, "shared.env"), "SHARED_SECRET=\nAPI_KEY=\n");
+
+        var editor = RepoEditViewModel.Load(dir);
+        editor.AddEnvFileCommand.Execute(null);
+        var row = editor.Env.First();
+        row.File = ".env.local";
+        await row.StatusReady;
+
+        row.AddTemplateCommand.Execute(null);
+        row.Templates.First().Path = "shared.env";
+        await row.StatusReady;
+
+        Assert.Contains("PORT", row.AvailableKeys);          // still the target file's own key
+        Assert.Contains("SHARED_SECRET", row.AvailableKeys); // pulled in from the added template
+        Assert.Contains("API_KEY", row.AvailableKeys);
+    }
+
+    [Fact]
     public async Task Env_file_that_is_not_gitignored_is_flagged_even_when_missing()
     {
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.present"), ""); // exists on disk, but not ignored
 
         var git = new FakeGitService();

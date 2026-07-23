@@ -34,7 +34,7 @@ public static partial class ConfigReferences
         foreach (var env in config.Env)
             foreach (var v in env.Set.Values)
                 yield return v;
-        if (config.Compose is { } compose)
+        foreach (var compose in config.Compose)
             foreach (var o in compose.Overrides)
                 yield return o.Template;
     }

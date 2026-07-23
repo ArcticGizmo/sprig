@@ -141,6 +141,51 @@
                         <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
 
+                        <!-- docker status -->
+                        <StackPanel Spacing="8" IsVisible="{Binding Selected.HasInfra}">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="DOCKER" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                    <Button Content="Open in Docker" Command="{Binding OpenDockerCommand}"
+                                            FontSize="11" Padding="8,3"
+                                            ToolTip.Tip="Open Docker Desktop to inspect this workspace's sprig-&lt;name&gt; project." />
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="6" Padding="14">
+                                <StackPanel Spacing="2">
+                                    <ItemsControl ItemsSource="{Binding Selected.Containers}"
+                                                  IsVisible="{Binding Selected.ShowContainers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ContainerLineViewModel">
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontFamily="Consolas,monospace"
+                                                               FontSize="12" Foreground="{StaticResource FgBrush}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding State}" FontSize="11"
+                                                               VerticalAlignment="Center" IsVisible="{Binding Running}"
+                                                               Foreground="{StaticResource OkBrush}" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding State}" FontSize="11"
+                                                               VerticalAlignment="Center" IsVisible="{Binding !Running}"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock IsVisible="{Binding Selected.ShowNoContainers}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               Text="No containers running — use Up to start this workspace's infra." />
+                                    <TextBlock IsVisible="{Binding Selected.ShowDockerUnavailable}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{StaticResource WarnBrush}"
+                                               Text="⚠ Docker isn't reachable — is Docker Desktop running?" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
                         <!-- repos -->
                         <ItemsControl ItemsSource="{Binding Selected.Repos}">
                             <ItemsControl.ItemTemplate>
@@ -191,6 +236,9 @@
                         <TextBlock Text="Workspace name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
                         <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. feature-x" />
                     </StackPanel>
+                    <CheckBox IsChecked="{Binding StartInfraOnCreate, Mode=TwoWay}"
+                              Content="Start its Docker infrastructure now"
+                              ToolTip.Tip="Runs docker compose up right after creating. Ignored if the stack has no infra." />
                     <TextBlock IsVisible="{Binding CreateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding CreateError}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">

@@ -10,12 +10,26 @@ public sealed class FakeDockerService : IDockerService
     public List<(string project, bool volumes)> Downs { get; } = [];
     public List<ContainerStatus> PsResult { get; } = [];
 
+    /// <summary>The compose-file lists passed to each Up/Down/Ps call, for fan-out assertions.</summary>
+    public List<IReadOnlyList<string>> ComposeFilesSeen { get; } = [];
+
     public bool IsAvailable() => Available;
 
-    public void Up(string composeFile, string projectDirectory, string projectName) => Ups.Add(projectName);
+    public void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
+    {
+        ComposeFilesSeen.Add(composeFiles);
+        Ups.Add(projectName);
+    }
 
-    public void Down(string composeFile, string projectDirectory, string projectName, bool removeVolumes = false)
-        => Downs.Add((projectName, removeVolumes));
+    public void Down(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool removeVolumes = false)
+    {
+        ComposeFilesSeen.Add(composeFiles);
+        Downs.Add((projectName, removeVolumes));
+    }
 
-    public IReadOnlyList<ContainerStatus> Ps(string composeFile, string projectDirectory, string projectName) => PsResult;
+    public IReadOnlyList<ContainerStatus> Ps(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
+    {
+        ComposeFilesSeen.Add(composeFiles);
+        return PsResult;
+    }
 }

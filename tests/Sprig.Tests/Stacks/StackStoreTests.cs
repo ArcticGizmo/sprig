@@ -12,7 +12,7 @@ public class StackStoreTests
         {
             var dir = Path.Combine(s.Root, name);
             Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":1, "name":"{{name}}" }""");
+            File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":2, "name":"{{name}}" }""");
             registry.Add(dir);
         }
         var instances = new InstanceStore(s.Paths);

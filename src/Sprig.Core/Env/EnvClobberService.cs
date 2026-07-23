@@ -25,8 +25,7 @@ public sealed class EnvClobberService
             var resolved = Resolve(over, scope);
             var block = RenderBlock(resolved);
 
-            var sourceFile = Path.Combine(sourceRepo, over.File);
-            var seed = File.Exists(sourceFile) ? StripBlocks(File.ReadAllText(sourceFile)) : "";
+            var seed = SeedFor(over, sourceRepo);
 
             var target = Path.Combine(worktree, over.File);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -45,6 +44,33 @@ public sealed class EnvClobberService
             if (File.Exists(target))
                 File.WriteAllText(target, StripBlocks(File.ReadAllText(target)));
         }
+    }
+
+    /// <summary>
+    /// The seed content for an override's target file. When the override names template files, their
+    /// (block-stripped) contents are concatenated in order — missing ones skipped. Otherwise the
+    /// target file's own content in the source repo is used, if it exists.
+    /// </summary>
+    static string SeedFor(EnvOverride over, string sourceRepo)
+    {
+        if (over.Templates is { Count: > 0 } templates)
+        {
+            var sb = new StringBuilder();
+            foreach (var rel in templates)
+            {
+                if (string.IsNullOrWhiteSpace(rel)) continue;
+                var abs = Path.Combine(sourceRepo, rel);
+                if (!File.Exists(abs)) continue;
+                var text = StripBlocks(File.ReadAllText(abs));
+                if (text.Length == 0) continue;
+                sb.Append(text);
+                if (!text.EndsWith('\n')) sb.Append('\n');
+            }
+            return sb.ToString();
+        }
+
+        var sourceFile = Path.Combine(sourceRepo, over.File);
+        return File.Exists(sourceFile) ? StripBlocks(File.ReadAllText(sourceFile)) : "";
     }
 
     static SortedDictionary<string, string> Resolve(EnvOverride over, IVariableSource scope)

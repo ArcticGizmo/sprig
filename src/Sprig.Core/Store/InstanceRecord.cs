@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Sprig.Core.Store;
 
 /// <summary>
@@ -25,8 +27,23 @@ public sealed record InstanceRepo
     public required string WorktreePath { get; init; }
     /// <summary>The sprig-created branch (<c>sprig/&lt;workspace&gt;</c>), if any.</summary>
     public string? Branch { get; init; }
-    /// <summary>The generated compose file in the central store, if this repo has infra.</summary>
+
+    /// <summary>The generated compose files in the central store (one per overridden compose file in
+    /// the repo's config), if this repo has infra.</summary>
+    public IReadOnlyList<string> GeneratedComposePaths { get; init; } = [];
+
+    /// <summary>Legacy single generated-compose path from records written before multi-compose support.
+    /// Read-only compatibility shim — omitted on write; prefer <see cref="ComposePaths"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? GeneratedComposePath { get; init; }
+
+    /// <summary>Every generated compose file for this repo — the list, plus any legacy single path.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> ComposePaths =>
+        GeneratedComposePaths.Count > 0 ? GeneratedComposePaths
+        : GeneratedComposePath is { Length: > 0 } p ? [p]
+        : [];
+
     /// <summary>This repo's resolved input values (input name → value) as supplied by the stack.</summary>
     public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
 }

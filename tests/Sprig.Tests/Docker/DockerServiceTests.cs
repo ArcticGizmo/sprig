@@ -6,14 +6,17 @@ namespace Sprig.Tests.Docker;
 public class DockerServiceTests
 {
     const string Compose = @"C:\store\instances\ws\docker-compose.sprig.yml";
+    const string Compose2 = @"C:\store\instances\ws\docker-compose.web.sprig.yml";
     const string WorktreeDir = @"C:\repos\app--ws";
     const string Project = "sprig-ws";
+
+    static string[] Files(params string[] f) => f;
 
     [Fact]
     public void Up_uses_project_directory_and_project_name()
     {
         var runner = new RecordingProcessRunner();
-        new DockerService(runner).Up(Compose, WorktreeDir, Project);
+        new DockerService(runner).Up(Files(Compose), WorktreeDir, Project);
 
         Assert.Equal("docker", runner.Last.Executable);
         Assert.Equal(
@@ -23,10 +26,21 @@ public class DockerServiceTests
     }
 
     [Fact]
+    public void Up_passes_every_compose_file_as_its_own_dash_f()
+    {
+        var runner = new RecordingProcessRunner();
+        new DockerService(runner).Up(Files(Compose, Compose2), WorktreeDir, Project);
+
+        Assert.Equal(
+            ["compose", "-f", Compose, "-f", Compose2, "--project-directory", WorktreeDir, "-p", Project, "up", "-d"],
+            runner.Last.Arguments);
+    }
+
+    [Fact]
     public void Down_keeps_volumes_by_default()
     {
         var runner = new RecordingProcessRunner();
-        new DockerService(runner).Down(Compose, WorktreeDir, Project);
+        new DockerService(runner).Down(Files(Compose), WorktreeDir, Project);
         Assert.Equal(["-p", Project, "down"], runner.Last.Arguments.TakeLast(3));
         Assert.DoesNotContain("-v", runner.Last.Arguments);
     }
@@ -35,7 +49,7 @@ public class DockerServiceTests
     public void Down_with_removeVolumes_adds_dash_v()
     {
         var runner = new RecordingProcessRunner();
-        new DockerService(runner).Down(Compose, WorktreeDir, Project, removeVolumes: true);
+        new DockerService(runner).Down(Files(Compose), WorktreeDir, Project, removeVolumes: true);
         Assert.Equal(["down", "-v"], runner.Last.Arguments.TakeLast(2));
     }
 
@@ -43,7 +57,7 @@ public class DockerServiceTests
     public void Non_zero_exit_throws()
     {
         var runner = new RecordingProcessRunner { ExitCode = 1, StdErr = "boom" };
-        Assert.Throws<ProcessException>(() => new DockerService(runner).Up(Compose, WorktreeDir, Project));
+        Assert.Throws<ProcessException>(() => new DockerService(runner).Up(Files(Compose), WorktreeDir, Project));
     }
 
     [Fact]

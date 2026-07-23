@@ -12,7 +12,7 @@ public class WorkspaceServiceTests
 {
     // Zero-input repo: env references only the workspace slug, so the ad-hoc (stackless) path works.
     const string ConfigJson = """
-        { "schema": 1, "name": "vue-app",
+        { "schema": 2, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ] }
         """;
 

@@ -41,6 +41,10 @@ public partial class EnvOverlayViewModel : ObservableObject
     public bool HasOverrides => Overrides.Count > 0;
     public bool HasKeys => Keys.Count > 0;
 
+    /// <summary>Raised whenever the applied overrides change — lets the repo editor recompute which
+    /// <c>${sprig.*}</c> inputs a value references (and surface any that aren't declared yet).</summary>
+    public event EventHandler? OverridesChanged;
+
     public EnvOverlayViewModel(
         IReadOnlyList<string> keys,
         IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> examples,
@@ -145,6 +149,7 @@ public partial class EnvOverlayViewModel : ObservableObject
         OnPropertyChanged(nameof(OverrideCount));
         OnPropertyChanged(nameof(HasOverrides));
         OnPropertyChanged(nameof(HasKeys));
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // File/template keys first (declaration order), then hand-added keys, de-duplicated.

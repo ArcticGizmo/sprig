@@ -3,6 +3,7 @@
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
+             xmlns:sys="using:System"
              x:Class="Sprig.App.Views.ReposView"
              x:DataType="vm:ReposViewModel">
     <Grid Margin="28,20,24,16">
@@ -297,6 +298,31 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- quick add: inputs referenced by an override but not declared yet. Save stays
+                                     blocked until these are gone (the validator flags each), but you can declare
+                                     them as you go by clicking a chip. -->
+                                <Border IsVisible="{Binding HasMissingInputRefs}" Margin="2,2,0,0"
+                                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
+                                        BorderThickness="1" CornerRadius="6" Padding="10,8">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
+                                                   Text="Referenced by an override but not declared yet — click to add (must be resolved before saving):" />
+                                        <ItemsControl ItemsSource="{Binding MissingInputRefs}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="sys:String">
+                                                    <Button Content="{Binding StringFormat='+ {0}'}" FontFamily="Consolas,monospace"
+                                                            FontSize="11" Padding="8,3" Margin="0,0,6,6"
+                                                            Command="{Binding $parent[ItemsControl].((vm:RepoEditViewModel)DataContext).QuickAddInputCommand}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
 
                             <!-- env -->

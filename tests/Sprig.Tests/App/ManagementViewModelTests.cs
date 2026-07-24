@@ -388,6 +388,35 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public async Task Referenced_but_undeclared_input_is_offered_as_quick_add_and_blocks_save()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
+            { "schema":2, "name":"api",
+              "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.port}" } } ] }
+            """);
+
+        var editor = RepoEditViewModel.Load(dir);
+        await editor.Env.First().StatusReady;   // let the env overlay settle
+
+        // "port" is referenced by the override but not declared → surfaced for quick add,
+        // and that same gap blocks the save.
+        Assert.Contains("port", editor.MissingInputRefs);
+        Assert.True(editor.HasMissingInputRefs);
+        Assert.False(editor.Save());
+        Assert.Contains("port", editor.Error);
+
+        // quick-add declares it: the chip clears and the config now saves
+        editor.QuickAddInputCommand.Execute("port");
+        Assert.DoesNotContain("port", editor.MissingInputRefs);
+        Assert.False(editor.HasMissingInputRefs);
+        Assert.Contains(editor.Inputs, i => i.Name == "port");
+        Assert.True(editor.Save());
+    }
+
+    [Fact]
     public async Task Env_file_that_is_not_gitignored_is_flagged_even_when_missing()
     {
         using var s = new TempStore();

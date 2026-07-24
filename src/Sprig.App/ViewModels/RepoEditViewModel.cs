@@ -118,6 +118,10 @@ public partial class EnvFileEditRow : ObservableObject
     /// <summary>Whether an overlay exists to show (only once a file path is entered).</summary>
     public bool HasOverlay => Overlay is not null;
 
+    /// <summary>Raised when this file's applied overrides change (bubbled from the overlay, and re-fired
+    /// when the overlay itself is rebuilt) — the repo editor listens to keep the quick-add list current.</summary>
+    public event EventHandler? OverridesChanged;
+
     /// <summary>The overrides to persist: whatever the live overlay holds, else the loaded seed.</summary>
     public IReadOnlyDictionary<string, string> CurrentSet => Overlay?.ToSet() ?? _seedSet;
 
@@ -249,7 +253,16 @@ public partial class EnvFileEditRow : ObservableObject
         OnPropertyChanged(nameof(NotIgnoredMessage));
     }
 
-    partial void OnOverlayChanged(EnvOverlayViewModel? value) => OnPropertyChanged(nameof(HasOverlay));
+    partial void OnOverlayChanged(EnvOverlayViewModel? oldValue, EnvOverlayViewModel? newValue)
+    {
+        OnPropertyChanged(nameof(HasOverlay));
+        if (oldValue is not null) oldValue.OverridesChanged -= BubbleOverridesChanged;
+        if (newValue is not null) newValue.OverridesChanged += BubbleOverridesChanged;
+        // A rebuilt overlay may reference different inputs, so re-announce.
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    void BubbleOverridesChanged(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand] private void Remove() => _remove(this);
     [RelayCommand] private void AddTemplate() => Templates.Add(new TemplateFileRow(r => Templates.Remove(r), _exists));
@@ -294,6 +307,10 @@ public partial class ComposeFileEditRow : ObservableObject
     /// <summary>Whether an overlay exists to show (only once a file path is entered).</summary>
     public bool HasOverlay => Overlay is not null;
 
+    /// <summary>Raised when this file's applied overrides change (bubbled from the overlay, and re-fired
+    /// when the overlay itself is rebuilt) — the repo editor listens to keep the quick-add list current.</summary>
+    public event EventHandler? OverridesChanged;
+
     /// <summary>The overrides to persist: whatever the live overlay holds, else the disk seed.</summary>
     public IReadOnlyList<ComposeOverride> CurrentOverrides => Overlay?.ToOverrides() ?? _seed ?? [];
 
@@ -305,7 +322,16 @@ public partial class ComposeFileEditRow : ObservableObject
         OnPropertyChanged(nameof(ShowMissing));
     }
 
-    partial void OnOverlayChanged(ComposeOverlayViewModel? value) => OnPropertyChanged(nameof(HasOverlay));
+    partial void OnOverlayChanged(ComposeOverlayViewModel? oldValue, ComposeOverlayViewModel? newValue)
+    {
+        OnPropertyChanged(nameof(HasOverlay));
+        if (oldValue is not null) oldValue.OverridesChanged -= BubbleOverridesChanged;
+        if (newValue is not null) newValue.OverridesChanged += BubbleOverridesChanged;
+        // A rebuilt overlay may reference different inputs, so re-announce.
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    void BubbleOverridesChanged(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>Populate the row from a loaded config entry (sets the disk seed, then the file).</summary>
     public void Seed(string file, IReadOnlyList<ComposeOverride> overrides)
@@ -358,6 +384,10 @@ public partial class RepoEditViewModel : ObservableObject
         // Keep the ${sprig.*} variable list live: it feeds token autocomplete + validity, and inputs
         // can be added/renamed in this same form.
         Inputs.CollectionChanged += OnInputsChanged;
+        // Env/compose overrides are where ${sprig.*} inputs get referenced — track their rows so the
+        // "referenced but not declared" quick-add list stays current as overrides are edited.
+        Env.CollectionChanged += OnOverrideRowsChanged;
+        Compose.CollectionChanged += OnOverrideRowsChanged;
         RefreshSprigVariableNames();
     }
 
@@ -379,6 +409,15 @@ public partial class RepoEditViewModel : ObservableObject
 
     /// <summary>True when at least one input is declared — gates the inputs column header.</summary>
     public bool HasInputs => Inputs.Count > 0;
+
+    /// <summary><c>${sprig.*}</c> names referenced by an env/compose override that aren't declared as
+    /// inputs yet — offered as one-click "quick add" chips so you can reference inputs as you go and
+    /// declare them after. These are exactly what blocks a save (see <see cref="Save"/>), so the list
+    /// empties to nothing before the config is valid.</summary>
+    public ObservableCollection<string> MissingInputRefs { get; } = [];
+
+    /// <summary>True when at least one referenced input is undeclared — gates the quick-add strip.</summary>
+    public bool HasMissingInputRefs => MissingInputRefs.Count > 0;
 
     [ObservableProperty] private string? _error;
 
@@ -421,6 +460,7 @@ public partial class RepoEditViewModel : ObservableObject
             vm.Compose.Add(row);
         }
 
+        vm.RefreshMissingInputRefs();
         return vm;
     }
 
@@ -437,12 +477,63 @@ public partial class RepoEditViewModel : ObservableObject
         if (e.NewItems is not null)
             foreach (InputEditRow r in e.NewItems) r.PropertyChanged += OnInputRowChanged;
         RefreshSprigVariableNames();
+        RefreshMissingInputRefs();   // declaring/removing an input changes what's still "missing"
         OnPropertyChanged(nameof(HasInputs));
     }
 
     void OnInputRowChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(InputEditRow.Name)) RefreshSprigVariableNames();
+        if (e.PropertyName != nameof(InputEditRow.Name)) return;
+        RefreshSprigVariableNames();
+        RefreshMissingInputRefs();
+    }
+
+    // -- referenced-but-undeclared inputs (quick add) --------------------------
+
+    void OnOverrideRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (var item in e.OldItems) Unsubscribe(item);
+        if (e.NewItems is not null)
+            foreach (var item in e.NewItems) Subscribe(item);
+        RefreshMissingInputRefs();
+
+        void Subscribe(object? item)
+        {
+            if (item is EnvFileEditRow ef) ef.OverridesChanged += OnOverrideChanged;
+            else if (item is ComposeFileEditRow cf) cf.OverridesChanged += OnOverrideChanged;
+        }
+        void Unsubscribe(object? item)
+        {
+            if (item is EnvFileEditRow ef) ef.OverridesChanged -= OnOverrideChanged;
+            else if (item is ComposeFileEditRow cf) cf.OverridesChanged -= OnOverrideChanged;
+        }
+    }
+
+    void OnOverrideChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
+
+    /// <summary>Recompute which referenced <c>${sprig.*}</c> inputs aren't declared yet, off the live
+    /// edit state. Cheap and best-effort — a refresh must never interrupt editing.</summary>
+    void RefreshMissingInputRefs()
+    {
+        List<string> missing;
+        try { missing = ConfigReferences.UndeclaredReferences(Build()).ToList(); }
+        catch { return; }
+        if (MissingInputRefs.SequenceEqual(missing, StringComparer.Ordinal)) return;
+        MissingInputRefs.Clear();
+        foreach (var m in missing) MissingInputRefs.Add(m);
+        OnPropertyChanged(nameof(HasMissingInputRefs));
+    }
+
+    /// <summary>Declare a referenced-but-missing input from its quick-add chip (name pre-filled; fill
+    /// example/description later). No-op if it's already declared.</summary>
+    [RelayCommand]
+    private void QuickAddInput(string? name)
+    {
+        var n = (name ?? "").Trim();
+        if (n.Length == 0 || Inputs.Any(i => string.Equals(i.Name.Trim(), n, StringComparison.Ordinal)))
+            return;
+        Inputs.Add(new InputEditRow(RemoveInputRow) { Name = n });   // OnInputsChanged refreshes the rest
     }
 
     /// <summary>Rebuild the variable list in place (so bound editors update) from the current inputs.</summary>

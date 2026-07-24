@@ -35,6 +35,10 @@ public partial class ComposeOverlayViewModel : ObservableObject
     public int OverrideCount => Overrides.Count;
     public bool HasOverrides => Overrides.Count > 0;
 
+    /// <summary>Raised whenever the applied overrides change — lets the repo editor recompute which
+    /// <c>${sprig.*}</c> inputs a template references (and surface any that aren't declared yet).</summary>
+    public event EventHandler? OverridesChanged;
+
     private sealed record Entry(IReadOnlyList<string> Path, string Template);
 
     public ComposeOverlayViewModel(string composeText, IEnumerable<ComposeOverride>? seed = null,
@@ -118,6 +122,7 @@ public partial class ComposeOverlayViewModel : ObservableObject
 
         OnPropertyChanged(nameof(OverrideCount));
         OnPropertyChanged(nameof(HasOverrides));
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private ComposeLineViewModel BuildLine(ComposeOutlineLine line, Dictionary<string, ComposeRunViewModel> runByPath)

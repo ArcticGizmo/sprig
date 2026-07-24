@@ -87,6 +87,7 @@ public partial class ReposViewModel : PageViewModel
     {
         Editor = null; // leave edit mode when switching repos
         IsIsolating = false;
+        ConfirmingDelete = false;
         SelectedConfig = value is null ? null : RepoConfigViewModel.Load(value.Path);
         OnPropertyChanged(nameof(HasSelected));
         OnPropertyChanged(nameof(ShowReadOnly));
@@ -334,6 +335,41 @@ public partial class ReposViewModel : PageViewModel
         if (Selected is null) return;
         Services.Repos.Remove(Selected.Name);
         Status = $"unregistered '{Selected.Name}'";
+        Reload();
+        Services.NotifyStoreChanged();
+    }
+
+    /// <summary>True while the "delete .sprig.json" confirm bar is showing for the selected repo.</summary>
+    [ObservableProperty] private bool _confirmingDelete;
+
+    /// <summary>Ask for confirmation before deleting the repo's <c>.sprig.json</c>.</summary>
+    [RelayCommand]
+    private void Delete()
+    {
+        if (Selected is not null) ConfirmingDelete = true;
+    }
+
+    [RelayCommand]
+    private void CancelDelete() => ConfirmingDelete = false;
+
+    /// <summary>Delete the selected repo's <c>.sprig.json</c> and unregister it — a full state reset.
+    /// The repo is no longer a sprig repo afterwards; re-add it to scaffold a fresh config.</summary>
+    [RelayCommand]
+    private void ConfirmDelete()
+    {
+        if (Selected is null) return;
+        ConfirmingDelete = false;
+
+        var name = Selected.Name;
+        var configPath = Path.Combine(Selected.Path, ".sprig.json");
+        try
+        {
+            if (File.Exists(configPath)) File.Delete(configPath);
+        }
+        catch (Exception ex) { Error = ex.Message; return; }
+
+        Services.Repos.Remove(name);
+        Status = $"deleted .sprig.json and unregistered '{name}'";
         Reload();
         Services.NotifyStoreChanged();
     }

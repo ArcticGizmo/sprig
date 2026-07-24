@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
-             xmlns:env="clr-namespace:Sprig.Core.Env;assembly=Sprig.Core"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              x:Class="Sprig.App.Views.ReposView"
              x:DataType="vm:ReposViewModel">
@@ -370,67 +369,12 @@
                                                         </StackPanel>
                                                     </Border>
 
-                                                    <!-- override keys: the KEY=value pairs sprig injects into the worktree copy -->
-                                                    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                                            BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,4,0,0">
-                                                        <StackPanel Spacing="4">
-                                                            <Grid ColumnDefinitions="*,Auto">
-                                                                <TextBlock Grid.Column="0" Text="Override keys" FontSize="11"
-                                                                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
-                                                                           ToolTip.Tip="The KEY=value pairs sprig writes into the worktree's copy of this file — reference a declared input with ${sprig.input}." />
-                                                                <Button Grid.Column="1" Content="+ Add key" Command="{Binding AddKeyCommand}"
-                                                                        FontSize="11" Padding="8,3" />
-                                                            </Grid>
-                                                            <ItemsControl ItemsSource="{Binding Set}">
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:KvEditRow">
-                                                                        <Grid ColumnDefinitions="*,2*,34,Auto" ColumnSpacing="8" Margin="0,3,0,0">
-                                                                            <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding Key, Mode=TwoWay}"
-                                                                                     ItemsSource="{Binding $parent[ItemsControl].((vm:EnvFileEditRow)DataContext).AvailableKeys}"
-                                                                                     FilterMode="StartsWith" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
-                                                                                     Loaded="EnvKeyBoxLoaded"
-                                                                                     PlaceholderText="KEY" FontFamily="Consolas,monospace" />
-                                                                            <controls:SprigTokenBox Grid.Column="1" Value="{Binding Value, Mode=TwoWay}" MinWidth="0"
-                                                                                     Watermark="{Binding ValueWatermark}"
-                                                                                     Variables="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).Editor.SprigVariableNames}" />
-                                                                            <!-- info: the values this key already has in the file/templates you're overriding.
-                                                                                 Column is a fixed width so the value box stays put whether or not the icon shows. -->
-                                                                            <Button Grid.Column="2" Content="ⓘ" Padding="0,2" VerticalAlignment="Center"
-                                                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                                                                    IsVisible="{Binding HasExamples}"
-                                                                                    Foreground="{StaticResource MutedBrush}"
-                                                                                    ToolTip.Tip="Example values already set for this key in the target file and its templates">
-                                                                                <Button.Flyout>
-                                                                                    <Flyout Placement="Bottom">
-                                                                                        <StackPanel MinWidth="220" MaxWidth="440" Spacing="6">
-                                                                                            <TextBlock Text="{Binding ExamplesHeader}" FontSize="12" FontWeight="SemiBold"
-                                                                                                       Foreground="{StaticResource FgBrush}" />
-                                                                                            <ItemsControl ItemsSource="{Binding Examples}">
-                                                                                                <ItemsControl.ItemTemplate>
-                                                                                                    <DataTemplate x:DataType="env:EnvExample">
-                                                                                                        <StackPanel Spacing="1" Margin="0,3,0,0">
-                                                                                                            <TextBlock Text="{Binding Source}" FontSize="10"
-                                                                                                                       Foreground="{StaticResource MutedBrush}" />
-                                                                                                            <!-- selectable so the value can be copied (drag-select + Ctrl+C, or right-click) -->
-                                                                                                            <SelectableTextBlock Text="{Binding Value}" FontSize="12" TextWrapping="Wrap"
-                                                                                                                       FontFamily="Consolas,monospace"
-                                                                                                                       Foreground="{StaticResource FgBrush}" />
-                                                                                                        </StackPanel>
-                                                                                                    </DataTemplate>
-                                                                                                </ItemsControl.ItemTemplate>
-                                                                                            </ItemsControl>
-                                                                                        </StackPanel>
-                                                                                    </Flyout>
-                                                                                </Button.Flyout>
-                                                                            </Button>
-                                                                            <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
-                                                                                    Foreground="{StaticResource DangerBrush}" Padding="10,2" />
-                                                                        </Grid>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </StackPanel>
-                                                    </Border>
+                                                    <!-- override keys: a merged view of the file + its templates, each value clickable
+                                                         to override (like the compose overlay). Wrapper keeps IsVisible bound to the
+                                                         row; the control's own DataContext is the overlay. -->
+                                                    <StackPanel IsVisible="{Binding HasOverlay}" Margin="0,4,0,0">
+                                                        <controls:EnvOverlay DataContext="{Binding Overlay}" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

@@ -122,12 +122,16 @@ public class ManagementViewModelTests
         Assert.True(vm.IsEditing);
         Assert.Equal("api", vm.Editor!.Name);
 
-        // change the input's example and add a new env key
+        // change the input's example and add a new env override via the overlay
         vm.Editor.Inputs.First().Example = "6000";
         var env = vm.Editor.Env.First();
-        env.AddKeyCommand.Execute(null);
-        env.Set.Last().Key = "HOST";
-        env.Set.Last().Value = "localhost";
+        await env.StatusReady;                     // let the merged-env overlay build
+        var overlay = env.Overlay!;
+        overlay.NewKey = "HOST";
+        overlay.AddKeyCommand.Execute(null);
+        var host = overlay.Keys.Single(k => k.Key == "HOST");
+        host.Draft = "localhost";
+        overlay.ApplyCommand.Execute(host);
 
         vm.SaveEditCommand.Execute(null);
 
@@ -137,7 +141,7 @@ public class ManagementViewModelTests
         // re-read from disk to prove it persisted
         var reloaded = RepoEditViewModel.Load(dir);
         Assert.Equal("6000", reloaded.Inputs.First().Example);
-        Assert.Contains(reloaded.Env.First().Set, k => k.Key == "HOST" && k.Value == "localhost");
+        Assert.Contains(reloaded.Env.First().CurrentSet, k => k.Key == "HOST" && k.Value == "localhost");
     }
 
     [Fact]
@@ -310,19 +314,25 @@ public class ManagementViewModelTests
 
         editor.AddEnvFileCommand.Execute(null);
         var row = editor.Env.First();
-        row.Set.First().Key = "PORT";
-        row.Set.First().Value = "5000";
 
         row.File = ".env";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Tracked, row.Status);
         Assert.True(row.ShowTrackedWarning);
 
-        Assert.False(editor.Save());                        // save refused
+        // set an override key via the overlay (the merged-env editor)
+        var overlay = row.Overlay!;
+        overlay.NewKey = "PORT";
+        overlay.AddKeyCommand.Execute(null);
+        var port = overlay.Keys.Single(k => k.Key == "PORT");
+        port.Draft = "5000";
+        overlay.ApplyCommand.Execute(port);
+
+        Assert.False(editor.Save());                        // save refused (tracked file)
         Assert.Contains("tracked", editor.Error);
         Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
 
-        // pointing at a gitignored file clears the block and saves
+        // pointing at a gitignored file clears the block — the override carries across the file change
         row.File = ".env.local";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
@@ -347,8 +357,8 @@ public class ManagementViewModelTests
         row.File = ".env.local";
         await row.StatusReady;
 
-        Assert.Contains("PORT", row.AvailableKeys);
-        Assert.Contains("DATABASE_URL", row.AvailableKeys); // from the committed template
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "PORT");
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "DATABASE_URL"); // from the committed template
     }
 
     [Fact]
@@ -372,9 +382,9 @@ public class ManagementViewModelTests
         row.Templates.First().Path = "shared.env";
         await row.StatusReady;
 
-        Assert.Contains("PORT", row.AvailableKeys);          // still the target file's own key
-        Assert.Contains("SHARED_SECRET", row.AvailableKeys); // pulled in from the added template
-        Assert.Contains("API_KEY", row.AvailableKeys);
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "PORT");          // still the target file's own key
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "SHARED_SECRET"); // pulled in from the added template
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "API_KEY");
     }
 
     [Fact]

@@ -31,48 +31,6 @@ public partial class InputEditRow : ObservableObject
     [RelayCommand] private void Remove() => _remove(this);
 }
 
-/// <summary>One editable <c>KEY = value</c> pair inside an env file.</summary>
-public partial class KvEditRow : ObservableObject
-{
-    readonly Action<KvEditRow> _remove;
-    readonly Func<string, IReadOnlyList<EnvExample>> _examplesFor;
-
-    public KvEditRow(Action<KvEditRow> remove, Func<string, IReadOnlyList<EnvExample>> examplesFor)
-    {
-        _remove = remove;
-        _examplesFor = examplesFor;
-    }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Examples), nameof(HasExamples), nameof(ExamplesHeader), nameof(ValueWatermark))]
-    private string _key = "";
-
-    [ObservableProperty] private string _value = "";
-
-    /// <summary>The values this key already has in the target file and its template/example
-    /// companions — shown in the info flyout so you can see what you're overriding.</summary>
-    public IReadOnlyList<EnvExample> Examples => _examplesFor(Key.Trim());
-
-    /// <summary>Whether there are any example values to show (gates the info icon).</summary>
-    public bool HasExamples => Examples.Count > 0;
-
-    public string ExamplesHeader => $"Example values for {Key.Trim()}";
-
-    /// <summary>Placeholder for the value field: the first example value found (so you can see what a
-    /// real value looks like), else the generic <c>${sprig.input}</c> hint.</summary>
-    public string ValueWatermark => Examples.Count > 0 ? Examples[0].Value : "${sprig.input}";
-
-    /// <summary>Re-raise the example properties after the underlying files/templates are re-read.</summary>
-    public void RefreshExamples()
-    {
-        OnPropertyChanged(nameof(Examples));
-        OnPropertyChanged(nameof(HasExamples));
-        OnPropertyChanged(nameof(ValueWatermark));
-    }
-
-    [RelayCommand] private void Remove() => _remove(this);
-}
-
 /// <summary>One editable template file path an env override seeds from.</summary>
 public partial class TemplateFileRow : ObservableObject
 {
@@ -114,7 +72,9 @@ public enum EnvFileStatus
     NotIgnoredNew,
 }
 
-/// <summary>One editable <c>.env.*</c> file plus the keys it clobbers.</summary>
+/// <summary>One editable <c>.env.*</c> override: the target file, its seed templates, and an
+/// interactive merged-env overlay for choosing which keys to clobber (the env analogue of
+/// <see cref="ComposeFileEditRow"/>).</summary>
 public partial class EnvFileEditRow : ObservableObject
 {
     readonly Action<EnvFileEditRow> _remove;
@@ -122,46 +82,52 @@ public partial class EnvFileEditRow : ObservableObject
     readonly Func<string, IReadOnlyList<string>> _keysFor;
     readonly Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> _examplesFor;
     readonly Func<string, bool> _exists;
+    readonly IEnumerable<string> _variables;
     CancellationTokenSource? _cts;
 
-    /// <summary>Example values for every key, gathered from the target file and its templates —
-    /// refreshed off the UI thread alongside <see cref="AvailableKeys"/>. Feeds each row's info flyout.</summary>
-    IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> _examples =
-        new Dictionary<string, IReadOnlyList<EnvExample>>();
+    /// <summary>The saved overrides (KEY→template) this row was loaded with — the overlay's fallback
+    /// seed until it (re)builds, and what <see cref="CurrentSet"/> returns before the overlay exists.</summary>
+    IReadOnlyDictionary<string, string> _seedSet = new Dictionary<string, string>();
 
     public EnvFileEditRow(
         Action<EnvFileEditRow> remove,
         Func<string, CancellationToken, Task<EnvFileStatus>> classify,
         Func<string, IReadOnlyList<string>> keysFor,
         Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> examplesFor,
-        Func<string, bool> exists)
+        Func<string, bool> exists,
+        IEnumerable<string> variables)
     {
         _remove = remove;
         _classify = classify;
         _keysFor = keysFor;
         _examplesFor = examplesFor;
         _exists = exists;
-        // Seed templates contribute their own keys to the autosuggest, so re-gather when they change.
+        _variables = variables;
+        // Seed templates contribute their own keys to the merged view, so re-gather when they change.
         Templates.CollectionChanged += OnTemplatesChanged;
     }
 
-    /// <summary>Create a key row wired to this file's example-value lookup (so its info flyout shows
-    /// the values the key already has in the target file and its templates).</summary>
-    public KvEditRow NewKvRow(string key = "", string value = "")
-        => new(r => Set.Remove(r), ExamplesForKey) { Key = key, Value = value };
-
-    IReadOnlyList<EnvExample> ExamplesForKey(string key)
-        => _examples.TryGetValue(key, out var list) ? list : [];
-
     [ObservableProperty] private string _file = "";
-    public ObservableCollection<KvEditRow> Set { get; } = [];
+
+    /// <summary>The interactive merged-env editor for this file (null until a file path is entered).</summary>
+    [ObservableProperty] private EnvOverlayViewModel? _overlay;
 
     /// <summary>Template files this override seeds the worktree's copy from (optional, ordered).</summary>
     public ObservableCollection<TemplateFileRow> Templates { get; } = [];
 
-    /// <summary>Variable names found in the target file (and its template companions) — feeds the
-    /// KEY field's autosuggest. Refreshed off the UI thread whenever <see cref="File"/> changes.</summary>
-    public ObservableCollection<string> AvailableKeys { get; } = [];
+    /// <summary>Whether an overlay exists to show (only once a file path is entered).</summary>
+    public bool HasOverlay => Overlay is not null;
+
+    /// <summary>The overrides to persist: whatever the live overlay holds, else the loaded seed.</summary>
+    public IReadOnlyDictionary<string, string> CurrentSet => Overlay?.ToSet() ?? _seedSet;
+
+    /// <summary>Populate the row from a loaded config entry (sets the seed, then the file path).</summary>
+    public void Seed(string file, IReadOnlyDictionary<string, string> set)
+    {
+        _seedSet = set;
+        if (File == file) Reclassify();   // no OnFileChanged to trigger it
+        else File = file;
+    }
 
     /// <summary>Git relationship of <see cref="File"/>; recomputed off the UI thread as it changes
     /// (the gitignore probe shells out to git, so it can't run inline on the keystroke).</summary>
@@ -191,8 +157,8 @@ public partial class EnvFileEditRow : ObservableObject
 
     partial void OnFileChanged(string value) => Reclassify();
 
-    /// <summary>Recompute the git status and the key suggestions off the UI thread. Runs on a
-    /// <see cref="File"/> edit and whenever the seed templates change (they add their own keys).</summary>
+    /// <summary>Recompute the git status and rebuild the merged-env overlay off the UI thread. Runs on
+    /// a <see cref="File"/> edit and whenever the seed templates change (they add their own keys).</summary>
     void Reclassify()
     {
         _cts?.Cancel();
@@ -231,15 +197,16 @@ public partial class EnvFileEditRow : ObservableObject
         if (ct.IsCancellationRequested) return;
 
         Status = result;
-        AvailableKeys.Clear();
-        foreach (var k in keys) AvailableKeys.Add(k);
 
-        _examples = examples;
-        foreach (var row in Set) row.RefreshExamples();
+        // (Re)build the overlay from the freshly gathered keys/examples, carrying forward whatever
+        // overrides the live overlay already holds (else the loaded seed) — so editing the file path
+        // or templates never drops in-progress overrides.
+        var seed = Overlay?.ToSet() ?? _seedSet;
+        Overlay = new EnvOverlayViewModel(keys, examples, seed, _variables);
     }
 
-    /// <summary>Variable names to suggest for this override's KEY field: the union of those declared
-    /// in the target file and in each configured seed template, in first-seen order.</summary>
+    /// <summary>The keys shown in the merged env view: the union of those declared in the target file
+    /// and in each configured seed template, in first-seen order.</summary>
     IReadOnlyList<string> GatherKeys(string file, IReadOnlyList<string> templatePaths)
     {
         var keys = new List<string>();
@@ -282,8 +249,9 @@ public partial class EnvFileEditRow : ObservableObject
         OnPropertyChanged(nameof(NotIgnoredMessage));
     }
 
+    partial void OnOverlayChanged(EnvOverlayViewModel? value) => OnPropertyChanged(nameof(HasOverlay));
+
     [RelayCommand] private void Remove() => _remove(this);
-    [RelayCommand] private void AddKey() => Set.Add(NewKvRow());
     [RelayCommand] private void AddTemplate() => Templates.Add(new TemplateFileRow(r => Templates.Remove(r), _exists));
 }
 
@@ -438,12 +406,11 @@ public partial class RepoEditViewModel : ObservableObject
 
         foreach (var e in c.Env)
         {
-            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.EnvExamplesFor, vm.RepoFileExists)
-                { File = e.File };
+            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.EnvExamplesFor,
+                vm.RepoFileExists, vm.SprigVariableNames);
             foreach (var t in e.Templates ?? [])
                 file.Templates.Add(new TemplateFileRow(r => file.Templates.Remove(r), vm.RepoFileExists) { Path = t });
-            foreach (var kv in e.Set)
-                file.Set.Add(file.NewKvRow(kv.Key, kv.Value));
+            file.Seed(e.File, e.Set);   // sets the seed overrides, then the file (which builds the overlay)
             vm.Env.Add(file);
         }
 
@@ -497,11 +464,8 @@ public partial class RepoEditViewModel : ObservableObject
 
     [RelayCommand]
     private void AddEnvFile()
-    {
-        var file = new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, EnvExamplesFor, RepoFileExists);
-        file.Set.Add(file.NewKvRow());
-        Env.Add(file);
-    }
+        => Env.Add(new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, EnvExamplesFor,
+            RepoFileExists, SprigVariableNames));
 
     [RelayCommand]
     private void AddComposeFile()
@@ -620,7 +584,7 @@ public partial class RepoEditViewModel : ObservableObject
             {
                 File = e.File.Trim(),
                 Templates = templates.Count > 0 ? templates : null,
-                Set = ToDict(e.Set),
+                Set = new Dictionary<string, string>(e.CurrentSet, StringComparer.Ordinal),
             };
         }).ToList(),
         Compose = Compose.Select(c => new ComposeConfig
@@ -672,17 +636,4 @@ public partial class RepoEditViewModel : ObservableObject
     }
 
     static string? Blank(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-
-    // Last value wins on a duplicate key — the validator has no cross-key check, and a dict can't
-    // hold duplicates anyway; this just avoids throwing while the user is mid-edit.
-    static Dictionary<string, string> ToDict(IEnumerable<KvEditRow> rows)
-    {
-        var dict = new Dictionary<string, string>();
-        foreach (var r in rows)
-        {
-            var key = r.Key.Trim();
-            if (key.Length > 0) dict[key] = r.Value;
-        }
-        return dict;
-    }
 }

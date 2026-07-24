@@ -22,11 +22,20 @@ public partial class StacksViewModel : PageViewModel
         Services = services;
         _nav = nav;
         Reload();
-        // Workspaces created/removed elsewhere change the edit gate for the selected stack.
-        Services.StoreChanged += RefreshAttached;
+        // The store changing elsewhere affects two things here: repos added/removed on the Repos
+        // tab must appear in (or drop out of) the builder's repo picker, and workspaces
+        // created/removed change the edit gate for the selected stack.
+        Services.StoreChanged += OnStoreChanged;
     }
 
-    protected override void OnActivated() => RefreshAttached();
+    protected override void OnActivated() => OnStoreChanged();
+
+    /// <summary>React to any store change: pick up repo registry edits, then re-gate editing.</summary>
+    void OnStoreChanged()
+    {
+        SyncRepoChoices();
+        RefreshAttached();
+    }
 
     public override string Title => "Stacks";
 
@@ -346,10 +355,20 @@ public partial class StacksViewModel : PageViewModel
         OnPropertyChanged(nameof(HasStacks));
         NavCount = Stacks.Count;
 
+        SyncRepoChoices();
+    }
+
+    /// <summary>Reconcile the repo picker against the registry, preserving any current selections so a
+    /// repo added (or removed) on the Repos tab shows up here without clobbering an in-progress build.</summary>
+    void SyncRepoChoices()
+    {
+        var selected = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToHashSet();
+
+        foreach (var c in RepoChoices) c.PropertyChanged -= OnChoiceChanged;
         RepoChoices.Clear();
         foreach (var r in Services.Repos.List())
         {
-            var choice = new RepoChoiceViewModel(r.Name);
+            var choice = new RepoChoiceViewModel(r.Name) { IsSelected = selected.Contains(r.Name) };
             choice.PropertyChanged += OnChoiceChanged;
             RepoChoices.Add(choice);
         }

@@ -55,6 +55,21 @@
     <Style Selector="Button.tok.applied /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#2660A5FA" />
     </Style>
+    <!-- applied, but references an input that isn't declared yet → red, like the token editor -->
+    <Style Selector="Button.tok.applied.invalidref">
+      <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    </Style>
+    <Style Selector="Button.tok.applied.invalidref /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#26F87171" />
+    </Style>
+
+    <!-- replacements list value: accent normally, red when it names an undeclared input -->
+    <Style Selector="TextBlock.rw">
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.rw.invalid">
+      <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    </Style>
   </UserControl.Styles>
 
   <StackPanel Spacing="10">
@@ -80,7 +95,8 @@
                 <StackPanel Orientation="Horizontal" MinHeight="19" Margin="0,1">
                   <TextBlock Classes="run" Text="{Binding Key}" />
                   <TextBlock Classes="run" Text="=" />
-                  <Button Classes="tok" Classes.applied="{Binding IsApplied}" Content="{Binding Display}">
+                  <Button Classes="tok" Classes.applied="{Binding IsApplied}"
+                          Classes.invalidref="{Binding ReferencesUnknownInput}" Content="{Binding Display}">
                     <Button.Flyout>
                       <Flyout>
                         <StackPanel Width="360" Spacing="9" Margin="4">
@@ -160,7 +176,8 @@
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="0,3">
                 <StackPanel Grid.Column="0" Spacing="1">
                   <TextBlock Text="{Binding Key}" Classes="mono" Foreground="{StaticResource FgBrush}" />
-                  <TextBlock Text="{Binding Rewrite}" Classes="mono" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Rewrite}" Classes="mono rw" TextWrapping="Wrap"
+                             Classes.invalid="{Binding ReferencesUnknownInput}" />
                 </StackPanel>
                 <Button Grid.Column="1" Content="✕" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}"
                         Command="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).RemoveCommand}"

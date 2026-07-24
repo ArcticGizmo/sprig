@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using Sprig.App.ViewModels;
 using Sprig.Core.Env;
@@ -114,5 +115,30 @@ public class EnvOverlayViewModelTests
     {
         var vm = new EnvOverlayViewModel(["PORT"], NoExamples, variables: ["workspace", "dbPort"]);
         Assert.Equal(new[] { "workspace", "dbPort" }, vm.Variables);
+    }
+
+    [Fact]
+    public void Override_referencing_an_undeclared_input_is_flagged_and_clears_when_declared()
+    {
+        var vars = new ObservableCollection<string> { "workspace", "port" };
+        var vm = new EnvOverlayViewModel(["PORT", "HOST"], NoExamples, variables: vars);
+
+        // references an input that isn't declared → flagged (renders red) in row and inspector
+        var host = Row(vm, "HOST");
+        host.Draft = "${sprig.apiHost}";
+        vm.ApplyCommand.Execute(host);
+        Assert.True(Row(vm, "HOST").ReferencesUnknownInput);
+        Assert.True(vm.Overrides.Single(o => o.Key == "HOST").ReferencesUnknownInput);
+
+        // a declared input (and a plain literal) are fine
+        var port = Row(vm, "PORT");
+        port.Draft = "${sprig.port}";
+        vm.ApplyCommand.Execute(port);
+        Assert.False(Row(vm, "PORT").ReferencesUnknownInput);
+
+        // declaring the input recolours it (the overlay watches the live variable list)
+        vars.Add("apiHost");
+        Assert.False(Row(vm, "HOST").ReferencesUnknownInput);
+        Assert.False(vm.Overrides.Single(o => o.Key == "HOST").ReferencesUnknownInput);
     }
 }

@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Core.Config;
 using Sprig.Core.Env;
 
 namespace Sprig.App.ViewModels;
@@ -64,7 +66,19 @@ public partial class EnvOverlayViewModel : ObservableObject
             if (!_fileKeys.Contains(k))
                 _customKeys.Add(k);
 
+        // Declaring/removing an input changes which references are valid — recolour when it does.
+        if (Variables is INotifyCollectionChanged live)
+            live.CollectionChanged += (_, _) => Rebuild();
+
         Rebuild();
+    }
+
+    // True when the override template names a ${sprig.*} input that isn't a known variable — the
+    // editor renders these red (in the file view and the replacements list) instead of accent.
+    private bool ReferencesUnknownInput(string template)
+    {
+        var known = new HashSet<string>(Variables, StringComparer.Ordinal);
+        return ConfigReferences.ReferencedNames(template).Any(n => !known.Contains(n));
     }
 
     /// <summary>The current overrides, ready to persist to <see cref="Sprig.Core.Config.EnvOverride.Set"/>.
@@ -132,6 +146,7 @@ public partial class EnvOverlayViewModel : ObservableObject
                 IsApplied = applied,
                 Display = applied ? template! : "override",
                 Draft = applied ? template! : string.Empty,
+                ReferencesUnknownInput = applied && ReferencesUnknownInput(template!),
             };
             Keys.Add(row);
             rowByKey[key] = row;
@@ -143,6 +158,7 @@ public partial class EnvOverlayViewModel : ObservableObject
             {
                 Key = key,
                 Rewrite = _overrides[key],
+                ReferencesUnknownInput = ReferencesUnknownInput(_overrides[key]),
                 Row = rowByKey.GetValueOrDefault(key),
             });
 
@@ -177,6 +193,10 @@ public partial class EnvKeyViewModel : ObservableObject
 
     public bool IsApplied { get; init; }
 
+    /// <summary>True when the applied template names a <c>${sprig.*}</c> input that isn't declared —
+    /// the value renders red instead of accent to match the token editor's invalid highlight.</summary>
+    public bool ReferencesUnknownInput { get; init; }
+
     /// <summary>What the value shows in the file view: the override template, or a dimmed <c>override</c>.</summary>
     public string Display { get; init; } = "override";
 
@@ -194,5 +214,9 @@ public sealed class EnvOverrideViewModel
 {
     public string Key { get; init; } = string.Empty;
     public string Rewrite { get; init; } = string.Empty;
+
+    /// <summary>True when the template names an undeclared <c>${sprig.*}</c> input — rendered red.</summary>
+    public bool ReferencesUnknownInput { get; init; }
+
     public EnvKeyViewModel? Row { get; init; }
 }

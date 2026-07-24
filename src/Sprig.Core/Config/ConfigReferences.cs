@@ -10,6 +10,16 @@ namespace Sprig.Core.Config;
 /// </summary>
 public static partial class ConfigReferences
 {
+    /// <summary>The <c>${sprig.&lt;name&gt;}</c> names referenced by a single template string, in order
+    /// (with duplicates) — used to colour an override red when it names an input that isn't declared.</summary>
+    public static IEnumerable<string> ReferencedNames(string? template)
+    {
+        if (string.IsNullOrEmpty(template))
+            yield break;
+        foreach (Match m in RefPattern().Matches(template))
+            yield return m.Groups[1].Value.Trim();
+    }
+
     /// <summary>Every distinct <c>${sprig.&lt;path&gt;}</c> path referenced by the config's templates.</summary>
     public static IReadOnlyList<string> ReferencedPaths(SprigRepoConfig config)
     {

@@ -35,10 +35,40 @@ public partial class InputEditRow : ObservableObject
 public partial class KvEditRow : ObservableObject
 {
     readonly Action<KvEditRow> _remove;
-    public KvEditRow(Action<KvEditRow> remove) => _remove = remove;
+    readonly Func<string, IReadOnlyList<EnvExample>> _examplesFor;
 
-    [ObservableProperty] private string _key = "";
+    public KvEditRow(Action<KvEditRow> remove, Func<string, IReadOnlyList<EnvExample>> examplesFor)
+    {
+        _remove = remove;
+        _examplesFor = examplesFor;
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Examples), nameof(HasExamples), nameof(ExamplesHeader), nameof(ValueWatermark))]
+    private string _key = "";
+
     [ObservableProperty] private string _value = "";
+
+    /// <summary>The values this key already has in the target file and its template/example
+    /// companions — shown in the info flyout so you can see what you're overriding.</summary>
+    public IReadOnlyList<EnvExample> Examples => _examplesFor(Key.Trim());
+
+    /// <summary>Whether there are any example values to show (gates the info icon).</summary>
+    public bool HasExamples => Examples.Count > 0;
+
+    public string ExamplesHeader => $"Example values for {Key.Trim()}";
+
+    /// <summary>Placeholder for the value field: the first example value found (so you can see what a
+    /// real value looks like), else the generic <c>${sprig.input}</c> hint.</summary>
+    public string ValueWatermark => Examples.Count > 0 ? Examples[0].Value : "${sprig.input}";
+
+    /// <summary>Re-raise the example properties after the underlying files/templates are re-read.</summary>
+    public void RefreshExamples()
+    {
+        OnPropertyChanged(nameof(Examples));
+        OnPropertyChanged(nameof(HasExamples));
+        OnPropertyChanged(nameof(ValueWatermark));
+    }
 
     [RelayCommand] private void Remove() => _remove(this);
 }
@@ -90,22 +120,38 @@ public partial class EnvFileEditRow : ObservableObject
     readonly Action<EnvFileEditRow> _remove;
     readonly Func<string, CancellationToken, Task<EnvFileStatus>> _classify;
     readonly Func<string, IReadOnlyList<string>> _keysFor;
+    readonly Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> _examplesFor;
     readonly Func<string, bool> _exists;
     CancellationTokenSource? _cts;
+
+    /// <summary>Example values for every key, gathered from the target file and its templates —
+    /// refreshed off the UI thread alongside <see cref="AvailableKeys"/>. Feeds each row's info flyout.</summary>
+    IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> _examples =
+        new Dictionary<string, IReadOnlyList<EnvExample>>();
 
     public EnvFileEditRow(
         Action<EnvFileEditRow> remove,
         Func<string, CancellationToken, Task<EnvFileStatus>> classify,
         Func<string, IReadOnlyList<string>> keysFor,
+        Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> examplesFor,
         Func<string, bool> exists)
     {
         _remove = remove;
         _classify = classify;
         _keysFor = keysFor;
+        _examplesFor = examplesFor;
         _exists = exists;
         // Seed templates contribute their own keys to the autosuggest, so re-gather when they change.
         Templates.CollectionChanged += OnTemplatesChanged;
     }
+
+    /// <summary>Create a key row wired to this file's example-value lookup (so its info flyout shows
+    /// the values the key already has in the target file and its templates).</summary>
+    public KvEditRow NewKvRow(string key = "", string value = "")
+        => new(r => Set.Remove(r), ExamplesForKey) { Key = key, Value = value };
+
+    IReadOnlyList<EnvExample> ExamplesForKey(string key)
+        => _examples.TryGetValue(key, out var list) ? list : [];
 
     [ObservableProperty] private string _file = "";
     public ObservableCollection<KvEditRow> Set { get; } = [];
@@ -173,11 +219,13 @@ public partial class EnvFileEditRow : ObservableObject
     {
         EnvFileStatus result;
         IReadOnlyList<string> keys;
+        IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> examples;
         try
         {
             result = await _classify(file, ct);
             var templatePaths = Templates.Select(t => t.Path).ToList();  // snapshot on the UI thread
-            keys = await Task.Run(() => GatherKeys(file, templatePaths), ct);
+            (keys, examples) = await Task.Run(
+                () => (GatherKeys(file, templatePaths), GatherExamples(file, templatePaths)), ct);
         }
         catch (OperationCanceledException) { return; }
         if (ct.IsCancellationRequested) return;
@@ -185,6 +233,9 @@ public partial class EnvFileEditRow : ObservableObject
         Status = result;
         AvailableKeys.Clear();
         foreach (var k in keys) AvailableKeys.Add(k);
+
+        _examples = examples;
+        foreach (var row in Set) row.RefreshExamples();
     }
 
     /// <summary>Variable names to suggest for this override's KEY field: the union of those declared
@@ -201,6 +252,28 @@ public partial class EnvFileEditRow : ObservableObject
         return keys;
     }
 
+    /// <summary>Example values to show per key: the union of those declared in the target file and
+    /// each configured seed template (first source wins per key, one example per source file).</summary>
+    IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> GatherExamples(string file, IReadOnlyList<string> templatePaths)
+    {
+        var map = new Dictionary<string, List<EnvExample>>(StringComparer.Ordinal);
+        void Merge(IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> src)
+        {
+            foreach (var (key, examples) in src)
+            {
+                if (!map.TryGetValue(key, out var list))
+                    map[key] = list = [];
+                foreach (var ex in examples)
+                    if (!list.Any(e => e.Source == ex.Source)) list.Add(ex);
+            }
+        }
+
+        Merge(_examplesFor(file));
+        foreach (var t in templatePaths)
+            if (!string.IsNullOrWhiteSpace(t)) Merge(_examplesFor(t));
+        return map.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<EnvExample>)kv.Value, StringComparer.Ordinal);
+    }
+
     partial void OnStatusChanged(EnvFileStatus value)
     {
         OnPropertyChanged(nameof(ShowTrackedWarning));
@@ -210,7 +283,7 @@ public partial class EnvFileEditRow : ObservableObject
     }
 
     [RelayCommand] private void Remove() => _remove(this);
-    [RelayCommand] private void AddKey() => Set.Add(new KvEditRow(r => Set.Remove(r)));
+    [RelayCommand] private void AddKey() => Set.Add(NewKvRow());
     [RelayCommand] private void AddTemplate() => Templates.Add(new TemplateFileRow(r => Templates.Remove(r), _exists));
 }
 
@@ -365,12 +438,12 @@ public partial class RepoEditViewModel : ObservableObject
 
         foreach (var e in c.Env)
         {
-            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.RepoFileExists)
+            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.EnvExamplesFor, vm.RepoFileExists)
                 { File = e.File };
             foreach (var t in e.Templates ?? [])
                 file.Templates.Add(new TemplateFileRow(r => file.Templates.Remove(r), vm.RepoFileExists) { Path = t });
             foreach (var kv in e.Set)
-                file.Set.Add(new KvEditRow(r => file.Set.Remove(r)) { Key = kv.Key, Value = kv.Value });
+                file.Set.Add(file.NewKvRow(kv.Key, kv.Value));
             vm.Env.Add(file);
         }
 
@@ -425,8 +498,8 @@ public partial class RepoEditViewModel : ObservableObject
     [RelayCommand]
     private void AddEnvFile()
     {
-        var file = new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, RepoFileExists);
-        file.Set.Add(new KvEditRow(r => file.Set.Remove(r)));
+        var file = new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, EnvExamplesFor, RepoFileExists);
+        file.Set.Add(file.NewKvRow());
         Env.Add(file);
     }
 
@@ -456,6 +529,11 @@ public partial class RepoEditViewModel : ObservableObject
     /// <summary>Variable names available for an env-file field — the file's own keys plus any from a
     /// companion template (<c>.env.template</c> etc.). Best-effort; drives the KEY autosuggest.</summary>
     public IReadOnlyList<string> EnvKeysFor(string file) => EnvKeyReader.KeysForFile(RepoPath, file);
+
+    /// <summary>Example values per key for an env-file field — the values that key already has in the
+    /// target file and its companion templates. Best-effort; feeds each key row's info flyout.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> EnvExamplesFor(string file)
+        => EnvKeyReader.ExamplesForFile(RepoPath, file);
 
     /// <summary>True if the given repo-relative path is tracked in git (and so off-limits to override).</summary>
     public bool IsTracked(string file)

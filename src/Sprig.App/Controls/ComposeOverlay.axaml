@@ -87,20 +87,23 @@
     <!-- YAML stage -->
     <Border CornerRadius="6" Background="{StaticResource FormBgBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" Padding="14,12" MaxHeight="420">
+      <!-- Horizontal scroll disabled so the width is constrained and long lines wrap (WrapPanel)
+           instead of running off-screen. -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="14,12" MaxHeight="420">
         <ItemsControl ItemsSource="{Binding Lines}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ComposeLineViewModel">
               <ItemsControl ItemsSource="{Binding Runs}" MinHeight="19">
                 <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                  <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:ComposeRunViewModel">
                     <Panel>
                       <Button Classes="tok" Classes.applied="{Binding IsApplied}"
-                              Classes.invalidref="{Binding ReferencesUnknownInput}" Content="{Binding Display}"
+                              Classes.invalidref="{Binding ReferencesUnknownInput}"
                               IsVisible="{Binding IsToken}">
+                        <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                         <Button.Flyout>
                           <Flyout>
                             <StackPanel Width="340" Spacing="9" Margin="4">
@@ -135,7 +138,8 @@
                           </Flyout>
                         </Button.Flyout>
                       </Button>
-                      <TextBlock Classes="run" Text="{Binding Display}" IsVisible="{Binding !IsToken}" />
+                      <TextBlock Classes="run" Text="{Binding Display}" IsVisible="{Binding !IsToken}"
+                                 TextWrapping="Wrap" />
                     </Panel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

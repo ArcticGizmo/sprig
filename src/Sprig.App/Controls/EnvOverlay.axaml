@@ -81,8 +81,9 @@
     <Border CornerRadius="6" Background="{StaticResource FormBgBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
       <!-- The inset is a Margin on the content (not ScrollViewer.Padding) so the scroll extent
-           reserves it — otherwise the last row clips against the bottom edge. -->
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" MaxHeight="420">
+           reserves it — otherwise the last row clips against the bottom edge. Horizontal scroll is
+           disabled so the width is constrained and long values wrap (WrapPanel) rather than scroll. -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" MaxHeight="420">
         <StackPanel Spacing="2" Margin="14,12">
 
           <TextBlock IsVisible="{Binding !HasKeys}" Classes="mono" Foreground="{StaticResource MutedBrush}"
@@ -92,11 +93,12 @@
           <ItemsControl ItemsSource="{Binding Keys}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:EnvKeyViewModel">
-                <StackPanel Orientation="Horizontal" MinHeight="19" Margin="0,1">
-                  <TextBlock Classes="run" Text="{Binding Key}" />
+                <WrapPanel Orientation="Horizontal" MinHeight="19" Margin="0,1">
+                  <TextBlock Classes="run" Text="{Binding Key}" TextWrapping="Wrap" />
                   <TextBlock Classes="run" Text="=" />
                   <Button Classes="tok" Classes.applied="{Binding IsApplied}"
-                          Classes.invalidref="{Binding ReferencesUnknownInput}" Content="{Binding Display}">
+                          Classes.invalidref="{Binding ReferencesUnknownInput}">
+                    <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                     <Button.Flyout>
                       <Flyout>
                         <StackPanel Width="360" Spacing="9" Margin="4">
@@ -146,7 +148,7 @@
                       </Flyout>
                     </Button.Flyout>
                   </Button>
-                </StackPanel>
+                </WrapPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

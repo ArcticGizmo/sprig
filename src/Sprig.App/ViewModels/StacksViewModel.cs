@@ -65,6 +65,9 @@ public partial class StacksViewModel : PageViewModel
     public ObservableCollection<string> PortNames { get; } = [];
     public bool HasPorts => PortNames.Count > 0;
 
+    /// <summary>Registered repos not yet in the stack — the canvas "add repo" slot lists these.</summary>
+    public ObservableCollection<string> AddableRepos { get; } = [];
+
     [ObservableProperty] private StackDefinition? _selected;
 
     /// <summary>The stack name — path-compatible, used as the filename/key, worktree folder and branch.</summary>
@@ -633,7 +636,29 @@ public partial class StacksViewModel : PageViewModel
         }
 
         OnPropertyChanged(nameof(CanAutoWire));
+        RefreshAddableRepos();
         RefreshClassification();
+    }
+
+    /// <summary>Keep the canvas "add repo" list to the registered repos not already in the stack.</summary>
+    void RefreshAddableRepos()
+    {
+        AddableRepos.Clear();
+        foreach (var c in RepoChoices.Where(c => !c.IsSelected)) AddableRepos.Add(c.Name);
+    }
+
+    /// <summary>Add a repo to the stack by name (canvas "add repo" slot).</summary>
+    [RelayCommand]
+    private void AddStackRepo(string? name)
+    {
+        if (RepoChoices.FirstOrDefault(c => c.Name == name) is { } choice) choice.IsSelected = true;
+    }
+
+    /// <summary>Remove a repo from the stack by name (canvas trash icon, after confirm).</summary>
+    [RelayCommand]
+    private void RemoveStackRepo(string? name)
+    {
+        if (RepoChoices.FirstOrDefault(c => c.Name == name) is { } choice) choice.IsSelected = false;
     }
 
     void OnBindingRowChanged(object? sender, PropertyChangedEventArgs e)

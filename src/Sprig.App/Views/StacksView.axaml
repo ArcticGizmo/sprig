@@ -382,39 +382,14 @@
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                            Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it — or drag an input back to a source. Click an empty input to type a literal; click a port to rename/remove it; click a ƒ node to edit it; click a line to select it (then delete or add a transform)." />
 
-                                <!-- Column headers, aligned to the canvas columns; buttons live under their columns. -->
+                                <!-- Column headers, aligned to the canvas columns (the actions are drawn on the canvas). -->
                                 <Grid HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284">
                                     <TextBlock Grid.Column="0" Text="SOURCE" HorizontalAlignment="Center" FontSize="10"
                                                FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                                    <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="4">
-                                        <TextBlock Text="TRANSFORM" HorizontalAlignment="Center" FontSize="10"
-                                                   FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                                        <Button Content="⚡ Auto-wire" Command="{Binding AutoWireCommand}"
-                                                IsEnabled="{Binding CanAutoWire}" Padding="10,4" FontSize="12"
-                                                ToolTip.Tip="Propose a port + binding for every unbound input." />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" HorizontalAlignment="Center" Spacing="4">
-                                        <TextBlock Text="REPO" HorizontalAlignment="Center" FontSize="10"
-                                                   FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                                        <Button Content="＋ Add repo" Padding="10,4" FontSize="12"
-                                                ToolTip.Tip="Add or remove repos in this stack">
-                                            <Button.Flyout>
-                                                <Flyout>
-                                                    <StackPanel Spacing="2" MinWidth="180">
-                                                        <TextBlock Text="Repos in this stack" FontSize="11" Margin="2,2,2,6"
-                                                                   Foreground="{StaticResource MutedBrush}" />
-                                                        <ItemsControl ItemsSource="{Binding RepoChoices}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="vm:RepoChoiceViewModel">
-                                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </StackPanel>
-                                                </Flyout>
-                                            </Button.Flyout>
-                                        </Button>
-                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="TRANSFORM" HorizontalAlignment="Center" FontSize="10"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBlock Grid.Column="2" Text="REPO" HorizontalAlignment="Center" FontSize="10"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                                 </Grid>
 
                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
@@ -432,7 +407,11 @@
                                                                RenamePortCommand="{Binding RenamePortCommand}"
                                                                RemovePortCommand="{Binding RemoveNamedPortCommand}"
                                                                AddPortCommand="{Binding AddNamedPortCommand}"
-                                                               AppendSourceCommand="{Binding AppendSourceCommand}" />
+                                                               AppendSourceCommand="{Binding AppendSourceCommand}"
+                                                               AddableRepos="{Binding AddableRepos}"
+                                                               AddRepoCommand="{Binding AddStackRepoCommand}"
+                                                               RemoveRepoCommand="{Binding RemoveStackRepoCommand}"
+                                                               AutoWireCommand="{Binding AutoWireCommand}" />
                                     </ScrollViewer>
                                 </Border>
                                 <WrapPanel>

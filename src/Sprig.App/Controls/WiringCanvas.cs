@@ -77,6 +77,22 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> AppendSourceCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AppendSourceCommand));
 
+    /// <summary>Registered repos not yet in the stack — listed by the canvas "add repo" slot.</summary>
+    public static readonly StyledProperty<System.Collections.IEnumerable?> AddableReposProperty =
+        AvaloniaProperty.Register<WiringCanvas, System.Collections.IEnumerable?>(nameof(AddableRepos));
+
+    /// <summary>Invoked with a repo name (string) from the canvas "add repo" slot.</summary>
+    public static readonly StyledProperty<ICommand?> AddRepoCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AddRepoCommand));
+
+    /// <summary>Invoked with a repo name (string) when a repo's trash icon is confirmed.</summary>
+    public static readonly StyledProperty<ICommand?> RemoveRepoCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(RemoveRepoCommand));
+
+    /// <summary>Invoked (no argument) from the on-canvas Auto-wire button.</summary>
+    public static readonly StyledProperty<ICommand?> AutoWireCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AutoWireCommand));
+
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
@@ -95,6 +111,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public ICommand? RemovePortCommand { get => GetValue(RemovePortCommandProperty); set => SetValue(RemovePortCommandProperty, value); }
     public ICommand? AddPortCommand { get => GetValue(AddPortCommandProperty); set => SetValue(AddPortCommandProperty, value); }
     public ICommand? AppendSourceCommand { get => GetValue(AppendSourceCommandProperty); set => SetValue(AppendSourceCommandProperty, value); }
+    public System.Collections.IEnumerable? AddableRepos { get => GetValue(AddableReposProperty); set => SetValue(AddableReposProperty, value); }
+    public ICommand? AddRepoCommand { get => GetValue(AddRepoCommandProperty); set => SetValue(AddRepoCommandProperty, value); }
+    public ICommand? RemoveRepoCommand { get => GetValue(RemoveRepoCommandProperty); set => SetValue(RemoveRepoCommandProperty, value); }
+    public ICommand? AutoWireCommand { get => GetValue(AutoWireCommandProperty); set => SetValue(AutoWireCommandProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -129,6 +149,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     readonly List<(string Repo, Rect Rect, WiringRepoNode Node)> _repoBoxes = new();
     // Centre-column transform nodes, keyed by the (repo, input) they shape, with the node's expression.
     readonly Dictionary<(string Repo, string Input), (Rect Rect, string Expression)> _xforms = new();
+    // On-canvas chrome (editing only): the "add repo" slot, per-repo trash icons, the Auto-wire button.
+    readonly Dictionary<string, Rect> _repoTrash = new(StringComparer.Ordinal);
+    Rect _addRepoRect, _autoWireRect;
+    string? _hoverTrash;
     // The exact graph the layout dictionaries were built from. Render draws THIS, not the live Graph,
     // so a compositor commit that lands between a Graph change and the re-measure can't look up a key
     // that isn't in the (still-stale) dictionaries. Rendering slightly-behind is fine; crashing isn't.
@@ -174,6 +198,9 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         _pinHit.Clear();
         _repoBoxes.Clear();
         _xforms.Clear();
+        _repoTrash.Clear();
+        _addRepoRect = default;
+        _autoWireRect = default;
 
         var g = Graph;
         _laidOut = g; // the dictionaries below correspond to this snapshot; Render uses it too
@@ -219,6 +246,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             var h = HeadH + Math.Max(1, repo.Pins.Count) * RowH + NodePad;
             var rect = new Rect(repoX, y2, NodeW, h);
             _repoBoxes.Add((repo.Repo, rect, repo));
+            if (IsEditable) _repoTrash[repo.Repo] = new Rect(rect.Right - 26, rect.Y + 7, 18, 18);
 
             for (var p = 0; p < repo.Pins.Count; p++)
             {
@@ -233,6 +261,13 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             y2 += h + RepoGap;
         }
 
+        // "Add repo…" slot: a phantom node at the bottom of the repo column (editing only).
+        if (IsEditable)
+        {
+            _addRepoRect = new Rect(repoX, y2, NodeW, HeadH);
+            y2 += HeadH + RepoGap;
+        }
+
         // Transform nodes: one per shaped input, in the centre column, aligned to its input row.
         var centreX = ((PortX + PortW) + (BoardW - 24 - NodeW)) / 2 - XformW / 2;
         foreach (var tn in g.TransformNodes)
@@ -241,6 +276,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             var rect = new Rect(centreX, pv.Pt.Y - XformH / 2, XformW, XformH);
             _xforms[(tn.Repo, tn.Input)] = (rect, tn.Expression);
         }
+
+        // Auto-wire button: on-canvas, at the top of the centre (transform) column.
+        if (IsEditable)
+            _autoWireRect = new Rect(centreX + (XformW - 116) / 2, 2, 116, 24);
 
         _height = Math.Max(portsBottom, y2) + 12;
     }
@@ -345,7 +384,11 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         {
             ctx.DrawRectangle(Panel, new Pen(Border, 1.5), node, 12, 12);
             ctx.DrawRectangle(PanelHead, null, new Rect(node.X, node.Y, NodeW, HeadH), 12, 12);
-            DrawText(ctx, repoName, new Rect(node.X + 14, node.Y, NodeW - 22, HeadH), Title, 13, vcenter: true);
+            DrawText(ctx, repoName, new Rect(node.X + 14, node.Y, NodeW - 34, HeadH), Title, 13, vcenter: true);
+
+            // Trash icon (top-right of the header) to remove the repo from the stack.
+            if (_repoTrash.TryGetValue(repoName, out var trash))
+                DrawTrash(ctx, trash, _hoverTrash == repoName ? Danger : Muted);
 
             foreach (var pin in repo.Pins)
             {
@@ -378,6 +421,23 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             var text = Truncate(xf.Expression, xf.Rect.Width - 26, 11);
             DrawText(ctx, "ƒ", new Rect(xf.Rect.X + 8, xf.Rect.Y, 12, xf.Rect.Height), Xform, 11, vcenter: true);
             DrawText(ctx, text, new Rect(xf.Rect.X + 22, xf.Rect.Y, xf.Rect.Width - 26, xf.Rect.Height), Fg, 11, vcenter: true);
+        }
+
+        // "Add repo…" slot at the bottom of the repo column (dashed, like the source "create new…").
+        if (_addRepoRect != default)
+        {
+            var hot = _hoverPort == null && _addRepoRect.Contains(_hoverPos);
+            var pen = new Pen(hot ? Wire : Muted, hot ? 2 : 1) { DashStyle = new DashStyle([3, 3], 0) };
+            ctx.DrawRectangle(PanelHead, pen, _addRepoRect, 10, 10);
+            DrawText(ctx, "＋ add repo…", _addRepoRect, hot ? Fg : Muted, 12, center: true);
+        }
+
+        // On-canvas Auto-wire button, at the top of the transform column.
+        if (_autoWireRect != default)
+        {
+            var hot = _autoWireRect.Contains(_hoverPos);
+            ctx.DrawRectangle(hot ? PanelHead : Panel, new Pen(Signal, hot ? 2 : 1.3), _autoWireRect, 6, 6);
+            DrawText(ctx, "⚡ Auto-wire", _autoWireRect, Signal, 12, center: true);
         }
 
         // Rubber-band while dragging a source (port / workspace / create-new) toward an input.
@@ -500,7 +560,26 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                 OpenPinMenu(selt);        // add/change a transform (or unbind/edit) on the selected line
                 e.Handled = true;
             }
-            // 2. A click on a transform node opens its expression editor (it isn't a drag source).
+            // 2. On-canvas chrome: a repo's trash icon, the "add repo…" slot, the Auto-wire button.
+            else if (TrashAt(pos) is { } trashRepo)
+            {
+                _selectedInput = null;
+                OpenRemoveRepoConfirm(trashRepo);
+                e.Handled = true;
+            }
+            else if (_addRepoRect != default && _addRepoRect.Contains(pos))
+            {
+                _selectedInput = null;
+                OpenAddRepoMenu();
+                e.Handled = true;
+            }
+            else if (_autoWireRect != default && _autoWireRect.Contains(pos))
+            {
+                _selectedInput = null;
+                AutoWireCommand?.Execute(null);
+                e.Handled = true;
+            }
+            // 3. A click on a transform node opens its expression editor (it isn't a drag source).
             else if (XformAt(pos) is { } xkey && _xforms.TryGetValue(xkey, out var xf))
             {
                 _selectedInput = null;
@@ -574,13 +653,23 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
         var hit = PortAt(pos);
         var xhit = XformAt(pos);
-        var changed = hit != _hoverPort || xhit != _hoverXform;
+        var trash = TrashAt(pos);
+        var overChrome = _addRepoRect.Contains(pos) || _autoWireRect.Contains(pos);
+        var changed = hit != _hoverPort || xhit != _hoverXform || trash != _hoverTrash;
         _hoverPort = hit;
         _hoverXform = xhit;
+        _hoverTrash = trash;
         _hoverPos = pos;
-        // Redraw on enter/leave, and on every move while over a port so the tooltip follows the cursor.
-        if (changed || hit is not null) InvalidateVisual();
+        // Redraw on enter/leave, over a port (tooltip follows the cursor), or over hoverable chrome.
+        if (changed || hit is not null || overChrome) InvalidateVisual();
         base.OnPointerMoved(e);
+    }
+
+    string? TrashAt(Point p)
+    {
+        foreach (var kv in _repoTrash)
+            if (kv.Value.Inflate(3).Contains(p)) return kv.Key;
+        return null;
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -721,6 +810,59 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         remove.Click += (_, _) => RemovePortCommand?.Execute(port);
         flyout.Items.Add(remove);
         flyout.ShowAt(this, showAtPointer: true);
+    }
+
+    /// <summary>The "add repo…" slot's menu: one item per registered repo not yet in the stack.</summary>
+    void OpenAddRepoMenu()
+    {
+        var flyout = new MenuFlyout();
+        var any = false;
+        if (AddableRepos is not null)
+            foreach (var obj in AddableRepos)
+            {
+                if (obj?.ToString() is not { Length: > 0 } name) continue;
+                any = true;
+                var item = new MenuItem { Header = name };
+                item.Click += (_, _) => AddRepoCommand?.Execute(name);
+                flyout.Items.Add(item);
+            }
+        if (!any) flyout.Items.Add(new MenuItem { Header = "No more repos to add", IsEnabled = false });
+        flyout.ShowAt(this, showAtPointer: true);
+    }
+
+    /// <summary>Confirm before removing a repo from the stack (the trash icon).</summary>
+    void OpenRemoveRepoConfirm(string repo)
+    {
+        var msg = new TextBlock
+        {
+            Text = $"Remove '{repo}' from this stack? Its inputs and their wiring are dropped.",
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 240, Margin = new Thickness(0, 0, 0, 4),
+        };
+        var remove = new Button { Content = "Remove", Foreground = Danger };
+        var cancel = new Button { Content = "Cancel" };
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { remove, cancel },
+        };
+        var flyout = new Flyout { Content = new StackPanel { Spacing = 10, Children = { msg, buttons } } };
+        remove.Click += (_, _) => { flyout.Hide(); RemoveRepoCommand?.Execute(repo); };
+        cancel.Click += (_, _) => flyout.Hide();
+        flyout.ShowAt(this, showAtPointer: true);
+    }
+
+    /// <summary>Draw a minimal trash-can glyph inside <paramref name="r"/>.</summary>
+    static void DrawTrash(DrawingContext ctx, Rect r, IBrush brush)
+    {
+        var pen = new Pen(brush, 1.4) { LineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+        double x = r.X, y = r.Y, w = r.Width, h = r.Height;
+        ctx.DrawLine(pen, new Point(x + 2, y + 4), new Point(x + w - 2, y + 4));            // lid
+        ctx.DrawLine(pen, new Point(x + w * 0.36, y + 4), new Point(x + w * 0.36, y + 1.5)); // handle
+        ctx.DrawLine(pen, new Point(x + w * 0.36, y + 1.5), new Point(x + w * 0.64, y + 1.5));
+        ctx.DrawLine(pen, new Point(x + w * 0.64, y + 1.5), new Point(x + w * 0.64, y + 4));
+        ctx.DrawRectangle(null, pen, new Rect(x + 3, y + 5, w - 6, h - 6), 1.5, 1.5);         // body
+        ctx.DrawLine(pen, new Point(x + w * 0.42, y + 7), new Point(x + w * 0.42, y + h - 3)); // ribs
+        ctx.DrawLine(pen, new Point(x + w * 0.58, y + 7), new Point(x + w * 0.58, y + h - 3));
     }
 
     /// <summary>Pop a text box prefilled with the port's name; commit renames it (and its bindings).</summary>

@@ -212,6 +212,20 @@ header). Still needs a live window:
 - [ ] Column headers stay aligned to the canvas columns at the modal's normal width (they don't
       track horizontal scroll on a very narrow window — minor).
 
+### Feedback round 2 (canvas chrome)
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): the Auto-wire button is drawn
+on the canvas (top of the TRANSFORM column), each repo node has a trash icon top-right, and a dashed
+**＋ add repo…** slot sits at the bottom of the repo column (matching the source "create new…"
+style). The header band is now just the three text headers. Still needs a live window:
+
+- [ ] **Click "＋ add repo…"** → a menu of registered repos not yet in the stack; picking one adds it
+      (its inputs appear). Shows "No more repos to add" when all are in.
+- [ ] **Click a repo's trash icon** → a confirm popup ("Remove '<repo>'…?" with Remove / Cancel);
+      Remove drops the repo and its wiring, Cancel does nothing.
+- [ ] **Click the on-canvas ⚡ Auto-wire** → fills unbound inputs (no-op with no repos).
+- [ ] Trash icon and add-repo slot highlight on hover.
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

@@ -7,12 +7,12 @@
              x:DataType="vm:StacksViewModel">
     <Grid Margin="28,20,24,16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="{Binding ListColumnWidth}" MaxWidth="{StaticResource ListPaneMaxWidth}" />
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Left: header + list (hidden while the diagram takes the full width) -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0" IsVisible="{Binding !ShowDiagram}">
+        <!-- Left: header + stack list -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <TextBlock Grid.Column="0" Text="Stacks" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
@@ -104,8 +104,6 @@
                             <TextBlock Grid.Column="0" Text="{Binding Selected.Name}" FontSize="18" FontWeight="SemiBold"
                                        Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                <Button Content="{Binding DiagramToggleLabel}" Command="{Binding ToggleDiagramCommand}"
-                                        ToolTip.Tip="Switch between the wiring list and the patchbay diagram" />
                                 <Button Content="Export" Click="ExportStack" />
                                 <Button Content="Edit" Command="{Binding EditSelectedCommand}" IsEnabled="{Binding CanEditSelected}" />
                                 <Button Content="Remove" Command="{Binding RemoveCommand}" Foreground="{StaticResource DangerBrush}" />
@@ -132,7 +130,7 @@
                         </Border>
 
                         <!-- repos -->
-                        <StackPanel Spacing="6" IsVisible="{Binding !ShowDiagram}">
+                        <StackPanel Spacing="6">
                             <TextBlock Text="REPOS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding Selected.Repos}">
                                 <ItemsControl.ItemsPanel>
@@ -149,7 +147,7 @@
                         </StackPanel>
 
                         <!-- ports -->
-                        <StackPanel Spacing="6" IsVisible="{Binding !ShowDiagram}">
+                        <StackPanel Spacing="6">
                             <TextBlock Text="PORTS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding Selected.Ports}">
                                 <ItemsControl.ItemsPanel>
@@ -167,7 +165,7 @@
                         </StackPanel>
 
                         <!-- bindings -->
-                        <StackPanel Spacing="8" IsVisible="{Binding !ShowDiagram}">
+                        <StackPanel Spacing="8">
                             <TextBlock Text="INPUTS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding DetailBindings}">
                                 <ItemsControl.ItemTemplate>
@@ -192,23 +190,6 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <!-- diagram (patchbay) -->
-                        <StackPanel Spacing="8" IsVisible="{Binding ShowDiagram}">
-                            <TextBlock Text="WIRING" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="8" Height="600" ClipToBounds="True">
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                    <controls:WiringCanvas Graph="{Binding Wiring}" HorizontalAlignment="Center" />
-                                </ScrollViewer>
-                            </Border>
-                            <WrapPanel>
-                                <TextBlock Text="■ plain" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="■ transform" Foreground="{StaticResource DevBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="■ producer port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="■ unbound" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="hover a port to see what uses it" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                            </WrapPanel>
-                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Panel>

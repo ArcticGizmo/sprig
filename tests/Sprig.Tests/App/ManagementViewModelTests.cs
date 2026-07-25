@@ -623,7 +623,7 @@ public class ManagementViewModelTests
     }
 
     [Fact]
-    public void Selecting_a_stack_builds_its_wiring_graph_and_the_toggle_flips()
+    public void Selecting_a_stack_populates_the_detail_summary()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
@@ -634,14 +634,11 @@ public class ManagementViewModelTests
 
         vm.Selected = vm.Stacks.Single();
 
-        Assert.NotNull(vm.Wiring);
-        Assert.Contains(vm.Wiring!.Ports, p => p.Name == "api_port" && p.Shared);
-        Assert.Contains(vm.Wiring.Edges, e => e is { Repo: "vue", Input: "apiUrl", Transform: true });
-
-        Assert.Equal("Diagram", vm.DiagramToggleLabel);
-        vm.ToggleDiagramCommand.Execute(null);
-        Assert.True(vm.ShowDiagram);
-        Assert.Equal("List", vm.DiagramToggleLabel);
+        // The read-only detail pane lists each repo's inputs and their expressions.
+        var vue = vm.DetailBindings.Single(b => b.Repo == "vue");
+        Assert.Contains(vue.Rows, r => r.Input == "apiUrl" && r.Expression == "http://localhost:${sprig.ports.api_port}");
+        var api = vm.DetailBindings.Single(b => b.Repo == "api");
+        Assert.Contains(api.Rows, r => r.Input == "port" && r.Expression == "${sprig.ports.api_port}");
     }
 
     [Fact]

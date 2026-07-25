@@ -121,38 +121,6 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>The selected stack's per-repo bindings, flattened for the detail panel.</summary>
     public ObservableCollection<StackBindingView> DetailBindings { get; } = [];
 
-    /// <summary>When on, the detail panel shows the selected stack as a wiring diagram instead of lists.</summary>
-    [ObservableProperty] private bool _showDiagram;
-
-    /// <summary>The selected stack's wiring, laid out by the patchbay canvas.</summary>
-    [ObservableProperty] private WiringGraph? _wiring;
-
-    public string DiagramToggleLabel => ShowDiagram ? "List" : "Diagram";
-
-    /// <summary>Collapse the stack-list column while the diagram is up, so the patchbay gets the full width.</summary>
-    public Avalonia.Controls.GridLength ListColumnWidth => ShowDiagram
-        ? new Avalonia.Controls.GridLength(0)
-        : new Avalonia.Controls.GridLength(1, Avalonia.Controls.GridUnitType.Star);
-
-    partial void OnShowDiagramChanged(bool value)
-    {
-        OnPropertyChanged(nameof(DiagramToggleLabel));
-        OnPropertyChanged(nameof(ListColumnWidth));
-    }
-
-    [RelayCommand]
-    private void ToggleDiagram() => ShowDiagram = !ShowDiagram;
-
-    /// <summary>Derive the wiring graph for the selected stack (repos, ports, declared inputs, bindings).</summary>
-    void RebuildWiring()
-    {
-        if (Selected is not { } stack) { Wiring = null; return; }
-        var inputs = stack.Repos.ToDictionary(
-            r => r,
-            r => (IReadOnlyList<string>)LoadInputs(r).Select(i => i.Name).ToList());
-        Wiring = WiringGraph.Build(stack.Repos, stack.Ports, inputs, stack.Bindings);
-    }
-
     // --- The builder's live wiring (the canvas is the one and only build surface) ----------------
 
     /// <summary>The wiring graph for the in-progress build — rebuilt on every binding/port change.</summary>
@@ -310,7 +278,6 @@ public partial class StacksViewModel : PageViewModel
             }
 
         OnPropertyChanged(nameof(HasSelected));
-        RebuildWiring();
         RefreshAttached();
     }
 

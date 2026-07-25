@@ -27,3 +27,13 @@ them — they were deliberately deferred rather than verified with screenshots.
 - [ ] Editing a token box live re-tags the row (e.g. typing a port token turns a literal into a
       transform/identity; pointing a second input at a port turns both `shared`).
 - [ ] Chip colours read correctly in the dark theme and don't crowd the input name.
+
+## M3 — Transform modules
+
+- [ ] A binding that references exactly one port shows a **preset dropdown** beside its token box
+      (Raw port / URL http / URL https / localhost:port / Custom…); it's hidden for literals and
+      multi-port expressions.
+- [ ] The dropdown opens on the **recognised** preset (an auto-wired `apiUrl` reads as "URL — http").
+- [ ] Choosing a preset rewrites the token box over the same port; choosing **Custom…** leaves the
+      expression alone for hand-editing.
+- [ ] The dropdown sits comfortably next to the token box without overflowing the modal width.

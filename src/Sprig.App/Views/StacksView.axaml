@@ -311,9 +311,21 @@
                                                                     <Border IsVisible="{Binding ShowAuto}" CornerRadius="4" Padding="6,1" Background="#264ADE80">
                                                                         <TextBlock Text="auto" FontSize="10" Foreground="{StaticResource OkBrush}" /></Border>
                                                                 </StackPanel>
-                                                                <controls:SprigTokenBox Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
-                                                                         Watermark="literal or ${sprig.ports.NAME}"
-                                                                         Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />
+                                                                <Grid ColumnDefinitions="*,Auto">
+                                                                    <controls:SprigTokenBox Grid.Column="0" Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
+                                                                             Watermark="literal or ${sprig.ports.NAME}"
+                                                                             Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />
+                                                                    <ComboBox Grid.Column="1" IsVisible="{Binding CanTransform}" Margin="8,0,0,0" MinWidth="170"
+                                                                              VerticalAlignment="Center"
+                                                                              ItemsSource="{Binding TransformOptions}" SelectedItem="{Binding SelectedTransform, Mode=TwoWay}"
+                                                                              ToolTip.Tip="How this port becomes the value">
+                                                                        <ComboBox.ItemTemplate>
+                                                                            <DataTemplate x:DataType="core:TransformPreset">
+                                                                                <TextBlock Text="{Binding Label}" FontSize="12" />
+                                                                            </DataTemplate>
+                                                                        </ComboBox.ItemTemplate>
+                                                                    </ComboBox>
+                                                                </Grid>
                                                                 <SelectableTextBlock IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                                                            FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap">
                                                                     <Run Text="e.g. " /><Run Text="{Binding Example}" />

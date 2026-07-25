@@ -1,5 +1,6 @@
 using Sprig.App;
 using Sprig.App.ViewModels;
+using Sprig.Core.Stacks;
 
 namespace Sprig.Tests.App;
 
@@ -639,5 +640,42 @@ public class ManagementViewModelTests
         Assert.True(port.ShowShared);
         Assert.False(apiUrl.IsCollapsed);
         Assert.False(port.IsCollapsed);           // a shared identity is an exception, not folded
+    }
+
+    [Fact]
+    public void The_transform_picker_reflects_and_rewrites_the_binding_over_its_port()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+
+        var row = Row(vm, "vue", "apiUrl");
+        Assert.True(row.CanTransform);
+        Assert.Equal("api_port", row.Port);
+        Assert.Equal(TransformPresets.Url, row.SelectedTransform); // recognised the localhost URL
+
+        // Switching the preset rewrites the expression over the same port...
+        row.SelectedTransform = TransformPresets.Raw;
+        Assert.Equal("${sprig.ports.api_port}", row.Expression);
+        // ...and the picker re-syncs from the new text.
+        Assert.Equal(TransformPresets.Raw, row.SelectedTransform);
+    }
+
+    [Fact]
+    public void The_transform_picker_is_unavailable_for_a_literal_binding()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:4000"; // a constant, no port
+        Assert.False(Row(vm, "vue", "apiUrl").CanTransform);
     }
 }

@@ -453,6 +453,9 @@ public partial class StacksViewModel : PageViewModel
                 row.Collapsible = cls.IsCollapsible;
                 row.IsCollapsed = cls.IsCollapsible && !group.Expanded;
                 if (cls.IsCollapsible) collapsible++;
+
+                var (preset, port) = TransformPresets.Recognize(row.Expression);
+                row.SyncTransform(port, preset);
             }
             group.CollapsibleCount = collapsible;
         }
@@ -583,6 +586,34 @@ public partial class BindingRow(string input, string? example) : ViewModelBase
     [ObservableProperty] private bool _showTransform;
     [ObservableProperty] private bool _showLiteral;
     [ObservableProperty] private bool _showAuto;
+
+    // Transform module: pick how a single port becomes this input's value. The raw token box below
+    // stays the source of truth — picking a preset just rewrites it, and it re-syncs from the text.
+    bool _syncingTransform;
+
+    /// <summary>The one stack port this row references, if exactly one — the target of a transform.</summary>
+    [ObservableProperty] private string? _port;
+    /// <summary>The transform picker is meaningful only when the row references exactly one port.</summary>
+    [ObservableProperty] private bool _canTransform;
+    [ObservableProperty] private TransformPreset? _selectedTransform;
+
+    public IReadOnlyList<TransformPreset> TransformOptions => TransformPresets.All;
+
+    partial void OnSelectedTransformChanged(TransformPreset? value)
+    {
+        if (_syncingTransform || value is null || Port is null || value == TransformPresets.Custom) return;
+        Expression = TransformPresets.Generate(value, Port);
+    }
+
+    /// <summary>Reflect the current expression in the picker without treating it as a user edit.</summary>
+    public void SyncTransform(string? port, TransformPreset preset)
+    {
+        _syncingTransform = true;
+        Port = port;
+        CanTransform = port is not null;
+        SelectedTransform = preset;
+        _syncingTransform = false;
+    }
 }
 
 /// <summary>Read-only projection of a stack's bindings for one repo (detail panel).</summary>

@@ -66,12 +66,18 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     static readonly IBrush Wire = Brush.Parse("#60A5FA");
     static readonly IBrush Signal = Brush.Parse("#4ADE80");
     static readonly IBrush Xform = Brush.Parse("#FF5FB0");
+    static readonly IBrush Ws = Brush.Parse("#A78BFA");        // the workspace source (a string producer)
     static readonly IBrush Danger = Brush.Parse("#F87171");
     static readonly IBrush TipBg = Brush.Parse("#0F0F16");
 
     const double BoardW = 820, NodeW = 260, HeadH = 30, RowH = 30, NodePad = 12;
     const double PortX = 24, PortW = 170, PortH = 28, PortGap = 60, RailTop = 24;
     const double RepoTop = 24, RepoGap = 20;
+
+    // Sentinel source names on the rail. The workspace is a real built-in source; the phantom slot is
+    // the "create new…" affordance you drag from to mint a port (wired in a later phase).
+    public const string WorkspaceSource = "\0workspace";
+    public const string CreatePortSlot = "\0create";
 
     readonly Typeface _mono = new("Consolas");
     readonly Dictionary<string, Rect> _portRects = new(StringComparer.Ordinal);
@@ -117,15 +123,35 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         _laidOut = g; // the dictionaries below correspond to this snapshot; Render uses it too
         if (g is null) { _height = 200; return; }
 
-        // Ports: a rail down the left.
+        // The left rail, top to bottom: the workspace source, the named ports, then (while editing)
+        // the phantom "create new…" slot. All keyed into the same maps so hit-testing/anchoring is uniform.
+        var slot = 0;
+
+        // Workspace source — always draggable while editing; shown read-only only when something uses it.
+        if (IsEditable || g.Workspace.Used)
+        {
+            var wsRect = new Rect(PortX, RailTop + slot * PortGap, PortW, PortH);
+            _portRects[WorkspaceSource] = wsRect;
+            _portAnchor[WorkspaceSource] = new Point(wsRect.Right, wsRect.Center.Y);
+            slot++;
+        }
+
         for (var i = 0; i < g.Ports.Count; i++)
         {
-            var y = RailTop + i * PortGap;
-            var rect = new Rect(PortX, y, PortW, PortH);
+            var rect = new Rect(PortX, RailTop + slot * PortGap, PortW, PortH);
             _portRects[g.Ports[i].Name] = rect;
             _portAnchor[g.Ports[i].Name] = new Point(rect.Right, rect.Center.Y);
+            slot++;
         }
-        var portsBottom = RailTop + Math.Max(0, g.Ports.Count) * PortGap + 12;
+
+        // Phantom "create new…" slot at the bottom (editing only).
+        if (IsEditable)
+        {
+            _portRects[CreatePortSlot] = new Rect(PortX, RailTop + slot * PortGap, PortW, PortH);
+            slot++;
+        }
+
+        var portsBottom = RailTop + Math.Max(1, slot) * PortGap + 12;
 
         // Repos: stacked on the right, pins on their left edge (facing the rail).
         var repoX = BoardW - 24 - NodeW;
@@ -179,6 +205,23 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             ctx.DrawGeometry(null, pen, Cable(start, pin.Pt));
         }
 
+        // Workspace cables: one from the workspace source to every input that references it.
+        if (_portAnchor.TryGetValue(WorkspaceSource, out var wsAnchor))
+        {
+            foreach (var repo in g.Repos)
+                foreach (var pinModel in repo.Pins)
+                {
+                    if (!pinModel.UsesWorkspace) continue;
+                    if (!_pins.TryGetValue((repo.Repo, pinModel.Input), out var pv)) continue;
+
+                    var dim = _dragPin is null && _hoverPort is not null && _hoverPort != WorkspaceSource;
+                    Pen pen = dim
+                        ? new Pen(new SolidColorBrush(((ISolidColorBrush)Ws).Color, 0.12), 1)
+                        : new Pen(Ws, g.Workspace.Shared ? 3 : 2.2) { LineCap = PenLineCap.Round };
+                    ctx.DrawGeometry(null, pen, Cable(wsAnchor, pv.Pt));
+                }
+        }
+
         // Port rail (left).
         foreach (var port in g.Ports)
         {
@@ -200,6 +243,31 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                 // Outlet dot on the right edge.
                 ctx.DrawEllipse(border, null, anchor, 3.5, 3.5);
             }
+        }
+
+        // Workspace source node (top of the rail).
+        if (_portRects.TryGetValue(WorkspaceSource, out var wsRect))
+        {
+            _portAnchor.TryGetValue(WorkspaceSource, out var anchor);
+            var faded = _dragPin is null && _hoverPort is not null && _hoverPort != WorkspaceSource;
+            var used = g.Workspace.Used;
+            using (ctx.PushOpacity(faded ? 0.35 : 1.0))
+            {
+                ctx.DrawRectangle(Brush.Parse("#1C1830"), new Pen(Ws, used ? 2 : 1), wsRect, 8, 8);
+                DrawText(ctx, "workspace", wsRect, Ws, 12.5, center: true);
+                DrawText(ctx, "SOURCE" + (g.Workspace.Shared ? " ×" + g.Workspace.ConsumerCount : ""),
+                    new Rect(wsRect.X, wsRect.Y - 15, wsRect.Width, 13), Ws, 9, center: true);
+                ctx.DrawEllipse(Ws, null, anchor, 3.5, 3.5);
+            }
+        }
+
+        // Phantom "create new…" slot (bottom of the rail, editing only).
+        if (_portRects.TryGetValue(CreatePortSlot, out var addRect))
+        {
+            var hot = _hoverPort == CreatePortSlot;
+            var pen = new Pen(hot ? Wire : Muted, hot ? 2 : 1) { DashStyle = new DashStyle([3, 3], 0) };
+            ctx.DrawRectangle(PanelHead, pen, addRect, 8, 8);
+            DrawText(ctx, "+ create new…", addRect, hot ? Fg : Muted, 12, center: true);
         }
 
         // Repo nodes (right) with pins on their left edge.
@@ -229,8 +297,11 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             ctx.DrawGeometry(null, pen, Cable(src.Pt, _dragCursor));
         }
 
-        if (_hoverPort is not null && _dragPin is null) DrawTooltip(ctx, g, _hoverPort);
+        if (_hoverPort is not null && !IsSentinel(_hoverPort) && _dragPin is null) DrawTooltip(ctx, g, _hoverPort);
     }
+
+    /// <summary>The rail's non-port slots (workspace source, phantom create) that aren't real ports.</summary>
+    static bool IsSentinel(string name) => name is WorkspaceSource or CreatePortSlot;
 
     // -- hover tooltip: what consumes this port ------------------------------
 
@@ -344,7 +415,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
             if (_dragMoved)
             {
-                if (PortAt(pos) is { } port)
+                if (PortAt(pos) is { } port && !IsSentinel(port))
                     WireCommand?.Execute(new WireRequest(pin.Repo, pin.Input, port));
                 else if (IsBound(pin))
                     UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input)); // dragged off → unbind

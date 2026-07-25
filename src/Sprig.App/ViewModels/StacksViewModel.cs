@@ -158,9 +158,10 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>The wiring graph for the in-progress build — rebuilt on every binding/port change.</summary>
     [ObservableProperty] private WiringGraph? _builderWiring;
 
-    public string BuilderViewLabel => BuilderDiagram ? "◧ Form" : "◨ Diagram";
+    // The canvas is the primary builder surface; the form is the "Advanced" escape hatch behind it.
+    public string BuilderViewLabel => BuilderDiagram ? "⚙ Advanced (form)" : "◨ Canvas";
 
-    /// <summary>The diagram needs room to breathe, so widen the modal while it's showing.</summary>
+    /// <summary>The canvas needs room to breathe, so keep the modal wide while it's showing.</summary>
     public double BuilderWidth => BuilderDiagram ? 1040 : 720;
 
     partial void OnBuilderDiagramChanged(bool value)
@@ -269,7 +270,7 @@ public partial class StacksViewModel : PageViewModel
         if (stack is null || !CanEditSelected) return;
 
         Error = null; Status = null;
-        BuilderDiagram = false;
+        BuilderDiagram = true;   // land on the canvas; the form is the Advanced view
         EditingOriginalName = stack.Name;
         NewName = stack.Name;
 
@@ -297,7 +298,7 @@ public partial class StacksViewModel : PageViewModel
     private void NewStack()
     {
         EditingOriginalName = null;
-        BuilderDiagram = false;
+        BuilderDiagram = true;   // name-first, then straight onto the canvas
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
         Ports.Clear();

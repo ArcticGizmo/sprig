@@ -225,8 +225,19 @@
                         <TextBlock Grid.Column="0" Text="{Binding OverlayTitle}" FontSize="18" FontWeight="SemiBold"
                                    Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
                         <Button Grid.Column="1" Content="{Binding BuilderViewLabel}" Command="{Binding ToggleBuilderDiagramCommand}"
-                                ToolTip.Tip="Switch between the form and the drag-to-wire diagram" />
+                                ToolTip.Tip="Switch between the canvas and the Advanced form" />
                     </Grid>
+
+                    <!-- Name — always visible: you name the stack, then wire it on the canvas. -->
+                    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,14">
+                        <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                        <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
+                        <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
+                    </StackPanel>
                     <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,14,0,0">
                         <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
@@ -238,18 +249,8 @@
                     </StackPanel>
                     <ScrollViewer>
                         <StackPanel Spacing="14">
-                            <!-- Form view -->
+                            <!-- Advanced (form) view -->
                             <StackPanel Spacing="14" IsVisible="{Binding !BuilderDiagram}">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
-                                <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
-                                           Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
-                                <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
-                            </StackPanel>
-
                             <StackPanel Spacing="4">
                                 <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
                                 <ItemsControl ItemsSource="{Binding RepoChoices}">
@@ -376,12 +377,12 @@
                             </StackPanel>
                             </StackPanel>
 
-                            <!-- Diagram view: drag inputs onto ports to wire them -->
+                            <!-- Canvas view: the primary wiring surface -->
                             <StackPanel Spacing="8" IsVisible="{Binding BuilderDiagram}">
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Drag an input onto a port to wire it, or off onto empty space to unbind. Click a wired input for transform options. Add repos and ports in the form view." />
+                                           Text="Drag an input onto a port to wire it, or off onto empty space to unbind. Click a wired input for transform options. The workspace source and 'create new…' slot become draggable next; for now add repos and ports in the Advanced (form) view." />
                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1" CornerRadius="8" Height="430" ClipToBounds="True">
+                                        BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                         <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
                                                                HorizontalAlignment="Center"

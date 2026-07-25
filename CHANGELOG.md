@@ -9,6 +9,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.3.0] - 2026-07-25
+
+### Added
+- **Visual stack builder.** Drag repos, ports, and cables on a canvas instead of filling in a form.
+- **Auto-wire.** One click maps every input to a port by convention, leaving anything you typed alone.
+- **Transform nodes.** Fold several ports into one value — URLs, connection strings — with a per-line expression editor.
+- **Shared ports.** Point two repos at one port on purpose; renaming it follows every binding.
+- **Clickable env overrides.** Set a value straight from the file view, matching the compose overlay.
+- **Undeclared inputs show as quick-add chips** — reference `${sprig.*}` first, declare it after.
+- **One-click template guesses** for hard-coded local ports in URLs and connection strings.
+- **"Delete config"** resets a repo's sprig state.
+
+### Changed
+- **The canvas is the only stack builder now — the form is retired.**
+- **Saving a stack clears ports nothing uses.**
+- **The repo picker refreshes when the registry changes.**
+
+---
+
 ## [v0.2.0] - 2026-07-23
 
 ### Added

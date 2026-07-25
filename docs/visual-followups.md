@@ -119,6 +119,39 @@ Needs a live window (drag interactions can't be captured statically — please v
 - [ ] The canvas actually receives pointer events (relies on `ICustomHitTest`) — if drag does nothing,
       that's the thing to check first.
 
+## Graphical-first builder ([`graphic-stack-builder-plan.md`](./graphic-stack-builder-plan.md))
+
+### Phase 1 — canvas-first shell
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): New stack opens on the canvas
+with a persistent **Name** field on top and a **⚙ Advanced (form)** toggle; the violet **workspace**
+SOURCE node sits at the top of the rail. Read-only detail diagram unchanged (workspace shows only
+when used). Still needs a live window:
+
+- [ ] The phantom **"create new…"** slot renders at the bottom of the rail (scroll down on a tall
+      stack; visible without scrolling on a 1–2 port stack).
+- [ ] Toggling **⚙ Advanced (form)** ⇄ **◨ Canvas** swaps surfaces and keeps the Name field.
+- [ ] A stack that binds an input to `${sprig.workspace}` draws a violet cable from the workspace
+      node to that input (and `SOURCE ×N` when shared).
+
+### Phase 2 — drag ports onto inputs (create-on-drop)
+
+**Logic unit-tested** (CreatePort / WireWorkspace / replace-on-rebind, +5 tests). Drag gestures
+can't be captured statically — please verify in a live window:
+
+- [ ] **Drag a port outlet onto an input** → binds it (dashed rubber-band follows the cursor; the
+      target input shows a ring; on drop a real cable appears). A port dragged to several inputs
+      fans out.
+- [ ] **Drag the workspace source onto an input** → binds it to `${sprig.workspace}` (violet
+      rubber-band + cable).
+- [ ] **Drag the "create new…" slot onto an input** → a small text box pops to name the port; Enter
+      creates it and wires the input; **Escape cancels** (no line, no port). Typing an existing
+      name reuses that port instead of duplicating.
+- [ ] **Drop a source on an already-bound input** replaces its binding (repo side is single).
+- [ ] **Drag a bound input off onto empty space** unbinds it (red rubber-band); **click a bound
+      input** opens the transform/Unbind menu.
+- [ ] Dropping a source on the rail sentinels (workspace/create) or empty space is a harmless no-op.
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

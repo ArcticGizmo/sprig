@@ -816,4 +816,92 @@ public class ManagementViewModelTests
 
         Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
     }
+
+    // --- Phase 2: source→input drag commands (create-on-drop, workspace, replace) --------------
+
+    [Fact]
+    public void CreatePort_mints_a_new_port_and_wires_the_input_to_it()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "api_port"));
+
+        Assert.Contains(vm.Ports, p => p.Name == "api_port");
+        Assert.Equal("${sprig.ports.api_port}", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void CreatePort_reuses_an_existing_port_of_the_same_name_rather_than_duplicating()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+
+        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "api_port"));
+        vm.CreatePortCommand.Execute(new CreatePortRequest("vue", "apiUrl", "api_port")); // same name
+
+        Assert.Single(vm.Ports.Where(p => p.Name == "api_port")); // not duplicated
+        Assert.True(Row(vm, "vue", "apiUrl").ShowShared);
+        Assert.True(Row(vm, "api", "port").ShowShared);
+    }
+
+    [Fact]
+    public void CreatePort_ignores_a_blank_name()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "   "));
+
+        Assert.Empty(vm.Ports);
+        Assert.Equal("", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void WireWorkspace_binds_the_input_to_the_workspace_source()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("name", "svc")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.WireWorkspaceCommand.Execute(new PinRef("api", "name"));
+
+        Assert.Equal("${sprig.workspace}", Row(vm, "api", "name").Expression);
+        Assert.Contains(vm.BuilderWiring!.Repos.SelectMany(r => r.Pins), p => p is { Input: "name", UsesWorkspace: true });
+        Assert.True(vm.BuilderWiring.Workspace.Used);
+    }
+
+    [Fact]
+    public void Dropping_a_port_on_an_already_bound_input_replaces_the_binding()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "first_port"));
+        Assert.Equal("${sprig.ports.first_port}", Row(vm, "api", "port").Expression);
+
+        // Drop a different port on the same (bound) input → the repo side is single, so it replaces.
+        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "second_port"));
+
+        Assert.Equal("${sprig.ports.second_port}", Row(vm, "api", "port").Expression);
+    }
 }

@@ -388,7 +388,9 @@
                                                                HorizontalAlignment="Center"
                                                                WireCommand="{Binding WirePinCommand}"
                                                                UnwireCommand="{Binding UnwirePinCommand}"
-                                                               TransformCommand="{Binding SetPinTransformCommand}" />
+                                                               TransformCommand="{Binding SetPinTransformCommand}"
+                                                               WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
+                                                               CreatePortCommand="{Binding CreatePortCommand}" />
                                     </ScrollViewer>
                                 </Border>
                                 <WrapPanel>

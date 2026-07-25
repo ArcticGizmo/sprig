@@ -44,6 +44,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> TransformCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(TransformCommand));
 
+    /// <summary>Invoked with a <see cref="PinRef"/> when the workspace source is dropped on an input.</summary>
+    public static readonly StyledProperty<ICommand?> WireWorkspaceCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(WireWorkspaceCommand));
+
+    /// <summary>Invoked with a <see cref="CreatePortRequest"/> when the "create new…" slot is dropped on an input.</summary>
+    public static readonly StyledProperty<ICommand?> CreatePortCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(CreatePortCommand));
+
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
@@ -54,6 +62,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public ICommand? WireCommand { get => GetValue(WireCommandProperty); set => SetValue(WireCommandProperty, value); }
     public ICommand? UnwireCommand { get => GetValue(UnwireCommandProperty); set => SetValue(UnwireCommandProperty, value); }
     public ICommand? TransformCommand { get => GetValue(TransformCommandProperty); set => SetValue(TransformCommandProperty, value); }
+    public ICommand? WireWorkspaceCommand { get => GetValue(WireWorkspaceCommandProperty); set => SetValue(WireWorkspaceCommandProperty, value); }
+    public ICommand? CreatePortCommand { get => GetValue(CreatePortCommandProperty); set => SetValue(CreatePortCommandProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -93,8 +103,12 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     string? _hoverPort;
     Point _hoverPos;
 
-    // Drag-to-wire state.
-    (string Repo, string Input)? _dragPin;
+    // Drag-to-wire state. Two gestures: dragging a SOURCE (a port, the workspace, or the phantom
+    // "create new…" slot) onto an input to wire it; and dragging a bound INPUT off onto empty space
+    // to unbind it.
+    string? _dragSource;                    // the rail slot being dragged from (port name / sentinel)
+    (string Repo, string Input)? _dragPin;  // a bound input being dragged off to unbind
+    (string Repo, string Input)? _dropPin;  // the input currently under a source drag (drop target)
     Point _pressPos;
     Point _dragCursor;
     bool _dragMoved;
@@ -147,7 +161,9 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         // Phantom "create new…" slot at the bottom (editing only).
         if (IsEditable)
         {
-            _portRects[CreatePortSlot] = new Rect(PortX, RailTop + slot * PortGap, PortW, PortH);
+            var addRect = new Rect(PortX, RailTop + slot * PortGap, PortW, PortH);
+            _portRects[CreatePortSlot] = addRect;
+            _portAnchor[CreatePortSlot] = new Point(addRect.Right, addRect.Center.Y);
             slot++;
         }
 
@@ -290,14 +306,25 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             }
         }
 
-        // Rubber-band cable while dragging a pin toward a port.
-        if (_dragPin is { } dp && _dragMoved && _pins.TryGetValue(dp, out var src))
+        // Rubber-band while dragging a source (port / workspace / create-new) toward an input.
+        if (_dragSource is { } ds && _dragMoved && _portAnchor.TryGetValue(ds, out var srcAnchor))
         {
-            var pen = new Pen(Wire, 2.5) { DashStyle = new DashStyle([2, 3], 0), LineCap = PenLineCap.Round };
-            ctx.DrawGeometry(null, pen, Cable(src.Pt, _dragCursor));
+            var colour = ds == WorkspaceSource ? Ws : Wire;
+            var pen = new Pen(colour, 2.5) { DashStyle = new DashStyle([2, 3], 0), LineCap = PenLineCap.Round };
+            ctx.DrawGeometry(null, pen, Cable(srcAnchor, _dragCursor));
+            if (_dropPin is { } tgt && _pins.TryGetValue(tgt, out var tv))
+                ctx.DrawEllipse(null, new Pen(colour, 3), tv.Pt, 9, 9); // drop-target ring
         }
 
-        if (_hoverPort is not null && !IsSentinel(_hoverPort) && _dragPin is null) DrawTooltip(ctx, g, _hoverPort);
+        // Rubber-band while dragging a bound input off to unbind it.
+        if (_dragPin is { } dp && _dragMoved && _pins.TryGetValue(dp, out var pinPt))
+        {
+            var pen = new Pen(Danger, 2.5) { DashStyle = new DashStyle([2, 3], 0), LineCap = PenLineCap.Round };
+            ctx.DrawGeometry(null, pen, Cable(pinPt.Pt, _dragCursor));
+        }
+
+        if (_hoverPort is not null && !IsSentinel(_hoverPort) && _dragPin is null && _dragSource is null)
+            DrawTooltip(ctx, g, _hoverPort);
     }
 
     /// <summary>The rail's non-port slots (workspace source, phantom create) that aren't real ports.</summary>
@@ -368,15 +395,31 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        if (IsEditable && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
-            && PinAt(e.GetPosition(this)) is { } pin)
+        if (IsEditable && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
-            _dragPin = pin;
-            _pressPos = _dragCursor = e.GetPosition(this);
-            _dragMoved = false;
-            e.Pointer.Capture(this);
-            e.Handled = true;
-            InvalidateVisual();
+            var pos = e.GetPosition(this);
+
+            // A press on a rail slot (port / workspace / create-new) begins a source→input wire drag.
+            if (PortAt(pos) is { } source)
+            {
+                _dragSource = source;
+                _pressPos = _dragCursor = pos;
+                _dragMoved = false;
+                _hoverPort = null;
+                e.Pointer.Capture(this);
+                e.Handled = true;
+                InvalidateVisual();
+            }
+            // A press on an input pin begins an unbind drag (or, on release without moving, its menu).
+            else if (PinAt(pos) is { } pin)
+            {
+                _dragPin = pin;
+                _pressPos = _dragCursor = pos;
+                _dragMoved = false;
+                e.Pointer.Capture(this);
+                e.Handled = true;
+                InvalidateVisual();
+            }
         }
         base.OnPointerPressed(e);
     }
@@ -385,11 +428,20 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     {
         var pos = e.GetPosition(this);
 
+        if (_dragSource is not null)
+        {
+            _dragCursor = pos;
+            if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
+            _dropPin = PinAt(pos); // the input under the cursor = drop target
+            InvalidateVisual();
+            base.OnPointerMoved(e);
+            return;
+        }
+
         if (_dragPin is not null)
         {
             _dragCursor = pos;
             if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
-            _hoverPort = PortAt(pos); // drop-target
             InvalidateVisual();
             base.OnPointerMoved(e);
             return;
@@ -406,23 +458,41 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        if (_dragPin is { } pin)
+        var pos = e.GetPosition(this);
+
+        if (_dragSource is { } source)
         {
-            var pos = e.GetPosition(this);
+            e.Pointer.Capture(null);
+            var target = _dropPin;
+            _dragSource = null;
+            _dropPin = null;
+
+            if (_dragMoved && target is { } t)
+            {
+                if (source == CreatePortSlot)
+                    PromptCreatePort(t.Repo, t.Input);       // name it, then create + wire
+                else if (source == WorkspaceSource)
+                    WireWorkspaceCommand?.Execute(new PinRef(t.Repo, t.Input));
+                else
+                    WireCommand?.Execute(new WireRequest(t.Repo, t.Input, source)); // a real port (replaces)
+            }
+
+            _dragMoved = false;
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        else if (_dragPin is { } pin)
+        {
             e.Pointer.Capture(null);
             _dragPin = null;
-            _hoverPort = null;
 
             if (_dragMoved)
             {
-                if (PortAt(pos) is { } port && !IsSentinel(port))
-                    WireCommand?.Execute(new WireRequest(pin.Repo, pin.Input, port));
-                else if (IsBound(pin))
-                    UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input)); // dragged off → unbind
+                if (IsBound(pin)) UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input)); // dragged off → unbind
             }
             else if (IsBound(pin))
             {
-                OpenPinMenu(pin); // a click on a bound pin → transform / unbind menu
+                OpenPinMenu(pin); // a click on a bound input → transform / unbind menu
             }
 
             _dragMoved = false;
@@ -434,8 +504,31 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
-        if (_hoverPort is not null && _dragPin is null) { _hoverPort = null; InvalidateVisual(); }
+        if (_hoverPort is not null && _dragPin is null && _dragSource is null) { _hoverPort = null; InvalidateVisual(); }
         base.OnPointerExited(e);
+    }
+
+    /// <summary>Pop a small text box to name the new port, then raise <see cref="CreatePortCommand"/>.</summary>
+    void PromptCreatePort(string repo, string input)
+    {
+        var box = new TextBox { Watermark = "new port name, e.g. api_port", Width = 220, FontSize = 12 };
+        var flyout = new Flyout { Content = box };
+
+        void Commit()
+        {
+            var name = box.Text?.Trim() ?? "";
+            flyout.Hide();
+            if (name.Length > 0) CreatePortCommand?.Execute(new CreatePortRequest(repo, input, name));
+        }
+
+        box.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter) { Commit(); ke.Handled = true; }
+            else if (ke.Key == Key.Escape) { flyout.Hide(); ke.Handled = true; } // cancel aborts the line
+        };
+
+        flyout.ShowAt(this, showAtPointer: true);
+        box.Focus();
     }
 
     (string Repo, string Input)? PinAt(Point p)

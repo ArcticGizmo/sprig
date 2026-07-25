@@ -212,6 +212,37 @@ public partial class StacksViewModel : PageViewModel
         if (FindRow(request.Repo, request.Input) is { } row) row.SelectedTransform = request.Preset;
     }
 
+    /// <summary>Bind an input to the workspace source (drag the workspace chip → input). Replaces any current value.</summary>
+    [RelayCommand]
+    private void WireWorkspace(PinRef? pin)
+    {
+        if (pin is null) return;
+        if (FindRow(pin.Repo, pin.Input) is { } row) row.Expression = "${sprig.workspace}";
+    }
+
+    /// <summary>
+    /// Create a new stack port and wire an input to it — the drop from the phantom "create new…" slot,
+    /// once the user names the port. A name that already exists is reused rather than duplicated, so
+    /// "create new" typed with an existing name simply shares that port.
+    /// </summary>
+    [RelayCommand]
+    private void CreatePort(CreatePortRequest? request)
+    {
+        if (request is null) return;
+        var name = request.PortName.Trim();
+        if (name.Length == 0) return;
+
+        if (Ports.All(p => p.Name.Trim() != name))
+        {
+            Ports.Add(NewPortRow(name));
+            ReindexPortPreviews();
+            RebuildBindingVariables();
+        }
+
+        if (FindRow(request.Repo, request.Input) is { } row) row.Port = name;
+        RefreshClassification();
+    }
+
     public bool HasSelected => Selected is not null;
 
     /// <summary>Editing is allowed only when no workspaces were built from this stack.</summary>

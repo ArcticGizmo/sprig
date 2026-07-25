@@ -41,21 +41,6 @@ public partial class ReposView : UserControl
         };
     }
 
-    // The KEY autosuggest lists every variable in the target file + its templates. AutoCompleteBox
-    // won't drop that list down on its own while the box is empty, so open it on focus — clicking an
-    // empty field shows everything; once you type, MinimumPrefixLength=0 + StartsWith filters live.
-    readonly HashSet<AutoCompleteBox> _wiredKeyBoxes = [];
-
-    void EnvKeyBoxLoaded(object? sender, RoutedEventArgs e)
-    {
-        // Loaded can fire more than once as rows recycle; wire the focus handler at most once per box.
-        if (sender is not AutoCompleteBox box || !_wiredKeyBoxes.Add(box)) return;
-        box.GotFocus += (_, _) =>
-        {
-            if (string.IsNullOrEmpty(box.Text)) box.IsDropDownOpen = true;
-        };
-    }
-
     async void BrowseRepoFolder(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not ReposViewModel vm) return;

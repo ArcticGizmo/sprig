@@ -3,6 +3,7 @@
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:core="clr-namespace:Sprig.Core.Stacks;assembly=Sprig.Core"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
+             xmlns:sys="using:System"
              x:Class="Sprig.App.Views.ReposView"
              x:DataType="vm:ReposViewModel">
     <Grid Margin="28,20,24,16">
@@ -292,11 +293,37 @@
                                                          ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
                                                 <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}"
                                                         Foreground="{StaticResource DangerBrush}" Padding="0" Width="32"
-                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch" />
+                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- quick add: inputs referenced by an override but not declared yet. Save stays
+                                     blocked until these are gone (the validator flags each), but you can declare
+                                     them as you go by clicking a chip. -->
+                                <Border IsVisible="{Binding HasMissingInputRefs}" Margin="2,2,0,0"
+                                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
+                                        BorderThickness="1" CornerRadius="6" Padding="10,8">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
+                                                   Text="Referenced by an override but not declared yet — click to add (must be resolved before saving):" />
+                                        <ItemsControl ItemsSource="{Binding MissingInputRefs}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="sys:String">
+                                                    <Button Content="{Binding StringFormat='+ {0}'}" FontFamily="Consolas,monospace"
+                                                            FontSize="11" Padding="8,3" Margin="0,0,6,6"
+                                                            Command="{Binding $parent[ItemsControl].((vm:RepoEditViewModel)DataContext).QuickAddInputCommand}"
+                                                            CommandParameter="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
 
                             <!-- env -->
@@ -369,37 +396,12 @@
                                                         </StackPanel>
                                                     </Border>
 
-                                                    <!-- override keys: the KEY=value pairs sprig injects into the worktree copy -->
-                                                    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                                            BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,4,0,0">
-                                                        <StackPanel Spacing="4">
-                                                            <Grid ColumnDefinitions="*,Auto">
-                                                                <TextBlock Grid.Column="0" Text="Override keys" FontSize="11"
-                                                                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
-                                                                           ToolTip.Tip="The KEY=value pairs sprig writes into the worktree's copy of this file — reference a declared input with ${sprig.input}." />
-                                                                <Button Grid.Column="1" Content="+ Add key" Command="{Binding AddKeyCommand}"
-                                                                        FontSize="11" Padding="8,3" />
-                                                            </Grid>
-                                                            <ItemsControl ItemsSource="{Binding Set}">
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:KvEditRow">
-                                                                        <Grid ColumnDefinitions="*,2*,Auto" ColumnSpacing="8" Margin="0,3,0,0">
-                                                                            <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding Key, Mode=TwoWay}"
-                                                                                     ItemsSource="{Binding $parent[ItemsControl].((vm:EnvFileEditRow)DataContext).AvailableKeys}"
-                                                                                     FilterMode="StartsWith" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
-                                                                                     Loaded="EnvKeyBoxLoaded"
-                                                                                     PlaceholderText="KEY" FontFamily="Consolas,monospace" />
-                                                                            <controls:SprigTokenBox Grid.Column="1" Value="{Binding Value, Mode=TwoWay}" MinWidth="0"
-                                                                                     Watermark="${sprig.input}"
-                                                                                     Variables="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).Editor.SprigVariableNames}" />
-                                                                            <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
-                                                                                    Foreground="{StaticResource DangerBrush}" Padding="10,2" />
-                                                                        </Grid>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </StackPanel>
-                                                    </Border>
+                                                    <!-- override keys: a merged view of the file + its templates, each value clickable
+                                                         to override (like the compose overlay). Wrapper keeps IsVisible bound to the
+                                                         row; the control's own DataContext is the overlay. -->
+                                                    <StackPanel IsVisible="{Binding HasOverlay}" Margin="0,4,0,0">
+                                                        <controls:EnvOverlay DataContext="{Binding Overlay}" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

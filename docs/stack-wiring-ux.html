@@ -1,0 +1,817 @@
+<title>Sprig — Wiring a stack, better</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    /* Sprig's own palette (src/Sprig.App/App.axaml) */
+    --ground: #131319;
+    --form: #181820;
+    --panel: #1f1f2a;
+    --panel-2: #23232f;
+    --fg: #e1e1eb;
+    --title: #f5f5fa;
+    --muted: #8c8ca0;
+    --muted-2: #5f5f70;
+    --border: #2d2d3c;
+    --wire: #60a5fa;        /* accent — a plain cable */
+    --signal: #4ade80;      /* a producer port / valid */
+    --warn: #fbbf24;
+    --danger: #f87171;      /* undeclared reference */
+    --xform: #ff5fb0;       /* a transform */
+    --wire-soft: #26375a;
+    --signal-soft: #1c3a2a;
+    --xform-soft: #3a1e30;
+
+    --font-sans: system-ui, "Segoe UI", Roboto, -apple-system, sans-serif;
+    --font-mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, "SF Mono", monospace;
+
+    --maxw: 1080px;
+    --r: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 78% -8%, #1a2436 0%, rgba(26,36,54,0) 60%),
+      radial-gradient(900px 500px at 8% 4%, #16241b 0%, rgba(22,36,27,0) 55%),
+      var(--ground);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  /* ---- type system ---- */
+  h1, h2, h3 { color: var(--title); text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2.1rem, 4.6vw, 3.4rem); line-height: 1.04; letter-spacing: -0.02em; font-weight: 750; }
+  h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; letter-spacing: -0.015em; font-weight: 700; }
+  h3 { font-size: 1.12rem; letter-spacing: -0.01em; font-weight: 650; }
+  p { margin: 0; }
+  a { color: var(--wire); }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .mono { font-family: var(--font-mono); }
+  .tok {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--wire-soft);
+    color: #a9cbfb;
+    padding: 0.08em 0.4em;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .tok.g { background: var(--signal-soft); color: #8ce7ac; }
+  .tok.r { background: #3a2020; color: #f6a6a6; }
+  .tok.p { background: var(--xform-soft); color: #ff9dcf; }
+
+  /* ---- hero ---- */
+  header.hero { padding: 88px 0 40px; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 14px; margin-bottom: 26px;
+  }
+  .kicker .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 10px var(--signal); }
+  header.hero p.lede { font-size: 1.18rem; color: var(--fg); max-width: 64ch; margin-top: 22px; }
+  header.hero p.lede b { color: var(--title); font-weight: 650; }
+
+  .metabar {
+    display: flex; flex-wrap: wrap; gap: 8px 26px; margin-top: 34px;
+    padding-top: 24px; border-top: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted);
+  }
+  .metabar b { color: var(--fg); font-weight: 600; }
+
+  /* ---- generic section ---- */
+  section { padding: 46px 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .sec-head .num {
+    font-family: var(--font-mono); font-size: 0.8rem; color: var(--wire);
+    letter-spacing: 0.1em; padding-top: 4px;
+  }
+  .sec-sub { color: var(--muted); max-width: 68ch; margin-top: 12px; font-size: 1.02rem; }
+
+  /* ---- the "before" panel ---- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+  }
+  .app-chrome {
+    background: var(--form);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .app-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    background: #14141b;
+    font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted);
+  }
+  .app-titlebar .lamp { width: 9px; height: 9px; border-radius: 50%; background: #33333f; }
+  .app-body { padding: 18px; }
+
+  .field-label { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin-bottom: 8px; letter-spacing: 0.04em; }
+  .group-tag {
+    display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
+    color: var(--signal); background: var(--signal-soft);
+    padding: 2px 8px; border-radius: 5px; margin: 14px 0 10px;
+  }
+  .tbox {
+    display: flex; align-items: center; gap: 10px;
+    background: #101017; border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 12px; margin-bottom: 8px;
+  }
+  .tbox .in-name { font-family: var(--font-mono); font-size: 0.84rem; color: var(--fg); min-width: 90px; }
+  .tbox .arrow { color: var(--muted-2); font-family: var(--font-mono); }
+  .tbox .in-val {
+    font-family: var(--font-mono); font-size: 0.84rem; color: #a9cbfb;
+    flex: 1; letter-spacing: -0.01em;
+  }
+  .tbox.dup { border-color: #3a3a12; }
+  .tbox .tag-note { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted-2); }
+  .repeat-brace {
+    display: flex; align-items: center; gap: 12px; margin: 12px 0 4px;
+    color: var(--warn); font-family: var(--font-mono); font-size: 0.8rem;
+  }
+  .repeat-brace .rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--warn), transparent); opacity: 0.5; }
+
+  /* ---- principles ---- */
+  .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
+  .principle { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .principle .p-mark { font-family: var(--font-mono); color: var(--wire); font-size: 0.8rem; letter-spacing: 0.1em; }
+  .principle h3 { margin: 10px 0 8px; }
+  .principle p { color: var(--muted); font-size: 0.94rem; }
+
+  /* ---- idea ladder ---- */
+  .ideas { display: flex; flex-direction: column; gap: 18px; margin-top: 28px; }
+  .idea {
+    display: grid; grid-template-columns: 132px 1fr; gap: 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+  }
+  .idea .rail {
+    padding: 20px 18px; border-right: 1px solid var(--border);
+    background: linear-gradient(180deg, #1c1c26, #17171f);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .idea .rail .cost {
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .effort { display: flex; gap: 3px; }
+  .effort i { width: 8px; height: 8px; border-radius: 2px; background: #2f2f3d; }
+  .effort i.on { background: var(--signal); }
+  .effort.mid i.on { background: var(--warn); }
+  .effort.hi i.on { background: var(--xform); }
+  .idea .rail .idx { font-family: var(--font-mono); font-size: 1.5rem; color: var(--title); font-weight: 700; }
+  .idea .body { padding: 20px 22px; }
+  .idea .body h3 { margin-bottom: 8px; }
+  .idea .body > p { color: var(--muted); font-size: 0.96rem; }
+  .idea .demo { margin-top: 16px; }
+
+  /* mini auto-wire demo */
+  .wire-row {
+    display: grid; grid-template-columns: 116px 26px 1fr auto; align-items: center; gap: 10px;
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: #101017;
+    margin-bottom: 7px; font-family: var(--font-mono); font-size: 0.82rem;
+  }
+  .wire-row .k { color: var(--fg); }
+  .wire-row .ar { color: var(--muted-2); text-align: center; }
+  .wire-row .v { color: #8ce7ac; }
+  .wire-row .badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; }
+  .badge.auto { color: var(--signal); background: var(--signal-soft); }
+  .badge.share { color: var(--wire); background: var(--wire-soft); }
+  .badge.xform { color: var(--xform); background: var(--xform-soft); }
+  .wire-row.attn { border-color: #3a2a4a; background: #16101c; }
+  .wire-row.attn .v { color: #ff9dcf; }
+  .wire-row.share-row .v { color: #a9cbfb; }
+
+  .collapse-strip {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    border: 1px dashed var(--border); border-radius: 8px; margin-bottom: 12px;
+    font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted);
+    background: repeating-linear-gradient(45deg, #14141b, #14141b 10px, #16161e 10px, #16161e 20px);
+  }
+  .collapse-strip .cnt { color: var(--signal); }
+  .collapse-strip .chev { margin-left: auto; color: var(--muted-2); }
+
+  /* transform chip mock */
+  .xform-demo { display: flex; align-items: center; gap: 0; flex-wrap: wrap; font-family: var(--font-mono); font-size: 0.82rem; }
+  .pin-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: #101017;
+  }
+  .pin-chip .dotp { width: 9px; height: 9px; border-radius: 50%; }
+  .dotp.g { background: var(--signal); box-shadow: 0 0 8px var(--signal); }
+  .dotp.b { background: var(--wire); box-shadow: 0 0 8px var(--wire); }
+  .conn { width: 26px; height: 2px; background: var(--muted-2); }
+  .xnode {
+    display: inline-flex; flex-direction: column; gap: 3px;
+    border: 1px solid var(--xform); border-radius: 8px; padding: 7px 11px; background: var(--xform-soft);
+  }
+  .xnode .xlabel { font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--xform); }
+  .xnode .xtmpl { color: #ffd0e8; }
+
+  /* ---- the canvas centerpiece ---- */
+  .canvas-shell { margin-top: 26px; }
+  .canvas-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 16px; border: 1px solid var(--border); border-bottom: none;
+    border-radius: 12px 12px 0 0; background: #14141b;
+  }
+  .canvas-toolbar .tt { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); margin-right: auto; }
+  .btn {
+    font-family: var(--font-mono); font-size: 0.78rem; cursor: pointer;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--fg);
+    padding: 7px 13px; border-radius: 7px; transition: border-color .15s, background .15s, transform .05s;
+  }
+  .btn:hover { border-color: var(--wire); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--wire); color: #0b1220; border-color: var(--wire); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn:focus-visible { outline: 2px solid var(--wire); outline-offset: 2px; }
+
+  .patchbay {
+    position: relative; border: 1px solid var(--border); border-radius: 0 0 12px 12px;
+    background:
+      linear-gradient(0deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 100% 28px,
+      linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 28px 100%,
+      var(--form);
+    overflow: hidden;
+  }
+  svg.board { display: block; width: 100%; height: auto; }
+
+  .node-card { cursor: grab; }
+  .node-card:active { cursor: grabbing; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 12px 16px; border: 1px solid var(--border); border-top: none; border-radius: 0 0 12px 12px; background: #14141b; margin-top: -12px; }
+  .legend span { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 20px; height: 3px; border-radius: 2px; display: inline-block; }
+  .hint { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted-2); margin-top: 12px; text-align: center; }
+
+  /* ---- comparison table ---- */
+  .tbl-scroll { overflow-x: auto; margin-top: 24px; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: #14141b; }
+  td.mono { font-family: var(--font-mono); font-size: 0.82rem; }
+  tr:last-child td { border-bottom: none; }
+  td .yes { color: var(--signal); }
+  td .no { color: var(--muted-2); }
+
+  /* ---- recommendation ---- */
+  .reco { background: linear-gradient(160deg, #17202f, #16161e 70%); border: 1px solid #294061; border-radius: 16px; padding: 30px; margin-top: 26px; }
+  .reco ol { margin: 18px 0 0; padding-left: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 14px; }
+  .reco li { counter-increment: step; display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start; }
+  .reco li::before {
+    content: counter(step); font-family: var(--font-mono); font-weight: 700;
+    color: var(--wire); border: 1px solid #294061; border-radius: 8px;
+    width: 40px; height: 40px; display: grid; place-items: center; font-size: 0.95rem;
+  }
+  .reco li b { color: var(--title); }
+  .reco li p { color: var(--muted); font-size: 0.94rem; margin-top: 3px; }
+
+  footer { padding: 40px 0 70px; color: var(--muted-2); font-family: var(--font-mono); font-size: 0.78rem; border-top: 1px solid var(--border); margin-top: 30px; }
+
+  @media (max-width: 760px) {
+    .principles { grid-template-columns: 1fr; }
+    .idea { grid-template-columns: 1fr; }
+    .idea .rail { flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--border); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="kicker"><span class="dot"></span> Sprig · design exploration · stack wiring</div>
+    <h1>Wiring a stack should feel like<br>patching cables, not filling a form.</h1>
+    <p class="lede">
+      Defining a stack today means binding <b>every input of every repo</b> by hand — and most of
+      the time you're just typing <span class="tok">${sprig.ports.api_port}</span> into yet another box.
+      The work only gets interesting in two places: when <b>two repos share one port</b>, and when a value
+      needs a <b>transform</b> (a port becoming a URL). This document proposes a ladder of UX moves that
+      make the boring 80% disappear and put the two interesting cases front and centre — ending with a
+      graphical <b>patchbay</b> you can wire by hand.
+    </p>
+    <div class="metabar">
+      <span>Surface · <b>Stacks view · binding editor</b></span>
+      <span>Model · <b>ports → bindings → inputs</b></span>
+      <span>Stack · <b>Avalonia / .NET 10</b></span>
+    </div>
+  </header>
+
+  <!-- 01 THE PROBLEM -->
+  <section>
+    <div class="sec-head"><span class="num">01</span><div><span class="eyebrow">The problem</span><h2>The wiring stage reads as repeated work</h2></div></div>
+    <p class="sec-sub">
+      A stack has three real repos below. The binding editor asks you to fill one token box per declared input.
+      Look how much of it is a <span class="tok g">name → same-named port</span> identity mapping — busywork the tool
+      already has enough information to propose itself.
+    </p>
+
+    <div class="app-chrome" style="margin-top:24px">
+      <div class="app-titlebar">
+        <span class="lamp"></span><span class="lamp"></span><span class="lamp"></span>
+        &nbsp; sprig — new stack · <span style="color:var(--fg)">web-plus-api</span> — inputs (bindings)
+      </div>
+      <div class="app-body">
+        <div class="group-tag">sprig-example-vue</div>
+        <div class="tbox"><span class="in-name">frontend</span><span class="arrow">←</span><span class="in-val">${sprig.ports.frontend_port}</span></div>
+        <div class="tbox dup"><span class="in-name">apiUrl</span><span class="arrow">←</span><span class="in-val">http://localhost:${sprig.ports.api_port}</span><span class="tag-note">transform</span></div>
+
+        <div class="group-tag">dotnet-api</div>
+        <div class="tbox"><span class="in-name">port</span><span class="arrow">←</span><span class="in-val">${sprig.ports.api_port}</span><span class="tag-note">shared w/ apiUrl</span></div>
+        <div class="tbox"><span class="in-name">dbPort</span><span class="arrow">←</span><span class="in-val">${sprig.ports.postgres_port}</span></div>
+
+        <div class="group-tag">worker</div>
+        <div class="tbox"><span class="in-name">dbPort</span><span class="arrow">←</span><span class="in-val">${sprig.ports.postgres_port}</span></div>
+        <div class="tbox"><span class="in-name">queuePort</span><span class="arrow">←</span><span class="in-val">${sprig.ports.queue_port}</span></div>
+
+        <div class="repeat-brace"><span class="rule"></span> 5 of 6 rows are mechanical · 1 transform · 2 rows quietly share a port <span class="rule"></span></div>
+      </div>
+    </div>
+
+    <p class="sec-sub" style="margin-top:20px">
+      Nothing on screen tells you that <span class="tok">port</span> and <span class="tok">apiUrl</span> resolve to the
+      <i>same</i> allocated port, or that <span class="tok">dbPort</span> appears in two repos. The relationships that
+      actually matter are invisible; the parts that don't matter take all the clicks.
+    </p>
+  </section>
+
+  <!-- 02 PRINCIPLES -->
+  <section>
+    <div class="sec-head"><span class="num">02</span><div><span class="eyebrow">Design principles</span><h2>Three ideas everything else follows from</h2></div></div>
+    <div class="principles">
+      <div class="principle">
+        <div class="p-mark">A</div>
+        <h3>Propose, don't prompt</h3>
+        <p>The identity mapping (input <span class="mono">port</span> → port <span class="mono">port</span>) is the default. Sprig should pre-wire it and let you glance-and-accept, not type it.</p>
+      </div>
+      <div class="principle">
+        <div class="p-mark">B</div>
+        <h3>Spend attention on exceptions</h3>
+        <p>Collapse the mechanical rows. Surface only the two things worth a human decision: a <span style="color:var(--wire)">shared port</span> and a <span style="color:var(--xform)">transform</span>.</p>
+      </div>
+      <div class="principle">
+        <div class="p-mark">C</div>
+        <h3>Make the graph visible</h3>
+        <p>Sharing is a relationship between repos. A list can't show it; a wiring surface can. Ports are producers, inputs are consumers, cables are bindings.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 IDEA LADDER -->
+  <section>
+    <div class="sec-head"><span class="num">03</span><div><span class="eyebrow">A ladder of moves</span><h2>From a quick win to a full canvas</h2></div></div>
+    <p class="sec-sub">Each rung stands on its own and ships independently. Effort rises as you go down; so does how much it changes the feel.</p>
+
+    <div class="ideas">
+
+      <!-- idea 1: auto-wire -->
+      <div class="idea">
+        <div class="rail">
+          <span class="idx">1</span>
+          <span class="cost">Effort</span>
+          <div class="effort"><i class="on"></i><i></i><i></i></div>
+          <span class="cost" style="margin-top:6px">Ships on</span>
+          <span class="mono" style="color:var(--fg);font-size:0.78rem">today's form</span>
+        </div>
+        <div class="body">
+          <h3>Auto-wire by convention</h3>
+          <p>When a repo is added, match each declared input against existing (and proposed) ports by name and <span class="tok">AllowedPorts</span>. Pre-fill the binding, create the port if it's new, and mark the row <span class="badge auto">auto</span>. You confirm a stack instead of authoring one.</p>
+          <div class="demo">
+            <div class="wire-row"><span class="k">frontend</span><span class="ar">←</span><span class="v">${sprig.ports.frontend_port}</span><span class="badge auto">auto</span></div>
+            <div class="wire-row"><span class="k">dbPort</span><span class="ar">←</span><span class="v">${sprig.ports.postgres_port}</span><span class="badge auto">auto</span></div>
+            <div class="wire-row"><span class="k">queuePort</span><span class="ar">←</span><span class="v">${sprig.ports.queue_port}</span><span class="badge auto">auto</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- idea 2: collapse to exceptions -->
+      <div class="idea">
+        <div class="rail">
+          <span class="idx">2</span>
+          <span class="cost">Effort</span>
+          <div class="effort mid"><i class="on"></i><i class="on"></i><i></i></div>
+          <span class="cost" style="margin-top:6px">Ships on</span>
+          <span class="mono" style="color:var(--fg);font-size:0.78rem">today's form</span>
+        </div>
+        <div class="body">
+          <h3>Collapse the mechanical, surface the exceptional</h3>
+          <p>Fold every clean auto-wired row into a single confirmable strip. Keep only the rows that carry a real decision expanded — a transform, or a port two repos share.</p>
+          <div class="demo">
+            <div class="collapse-strip"><span class="cnt">4 inputs</span> auto-wired to matching ports — all valid <span class="chev">▸ review</span></div>
+            <div class="wire-row attn"><span class="k">apiUrl</span><span class="ar">←</span><span class="v">http://localhost:${…api_port}</span><span class="badge xform">transform</span></div>
+            <div class="wire-row share-row"><span class="k">port · dbPort</span><span class="ar">⇄</span><span class="v">2 repos → api_port / postgres_port</span><span class="badge share">shared</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- idea 3: transform module -->
+      <div class="idea">
+        <div class="rail">
+          <span class="idx">3</span>
+          <span class="cost">Effort</span>
+          <div class="effort mid"><i class="on"></i><i class="on"></i><i></i></div>
+          <span class="cost" style="margin-top:6px">Reuses</span>
+          <span class="mono" style="color:var(--fg);font-size:0.78rem">SprigTokenBox</span>
+        </div>
+        <div class="body">
+          <h3>Transforms as a named module, not raw string-wrapping</h3>
+          <p>The <span class="tok p">http://localhost:${port}</span> case is really "derive a URL from a port". Offer it as a pickable transform with presets — <span class="mono">URL from port</span>, <span class="mono">connection string</span>, <span class="mono">host:port</span> — with the raw <span class="tok">SprigTokenBox</span> still underneath for anything bespoke.</p>
+          <div class="demo">
+            <div class="xform-demo">
+              <span class="pin-chip"><span class="dotp g"></span> api_port <span style="color:var(--muted-2)">8003</span></span>
+              <span class="conn"></span>
+              <span class="xnode"><span class="xlabel">transform · url from port</span><span class="xtmpl">http://localhost:${port}</span></span>
+              <span class="conn"></span>
+              <span class="pin-chip"><span class="dotp b"></span> apiUrl</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- idea 4: share action -->
+      <div class="idea">
+        <div class="rail">
+          <span class="idx">4</span>
+          <span class="cost">Effort</span>
+          <div class="effort mid"><i class="on"></i><i class="on"></i><i></i></div>
+          <span class="cost" style="margin-top:6px">New concept</span>
+          <span class="mono" style="color:var(--fg);font-size:0.78rem">"share port"</span>
+        </div>
+        <div class="body">
+          <h3>Make "share a port" an explicit verb</h3>
+          <p>Instead of hoping two people type the same port name, add a <span class="badge share">link</span> action on any input: "consume the same port as…". Both bindings then track one port; renaming or reallocating it updates both. The shared relationship becomes data, not a coincidence of strings.</p>
+          <div class="demo">
+            <div class="wire-row share-row"><span class="k">dotnet-api · port</span><span class="ar">⇄</span><span class="v">linked to → worker is free</span><span class="badge share">source</span></div>
+            <div class="wire-row share-row"><span class="k">worker · upstreamApi</span><span class="ar">⇄</span><span class="v">follows dotnet-api · port</span><span class="badge share">linked</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- idea 5: canvas -->
+      <div class="idea" style="border-color:#3a2a4a">
+        <div class="rail" style="background:linear-gradient(180deg,#241626,#1a1420)">
+          <span class="idx">5</span>
+          <span class="cost">Effort</span>
+          <div class="effort hi"><i class="on"></i><i class="on"></i><i class="on"></i></div>
+          <span class="cost" style="margin-top:6px">Greenfield</span>
+          <span class="mono" style="color:var(--fg);font-size:0.78rem">Canvas + Shapes</span>
+        </div>
+        <div class="body">
+          <h3>The patchbay — wire the stack by hand</h3>
+          <p>The full graphical move. Ports run down a central rail as producers; repos sit either side with an input pin per declared input. Drag a pin to a port to bind it. Shared ports show as cables converging; transforms live on the cable. Try it below.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 04 CANVAS CENTERPIECE -->
+  <section>
+    <div class="sec-head"><span class="num">04</span><div><span class="eyebrow">The centrepiece</span><h2>An interactive patchbay</h2></div></div>
+    <p class="sec-sub">
+      Live mock of idea 5. <b style="color:var(--fg)">Hover a port</b> to see everything wired to it (the shared-port
+      relationship, made visible). <b style="color:var(--fg)">Hover the pink cable</b> for the transform. Press
+      <b style="color:var(--fg)">Auto-wire</b> to watch the identity mappings snap in, or <b style="color:var(--fg)">drag</b> a
+      repo node to reposition it. This is derivable entirely from data Sprig already has:
+      <span class="tok">StackDefinition.Bindings</span> + each repo's <span class="tok">InputDeclaration</span>s.
+    </p>
+
+    <div class="canvas-shell">
+      <div class="canvas-toolbar">
+        <span class="tt">patchbay · web-plus-api</span>
+        <button class="btn" id="btnReset" type="button">Reset</button>
+        <button class="btn" id="btnFlow" type="button">Signal flow: off</button>
+        <button class="btn primary" id="btnAuto" type="button">▸ Auto-wire</button>
+      </div>
+      <div class="patchbay">
+        <svg class="board" id="board" viewBox="0 0 1000 560" role="img" aria-label="Interactive stack wiring diagram: repositories on the left and right connect to a central rail of ports.">
+          <defs>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g id="cables"></g>
+          <g id="ports"></g>
+          <g id="nodes"></g>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--wire)"></i> plain binding</span>
+        <span><i style="background:var(--xform)"></i> transform on cable</span>
+        <span><i style="background:var(--signal)"></i> producer port</span>
+        <span><i style="background:var(--danger)"></i> unbound / undeclared</span>
+        <span style="color:var(--muted-2)">— a port lit on both sides is shared</span>
+      </div>
+      <p class="hint">Mock — driven by the same ports + bindings the real editor already holds. Hover, drag, and auto-wire are live.</p>
+    </div>
+  </section>
+
+  <!-- 05 COMPARISON -->
+  <section>
+    <div class="sec-head"><span class="num">05</span><div><span class="eyebrow">Trade-offs</span><h2>Which surface for which moment</h2></div></div>
+    <p class="sec-sub">The list and the canvas aren't rivals — they're views on the same bindings. Most work wants the fast list; the canvas earns its place when relationships get dense.</p>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>Move</th><th>Best when</th><th>Shared ports visible</th><th>Transforms</th><th>Build cost</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Auto-wire + collapse</td><td>Almost always — the daily case</td><td><span class="no">indirect</span></td><td class="mono">inline box</td><td><span class="yes">low</span></td></tr>
+          <tr><td class="mono">Transform modules</td><td>Ports that become URLs / DSNs</td><td><span class="no">n/a</span></td><td class="mono"><span class="yes">first-class</span></td><td><span class="yes">low–med</span></td></tr>
+          <tr><td class="mono">Explicit share action</td><td>2+ repos that must agree</td><td class="mono"><span class="yes">as data</span></td><td class="mono">inherited</td><td class="mono">medium</td></tr>
+          <tr><td class="mono">Patchbay canvas</td><td>Dense stacks, onboarding, review</td><td class="mono"><span class="yes">spatial</span></td><td class="mono">on the cable</td><td><span class="no">high</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 06 RECO -->
+  <section>
+    <div class="sec-head"><span class="num">06</span><div><span class="eyebrow">Recommendation</span><h2>Sequence the wins</h2></div></div>
+    <div class="reco">
+      <p style="color:var(--fg);max-width:64ch">
+        Ship the cheap, high-impact moves on the existing form first — they remove most of the felt busywork
+        without a rewrite — then treat the canvas as a second, opt-in view once the data model already supports
+        explicit sharing.
+      </p>
+      <ol>
+        <li><div><b>Auto-wire on repo add.</b><p>Convention matching against ports + <span class="mono">AllowedPorts</span>. This alone removes ~80% of typing. Reuses today's binding rows.</p></div></li>
+        <li><div><b>Collapse valid rows, expand exceptions.</b><p>One confirmable strip for clean mappings; transforms and shared ports stay open. Pure view change over the same bindings.</p></div></li>
+        <li><div><b>Transform modules + explicit "share port".</b><p>Turn the two interesting cases into named, first-class actions. "Share" makes the relationship real data — the prerequisite for a faithful canvas.</p></div></li>
+        <li><div><b>Patchbay as an opt-in view.</b><p>Built on Avalonia <span class="mono">Canvas</span> + <span class="mono">Shapes</span>, reading the now-explicit graph. A toggle beside the list, not a replacement for it.</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    Sprig · stack-wiring UX exploration · saved to <span style="color:var(--muted)">docs/stack-wiring-ux.html</span> · palette + model drawn from the live app (App.axaml, StackDefinition, ConfigReferences)
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var SVG = "http://www.w3.org/2000/svg";
+  function el(name, attrs) {
+    var e = document.createElementNS(SVG, name);
+    if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  var COL = { wire:"#60a5fa", signal:"#4ade80", xform:"#ff5fb0", danger:"#f87171", muted:"#5f5f70", border:"#2d2d3c", fg:"#e1e1eb", title:"#f5f5fa", panel:"#1f1f2a" };
+
+  // ---- model: repos (with input pins), ports, bindings ----
+  var nodes = [
+    { id:"vue", title:"sprig-example-vue", x:40,  y:60,  side:"L",
+      pins:[ {id:"frontend", label:"frontend"}, {id:"apiUrl", label:"apiUrl"} ] },
+    { id:"api", title:"dotnet-api", x:40, y:330, side:"L",
+      pins:[ {id:"port", label:"port"}, {id:"dbPort", label:"dbPort"} ] },
+    { id:"worker", title:"worker", x:720, y:210, side:"R",
+      pins:[ {id:"w_db", label:"dbPort"}, {id:"queuePort", label:"queuePort"} ] }
+  ];
+  var ports = [
+    { id:"frontend_port", label:"frontend_port", y:80 },
+    { id:"api_port",      label:"api_port",      y:190 },
+    { id:"postgres_port", label:"postgres_port", y:330 },
+    { id:"queue_port",    label:"queue_port",    y:450 }
+  ];
+  // pinKey "node.pin" -> { port, xform? }
+  var manual = {
+    "vue.apiUrl":   { port:"api_port", xform:"http://localhost:${port}" },
+    "api.port":     { port:"api_port" },
+    "vue.frontend": { port:"frontend_port" }
+  };
+  var autoAll = {
+    "vue.frontend": { port:"frontend_port" },
+    "vue.apiUrl":   { port:"api_port", xform:"http://localhost:${port}" },
+    "api.port":     { port:"api_port" },
+    "api.dbPort":   { port:"postgres_port" },
+    "worker.w_db":  { port:"postgres_port" },
+    "worker.queuePort": { port:"queue_port" }
+  };
+  var bindings = clone(manual);
+  function clone(o){ return JSON.parse(JSON.stringify(o)); }
+
+  var RAILX = 500, PORTW = 118, NODEW = 240, ROWH = 34, HEADH = 40;
+  var flow = false;
+
+  var gCables = document.getElementById("cables");
+  var gPorts  = document.getElementById("ports");
+  var gNodes  = document.getElementById("nodes");
+
+  // geometry helpers -------------------------------------------------
+  function pinPos(node, idx) {
+    var x = node.side === "L" ? node.x + NODEW : node.x;
+    var y = node.y + HEADH + idx * ROWH + ROWH/2;
+    return { x:x, y:y };
+  }
+  function portPos(p, side) {
+    return { x: side === "L" ? RAILX - PORTW/2 : RAILX + PORTW/2, y: p.y };
+  }
+  function portById(id){ for (var i=0;i<ports.length;i++) if (ports[i].id===id) return ports[i]; return null; }
+  function nodeByPin(key){ var nid = key.split(".")[0]; for (var i=0;i<nodes.length;i++) if (nodes[i].id===nid) return nodes[i]; return null; }
+  function pinIndex(node, pid){ for (var i=0;i<node.pins.length;i++) if (node.pins[i].id===pid) return i; return -1; }
+
+  // rendering --------------------------------------------------------
+  function draw() {
+    gCables.textContent = ""; gPorts.textContent = ""; gNodes.textContent = "";
+
+    // which ports are consumed, and by how many pins (for "shared")
+    var portUse = {};
+    for (var key in bindings) {
+      var pid = bindings[key].port; if (!pid) continue;
+      portUse[pid] = (portUse[pid]||0) + 1;
+    }
+
+    // ports rail
+    ports.forEach(function (p) {
+      var used = portUse[p.id] || 0;
+      var shared = used > 1;
+      var g = el("g", { "data-port": p.id, class:"port-node" });
+      var c = COL.signal;
+      var box = el("rect", { x: RAILX - PORTW/2, y: p.y - 15, width: PORTW, height: 30, rx: 8,
+        fill: used ? "#152417" : "#16161e", stroke: shared ? COL.wire : (used?COL.signal:COL.border),
+        "stroke-width": shared ? 2 : 1 });
+      g.appendChild(box);
+      var t = el("text", { x: RAILX, y: p.y + 4, "text-anchor":"middle", fill: used?COL.signal:COL.muted,
+        "font-family":"var(--font-mono)", "font-size":"12.5" });
+      t.textContent = p.label; g.appendChild(t);
+      if (shared) {
+        var s = el("text", { x: RAILX, y: p.y - 20, "text-anchor":"middle", fill: COL.wire,
+          "font-family":"var(--font-mono)", "font-size":"9.5", "letter-spacing":"1" });
+        s.textContent = "SHARED ×" + used; g.appendChild(s);
+      }
+      g.style.cursor = "pointer";
+      g.addEventListener("mouseenter", function(){ highlightPort(p.id); });
+      g.addEventListener("mouseleave", clearHighlight);
+      gPorts.appendChild(g);
+    });
+
+    // cables
+    for (var k in bindings) {
+      var b = bindings[k];
+      var node = nodeByPin(k); if (!node) continue;
+      var pid2 = k.split(".")[1];
+      var idx = pinIndex(node, pid2); if (idx < 0) continue;
+      var pp = pinPos(node, idx);
+      var port = portById(b.port); if (!port) continue;
+      var ep = portPos(port, node.side);
+      var col = b.xform ? COL.xform : COL.wire;
+      var dx = Math.abs(ep.x - pp.x) * 0.5;
+      var c1x = node.side === "L" ? pp.x + dx : pp.x - dx;
+      var c2x = node.side === "L" ? ep.x - dx : ep.x + dx;
+      var d = "M " + pp.x + " " + pp.y + " C " + c1x + " " + pp.y + " " + c2x + " " + ep.y + " " + ep.x + " " + ep.y;
+      var path = el("path", { d:d, fill:"none", stroke:col, "stroke-width":"2.5", "stroke-linecap":"round",
+        "data-cable":k, "data-port":b.port, opacity:"0.85" });
+      if (flow) { path.setAttribute("stroke-dasharray","2 8"); path.classList.add("flowing"); }
+      if (b.xform) {
+        path.style.cursor = "pointer";
+        (function(bb){ path.addEventListener("mouseenter", function(){ showXform(bb, (pp.x+ep.x)/2, (pp.y+ep.y)/2); }); })(b);
+        path.addEventListener("mouseleave", hideXform);
+        // transform node marker
+        var mx = (pp.x + ep.x)/2, my = (pp.y + ep.y)/2;
+        var mk = el("rect", { x:mx-7, y:my-7, width:14, height:14, rx:3, fill:"#3a1e30", stroke:COL.xform, "stroke-width":"1.5", "data-xmark":k });
+        gCables.appendChild(path); gCables.appendChild(mk);
+      } else {
+        gCables.appendChild(path);
+      }
+    }
+
+    // repo nodes
+    nodes.forEach(function (node) {
+      var h = HEADH + node.pins.length * ROWH + 10;
+      var g = el("g", { class:"node-card", transform:"translate("+node.x+","+node.y+")", "data-node":node.id });
+      var card = el("rect", { x:0, y:0, width:NODEW, height:h, rx:12, fill:COL.panel, stroke:COL.border, "stroke-width":"1.5" });
+      g.appendChild(card);
+      var head = el("rect", { x:0, y:0, width:NODEW, height:HEADH, rx:12, fill:"#181820" });
+      g.appendChild(head);
+      var htxt = el("text", { x:16, y:25, fill:COL.title, "font-family":"var(--font-mono)", "font-size":"13", "font-weight":"600" });
+      htxt.textContent = node.title; g.appendChild(htxt);
+      var badge = el("text", { x:NODEW-16, y:25, fill:COL.muted, "text-anchor":"end", "font-family":"var(--font-mono)", "font-size":"10" });
+      badge.textContent = node.side==="L" ? "consumer ▸" : "◂ consumer"; g.appendChild(badge);
+
+      node.pins.forEach(function (pin, i) {
+        var py = HEADH + i*ROWH + ROWH/2;
+        var bound = !!bindings[node.id+"."+pin.id];
+        var pinX = node.side==="L" ? NODEW : 0;
+        var row = el("text", { x: node.side==="L"?16:24, y: py+4, fill: bound?COL.fg:COL.danger,
+          "font-family":"var(--font-mono)", "font-size":"12" });
+        row.textContent = pin.label; g.appendChild(row);
+        // pin jack
+        var jack = el("circle", { cx:pinX, cy:py, r:6, fill: bound?COL.wire:"#16161e",
+          stroke: bound?COL.wire:COL.danger, "stroke-width":"2", "data-pin":node.id+"."+pin.id });
+        jack.style.filter = bound ? "url(#glow)" : "none";
+        g.appendChild(jack);
+      });
+
+      makeDraggable(g, node);
+      gNodes.appendChild(g);
+    });
+  }
+
+  // interaction: highlight a port and everything on it ---------------
+  function highlightPort(pid) {
+    var cables = gCables.querySelectorAll("[data-cable]");
+    cables.forEach(function (c) {
+      var on = c.getAttribute("data-port") === pid;
+      c.setAttribute("opacity", on ? "1" : "0.12");
+      c.setAttribute("stroke-width", on ? "3.5" : "2.5");
+    });
+    gPorts.querySelectorAll(".port-node").forEach(function (g) {
+      g.setAttribute("opacity", g.getAttribute("data-port") === pid ? "1" : "0.3");
+    });
+  }
+  function clearHighlight() {
+    gCables.querySelectorAll("[data-cable]").forEach(function (c) {
+      c.setAttribute("opacity","0.85"); c.setAttribute("stroke-width","2.5");
+    });
+    gPorts.querySelectorAll(".port-node").forEach(function (g){ g.setAttribute("opacity","1"); });
+  }
+
+  // transform tooltip -------------------------------------------------
+  var tip = null;
+  function showXform(b, x, y) {
+    hideXform();
+    tip = el("g", { id:"xtip" });
+    var w = 210;
+    var r = el("rect", { x:x-w/2, y:y-52, width:w, height:38, rx:7, fill:"#241019", stroke:COL.xform, "stroke-width":"1.5" });
+    var l = el("text", { x:x, y:y-36, "text-anchor":"middle", fill:COL.xform, "font-family":"var(--font-mono)", "font-size":"9", "letter-spacing":"1.2" });
+    l.textContent = "TRANSFORM · URL FROM PORT";
+    var v = el("text", { x:x, y:y-22, "text-anchor":"middle", fill:"#ffd0e8", "font-family":"var(--font-mono)", "font-size":"11.5" });
+    v.textContent = b.xform;
+    tip.appendChild(r); tip.appendChild(l); tip.appendChild(v);
+    document.getElementById("board").appendChild(tip);
+  }
+  function hideXform(){ if (tip && tip.parentNode) tip.parentNode.removeChild(tip); tip = null; }
+
+  // dragging repo nodes ----------------------------------------------
+  function makeDraggable(g, node) {
+    var start = null;
+    g.addEventListener("pointerdown", function (e) {
+      if (e.target.getAttribute("data-pin")) return; // reserve jacks for future wire-drag
+      start = { mx:e.clientX, my:e.clientY, nx:node.x, ny:node.y };
+      g.setPointerCapture(e.pointerId);
+      hideXform();
+    });
+    g.addEventListener("pointermove", function (e) {
+      if (!start) return;
+      var svg = document.getElementById("board");
+      var scale = 1000 / svg.getBoundingClientRect().width;
+      node.x = Math.max(10, Math.min(760, start.nx + (e.clientX - start.mx) * scale));
+      node.y = Math.max(10, Math.min(430, start.ny + (e.clientY - start.my) * scale));
+      draw();
+    });
+    g.addEventListener("pointerup", function (e){ start = null; try { g.releasePointerCapture(e.pointerId); } catch(_){} });
+    g.addEventListener("pointercancel", function(){ start = null; });
+  }
+
+  // auto-wire animation ----------------------------------------------
+  function autoWire() {
+    var missing = [];
+    for (var k in autoAll) if (!bindings[k]) missing.push(k);
+    if (!missing.length) { flash("already fully wired"); return; }
+    var i = 0;
+    (function step() {
+      if (i >= missing.length) return;
+      bindings[missing[i]] = clone(autoAll[missing[i]]);
+      draw();
+      i++;
+      window.requestAnimationFrame(function(){ setTimeout(step, 260); });
+    })();
+  }
+  function flash(msg) {
+    var b = document.getElementById("btnAuto"); var old = b.textContent;
+    b.textContent = msg; setTimeout(function(){ b.textContent = old; }, 1100);
+  }
+
+  // controls ----------------------------------------------------------
+  document.getElementById("btnAuto").addEventListener("click", autoWire);
+  document.getElementById("btnReset").addEventListener("click", function(){ bindings = clone(manual); draw(); });
+  document.getElementById("btnFlow").addEventListener("click", function(){
+    flow = !flow; this.textContent = "Signal flow: " + (flow?"on":"off"); draw();
+  });
+
+  // flowing cable animation via CSS
+  var st = document.createElement("style");
+  st.textContent = "@keyframes dashmove { to { stroke-dashoffset: -100; } } .flowing { animation: dashmove 2.4s linear infinite; } @media (prefers-reduced-motion: reduce){ .flowing{ animation:none; } }";
+  document.head.appendChild(st);
+
+  draw();
+})();
+</script>

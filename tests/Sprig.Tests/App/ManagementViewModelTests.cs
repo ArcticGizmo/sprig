@@ -1,5 +1,7 @@
 using Sprig.App;
+using Sprig.App.Controls;
 using Sprig.App.ViewModels;
+using Sprig.Core.Stacks;
 
 namespace Sprig.Tests.App;
 
@@ -122,12 +124,16 @@ public class ManagementViewModelTests
         Assert.True(vm.IsEditing);
         Assert.Equal("api", vm.Editor!.Name);
 
-        // change the input's example and add a new env key
+        // change the input's example and add a new env override via the overlay
         vm.Editor.Inputs.First().Example = "6000";
         var env = vm.Editor.Env.First();
-        env.AddKeyCommand.Execute(null);
-        env.Set.Last().Key = "HOST";
-        env.Set.Last().Value = "localhost";
+        await env.StatusReady;                     // let the merged-env overlay build
+        var overlay = env.Overlay!;
+        overlay.NewKey = "HOST";
+        overlay.AddKeyCommand.Execute(null);
+        var host = overlay.Keys.Single(k => k.Key == "HOST");
+        host.Draft = "localhost";
+        overlay.ApplyCommand.Execute(host);
 
         vm.SaveEditCommand.Execute(null);
 
@@ -137,7 +143,7 @@ public class ManagementViewModelTests
         // re-read from disk to prove it persisted
         var reloaded = RepoEditViewModel.Load(dir);
         Assert.Equal("6000", reloaded.Inputs.First().Example);
-        Assert.Contains(reloaded.Env.First().Set, k => k.Key == "HOST" && k.Value == "localhost");
+        Assert.Contains(reloaded.Env.First().CurrentSet, k => k.Key == "HOST" && k.Value == "localhost");
     }
 
     [Fact]
@@ -310,19 +316,25 @@ public class ManagementViewModelTests
 
         editor.AddEnvFileCommand.Execute(null);
         var row = editor.Env.First();
-        row.Set.First().Key = "PORT";
-        row.Set.First().Value = "5000";
 
         row.File = ".env";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Tracked, row.Status);
         Assert.True(row.ShowTrackedWarning);
 
-        Assert.False(editor.Save());                        // save refused
+        // set an override key via the overlay (the merged-env editor)
+        var overlay = row.Overlay!;
+        overlay.NewKey = "PORT";
+        overlay.AddKeyCommand.Execute(null);
+        var port = overlay.Keys.Single(k => k.Key == "PORT");
+        port.Draft = "5000";
+        overlay.ApplyCommand.Execute(port);
+
+        Assert.False(editor.Save());                        // save refused (tracked file)
         Assert.Contains("tracked", editor.Error);
         Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
 
-        // pointing at a gitignored file clears the block and saves
+        // pointing at a gitignored file clears the block — the override carries across the file change
         row.File = ".env.local";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
@@ -347,8 +359,8 @@ public class ManagementViewModelTests
         row.File = ".env.local";
         await row.StatusReady;
 
-        Assert.Contains("PORT", row.AvailableKeys);
-        Assert.Contains("DATABASE_URL", row.AvailableKeys); // from the committed template
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "PORT");
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "DATABASE_URL"); // from the committed template
     }
 
     [Fact]
@@ -372,9 +384,38 @@ public class ManagementViewModelTests
         row.Templates.First().Path = "shared.env";
         await row.StatusReady;
 
-        Assert.Contains("PORT", row.AvailableKeys);          // still the target file's own key
-        Assert.Contains("SHARED_SECRET", row.AvailableKeys); // pulled in from the added template
-        Assert.Contains("API_KEY", row.AvailableKeys);
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "PORT");          // still the target file's own key
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "SHARED_SECRET"); // pulled in from the added template
+        Assert.Contains(row.Overlay!.Keys, k => k.Key == "API_KEY");
+    }
+
+    [Fact]
+    public async Task Referenced_but_undeclared_input_is_offered_as_quick_add_and_blocks_save()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
+            { "schema":2, "name":"api",
+              "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.port}" } } ] }
+            """);
+
+        var editor = RepoEditViewModel.Load(dir);
+        await editor.Env.First().StatusReady;   // let the env overlay settle
+
+        // "port" is referenced by the override but not declared → surfaced for quick add,
+        // and that same gap blocks the save.
+        Assert.Contains("port", editor.MissingInputRefs);
+        Assert.True(editor.HasMissingInputRefs);
+        Assert.False(editor.Save());
+        Assert.Contains("port", editor.Error);
+
+        // quick-add declares it: the chip clears and the config now saves
+        editor.QuickAddInputCommand.Execute("port");
+        Assert.DoesNotContain("port", editor.MissingInputRefs);
+        Assert.False(editor.HasMissingInputRefs);
+        Assert.Contains(editor.Inputs, i => i.Name == "port");
+        Assert.True(editor.Save());
     }
 
     [Fact]
@@ -501,5 +542,278 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var vm = new StacksViewModel(new AppServices(s.Root), new Navigator()) { NewName = name };
         Assert.Equal(expectError, vm.HasNameError);
+    }
+
+    // A repo whose .sprig.json declares inputs, for exercising the builder's wiring aids.
+    static string MakeRepoWithInputs(string root, string name, params (string Name, string Example)[] inputs)
+    {
+        var dir = Path.Combine(root, name);
+        Directory.CreateDirectory(dir);
+        var decls = string.Join(",", inputs.Select(i => $$"""{ "name":"{{i.Name}}", "example":"{{i.Example}}" }"""));
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"),
+            $$"""{ "schema":2, "name":"{{name}}", "inputs":[ {{decls}} ] }""");
+        return dir;
+    }
+
+    static BindingRow Row(StacksViewModel vm, string repo, string input) =>
+        vm.Bindings.First(g => g.Repo == repo).Rows.First(r => r.Input == input);
+
+    [Fact]
+    public void AutoWire_fills_unbound_bindings_and_adds_ports()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000"), ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.AutoWireCommand.Execute(null);
+
+        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
+        Assert.Equal("http://localhost:${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
+        Assert.Contains(vm.Ports, p => p.Name == "frontend_port");
+        Assert.Contains(vm.Ports, p => p.Name == "api_port");
+    }
+
+    [Fact]
+    public void AutoWire_collapses_the_identity_row_but_leaves_the_transform_visible()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000"), ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+
+        var frontend = Row(vm, "vue", "frontend");
+        Assert.True(frontend.ShowAuto);
+        Assert.True(frontend.IsCollapsed);        // folded behind the strip
+
+        var apiUrl = Row(vm, "vue", "apiUrl");
+        Assert.True(apiUrl.ShowTransform);
+        Assert.False(apiUrl.IsCollapsed);         // an exception stays in view
+
+        var group = vm.Bindings.Single();
+        Assert.True(group.HasCollapsible);
+        Assert.Equal(1, group.CollapsibleCount);
+    }
+
+    [Fact]
+    public void Toggling_a_group_reveals_its_folded_rows()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+
+        var frontend = Row(vm, "vue", "frontend");
+        Assert.True(frontend.IsCollapsed);
+
+        vm.ToggleGroupCommand.Execute(vm.Bindings.Single());
+        Assert.False(frontend.IsCollapsed);       // revealed
+    }
+
+    [Fact]
+    public void Pointing_two_inputs_at_one_port_flags_them_shared_and_keeps_them_visible()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+        vm.AddPortCommand.Execute(null);
+        vm.Ports.Single().Name = "api_port";
+
+        // Both consume api_port — vue via a transform, api raw.
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
+        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
+
+        var apiUrl = Row(vm, "vue", "apiUrl");
+        var port = Row(vm, "api", "port");
+        Assert.True(apiUrl.ShowShared);
+        Assert.True(port.ShowShared);
+        Assert.False(apiUrl.IsCollapsed);
+        Assert.False(port.IsCollapsed);           // a shared identity is an exception, not folded
+    }
+
+    [Fact]
+    public void The_transform_picker_reflects_and_rewrites_the_binding_over_its_port()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+
+        var row = Row(vm, "vue", "apiUrl");
+        Assert.True(row.CanTransform);
+        Assert.Equal("api_port", row.Port);
+        Assert.Equal(TransformPresets.Url, row.SelectedTransform); // recognised the localhost URL
+
+        // Switching the preset rewrites the expression over the same port...
+        row.SelectedTransform = TransformPresets.Raw;
+        Assert.Equal("${sprig.ports.api_port}", row.Expression);
+        // ...and the picker re-syncs from the new text.
+        Assert.Equal(TransformPresets.Raw, row.SelectedTransform);
+    }
+
+    [Fact]
+    public void The_transform_picker_is_unavailable_for_a_literal_binding()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:4000"; // a constant, no port
+        Assert.False(Row(vm, "vue", "apiUrl").CanTransform);
+    }
+
+    static StacksViewModel WebPlusApi(AppServices services, string root)
+    {
+        services.Repos.Add(MakeRepoWithInputs(root, "vue", ("apiUrl", "http://localhost:4000")));
+        services.Repos.Add(MakeRepoWithInputs(root, "api", ("port", "5000")));
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+        vm.AddPortCommand.Execute(null);
+        vm.Ports.Single().Name = "api_port";
+        return vm;
+    }
+
+    [Fact]
+    public void Saving_persists_the_shared_port_relationship()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
+        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
+        vm.CreateCommand.Execute(null);
+
+        var saved = services.Stacks.Get("web+api");
+        Assert.NotNull(saved);
+        var share = Assert.Single(saved!.Shares);
+        Assert.Equal("api_port", share.Port);
+        Assert.Equal(2, share.Consumers.Count);
+    }
+
+    [Fact]
+    public void Renaming_a_port_rewrites_every_binding_that_uses_it()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
+
+        vm.Ports.Single().Name = "web_port"; // commit a rename
+
+        Assert.Equal("${sprig.ports.web_port}", Row(vm, "vue", "frontend").Expression);
+    }
+
+    [Fact]
+    public void Choosing_a_port_in_the_row_picker_binds_it_and_shares_when_reused()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        Row(vm, "vue", "apiUrl").Port = "api_port"; // explicit "share a port"
+        Row(vm, "api", "port").Port = "api_port";
+
+        Assert.Equal("${sprig.ports.api_port}", Row(vm, "api", "port").Expression);
+        Assert.True(Row(vm, "vue", "apiUrl").ShowShared);
+        Assert.True(Row(vm, "api", "port").ShowShared);
+    }
+
+    [Fact]
+    public void Selecting_a_stack_builds_its_wiring_graph_and_the_toggle_flips()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
+        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
+        vm.CreateCommand.Execute(null);
+
+        vm.Selected = vm.Stacks.Single();
+
+        Assert.NotNull(vm.Wiring);
+        Assert.Contains(vm.Wiring!.Ports, p => p.Name == "api_port" && p.Shared);
+        Assert.Contains(vm.Wiring.Edges, e => e is { Repo: "vue", Input: "apiUrl", Transform: true });
+
+        Assert.Equal("Diagram", vm.DiagramToggleLabel);
+        vm.ToggleDiagramCommand.Execute(null);
+        Assert.True(vm.ShowDiagram);
+        Assert.Equal("List", vm.DiagramToggleLabel);
+    }
+
+    [Fact]
+    public void WirePin_binds_the_input_to_the_port_and_updates_the_live_graph()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
+
+        Assert.Equal("${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
+        Assert.NotNull(vm.BuilderWiring);
+        Assert.Contains(vm.BuilderWiring!.Edges, e => e is { Repo: "vue", Input: "apiUrl", Port: "api_port" });
+    }
+
+    [Fact]
+    public void UnwirePin_clears_the_binding()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
+        Assert.NotEqual("", Row(vm, "api", "port").Expression);
+
+        vm.UnwirePinCommand.Execute(new PinRef("api", "port"));
+
+        Assert.Equal("", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void SetPinTransform_reshapes_a_bound_input_over_its_port()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
+
+        vm.SetPinTransformCommand.Execute(new TransformRequest("vue", "apiUrl", TransformPresets.Url));
+
+        Assert.Equal("http://localhost:${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
+    }
+
+    [Fact]
+    public void Wiring_two_pins_to_one_port_marks_it_shared_in_the_live_graph()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
+        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
+
+        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
     }
 }

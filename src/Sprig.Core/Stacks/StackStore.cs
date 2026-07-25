@@ -28,7 +28,11 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
         JsonFile.Write(FilePath(stack.Name), stack);
     }
 
-    public StackDefinition? Get(string name) => JsonFile.Read<StackDefinition>(FilePath(name));
+    public StackDefinition? Get(string name)
+    {
+        var def = JsonFile.Read<StackDefinition>(FilePath(name));
+        return def is null ? null : StackMigration.Normalize(def);
+    }
 
     public IReadOnlyList<StackDefinition> List()
     {
@@ -36,6 +40,7 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
         return Directory.EnumerateFiles(paths.StacksDir, "*.json")
             .Select(f => JsonFile.Read<StackDefinition>(f))
             .OfType<StackDefinition>()
+            .Select(StackMigration.Normalize)
             .OrderBy(s => s.Name)
             .ToList();
     }
@@ -54,13 +59,16 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
         return destPath;
     }
 
-    /// <summary>Read a stack JSON from a file, validate against the registry, and save it.</summary>
+    /// <summary>Read a stack JSON from a file, migrate + validate against the registry, and save it.</summary>
     public StackDefinition Import(string sourcePath)
     {
         if (!File.Exists(sourcePath))
             throw new StackException($"stack file not found: {sourcePath}");
-        var stack = JsonFile.Read<StackDefinition>(sourcePath)
+        var raw = JsonFile.Read<StackDefinition>(sourcePath)
             ?? throw new StackException($"could not read stack from {sourcePath}");
+        // Upgrade an older exported file to the current schema on the way in, so its shares are
+        // explicit on disk from here on rather than re-derived every load.
+        var stack = StackMigration.Normalize(raw);
         Save(stack);
         return stack;
     }
@@ -79,6 +87,42 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
             throw new StackException(
                 $"stack '{stack.Name}' references unregistered repo{(unknown.Count == 1 ? "" : "s")} " +
                 $"{string.Join(", ", unknown.Select(r => $"'{r}'"))} — register {(unknown.Count == 1 ? "it" : "them")} first");
+
+        ValidateShares(stack);
+    }
+
+    /// <summary>
+    /// The explicit <see cref="StackDefinition.Shares"/> must stay consistent with the bindings that
+    /// actually feed resolution: each shared port is declared, each consumer is a stack repo, and
+    /// that consumer's binding references the shared port. This is the invariant that lets the rest
+    /// of the app trust <c>Shares</c> without re-deriving it.
+    /// </summary>
+    static void ValidateShares(StackDefinition stack)
+    {
+        var ports = new HashSet<string>(stack.Ports, StringComparer.Ordinal);
+        var repos = new HashSet<string>(stack.Repos, StringComparer.Ordinal);
+
+        foreach (var share in stack.Shares)
+        {
+            if (!ports.Contains(share.Port))
+                throw new StackException(
+                    $"stack '{stack.Name}' shares port '{share.Port}', but no such port is declared");
+
+            foreach (var c in share.Consumers)
+            {
+                if (!repos.Contains(c.Repo))
+                    throw new StackException(
+                        $"stack '{stack.Name}' shares port '{share.Port}' with repo '{c.Repo}', " +
+                        "which the stack doesn't include");
+
+                var expr = stack.Bindings.TryGetValue(c.Repo, out var b)
+                    && b.TryGetValue(c.Input, out var e) ? e : null;
+                if (expr is null || !PortExpressions.ReferencedPorts(expr).Contains(share.Port))
+                    throw new StackException(
+                        $"stack '{stack.Name}' shares port '{share.Port}' with {c.Repo}.{c.Input}, " +
+                        $"but that input's binding doesn't reference ${{sprig.ports.{share.Port}}}");
+            }
+        }
     }
 
     string FilePath(string name) => Path.Combine(paths.StacksDir, name + ".json");

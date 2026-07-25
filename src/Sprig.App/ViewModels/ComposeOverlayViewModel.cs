@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -35,6 +36,10 @@ public partial class ComposeOverlayViewModel : ObservableObject
     public int OverrideCount => Overrides.Count;
     public bool HasOverrides => Overrides.Count > 0;
 
+    /// <summary>Raised whenever the applied overrides change — lets the repo editor recompute which
+    /// <c>${sprig.*}</c> inputs a template references (and surface any that aren't declared yet).</summary>
+    public event EventHandler? OverridesChanged;
+
     private sealed record Entry(IReadOnlyList<string> Path, string Template);
 
     public ComposeOverlayViewModel(string composeText, IEnumerable<ComposeOverride>? seed = null,
@@ -42,8 +47,19 @@ public partial class ComposeOverlayViewModel : ObservableObject
     {
         _outline = ComposeScanner.Scan(composeText);
         Variables = variables ?? [];
+        // Declaring/removing an input changes which references are valid — recolour when it does.
+        if (Variables is INotifyCollectionChanged live)
+            live.CollectionChanged += (_, _) => Rebuild();
         SeedFrom(seed);
         Rebuild();
+    }
+
+    // True when the template names a ${sprig.*} input that isn't a known variable — the editor renders
+    // these red (in the file view and the replacements list), matching the token editor's highlight.
+    private bool ReferencesUnknownInput(string template)
+    {
+        var known = new HashSet<string>(Variables, StringComparer.Ordinal);
+        return ConfigReferences.ReferencedNames(template).Any(n => !known.Contains(n));
     }
 
     /// <summary>The current overrides, ready to persist to <see cref="ComposeConfig.Overrides"/>.
@@ -112,12 +128,14 @@ public partial class ComposeOverlayViewModel : ObservableObject
                 Group = token.Service ?? "compose",
                 Label = FieldLabel(token),
                 Rewrite = entry.Template,
+                ReferencesUnknownInput = ReferencesUnknownInput(entry.Template),
                 Run = run,
             });
         }
 
         OnPropertyChanged(nameof(OverrideCount));
         OnPropertyChanged(nameof(HasOverrides));
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private ComposeLineViewModel BuildLine(ComposeOutlineLine line, Dictionary<string, ComposeRunViewModel> runByPath)
@@ -150,15 +168,18 @@ public partial class ComposeOverlayViewModel : ObservableObject
             VolumeName = token.VolumeName,
             OriginalText = token.Text,
             IsApplied = applied,
+            ReferencesUnknownInput = applied && ReferencesUnknownInput(entry!.Template),
             Display = applied ? entry!.Template : token.Text,
             Draft = applied ? entry!.Template : DefaultDraft(token),
         };
     }
 
-    // The editor opens on the current value; the user templates it with autocomplete. (We don't
-    // pre-fill a ${sprig.ports.*} guess — a repo references its own declared inputs, not stack ports,
-    // so a guessed token would just read as invalid.)
-    private static string DefaultDraft(ComposeToken token) => token.Text;
+    // The editor opens on the current value; the user templates it with autocomplete. The one guess we
+    // make is a value that hard-codes a local port (a localhost URL or connection string) — that port
+    // is pre-templated to a declared input. A host:container port like "5432:5432" has no local host,
+    // so it's left as-is (its own note covers the host-port case).
+    private string DefaultDraft(ComposeToken token)
+        => LocalPortGuess.Rewrite(token.Text, Variables.ToList()) ?? token.Text;
 
     private static string FieldLabel(ComposeToken token) => token.Kind switch
     {
@@ -198,6 +219,10 @@ public partial class ComposeRunViewModel : ObservableObject
     public string OriginalText { get; init; } = string.Empty;
 
     public bool IsApplied { get; init; }
+
+    /// <summary>True when the applied template names a <c>${sprig.*}</c> input that isn't declared —
+    /// the value renders red instead of accent to match the token editor's invalid highlight.</summary>
+    public bool ReferencesUnknownInput { get; init; }
 
     /// <summary>The editor's working template, two-way bound to the token text box.</summary>
     [ObservableProperty] private string _draft = string.Empty;
@@ -239,5 +264,9 @@ public sealed class ComposeOverrideViewModel
     public string Group { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;
     public string Rewrite { get; init; } = string.Empty;
+
+    /// <summary>True when the template names an undeclared <c>${sprig.*}</c> input — rendered red.</summary>
+    public bool ReferencesUnknownInput { get; init; }
+
     public ComposeRunViewModel? Run { get; init; }
 }

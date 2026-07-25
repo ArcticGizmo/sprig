@@ -180,11 +180,12 @@ that repo's declared inputs. It lives in the central store, never inside a repo.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema` | int | Schema version. Currently `1`. |
+| `schema` | int | Schema version. Currently `2`. |
 | `name` | string | Stack name. Must match `^[A-Za-z0-9._+-]+$`. |
 | `repos` | string[] | Repos in the stack, by **registry name**. Each must exist in the repo registry. |
 | `ports` | string[] | Named ports the stack owns. Each is allocated a real, non-colliding number per workspace. |
 | `bindings` | object | `bindings[repo][input] = expression` — supplies each repo's declared inputs. |
+| `shares` | array | Ports shared by 2+ repos, made explicit (see below). Optional; back-filled on load for older files. |
 
 ### Ports
 
@@ -202,6 +203,27 @@ For each repo, supply every input it declares. An expression is either:
 
 Same-named inputs in different repos are **independent** — bind each one individually. Sharing a
 value between repos is done by pointing both bindings at the same stack port.
+
+### Shares — sharing made explicit
+
+`bindings` alone stays the single source of truth for resolution: at create time sprig only ever
+reads the binding expressions. But "two repos deliberately point at the same port" is a real
+relationship the builder, port-rename, and wiring canvas need to know about — so schema 2 records it
+explicitly.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `shares[].port` | string | A declared stack port that more than one repo consumes. |
+| `shares[].consumers[]` | array | The `{ repo, input }` pairs wired to that port. |
+
+Each `shares` entry is validated on save: the port must be declared, each consumer must be a repo in
+the stack, and that consumer's binding **must** reference `${sprig.ports.<port>}`. sprig keeps
+`shares` in step with `bindings`; you don't edit it by hand.
+
+**Migration.** A schema-1 stack has no `shares`. On load sprig derives it from the bindings — any
+port referenced by two or more `(repo, input)` bindings becomes a share — bumps the file to schema 2
+in memory, and persists it the next time the stack is saved (or immediately on import). Nothing you
+need to do.
 
 ### Example — two repos sharing a port (`web+api`)
 
@@ -223,9 +245,18 @@ talks to *its* isolated API, not another workspace's.
       "port":   "${sprig.ports.api_port}",
       "dbPort": "${sprig.ports.postgres_port}"
     }
-  }
+  },
+  "shares": [
+    { "port": "api_port", "consumers": [
+        { "repo": "sprig-example-vue", "input": "apiUrl" },
+        { "repo": "dotnet-api",        "input": "port" }
+    ] }
+  ]
 }
 ```
+
+`api_port` is consumed by both repos, so it appears in `shares`. `frontend_port` and `postgres_port`
+each have a single consumer, so they don't.
 
 ### Example — one repo, literal binding (`web-only`)
 

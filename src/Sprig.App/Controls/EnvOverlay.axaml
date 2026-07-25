@@ -1,0 +1,196 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Sprig.App.ViewModels"
+             xmlns:controls="using:Sprig.App.Controls"
+             x:Class="Sprig.App.Controls.EnvOverlay"
+             x:DataType="vm:EnvOverlayViewModel"
+             x:Name="Root">
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.phead">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+    </Style>
+    <Style Selector="TextBlock.run">
+      <Setter Property="FontFamily" Value="Consolas,monospace" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="Consolas,monospace" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+    </Style>
+
+    <!-- Inline clickable value token. Unset reads a dimmed "override"; applied turns accent. -->
+    <Style Selector="Button.tok">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="BorderBrush" Value="#40808080" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="2,0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="FontFamily" Value="Consolas,monospace" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontStyle" Value="Italic" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.tok /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.tok:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#22808080" />
+    </Style>
+    <Style Selector="Button.tok.applied">
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontStyle" Value="Normal" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.tok.applied /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#2660A5FA" />
+    </Style>
+    <!-- applied, but references an input that isn't declared yet → red, like the token editor -->
+    <Style Selector="Button.tok.applied.invalidref">
+      <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    </Style>
+    <Style Selector="Button.tok.applied.invalidref /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#26F87171" />
+    </Style>
+
+    <!-- replacements list value: accent normally, red when it names an undeclared input -->
+    <Style Selector="TextBlock.rw">
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.rw.invalid">
+      <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="10">
+
+    <TextBlock Classes="phead" TextWrapping="Wrap"
+               Text="A merged view of this file and its templates. Click any value to override the key for every worktree — set a ${sprig.*} template or a literal, resolved when a workspace is created." />
+
+    <!-- env stage: KEY=value per line, value clickable -->
+    <Border CornerRadius="6" Background="{StaticResource FormBgBrush}"
+            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+      <!-- The inset is a Margin on the content (not ScrollViewer.Padding) so the scroll extent
+           reserves it — otherwise the last row clips against the bottom edge. Horizontal scroll is
+           disabled so the width is constrained and long values wrap (WrapPanel) rather than scroll. -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" MaxHeight="420">
+        <StackPanel Spacing="2" Margin="14,12">
+
+          <TextBlock IsVisible="{Binding !HasKeys}" Classes="mono" Foreground="{StaticResource MutedBrush}"
+                     TextWrapping="Wrap"
+                     Text="No keys found in this file or its templates yet — add one below, or point at a file/template that declares them." />
+
+          <ItemsControl ItemsSource="{Binding Keys}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:EnvKeyViewModel">
+                <WrapPanel Orientation="Horizontal" MinHeight="19" Margin="0,1">
+                  <TextBlock Classes="run" Text="{Binding Key}" TextWrapping="Wrap" />
+                  <TextBlock Classes="run" Text="=" />
+                  <Button Classes="tok" Classes.applied="{Binding IsApplied}"
+                          Classes.invalidref="{Binding ReferencesUnknownInput}">
+                    <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
+                    <Button.Flyout>
+                      <Flyout>
+                        <Border Padding="14" MinWidth="380" MaxWidth="480">
+                        <StackPanel Spacing="9">
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="Environment variable" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding Key}" Classes="mono" FontWeight="SemiBold" TextWrapping="Wrap" />
+                          </StackPanel>
+
+                          <!-- example values already set in the file/templates (copyable) -->
+                          <StackPanel Spacing="3" IsVisible="{Binding HasExamples}">
+                            <TextBlock Text="EXAMPLE VALUES" FontSize="10" Foreground="{StaticResource MutedBrush}" />
+                            <ItemsControl ItemsSource="{Binding Examples}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EnvExampleGroup">
+                                  <StackPanel Spacing="1" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding Sources}" FontSize="10" TextWrapping="Wrap"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                    <SelectableTextBlock Text="{Binding Value}" Classes="mono" TextWrapping="Wrap" />
+                                  </StackPanel>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                          <TextBlock IsVisible="{Binding !HasExamples}" FontSize="12" TextWrapping="Wrap"
+                                     Foreground="{StaticResource MutedBrush}"
+                                     Text="No example values in the file or its templates." />
+
+                          <StackPanel Spacing="3">
+                            <TextBlock Text="OVERRIDE WITH" FontSize="10" Foreground="{StaticResource MutedBrush}" />
+                            <controls:SprigTokenBox Value="{Binding Draft, Mode=TwoWay}"
+                                                    Variables="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).Variables}"
+                                                    Watermark="{Binding ValueWatermark}" />
+                          </StackPanel>
+
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Apply"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                    Command="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).ApplyCommand}"
+                                    CommandParameter="{Binding}" />
+                            <Button Content="Remove" IsVisible="{Binding IsApplied}"
+                                    Foreground="{StaticResource DangerBrush}"
+                                    Command="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).RemoveCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+                        </StackPanel>
+                        </Border>
+                      </Flyout>
+                    </Button.Flyout>
+                  </Button>
+                </WrapPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- add a key that no file/template declares — inside the stage, below the merged keys -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,10,0,0">
+            <TextBox Grid.Column="0" MinWidth="0" Text="{Binding NewKey, Mode=TwoWay}"
+                     FontFamily="Consolas,monospace" FontSize="12" PlaceholderText="add another key…" />
+            <Button Grid.Column="1" Content="+ Add key" Padding="10,5" VerticalAlignment="Stretch"
+                    Command="{Binding AddKeyCommand}" />
+          </Grid>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!-- inspector: the applied overrides -->
+    <Border CornerRadius="6" Padding="14,12" IsVisible="{Binding HasOverrides}"
+            Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Text="REPLACEMENTS" Classes="phead" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{Binding OverrideCount}" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Overrides}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:EnvOverrideViewModel">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="0,3">
+                <StackPanel Grid.Column="0" Spacing="1">
+                  <TextBlock Text="{Binding Key}" Classes="mono" Foreground="{StaticResource FgBrush}" />
+                  <TextBlock Text="{Binding Rewrite}" Classes="mono rw" TextWrapping="Wrap"
+                             Classes.invalid="{Binding ReferencesUnknownInput}" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="✕" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}"
+                        Command="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).RemoveCommand}"
+                        CommandParameter="{Binding Row}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+  </StackPanel>
+</UserControl>

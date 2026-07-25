@@ -58,4 +58,48 @@ public class EnvKeyReaderTests
         Directory.CreateDirectory(s.Root);
         Assert.Empty(EnvKeyReader.KeysForFile(s.Root, ".env"));
     }
+
+    [Fact]
+    public void Parse_captures_values_trimmed_and_unquoted_first_seen_wins()
+    {
+        const string content =
+            "PORT=3000\n" +
+            "export DATABASE_URL = postgres://localhost \n" +   // spaces around = and trailing space
+            "QUOTED=\"a value\"\n" +
+            "SINGLE='shh'\n" +
+            "EMPTY=\n" +
+            "PORT=4000\n";                                       // duplicate → first value wins
+
+        var pairs = EnvKeyReader.Parse(content);
+
+        Assert.Equal(
+            new[]
+            {
+                new KeyValuePair<string, string>("PORT", "3000"),
+                new KeyValuePair<string, string>("DATABASE_URL", "postgres://localhost"),
+                new KeyValuePair<string, string>("QUOTED", "a value"),
+                new KeyValuePair<string, string>("SINGLE", "shh"),
+                new KeyValuePair<string, string>("EMPTY", ""),
+            },
+            pairs);
+    }
+
+    [Fact]
+    public void ExamplesForFile_gathers_values_from_file_and_templates_skipping_empties()
+    {
+        using var s = new TempStore();
+        Directory.CreateDirectory(s.Root);
+        File.WriteAllText(Path.Combine(s.Root, ".env.local"), "PORT=1234\nSECRET=\n");
+        File.WriteAllText(Path.Combine(s.Root, ".env.example"), "PORT=8080\nAPI_KEY=your-key-here\n");
+
+        var examples = EnvKeyReader.ExamplesForFile(s.Root, ".env.local");
+
+        // PORT has an example from each source (file first), API_KEY only from the example file
+        Assert.Equal(
+            new[] { new EnvExample(".env.local", "1234"), new EnvExample(".env.example", "8080") },
+            examples["PORT"]);
+        Assert.Equal(new[] { new EnvExample(".env.example", "your-key-here") }, examples["API_KEY"]);
+        // SECRET was declared but had no value → no example, so it isn't in the map
+        Assert.False(examples.ContainsKey("SECRET"));
+    }
 }

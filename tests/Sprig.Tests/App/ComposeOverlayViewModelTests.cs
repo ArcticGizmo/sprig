@@ -90,6 +90,26 @@ public class ComposeOverlayViewModelTests
     }
 
     [Fact]
+    public void Override_referencing_an_undeclared_input_is_flagged()
+    {
+        var vm = new ComposeOverlayViewModel(Sample, variables: new[] { "workspace" });
+
+        var cn = Token(vm, "services", "db", "container_name");
+        cn.Draft = "${sprig.workspace}-db";   // workspace is known
+        vm.ApplyCommand.Execute(cn);
+        Assert.False(Token(vm, "services", "db", "container_name").ReferencesUnknownInput);
+
+        var port = Token(vm, "services", "db", "ports", "0");
+        port.Draft = "${sprig.dbPort}:5432";  // dbPort isn't declared
+        vm.ApplyCommand.Execute(port);
+        Assert.True(Token(vm, "services", "db", "ports", "0").ReferencesUnknownInput);
+
+        // the inspector agrees: one flagged, one not
+        Assert.Contains(vm.Overrides, o => o.ReferencesUnknownInput);
+        Assert.Contains(vm.Overrides, o => !o.ReferencesUnknownInput);
+    }
+
+    [Fact]
     public void Unparseable_file_surfaces_an_error_and_offers_no_tokens()
     {
         var vm = new ComposeOverlayViewModel("services:\n  db:\n   - bad: : :\n\tmixed\n");

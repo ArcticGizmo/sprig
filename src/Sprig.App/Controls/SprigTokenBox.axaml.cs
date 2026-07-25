@@ -55,6 +55,11 @@ public partial class SprigTokenBox : UserControl
 
         CompletionList.AddHandler(PointerPressedEvent, OnListPointerPressed, RoutingStrategies.Tunnel);
 
+        // A box that was laid out while hidden (e.g. a collapsed binding row, or a not-yet-opened
+        // flyout) can have a stale/empty text layout when it first becomes visible. Re-render the
+        // highlight when the control enters the viewport so the value shows without needing a click.
+        EffectiveViewportChanged += (_, _) => { if (!_editing) RenderHighlight(); };
+
         RenderHighlight();
     }
 

@@ -52,6 +52,21 @@
     <Style Selector="Button.tok.applied /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#2660A5FA" />
     </Style>
+    <!-- applied, but references an input that isn't declared yet → red, like the token editor -->
+    <Style Selector="Button.tok.applied.invalidref">
+      <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    </Style>
+    <Style Selector="Button.tok.applied.invalidref /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#26F87171" />
+    </Style>
+
+    <!-- replacements list value: accent normally, red when it names an undeclared input -->
+    <Style Selector="TextBlock.rw">
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+    </Style>
+    <Style Selector="TextBlock.rw.invalid">
+      <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+    </Style>
   </UserControl.Styles>
 
   <StackPanel Spacing="10">
@@ -72,22 +87,27 @@
     <!-- YAML stage -->
     <Border CornerRadius="6" Background="{StaticResource FormBgBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" Padding="14,12" MaxHeight="420">
+      <!-- Horizontal scroll disabled so the width is constrained and long lines wrap (WrapPanel)
+           instead of running off-screen. -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="14,12" MaxHeight="420">
         <ItemsControl ItemsSource="{Binding Lines}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ComposeLineViewModel">
               <ItemsControl ItemsSource="{Binding Runs}" MinHeight="19">
                 <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                  <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:ComposeRunViewModel">
                     <Panel>
-                      <Button Classes="tok" Classes.applied="{Binding IsApplied}" Content="{Binding Display}"
+                      <Button Classes="tok" Classes.applied="{Binding IsApplied}"
+                              Classes.invalidref="{Binding ReferencesUnknownInput}"
                               IsVisible="{Binding IsToken}">
+                        <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                         <Button.Flyout>
                           <Flyout>
-                            <StackPanel Width="340" Spacing="9" Margin="4">
+                            <Border Padding="14" MinWidth="380" MaxWidth="480">
+                            <StackPanel Spacing="9">
                               <StackPanel Spacing="2">
                                 <TextBlock Text="{Binding KindLabel}" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{StaticResource MutedBrush}" />
@@ -116,10 +136,12 @@
                                         CommandParameter="{Binding}" />
                               </StackPanel>
                             </StackPanel>
+                            </Border>
                           </Flyout>
                         </Button.Flyout>
                       </Button>
-                      <TextBlock Classes="run" Text="{Binding Display}" IsVisible="{Binding !IsToken}" />
+                      <TextBlock Classes="run" Text="{Binding Display}" IsVisible="{Binding !IsToken}"
+                                 TextWrapping="Wrap" />
                     </Panel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -146,7 +168,8 @@
                            VerticalAlignment="Center" MinWidth="56" />
                 <StackPanel Grid.Column="1" Spacing="1">
                   <TextBlock Text="{Binding Label}" FontSize="12.5" Foreground="{StaticResource FgBrush}" />
-                  <TextBlock Text="{Binding Rewrite}" Classes="mono" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Rewrite}" Classes="mono rw" TextWrapping="Wrap"
+                             Classes.invalid="{Binding ReferencesUnknownInput}" />
                 </StackPanel>
                 <Button Grid.Column="2" Content="✕" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}"
                         Command="{Binding #Root.((vm:ComposeOverlayViewModel)DataContext).RemoveCommand}"

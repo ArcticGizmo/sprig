@@ -31,18 +31,6 @@ public partial class InputEditRow : ObservableObject
     [RelayCommand] private void Remove() => _remove(this);
 }
 
-/// <summary>One editable <c>KEY = value</c> pair inside an env file.</summary>
-public partial class KvEditRow : ObservableObject
-{
-    readonly Action<KvEditRow> _remove;
-    public KvEditRow(Action<KvEditRow> remove) => _remove = remove;
-
-    [ObservableProperty] private string _key = "";
-    [ObservableProperty] private string _value = "";
-
-    [RelayCommand] private void Remove() => _remove(this);
-}
-
 /// <summary>One editable template file path an env override seeds from.</summary>
 public partial class TemplateFileRow : ObservableObject
 {
@@ -84,38 +72,66 @@ public enum EnvFileStatus
     NotIgnoredNew,
 }
 
-/// <summary>One editable <c>.env.*</c> file plus the keys it clobbers.</summary>
+/// <summary>One editable <c>.env.*</c> override: the target file, its seed templates, and an
+/// interactive merged-env overlay for choosing which keys to clobber (the env analogue of
+/// <see cref="ComposeFileEditRow"/>).</summary>
 public partial class EnvFileEditRow : ObservableObject
 {
     readonly Action<EnvFileEditRow> _remove;
     readonly Func<string, CancellationToken, Task<EnvFileStatus>> _classify;
     readonly Func<string, IReadOnlyList<string>> _keysFor;
+    readonly Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> _examplesFor;
     readonly Func<string, bool> _exists;
+    readonly IEnumerable<string> _variables;
     CancellationTokenSource? _cts;
+
+    /// <summary>The saved overrides (KEY→template) this row was loaded with — the overlay's fallback
+    /// seed until it (re)builds, and what <see cref="CurrentSet"/> returns before the overlay exists.</summary>
+    IReadOnlyDictionary<string, string> _seedSet = new Dictionary<string, string>();
 
     public EnvFileEditRow(
         Action<EnvFileEditRow> remove,
         Func<string, CancellationToken, Task<EnvFileStatus>> classify,
         Func<string, IReadOnlyList<string>> keysFor,
-        Func<string, bool> exists)
+        Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> examplesFor,
+        Func<string, bool> exists,
+        IEnumerable<string> variables)
     {
         _remove = remove;
         _classify = classify;
         _keysFor = keysFor;
+        _examplesFor = examplesFor;
         _exists = exists;
-        // Seed templates contribute their own keys to the autosuggest, so re-gather when they change.
+        _variables = variables;
+        // Seed templates contribute their own keys to the merged view, so re-gather when they change.
         Templates.CollectionChanged += OnTemplatesChanged;
     }
 
     [ObservableProperty] private string _file = "";
-    public ObservableCollection<KvEditRow> Set { get; } = [];
+
+    /// <summary>The interactive merged-env editor for this file (null until a file path is entered).</summary>
+    [ObservableProperty] private EnvOverlayViewModel? _overlay;
 
     /// <summary>Template files this override seeds the worktree's copy from (optional, ordered).</summary>
     public ObservableCollection<TemplateFileRow> Templates { get; } = [];
 
-    /// <summary>Variable names found in the target file (and its template companions) — feeds the
-    /// KEY field's autosuggest. Refreshed off the UI thread whenever <see cref="File"/> changes.</summary>
-    public ObservableCollection<string> AvailableKeys { get; } = [];
+    /// <summary>Whether an overlay exists to show (only once a file path is entered).</summary>
+    public bool HasOverlay => Overlay is not null;
+
+    /// <summary>Raised when this file's applied overrides change (bubbled from the overlay, and re-fired
+    /// when the overlay itself is rebuilt) — the repo editor listens to keep the quick-add list current.</summary>
+    public event EventHandler? OverridesChanged;
+
+    /// <summary>The overrides to persist: whatever the live overlay holds, else the loaded seed.</summary>
+    public IReadOnlyDictionary<string, string> CurrentSet => Overlay?.ToSet() ?? _seedSet;
+
+    /// <summary>Populate the row from a loaded config entry (sets the seed, then the file path).</summary>
+    public void Seed(string file, IReadOnlyDictionary<string, string> set)
+    {
+        _seedSet = set;
+        if (File == file) Reclassify();   // no OnFileChanged to trigger it
+        else File = file;
+    }
 
     /// <summary>Git relationship of <see cref="File"/>; recomputed off the UI thread as it changes
     /// (the gitignore probe shells out to git, so it can't run inline on the keystroke).</summary>
@@ -145,8 +161,8 @@ public partial class EnvFileEditRow : ObservableObject
 
     partial void OnFileChanged(string value) => Reclassify();
 
-    /// <summary>Recompute the git status and the key suggestions off the UI thread. Runs on a
-    /// <see cref="File"/> edit and whenever the seed templates change (they add their own keys).</summary>
+    /// <summary>Recompute the git status and rebuild the merged-env overlay off the UI thread. Runs on
+    /// a <see cref="File"/> edit and whenever the seed templates change (they add their own keys).</summary>
     void Reclassify()
     {
         _cts?.Cancel();
@@ -173,22 +189,28 @@ public partial class EnvFileEditRow : ObservableObject
     {
         EnvFileStatus result;
         IReadOnlyList<string> keys;
+        IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> examples;
         try
         {
             result = await _classify(file, ct);
             var templatePaths = Templates.Select(t => t.Path).ToList();  // snapshot on the UI thread
-            keys = await Task.Run(() => GatherKeys(file, templatePaths), ct);
+            (keys, examples) = await Task.Run(
+                () => (GatherKeys(file, templatePaths), GatherExamples(file, templatePaths)), ct);
         }
         catch (OperationCanceledException) { return; }
         if (ct.IsCancellationRequested) return;
 
         Status = result;
-        AvailableKeys.Clear();
-        foreach (var k in keys) AvailableKeys.Add(k);
+
+        // (Re)build the overlay from the freshly gathered keys/examples, carrying forward whatever
+        // overrides the live overlay already holds (else the loaded seed) — so editing the file path
+        // or templates never drops in-progress overrides.
+        var seed = Overlay?.ToSet() ?? _seedSet;
+        Overlay = new EnvOverlayViewModel(keys, examples, seed, _variables);
     }
 
-    /// <summary>Variable names to suggest for this override's KEY field: the union of those declared
-    /// in the target file and in each configured seed template, in first-seen order.</summary>
+    /// <summary>The keys shown in the merged env view: the union of those declared in the target file
+    /// and in each configured seed template, in first-seen order.</summary>
     IReadOnlyList<string> GatherKeys(string file, IReadOnlyList<string> templatePaths)
     {
         var keys = new List<string>();
@@ -201,6 +223,28 @@ public partial class EnvFileEditRow : ObservableObject
         return keys;
     }
 
+    /// <summary>Example values to show per key: the union of those declared in the target file and
+    /// each configured seed template (first source wins per key, one example per source file).</summary>
+    IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> GatherExamples(string file, IReadOnlyList<string> templatePaths)
+    {
+        var map = new Dictionary<string, List<EnvExample>>(StringComparer.Ordinal);
+        void Merge(IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> src)
+        {
+            foreach (var (key, examples) in src)
+            {
+                if (!map.TryGetValue(key, out var list))
+                    map[key] = list = [];
+                foreach (var ex in examples)
+                    if (!list.Any(e => e.Source == ex.Source)) list.Add(ex);
+            }
+        }
+
+        Merge(_examplesFor(file));
+        foreach (var t in templatePaths)
+            if (!string.IsNullOrWhiteSpace(t)) Merge(_examplesFor(t));
+        return map.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<EnvExample>)kv.Value, StringComparer.Ordinal);
+    }
+
     partial void OnStatusChanged(EnvFileStatus value)
     {
         OnPropertyChanged(nameof(ShowTrackedWarning));
@@ -209,8 +253,18 @@ public partial class EnvFileEditRow : ObservableObject
         OnPropertyChanged(nameof(NotIgnoredMessage));
     }
 
+    partial void OnOverlayChanged(EnvOverlayViewModel? oldValue, EnvOverlayViewModel? newValue)
+    {
+        OnPropertyChanged(nameof(HasOverlay));
+        if (oldValue is not null) oldValue.OverridesChanged -= BubbleOverridesChanged;
+        if (newValue is not null) newValue.OverridesChanged += BubbleOverridesChanged;
+        // A rebuilt overlay may reference different inputs, so re-announce.
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    void BubbleOverridesChanged(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
+
     [RelayCommand] private void Remove() => _remove(this);
-    [RelayCommand] private void AddKey() => Set.Add(new KvEditRow(r => Set.Remove(r)));
     [RelayCommand] private void AddTemplate() => Templates.Add(new TemplateFileRow(r => Templates.Remove(r), _exists));
 }
 
@@ -253,6 +307,10 @@ public partial class ComposeFileEditRow : ObservableObject
     /// <summary>Whether an overlay exists to show (only once a file path is entered).</summary>
     public bool HasOverlay => Overlay is not null;
 
+    /// <summary>Raised when this file's applied overrides change (bubbled from the overlay, and re-fired
+    /// when the overlay itself is rebuilt) — the repo editor listens to keep the quick-add list current.</summary>
+    public event EventHandler? OverridesChanged;
+
     /// <summary>The overrides to persist: whatever the live overlay holds, else the disk seed.</summary>
     public IReadOnlyList<ComposeOverride> CurrentOverrides => Overlay?.ToOverrides() ?? _seed ?? [];
 
@@ -264,7 +322,16 @@ public partial class ComposeFileEditRow : ObservableObject
         OnPropertyChanged(nameof(ShowMissing));
     }
 
-    partial void OnOverlayChanged(ComposeOverlayViewModel? value) => OnPropertyChanged(nameof(HasOverlay));
+    partial void OnOverlayChanged(ComposeOverlayViewModel? oldValue, ComposeOverlayViewModel? newValue)
+    {
+        OnPropertyChanged(nameof(HasOverlay));
+        if (oldValue is not null) oldValue.OverridesChanged -= BubbleOverridesChanged;
+        if (newValue is not null) newValue.OverridesChanged += BubbleOverridesChanged;
+        // A rebuilt overlay may reference different inputs, so re-announce.
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    void BubbleOverridesChanged(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>Populate the row from a loaded config entry (sets the disk seed, then the file).</summary>
     public void Seed(string file, IReadOnlyList<ComposeOverride> overrides)
@@ -317,6 +384,10 @@ public partial class RepoEditViewModel : ObservableObject
         // Keep the ${sprig.*} variable list live: it feeds token autocomplete + validity, and inputs
         // can be added/renamed in this same form.
         Inputs.CollectionChanged += OnInputsChanged;
+        // Env/compose overrides are where ${sprig.*} inputs get referenced — track their rows so the
+        // "referenced but not declared" quick-add list stays current as overrides are edited.
+        Env.CollectionChanged += OnOverrideRowsChanged;
+        Compose.CollectionChanged += OnOverrideRowsChanged;
         RefreshSprigVariableNames();
     }
 
@@ -338,6 +409,15 @@ public partial class RepoEditViewModel : ObservableObject
 
     /// <summary>True when at least one input is declared — gates the inputs column header.</summary>
     public bool HasInputs => Inputs.Count > 0;
+
+    /// <summary><c>${sprig.*}</c> names referenced by an env/compose override that aren't declared as
+    /// inputs yet — offered as one-click "quick add" chips so you can reference inputs as you go and
+    /// declare them after. These are exactly what blocks a save (see <see cref="Save"/>), so the list
+    /// empties to nothing before the config is valid.</summary>
+    public ObservableCollection<string> MissingInputRefs { get; } = [];
+
+    /// <summary>True when at least one referenced input is undeclared — gates the quick-add strip.</summary>
+    public bool HasMissingInputRefs => MissingInputRefs.Count > 0;
 
     [ObservableProperty] private string? _error;
 
@@ -365,12 +445,11 @@ public partial class RepoEditViewModel : ObservableObject
 
         foreach (var e in c.Env)
         {
-            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.RepoFileExists)
-                { File = e.File };
+            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.EnvExamplesFor,
+                vm.RepoFileExists, vm.SprigVariableNames);
             foreach (var t in e.Templates ?? [])
                 file.Templates.Add(new TemplateFileRow(r => file.Templates.Remove(r), vm.RepoFileExists) { Path = t });
-            foreach (var kv in e.Set)
-                file.Set.Add(new KvEditRow(r => file.Set.Remove(r)) { Key = kv.Key, Value = kv.Value });
+            file.Seed(e.File, e.Set);   // sets the seed overrides, then the file (which builds the overlay)
             vm.Env.Add(file);
         }
 
@@ -381,6 +460,7 @@ public partial class RepoEditViewModel : ObservableObject
             vm.Compose.Add(row);
         }
 
+        vm.RefreshMissingInputRefs();
         return vm;
     }
 
@@ -397,12 +477,63 @@ public partial class RepoEditViewModel : ObservableObject
         if (e.NewItems is not null)
             foreach (InputEditRow r in e.NewItems) r.PropertyChanged += OnInputRowChanged;
         RefreshSprigVariableNames();
+        RefreshMissingInputRefs();   // declaring/removing an input changes what's still "missing"
         OnPropertyChanged(nameof(HasInputs));
     }
 
     void OnInputRowChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(InputEditRow.Name)) RefreshSprigVariableNames();
+        if (e.PropertyName != nameof(InputEditRow.Name)) return;
+        RefreshSprigVariableNames();
+        RefreshMissingInputRefs();
+    }
+
+    // -- referenced-but-undeclared inputs (quick add) --------------------------
+
+    void OnOverrideRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (var item in e.OldItems) Unsubscribe(item);
+        if (e.NewItems is not null)
+            foreach (var item in e.NewItems) Subscribe(item);
+        RefreshMissingInputRefs();
+
+        void Subscribe(object? item)
+        {
+            if (item is EnvFileEditRow ef) ef.OverridesChanged += OnOverrideChanged;
+            else if (item is ComposeFileEditRow cf) cf.OverridesChanged += OnOverrideChanged;
+        }
+        void Unsubscribe(object? item)
+        {
+            if (item is EnvFileEditRow ef) ef.OverridesChanged -= OnOverrideChanged;
+            else if (item is ComposeFileEditRow cf) cf.OverridesChanged -= OnOverrideChanged;
+        }
+    }
+
+    void OnOverrideChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
+
+    /// <summary>Recompute which referenced <c>${sprig.*}</c> inputs aren't declared yet, off the live
+    /// edit state. Cheap and best-effort — a refresh must never interrupt editing.</summary>
+    void RefreshMissingInputRefs()
+    {
+        List<string> missing;
+        try { missing = ConfigReferences.UndeclaredReferences(Build()).ToList(); }
+        catch { return; }
+        if (MissingInputRefs.SequenceEqual(missing, StringComparer.Ordinal)) return;
+        MissingInputRefs.Clear();
+        foreach (var m in missing) MissingInputRefs.Add(m);
+        OnPropertyChanged(nameof(HasMissingInputRefs));
+    }
+
+    /// <summary>Declare a referenced-but-missing input from its quick-add chip (name pre-filled; fill
+    /// example/description later). No-op if it's already declared.</summary>
+    [RelayCommand]
+    private void QuickAddInput(string? name)
+    {
+        var n = (name ?? "").Trim();
+        if (n.Length == 0 || Inputs.Any(i => string.Equals(i.Name.Trim(), n, StringComparison.Ordinal)))
+            return;
+        Inputs.Add(new InputEditRow(RemoveInputRow) { Name = n });   // OnInputsChanged refreshes the rest
     }
 
     /// <summary>Rebuild the variable list in place (so bound editors update) from the current inputs.</summary>
@@ -424,11 +555,8 @@ public partial class RepoEditViewModel : ObservableObject
 
     [RelayCommand]
     private void AddEnvFile()
-    {
-        var file = new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, RepoFileExists);
-        file.Set.Add(new KvEditRow(r => file.Set.Remove(r)));
-        Env.Add(file);
-    }
+        => Env.Add(new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, EnvExamplesFor,
+            RepoFileExists, SprigVariableNames));
 
     [RelayCommand]
     private void AddComposeFile()
@@ -456,6 +584,11 @@ public partial class RepoEditViewModel : ObservableObject
     /// <summary>Variable names available for an env-file field — the file's own keys plus any from a
     /// companion template (<c>.env.template</c> etc.). Best-effort; drives the KEY autosuggest.</summary>
     public IReadOnlyList<string> EnvKeysFor(string file) => EnvKeyReader.KeysForFile(RepoPath, file);
+
+    /// <summary>Example values per key for an env-file field — the values that key already has in the
+    /// target file and its companion templates. Best-effort; feeds each key row's info flyout.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> EnvExamplesFor(string file)
+        => EnvKeyReader.ExamplesForFile(RepoPath, file);
 
     /// <summary>True if the given repo-relative path is tracked in git (and so off-limits to override).</summary>
     public bool IsTracked(string file)
@@ -542,7 +675,7 @@ public partial class RepoEditViewModel : ObservableObject
             {
                 File = e.File.Trim(),
                 Templates = templates.Count > 0 ? templates : null,
-                Set = ToDict(e.Set),
+                Set = new Dictionary<string, string>(e.CurrentSet, StringComparer.Ordinal),
             };
         }).ToList(),
         Compose = Compose.Select(c => new ComposeConfig
@@ -594,17 +727,4 @@ public partial class RepoEditViewModel : ObservableObject
     }
 
     static string? Blank(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-
-    // Last value wins on a duplicate key — the validator has no cross-key check, and a dict can't
-    // hold duplicates anyway; this just avoids throwing while the user is mid-edit.
-    static Dictionary<string, string> ToDict(IEnumerable<KvEditRow> rows)
-    {
-        var dict = new Dictionary<string, string>();
-        foreach (var r in rows)
-        {
-            var key = r.Key.Trim();
-            if (key.Length > 0) dict[key] = r.Value;
-        }
-        return dict;
-    }
 }

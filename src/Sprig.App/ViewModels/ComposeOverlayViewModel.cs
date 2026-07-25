@@ -174,10 +174,12 @@ public partial class ComposeOverlayViewModel : ObservableObject
         };
     }
 
-    // The editor opens on the current value; the user templates it with autocomplete. (We don't
-    // pre-fill a ${sprig.ports.*} guess — a repo references its own declared inputs, not stack ports,
-    // so a guessed token would just read as invalid.)
-    private static string DefaultDraft(ComposeToken token) => token.Text;
+    // The editor opens on the current value; the user templates it with autocomplete. The one guess we
+    // make is a value that hard-codes a local port (a localhost URL or connection string) — that port
+    // is pre-templated to a declared input. A host:container port like "5432:5432" has no local host,
+    // so it's left as-is (its own note covers the host-port case).
+    private string DefaultDraft(ComposeToken token)
+        => LocalPortGuess.Rewrite(token.Text, Variables.ToList()) ?? token.Text;
 
     private static string FieldLabel(ComposeToken token) => token.Kind switch
     {

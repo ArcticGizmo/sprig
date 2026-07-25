@@ -145,7 +145,8 @@ public partial class EnvOverlayViewModel : ObservableObject
                 Examples = GroupExamples(ExamplesFor(key)),
                 IsApplied = applied,
                 Display = applied ? template! : "override",
-                Draft = applied ? template! : string.Empty,
+                // Unset keys open on a guess when an example hard-codes a local port (else empty).
+                Draft = applied ? template! : (GuessDraft(key) ?? string.Empty),
                 ReferencesUnknownInput = applied && ReferencesUnknownInput(template!),
             };
             Keys.Add(row);
@@ -180,6 +181,18 @@ public partial class EnvOverlayViewModel : ObservableObject
 
     private IReadOnlyList<EnvExample> ExamplesFor(string key)
         => _examples.TryGetValue(key, out var list) ? list : [];
+
+    // If an example value for this key hard-codes a local port (a localhost URL or connection
+    // string), pre-fill the editor with that port templated to a declared input — one-click templating
+    // for the common case. Null when nothing local is found (or the input to use is ambiguous).
+    private string? GuessDraft(string key)
+    {
+        var inputs = Variables.ToList();
+        foreach (var example in ExamplesFor(key))
+            if (LocalPortGuess.Rewrite(example.Value, inputs) is { } guess)
+                return guess;
+        return null;
+    }
 
     // Collapse example values that repeat across files into one entry, listing the sharing files under
     // a single header (e.g. ".env.local, .env.example" → "8080") so the same value isn't shown twice.

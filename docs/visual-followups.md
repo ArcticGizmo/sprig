@@ -48,3 +48,20 @@ them — they were deliberately deferred rather than verified with screenshots.
       it — no row is left showing `unknown port`. Renames commit on blur, not per keystroke.
 - [ ] Saving a stack where two inputs point at one port and reopening it (Edit) still shows them as
       `shared` (the `shares` block persisted). Check the exported JSON contains a `shares` entry.
+
+## M5 — Patchbay canvas
+
+**Already verified (static render):** the canvas draws on real Skia without error — repos + pins
+either side, green port rail, blue/pink cables, `SHARED ×2` highlight. Regenerate any time with
+`dotnet run --project src/Sprig.App -- render <dir>`, which now emits `stacks_wiring_diagram.png`
+(alongside the other view PNGs) into `<dir>`. The first run landed under `captures/` (gitignored).
+
+Still needs a live window (can't be caught by a static capture):
+
+- [ ] Stacks detail has a **Diagram / List** toggle; selecting a stack and toggling shows the
+      patchbay; toggling back restores the REPOS/PORTS/INPUTS lists.
+- [ ] **Hovering a port** dims every cable not on it (so a shared port's fan-out stands out); moving
+      off restores them. (Interactive — not in the PNG.)
+- [ ] Unbound / unknown-port inputs render with a **red** pin + label in a real stack that has them.
+- [ ] The 440-high diagram panel scrolls (H/V) for a stack with many repos/ports without clipping.
+- [ ] Legend row under the diagram matches the cable/port colours.

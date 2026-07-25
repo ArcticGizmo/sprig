@@ -117,6 +117,28 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>The selected stack's per-repo bindings, flattened for the detail panel.</summary>
     public ObservableCollection<StackBindingView> DetailBindings { get; } = [];
 
+    /// <summary>When on, the detail panel shows the selected stack as a wiring diagram instead of lists.</summary>
+    [ObservableProperty] private bool _showDiagram;
+
+    /// <summary>The selected stack's wiring, laid out by the patchbay canvas.</summary>
+    [ObservableProperty] private WiringGraph? _wiring;
+
+    public string DiagramToggleLabel => ShowDiagram ? "List" : "Diagram";
+    partial void OnShowDiagramChanged(bool value) => OnPropertyChanged(nameof(DiagramToggleLabel));
+
+    [RelayCommand]
+    private void ToggleDiagram() => ShowDiagram = !ShowDiagram;
+
+    /// <summary>Derive the wiring graph for the selected stack (repos, ports, declared inputs, bindings).</summary>
+    void RebuildWiring()
+    {
+        if (Selected is not { } stack) { Wiring = null; return; }
+        var inputs = stack.Repos.ToDictionary(
+            r => r,
+            r => (IReadOnlyList<string>)LoadInputs(r).Select(i => i.Name).ToList());
+        Wiring = WiringGraph.Build(stack.Repos, stack.Ports, inputs, stack.Bindings);
+    }
+
     public bool HasSelected => Selected is not null;
 
     /// <summary>Editing is allowed only when no workspaces were built from this stack.</summary>
@@ -152,6 +174,7 @@ public partial class StacksViewModel : PageViewModel
             }
 
         OnPropertyChanged(nameof(HasSelected));
+        RebuildWiring();
         RefreshAttached();
     }
 

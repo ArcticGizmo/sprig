@@ -739,4 +739,26 @@ public class ManagementViewModelTests
         Assert.True(Row(vm, "vue", "apiUrl").ShowShared);
         Assert.True(Row(vm, "api", "port").ShowShared);
     }
+
+    [Fact]
+    public void Selecting_a_stack_builds_its_wiring_graph_and_the_toggle_flips()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
+        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
+        vm.CreateCommand.Execute(null);
+
+        vm.Selected = vm.Stacks.Single();
+
+        Assert.NotNull(vm.Wiring);
+        Assert.Contains(vm.Wiring!.Ports, p => p.Name == "api_port" && p.Shared);
+        Assert.Contains(vm.Wiring.Edges, e => e is { Repo: "vue", Input: "apiUrl", Transform: true });
+
+        Assert.Equal("Diagram", vm.DiagramToggleLabel);
+        vm.ToggleDiagramCommand.Execute(null);
+        Assert.True(vm.ShowDiagram);
+        Assert.Equal("List", vm.DiagramToggleLabel);
+    }
 }

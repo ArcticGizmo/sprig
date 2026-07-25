@@ -37,3 +37,14 @@ them — they were deliberately deferred rather than verified with screenshots.
 - [ ] Choosing a preset rewrites the token box over the same port; choosing **Custom…** leaves the
       expression alone for hand-editing.
 - [ ] The dropdown sits comfortably next to the token box without overflowing the modal width.
+
+## M4 — Explicit share + rename propagation
+
+- [ ] Each binding row shows a **port picker** ("share a port…") listing the stack's ports; picking
+      one binds the input to it. Picking a port another input already uses turns both rows `shared`.
+- [ ] The **port** + **as** (transform) dropdowns sit on one line under the token box and wrap/fit
+      within the 720-wide modal (check with 2–3 repos expanded).
+- [ ] **Renaming a port** (edit the name, then Tab/click away) rewrites every binding that referenced
+      it — no row is left showing `unknown port`. Renames commit on blur, not per keystroke.
+- [ ] Saving a stack where two inputs point at one port and reopening it (Edit) still shows them as
+      `shared` (the `shares` block persisted). Check the exported JSON contains a `shares` entry.

@@ -678,4 +678,65 @@ public class ManagementViewModelTests
         Row(vm, "vue", "apiUrl").Expression = "http://localhost:4000"; // a constant, no port
         Assert.False(Row(vm, "vue", "apiUrl").CanTransform);
     }
+
+    static StacksViewModel WebPlusApi(AppServices services, string root)
+    {
+        services.Repos.Add(MakeRepoWithInputs(root, "vue", ("apiUrl", "http://localhost:4000")));
+        services.Repos.Add(MakeRepoWithInputs(root, "api", ("port", "5000")));
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+        vm.AddPortCommand.Execute(null);
+        vm.Ports.Single().Name = "api_port";
+        return vm;
+    }
+
+    [Fact]
+    public void Saving_persists_the_shared_port_relationship()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
+        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
+        vm.CreateCommand.Execute(null);
+
+        var saved = services.Stacks.Get("web+api");
+        Assert.NotNull(saved);
+        var share = Assert.Single(saved!.Shares);
+        Assert.Equal("api_port", share.Port);
+        Assert.Equal(2, share.Consumers.Count);
+    }
+
+    [Fact]
+    public void Renaming_a_port_rewrites_every_binding_that_uses_it()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
+
+        vm.Ports.Single().Name = "web_port"; // commit a rename
+
+        Assert.Equal("${sprig.ports.web_port}", Row(vm, "vue", "frontend").Expression);
+    }
+
+    [Fact]
+    public void Choosing_a_port_in_the_row_picker_binds_it_and_shares_when_reused()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        Row(vm, "vue", "apiUrl").Port = "api_port"; // explicit "share a port"
+        Row(vm, "api", "port").Port = "api_port";
+
+        Assert.Equal("${sprig.ports.api_port}", Row(vm, "api", "port").Expression);
+        Assert.True(Row(vm, "vue", "apiUrl").ShowShared);
+        Assert.True(Row(vm, "api", "port").ShowShared);
+    }
 }

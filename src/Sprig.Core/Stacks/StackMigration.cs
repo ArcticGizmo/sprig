@@ -20,28 +20,6 @@ public static class StackMigration
     /// The shared ports implied by the bindings: each stack port that two or more distinct
     /// <c>(repo, input)</c> bindings reference, with those consumers in a stable order.
     /// </summary>
-    public static IReadOnlyList<SharedPort> DeriveShares(StackDefinition def)
-    {
-        var declared = new HashSet<string>(def.Ports, StringComparer.Ordinal);
-        var byPort = new Dictionary<string, List<PortConsumer>>(StringComparer.Ordinal);
-
-        foreach (var repo in def.Repos)
-        {
-            if (!def.Bindings.TryGetValue(repo, out var inputs)) continue;
-            foreach (var (input, expr) in inputs.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-                foreach (var port in PortExpressions.ReferencedPorts(expr))
-                {
-                    if (!declared.Contains(port)) continue;
-                    if (!byPort.TryGetValue(port, out var list))
-                        byPort[port] = list = [];
-                    list.Add(new PortConsumer { Repo = repo, Input = input });
-                }
-        }
-
-        return byPort
-            .Where(kv => kv.Value.Count >= 2)
-            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => new SharedPort { Port = kv.Key, Consumers = kv.Value })
-            .ToList();
-    }
+    public static IReadOnlyList<SharedPort> DeriveShares(StackDefinition def) =>
+        StackShares.Derive(def.Repos, def.Ports, def.Bindings);
 }

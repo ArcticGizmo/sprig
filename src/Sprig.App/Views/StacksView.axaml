@@ -244,7 +244,9 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:StackPortRow">
                                             <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
-                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay}" PlaceholderText="e.g. api_port" FontSize="12" />
+                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         PlaceholderText="e.g. api_port" FontSize="12"
+                                                         ToolTip.Tip="Rename to update every binding that uses this port." />
                                                 <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0"
                                                            FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource MutedBrush}">
                                                     <Run Text="≈ " /><Run Text="{Binding Preview}" />
@@ -311,12 +313,19 @@
                                                                     <Border IsVisible="{Binding ShowAuto}" CornerRadius="4" Padding="6,1" Background="#264ADE80">
                                                                         <TextBlock Text="auto" FontSize="10" Foreground="{StaticResource OkBrush}" /></Border>
                                                                 </StackPanel>
-                                                                <Grid ColumnDefinitions="*,Auto">
-                                                                    <controls:SprigTokenBox Grid.Column="0" Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
-                                                                             Watermark="literal or ${sprig.ports.NAME}"
-                                                                             Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />
-                                                                    <ComboBox Grid.Column="1" IsVisible="{Binding CanTransform}" Margin="8,0,0,0" MinWidth="170"
-                                                                              VerticalAlignment="Center"
+                                                                <controls:SprigTokenBox Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
+                                                                         Watermark="literal or ${sprig.ports.NAME}"
+                                                                         Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />
+                                                                <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                            IsVisible="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).HasPorts}">
+                                                                    <TextBlock Text="port" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                                    <ComboBox MinWidth="140" FontSize="12" PlaceholderText="share a port…"
+                                                                              ItemsSource="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).PortNames}"
+                                                                              SelectedItem="{Binding Port, Mode=TwoWay}"
+                                                                              ToolTip.Tip="Bind to a stack port — pick one another input already uses to share it." />
+                                                                    <TextBlock Text="as" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                                                               IsVisible="{Binding CanTransform}" />
+                                                                    <ComboBox IsVisible="{Binding CanTransform}" MinWidth="170" FontSize="12"
                                                                               ItemsSource="{Binding TransformOptions}" SelectedItem="{Binding SelectedTransform, Mode=TwoWay}"
                                                                               ToolTip.Tip="How this port becomes the value">
                                                                         <ComboBox.ItemTemplate>
@@ -325,7 +334,7 @@
                                                                             </DataTemplate>
                                                                         </ComboBox.ItemTemplate>
                                                                     </ComboBox>
-                                                                </Grid>
+                                                                </StackPanel>
                                                                 <SelectableTextBlock IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                                                            FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap">
                                                                     <Run Text="e.g. " /><Run Text="{Binding Example}" />

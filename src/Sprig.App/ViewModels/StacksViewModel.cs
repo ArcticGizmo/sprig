@@ -60,6 +60,10 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>The tokens the binding expressions can autosuggest: <c>workspace</c> + one per named port.</summary>
     public ObservableCollection<string> BindingVariables { get; } = ["workspace"];
 
+    /// <summary>Just the named ports — the choices in each row's "share a port" picker.</summary>
+    public ObservableCollection<string> PortNames { get; } = [];
+    public bool HasPorts => PortNames.Count > 0;
+
     [ObservableProperty] private StackDefinition? _selected;
 
     /// <summary>The stack name — path-compatible, used as the filename/key, worktree folder and branch.</summary>
@@ -175,12 +179,7 @@ public partial class StacksViewModel : PageViewModel
 
         foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
-        foreach (var p in stack.Ports)
-        {
-            var row = new StackPortRow { Name = p };
-            row.PropertyChanged += OnPortRowChanged;
-            Ports.Add(row);
-        }
+        foreach (var p in stack.Ports) Ports.Add(NewPortRow(p));
         ReindexPortPreviews();
         RebuildBindingVariables();
 
@@ -251,9 +250,7 @@ public partial class StacksViewModel : PageViewModel
     [RelayCommand]
     private void AddPort()
     {
-        var row = new StackPortRow();
-        row.PropertyChanged += OnPortRowChanged;
-        Ports.Add(row);
+        Ports.Add(NewPortRow());
         ReindexPortPreviews();
         RebuildBindingVariables();
         RefreshClassification();
@@ -271,19 +268,54 @@ public partial class StacksViewModel : PageViewModel
 
     void OnPortRowChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(StackPortRow.Name)) { RebuildBindingVariables(); RefreshClassification(); }
+        if (e.PropertyName != nameof(StackPortRow.Name)) return;
+
+        // Renaming a port rewrites every binding that referenced it, so a rename never silently
+        // orphans a wiring. The port name box commits on blur, so this sees one old→new transition.
+        if (sender is StackPortRow row)
+        {
+            var renamed = row.Name.Trim();
+            var previous = row.CommittedName;
+            if (previous.Length > 0 && renamed.Length > 0 && previous != renamed)
+                PropagatePortRename(previous, renamed);
+            row.CommittedName = renamed;
+        }
+
+        RebuildBindingVariables();
+        RefreshClassification();
     }
 
-    /// <summary>Rebuild the autosuggest tokens for binding expressions from the current named ports.</summary>
+    /// <summary>Rewrite every binding expression that references <paramref name="oldName"/> to use the new port name.</summary>
+    void PropagatePortRename(string oldName, string newName)
+    {
+        var oldToken = $"${{sprig.ports.{oldName}}}";
+        var newToken = $"${{sprig.ports.{newName}}}";
+        foreach (var group in Bindings)
+            foreach (var bindingRow in group.Rows)
+                if (bindingRow.Expression.Contains(oldToken, StringComparison.Ordinal))
+                    bindingRow.Expression = bindingRow.Expression.Replace(oldToken, newToken, StringComparison.Ordinal);
+    }
+
+    /// <summary>Create a port row wired for change tracking (rename propagation + previews).</summary>
+    StackPortRow NewPortRow(string name = "")
+    {
+        var row = new StackPortRow { Name = name, CommittedName = name };
+        row.PropertyChanged += OnPortRowChanged;
+        return row;
+    }
+
+    /// <summary>Rebuild the autosuggest tokens and the port picker list from the current named ports.</summary>
     void RebuildBindingVariables()
     {
         BindingVariables.Clear();
         BindingVariables.Add("workspace");
+        PortNames.Clear();
         foreach (var p in Ports)
         {
             var n = p.Name.Trim();
-            if (n.Length > 0) BindingVariables.Add("ports." + n);
+            if (n.Length > 0) { BindingVariables.Add("ports." + n); PortNames.Add(n); }
         }
+        OnPropertyChanged(nameof(HasPorts));
     }
 
     [RelayCommand]
@@ -298,10 +330,12 @@ public partial class StacksViewModel : PageViewModel
                 .Where(r => !string.IsNullOrWhiteSpace(r.Expression))
                 .ToDictionary(r => r.Input, r => r.Expression.Trim()));
 
+        var shares = StackShares.Derive(repos, ports, bindings);
+
         Error = null; Status = null;
         try
         {
-            Services.Stacks.Save(new StackDefinition { Name = name, Repos = repos, Ports = ports, Bindings = bindings });
+            Services.Stacks.Save(new StackDefinition { Name = name, Repos = repos, Ports = ports, Bindings = bindings, Shares = shares });
 
             // Editing with a changed name: the save wrote the new file, so drop the old one.
             var edited = EditingOriginalName;
@@ -520,12 +554,7 @@ public partial class StacksViewModel : PageViewModel
     {
         foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
-        foreach (var n in names)
-        {
-            var row = new StackPortRow { Name = n };
-            row.PropertyChanged += OnPortRowChanged;
-            Ports.Add(row);
-        }
+        foreach (var n in names) Ports.Add(NewPortRow(n));
         ReindexPortPreviews();
         RebuildBindingVariables();
         RefreshClassification();
@@ -542,6 +571,9 @@ public partial class StackPortRow : ViewModelBase
 {
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _preview = "";
+
+    /// <summary>The last committed name, so a rename can be detected and propagated to bindings.</summary>
+    public string CommittedName { get; set; } = "";
 }
 
 public sealed partial class RepoBindingGroup(string repo) : ViewModelBase
@@ -603,6 +635,17 @@ public partial class BindingRow(string input, string? example) : ViewModelBase
     {
         if (_syncingTransform || value is null || Port is null || value == TransformPresets.Custom) return;
         Expression = TransformPresets.Generate(value, Port);
+    }
+
+    /// <summary>
+    /// Picking a port binds this input to it (keeping the current transform form, defaulting to raw).
+    /// Choosing a port another input already uses is exactly how you share it.
+    /// </summary>
+    partial void OnPortChanged(string? value)
+    {
+        if (_syncingTransform || string.IsNullOrEmpty(value)) return;
+        var preset = SelectedTransform is { } p && p != TransformPresets.Custom ? p : TransformPresets.Raw;
+        Expression = TransformPresets.Generate(preset, value);
     }
 
     /// <summary>Reflect the current expression in the picker without treating it as a user edit.</summary>

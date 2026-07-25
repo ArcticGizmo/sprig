@@ -228,6 +228,37 @@ public partial class StacksViewModel : PageViewModel
         if (FindRow(request.Repo, request.Input) is { } row) row.Expression = request.Expression;
     }
 
+    /// <summary>Add a named stack port from the canvas (click the "create new…" slot with no drag).</summary>
+    [RelayCommand]
+    private void AddNamedPort(string? name)
+    {
+        var n = name?.Trim() ?? "";
+        if (n.Length == 0 || Ports.Any(p => p.Name.Trim() == n)) return;
+        Ports.Add(NewPortRow(n));
+        ReindexPortPreviews();
+        RebuildBindingVariables();
+        RefreshClassification();
+    }
+
+    /// <summary>Rename a stack port from the canvas; the row's own change handler propagates it to bindings.</summary>
+    [RelayCommand]
+    private void RenamePort(RenamePortRequest? request)
+    {
+        if (request is null) return;
+        var newName = request.NewName.Trim();
+        if (newName.Length == 0 || newName == request.OldName) return;
+        if (Ports.Any(p => p.Name.Trim() == newName)) return; // don't collide with an existing port
+        if (Ports.FirstOrDefault(p => p.Name.Trim() == request.OldName) is { } row) row.Name = newName;
+    }
+
+    /// <summary>Remove a stack port by name from the canvas (its cables drop away with it).</summary>
+    [RelayCommand]
+    private void RemoveNamedPort(string? name)
+    {
+        var n = name?.Trim() ?? "";
+        if (Ports.FirstOrDefault(p => p.Name.Trim() == n) is { } row) RemovePort(row);
+    }
+
     /// <summary>
     /// Create a new stack port and wire an input to it — the drop from the phantom "create new…" slot,
     /// once the user names the port. A name that already exists is reused rather than duplicated, so

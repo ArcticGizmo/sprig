@@ -379,8 +379,32 @@
 
                             <!-- Canvas view: the primary wiring surface -->
                             <StackPanel Spacing="8" IsVisible="{Binding BuilderDiagram}">
-                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it. Click an empty input to type a literal or ${sprig.workspace}. Click a wired input for transform presets; click a ƒ transform node to edit its expression. Drag an input off to unbind. Add repos in the Advanced (form) view." />
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               VerticalAlignment="Center" Margin="0,0,10,0"
+                                               Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it. Click an empty input to type a literal; click a port to rename/remove it; click a ƒ node to edit it. Drag an input off to unbind." />
+                                    <Button Grid.Column="1" Content="＋ Add repo" Margin="0,0,8,0" Padding="10,4" FontSize="12"
+                                            ToolTip.Tip="Add or remove repos in this stack">
+                                        <Button.Flyout>
+                                            <Flyout>
+                                                <StackPanel Spacing="2" MinWidth="180">
+                                                    <TextBlock Text="Repos in this stack" FontSize="11" Margin="2,2,2,6"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                    <ItemsControl ItemsSource="{Binding RepoChoices}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:RepoChoiceViewModel">
+                                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                    <Button Grid.Column="2" Content="⚡ Auto-wire" Command="{Binding AutoWireCommand}"
+                                            IsEnabled="{Binding CanAutoWire}" Padding="10,4" FontSize="12"
+                                            ToolTip.Tip="Propose a port + binding for every unbound input." />
+                                </Grid>
                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                         BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -392,7 +416,10 @@
                                                                WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
                                                                CreatePortCommand="{Binding CreatePortCommand}"
                                                                SetExpressionCommand="{Binding SetExpressionCommand}"
-                                                               Variables="{Binding BindingVariables}" />
+                                                               Variables="{Binding BindingVariables}"
+                                                               RenamePortCommand="{Binding RenamePortCommand}"
+                                                               RemovePortCommand="{Binding RemoveNamedPortCommand}"
+                                                               AddPortCommand="{Binding AddNamedPortCommand}" />
                                     </ScrollViewer>
                                 </Border>
                                 <WrapPanel>

@@ -919,6 +919,61 @@ public class ManagementViewModelTests
         Assert.Contains(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "name", UsesWorkspace: true });
     }
 
+    // --- Phase 4: port management from the canvas -----------------------------------------------
+
+    [Fact]
+    public void AddNamedPort_adds_a_port_and_ignores_blanks_and_duplicates()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.AddNamedPortCommand.Execute("api_port");
+        Assert.Contains(vm.Ports, p => p.Name == "api_port");
+
+        vm.AddNamedPortCommand.Execute("api_port"); // duplicate ignored
+        vm.AddNamedPortCommand.Execute("   ");        // blank ignored
+        Assert.Single(vm.Ports);
+    }
+
+    [Fact]
+    public void RenamePort_from_the_canvas_rewrites_bindings_and_rejects_collisions()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
+
+        vm.RenamePortCommand.Execute(new RenamePortRequest("frontend_port", "web_port"));
+        Assert.Contains(vm.Ports, p => p.Name == "web_port");
+        Assert.Equal("${sprig.ports.web_port}", Row(vm, "vue", "frontend").Expression);
+
+        // Renaming onto an existing port name is rejected (no silent merge).
+        vm.AddNamedPortCommand.Execute("other");
+        vm.RenamePortCommand.Execute(new RenamePortRequest("web_port", "other"));
+        Assert.Contains(vm.Ports, p => p.Name == "web_port"); // unchanged
+    }
+
+    [Fact]
+    public void RemoveNamedPort_from_the_canvas_drops_the_port()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+        Assert.Contains(vm.Ports, p => p.Name == "frontend_port");
+
+        vm.RemoveNamedPortCommand.Execute("frontend_port");
+        Assert.DoesNotContain(vm.Ports, p => p.Name == "frontend_port");
+    }
+
     [Fact]
     public void Dropping_a_port_on_an_already_bound_input_replaces_the_binding()
     {

@@ -61,6 +61,18 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<System.Collections.IEnumerable?> VariablesProperty =
         AvaloniaProperty.Register<WiringCanvas, System.Collections.IEnumerable?>(nameof(Variables));
 
+    /// <summary>Invoked with a <see cref="RenamePortRequest"/> from the port menu's Rename action.</summary>
+    public static readonly StyledProperty<ICommand?> RenamePortCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(RenamePortCommand));
+
+    /// <summary>Invoked with a port name (string) from the port menu's Remove action.</summary>
+    public static readonly StyledProperty<ICommand?> RemovePortCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(RemovePortCommand));
+
+    /// <summary>Invoked with a port name (string) when the "create new…" slot is clicked (no drag).</summary>
+    public static readonly StyledProperty<ICommand?> AddPortCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AddPortCommand));
+
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
@@ -75,6 +87,9 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public ICommand? CreatePortCommand { get => GetValue(CreatePortCommandProperty); set => SetValue(CreatePortCommandProperty, value); }
     public ICommand? SetExpressionCommand { get => GetValue(SetExpressionCommandProperty); set => SetValue(SetExpressionCommandProperty, value); }
     public System.Collections.IEnumerable? Variables { get => GetValue(VariablesProperty); set => SetValue(VariablesProperty, value); }
+    public ICommand? RenamePortCommand { get => GetValue(RenamePortCommandProperty); set => SetValue(RenamePortCommandProperty, value); }
+    public ICommand? RemovePortCommand { get => GetValue(RemovePortCommandProperty); set => SetValue(RemovePortCommandProperty, value); }
+    public ICommand? AddPortCommand { get => GetValue(AddPortCommandProperty); set => SetValue(AddPortCommandProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -531,6 +546,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                 else
                     WireCommand?.Execute(new WireRequest(t.Repo, t.Input, source)); // a real port (replaces)
             }
+            else if (!_dragMoved)
+            {
+                // A click with no drag: manage the slot itself.
+                if (source == CreatePortSlot)
+                    PromptAddPort();                          // name a new port (no wiring yet)
+                else if (source != WorkspaceSource)
+                    OpenPortMenu(source);                     // rename / remove a real port
+            }
 
             _dragMoved = false;
             e.Handled = true;
@@ -588,6 +611,64 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
         flyout.ShowAt(this, showAtPointer: true);
         box.Focus();
+    }
+
+    /// <summary>Pop a text box to name a brand-new port (clicking the "create new…" slot without dragging).</summary>
+    void PromptAddPort()
+    {
+        var box = new TextBox { PlaceholderText = "new port name, e.g. api_port", Width = 220, FontSize = 12 };
+        var flyout = new Flyout { Content = box };
+
+        void Commit()
+        {
+            var name = box.Text?.Trim() ?? "";
+            flyout.Hide();
+            if (name.Length > 0) AddPortCommand?.Execute(name);
+        }
+
+        box.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter) { Commit(); ke.Handled = true; }
+            else if (ke.Key == Key.Escape) { flyout.Hide(); ke.Handled = true; }
+        };
+        flyout.ShowAt(this, showAtPointer: true);
+        box.Focus();
+    }
+
+    /// <summary>The rename / remove menu for a real stack port (a click on the port with no drag).</summary>
+    void OpenPortMenu(string port)
+    {
+        var flyout = new MenuFlyout();
+        var rename = new MenuItem { Header = "Rename…" };
+        rename.Click += (_, _) => PromptRenamePort(port);
+        flyout.Items.Add(rename);
+        var remove = new MenuItem { Header = "Remove port" };
+        remove.Click += (_, _) => RemovePortCommand?.Execute(port);
+        flyout.Items.Add(remove);
+        flyout.ShowAt(this, showAtPointer: true);
+    }
+
+    /// <summary>Pop a text box prefilled with the port's name; commit renames it (and its bindings).</summary>
+    void PromptRenamePort(string port)
+    {
+        var box = new TextBox { Text = port, Width = 220, FontSize = 12 };
+        var flyout = new Flyout { Content = box };
+
+        void Commit()
+        {
+            var name = box.Text?.Trim() ?? "";
+            flyout.Hide();
+            if (name.Length > 0 && name != port) RenamePortCommand?.Execute(new RenamePortRequest(port, name));
+        }
+
+        box.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter) { Commit(); ke.Handled = true; }
+            else if (ke.Key == Key.Escape) { flyout.Hide(); ke.Handled = true; }
+        };
+        flyout.ShowAt(this, showAtPointer: true);
+        box.Focus();
+        box.SelectAll();
     }
 
     /// <summary>

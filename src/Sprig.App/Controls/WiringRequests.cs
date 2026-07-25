@@ -17,5 +17,8 @@ public sealed record CreatePortRequest(string Repo, string Input, string PortNam
 /// <summary>Set an input's expression directly — from the inline editor on an input or a transform node.</summary>
 public sealed record SetExpressionRequest(string Repo, string Input, string Expression);
 
+/// <summary>Rename a stack port (from the canvas port menu); every binding that used it is rewritten.</summary>
+public sealed record RenamePortRequest(string OldName, string NewName);
+
 /// <summary>Re-shape a bound input's value with a transform preset (from the canvas pin menu).</summary>
 public sealed record TransformRequest(string Repo, string Input, TransformPreset Preset);

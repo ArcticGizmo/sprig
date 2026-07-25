@@ -169,6 +169,20 @@ window:
 - [ ] A multi-port expression routes both source cables into one ƒ node (fan-in), one node→input
       segment out. (Wiring a second port into an existing node is Phase 5.)
 
+### Phase 4 — port/repo management on the canvas
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): the canvas toolbar shows
+**＋ Add repo** and **⚡ Auto-wire**. Logic unit-tested (add/rename/remove port, +3). Still needs a
+live window:
+
+- [ ] **Click a port** (no drag) → a menu with **Rename…** / **Remove port**; Rename pops a prefilled
+      box that rewrites every binding using it; Remove drops the port and its cables.
+- [ ] **Click "create new…"** (no drag) → a box to add a bare port (no wiring).
+- [ ] **＋ Add repo** opens a checkbox flyout; checking adds a repo (its inputs appear), unchecking
+      removes it. **⚡ Auto-wire** fills unbound inputs from the canvas.
+- [ ] Editing is still gated upstream (the builder only opens for a stack no workspace depends on),
+      so there is no locked-canvas state to reach here.
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

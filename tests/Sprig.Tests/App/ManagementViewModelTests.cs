@@ -576,110 +576,6 @@ public class ManagementViewModelTests
         Assert.Contains(vm.Ports, p => p.Name == "api_port");
     }
 
-    [Fact]
-    public void AutoWire_collapses_the_identity_row_but_leaves_the_transform_visible()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000"), ("apiUrl", "http://localhost:4000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-
-        var frontend = Row(vm, "vue", "frontend");
-        Assert.True(frontend.ShowAuto);
-        Assert.True(frontend.IsCollapsed);        // folded behind the strip
-
-        var apiUrl = Row(vm, "vue", "apiUrl");
-        Assert.True(apiUrl.ShowTransform);
-        Assert.False(apiUrl.IsCollapsed);         // an exception stays in view
-
-        var group = vm.Bindings.Single();
-        Assert.True(group.HasCollapsible);
-        Assert.Equal(1, group.CollapsibleCount);
-    }
-
-    [Fact]
-    public void Toggling_a_group_reveals_its_folded_rows()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-
-        var frontend = Row(vm, "vue", "frontend");
-        Assert.True(frontend.IsCollapsed);
-
-        vm.ToggleGroupCommand.Execute(vm.Bindings.Single());
-        Assert.False(frontend.IsCollapsed);       // revealed
-    }
-
-    [Fact]
-    public void Pointing_two_inputs_at_one_port_flags_them_shared_and_keeps_them_visible()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
-        foreach (var c in vm.RepoChoices) c.IsSelected = true;
-        vm.AddPortCommand.Execute(null);
-        vm.Ports.Single().Name = "api_port";
-
-        // Both consume api_port — vue via a transform, api raw.
-        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
-        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
-
-        var apiUrl = Row(vm, "vue", "apiUrl");
-        var port = Row(vm, "api", "port");
-        Assert.True(apiUrl.ShowShared);
-        Assert.True(port.ShowShared);
-        Assert.False(apiUrl.IsCollapsed);
-        Assert.False(port.IsCollapsed);           // a shared identity is an exception, not folded
-    }
-
-    [Fact]
-    public void The_transform_picker_reflects_and_rewrites_the_binding_over_its_port()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-
-        var row = Row(vm, "vue", "apiUrl");
-        Assert.True(row.CanTransform);
-        Assert.Equal("api_port", row.Port);
-        Assert.Equal(TransformPresets.Url, row.SelectedTransform); // recognised the localhost URL
-
-        // Switching the preset rewrites the expression over the same port...
-        row.SelectedTransform = TransformPresets.Raw;
-        Assert.Equal("${sprig.ports.api_port}", row.Expression);
-        // ...and the picker re-syncs from the new text.
-        Assert.Equal(TransformPresets.Raw, row.SelectedTransform);
-    }
-
-    [Fact]
-    public void The_transform_picker_is_unavailable_for_a_literal_binding()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-
-        Row(vm, "vue", "apiUrl").Expression = "http://localhost:4000"; // a constant, no port
-        Assert.False(Row(vm, "vue", "apiUrl").CanTransform);
-    }
-
     static StacksViewModel WebPlusApi(AppServices services, string root)
     {
         services.Repos.Add(MakeRepoWithInputs(root, "vue", ("apiUrl", "http://localhost:4000")));
@@ -724,21 +620,6 @@ public class ManagementViewModelTests
         vm.Ports.Single().Name = "web_port"; // commit a rename
 
         Assert.Equal("${sprig.ports.web_port}", Row(vm, "vue", "frontend").Expression);
-    }
-
-    [Fact]
-    public void Choosing_a_port_in_the_row_picker_binds_it_and_shares_when_reused()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-
-        Row(vm, "vue", "apiUrl").Port = "api_port"; // explicit "share a port"
-        Row(vm, "api", "port").Port = "api_port";
-
-        Assert.Equal("${sprig.ports.api_port}", Row(vm, "api", "port").Expression);
-        Assert.True(Row(vm, "vue", "apiUrl").ShowShared);
-        Assert.True(Row(vm, "api", "port").ShowShared);
     }
 
     [Fact]
@@ -792,19 +673,6 @@ public class ManagementViewModelTests
     }
 
     [Fact]
-    public void SetPinTransform_reshapes_a_bound_input_over_its_port()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
-
-        vm.SetPinTransformCommand.Execute(new TransformRequest("vue", "apiUrl", TransformPresets.Url));
-
-        Assert.Equal("http://localhost:${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
-    }
-
-    [Fact]
     public void Wiring_two_pins_to_one_port_marks_it_shared_in_the_live_graph()
     {
         using var s = new TempStore();
@@ -850,8 +718,8 @@ public class ManagementViewModelTests
         vm.CreatePortCommand.Execute(new CreatePortRequest("vue", "apiUrl", "api_port")); // same name
 
         Assert.Single(vm.Ports.Where(p => p.Name == "api_port")); // not duplicated
-        Assert.True(Row(vm, "vue", "apiUrl").ShowShared);
-        Assert.True(Row(vm, "api", "port").ShowShared);
+        // Both inputs now consume the one port — the live graph marks it shared.
+        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
     }
 
     [Fact]

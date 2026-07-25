@@ -41,10 +41,6 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> UnwireCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(UnwireCommand));
 
-    /// <summary>Invoked with a <see cref="TransformRequest"/> when a transform is picked from a pin menu.</summary>
-    public static readonly StyledProperty<ICommand?> TransformCommandProperty =
-        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(TransformCommand));
-
     /// <summary>Invoked with a <see cref="PinRef"/> when the workspace source is dropped on an input.</summary>
     public static readonly StyledProperty<ICommand?> WireWorkspaceCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(WireWorkspaceCommand));
@@ -102,7 +98,6 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public bool IsEditable { get => GetValue(IsEditableProperty); set => SetValue(IsEditableProperty, value); }
     public ICommand? WireCommand { get => GetValue(WireCommandProperty); set => SetValue(WireCommandProperty, value); }
     public ICommand? UnwireCommand { get => GetValue(UnwireCommandProperty); set => SetValue(UnwireCommandProperty, value); }
-    public ICommand? TransformCommand { get => GetValue(TransformCommandProperty); set => SetValue(TransformCommandProperty, value); }
     public ICommand? WireWorkspaceCommand { get => GetValue(WireWorkspaceCommandProperty); set => SetValue(WireWorkspaceCommandProperty, value); }
     public ICommand? CreatePortCommand { get => GetValue(CreatePortCommandProperty); set => SetValue(CreatePortCommandProperty, value); }
     public ICommand? SetExpressionCommand { get => GetValue(SetExpressionCommandProperty); set => SetValue(SetExpressionCommandProperty, value); }

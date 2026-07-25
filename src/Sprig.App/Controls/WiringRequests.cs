@@ -1,5 +1,3 @@
-using Sprig.Core.Stacks;
-
 namespace Sprig.App.Controls;
 
 /// <summary>Wire a repo input to a stack port (drag a port → input on the canvas).</summary>
@@ -25,6 +23,3 @@ public sealed record RenamePortRequest(string OldName, string NewName);
 /// expression — dragging a second source into an existing transform node to fan it in.
 /// </summary>
 public sealed record AppendSourceRequest(string Repo, string Input, string Token);
-
-/// <summary>Re-shape a bound input's value with a transform preset (from the canvas pin menu).</summary>
-public sealed record TransformRequest(string Repo, string Input, TransformPreset Preset);

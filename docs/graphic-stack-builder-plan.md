@@ -134,12 +134,15 @@ now the only stack-building surface.
 | 3 Transform nodes + inline editor | `2be54dc` | ✅ done |
 | 4 Port/repo management on canvas | `4c58720` | ✅ done |
 | 5 Multi-input fan-in | `dd0ae58` | ✅ done |
-| 6 Retire the form | (this round) | ✅ done — canvas is the only builder |
+| 6 Retire the form | done | ✅ done — canvas is the only builder |
 
-**Residual cleanup (optional):** a few `BindingRow`/`RepoBindingGroup` display flags (tag booleans,
-group collapse) that only the form rendered are now unused but still unit-tested; the rest of the
-binding machinery (the `Port` setter that generates expressions, `RebuildBuilderWiring`) is shared
-with the canvas and stays. Pruning the dead flags + their tests is a safe follow-up.
+**Dead-code cleanup done:** the form-only `BindingRow` display flags (tag booleans, collapse) and
+the transform-preset module (`Port`/`SelectedTransform`/`CanTransform`/`SyncTransform`), plus
+`RepoBindingGroup`'s collapse state, `ToggleGroup`, `RefreshClassification`/`ApplyTag`,
+`SetPinTransform`, and the canvas `TransformCommand`/`TransformRequest` were removed. Wiring now
+writes `BindingRow.Expression` directly (`WirePin`/`CreatePort` via a `PortToken` helper) and the
+canvas rebuilds from it. `BindingRow` is now just `Input` / `Example` / `Expression`. Seven
+form-only tests were removed; suite green at 373.
 
 ## 4. Phased implementation plan
 

@@ -173,12 +173,15 @@ public partial class StacksViewModel : PageViewModel
     BindingRow? FindRow(string repo, string input) =>
         Bindings.FirstOrDefault(g => g.Repo == repo)?.Rows.FirstOrDefault(r => r.Input == input);
 
-    /// <summary>Bind an input to a port (drag pin → port). Reuses the row's port setter so the form agrees.</summary>
+    /// <summary>The raw token that binds an input to a stack port.</summary>
+    static string PortToken(string port) => $"${{sprig.ports.{port}}}";
+
+    /// <summary>Bind an input to a port (drag a port → input). Replaces any current binding.</summary>
     [RelayCommand]
     private void WirePin(WireRequest? request)
     {
         if (request is null) return;
-        if (FindRow(request.Repo, request.Input) is { } row) row.Port = request.Port;
+        if (FindRow(request.Repo, request.Input) is { } row) row.Expression = PortToken(request.Port);
     }
 
     /// <summary>Clear an input's binding (drag pin → empty space).</summary>
@@ -187,14 +190,6 @@ public partial class StacksViewModel : PageViewModel
     {
         if (pin is null) return;
         if (FindRow(pin.Repo, pin.Input) is { } row) row.Expression = "";
-    }
-
-    /// <summary>Re-shape a bound input with a transform preset (canvas pin menu).</summary>
-    [RelayCommand]
-    private void SetPinTransform(TransformRequest? request)
-    {
-        if (request is null) return;
-        if (FindRow(request.Repo, request.Input) is { } row) row.SelectedTransform = request.Preset;
     }
 
     /// <summary>Bind an input to the workspace source (drag the workspace chip → input). Replaces any current value.</summary>
@@ -235,7 +230,7 @@ public partial class StacksViewModel : PageViewModel
         Ports.Add(NewPortRow(n));
         ReindexPortPreviews();
         RebuildBindingVariables();
-        RefreshClassification();
+        RebuildBuilderWiring();
     }
 
     /// <summary>Rename a stack port from the canvas; the row's own change handler propagates it to bindings.</summary>
@@ -276,8 +271,8 @@ public partial class StacksViewModel : PageViewModel
             RebuildBindingVariables();
         }
 
-        if (FindRow(request.Repo, request.Input) is { } row) row.Port = name;
-        RefreshClassification();
+        if (FindRow(request.Repo, request.Input) is { } row) row.Expression = PortToken(name);
+        RebuildBuilderWiring();
     }
 
     public bool HasSelected => Selected is not null;
@@ -417,7 +412,7 @@ public partial class StacksViewModel : PageViewModel
         Ports.Add(NewPortRow());
         ReindexPortPreviews();
         RebuildBindingVariables();
-        RefreshClassification();
+        RebuildBuilderWiring();
     }
 
     [RelayCommand]
@@ -427,7 +422,7 @@ public partial class StacksViewModel : PageViewModel
         Ports.Remove(row);
         ReindexPortPreviews();
         RebuildBindingVariables();
-        RefreshClassification();
+        RebuildBuilderWiring();
     }
 
     void OnPortRowChanged(object? sender, PropertyChangedEventArgs e)
@@ -446,7 +441,7 @@ public partial class StacksViewModel : PageViewModel
         }
 
         RebuildBindingVariables();
-        RefreshClassification();
+        RebuildBuilderWiring();
     }
 
     /// <summary>Rewrite every binding expression that references <paramref name="oldName"/> to use the new port name.</summary>
@@ -617,7 +612,7 @@ public partial class StacksViewModel : PageViewModel
 
         OnPropertyChanged(nameof(CanAutoWire));
         RefreshAddableRepos();
-        RefreshClassification();
+        RebuildBuilderWiring();
     }
 
     /// <summary>Keep the canvas "add repo" list to the registered repos not already in the stack.</summary>
@@ -643,55 +638,7 @@ public partial class StacksViewModel : PageViewModel
 
     void OnBindingRowChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BindingRow.Expression)) RefreshClassification();
-    }
-
-    /// <summary>Show or hide a group's folded identity rows.</summary>
-    [RelayCommand]
-    private void ToggleGroup(RepoBindingGroup group) => group.Expanded = !group.Expanded;
-
-    /// <summary>
-    /// Re-classify every binding row so the mechanical identity mappings can fold away and the
-    /// exceptions (transforms, shared ports, literals, and anything unbound) stay in view with a tag.
-    /// </summary>
-    void RefreshClassification()
-    {
-        var declared = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
-        var bindings = Bindings.ToDictionary(
-            g => g.Repo,
-            g => (IReadOnlyDictionary<string, string>)g.Rows.ToDictionary(r => r.Input, r => r.Expression));
-        var all = BindingClassifier.ClassifyAll(bindings, declared);
-
-        foreach (var group in Bindings)
-        {
-            var collapsible = 0;
-            foreach (var row in group.Rows)
-            {
-                var cls = all.GetValueOrDefault((group.Repo, row.Input))
-                          ?? new BindingClass(BindingKind.Unbound, false, false);
-                ApplyTag(row, cls);
-                row.Collapsible = cls.IsCollapsible;
-                row.IsCollapsed = cls.IsCollapsible && !group.Expanded;
-                if (cls.IsCollapsible) collapsible++;
-
-                var (preset, port) = TransformPresets.Recognize(row.Expression);
-                row.SyncTransform(port, preset);
-            }
-            group.CollapsibleCount = collapsible;
-        }
-
-        RebuildBuilderWiring();
-    }
-
-    /// <summary>Light exactly one tag chip per row, most decision-worthy first.</summary>
-    static void ApplyTag(BindingRow row, BindingClass cls)
-    {
-        row.ShowNeedsValue = cls.Kind == BindingKind.Unbound;
-        row.ShowUnknownPort = cls is { Kind: not BindingKind.Unbound, ReferencesUndeclaredPort: true };
-        row.ShowShared = cls is { Shared: true, ReferencesUndeclaredPort: false } && !row.ShowNeedsValue;
-        row.ShowTransform = cls is { Kind: BindingKind.Transform, Shared: false, ReferencesUndeclaredPort: false };
-        row.ShowLiteral = cls.Kind == BindingKind.Literal;
-        row.ShowAuto = cls.IsCollapsible;
+        if (e.PropertyName == nameof(BindingRow.Expression)) RebuildBuilderWiring();
     }
 
     /// <summary>A repo's declared inputs, or an empty list if it's gone or its config won't parse.</summary>
@@ -745,7 +692,7 @@ public partial class StacksViewModel : PageViewModel
         foreach (var n in names) Ports.Add(NewPortRow(n));
         ReindexPortPreviews();
         RebuildBindingVariables();
-        RefreshClassification();
+        RebuildBuilderWiring();
     }
 }
 
@@ -768,83 +715,15 @@ public sealed partial class RepoBindingGroup(string repo) : ViewModelBase
 {
     public string Repo { get; } = repo;
     public ObservableCollection<BindingRow> Rows { get; } = [];
-
-    /// <summary>Whether the folded identity rows are currently shown.</summary>
-    [ObservableProperty] private bool _expanded;
-
-    /// <summary>How many rows in this group are plain identity mappings that can be folded away.</summary>
-    [ObservableProperty] private int _collapsibleCount;
-
-    public bool HasCollapsible => CollapsibleCount > 0;
-    public string CollapsibleSummary =>
-        $"{CollapsibleCount} input{(CollapsibleCount == 1 ? "" : "s")} auto-wired to matching ports — all valid";
-    public string ToggleLabel => Expanded ? "▾ hide" : "▸ review";
-
-    partial void OnCollapsibleCountChanged(int value) => OnPropertyChanged(nameof(HasCollapsible));
-    partial void OnExpandedChanged(bool value)
-    {
-        OnPropertyChanged(nameof(ToggleLabel));
-        foreach (var row in Rows) row.IsCollapsed = row.Collapsible && !value;
-    }
 }
 
 public partial class BindingRow(string input, string? example) : ViewModelBase
 {
     public string Input { get; } = input;
     public string? Example { get; } = example;
+
+    /// <summary>The one expression that fills this input — the single source of truth the canvas edits.</summary>
     [ObservableProperty] private string _expression = "";
-
-    /// <summary>A plain identity mapping that can be folded away (set by the classifier pass).</summary>
-    [ObservableProperty] private bool _collapsible;
-    /// <summary>Currently folded behind its group's summary strip.</summary>
-    [ObservableProperty] private bool _isCollapsed;
-
-    // One tag chip shows at a time; the builder's classifier sets exactly one of these.
-    [ObservableProperty] private bool _showNeedsValue;
-    [ObservableProperty] private bool _showUnknownPort;
-    [ObservableProperty] private bool _showShared;
-    [ObservableProperty] private bool _showTransform;
-    [ObservableProperty] private bool _showLiteral;
-    [ObservableProperty] private bool _showAuto;
-
-    // Transform module: pick how a single port becomes this input's value. The raw token box below
-    // stays the source of truth — picking a preset just rewrites it, and it re-syncs from the text.
-    bool _syncingTransform;
-
-    /// <summary>The one stack port this row references, if exactly one — the target of a transform.</summary>
-    [ObservableProperty] private string? _port;
-    /// <summary>The transform picker is meaningful only when the row references exactly one port.</summary>
-    [ObservableProperty] private bool _canTransform;
-    [ObservableProperty] private TransformPreset? _selectedTransform;
-
-    public IReadOnlyList<TransformPreset> TransformOptions => TransformPresets.All;
-
-    partial void OnSelectedTransformChanged(TransformPreset? value)
-    {
-        if (_syncingTransform || value is null || Port is null || value == TransformPresets.Custom) return;
-        Expression = TransformPresets.Generate(value, Port);
-    }
-
-    /// <summary>
-    /// Picking a port binds this input to it (keeping the current transform form, defaulting to raw).
-    /// Choosing a port another input already uses is exactly how you share it.
-    /// </summary>
-    partial void OnPortChanged(string? value)
-    {
-        if (_syncingTransform || string.IsNullOrEmpty(value)) return;
-        var preset = SelectedTransform is { } p && p != TransformPresets.Custom ? p : TransformPresets.Raw;
-        Expression = TransformPresets.Generate(preset, value);
-    }
-
-    /// <summary>Reflect the current expression in the picker without treating it as a user edit.</summary>
-    public void SyncTransform(string? port, TransformPreset preset)
-    {
-        _syncingTransform = true;
-        Port = port;
-        CanTransform = port is not null;
-        SelectedTransform = preset;
-        _syncingTransform = false;
-    }
 }
 
 /// <summary>Read-only projection of a stack's bindings for one repo (detail panel).</summary>

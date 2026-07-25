@@ -380,7 +380,7 @@
                             <!-- Canvas view: the primary wiring surface -->
                             <StackPanel Spacing="8" IsVisible="{Binding BuilderDiagram}">
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it — or drag an input back to a source. Click an empty input to type a literal; click a port to rename/remove it; click a ƒ node to edit it; click a line to select it (then delete or add a transform)." />
+                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it — or drag an input back to a source. Click an input to edit its value; click a port to rename/remove it; click a ƒ node to edit it; click a line to select it (then delete or edit)." />
 
                                 <!-- Column headers, aligned to the canvas columns (the actions are drawn on the canvas). -->
                                 <Grid HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284">
@@ -399,7 +399,6 @@
                                                                HorizontalAlignment="Center"
                                                                WireCommand="{Binding WirePinCommand}"
                                                                UnwireCommand="{Binding UnwirePinCommand}"
-                                                               TransformCommand="{Binding SetPinTransformCommand}"
                                                                WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
                                                                CreatePortCommand="{Binding CreatePortCommand}"
                                                                SetExpressionCommand="{Binding SetExpressionCommand}"

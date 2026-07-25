@@ -557,7 +557,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             }
             else if (_selectedInput is { } selt && _transformBtn.Contains(pos))
             {
-                OpenPinMenu(selt);        // add/change a transform (or unbind/edit) on the selected line
+                OpenExpressionEditor(selt.Repo, selt.Input, ExpressionOf(selt)); // edit this line's expression
                 e.Handled = true;
             }
             // 2. On-canvas chrome: a repo's trash icon, the "add repo…" slot, the Auto-wire button.
@@ -902,10 +902,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             Watermark = "literal or ${sprig.ports.NAME}",
             Width = 300,
         };
+        var hint = new TextBlock
+        {
+            Text = "Enter to save · Esc to cancel", FontSize = 10.5, Foreground = Muted,
+        };
         var ok = new Button { Content = "Set", HorizontalAlignment = HorizontalAlignment.Right };
         var flyout = new Flyout
         {
-            Content = new StackPanel { Spacing = 8, Width = 300, Children = { box, ok } },
+            Content = new StackPanel { Spacing = 8, Width = 300, Children = { box, hint, ok } },
         };
 
         void Commit()
@@ -913,6 +917,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             flyout.Hide();
             SetExpressionCommand?.Execute(new SetExpressionRequest(repo, input, box.Value?.Trim() ?? ""));
         }
+
+        // Enter commits, Esc cancels. When the token box's completion popup is open it consumes these
+        // first (accept/close the suggestion), so they only reach us once the popup is dismissed.
+        box.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Enter) { Commit(); ke.Handled = true; }
+            else if (ke.Key == Key.Escape) { flyout.Hide(); ke.Handled = true; }
+        };
 
         ok.Click += (_, _) => Commit();
         flyout.ShowAt(this, showAtPointer: true);
@@ -1027,13 +1039,6 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     void OpenPinMenu((string Repo, string Input) pin)
     {
         var flyout = new MenuFlyout();
-        foreach (var preset in TransformPresets.All.Where(p => p != TransformPresets.Custom))
-        {
-            var item = new MenuItem { Header = preset.Label };
-            item.Click += (_, _) => TransformCommand?.Execute(new TransformRequest(pin.Repo, pin.Input, preset));
-            flyout.Items.Add(item);
-        }
-        flyout.Items.Add(new Separator());
         var edit = new MenuItem { Header = "Edit expression…" };
         edit.Click += (_, _) => OpenExpressionEditor(pin.Repo, pin.Input, ExpressionOf(pin));
         flyout.Items.Add(edit);

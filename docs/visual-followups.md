@@ -226,6 +226,18 @@ style). The header band is now just the three text headers. Still needs a live w
 - [ ] **Click the on-canvas ⚡ Auto-wire** → fills unbound inputs (no-op with no repos).
 - [ ] Trash icon and add-repo slot highlight on hover.
 
+### Feedback round 3 (edit-only transforms + Enter/Esc)
+
+Transform presets (Raw / URL http / URL https / localhost:port) are removed from the canvas — the
+only shaping action now is editing the expression. Needs a live window:
+
+- [ ] **Click a wired input** → menu is now just **Edit expression…** / **Unbind** (no presets).
+- [ ] **Line-select ƒ** button opens the expression editor directly (no preset menu).
+- [ ] In the expression editor, **Enter saves** and **Esc cancels**. When the token-completion popup
+      is open, Enter/Esc drive the suggestion first (accept / dismiss), then work on the editor.
+- [ ] (Known/deferred) the Advanced form still shows the preset dropdown — left alone as it's slated
+      for retirement.
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

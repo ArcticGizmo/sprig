@@ -44,17 +44,9 @@ internal static class HeadlessRenderer
                 // Check the repos so the stack variable editor shows auto-detected vars.
                 if (page is StacksViewModel stacks)
                 {
-                    // Detail panel for an existing stack.
+                    // Detail panel for an existing stack (repos / ports / inputs summary).
                     stacks.Selected = stacks.Stacks.FirstOrDefault();
                     Capture(vm, Path.Combine(outDir, "main_stacks_detail.png"));
-
-                    // The same stack as the full-width wiring diagram (list column collapsed).
-                    if (stacks.Selected is not null)
-                    {
-                        stacks.ShowDiagram = true;
-                        Capture(vm, Path.Combine(outDir, "main_stacks_diagram.png"));
-                        stacks.ShowDiagram = false;
-                    }
 
                     // Edit an existing stack (when nothing depends on it).
                     if (stacks.EditSelectedCommand.CanExecute(null))
@@ -64,18 +56,12 @@ internal static class HeadlessRenderer
                         stacks.CancelCreateCommand.Execute(null);
                     }
 
-                    // The New-stack builder (main_stacks.png).
+                    // The New-stack builder (canvas is the only surface; auto-wire so it has cables).
                     stacks.NewStackCommand.Execute(null);
                     stacks.NewName = "web+api";
                     foreach (var c in stacks.RepoChoices) c.IsSelected = true;
-                    stacks.AddPortCommand.Execute(null);
-                    if (stacks.Ports.Count > 0) stacks.Ports[0].Name = "api_port";
-
-                    // The builder's editable drag-to-wire diagram (auto-wire first so it has cables).
                     stacks.AutoWireCommand.Execute(null);
-                    stacks.BuilderDiagram = true;
                     Capture(vm, Path.Combine(outDir, "main_stacks_builder_diagram.png"));
-                    stacks.BuilderDiagram = false;
                 }
                 // Populate the Settings port-checker so the snapshot shows a status result.
                 if (page is SettingsViewModel settings)
@@ -194,7 +180,7 @@ internal static class HeadlessRenderer
         {
             ["sprig-example-vue"] = ["frontend", "apiUrl"],
             ["dotnet-api"] = ["port", "dbPort"],
-            ["worker"] = ["dbPort", "queuePort"],
+            ["worker"] = ["dbPort", "queuePort", "dbAddr"],
         };
         var bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
         {
@@ -212,6 +198,7 @@ internal static class HeadlessRenderer
             {
                 ["dbPort"] = "${sprig.ports.postgres_port}", // shares postgres_port with dotnet-api.dbPort
                 ["queuePort"] = "${sprig.ports.queue_port}",
+                ["dbAddr"] = "${sprig.ports.postgres_port}:${sprig.ports.queue_port}", // fan-in: two ports → one node
             },
         };
 

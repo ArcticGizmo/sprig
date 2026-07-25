@@ -23,6 +23,29 @@ public static partial class PortExpressions
         return names;
     }
 
+    /// <summary>
+    /// Whether <paramref name="expr"/> references the built-in <c>${sprig.workspace}</c> source. The
+    /// workspace is a first-class producer (a fixed, named string that fans out to many inputs), not a
+    /// port — the wiring canvas draws it as its own source on the rail.
+    /// </summary>
+    public static bool ReferencesWorkspace(string? expr) =>
+        !string.IsNullOrEmpty(expr) && WorkspaceRefPattern().IsMatch(expr);
+
+    /// <summary>True when <paramref name="expr"/> is exactly a single source token and nothing else —
+    /// a bare <c>${sprig.ports.x}</c> or <c>${sprig.workspace}</c>. Such a pass-through needs no
+    /// transform node on the canvas; anything else (wrapping text, multiple sources) does.</summary>
+    public static bool IsBareSourceReference(string? expr)
+    {
+        if (string.IsNullOrWhiteSpace(expr)) return false;
+        var trimmed = expr.Trim();
+        if (trimmed == "${sprig.workspace}") return true;
+        var ports = ReferencedPorts(trimmed);
+        return ports.Count == 1 && !ReferencesWorkspace(trimmed) && trimmed == $"${{sprig.ports.{ports[0]}}}";
+    }
+
     [GeneratedRegex(@"\$\{sprig\.ports\.([^}]+)\}")]
     private static partial Regex PortRefPattern();
+
+    [GeneratedRegex(@"\$\{sprig\.workspace\}")]
+    private static partial Regex WorkspaceRefPattern();
 }

@@ -119,6 +119,125 @@ Needs a live window (drag interactions can't be captured statically — please v
 - [ ] The canvas actually receives pointer events (relies on `ICustomHitTest`) — if drag does nothing,
       that's the thing to check first.
 
+## Graphical-first builder ([`graphic-stack-builder-plan.md`](./graphic-stack-builder-plan.md))
+
+### Phase 1 — canvas-first shell
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): New stack opens on the canvas
+with a persistent **Name** field on top and a **⚙ Advanced (form)** toggle; the violet **workspace**
+SOURCE node sits at the top of the rail. Read-only detail diagram unchanged (workspace shows only
+when used). Still needs a live window:
+
+- [ ] The phantom **"create new…"** slot renders at the bottom of the rail (scroll down on a tall
+      stack; visible without scrolling on a 1–2 port stack).
+- [ ] Toggling **⚙ Advanced (form)** ⇄ **◨ Canvas** swaps surfaces and keeps the Name field.
+- [ ] A stack that binds an input to `${sprig.workspace}` draws a violet cable from the workspace
+      node to that input (and `SOURCE ×N` when shared).
+
+### Phase 2 — drag ports onto inputs (create-on-drop)
+
+**Logic unit-tested** (CreatePort / WireWorkspace / replace-on-rebind, +5 tests). Drag gestures
+can't be captured statically — please verify in a live window:
+
+- [ ] **Drag a port outlet onto an input** → binds it (dashed rubber-band follows the cursor; the
+      target input shows a ring; on drop a real cable appears). A port dragged to several inputs
+      fans out.
+- [ ] **Drag the workspace source onto an input** → binds it to `${sprig.workspace}` (violet
+      rubber-band + cable).
+- [ ] **Drag the "create new…" slot onto an input** → a small text box pops to name the port; Enter
+      creates it and wires the input; **Escape cancels** (no line, no port). Typing an existing
+      name reuses that port instead of duplicating.
+- [ ] **Drop a source on an already-bound input** replaces its binding (repo side is single).
+- [ ] **Drag a bound input off onto empty space** unbinds it (red rubber-band); **click a bound
+      input** opens the transform/Unbind menu.
+- [ ] Dropping a source on the rail sentinels (workspace/create) or empty space is a harmless no-op.
+
+### Phase 3 — transform nodes in the centre column + inline editing
+
+**Verified via headless render** (`stacks_wiring_diagram.png`): a transform binding (`apiUrl`) draws a
+centre-column **ƒ node** showing its expression, with a blue source cable (`api_port → node`) and a
+pink `node → input` segment; identity bindings still run straight port→input. Still needs a live
+window:
+
+- [ ] A **pure literal** input shows its value inline (right-aligned, muted) with no cable/node.
+- [ ] **Click an empty input** → a `SprigTokenBox` flyout with `${sprig...}` autocomplete; typing a
+      literal / `${sprig.workspace}` / raw expression and pressing **Set** binds it.
+- [ ] **Click a ƒ transform node** → the same editor opens on its expression; editing rewrites it and
+      the node text updates.
+- [ ] **Click a wired input** → menu now has **Edit expression…** alongside the transform presets and
+      Unbind.
+- [ ] A multi-port expression routes both source cables into one ƒ node (fan-in), one node→input
+      segment out. (Wiring a second port into an existing node is Phase 5.)
+
+### Phase 4 — port/repo management on the canvas
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): the canvas toolbar shows
+**＋ Add repo** and **⚡ Auto-wire**. Logic unit-tested (add/rename/remove port, +3). Still needs a
+live window:
+
+- [ ] **Click a port** (no drag) → a menu with **Rename…** / **Remove port**; Rename pops a prefilled
+      box that rewrites every binding using it; Remove drops the port and its cables.
+- [ ] **Click "create new…"** (no drag) → a box to add a bare port (no wiring).
+- [ ] **＋ Add repo** opens a checkbox flyout; checking adds a repo (its inputs appear), unchecking
+      removes it. **⚡ Auto-wire** fills unbound inputs from the canvas.
+- [ ] Editing is still gated upstream (the builder only opens for a stack no workspace depends on),
+      so there is no locked-canvas state to reach here.
+
+### Phase 5 — multi-input transforms (fan-in)
+
+**Verified via headless render** (`stacks_wiring_diagram.png`, sample now includes a two-port
+`dbAddr`): two source cables converge on one ƒ node, one node→input segment out, and the reused
+ports show `SHARED ×3` / `×2`. Logic unit-tested (append + dedupe, +2). Still needs a live window:
+
+- [ ] **Drag a port onto an existing ƒ node** → its token is appended to the node's expression (the
+      node highlights as the drop target while hovering); a second cable joins the fan-in.
+- [ ] Dragging a port already feeding the node is a no-op (no duplicate token).
+- [ ] Refine separators/text by clicking the node (the inline editor from Phase 3).
+
+### Feedback round 1 (canvas refinements)
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): three column headers
+(**SOURCE / TRANSFORM / REPO**) aligned to the columns, with **⚡ Auto-wire** under TRANSFORM and
+**＋ Add repo** under REPO (the old toolbar is gone; the workspace node's SOURCE tag moved to the
+header). Still needs a live window:
+
+- [ ] **Drag an input back to a source** wires it (blue rubber-band + a ring on the target source);
+      onto **workspace** (violet) or a **port**; onto **create new…** quick-adds a named port from the
+      repo side; dropping onto empty still unbinds (red). Re-wiring replaces the current binding.
+- [ ] **Click a cable** selects that binding: a ring on its input plus **ƒ** (add/change transform)
+      and **✕** (delete) buttons appear just left of the input. **✕** unbinds; **ƒ** opens the
+      transform/edit menu. Clicking empty space clears the selection.
+- [ ] Header buttons work: **Auto-wire** fills unbound inputs; **Add repo** opens the checkbox
+      picker.
+- [ ] Column headers stay aligned to the canvas columns at the modal's normal width (they don't
+      track horizontal scroll on a very narrow window — minor).
+
+### Feedback round 2 (canvas chrome)
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): the Auto-wire button is drawn
+on the canvas (top of the TRANSFORM column), each repo node has a trash icon top-right, and a dashed
+**＋ add repo…** slot sits at the bottom of the repo column (matching the source "create new…"
+style). The header band is now just the three text headers. Still needs a live window:
+
+- [ ] **Click "＋ add repo…"** → a menu of registered repos not yet in the stack; picking one adds it
+      (its inputs appear). Shows "No more repos to add" when all are in.
+- [ ] **Click a repo's trash icon** → a confirm popup ("Remove '<repo>'…?" with Remove / Cancel);
+      Remove drops the repo and its wiring, Cancel does nothing.
+- [ ] **Click the on-canvas ⚡ Auto-wire** → fills unbound inputs (no-op with no repos).
+- [ ] Trash icon and add-repo slot highlight on hover.
+
+### Feedback round 3 (edit-only transforms + Enter/Esc)
+
+Transform presets (Raw / URL http / URL https / localhost:port) are removed from the canvas — the
+only shaping action now is editing the expression. Needs a live window:
+
+- [ ] **Click a wired input** → menu is now just **Edit expression…** / **Unbind** (no presets).
+- [ ] **Line-select ƒ** button opens the expression editor directly (no preset menu).
+- [ ] In the expression editor, **Enter saves** and **Esc cancels**. When the token-completion popup
+      is open, Enter/Esc drive the suggestion first (accept / dismiss), then work on the editor.
+- [ ] (Known/deferred) the Advanced form still shows the preset dropdown — left alone as it's slated
+      for retirement.
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

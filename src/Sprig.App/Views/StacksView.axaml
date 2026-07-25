@@ -7,12 +7,12 @@
              x:DataType="vm:StacksViewModel">
     <Grid Margin="28,20,24,16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="{Binding ListColumnWidth}" MaxWidth="{StaticResource ListPaneMaxWidth}" />
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Left: header + list (hidden while the diagram takes the full width) -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0" IsVisible="{Binding !ShowDiagram}">
+        <!-- Left: header + stack list -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <TextBlock Grid.Column="0" Text="Stacks" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
@@ -104,8 +104,6 @@
                             <TextBlock Grid.Column="0" Text="{Binding Selected.Name}" FontSize="18" FontWeight="SemiBold"
                                        Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                <Button Content="{Binding DiagramToggleLabel}" Command="{Binding ToggleDiagramCommand}"
-                                        ToolTip.Tip="Switch between the wiring list and the patchbay diagram" />
                                 <Button Content="Export" Click="ExportStack" />
                                 <Button Content="Edit" Command="{Binding EditSelectedCommand}" IsEnabled="{Binding CanEditSelected}" />
                                 <Button Content="Remove" Command="{Binding RemoveCommand}" Foreground="{StaticResource DangerBrush}" />
@@ -132,7 +130,7 @@
                         </Border>
 
                         <!-- repos -->
-                        <StackPanel Spacing="6" IsVisible="{Binding !ShowDiagram}">
+                        <StackPanel Spacing="6">
                             <TextBlock Text="REPOS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding Selected.Repos}">
                                 <ItemsControl.ItemsPanel>
@@ -149,7 +147,7 @@
                         </StackPanel>
 
                         <!-- ports -->
-                        <StackPanel Spacing="6" IsVisible="{Binding !ShowDiagram}">
+                        <StackPanel Spacing="6">
                             <TextBlock Text="PORTS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding Selected.Ports}">
                                 <ItemsControl.ItemsPanel>
@@ -167,7 +165,7 @@
                         </StackPanel>
 
                         <!-- bindings -->
-                        <StackPanel Spacing="8" IsVisible="{Binding !ShowDiagram}">
+                        <StackPanel Spacing="8">
                             <TextBlock Text="INPUTS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding DetailBindings}">
                                 <ItemsControl.ItemTemplate>
@@ -192,23 +190,6 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <!-- diagram (patchbay) -->
-                        <StackPanel Spacing="8" IsVisible="{Binding ShowDiagram}">
-                            <TextBlock Text="WIRING" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="8" Height="600" ClipToBounds="True">
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                    <controls:WiringCanvas Graph="{Binding Wiring}" HorizontalAlignment="Center" />
-                                </ScrollViewer>
-                            </Border>
-                            <WrapPanel>
-                                <TextBlock Text="■ plain" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="■ transform" Foreground="{StaticResource DevBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="■ producer port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="■ unbound" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="hover a port to see what uses it" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                            </WrapPanel>
-                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Panel>
@@ -218,15 +199,22 @@
         <Border Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsCreating}" Background="#B0000000"
                 Margin="-28,-20,-24,-16">
             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="22" Width="{Binding BuilderWidth}" MaxHeight="680"
+                    BorderThickness="1" CornerRadius="8" Padding="22" Width="1040" MaxHeight="720"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
                 <DockPanel LastChildFill="True">
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
-                        <TextBlock Grid.Column="0" Text="{Binding OverlayTitle}" FontSize="18" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="{Binding BuilderViewLabel}" Command="{Binding ToggleBuilderDiagramCommand}"
-                                ToolTip.Tip="Switch between the form and the drag-to-wire diagram" />
-                    </Grid>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding OverlayTitle}" FontSize="18" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" Margin="0,0,0,14" />
+
+                    <!-- Name — always visible: you name the stack, then wire it on the canvas. -->
+                    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,14">
+                        <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                        <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
+                        <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
+                    </StackPanel>
                     <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,14,0,0">
                         <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
@@ -238,156 +226,40 @@
                     </StackPanel>
                     <ScrollViewer>
                         <StackPanel Spacing="14">
-                            <!-- Form view -->
-                            <StackPanel Spacing="14" IsVisible="{Binding !BuilderDiagram}">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
-                                <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
-                                           Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
-                                <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
-                            </StackPanel>
-
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                                <ItemsControl ItemsSource="{Binding RepoChoices}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:RepoChoiceViewModel">
-                                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-
-                            <!-- Ports -->
-                            <StackPanel Spacing="6">
-                                <TextBlock Text="Ports" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                            <!-- Canvas: the stack wiring surface -->
+                            <StackPanel Spacing="8">
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Named ports the stack owns. Each gets a real, non-colliding number per workspace (preview shows they're distinct)." />
-                                <ItemsControl ItemsSource="{Binding Ports}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:StackPortRow">
-                                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
-                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                                         PlaceholderText="e.g. api_port" FontSize="12"
-                                                         ToolTip.Tip="Rename to update every binding that uses this port." />
-                                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="8,0"
-                                                           FontFamily="Consolas,monospace" FontSize="11" Foreground="{StaticResource MutedBrush}">
-                                                    <Run Text="≈ " /><Run Text="{Binding Preview}" />
-                                                </TextBlock>
-                                                <Button Grid.Column="2" Content="✕" Padding="8,4"
-                                                        Command="{Binding $parent[ItemsControl].((vm:StacksViewModel)DataContext).RemovePortCommand}"
-                                                        CommandParameter="{Binding}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <Button Content="+ Add port" Command="{Binding AddPortCommand}" HorizontalAlignment="Left" />
-                            </StackPanel>
+                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it — or drag an input back to a source. Click an input to edit its value; click a port to rename/remove it; click a ƒ node to edit it; click a line to select it (then delete or edit)." />
 
-                            <!-- Bindings -->
-                            <StackPanel Spacing="6">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Grid.Column="0" Text="Inputs" Foreground="{StaticResource MutedBrush}"
-                                               FontSize="12" VerticalAlignment="Center" />
-                                    <Button Grid.Column="1" Content="⚡ Auto-wire" Command="{Binding AutoWireCommand}"
-                                            IsEnabled="{Binding CanAutoWire}" Padding="10,4" FontSize="12"
-                                            ToolTip.Tip="Propose a port + binding for every unbound input. Won't touch anything you've already typed." />
+                                <!-- Column headers, aligned to the canvas columns (the actions are drawn on the canvas). -->
+                                <Grid HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284">
+                                    <TextBlock Grid.Column="0" Text="SOURCE" HorizontalAlignment="Center" FontSize="10"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBlock Grid.Column="1" Text="TRANSFORM" HorizontalAlignment="Center" FontSize="10"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBlock Grid.Column="2" Text="REPO" HorizontalAlignment="Center" FontSize="10"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                                 </Grid>
-                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Supply each repo's inputs individually — a literal, or a template over ${sprig.ports.NAME} / ${sprig.workspace}. Or let Auto-wire fill the mechanical mappings for you." />
-                                <ItemsControl ItemsSource="{Binding Bindings}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:RepoBindingGroup">
-                                            <StackPanel Spacing="4" Margin="0,4,0,8">
-                                                <TextBlock Text="{Binding Repo}" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
 
-                                                <!-- Folded identity mappings: one strip to confirm, expandable to review. -->
-                                                <Button IsVisible="{Binding HasCollapsible}" HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Stretch" Padding="10,6" Margin="8,2,0,2"
-                                                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
-                                                        Command="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).ToggleGroupCommand}"
-                                                        CommandParameter="{Binding}">
-                                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                                        <TextBlock Grid.Column="0" Text="✓" Foreground="{StaticResource OkBrush}" Margin="0,0,8,0" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding CollapsibleSummary}" FontSize="12"
-                                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding ToggleLabel}" FontFamily="Consolas,monospace"
-                                                                   FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                                                    </Grid>
-                                                </Button>
-
-                                                <ItemsControl ItemsSource="{Binding Rows}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate x:DataType="vm:BindingRow">
-                                                            <StackPanel Spacing="3" Margin="8,4,0,10" IsVisible="{Binding !IsCollapsed}">
-                                                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                                                    <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
-                                                                               Foreground="{StaticResource FgBrush}" VerticalAlignment="Center" />
-                                                                    <Border IsVisible="{Binding ShowNeedsValue}" CornerRadius="4" Padding="6,1" Background="#26F87171">
-                                                                        <TextBlock Text="needs value" FontSize="10" Foreground="{StaticResource DangerBrush}" /></Border>
-                                                                    <Border IsVisible="{Binding ShowUnknownPort}" CornerRadius="4" Padding="6,1" Background="#26F87171">
-                                                                        <TextBlock Text="unknown port" FontSize="10" Foreground="{StaticResource DangerBrush}" /></Border>
-                                                                    <Border IsVisible="{Binding ShowShared}" CornerRadius="4" Padding="6,1" Background="#2660A5FA">
-                                                                        <TextBlock Text="shared" FontSize="10" Foreground="{StaticResource AccentBrush}" /></Border>
-                                                                    <Border IsVisible="{Binding ShowTransform}" CornerRadius="4" Padding="6,1" Background="#26FF5FB0">
-                                                                        <TextBlock Text="transform" FontSize="10" Foreground="{StaticResource DevBrush}" /></Border>
-                                                                    <Border IsVisible="{Binding ShowLiteral}" CornerRadius="4" Padding="6,1" Background="#22808080">
-                                                                        <TextBlock Text="literal" FontSize="10" Foreground="{StaticResource MutedBrush}" /></Border>
-                                                                    <Border IsVisible="{Binding ShowAuto}" CornerRadius="4" Padding="6,1" Background="#264ADE80">
-                                                                        <TextBlock Text="auto" FontSize="10" Foreground="{StaticResource OkBrush}" /></Border>
-                                                                </StackPanel>
-                                                                <controls:SprigTokenBox Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
-                                                                         Watermark="literal or ${sprig.ports.NAME}"
-                                                                         Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />
-                                                                <StackPanel Orientation="Horizontal" Spacing="6"
-                                                                            IsVisible="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).HasPorts}">
-                                                                    <TextBlock Text="port" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                                                                    <ComboBox MinWidth="140" FontSize="12" PlaceholderText="share a port…"
-                                                                              ItemsSource="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).PortNames}"
-                                                                              SelectedItem="{Binding Port, Mode=TwoWay}"
-                                                                              ToolTip.Tip="Bind to a stack port — pick one another input already uses to share it." />
-                                                                    <TextBlock Text="as" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
-                                                                               IsVisible="{Binding CanTransform}" />
-                                                                    <ComboBox IsVisible="{Binding CanTransform}" MinWidth="170" FontSize="12"
-                                                                              ItemsSource="{Binding TransformOptions}" SelectedItem="{Binding SelectedTransform, Mode=TwoWay}"
-                                                                              ToolTip.Tip="How this port becomes the value">
-                                                                        <ComboBox.ItemTemplate>
-                                                                            <DataTemplate x:DataType="core:TransformPreset">
-                                                                                <TextBlock Text="{Binding Label}" FontSize="12" />
-                                                                            </DataTemplate>
-                                                                        </ComboBox.ItemTemplate>
-                                                                    </ComboBox>
-                                                                </StackPanel>
-                                                                <SelectableTextBlock IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                                                           FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap">
-                                                                    <Run Text="e.g. " /><Run Text="{Binding Example}" />
-                                                                </SelectableTextBlock>
-                                                            </StackPanel>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                            </StackPanel>
-
-                            <!-- Diagram view: drag inputs onto ports to wire them -->
-                            <StackPanel Spacing="8" IsVisible="{Binding BuilderDiagram}">
-                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Drag an input onto a port to wire it, or off onto empty space to unbind. Click a wired input for transform options. Add repos and ports in the form view." />
                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1" CornerRadius="8" Height="430" ClipToBounds="True">
+                                        BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                         <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
                                                                HorizontalAlignment="Center"
                                                                WireCommand="{Binding WirePinCommand}"
                                                                UnwireCommand="{Binding UnwirePinCommand}"
-                                                               TransformCommand="{Binding SetPinTransformCommand}" />
+                                                               WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
+                                                               CreatePortCommand="{Binding CreatePortCommand}"
+                                                               SetExpressionCommand="{Binding SetExpressionCommand}"
+                                                               Variables="{Binding BindingVariables}"
+                                                               RenamePortCommand="{Binding RenamePortCommand}"
+                                                               RemovePortCommand="{Binding RemoveNamedPortCommand}"
+                                                               AddPortCommand="{Binding AddNamedPortCommand}"
+                                                               AppendSourceCommand="{Binding AppendSourceCommand}"
+                                                               AddableRepos="{Binding AddableRepos}"
+                                                               AddRepoCommand="{Binding AddStackRepoCommand}"
+                                                               RemoveRepoCommand="{Binding RemoveStackRepoCommand}"
+                                                               AutoWireCommand="{Binding AutoWireCommand}" />
                                     </ScrollViewer>
                                 </Border>
                                 <WrapPanel>

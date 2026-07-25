@@ -152,6 +152,23 @@ can't be captured statically — please verify in a live window:
       input** opens the transform/Unbind menu.
 - [ ] Dropping a source on the rail sentinels (workspace/create) or empty space is a harmless no-op.
 
+### Phase 3 — transform nodes in the centre column + inline editing
+
+**Verified via headless render** (`stacks_wiring_diagram.png`): a transform binding (`apiUrl`) draws a
+centre-column **ƒ node** showing its expression, with a blue source cable (`api_port → node`) and a
+pink `node → input` segment; identity bindings still run straight port→input. Still needs a live
+window:
+
+- [ ] A **pure literal** input shows its value inline (right-aligned, muted) with no cable/node.
+- [ ] **Click an empty input** → a `SprigTokenBox` flyout with `${sprig...}` autocomplete; typing a
+      literal / `${sprig.workspace}` / raw expression and pressing **Set** binds it.
+- [ ] **Click a ƒ transform node** → the same editor opens on its expression; editing rewrites it and
+      the node text updates.
+- [ ] **Click a wired input** → menu now has **Edit expression…** alongside the transform presets and
+      Unbind.
+- [ ] A multi-port expression routes both source cables into one ƒ node (fan-in), one node→input
+      segment out. (Wiring a second port into an existing node is Phase 5.)
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

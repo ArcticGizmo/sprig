@@ -888,6 +888,38 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void SetExpression_types_a_literal_directly_onto_an_input()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("env", "production")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "env", "production"));
+
+        Assert.Equal("production", Row(vm, "api", "env").Expression);
+        Assert.Contains(vm.BuilderWiring!.Repos.SelectMany(r => r.Pins), p => p is { Input: "env", IsLiteral: true });
+        Assert.Empty(vm.BuilderWiring.TransformNodes);
+    }
+
+    [Fact]
+    public void SetExpression_with_a_wrapped_workspace_creates_a_transform_node()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("name", "svc")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "name", "svc-${sprig.workspace}"));
+
+        Assert.Contains(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "name", UsesWorkspace: true });
+    }
+
+    [Fact]
     public void Dropping_a_port_on_an_already_bound_input_replaces_the_binding()
     {
         using var s = new TempStore();

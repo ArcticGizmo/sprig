@@ -220,6 +220,14 @@ public partial class StacksViewModel : PageViewModel
         if (FindRow(pin.Repo, pin.Input) is { } row) row.Expression = "${sprig.workspace}";
     }
 
+    /// <summary>Set an input's expression directly (inline editor on an input or transform node).</summary>
+    [RelayCommand]
+    private void SetExpression(SetExpressionRequest? request)
+    {
+        if (request is null) return;
+        if (FindRow(request.Repo, request.Input) is { } row) row.Expression = request.Expression;
+    }
+
     /// <summary>
     /// Create a new stack port and wire an input to it — the drop from the phantom "create new…" slot,
     /// once the user names the port. A name that already exists is reused rather than duplicated, so

@@ -380,7 +380,7 @@
                             <!-- Canvas view: the primary wiring surface -->
                             <StackPanel Spacing="8" IsVisible="{Binding BuilderDiagram}">
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Drag an input onto a port to wire it, or off onto empty space to unbind. Click a wired input for transform options. The workspace source and 'create new…' slot become draggable next; for now add repos and ports in the Advanced (form) view." />
+                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it. Click an empty input to type a literal or ${sprig.workspace}. Click a wired input for transform presets; click a ƒ transform node to edit its expression. Drag an input off to unbind. Add repos in the Advanced (form) view." />
                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                         BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -390,7 +390,9 @@
                                                                UnwireCommand="{Binding UnwirePinCommand}"
                                                                TransformCommand="{Binding SetPinTransformCommand}"
                                                                WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
-                                                               CreatePortCommand="{Binding CreatePortCommand}" />
+                                                               CreatePortCommand="{Binding CreatePortCommand}"
+                                                               SetExpressionCommand="{Binding SetExpressionCommand}"
+                                                               Variables="{Binding BindingVariables}" />
                                     </ScrollViewer>
                                 </Border>
                                 <WrapPanel>

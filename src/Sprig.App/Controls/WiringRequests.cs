@@ -14,5 +14,8 @@ public sealed record PinRef(string Repo, string Input);
 /// </summary>
 public sealed record CreatePortRequest(string Repo, string Input, string PortName);
 
+/// <summary>Set an input's expression directly — from the inline editor on an input or a transform node.</summary>
+public sealed record SetExpressionRequest(string Repo, string Input, string Expression);
+
 /// <summary>Re-shape a bound input's value with a transform preset (from the canvas pin menu).</summary>
 public sealed record TransformRequest(string Repo, string Input, TransformPreset Preset);

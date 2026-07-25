@@ -6,6 +6,7 @@ using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering;
 using Sprig.Core.Stacks;
@@ -52,6 +53,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> CreatePortCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(CreatePortCommand));
 
+    /// <summary>Invoked with a <see cref="SetExpressionRequest"/> from the inline expression editor.</summary>
+    public static readonly StyledProperty<ICommand?> SetExpressionCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(SetExpressionCommand));
+
+    /// <summary>The tokens the inline editor autosuggests (<c>workspace</c> + one per named port).</summary>
+    public static readonly StyledProperty<System.Collections.IEnumerable?> VariablesProperty =
+        AvaloniaProperty.Register<WiringCanvas, System.Collections.IEnumerable?>(nameof(Variables));
+
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
@@ -64,6 +73,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public ICommand? TransformCommand { get => GetValue(TransformCommandProperty); set => SetValue(TransformCommandProperty, value); }
     public ICommand? WireWorkspaceCommand { get => GetValue(WireWorkspaceCommandProperty); set => SetValue(WireWorkspaceCommandProperty, value); }
     public ICommand? CreatePortCommand { get => GetValue(CreatePortCommandProperty); set => SetValue(CreatePortCommandProperty, value); }
+    public ICommand? SetExpressionCommand { get => GetValue(SetExpressionCommandProperty); set => SetValue(SetExpressionCommandProperty, value); }
+    public System.Collections.IEnumerable? Variables { get => GetValue(VariablesProperty); set => SetValue(VariablesProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -83,6 +94,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     const double BoardW = 820, NodeW = 260, HeadH = 30, RowH = 30, NodePad = 12;
     const double PortX = 24, PortW = 170, PortH = 28, PortGap = 60, RailTop = 24;
     const double RepoTop = 24, RepoGap = 20;
+    const double XformW = 168, XformH = 26; // centre-column transform node
 
     // Sentinel source names on the rail. The workspace is a real built-in source; the phantom slot is
     // the "create new…" affordance you drag from to mint a port (wired in a later phase).
@@ -95,6 +107,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     readonly Dictionary<(string Repo, string Input), (Point Pt, bool Bound, bool Problem)> _pins = new();
     readonly Dictionary<(string Repo, string Input), Rect> _pinHit = new();        // grab area (jack + label)
     readonly List<(string Repo, Rect Rect, WiringRepoNode Node)> _repoBoxes = new();
+    // Centre-column transform nodes, keyed by the (repo, input) they shape, with the node's expression.
+    readonly Dictionary<(string Repo, string Input), (Rect Rect, string Expression)> _xforms = new();
     // The exact graph the layout dictionaries were built from. Render draws THIS, not the live Graph,
     // so a compositor commit that lands between a Graph change and the re-measure can't look up a key
     // that isn't in the (still-stale) dictionaries. Rendering slightly-behind is fine; crashing isn't.
@@ -109,6 +123,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     string? _dragSource;                    // the rail slot being dragged from (port name / sentinel)
     (string Repo, string Input)? _dragPin;  // a bound input being dragged off to unbind
     (string Repo, string Input)? _dropPin;  // the input currently under a source drag (drop target)
+    (string Repo, string Input)? _hoverXform; // the transform node under the cursor
     Point _pressPos;
     Point _dragCursor;
     bool _dragMoved;
@@ -132,6 +147,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         _pins.Clear();
         _pinHit.Clear();
         _repoBoxes.Clear();
+        _xforms.Clear();
 
         var g = Graph;
         _laidOut = g; // the dictionaries below correspond to this snapshot; Render uses it too
@@ -191,6 +207,15 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             y2 += h + RepoGap;
         }
 
+        // Transform nodes: one per shaped input, in the centre column, aligned to its input row.
+        var centreX = ((PortX + PortW) + (BoardW - 24 - NodeW)) / 2 - XformW / 2;
+        foreach (var tn in g.TransformNodes)
+        {
+            if (!_pins.TryGetValue((tn.Repo, tn.Input), out var pv)) continue;
+            var rect = new Rect(centreX, pv.Pt.Y - XformH / 2, XformW, XformH);
+            _xforms[(tn.Repo, tn.Input)] = (rect, tn.Expression);
+        }
+
         _height = Math.Max(portsBottom, y2) + 12;
     }
 
@@ -200,42 +225,44 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         var g = _laidOut; // draw the snapshot the layout dictionaries were built from
         if (g is null) return;
 
-        // Cables first, so nodes sit on top.
+        // Cables first, so nodes sit on top. A source cable ends at the transform node when the input
+        // has one (port → node), otherwise straight at the input pin (port → input).
         foreach (var e in g.Edges)
         {
-            if (!_pins.TryGetValue((e.Repo, e.Input), out var pin)) continue;
             if (!_portAnchor.TryGetValue(e.Port, out var start)) continue;
+            var end = SourceEndFor((e.Repo, e.Input));
+            if (end is not { } to) continue;
 
-            var dim = _dragPin is null && _hoverPort is not null && _hoverPort != e.Port;
-            var colour = e.Transform ? Xform : Wire;
-            Pen pen;
-            if (dim)
-            {
-                var c = ((ISolidColorBrush)colour).Color;
-                pen = new Pen(new SolidColorBrush(c, 0.12), 1);
-            }
-            else
-            {
-                pen = new Pen(colour, e.Shared ? 3 : 2.2) { LineCap = PenLineCap.Round };
-            }
-            ctx.DrawGeometry(null, pen, Cable(start, pin.Pt));
+            var dim = _dragPin is null && _dragSource is null && _hoverPort is not null && _hoverPort != e.Port;
+            Pen pen = dim
+                ? new Pen(new SolidColorBrush(((ISolidColorBrush)Wire).Color, 0.12), 1)
+                : new Pen(Wire, e.Shared ? 3 : 2.2) { LineCap = PenLineCap.Round };
+            ctx.DrawGeometry(null, pen, Cable(start, to));
         }
 
-        // Workspace cables: one from the workspace source to every input that references it.
+        // Workspace cables: from the workspace source to every input that references it (via its node).
         if (_portAnchor.TryGetValue(WorkspaceSource, out var wsAnchor))
         {
             foreach (var repo in g.Repos)
                 foreach (var pinModel in repo.Pins)
                 {
                     if (!pinModel.UsesWorkspace) continue;
-                    if (!_pins.TryGetValue((repo.Repo, pinModel.Input), out var pv)) continue;
+                    if (SourceEndFor((repo.Repo, pinModel.Input)) is not { } to) continue;
 
-                    var dim = _dragPin is null && _hoverPort is not null && _hoverPort != WorkspaceSource;
+                    var dim = _dragPin is null && _dragSource is null && _hoverPort is not null && _hoverPort != WorkspaceSource;
                     Pen pen = dim
                         ? new Pen(new SolidColorBrush(((ISolidColorBrush)Ws).Color, 0.12), 1)
                         : new Pen(Ws, g.Workspace.Shared ? 3 : 2.2) { LineCap = PenLineCap.Round };
-                    ctx.DrawGeometry(null, pen, Cable(wsAnchor, pv.Pt));
+                    ctx.DrawGeometry(null, pen, Cable(wsAnchor, to));
                 }
+        }
+
+        // Transform node → input segments (transform-coloured), under the node boxes.
+        foreach (var (key, xf) in _xforms)
+        {
+            if (!_pins.TryGetValue(key, out var pin)) continue;
+            var outPt = new Point(xf.Rect.Right, xf.Rect.Center.Y);
+            ctx.DrawGeometry(null, new Pen(Xform, 2.4) { LineCap = PenLineCap.Round }, Cable(outPt, pin.Pt));
         }
 
         // Port rail (left).
@@ -300,10 +327,30 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                 DrawText(ctx, pin.Input, new Rect(node.X + 16, pt.Y - RowH / 2, NodeW - 26, RowH),
                     problem ? Danger : Fg, 12, vcenter: true);
 
+                // A pure literal has no cable and no node, so show its value inline (right-aligned, muted).
+                if (pin.IsLiteral && pin.Expression is { Length: > 0 } lit)
+                {
+                    var nameW = Ft(pin.Input, 12, Fg).Width;
+                    var avail = NodeW - 26 - nameW - 16;
+                    var text = Truncate(lit, Math.Max(24, avail), 11);
+                    var ft = Ft(text, 11, Muted);
+                    ctx.DrawText(ft, new Point(node.Right - 14 - ft.Width, pt.Y - ft.Height / 2));
+                }
+
                 var jackBrush = problem ? PanelHead : (bound ? Wire : PanelHead);
                 var jackPen = new Pen(problem ? Danger : (bound ? Wire : Border), 2);
                 ctx.DrawEllipse(jackBrush, jackPen, pt, 5.5, 5.5);
             }
+        }
+
+        // Transform node boxes (centre column), on top of the cables.
+        foreach (var (key, xf) in _xforms)
+        {
+            var hot = _hoverXform == key;
+            ctx.DrawRectangle(Brush.Parse("#241626"), new Pen(Xform, hot ? 2 : 1.4), xf.Rect, 6, 6);
+            var text = Truncate(xf.Expression, xf.Rect.Width - 26, 11);
+            DrawText(ctx, "ƒ", new Rect(xf.Rect.X + 8, xf.Rect.Y, 12, xf.Rect.Height), Xform, 11, vcenter: true);
+            DrawText(ctx, text, new Rect(xf.Rect.X + 22, xf.Rect.Y, xf.Rect.Width - 26, xf.Rect.Height), Fg, 11, vcenter: true);
         }
 
         // Rubber-band while dragging a source (port / workspace / create-new) toward an input.
@@ -399,8 +446,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         {
             var pos = e.GetPosition(this);
 
+            // A click on a transform node opens its expression editor (it isn't a drag source).
+            if (XformAt(pos) is { } xkey && _xforms.TryGetValue(xkey, out var xf))
+            {
+                OpenExpressionEditor(xkey.Repo, xkey.Input, xf.Expression);
+                e.Handled = true;
+            }
             // A press on a rail slot (port / workspace / create-new) begins a source→input wire drag.
-            if (PortAt(pos) is { } source)
+            else if (PortAt(pos) is { } source)
             {
                 _dragSource = source;
                 _pressPos = _dragCursor = pos;
@@ -448,8 +501,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         }
 
         var hit = PortAt(pos);
-        var changed = hit != _hoverPort;
+        var xhit = XformAt(pos);
+        var changed = hit != _hoverPort || xhit != _hoverXform;
         _hoverPort = hit;
+        _hoverXform = xhit;
         _hoverPos = pos;
         // Redraw on enter/leave, and on every move while over a port so the tooltip follows the cursor.
         if (changed || hit is not null) InvalidateVisual();
@@ -492,7 +547,11 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             }
             else if (IsBound(pin))
             {
-                OpenPinMenu(pin); // a click on a bound input → transform / unbind menu
+                OpenPinMenu(pin); // a click on a bound input → transform / unbind / edit menu
+            }
+            else
+            {
+                OpenExpressionEditor(pin.Repo, pin.Input, ExpressionOf(pin)); // click an empty input → type a value
             }
 
             _dragMoved = false;
@@ -511,7 +570,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     /// <summary>Pop a small text box to name the new port, then raise <see cref="CreatePortCommand"/>.</summary>
     void PromptCreatePort(string repo, string input)
     {
-        var box = new TextBox { Watermark = "new port name, e.g. api_port", Width = 220, FontSize = 12 };
+        var box = new TextBox { PlaceholderText = "new port name, e.g. api_port", Width = 220, FontSize = 12 };
         var flyout = new Flyout { Content = box };
 
         void Commit()
@@ -531,6 +590,42 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         box.Focus();
     }
 
+    /// <summary>
+    /// Pop the inline expression editor for one input — the D1 "one expression per input" surface, a
+    /// <see cref="SprigTokenBox"/> over the same tokens the form uses. Used for typing a literal or
+    /// <c>${sprig.workspace}</c> on an empty input, and for editing a transform node's expression.
+    /// </summary>
+    void OpenExpressionEditor(string repo, string input, string current)
+    {
+        var box = new SprigTokenBox
+        {
+            Value = current,
+            Variables = Variables,
+            Watermark = "literal or ${sprig.ports.NAME}",
+            Width = 300,
+        };
+        var ok = new Button { Content = "Set", HorizontalAlignment = HorizontalAlignment.Right };
+        var flyout = new Flyout
+        {
+            Content = new StackPanel { Spacing = 8, Width = 300, Children = { box, ok } },
+        };
+
+        void Commit()
+        {
+            flyout.Hide();
+            SetExpressionCommand?.Execute(new SetExpressionRequest(repo, input, box.Value?.Trim() ?? ""));
+        }
+
+        ok.Click += (_, _) => Commit();
+        flyout.ShowAt(this, showAtPointer: true);
+        box.Focus();
+    }
+
+    /// <summary>The current expression for an input, from the graph snapshot the layout was built from.</summary>
+    string ExpressionOf((string Repo, string Input) key) =>
+        _laidOut?.Repos.FirstOrDefault(r => r.Repo == key.Repo)?
+            .Pins.FirstOrDefault(p => p.Input == key.Input)?.Expression ?? "";
+
     (string Repo, string Input)? PinAt(Point p)
     {
         foreach (var kv in _pinHit)
@@ -543,6 +638,31 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         foreach (var kv in _portRects)
             if (kv.Value.Contains(p)) return kv.Key;
         return null;
+    }
+
+    (string Repo, string Input)? XformAt(Point p)
+    {
+        foreach (var kv in _xforms)
+            if (kv.Value.Rect.Contains(p)) return kv.Key;
+        return null;
+    }
+
+    /// <summary>Where a source cable for this input ends: its transform node's left edge, or the pin.</summary>
+    Point? SourceEndFor((string Repo, string Input) key) =>
+        _xforms.TryGetValue(key, out var xf) ? new Point(xf.Rect.Left, xf.Rect.Center.Y)
+        : _pins.TryGetValue(key, out var pin) ? pin.Pt
+        : null;
+
+    /// <summary>Cut <paramref name="s"/> with an ellipsis so it fits <paramref name="maxWidth"/> at the given size.</summary>
+    string Truncate(string s, double maxWidth, double size)
+    {
+        if (Ft(s, size, Fg).Width <= maxWidth) return s;
+        for (var len = s.Length - 1; len > 1; len--)
+        {
+            var t = s[..len] + "…";
+            if (Ft(t, size, Fg).Width <= maxWidth) return t;
+        }
+        return "…";
     }
 
     bool IsBound((string Repo, string Input) pin) => _pins.TryGetValue(pin, out var v) && v.Bound;
@@ -559,6 +679,9 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             flyout.Items.Add(item);
         }
         flyout.Items.Add(new Separator());
+        var edit = new MenuItem { Header = "Edit expression…" };
+        edit.Click += (_, _) => OpenExpressionEditor(pin.Repo, pin.Input, ExpressionOf(pin));
+        flyout.Items.Add(edit);
         var unbind = new MenuItem { Header = "Unbind" };
         unbind.Click += (_, _) => UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input));
         flyout.Items.Add(unbind);

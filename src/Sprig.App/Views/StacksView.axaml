@@ -379,32 +379,44 @@
 
                             <!-- Canvas view: the primary wiring surface -->
                             <StackPanel Spacing="8" IsVisible="{Binding BuilderDiagram}">
-                                <Grid ColumnDefinitions="*,Auto,Auto">
-                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                               VerticalAlignment="Center" Margin="0,0,10,0"
-                                               Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it. Click an empty input to type a literal; click a port to rename/remove it; click a ƒ node to edit it. Drag an input off to unbind." />
-                                    <Button Grid.Column="1" Content="＋ Add repo" Margin="0,0,8,0" Padding="10,4" FontSize="12"
-                                            ToolTip.Tip="Add or remove repos in this stack">
-                                        <Button.Flyout>
-                                            <Flyout>
-                                                <StackPanel Spacing="2" MinWidth="180">
-                                                    <TextBlock Text="Repos in this stack" FontSize="11" Margin="2,2,2,6"
-                                                               Foreground="{StaticResource MutedBrush}" />
-                                                    <ItemsControl ItemsSource="{Binding RepoChoices}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:RepoChoiceViewModel">
-                                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </StackPanel>
-                                            </Flyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                    <Button Grid.Column="2" Content="⚡ Auto-wire" Command="{Binding AutoWireCommand}"
-                                            IsEnabled="{Binding CanAutoWire}" Padding="10,4" FontSize="12"
-                                            ToolTip.Tip="Propose a port + binding for every unbound input." />
+                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it — or drag an input back to a source. Click an empty input to type a literal; click a port to rename/remove it; click a ƒ node to edit it; click a line to select it (then delete or add a transform)." />
+
+                                <!-- Column headers, aligned to the canvas columns; buttons live under their columns. -->
+                                <Grid HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284">
+                                    <TextBlock Grid.Column="0" Text="SOURCE" HorizontalAlignment="Center" FontSize="10"
+                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="4">
+                                        <TextBlock Text="TRANSFORM" HorizontalAlignment="Center" FontSize="10"
+                                                   FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                        <Button Content="⚡ Auto-wire" Command="{Binding AutoWireCommand}"
+                                                IsEnabled="{Binding CanAutoWire}" Padding="10,4" FontSize="12"
+                                                ToolTip.Tip="Propose a port + binding for every unbound input." />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" HorizontalAlignment="Center" Spacing="4">
+                                        <TextBlock Text="REPO" HorizontalAlignment="Center" FontSize="10"
+                                                   FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                        <Button Content="＋ Add repo" Padding="10,4" FontSize="12"
+                                                ToolTip.Tip="Add or remove repos in this stack">
+                                            <Button.Flyout>
+                                                <Flyout>
+                                                    <StackPanel Spacing="2" MinWidth="180">
+                                                        <TextBlock Text="Repos in this stack" FontSize="11" Margin="2,2,2,6"
+                                                                   Foreground="{StaticResource MutedBrush}" />
+                                                        <ItemsControl ItemsSource="{Binding RepoChoices}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:RepoChoiceViewModel">
+                                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
+
                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                         BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">

@@ -194,6 +194,24 @@ ports show `SHARED ×3` / `×2`. Logic unit-tested (append + dedupe, +2). Still 
 - [ ] Dragging a port already feeding the node is a no-op (no duplicate token).
 - [ ] Refine separators/text by clicking the node (the inline editor from Phase 3).
 
+### Feedback round 1 (canvas refinements)
+
+**Verified via headless render** (`main_stacks_builder_diagram.png`): three column headers
+(**SOURCE / TRANSFORM / REPO**) aligned to the columns, with **⚡ Auto-wire** under TRANSFORM and
+**＋ Add repo** under REPO (the old toolbar is gone; the workspace node's SOURCE tag moved to the
+header). Still needs a live window:
+
+- [ ] **Drag an input back to a source** wires it (blue rubber-band + a ring on the target source);
+      onto **workspace** (violet) or a **port**; onto **create new…** quick-adds a named port from the
+      repo side; dropping onto empty still unbinds (red). Re-wiring replaces the current binding.
+- [ ] **Click a cable** selects that binding: a ring on its input plus **ƒ** (add/change transform)
+      and **✕** (delete) buttons appear just left of the input. **✕** unbinds; **ƒ** opens the
+      transform/edit menu. Clicking empty space clears the selection.
+- [ ] Header buttons work: **Auto-wire** fills unbound inputs; **Add repo** opens the checkbox
+      picker.
+- [ ] Column headers stay aligned to the canvas columns at the modal's normal width (they don't
+      track horizontal scroll on a very narrow window — minor).
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

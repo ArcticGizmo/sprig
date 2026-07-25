@@ -141,13 +141,18 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     // "create new…" slot) onto an input to wire it; and dragging a bound INPUT off onto empty space
     // to unbind it.
     string? _dragSource;                    // the rail slot being dragged from (port name / sentinel)
-    (string Repo, string Input)? _dragPin;  // a bound input being dragged off to unbind
+    (string Repo, string Input)? _dragPin;  // an input being dragged (to a source to wire, or off to unbind)
     (string Repo, string Input)? _dropPin;  // the input currently under a source drag (drop target)
     (string Repo, string Input)? _dropXform;// the transform node under a source drag (fan-in target)
+    string? _dropSource;                    // the source under an input drag (reverse-wire drop target)
     (string Repo, string Input)? _hoverXform; // the transform node under the cursor
     Point _pressPos;
     Point _dragCursor;
     bool _dragMoved;
+
+    // Line selection: click a cable to select its binding; small Delete / Transform actions appear.
+    (string Repo, string Input)? _selectedInput;
+    Rect _deleteBtn, _transformBtn; // action hit-boxes, valid while _selectedInput is set
 
     static WiringCanvas()
     {
@@ -319,8 +324,9 @@ public sealed class WiringCanvas : Control, ICustomHitTest
             {
                 ctx.DrawRectangle(Brush.Parse("#1C1830"), new Pen(Ws, used ? 2 : 1), wsRect, 8, 8);
                 DrawText(ctx, "workspace", wsRect, Ws, 12.5, center: true);
-                DrawText(ctx, "SOURCE" + (g.Workspace.Shared ? " ×" + g.Workspace.ConsumerCount : ""),
-                    new Rect(wsRect.X, wsRect.Y - 15, wsRect.Width, 13), Ws, 9, center: true);
+                if (g.Workspace.Shared)
+                    DrawText(ctx, "×" + g.Workspace.ConsumerCount,
+                        new Rect(wsRect.X, wsRect.Y - 15, wsRect.Width, 13), Ws, 9, center: true);
                 ctx.DrawEllipse(Ws, null, anchor, 3.5, 3.5);
             }
         }
@@ -384,11 +390,26 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                 ctx.DrawEllipse(null, new Pen(colour, 3), tv.Pt, 9, 9); // drop-target ring
         }
 
-        // Rubber-band while dragging a bound input off to unbind it.
+        // Rubber-band while dragging an input — blue toward a source (will wire), red toward empty (unbind).
         if (_dragPin is { } dp && _dragMoved && _pins.TryGetValue(dp, out var pinPt))
         {
-            var pen = new Pen(Danger, 2.5) { DashStyle = new DashStyle([2, 3], 0), LineCap = PenLineCap.Round };
+            var colour = _dropSource == WorkspaceSource ? Ws : (_dropSource is not null ? Wire : Danger);
+            var pen = new Pen(colour, 2.5) { DashStyle = new DashStyle([2, 3], 0), LineCap = PenLineCap.Round };
             ctx.DrawGeometry(null, pen, Cable(pinPt.Pt, _dragCursor));
+            if (_dropSource is { } s && _portRects.TryGetValue(s, out var sr))
+                ctx.DrawRectangle(null, new Pen(colour, 3), sr.Inflate(3), 10, 10); // source drop-target ring
+        }
+
+        // Selected line: a ring on its input plus Delete / Transform quick actions beside it.
+        if (_selectedInput is { } sel && _pins.TryGetValue(sel, out var sp))
+        {
+            ctx.DrawEllipse(null, new Pen(Wire, 2.5), sp.Pt, 9, 9);
+            _transformBtn = new Rect(sp.Pt.X - 62, sp.Pt.Y - 11, 26, 22);
+            _deleteBtn = new Rect(sp.Pt.X - 32, sp.Pt.Y - 11, 22, 22);
+            ctx.DrawRectangle(Panel, new Pen(Xform, 1.4), _transformBtn, 5, 5);
+            DrawText(ctx, "ƒ", _transformBtn, Xform, 12, center: true);
+            ctx.DrawRectangle(Panel, new Pen(Danger, 1.4), _deleteBtn, 5, 5);
+            DrawText(ctx, "✕", _deleteBtn, Danger, 12, center: true);
         }
 
         if (_hoverPort is not null && !IsSentinel(_hoverPort) && _dragPin is null && _dragSource is null)
@@ -467,15 +488,29 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         {
             var pos = e.GetPosition(this);
 
-            // A click on a transform node opens its expression editor (it isn't a drag source).
-            if (XformAt(pos) is { } xkey && _xforms.TryGetValue(xkey, out var xf))
+            // 1. The selected line's quick actions win first.
+            if (_selectedInput is { } sel && _deleteBtn.Contains(pos))
             {
+                UnwireCommand?.Execute(new PinRef(sel.Repo, sel.Input));
+                _selectedInput = null;
+                e.Handled = true; InvalidateVisual();
+            }
+            else if (_selectedInput is { } selt && _transformBtn.Contains(pos))
+            {
+                OpenPinMenu(selt);        // add/change a transform (or unbind/edit) on the selected line
+                e.Handled = true;
+            }
+            // 2. A click on a transform node opens its expression editor (it isn't a drag source).
+            else if (XformAt(pos) is { } xkey && _xforms.TryGetValue(xkey, out var xf))
+            {
+                _selectedInput = null;
                 OpenExpressionEditor(xkey.Repo, xkey.Input, xf.Expression);
                 e.Handled = true;
             }
-            // A press on a rail slot (port / workspace / create-new) begins a source→input wire drag.
+            // 3. A press on a rail slot (port / workspace / create-new) begins a source→input wire drag.
             else if (PortAt(pos) is { } source)
             {
+                _selectedInput = null;
                 _dragSource = source;
                 _pressPos = _dragCursor = pos;
                 _dragMoved = false;
@@ -484,14 +519,28 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                 e.Handled = true;
                 InvalidateVisual();
             }
-            // A press on an input pin begins an unbind drag (or, on release without moving, its menu).
+            // 4. A press on an input pin begins a drag — to a source to (re)wire it, or off to unbind.
             else if (PinAt(pos) is { } pin)
             {
+                _selectedInput = null;
                 _dragPin = pin;
                 _pressPos = _dragCursor = pos;
                 _dragMoved = false;
                 e.Pointer.Capture(this);
                 e.Handled = true;
+                InvalidateVisual();
+            }
+            // 5. A click on a cable selects that binding (Delete / Transform actions appear).
+            else if (EdgeAt(pos) is { } edgeKey)
+            {
+                _selectedInput = edgeKey;
+                e.Handled = true;
+                InvalidateVisual();
+            }
+            // 6. A click on empty space clears the selection.
+            else if (_selectedInput is not null)
+            {
+                _selectedInput = null;
                 InvalidateVisual();
             }
         }
@@ -517,6 +566,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         {
             _dragCursor = pos;
             if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
+            _dropSource = PortAt(pos); // dropping on a source (re)wires it; off onto empty → unbind
             InvalidateVisual();
             base.OnPointerMoved(e);
             return;
@@ -577,11 +627,21 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         else if (_dragPin is { } pin)
         {
             e.Pointer.Capture(null);
+            var src = _dropSource;
             _dragPin = null;
+            _dropSource = null;
 
             if (_dragMoved)
             {
-                if (IsBound(pin)) UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input)); // dragged off → unbind
+                // Dragging the input to a source (re)wires it — replacing any current binding.
+                if (src == CreatePortSlot)
+                    PromptCreatePort(pin.Repo, pin.Input);              // quick-add a new port from the repo side
+                else if (src == WorkspaceSource)
+                    WireWorkspaceCommand?.Execute(new PinRef(pin.Repo, pin.Input));
+                else if (src is not null)
+                    WireCommand?.Execute(new WireRequest(pin.Repo, pin.Input, src));
+                else if (IsBound(pin))
+                    UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input)); // dragged off onto empty → unbind
             }
             else if (IsBound(pin))
             {
@@ -741,6 +801,63 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         foreach (var kv in _xforms)
             if (kv.Value.Rect.Contains(p)) return kv.Key;
         return null;
+    }
+
+    /// <summary>The input whose cable runs nearest <paramref name="p"/> (within a small threshold), or null.</summary>
+    (string Repo, string Input)? EdgeAt(Point p)
+    {
+        var g = _laidOut;
+        if (g is null) return null;
+
+        (string Repo, string Input)? best = null;
+        var bestD = 7.0;
+        void Test((string Repo, string Input) key, Point a, Point b)
+        {
+            var d = DistanceToCable(a, b, p);
+            if (d < bestD) { bestD = d; best = key; }
+        }
+
+        foreach (var e in g.Edges)
+            if (_portAnchor.TryGetValue(e.Port, out var a) && SourceEndFor((e.Repo, e.Input)) is { } end)
+                Test((e.Repo, e.Input), a, end);
+
+        if (_portAnchor.TryGetValue(WorkspaceSource, out var wa))
+            foreach (var repo in g.Repos)
+                foreach (var pinm in repo.Pins)
+                    if (pinm.UsesWorkspace && SourceEndFor((repo.Repo, pinm.Input)) is { } end)
+                        Test((repo.Repo, pinm.Input), wa, end);
+
+        foreach (var (key, xf) in _xforms)
+            if (_pins.TryGetValue(key, out var pin))
+                Test(key, new Point(xf.Rect.Right, xf.Rect.Center.Y), pin.Pt);
+
+        return best;
+    }
+
+    /// <summary>Min distance from <paramref name="p"/> to the bezier <see cref="Cable"/> would draw for a→b.</summary>
+    static double DistanceToCable(Point a, Point b, Point p)
+    {
+        var dx = Math.Max(40, Math.Abs(b.X - a.X) * 0.45);
+        var dir = b.X >= a.X ? 1 : -1;
+        var c1 = new Point(a.X + dx * dir, a.Y);
+        var c2 = new Point(b.X - dx * dir, b.Y);
+        var min = double.MaxValue;
+        const int steps = 24;
+        for (var i = 0; i <= steps; i++)
+        {
+            var pt = Bezier(a, c1, c2, b, i / (double)steps);
+            var d = Distance(pt, p);
+            if (d < min) min = d;
+        }
+        return min;
+    }
+
+    static Point Bezier(Point p0, Point p1, Point p2, Point p3, double t)
+    {
+        var u = 1 - t;
+        double w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t;
+        return new Point(w0 * p0.X + w1 * p1.X + w2 * p2.X + w3 * p3.X,
+                         w0 * p0.Y + w1 * p1.Y + w2 * p2.Y + w3 * p3.Y);
     }
 
     /// <summary>Where a source cable for this input ends: its transform node's left edge, or the pin.</summary>

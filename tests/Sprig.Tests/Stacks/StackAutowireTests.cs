@@ -33,6 +33,18 @@ public class StackAutowireTests
         Assert.Equal("${sprig.ports.port}", proposal.Bindings["api"]["port"]);
     }
 
+    [Theory]
+    [InlineData("frontend-port", "frontend-port")] // already has a port word — no double suffix
+    [InlineData("frontend_port", "frontend_port")]
+    [InlineData("apiPort", "api_port")]
+    [InlineData("frontend", "frontend_port")]      // no port word — suffix added
+    public void Does_not_append_a_second_port_word(string input, string expectedPort)
+    {
+        var proposal = StackAutowire.Propose(
+            [new AutowireRepo("r", [In(input, "3000")])], [], NoBindings);
+        Assert.Equal($"${{sprig.ports.{expectedPort}}}", proposal.Bindings["r"][input]);
+    }
+
     [Fact]
     public void Wraps_a_url_input_as_a_localhost_transform_over_a_derived_port()
     {

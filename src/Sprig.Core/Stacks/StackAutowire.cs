@@ -122,7 +122,12 @@ public static class StackAutowire
     static string EnsurePortSuffix(string snake)
     {
         if (snake.Length == 0) return "port";
-        if (snake == "port" || snake.EndsWith("_port", StringComparison.Ordinal)) return snake;
+        // Already ends in a "port" word (however it was separated) — don't tack on another one, so
+        // an input already named "frontend-port" / "frontend_port" / "port" stays as-is.
+        if (snake == "port"
+            || snake.EndsWith("_port", StringComparison.Ordinal)
+            || snake.EndsWith("-port", StringComparison.Ordinal))
+            return snake;
         return snake + "_port";
     }
 

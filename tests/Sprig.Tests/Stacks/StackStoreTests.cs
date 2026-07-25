@@ -117,4 +117,96 @@ public class StackStoreTests
         File.WriteAllText(path, """{ "schema":1, "name":"foreign", "repos":["not-registered"] }""");
         Assert.Throws<StackException>(() => stacks.Import(path));
     }
+
+    // A stack whose api_port is shared by both repos, kept consistent with its bindings.
+    static StackDefinition SharedStack() => new()
+    {
+        Name = "web+api",
+        Repos = ["vue", "api"],
+        Ports = ["api_port"],
+        Bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
+        {
+            ["vue"] = new Dictionary<string, string> { ["apiUrl"] = "http://localhost:${sprig.ports.api_port}" },
+            ["api"] = new Dictionary<string, string> { ["port"] = "${sprig.ports.api_port}" },
+        },
+        Shares =
+        [
+            new SharedPort
+            {
+                Port = "api_port",
+                Consumers = [new PortConsumer { Repo = "vue", Input = "apiUrl" }, new PortConsumer { Repo = "api", Input = "port" }],
+            },
+        ],
+    };
+
+    [Fact]
+    public void Explicit_shares_round_trip_through_save_and_get()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+
+        stacks.Save(SharedStack());
+
+        var got = stacks.Get("web+api");
+        Assert.NotNull(got);
+        Assert.Equal(2, got!.Schema);
+        var share = Assert.Single(got.Shares);
+        Assert.Equal("api_port", share.Port);
+        Assert.Equal(2, share.Consumers.Count);
+    }
+
+    [Fact]
+    public void Save_rejects_a_share_of_an_undeclared_port()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var bad = SharedStack() with { Ports = [] };  // api_port no longer declared
+        var ex = Assert.Throws<StackException>(() => stacks.Save(bad));
+        Assert.Contains("api_port", ex.Message);
+    }
+
+    [Fact]
+    public void Save_rejects_a_share_whose_consumer_binding_doesnt_reference_the_port()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var bad = SharedStack() with
+        {
+            Bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["vue"] = new Dictionary<string, string> { ["apiUrl"] = "http://localhost:4000" }, // literal, no port ref
+                ["api"] = new Dictionary<string, string> { ["port"] = "${sprig.ports.api_port}" },
+            },
+        };
+        var ex = Assert.Throws<StackException>(() => stacks.Save(bad));
+        Assert.Contains("apiUrl", ex.Message);
+    }
+
+    [Fact]
+    public void Importing_a_schema_one_file_upgrades_it_to_explicit_shares()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var path = Path.Combine(s.Root, "legacy.json");
+        File.WriteAllText(path, """
+        {
+          "schema": 1,
+          "name": "web+api",
+          "repos": ["vue", "api"],
+          "ports": ["api_port"],
+          "bindings": {
+            "vue": { "apiUrl": "http://localhost:${sprig.ports.api_port}" },
+            "api": { "port": "${sprig.ports.api_port}" }
+          }
+        }
+        """);
+
+        var imported = stacks.Import(path);
+
+        Assert.Equal(2, imported.Schema);
+        Assert.Equal("api_port", Assert.Single(imported.Shares).Port);
+        // and it was persisted as schema 2 with the shares filled in
+        Assert.Equal(2, stacks.Get("web+api")!.Schema);
+        Assert.Single(stacks.Get("web+api")!.Shares);
+    }
 }

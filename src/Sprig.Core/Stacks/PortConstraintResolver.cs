@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Sprig.Core.Ports;
 using Sprig.Core.Workspaces;
 
@@ -15,7 +14,7 @@ public sealed class PortConstraintException(string message) : Exception(message)
 /// port, or two restrictions on one port with nothing in common) is a hard error, never a silently
 /// dropped restriction.
 /// </summary>
-public static partial class PortConstraintResolver
+public static class PortConstraintResolver
 {
     /// <summary>Stack port name → the set of host ports it may take. Ports with no restriction are absent.</summary>
     public static IReadOnlyDictionary<string, IReadOnlySet<int>> Resolve(
@@ -45,7 +44,7 @@ public static partial class PortConstraintResolver
                     || string.IsNullOrWhiteSpace(expr))
                     continue;
 
-                var portRefs = PortReferences(expr);
+                var portRefs = PortExpressions.ReferencedPorts(expr);
                 if (portRefs.Count == 0)
                     throw new PortConstraintException(
                         $"repo '{repo.Name}' input '{input.Name}' restricts ports to {PortSetSpec.Describe(allowed)}, " +
@@ -80,19 +79,4 @@ public static partial class PortConstraintResolver
 
         return result;
     }
-
-    /// <summary>The distinct stack-port names an expression references via <c>${sprig.ports.&lt;name&gt;}</c>.</summary>
-    static List<string> PortReferences(string expr)
-    {
-        var names = new List<string>();
-        foreach (Match m in PortRefPattern().Matches(expr))
-        {
-            var name = m.Groups[1].Value.Trim();
-            if (name.Length > 0 && !names.Contains(name)) names.Add(name);
-        }
-        return names;
-    }
-
-    [GeneratedRegex(@"\$\{sprig\.ports\.([^}]+)\}")]
-    private static partial Regex PortRefPattern();
 }

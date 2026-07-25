@@ -261,9 +261,15 @@
 
                             <!-- Bindings -->
                             <StackPanel Spacing="6">
-                                <TextBlock Text="Inputs" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="Inputs" Foreground="{StaticResource MutedBrush}"
+                                               FontSize="12" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="⚡ Auto-wire" Command="{Binding AutoWireCommand}"
+                                            IsEnabled="{Binding CanAutoWire}" Padding="10,4" FontSize="12"
+                                            ToolTip.Tip="Propose a port + binding for every unbound input. Won't touch anything you've already typed." />
+                                </Grid>
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Supply each repo's inputs individually — a literal, or a template over ${sprig.ports.NAME} / ${sprig.workspace}." />
+                                           Text="Supply each repo's inputs individually — a literal, or a template over ${sprig.ports.NAME} / ${sprig.workspace}. Or let Auto-wire fill the mechanical mappings for you." />
                                 <ItemsControl ItemsSource="{Binding Bindings}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:RepoBindingGroup">

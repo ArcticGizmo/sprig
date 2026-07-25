@@ -392,12 +392,8 @@ public partial class StacksViewModel : PageViewModel
 
         foreach (var repoName in desired)
         {
-            var reg = Services.Repos.Get(repoName);
-            if (reg is null) continue;
-
-            List<InputDeclaration> inputs;
-            try { inputs = SprigConfigLoader.LoadFromFile(Path.Combine(reg.Path, ".sprig.json")).Inputs.ToList(); }
-            catch { inputs = []; }
+            if (Services.Repos.Get(repoName) is null) continue;
+            var inputs = LoadInputs(repoName);
 
             var group = Bindings.FirstOrDefault(g => g.Repo == repoName);
             if (group is null) { group = new RepoBindingGroup(repoName); Bindings.Add(group); }
@@ -408,6 +404,66 @@ public partial class StacksViewModel : PageViewModel
                 if (group.Rows.All(r => r.Input != input.Name))
                     group.Rows.Add(new BindingRow(input.Name, input.Example));
         }
+
+        OnPropertyChanged(nameof(CanAutoWire));
+    }
+
+    /// <summary>A repo's declared inputs, or an empty list if it's gone or its config won't parse.</summary>
+    List<InputDeclaration> LoadInputs(string repoName)
+    {
+        var reg = Services.Repos.Get(repoName);
+        if (reg is null) return [];
+        try { return SprigConfigLoader.LoadFromFile(Path.Combine(reg.Path, ".sprig.json")).Inputs.ToList(); }
+        catch { return []; }
+    }
+
+    /// <summary>Enabled once at least one repo (hence a binding group) is in the builder.</summary>
+    public bool CanAutoWire => Bindings.Count > 0;
+
+    /// <summary>
+    /// Fill the mechanical wiring: propose a port + binding for every still-unbound input, reusing
+    /// existing ports by name and wrapping URL-shaped inputs as a localhost transform. Anything the
+    /// user already typed is left untouched.
+    /// </summary>
+    [RelayCommand]
+    private void AutoWire()
+    {
+        var repos = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+        if (repos.Count == 0) return;
+
+        var autowireRepos = repos.Select(r => new AutowireRepo(r, LoadInputs(r))).ToList();
+
+        var existingBindings = Bindings.ToDictionary(
+            g => g.Repo,
+            g => (IReadOnlyDictionary<string, string>)g.Rows
+                .Where(r => !string.IsNullOrWhiteSpace(r.Expression))
+                .ToDictionary(r => r.Input, r => r.Expression.Trim()));
+
+        var existingPorts = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+
+        var proposal = StackAutowire.Propose(autowireRepos, existingPorts, existingBindings);
+
+        SetPorts(proposal.Ports);
+        foreach (var group in Bindings)
+            if (proposal.Bindings.TryGetValue(group.Repo, out var proposed))
+                foreach (var row in group.Rows)
+                    if (proposed.TryGetValue(row.Input, out var expr))
+                        row.Expression = expr;
+    }
+
+    /// <summary>Replace the port rows (re-subscribing change events) and refresh previews + autosuggest.</summary>
+    void SetPorts(IEnumerable<string> names)
+    {
+        foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
+        Ports.Clear();
+        foreach (var n in names)
+        {
+            var row = new StackPortRow { Name = n };
+            row.PropertyChanged += OnPortRowChanged;
+            Ports.Add(row);
+        }
+        ReindexPortPreviews();
+        RebuildBindingVariables();
     }
 }
 

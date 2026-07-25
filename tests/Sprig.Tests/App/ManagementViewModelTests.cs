@@ -919,6 +919,49 @@ public class ManagementViewModelTests
         Assert.Contains(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "name", UsesWorkspace: true });
     }
 
+    // --- Phase 5: multi-input transforms (fan-in) -----------------------------------------------
+
+    [Fact]
+    public void AppendSource_fans_a_second_port_into_a_transform()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("addr", "a:b")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AddNamedPortCommand.Execute("host_port");
+        vm.AddNamedPortCommand.Execute("admin_port");
+
+        // Start from a transform over one port, then fan a second port into its node.
+        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "addr", "${sprig.ports.host_port}:"));
+        vm.AppendSourceCommand.Execute(new AppendSourceRequest("api", "addr", "${sprig.ports.admin_port}"));
+
+        Assert.Equal("${sprig.ports.host_port}:${sprig.ports.admin_port}", Row(vm, "api", "addr").Expression);
+
+        // The live graph shows one node fed by both ports (two edges, one transform node).
+        var node = Assert.Single(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "addr" });
+        Assert.Equal(["host_port", "admin_port"], node.Ports);
+        Assert.Equal(2, vm.BuilderWiring.Edges.Count(e => e is { Repo: "api", Input: "addr" }));
+    }
+
+    [Fact]
+    public void AppendSource_ignores_a_source_already_present()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("addr", "a")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AddNamedPortCommand.Execute("host_port");
+        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "addr", "${sprig.ports.host_port}"));
+
+        vm.AppendSourceCommand.Execute(new AppendSourceRequest("api", "addr", "${sprig.ports.host_port}"));
+
+        Assert.Equal("${sprig.ports.host_port}", Row(vm, "api", "addr").Expression); // unchanged
+    }
+
     // --- Phase 4: port management from the canvas -----------------------------------------------
 
     [Fact]

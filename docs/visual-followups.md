@@ -183,6 +183,17 @@ live window:
 - [ ] Editing is still gated upstream (the builder only opens for a stack no workspace depends on),
       so there is no locked-canvas state to reach here.
 
+### Phase 5 — multi-input transforms (fan-in)
+
+**Verified via headless render** (`stacks_wiring_diagram.png`, sample now includes a two-port
+`dbAddr`): two source cables converge on one ƒ node, one node→input segment out, and the reused
+ports show `SHARED ×3` / `×2`. Logic unit-tested (append + dedupe, +2). Still needs a live window:
+
+- [ ] **Drag a port onto an existing ƒ node** → its token is appended to the node's expression (the
+      node highlights as the drop target while hovering); a second cable joins the fan-in.
+- [ ] Dragging a port already feeding the node is a no-op (no duplicate token).
+- [ ] Refine separators/text by clicking the node (the inline editor from Phase 3).
+
 ### Crash fix — Auto-wire (round 4a)
 
 Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor

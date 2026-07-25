@@ -20,5 +20,11 @@ public sealed record SetExpressionRequest(string Repo, string Input, string Expr
 /// <summary>Rename a stack port (from the canvas port menu); every binding that used it is rewritten.</summary>
 public sealed record RenamePortRequest(string OldName, string NewName);
 
+/// <summary>
+/// Append a source token (<c>${sprig.ports.x}</c> or <c>${sprig.workspace}</c>) to an input's
+/// expression — dragging a second source into an existing transform node to fan it in.
+/// </summary>
+public sealed record AppendSourceRequest(string Repo, string Input, string Token);
+
 /// <summary>Re-shape a bound input's value with a transform preset (from the canvas pin menu).</summary>
 public sealed record TransformRequest(string Repo, string Input, TransformPreset Preset);

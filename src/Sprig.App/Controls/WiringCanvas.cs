@@ -73,6 +73,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> AddPortCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AddPortCommand));
 
+    /// <summary>Invoked with an <see cref="AppendSourceRequest"/> when a source is dropped on a transform node.</summary>
+    public static readonly StyledProperty<ICommand?> AppendSourceCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AppendSourceCommand));
+
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
@@ -90,6 +94,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public ICommand? RenamePortCommand { get => GetValue(RenamePortCommandProperty); set => SetValue(RenamePortCommandProperty, value); }
     public ICommand? RemovePortCommand { get => GetValue(RemovePortCommandProperty); set => SetValue(RemovePortCommandProperty, value); }
     public ICommand? AddPortCommand { get => GetValue(AddPortCommandProperty); set => SetValue(AddPortCommandProperty, value); }
+    public ICommand? AppendSourceCommand { get => GetValue(AppendSourceCommandProperty); set => SetValue(AppendSourceCommandProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -138,6 +143,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     string? _dragSource;                    // the rail slot being dragged from (port name / sentinel)
     (string Repo, string Input)? _dragPin;  // a bound input being dragged off to unbind
     (string Repo, string Input)? _dropPin;  // the input currently under a source drag (drop target)
+    (string Repo, string Input)? _dropXform;// the transform node under a source drag (fan-in target)
     (string Repo, string Input)? _hoverXform; // the transform node under the cursor
     Point _pressPos;
     Point _dragCursor;
@@ -361,7 +367,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         // Transform node boxes (centre column), on top of the cables.
         foreach (var (key, xf) in _xforms)
         {
-            var hot = _hoverXform == key;
+            var hot = _hoverXform == key || _dropXform == key;
             ctx.DrawRectangle(Brush.Parse("#241626"), new Pen(Xform, hot ? 2 : 1.4), xf.Rect, 6, 6);
             var text = Truncate(xf.Expression, xf.Rect.Width - 26, 11);
             DrawText(ctx, "ƒ", new Rect(xf.Rect.X + 8, xf.Rect.Y, 12, xf.Rect.Height), Xform, 11, vcenter: true);
@@ -500,7 +506,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         {
             _dragCursor = pos;
             if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
-            _dropPin = PinAt(pos); // the input under the cursor = drop target
+            _dropXform = _dragSource == CreatePortSlot ? null : XformAt(pos); // fan into a node…
+            _dropPin = _dropXform is null ? PinAt(pos) : null;                // …or wire an input
             InvalidateVisual();
             base.OnPointerMoved(e);
             return;
@@ -534,10 +541,18 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         {
             e.Pointer.Capture(null);
             var target = _dropPin;
+            var xtarget = _dropXform;
             _dragSource = null;
             _dropPin = null;
+            _dropXform = null;
 
-            if (_dragMoved && target is { } t)
+            if (_dragMoved && xtarget is { } xf && source != CreatePortSlot)
+            {
+                // Fan a second source into an existing transform node.
+                var token = source == WorkspaceSource ? "${sprig.workspace}" : $"${{sprig.ports.{source}}}";
+                AppendSourceCommand?.Execute(new AppendSourceRequest(xf.Repo, xf.Input, token));
+            }
+            else if (_dragMoved && target is { } t)
             {
                 if (source == CreatePortSlot)
                     PromptCreatePort(t.Repo, t.Input);       // name it, then create + wire

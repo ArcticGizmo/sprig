@@ -228,6 +228,19 @@ public partial class StacksViewModel : PageViewModel
         if (FindRow(request.Repo, request.Input) is { } row) row.Expression = request.Expression;
     }
 
+    /// <summary>
+    /// Append a source token to an input's expression — dragging a second port (or the workspace)
+    /// into an existing transform node to fan it in. A token already present is left alone.
+    /// </summary>
+    [RelayCommand]
+    private void AppendSource(AppendSourceRequest? request)
+    {
+        if (request is null) return;
+        if (FindRow(request.Repo, request.Input) is not { } row) return;
+        if (row.Expression.Contains(request.Token, StringComparison.Ordinal)) return;
+        row.Expression += request.Token;
+    }
+
     /// <summary>Add a named stack port from the canvas (click the "create new…" slot with no drag).</summary>
     [RelayCommand]
     private void AddNamedPort(string? name)

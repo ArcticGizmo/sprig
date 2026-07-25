@@ -194,7 +194,7 @@ internal static class HeadlessRenderer
         {
             ["sprig-example-vue"] = ["frontend", "apiUrl"],
             ["dotnet-api"] = ["port", "dbPort"],
-            ["worker"] = ["dbPort", "queuePort"],
+            ["worker"] = ["dbPort", "queuePort", "dbAddr"],
         };
         var bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
         {
@@ -212,6 +212,7 @@ internal static class HeadlessRenderer
             {
                 ["dbPort"] = "${sprig.ports.postgres_port}", // shares postgres_port with dotnet-api.dbPort
                 ["queuePort"] = "${sprig.ports.queue_port}",
+                ["dbAddr"] = "${sprig.ports.postgres_port}:${sprig.ports.queue_port}", // fan-in: two ports → one node
             },
         };
 

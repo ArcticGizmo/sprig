@@ -419,7 +419,8 @@
                                                                Variables="{Binding BindingVariables}"
                                                                RenamePortCommand="{Binding RenamePortCommand}"
                                                                RemovePortCommand="{Binding RemoveNamedPortCommand}"
-                                                               AddPortCommand="{Binding AddNamedPortCommand}" />
+                                                               AddPortCommand="{Binding AddNamedPortCommand}"
+                                                               AppendSourceCommand="{Binding AppendSourceCommand}" />
                                     </ScrollViewer>
                                 </Border>
                                 <WrapPanel>

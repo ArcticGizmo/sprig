@@ -449,12 +449,20 @@ public partial class StacksViewModel : PageViewModel
     {
         var name = NewName.Trim();
         var repos = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
-        var ports = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
         var bindings = Bindings.ToDictionary(
             g => g.Repo,
             g => (IReadOnlyDictionary<string, string>)g.Rows
                 .Where(r => !string.IsNullOrWhiteSpace(r.Expression))
                 .ToDictionary(r => r.Input, r => r.Expression.Trim()));
+
+        // Drop ports no binding references — an unwired port would just allocate a number nothing uses.
+        var used = bindings.Values
+            .SelectMany(b => b.Values)
+            .SelectMany(PortExpressions.ReferencedPorts)
+            .ToHashSet(StringComparer.Ordinal);
+        var ports = Ports.Select(p => p.Name.Trim())
+            .Where(n => n.Length > 0 && used.Contains(n))
+            .ToList();
 
         var shares = StackShares.Derive(repos, ports, bindings);
 

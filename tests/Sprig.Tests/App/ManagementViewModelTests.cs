@@ -868,6 +868,27 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void Saving_drops_ports_that_no_binding_uses()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AddNamedPortCommand.Execute("api_port");     // will be wired
+        vm.AddNamedPortCommand.Execute("orphan_port");  // never referenced
+        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
+
+        vm.CreateCommand.Execute(null);
+
+        var saved = services.Stacks.Get("web");
+        Assert.NotNull(saved);
+        Assert.Contains("api_port", saved!.Ports);
+        Assert.DoesNotContain("orphan_port", saved.Ports); // auto-cleared on save
+    }
+
+    [Fact]
     public void RemoveNamedPort_from_the_canvas_drops_the_port()
     {
         using var s = new TempStore();

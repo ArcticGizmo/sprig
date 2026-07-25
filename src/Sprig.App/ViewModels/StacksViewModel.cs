@@ -124,7 +124,17 @@ public partial class StacksViewModel : PageViewModel
     [ObservableProperty] private WiringGraph? _wiring;
 
     public string DiagramToggleLabel => ShowDiagram ? "List" : "Diagram";
-    partial void OnShowDiagramChanged(bool value) => OnPropertyChanged(nameof(DiagramToggleLabel));
+
+    /// <summary>Collapse the stack-list column while the diagram is up, so the patchbay gets the full width.</summary>
+    public Avalonia.Controls.GridLength ListColumnWidth => ShowDiagram
+        ? new Avalonia.Controls.GridLength(0)
+        : new Avalonia.Controls.GridLength(1, Avalonia.Controls.GridUnitType.Star);
+
+    partial void OnShowDiagramChanged(bool value)
+    {
+        OnPropertyChanged(nameof(DiagramToggleLabel));
+        OnPropertyChanged(nameof(ListColumnWidth));
+    }
 
     [RelayCommand]
     private void ToggleDiagram() => ShowDiagram = !ShowDiagram;

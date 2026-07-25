@@ -65,3 +65,21 @@ Still needs a live window (can't be caught by a static capture):
 - [ ] Unbound / unknown-port inputs render with a **red** pin + label in a real stack that has them.
 - [ ] The 440-high diagram panel scrolls (H/V) for a stack with many repos/ports without clipping.
 - [ ] Legend row under the diagram matches the cable/port colours.
+
+## Review-feedback fixes (round 2)
+
+**Verified via headless render:** the ✕ on repo input rows is centred; the diagram takes the full
+width with the stack list collapsed and the toggle reading "List" (see `main_stacks_diagram.png`).
+
+Still needs a live window (flyout/interaction — not in a static capture):
+
+- [ ] **Override flyout** (click a value in an env/compose override): now has 14px padding and a
+      constrained width so the token box no longer overflows the popup.
+- [ ] **Port auto-guess**: click an unset env key (or compose value) whose example hard-codes a local
+      port — e.g. `Host=localhost;Port=5432` or `http://localhost:5000` — and the "OVERRIDE/REPLACE
+      WITH" box opens pre-filled with the port templated to a declared input (only when the input is
+      unambiguous). External hosts and `5432:5432` published ports are left alone.
+- [ ] **Token box on expand**: expand a collapsed "▸ review" group in the stack builder — the first
+      revealed binding box now shows its value immediately (no click needed).
+- [ ] Auto-wire no longer produces `frontend-port_port`; an input already ending in a port word keeps
+      its name (existing saved stacks keep their old names until re-wired).

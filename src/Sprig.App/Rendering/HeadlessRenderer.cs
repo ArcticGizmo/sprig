@@ -48,6 +48,14 @@ internal static class HeadlessRenderer
                     stacks.Selected = stacks.Stacks.FirstOrDefault();
                     Capture(vm, Path.Combine(outDir, "main_stacks_detail.png"));
 
+                    // The same stack as the full-width wiring diagram (list column collapsed).
+                    if (stacks.Selected is not null)
+                    {
+                        stacks.ShowDiagram = true;
+                        Capture(vm, Path.Combine(outDir, "main_stacks_diagram.png"));
+                        stacks.ShowDiagram = false;
+                    }
+
                     // Edit an existing stack (when nothing depends on it).
                     if (stacks.EditSelectedCommand.CanExecute(null))
                     {

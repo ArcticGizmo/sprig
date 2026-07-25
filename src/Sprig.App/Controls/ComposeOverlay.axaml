@@ -106,7 +106,8 @@
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                         <Button.Flyout>
                           <Flyout>
-                            <StackPanel Width="460" Spacing="9" Margin="4">
+                            <Border Padding="14" MinWidth="380" MaxWidth="480">
+                            <StackPanel Spacing="9">
                               <StackPanel Spacing="2">
                                 <TextBlock Text="{Binding KindLabel}" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{StaticResource MutedBrush}" />
@@ -135,6 +136,7 @@
                                         CommandParameter="{Binding}" />
                               </StackPanel>
                             </StackPanel>
+                            </Border>
                           </Flyout>
                         </Button.Flyout>
                       </Button>

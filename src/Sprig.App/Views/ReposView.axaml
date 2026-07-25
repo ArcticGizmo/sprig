@@ -293,7 +293,8 @@
                                                          ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
                                                 <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}"
                                                         Foreground="{StaticResource DangerBrush}" Padding="0" Width="32"
-                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch" />
+                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

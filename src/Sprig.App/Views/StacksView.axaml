@@ -7,12 +7,12 @@
              x:DataType="vm:StacksViewModel">
     <Grid Margin="28,20,24,16">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
+            <ColumnDefinition Width="{Binding ListColumnWidth}" MaxWidth="{StaticResource ListPaneMaxWidth}" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <!-- Left: header + list -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0">
+        <!-- Left: header + list (hidden while the diagram takes the full width) -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*" Margin="0,0,16,0" IsVisible="{Binding !ShowDiagram}">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <TextBlock Grid.Column="0" Text="Stacks" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
@@ -196,9 +196,9 @@
                         <StackPanel Spacing="8" IsVisible="{Binding ShowDiagram}">
                             <TextBlock Text="WIRING" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                             <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="8" Height="440" ClipToBounds="True">
+                                    BorderThickness="1" CornerRadius="8" Height="600" ClipToBounds="True">
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                    <controls:WiringCanvas Graph="{Binding Wiring}" />
+                                    <controls:WiringCanvas Graph="{Binding Wiring}" HorizontalAlignment="Center" />
                                 </ScrollViewer>
                             </Border>
                             <WrapPanel>

@@ -118,3 +118,14 @@ Needs a live window (drag interactions can't be captured statically — please v
       ports/repos from the canvas is a possible future enhancement.)
 - [ ] The canvas actually receives pointer events (relies on `ICustomHitTest`) — if drag does nothing,
       that's the thing to check first.
+
+### Crash fix — Auto-wire (round 4a)
+
+Auto-wire crashed the app on the real Windows backend (not reproducible headless): the compositor
+could commit a render between a `BuilderWiring` change and the canvas re-measure, so `Render` looked
+up a port in a stale layout dictionary (`KeyNotFoundException: 'port'`, WiringCanvas.Render). Fixed by
+rendering from the exact graph snapshot the layout was built from (`_laidOut`) plus `TryGetValue`
+guards, so the render thread can never throw on a transient mismatch.
+
+- [ ] **Regression check:** open the stack builder, select repos, add a port, click **⚡ Auto-wire** —
+      it should fill the bindings without crashing (previously crashed here).

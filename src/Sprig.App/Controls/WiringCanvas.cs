@@ -79,6 +79,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     readonly Dictionary<(string Repo, string Input), (Point Pt, bool Bound, bool Problem)> _pins = new();
     readonly Dictionary<(string Repo, string Input), Rect> _pinHit = new();        // grab area (jack + label)
     readonly List<(string Repo, Rect Rect, WiringRepoNode Node)> _repoBoxes = new();
+    // The exact graph the layout dictionaries were built from. Render draws THIS, not the live Graph,
+    // so a compositor commit that lands between a Graph change and the re-measure can't look up a key
+    // that isn't in the (still-stale) dictionaries. Rendering slightly-behind is fine; crashing isn't.
+    WiringGraph? _laidOut;
     double _height = 300;
     string? _hoverPort;
     Point _hoverPos;
@@ -110,6 +114,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         _repoBoxes.Clear();
 
         var g = Graph;
+        _laidOut = g; // the dictionaries below correspond to this snapshot; Render uses it too
         if (g is null) { _height = 200; return; }
 
         // Ports: a rail down the left.
@@ -150,7 +155,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
     public override void Render(DrawingContext ctx)
     {
         ctx.FillRectangle(Bg, new Rect(0, 0, BoardW, _height));
-        var g = Graph;
+        var g = _laidOut; // draw the snapshot the layout dictionaries were built from
         if (g is null) return;
 
         // Cables first, so nodes sit on top.
@@ -177,7 +182,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest
         // Port rail (left).
         foreach (var port in g.Ports)
         {
-            var rect = _portRects[port.Name];
+            if (!_portRects.TryGetValue(port.Name, out var rect)) continue;
+            _portAnchor.TryGetValue(port.Name, out var anchor);
             var faded = _dragPin is null && _hoverPort is not null && _hoverPort != port.Name;
             var dropTarget = _dragPin is not null && _hoverPort == port.Name;
             var border = port.Shared ? Wire : (port.Used ? Signal : Border);
@@ -192,7 +198,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest
                     DrawText(ctx, "SHARED ×" + port.ConsumerCount,
                         new Rect(rect.X, rect.Y - 15, rect.Width, 13), Wire, 9, center: true);
                 // Outlet dot on the right edge.
-                ctx.DrawEllipse(border, null, _portAnchor[port.Name], 3.5, 3.5);
+                ctx.DrawEllipse(border, null, anchor, 3.5, 3.5);
             }
         }
 
@@ -205,7 +211,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest
 
             foreach (var pin in repo.Pins)
             {
-                var (pt, bound, problem) = _pins[(repoName, pin.Input)];
+                if (!_pins.TryGetValue((repoName, pin.Input), out var pv)) continue;
+                var (pt, bound, problem) = pv;
                 DrawText(ctx, pin.Input, new Rect(node.X + 16, pt.Y - RowH / 2, NodeW - 26, RowH),
                     problem ? Danger : Fg, 12, vcenter: true);
 

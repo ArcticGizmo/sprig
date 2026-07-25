@@ -119,6 +119,23 @@ Left rail = **ports + the `workspace` chip + the phantom "create new…"**. *(Fu
 
 ---
 
+## Status (2026-07-25)
+
+Phases **0–5 are implemented, committed, and green** (380 tests). Rendering verified via headless
+PNGs; pointer-driven interactions are logged in [`visual-followups.md`](./visual-followups.md) for a
+live pass. **Phase 6 (retiring the form) is intentionally not started** — per D2 it is gated on a
+live verification of the canvas interactions.
+
+| Phase | Commit | State |
+|------|--------|-------|
+| 0 Model shim | `966b077` | ✅ done |
+| 1 Canvas-first shell | `384f901` | ✅ done |
+| 2 Source→input drag | `082590b` | ✅ done |
+| 3 Transform nodes + inline editor | `2be54dc` | ✅ done |
+| 4 Port/repo management on canvas | `4c58720` | ✅ done |
+| 5 Multi-input fan-in | `dd0ae58` | ✅ done |
+| 6 Retire the form + polish | — | ⏸ pending live verification |
+
 ## 4. Phased implementation plan
 
 Principles (carried from the prior plan): **`Bindings` stays the resolution source of truth**;

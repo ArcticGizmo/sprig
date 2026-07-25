@@ -83,3 +83,16 @@ Still needs a live window (flyout/interaction — not in a static capture):
       revealed binding box now shows its value immediately (no click needed).
 - [ ] Auto-wire no longer produces `frontend-port_port`; an input already ending in a port word keeps
       its name (existing saved stacks keep their old names until re-wired).
+
+## Diagram relayout (round 3)
+
+**Verified via headless render:** ports now form a single left-hand rail with every repo stacked on
+the right; cables flow left→right, and each `SHARED ×N` port visibly fans out to its consumers (see
+`stacks_wiring_diagram.png`). Still needs a live window:
+
+- [ ] **Hover a port** → the other cables dim and a tooltip appears listing every consumer
+      (`repo · input`, transform consumers in pink). The tooltip follows the cursor and stays inside
+      the panel edges.
+- [ ] Crossing cables are inherent to a stack whose ports don't line up with their consumers — the
+      hover dim + tooltip is the way to trace them. (Crossing-minimisation is a possible future
+      enhancement, not done here.)

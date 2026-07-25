@@ -206,7 +206,7 @@
                                 <TextBlock Text="■ transform" Foreground="{StaticResource DevBrush}" FontSize="11" Margin="0,0,14,0" />
                                 <TextBlock Text="■ producer port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
                                 <TextBlock Text="■ unbound" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="0,0,14,0" />
-                                <TextBlock Text="hover a port to trace its cables" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                                <TextBlock Text="hover a port to see what uses it" Foreground="{StaticResource MutedBrush}" FontSize="11" />
                             </WrapPanel>
                         </StackPanel>
                     </StackPanel>

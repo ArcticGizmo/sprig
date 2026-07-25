@@ -121,10 +121,10 @@ Left rail = **ports + the `workspace` chip + the phantom "create new…"**. *(Fu
 
 ## Status (2026-07-25)
 
-Phases **0–5 are implemented, committed, and green** (380 tests). Rendering verified via headless
-PNGs; pointer-driven interactions are logged in [`visual-followups.md`](./visual-followups.md) for a
-live pass. **Phase 6 (retiring the form) is intentionally not started** — per D2 it is gated on a
-live verification of the canvas interactions.
+All phases **implemented, committed, and green** (380 tests). Rendering verified via headless PNGs;
+pointer-driven interactions are logged in [`visual-followups.md`](./visual-followups.md). After the
+user's live test-drive and three rounds of refinement, the form was retired (Phase 6): the canvas is
+now the only stack-building surface.
 
 | Phase | Commit | State |
 |------|--------|-------|
@@ -134,7 +134,12 @@ live verification of the canvas interactions.
 | 3 Transform nodes + inline editor | `2be54dc` | ✅ done |
 | 4 Port/repo management on canvas | `4c58720` | ✅ done |
 | 5 Multi-input fan-in | `dd0ae58` | ✅ done |
-| 6 Retire the form + polish | — | ⏸ pending live verification |
+| 6 Retire the form | (this round) | ✅ done — canvas is the only builder |
+
+**Residual cleanup (optional):** a few `BindingRow`/`RepoBindingGroup` display flags (tag booleans,
+group collapse) that only the form rendered are now unused but still unit-tested; the rest of the
+binding machinery (the `Port` setter that generates expressions, `RebuildBuilderWiring`) is shared
+with the canvas and stays. Pruning the dead flags + their tests is a safe follow-up.
 
 ## 4. Phased implementation plan
 

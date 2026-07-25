@@ -153,28 +153,10 @@ public partial class StacksViewModel : PageViewModel
         Wiring = WiringGraph.Build(stack.Repos, stack.Ports, inputs, stack.Bindings);
     }
 
-    // --- The builder's own live wiring (an editable second view of the form) ----------------
-
-    /// <summary>When on, the builder shows the editable patchbay instead of the form fields.</summary>
-    [ObservableProperty] private bool _builderDiagram;
+    // --- The builder's live wiring (the canvas is the one and only build surface) ----------------
 
     /// <summary>The wiring graph for the in-progress build — rebuilt on every binding/port change.</summary>
     [ObservableProperty] private WiringGraph? _builderWiring;
-
-    // The canvas is the primary builder surface; the form is the "Advanced" escape hatch behind it.
-    public string BuilderViewLabel => BuilderDiagram ? "⚙ Advanced (form)" : "◨ Canvas";
-
-    /// <summary>The canvas needs room to breathe, so keep the modal wide while it's showing.</summary>
-    public double BuilderWidth => BuilderDiagram ? 1040 : 720;
-
-    partial void OnBuilderDiagramChanged(bool value)
-    {
-        OnPropertyChanged(nameof(BuilderViewLabel));
-        OnPropertyChanged(nameof(BuilderWidth));
-    }
-
-    [RelayCommand]
-    private void ToggleBuilderDiagram() => BuilderDiagram = !BuilderDiagram;
 
     /// <summary>Rebuild the live graph the builder's canvas draws from the current rows + ports.</summary>
     void RebuildBuilderWiring()
@@ -356,7 +338,6 @@ public partial class StacksViewModel : PageViewModel
         if (stack is null || !CanEditSelected) return;
 
         Error = null; Status = null;
-        BuilderDiagram = true;   // land on the canvas; the form is the Advanced view
         EditingOriginalName = stack.Name;
         NewName = stack.Name;
 
@@ -384,7 +365,6 @@ public partial class StacksViewModel : PageViewModel
     private void NewStack()
     {
         EditingOriginalName = null;
-        BuilderDiagram = true;   // name-first, then straight onto the canvas
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
         Ports.Clear();

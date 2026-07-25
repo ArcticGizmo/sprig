@@ -64,18 +64,12 @@ internal static class HeadlessRenderer
                         stacks.CancelCreateCommand.Execute(null);
                     }
 
-                    // The New-stack builder (main_stacks.png).
+                    // The New-stack builder (canvas is the only surface; auto-wire so it has cables).
                     stacks.NewStackCommand.Execute(null);
                     stacks.NewName = "web+api";
                     foreach (var c in stacks.RepoChoices) c.IsSelected = true;
-                    stacks.AddPortCommand.Execute(null);
-                    if (stacks.Ports.Count > 0) stacks.Ports[0].Name = "api_port";
-
-                    // The builder's editable drag-to-wire diagram (auto-wire first so it has cables).
                     stacks.AutoWireCommand.Execute(null);
-                    stacks.BuilderDiagram = true;
                     Capture(vm, Path.Combine(outDir, "main_stacks_builder_diagram.png"));
-                    stacks.BuilderDiagram = false;
                 }
                 // Populate the Settings port-checker so the snapshot shows a status result.
                 if (page is SettingsViewModel settings)

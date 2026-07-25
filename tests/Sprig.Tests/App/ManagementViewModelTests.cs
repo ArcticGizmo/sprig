@@ -1,4 +1,5 @@
 using Sprig.App;
+using Sprig.App.Controls;
 using Sprig.App.ViewModels;
 using Sprig.Core.Stacks;
 
@@ -760,5 +761,59 @@ public class ManagementViewModelTests
         vm.ToggleDiagramCommand.Execute(null);
         Assert.True(vm.ShowDiagram);
         Assert.Equal("List", vm.DiagramToggleLabel);
+    }
+
+    [Fact]
+    public void WirePin_binds_the_input_to_the_port_and_updates_the_live_graph()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
+
+        Assert.Equal("${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
+        Assert.NotNull(vm.BuilderWiring);
+        Assert.Contains(vm.BuilderWiring!.Edges, e => e is { Repo: "vue", Input: "apiUrl", Port: "api_port" });
+    }
+
+    [Fact]
+    public void UnwirePin_clears_the_binding()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
+        Assert.NotEqual("", Row(vm, "api", "port").Expression);
+
+        vm.UnwirePinCommand.Execute(new PinRef("api", "port"));
+
+        Assert.Equal("", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void SetPinTransform_reshapes_a_bound_input_over_its_port()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
+
+        vm.SetPinTransformCommand.Execute(new TransformRequest("vue", "apiUrl", TransformPresets.Url));
+
+        Assert.Equal("http://localhost:${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
+    }
+
+    [Fact]
+    public void Wiring_two_pins_to_one_port_marks_it_shared_in_the_live_graph()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var vm = WebPlusApi(services, s.Root);
+
+        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
+        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
+
+        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
     }
 }

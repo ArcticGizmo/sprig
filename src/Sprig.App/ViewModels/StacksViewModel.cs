@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.App.Controls;
 using Sprig.Core.Config;
 using Sprig.Core.Stacks;
 
@@ -149,6 +150,67 @@ public partial class StacksViewModel : PageViewModel
         Wiring = WiringGraph.Build(stack.Repos, stack.Ports, inputs, stack.Bindings);
     }
 
+    // --- The builder's own live wiring (an editable second view of the form) ----------------
+
+    /// <summary>When on, the builder shows the editable patchbay instead of the form fields.</summary>
+    [ObservableProperty] private bool _builderDiagram;
+
+    /// <summary>The wiring graph for the in-progress build — rebuilt on every binding/port change.</summary>
+    [ObservableProperty] private WiringGraph? _builderWiring;
+
+    public string BuilderViewLabel => BuilderDiagram ? "◧ Form" : "◨ Diagram";
+
+    /// <summary>The diagram needs room to breathe, so widen the modal while it's showing.</summary>
+    public double BuilderWidth => BuilderDiagram ? 1040 : 720;
+
+    partial void OnBuilderDiagramChanged(bool value)
+    {
+        OnPropertyChanged(nameof(BuilderViewLabel));
+        OnPropertyChanged(nameof(BuilderWidth));
+    }
+
+    [RelayCommand]
+    private void ToggleBuilderDiagram() => BuilderDiagram = !BuilderDiagram;
+
+    /// <summary>Rebuild the live graph the builder's canvas draws from the current rows + ports.</summary>
+    void RebuildBuilderWiring()
+    {
+        var repos = Bindings.Select(g => g.Repo).ToList();
+        var ports = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var inputs = Bindings.ToDictionary(
+            g => g.Repo, g => (IReadOnlyList<string>)g.Rows.Select(r => r.Input).ToList());
+        var bindings = Bindings.ToDictionary(
+            g => g.Repo, g => (IReadOnlyDictionary<string, string>)g.Rows.ToDictionary(r => r.Input, r => r.Expression));
+        BuilderWiring = WiringGraph.Build(repos, ports, inputs, bindings);
+    }
+
+    BindingRow? FindRow(string repo, string input) =>
+        Bindings.FirstOrDefault(g => g.Repo == repo)?.Rows.FirstOrDefault(r => r.Input == input);
+
+    /// <summary>Bind an input to a port (drag pin → port). Reuses the row's port setter so the form agrees.</summary>
+    [RelayCommand]
+    private void WirePin(WireRequest? request)
+    {
+        if (request is null) return;
+        if (FindRow(request.Repo, request.Input) is { } row) row.Port = request.Port;
+    }
+
+    /// <summary>Clear an input's binding (drag pin → empty space).</summary>
+    [RelayCommand]
+    private void UnwirePin(PinRef? pin)
+    {
+        if (pin is null) return;
+        if (FindRow(pin.Repo, pin.Input) is { } row) row.Expression = "";
+    }
+
+    /// <summary>Re-shape a bound input with a transform preset (canvas pin menu).</summary>
+    [RelayCommand]
+    private void SetPinTransform(TransformRequest? request)
+    {
+        if (request is null) return;
+        if (FindRow(request.Repo, request.Input) is { } row) row.SelectedTransform = request.Preset;
+    }
+
     public bool HasSelected => Selected is not null;
 
     /// <summary>Editing is allowed only when no workspaces were built from this stack.</summary>
@@ -207,6 +269,7 @@ public partial class StacksViewModel : PageViewModel
         if (stack is null || !CanEditSelected) return;
 
         Error = null; Status = null;
+        BuilderDiagram = false;
         EditingOriginalName = stack.Name;
         NewName = stack.Name;
 
@@ -234,6 +297,7 @@ public partial class StacksViewModel : PageViewModel
     private void NewStack()
     {
         EditingOriginalName = null;
+        BuilderDiagram = false;
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
         Ports.Clear();
@@ -526,6 +590,8 @@ public partial class StacksViewModel : PageViewModel
             }
             group.CollapsibleCount = collapsible;
         }
+
+        RebuildBuilderWiring();
     }
 
     /// <summary>Light exactly one tag chip per row, most decision-worthy first.</summary>

@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Rendering;
 using Sprig.Core.Stacks;
 
 namespace Sprig.App.Controls;
@@ -18,16 +20,40 @@ namespace Sprig.App.Controls;
 /// transform colour; hovering a port dims the other cables and shows a tooltip naming what consumes
 /// it. Layout is deterministic and derived from <see cref="WiringGraph"/>; this control only draws.
 /// </summary>
-public sealed class WiringCanvas : Control
+public sealed class WiringCanvas : Control, ICustomHitTest
 {
+    // The whole board is interactive (it's drawn, not templated, so give it a solid hit area).
+    public bool HitTest(Point point) => true;
+
     public static readonly StyledProperty<WiringGraph?> GraphProperty =
         AvaloniaProperty.Register<WiringCanvas, WiringGraph?>(nameof(Graph));
+
+    /// <summary>When true, input pins can be dragged onto ports to wire them (and off to unbind).</summary>
+    public static readonly StyledProperty<bool> IsEditableProperty =
+        AvaloniaProperty.Register<WiringCanvas, bool>(nameof(IsEditable));
+
+    /// <summary>Invoked with a <see cref="WireRequest"/> when a pin is dropped on a port.</summary>
+    public static readonly StyledProperty<ICommand?> WireCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(WireCommand));
+
+    /// <summary>Invoked with a <see cref="PinRef"/> when a bound pin is dropped on empty space (or "Unbind").</summary>
+    public static readonly StyledProperty<ICommand?> UnwireCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(UnwireCommand));
+
+    /// <summary>Invoked with a <see cref="TransformRequest"/> when a transform is picked from a pin menu.</summary>
+    public static readonly StyledProperty<ICommand?> TransformCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(TransformCommand));
 
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
         set => SetValue(GraphProperty, value);
     }
+
+    public bool IsEditable { get => GetValue(IsEditableProperty); set => SetValue(IsEditableProperty, value); }
+    public ICommand? WireCommand { get => GetValue(WireCommandProperty); set => SetValue(WireCommandProperty, value); }
+    public ICommand? UnwireCommand { get => GetValue(UnwireCommandProperty); set => SetValue(UnwireCommandProperty, value); }
+    public ICommand? TransformCommand { get => GetValue(TransformCommandProperty); set => SetValue(TransformCommandProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -51,10 +77,17 @@ public sealed class WiringCanvas : Control
     readonly Dictionary<string, Rect> _portRects = new(StringComparer.Ordinal);
     readonly Dictionary<string, Point> _portAnchor = new(StringComparer.Ordinal); // right-edge outlet
     readonly Dictionary<(string Repo, string Input), (Point Pt, bool Bound, bool Problem)> _pins = new();
+    readonly Dictionary<(string Repo, string Input), Rect> _pinHit = new();        // grab area (jack + label)
     readonly List<(string Repo, Rect Rect, WiringRepoNode Node)> _repoBoxes = new();
     double _height = 300;
     string? _hoverPort;
     Point _hoverPos;
+
+    // Drag-to-wire state.
+    (string Repo, string Input)? _dragPin;
+    Point _pressPos;
+    Point _dragCursor;
+    bool _dragMoved;
 
     static WiringCanvas()
     {
@@ -73,6 +106,7 @@ public sealed class WiringCanvas : Control
         _portRects.Clear();
         _portAnchor.Clear();
         _pins.Clear();
+        _pinHit.Clear();
         _repoBoxes.Clear();
 
         var g = Graph;
@@ -103,6 +137,8 @@ public sealed class WiringCanvas : Control
                 var py = y2 + HeadH + p * RowH + RowH / 2;
                 var problem = pin.Kind == BindingKind.Unbound || pin.UndeclaredPort;
                 _pins[(repo.Repo, pin.Input)] = (new Point(repoX, py), pin.HasPort, problem);
+                // Grab area covers the jack and its label, so the whole input row is a drag handle.
+                _pinHit[(repo.Repo, pin.Input)] = new Rect(repoX - 12, py - RowH / 2, 172, RowH);
             }
 
             y2 += h + RepoGap;
@@ -123,7 +159,7 @@ public sealed class WiringCanvas : Control
             if (!_pins.TryGetValue((e.Repo, e.Input), out var pin)) continue;
             if (!_portAnchor.TryGetValue(e.Port, out var start)) continue;
 
-            var dim = _hoverPort is not null && _hoverPort != e.Port;
+            var dim = _dragPin is null && _hoverPort is not null && _hoverPort != e.Port;
             var colour = e.Transform ? Xform : Wire;
             Pen pen;
             if (dim)
@@ -142,13 +178,15 @@ public sealed class WiringCanvas : Control
         foreach (var port in g.Ports)
         {
             var rect = _portRects[port.Name];
-            var faded = _hoverPort is not null && _hoverPort != port.Name;
+            var faded = _dragPin is null && _hoverPort is not null && _hoverPort != port.Name;
+            var dropTarget = _dragPin is not null && _hoverPort == port.Name;
             var border = port.Shared ? Wire : (port.Used ? Signal : Border);
             var fill = port.Used ? Brush.Parse("#152417") : PanelHead;
             var pen = new Pen(border, port.Shared ? 2 : 1);
             using (ctx.PushOpacity(faded ? 0.35 : 1.0))
             {
                 ctx.DrawRectangle(fill, pen, rect, 8, 8);
+                if (dropTarget) ctx.DrawRectangle(null, new Pen(Wire, 3), rect.Inflate(3), 10, 10);
                 DrawText(ctx, port.Name, rect, port.Used ? Signal : Muted, 12.5, center: true);
                 if (port.Shared)
                     DrawText(ctx, "SHARED ×" + port.ConsumerCount,
@@ -177,7 +215,14 @@ public sealed class WiringCanvas : Control
             }
         }
 
-        if (_hoverPort is not null) DrawTooltip(ctx, g, _hoverPort);
+        // Rubber-band cable while dragging a pin toward a port.
+        if (_dragPin is { } dp && _dragMoved && _pins.TryGetValue(dp, out var src))
+        {
+            var pen = new Pen(Wire, 2.5) { DashStyle = new DashStyle([2, 3], 0), LineCap = PenLineCap.Round };
+            ctx.DrawGeometry(null, pen, Cable(src.Pt, _dragCursor));
+        }
+
+        if (_hoverPort is not null && _dragPin is null) DrawTooltip(ctx, g, _hoverPort);
     }
 
     // -- hover tooltip: what consumes this port ------------------------------
@@ -220,8 +265,9 @@ public sealed class WiringCanvas : Control
     static StreamGeometry Cable(Point a, Point b)
     {
         var dx = Math.Max(40, Math.Abs(b.X - a.X) * 0.45);
-        var c1 = new Point(a.X + dx, a.Y);
-        var c2 = new Point(b.X - dx, b.Y);
+        var dir = b.X >= a.X ? 1 : -1; // handles either direction (port→pin and the drag rubber-band)
+        var c1 = new Point(a.X + dx * dir, a.Y);
+        var c2 = new Point(b.X - dx * dir, b.Y);
         var geo = new StreamGeometry();
         using var c = geo.Open();
         c.BeginFigure(a, false);
@@ -242,10 +288,36 @@ public sealed class WiringCanvas : Control
         ctx.DrawText(ft, new Point(x, y));
     }
 
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        if (IsEditable && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+            && PinAt(e.GetPosition(this)) is { } pin)
+        {
+            _dragPin = pin;
+            _pressPos = _dragCursor = e.GetPosition(this);
+            _dragMoved = false;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        base.OnPointerPressed(e);
+    }
+
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         var pos = e.GetPosition(this);
-        var hit = _portRects.FirstOrDefault(kv => kv.Value.Contains(pos)).Key;
+
+        if (_dragPin is not null)
+        {
+            _dragCursor = pos;
+            if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
+            _hoverPort = PortAt(pos); // drop-target
+            InvalidateVisual();
+            base.OnPointerMoved(e);
+            return;
+        }
+
+        var hit = PortAt(pos);
         var changed = hit != _hoverPort;
         _hoverPort = hit;
         _hoverPos = pos;
@@ -254,9 +326,71 @@ public sealed class WiringCanvas : Control
         base.OnPointerMoved(e);
     }
 
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        if (_dragPin is { } pin)
+        {
+            var pos = e.GetPosition(this);
+            e.Pointer.Capture(null);
+            _dragPin = null;
+            _hoverPort = null;
+
+            if (_dragMoved)
+            {
+                if (PortAt(pos) is { } port)
+                    WireCommand?.Execute(new WireRequest(pin.Repo, pin.Input, port));
+                else if (IsBound(pin))
+                    UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input)); // dragged off → unbind
+            }
+            else if (IsBound(pin))
+            {
+                OpenPinMenu(pin); // a click on a bound pin → transform / unbind menu
+            }
+
+            _dragMoved = false;
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        base.OnPointerReleased(e);
+    }
+
     protected override void OnPointerExited(PointerEventArgs e)
     {
-        if (_hoverPort is not null) { _hoverPort = null; InvalidateVisual(); }
+        if (_hoverPort is not null && _dragPin is null) { _hoverPort = null; InvalidateVisual(); }
         base.OnPointerExited(e);
+    }
+
+    (string Repo, string Input)? PinAt(Point p)
+    {
+        foreach (var kv in _pinHit)
+            if (kv.Value.Contains(p)) return kv.Key;
+        return null;
+    }
+
+    string? PortAt(Point p)
+    {
+        foreach (var kv in _portRects)
+            if (kv.Value.Contains(p)) return kv.Key;
+        return null;
+    }
+
+    bool IsBound((string Repo, string Input) pin) => _pins.TryGetValue(pin, out var v) && v.Bound;
+
+    static double Distance(Point a, Point b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
+
+    void OpenPinMenu((string Repo, string Input) pin)
+    {
+        var flyout = new MenuFlyout();
+        foreach (var preset in TransformPresets.All.Where(p => p != TransformPresets.Custom))
+        {
+            var item = new MenuItem { Header = preset.Label };
+            item.Click += (_, _) => TransformCommand?.Execute(new TransformRequest(pin.Repo, pin.Input, preset));
+            flyout.Items.Add(item);
+        }
+        flyout.Items.Add(new Separator());
+        var unbind = new MenuItem { Header = "Unbind" };
+        unbind.Click += (_, _) => UnwireCommand?.Execute(new PinRef(pin.Repo, pin.Input));
+        flyout.Items.Add(unbind);
+        flyout.ShowAt(this, showAtPointer: true);
     }
 }

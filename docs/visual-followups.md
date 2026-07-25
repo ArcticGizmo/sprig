@@ -96,3 +96,25 @@ the right; cables flow left→right, and each `SHARED ×N` port visibly fans out
 - [ ] Crossing cables are inherent to a stack whose ports don't line up with their consumers — the
       hover dim + tooltip is the way to trace them. (Crossing-minimisation is a possible future
       enhancement, not done here.)
+
+## Interactive canvas (round 4) — drag to wire
+
+**Verified via headless render:** the stack builder has a **Form / Diagram** toggle in the modal
+header; switching to Diagram widens the modal and shows the editable canvas bound to the builder's
+live state (see `main_stacks_builder_diagram.png`). The wiring commands are unit-tested
+(WirePin/UnwirePin/SetPinTransform + live graph).
+
+Needs a live window (drag interactions can't be captured statically — please verify these):
+
+- [ ] **Drag an input pin onto a port** → binds it (a dashed rubber-band cable follows the cursor
+      while dragging; the target port shows a highlight ring on hover; on drop a real cable appears).
+- [ ] **Drag a bound pin onto empty space** → unbinds it (the cable disappears; the pin/label go red).
+- [ ] **Click a bound pin** (no drag) → a menu opens with the transform presets (Raw port / URL http /
+      URL https / localhost:port) and **Unbind**; picking one rewrites the binding over its port.
+- [ ] Edits on the canvas are reflected in the **Form** view (toggle back) and vice-versa — they edit
+      the same rows.
+- [ ] Wiring two inputs to one port shows it `SHARED ×2` immediately.
+- [ ] Repos/ports are still added in the **Form** view; the diagram is the wiring surface. (Adding
+      ports/repos from the canvas is a possible future enhancement.)
+- [ ] The canvas actually receives pointer events (relies on `ICustomHitTest`) — if drag does nothing,
+      that's the thing to check first.

@@ -256,6 +256,7 @@ public partial class StacksViewModel : PageViewModel
         Ports.Add(row);
         ReindexPortPreviews();
         RebuildBindingVariables();
+        RefreshClassification();
     }
 
     [RelayCommand]
@@ -265,11 +266,12 @@ public partial class StacksViewModel : PageViewModel
         Ports.Remove(row);
         ReindexPortPreviews();
         RebuildBindingVariables();
+        RefreshClassification();
     }
 
     void OnPortRowChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(StackPortRow.Name)) RebuildBindingVariables();
+        if (e.PropertyName == nameof(StackPortRow.Name)) { RebuildBindingVariables(); RefreshClassification(); }
     }
 
     /// <summary>Rebuild the autosuggest tokens for binding expressions from the current named ports.</summary>
@@ -388,7 +390,10 @@ public partial class StacksViewModel : PageViewModel
         var desired = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
 
         foreach (var group in Bindings.Where(g => !desired.Contains(g.Repo)).ToList())
+        {
+            foreach (var row in group.Rows) row.PropertyChanged -= OnBindingRowChanged;
             Bindings.Remove(group);
+        }
 
         foreach (var repoName in desired)
         {
@@ -399,13 +404,69 @@ public partial class StacksViewModel : PageViewModel
             if (group is null) { group = new RepoBindingGroup(repoName); Bindings.Add(group); }
 
             foreach (var row in group.Rows.Where(r => inputs.All(i => i.Name != r.Input)).ToList())
+            {
+                row.PropertyChanged -= OnBindingRowChanged;
                 group.Rows.Remove(row);
+            }
             foreach (var input in inputs)
                 if (group.Rows.All(r => r.Input != input.Name))
-                    group.Rows.Add(new BindingRow(input.Name, input.Example));
+                {
+                    var row = new BindingRow(input.Name, input.Example);
+                    row.PropertyChanged += OnBindingRowChanged;
+                    group.Rows.Add(row);
+                }
         }
 
         OnPropertyChanged(nameof(CanAutoWire));
+        RefreshClassification();
+    }
+
+    void OnBindingRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BindingRow.Expression)) RefreshClassification();
+    }
+
+    /// <summary>Show or hide a group's folded identity rows.</summary>
+    [RelayCommand]
+    private void ToggleGroup(RepoBindingGroup group) => group.Expanded = !group.Expanded;
+
+    /// <summary>
+    /// Re-classify every binding row so the mechanical identity mappings can fold away and the
+    /// exceptions (transforms, shared ports, literals, and anything unbound) stay in view with a tag.
+    /// </summary>
+    void RefreshClassification()
+    {
+        var declared = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var bindings = Bindings.ToDictionary(
+            g => g.Repo,
+            g => (IReadOnlyDictionary<string, string>)g.Rows.ToDictionary(r => r.Input, r => r.Expression));
+        var all = BindingClassifier.ClassifyAll(bindings, declared);
+
+        foreach (var group in Bindings)
+        {
+            var collapsible = 0;
+            foreach (var row in group.Rows)
+            {
+                var cls = all.GetValueOrDefault((group.Repo, row.Input))
+                          ?? new BindingClass(BindingKind.Unbound, false, false);
+                ApplyTag(row, cls);
+                row.Collapsible = cls.IsCollapsible;
+                row.IsCollapsed = cls.IsCollapsible && !group.Expanded;
+                if (cls.IsCollapsible) collapsible++;
+            }
+            group.CollapsibleCount = collapsible;
+        }
+    }
+
+    /// <summary>Light exactly one tag chip per row, most decision-worthy first.</summary>
+    static void ApplyTag(BindingRow row, BindingClass cls)
+    {
+        row.ShowNeedsValue = cls.Kind == BindingKind.Unbound;
+        row.ShowUnknownPort = cls is { Kind: not BindingKind.Unbound, ReferencesUndeclaredPort: true };
+        row.ShowShared = cls is { Shared: true, ReferencesUndeclaredPort: false } && !row.ShowNeedsValue;
+        row.ShowTransform = cls is { Kind: BindingKind.Transform, Shared: false, ReferencesUndeclaredPort: false };
+        row.ShowLiteral = cls.Kind == BindingKind.Literal;
+        row.ShowAuto = cls.IsCollapsible;
     }
 
     /// <summary>A repo's declared inputs, or an empty list if it's gone or its config won't parse.</summary>
@@ -464,6 +525,7 @@ public partial class StacksViewModel : PageViewModel
         }
         ReindexPortPreviews();
         RebuildBindingVariables();
+        RefreshClassification();
     }
 }
 
@@ -479,10 +541,28 @@ public partial class StackPortRow : ViewModelBase
     [ObservableProperty] private string _preview = "";
 }
 
-public sealed class RepoBindingGroup(string repo) : ViewModelBase
+public sealed partial class RepoBindingGroup(string repo) : ViewModelBase
 {
     public string Repo { get; } = repo;
     public ObservableCollection<BindingRow> Rows { get; } = [];
+
+    /// <summary>Whether the folded identity rows are currently shown.</summary>
+    [ObservableProperty] private bool _expanded;
+
+    /// <summary>How many rows in this group are plain identity mappings that can be folded away.</summary>
+    [ObservableProperty] private int _collapsibleCount;
+
+    public bool HasCollapsible => CollapsibleCount > 0;
+    public string CollapsibleSummary =>
+        $"{CollapsibleCount} input{(CollapsibleCount == 1 ? "" : "s")} auto-wired to matching ports — all valid";
+    public string ToggleLabel => Expanded ? "▾ hide" : "▸ review";
+
+    partial void OnCollapsibleCountChanged(int value) => OnPropertyChanged(nameof(HasCollapsible));
+    partial void OnExpandedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ToggleLabel));
+        foreach (var row in Rows) row.IsCollapsed = row.Collapsible && !value;
+    }
 }
 
 public partial class BindingRow(string input, string? example) : ViewModelBase
@@ -490,6 +570,19 @@ public partial class BindingRow(string input, string? example) : ViewModelBase
     public string Input { get; } = input;
     public string? Example { get; } = example;
     [ObservableProperty] private string _expression = "";
+
+    /// <summary>A plain identity mapping that can be folded away (set by the classifier pass).</summary>
+    [ObservableProperty] private bool _collapsible;
+    /// <summary>Currently folded behind its group's summary strip.</summary>
+    [ObservableProperty] private bool _isCollapsed;
+
+    // One tag chip shows at a time; the builder's classifier sets exactly one of these.
+    [ObservableProperty] private bool _showNeedsValue;
+    [ObservableProperty] private bool _showUnknownPort;
+    [ObservableProperty] private bool _showShared;
+    [ObservableProperty] private bool _showTransform;
+    [ObservableProperty] private bool _showLiteral;
+    [ObservableProperty] private bool _showAuto;
 }
 
 /// <summary>Read-only projection of a stack's bindings for one repo (detail panel).</summary>

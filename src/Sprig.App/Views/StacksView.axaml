@@ -275,12 +275,42 @@
                                         <DataTemplate x:DataType="vm:RepoBindingGroup">
                                             <StackPanel Spacing="4" Margin="0,4,0,8">
                                                 <TextBlock Text="{Binding Repo}" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
+
+                                                <!-- Folded identity mappings: one strip to confirm, expandable to review. -->
+                                                <Button IsVisible="{Binding HasCollapsible}" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Stretch" Padding="10,6" Margin="8,2,0,2"
+                                                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                                        Command="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).ToggleGroupCommand}"
+                                                        CommandParameter="{Binding}">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                                        <TextBlock Grid.Column="0" Text="✓" Foreground="{StaticResource OkBrush}" Margin="0,0,8,0" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding CollapsibleSummary}" FontSize="12"
+                                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding ToggleLabel}" FontFamily="Consolas,monospace"
+                                                                   FontSize="11" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Button>
+
                                                 <ItemsControl ItemsSource="{Binding Rows}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate x:DataType="vm:BindingRow">
-                                                            <StackPanel Spacing="3" Margin="8,4,0,10">
-                                                                <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
-                                                                           Foreground="{StaticResource FgBrush}" />
+                                                            <StackPanel Spacing="3" Margin="8,4,0,10" IsVisible="{Binding !IsCollapsed}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                    <TextBlock Text="{Binding Input}" FontFamily="Consolas,monospace" FontSize="12"
+                                                                               Foreground="{StaticResource FgBrush}" VerticalAlignment="Center" />
+                                                                    <Border IsVisible="{Binding ShowNeedsValue}" CornerRadius="4" Padding="6,1" Background="#26F87171">
+                                                                        <TextBlock Text="needs value" FontSize="10" Foreground="{StaticResource DangerBrush}" /></Border>
+                                                                    <Border IsVisible="{Binding ShowUnknownPort}" CornerRadius="4" Padding="6,1" Background="#26F87171">
+                                                                        <TextBlock Text="unknown port" FontSize="10" Foreground="{StaticResource DangerBrush}" /></Border>
+                                                                    <Border IsVisible="{Binding ShowShared}" CornerRadius="4" Padding="6,1" Background="#2660A5FA">
+                                                                        <TextBlock Text="shared" FontSize="10" Foreground="{StaticResource AccentBrush}" /></Border>
+                                                                    <Border IsVisible="{Binding ShowTransform}" CornerRadius="4" Padding="6,1" Background="#26FF5FB0">
+                                                                        <TextBlock Text="transform" FontSize="10" Foreground="{StaticResource DevBrush}" /></Border>
+                                                                    <Border IsVisible="{Binding ShowLiteral}" CornerRadius="4" Padding="6,1" Background="#22808080">
+                                                                        <TextBlock Text="literal" FontSize="10" Foreground="{StaticResource MutedBrush}" /></Border>
+                                                                    <Border IsVisible="{Binding ShowAuto}" CornerRadius="4" Padding="6,1" Background="#264ADE80">
+                                                                        <TextBlock Text="auto" FontSize="10" Foreground="{StaticResource OkBrush}" /></Border>
+                                                                </StackPanel>
                                                                 <controls:SprigTokenBox Value="{Binding Expression, Mode=TwoWay}" MinWidth="0"
                                                                          Watermark="literal or ${sprig.ports.NAME}"
                                                                          Variables="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).BindingVariables}" />

@@ -541,4 +541,103 @@ public class ManagementViewModelTests
         var vm = new StacksViewModel(new AppServices(s.Root), new Navigator()) { NewName = name };
         Assert.Equal(expectError, vm.HasNameError);
     }
+
+    // A repo whose .sprig.json declares inputs, for exercising the builder's wiring aids.
+    static string MakeRepoWithInputs(string root, string name, params (string Name, string Example)[] inputs)
+    {
+        var dir = Path.Combine(root, name);
+        Directory.CreateDirectory(dir);
+        var decls = string.Join(",", inputs.Select(i => $$"""{ "name":"{{i.Name}}", "example":"{{i.Example}}" }"""));
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"),
+            $$"""{ "schema":2, "name":"{{name}}", "inputs":[ {{decls}} ] }""");
+        return dir;
+    }
+
+    static BindingRow Row(StacksViewModel vm, string repo, string input) =>
+        vm.Bindings.First(g => g.Repo == repo).Rows.First(r => r.Input == input);
+
+    [Fact]
+    public void AutoWire_fills_unbound_bindings_and_adds_ports()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000"), ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        vm.AutoWireCommand.Execute(null);
+
+        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
+        Assert.Equal("http://localhost:${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
+        Assert.Contains(vm.Ports, p => p.Name == "frontend_port");
+        Assert.Contains(vm.Ports, p => p.Name == "api_port");
+    }
+
+    [Fact]
+    public void AutoWire_collapses_the_identity_row_but_leaves_the_transform_visible()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000"), ("apiUrl", "http://localhost:4000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+
+        var frontend = Row(vm, "vue", "frontend");
+        Assert.True(frontend.ShowAuto);
+        Assert.True(frontend.IsCollapsed);        // folded behind the strip
+
+        var apiUrl = Row(vm, "vue", "apiUrl");
+        Assert.True(apiUrl.ShowTransform);
+        Assert.False(apiUrl.IsCollapsed);         // an exception stays in view
+
+        var group = vm.Bindings.Single();
+        Assert.True(group.HasCollapsible);
+        Assert.Equal(1, group.CollapsibleCount);
+    }
+
+    [Fact]
+    public void Toggling_a_group_reveals_its_folded_rows()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+
+        var frontend = Row(vm, "vue", "frontend");
+        Assert.True(frontend.IsCollapsed);
+
+        vm.ToggleGroupCommand.Execute(vm.Bindings.Single());
+        Assert.False(frontend.IsCollapsed);       // revealed
+    }
+
+    [Fact]
+    public void Pointing_two_inputs_at_one_port_flags_them_shared_and_keeps_them_visible()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+        vm.AddPortCommand.Execute(null);
+        vm.Ports.Single().Name = "api_port";
+
+        // Both consume api_port — vue via a transform, api raw.
+        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
+        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
+
+        var apiUrl = Row(vm, "vue", "apiUrl");
+        var port = Row(vm, "api", "port");
+        Assert.True(apiUrl.ShowShared);
+        Assert.True(port.ShowShared);
+        Assert.False(apiUrl.IsCollapsed);
+        Assert.False(port.IsCollapsed);           // a shared identity is an exception, not folded
+    }
 }

@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Sprig.App.ViewModels"
              xmlns:controls="using:Sprig.App.Controls"
-             xmlns:env="using:Sprig.Core.Env"
              x:Class="Sprig.App.Controls.EnvOverlay"
              x:DataType="vm:EnvOverlayViewModel"
              x:Name="Root">
@@ -101,7 +100,7 @@
                     <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                     <Button.Flyout>
                       <Flyout>
-                        <StackPanel Width="360" Spacing="9" Margin="4">
+                        <StackPanel Width="460" Spacing="9" Margin="4">
                           <StackPanel Spacing="2">
                             <TextBlock Text="Environment variable" FontSize="11" FontWeight="SemiBold"
                                        Foreground="{StaticResource MutedBrush}" />
@@ -113,9 +112,9 @@
                             <TextBlock Text="EXAMPLE VALUES" FontSize="10" Foreground="{StaticResource MutedBrush}" />
                             <ItemsControl ItemsSource="{Binding Examples}">
                               <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="env:EnvExample">
+                                <DataTemplate x:DataType="vm:EnvExampleGroup">
                                   <StackPanel Spacing="1" Margin="0,2,0,0">
-                                    <TextBlock Text="{Binding Source}" FontSize="10"
+                                    <TextBlock Text="{Binding Sources}" FontSize="10" TextWrapping="Wrap"
                                                Foreground="{StaticResource MutedBrush}" />
                                     <SelectableTextBlock Text="{Binding Value}" Classes="mono" TextWrapping="Wrap" />
                                   </StackPanel>

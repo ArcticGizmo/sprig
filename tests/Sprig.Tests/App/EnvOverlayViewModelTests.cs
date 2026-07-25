@@ -83,6 +83,27 @@ public class EnvOverlayViewModelTests
     }
 
     [Fact]
+    public void Example_values_shared_across_files_are_combined_under_one_header()
+    {
+        var examples = new Dictionary<string, IReadOnlyList<EnvExample>>
+        {
+            ["PORT"] =
+            [
+                new EnvExample(".env.local", "8080"),
+                new EnvExample(".env.example", "8080"),   // same value, different file
+                new EnvExample(".env.dist", "9090"),      // a different value
+            ],
+        };
+        var vm = new EnvOverlayViewModel(["PORT"], examples);
+
+        var port = Row(vm, "PORT");
+        Assert.Equal(2, port.Examples.Count);                       // two distinct values, not three rows
+        Assert.Equal(".env.local, .env.example",
+            port.Examples.Single(e => e.Value == "8080").Sources);  // sharing files combined, first-seen order
+        Assert.Equal(".env.dist", port.Examples.Single(e => e.Value == "9090").Sources);
+    }
+
+    [Fact]
     public void Add_key_introduces_a_row_for_a_key_no_template_declares()
     {
         var vm = new EnvOverlayViewModel([], NoExamples);

@@ -142,7 +142,7 @@ public partial class EnvOverlayViewModel : ObservableObject
             var row = new EnvKeyViewModel
             {
                 Key = key,
-                Examples = ExamplesFor(key),
+                Examples = GroupExamples(ExamplesFor(key)),
                 IsApplied = applied,
                 Display = applied ? template! : "override",
                 Draft = applied ? template! : string.Empty,
@@ -180,15 +180,38 @@ public partial class EnvOverlayViewModel : ObservableObject
 
     private IReadOnlyList<EnvExample> ExamplesFor(string key)
         => _examples.TryGetValue(key, out var list) ? list : [];
+
+    // Collapse example values that repeat across files into one entry, listing the sharing files under
+    // a single header (e.g. ".env.local, .env.example" → "8080") so the same value isn't shown twice.
+    private static IReadOnlyList<EnvExampleGroup> GroupExamples(IReadOnlyList<EnvExample> examples)
+    {
+        var order = new List<string>();
+        var sourcesByValue = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var e in examples)
+        {
+            if (!sourcesByValue.TryGetValue(e.Value, out var sources))
+            {
+                sourcesByValue[e.Value] = sources = [];
+                order.Add(e.Value);
+            }
+            if (!sources.Contains(e.Source)) sources.Add(e.Source);
+        }
+        return order.Select(v => new EnvExampleGroup(string.Join(", ", sourcesByValue[v]), v)).ToList();
+    }
 }
+
+/// <summary>An example value plus the file(s) it appears in — one row in a key's example list, with
+/// files that share a value combined under a single header.</summary>
+public sealed record EnvExampleGroup(string Sources, string Value);
 
 /// <summary>One key in the merged env view: its example values and any applied override.</summary>
 public partial class EnvKeyViewModel : ObservableObject
 {
     public string Key { get; init; } = string.Empty;
 
-    /// <summary>The values this key already has in the target file and its templates (source + value).</summary>
-    public IReadOnlyList<EnvExample> Examples { get; init; } = [];
+    /// <summary>The values this key already has in the target file and its templates (files that share
+    /// a value are combined into one entry).</summary>
+    public IReadOnlyList<EnvExampleGroup> Examples { get; init; } = [];
     public bool HasExamples => Examples.Count > 0;
 
     public bool IsApplied { get; init; }

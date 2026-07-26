@@ -47,7 +47,13 @@ public static class PlanTargets
     /// <summary>A stack port, e.g. <c>port:api_port</c>.</summary>
     public static string Port(string name) => $"port:{name}";
 
-    // Compose/env files are declared repo-relative, but '\' and '/' both reach the same file on Windows.
-    // Normalising here stops two spellings of one path from reading as two different targets.
-    static string Normalize(string file) => file.Replace('\\', '/').TrimStart('.', '/');
+    // Compose/env files are declared repo-relative, but '\' and '/' both reach the same file on Windows,
+    // and './x' is 'x'. Normalising stops two spellings of one path reading as two different targets —
+    // while leaving a leading dot alone, because '.env' and 'env' are genuinely different files.
+    static string Normalize(string file)
+    {
+        var path = file.Replace('\\', '/');
+        while (path.StartsWith("./", StringComparison.Ordinal)) path = path[2..];
+        return path.TrimStart('/');
+    }
 }

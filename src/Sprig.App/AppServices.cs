@@ -6,6 +6,7 @@ using Sprig.Core.Init;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
+using Sprig.Core.Shared;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
@@ -26,6 +27,7 @@ public sealed class AppServices
     public WorkspaceReconciler Reconciler { get; }
     public RepoRegistryStore Repos { get; }
     public StackStore Stacks { get; }
+    public SharedResourceStore Shared { get; }
     public StackResolver StackResolver { get; }
     public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
@@ -56,8 +58,9 @@ public sealed class AppServices
         var ports = new FilePortStore(Paths, Settings);
         Ports = ports;
         var instances = new InstanceStore(Paths);
+        Shared = new SharedResourceStore(Paths);
         Workspaces = new WorkspaceService(Git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner));
+            new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner), Shared);
         Reconciler = new WorkspaceReconciler(Git, instances);
         Repos = new RepoRegistryStore(Paths);
         Stacks = new StackStore(Paths, Repos, instances);

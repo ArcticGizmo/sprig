@@ -6,6 +6,7 @@ using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Planning;
 using Sprig.Core.Ports;
+using Sprig.Core.Shared;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 
@@ -27,7 +28,8 @@ public sealed partial class WorkspaceService(
     ComposeGenerator compose,
     IDockerService docker,
     ISprigPaths paths,
-    Setup.SetupRunner? setup = null)
+    Setup.SetupRunner? setup = null,
+    Shared.SharedResourceStore? shared = null)
 {
     public const string ConfigFileName = ".sprig.json";
     public const string GeneratedComposeName = "docker-compose.sprig.yml";
@@ -48,6 +50,18 @@ public sealed partial class WorkspaceService(
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
 
+    /// <summary>
+    /// Build the plan for a workspace, with every enabled shared-resource overlay applied unless
+    /// <paramref name="options"/> opts out. One method, so create, the create checklist, and
+    /// <c>sprig plan</c> can never disagree about what is going to happen.
+    /// </summary>
+    WorkspacePlan BuildPlan(ResolvedStack stack, string workspace, CreateOptions? options)
+    {
+        var plan = WorkspacePlanner.Plan(stack, workspace);
+        if (options?.NoShared == true || shared is null) return plan;
+        return OverlayEngine.Apply(plan, shared.Active());
+    }
+
     /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
     public InstanceRecord Create(string repoPath, string workspace,
         IProgress<WorkspaceStepProgress>? progress = null)
@@ -57,12 +71,13 @@ public sealed partial class WorkspaceService(
     /// will work through, computed up front so a UI can show every row before execution starts. Runs the
     /// same cheap pre-flight validation as create, so a bad name / duplicate workspace fails here rather
     /// than mid-checklist.</summary>
-    public IReadOnlyList<WorkspaceStep> PlanCreate(ResolvedStack stack, string workspace)
+    public IReadOnlyList<WorkspaceStep> PlanCreate(ResolvedStack stack, string workspace,
+        CreateOptions? options = null)
     {
         ValidateCreate(stack, workspace);
         // Derive the checklist from the plan, not the raw stack, so the rows a UI pre-renders keep
         // matching what create actually does once a layer above the stack can add or remove work.
-        var plan = WorkspacePlanner.Plan(stack, workspace);
+        var plan = BuildPlan(stack, workspace, options);
         var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
         foreach (var repo in plan.EffectiveRepos)
         {
@@ -119,15 +134,16 @@ public sealed partial class WorkspaceService(
     /// Reports checklist progress to <paramref name="progress"/> if supplied (steps match
     /// <see cref="PlanCreate"/>).</summary>
     public InstanceRecord Create(ResolvedStack stack, string workspace,
-        IProgress<WorkspaceStepProgress>? progress = null)
+        IProgress<WorkspaceStepProgress>? progress = null, CreateOptions? options = null)
     {
         ValidateCreate(stack, workspace);
 
         var branch = $"sprig/{workspace}";
 
         // Stage 1: what we intend to do, before a single port is reserved. Hard-fails on an unbound
-        // input, so a stack that can't produce a workspace says so before touching the filesystem.
-        var plan = WorkspacePlanner.Plan(stack, workspace);
+        // input or an overlay whose target has moved, so a stack that can't produce a workspace says
+        // so before touching the filesystem.
+        var plan = BuildPlan(stack, workspace, options);
 
         // Pre-compute each repo's sibling worktree path and guard against collisions.
         var plans = new List<RepoPlan>();
@@ -153,8 +169,7 @@ public sealed partial class WorkspaceService(
             // port to a fixed set (e.g. pre-registered Auth0 callbacks); resolve those onto the stack
             // ports so allocation only draws from the allowed set.
             progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Running));
-            var constraints = PortConstraintResolver.Resolve(
-                plan.EffectiveRepos, plan.EffectiveBindings, plan.DeclaredPorts);
+            var constraints = PortConstraintResolver.Resolve(plan);
             var requests = plan.ReferencedPorts
                 .Select(p => new PortRequest(p, constraints.GetValueOrDefault(p)))
                 .ToList();
@@ -275,18 +290,18 @@ public sealed partial class WorkspaceService(
     /// written, so ports render as <c>{name}</c> placeholders. Hard-fails on an unbound input, which
     /// makes this the cheapest way to find out whether a stack can actually produce a workspace.
     /// </summary>
-    public BoundPlan PreviewPlan(ResolvedStack stack, string workspace)
-        => WorkspacePlanner.Preview(WorkspacePlanner.Plan(stack, workspace));
+    public BoundPlan PreviewPlan(ResolvedStack stack, string workspace, CreateOptions? options = null)
+        => WorkspacePlanner.Preview(BuildPlan(stack, workspace, options));
 
     /// <summary>
     /// Re-plan an existing workspace against the ports it actually holds — the "why is this value what it
     /// is?" view for something already on disk.
     /// </summary>
-    public BoundPlan ExplainPlan(ResolvedStack stack, string workspace)
+    public BoundPlan ExplainPlan(ResolvedStack stack, string workspace, CreateOptions? options = null)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
-        return WorkspacePlanner.Bind(WorkspacePlanner.Plan(stack, workspace), record.Ports);
+        return WorkspacePlanner.Bind(BuildPlan(stack, workspace, options), record.Ports);
     }
 
     /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>

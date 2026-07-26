@@ -1,4 +1,5 @@
 using Sprig.Core.Config;
+using Sprig.Core.Shared;
 using Sprig.Core.Substitution;
 using Sprig.Core.Workspaces;
 
@@ -15,6 +16,10 @@ public sealed record BoundRepo(
 {
     public string Name => Source.Name;
     public string Root => Source.Root;
+
+    /// <summary>Compose services a shared resource provides, so this repo's own copy isn't generated.</summary>
+    public IReadOnlyList<ComposeSuppression> Suppress { get; init; } = [];
+
     public ResolvedRepo Effective => Source with { Config = EffectiveConfig };
 }
 

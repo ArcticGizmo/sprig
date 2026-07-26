@@ -10,6 +10,7 @@ using Sprig.Core.Planning;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
+using Sprig.Core.Shared;
 using Sprig.Core.Setup;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
@@ -36,8 +37,9 @@ public static class CliApp
         var git = new GitService(runner);
         var ports = new FilePortStore(paths, new FileSettingsStore(paths));
         var instances = new InstanceStore(paths);
+        var sharedStore = new SharedResourceStore(paths);
         var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner));
+            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner), sharedStore);
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
         var stacks = new StackStore(paths, registry, instances);
@@ -51,6 +53,7 @@ public static class CliApp
             {
                 "create" => Create(svc, resolver, rest, json),
                 "plan" => Plan(svc, resolver, rest, json),
+                "shared" => SharedCmd(sharedStore, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
@@ -75,13 +78,15 @@ public static class CliApp
 
     static int Create(WorkspaceService svc, StackResolver resolver, string[] args, bool json)
     {
+        var noShared = Args.TakeFlag(ref args, "--no-shared");
         var stackName = Args.TakeOption(ref args, "--stack");
         var repo = Args.TakeOption(ref args, "--repo");
         var workspace = Args.FirstPositional(args)
             ?? throw new ArgumentException("create requires a workspace name");
+        var options = new CreateOptions { NoShared = noShared };
 
-        var record = stackName is not null ? svc.Create(resolver.Resolve(stackName), workspace)
-            : repo is not null ? svc.Create(repo, workspace)
+        var record = stackName is not null ? svc.Create(resolver.Resolve(stackName), workspace, null, options)
+            : repo is not null ? svc.Create(svc.ResolveSingleRepo(repo), workspace, null, options)
             : throw new ArgumentException("create requires --stack <name> or --repo <path>");
 
         if (json) { WriteJson(record); return 0; }
@@ -113,6 +118,7 @@ public static class CliApp
     /// </summary>
     static int Plan(WorkspaceService svc, StackResolver resolver, string[] args, bool json)
     {
+        var options = new CreateOptions { NoShared = Args.TakeFlag(ref args, "--no-shared") };
         var stackName = Args.TakeOption(ref args, "--stack");
         var repo = Args.TakeOption(ref args, "--repo");
         var name = Args.TakeOption(ref args, "--name") ?? Args.FirstPositional(args);
@@ -121,7 +127,7 @@ public static class CliApp
         if (stackName is not null || repo is not null)
         {
             var stack = stackName is not null ? resolver.Resolve(stackName) : svc.ResolveSingleRepo(repo!);
-            plan = svc.PreviewPlan(stack, name ?? "preview");
+            plan = svc.PreviewPlan(stack, name ?? "preview", options);
         }
         else
         {
@@ -132,7 +138,7 @@ public static class CliApp
             var stack = record.Stack is { } s ? resolver.Resolve(s)
                 : throw new ArgumentException(
                     $"workspace '{workspace}' wasn't created from a stack — nothing to re-plan");
-            plan = svc.ExplainPlan(stack, workspace);
+            plan = svc.ExplainPlan(stack, workspace, options);
         }
 
         if (json) { WriteJson(plan); return 0; }
@@ -169,6 +175,70 @@ public static class CliApp
         PlanLayer.Shared => "[shared]",
         _ => "[?]     ",
     };
+
+    /// <summary>Machine-local shared resources: the overlays that pool infrastructure across workspaces.</summary>
+    static int SharedCmd(SharedResourceStore store, string[] args, bool json)
+    {
+        var sub = Args.FirstPositional(args) ?? "ls";
+        var tail = args.Where(a => a != sub).ToArray();
+        switch (sub)
+        {
+            case "ls":
+                var all = store.List();
+                if (json) { WriteJson(all); return 0; }
+                if (all.Count == 0)
+                {
+                    Console.WriteLine("no shared resources defined");
+                    return 0;
+                }
+                foreach (var r in all)
+                    Console.WriteLine($"  {(r.Enabled ? "on " : "off")} {r.Name,-22} capacity {r.Capacity}  " +
+                                      $"injects {string.Join(", ", r.Injects.Select(i => i.Repo))}");
+                return 0;
+
+            case "show":
+                var showName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared show requires a name");
+                var res = store.Get(showName) ?? throw new ArgumentException($"unknown shared resource '{showName}'");
+                if (json) { WriteJson(res); return 0; }
+                Console.WriteLine($"{res.Name}  {(res.Enabled ? "enabled" : "disabled")}  capacity {res.Capacity}  whenIdle {res.WhenIdle}");
+                foreach (var (k, v) in res.Values.OrderBy(v => v.Key, StringComparer.Ordinal))
+                    Console.WriteLine($"  value  {k,-14} {v}");
+                foreach (var inject in res.Injects)
+                {
+                    Console.WriteLine($"  injects into {inject.Repo}");
+                    foreach (var (k, v) in inject.Inputs)
+                        Console.WriteLine($"    [stack]  input  {k,-24} {v}");
+                    foreach (var e in inject.Env)
+                        foreach (var (k, v) in e.Set)
+                            Console.WriteLine($"    [repo]   env    {e.File}#{k,-16} {v}");
+                    foreach (var c in inject.Compose)
+                        foreach (var o in c.Overrides)
+                            Console.WriteLine($"    [repo]   compose {c.File}#{string.Join('.', o.Path),-14} {o.Template}");
+                    foreach (var sup in inject.Suppress)
+                        foreach (var svcName in sup.Services)
+                            Console.WriteLine($"    [repo]   suppress {sup.File}#services.{svcName}");
+                }
+                return 0;
+
+            case "enable":
+            case "disable":
+                var toggleName = Args.FirstPositional(tail) ?? throw new ArgumentException($"shared {sub} requires a name");
+                var toggle = store.Get(toggleName) ?? throw new ArgumentException($"unknown shared resource '{toggleName}'");
+                store.Save(toggle with { Enabled = sub == "enable" });
+                Console.WriteLine($"{sub}d '{toggleName}'");
+                return 0;
+
+            case "rm":
+                var rmName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared rm requires a name");
+                store.Remove(rmName);
+                Console.WriteLine($"removed shared resource '{rmName}'");
+                return 0;
+
+            default:
+                Console.Error.WriteLine($"unknown shared subcommand: {sub} (ls, show, enable, disable, rm)");
+                return 1;
+        }
+    }
 
     static int Repo(RepoRegistryStore registry, string[] args, bool json)
     {
@@ -472,8 +542,10 @@ public static class CliApp
                 sprig <command> [options] [--json]
 
             COMMANDS:
-                create <name> --stack <s> | --repo <path>   Create an isolated workspace
-                plan <name> | --stack <s> | --repo <path>   Show every value and the layer that set it
+                create <name> --stack <s> | --repo <path> [--no-shared]   Create an isolated workspace
+                plan <name> | --stack <s> | --repo <path> [--no-shared]   Show every value and the layer that set it
+                shared ls | show <name> | enable <name> | disable <name> | rm <name>
+                                              Machine-local pooled infrastructure (overlays)
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift
                 up <name>                     Bring the workspace's docker infra up

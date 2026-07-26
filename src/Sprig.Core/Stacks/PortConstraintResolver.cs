@@ -16,6 +16,33 @@ public sealed class PortConstraintException(string message) : Exception(message)
 /// </summary>
 public static class PortConstraintResolver
 {
+    /// <summary>
+    /// Resolve constraints for a plan, ignoring inputs a shared resource has taken over. Once an overlay
+    /// points an input at a fixed shared port, that input no longer feeds a stack port at all — so its
+    /// <c>allowedPorts</c> has nothing left to constrain, and insisting on tracing it would fail a plan
+    /// that is perfectly correct.
+    /// </summary>
+    public static IReadOnlyDictionary<string, IReadOnlySet<int>> Resolve(Planning.WorkspacePlan plan)
+    {
+        var overridden = plan.Notes
+            .Where(n => n.Layer == Planning.PlanLayer.Shared && n.Repo is not null)
+            .Select(n => (n.Repo!, n.Target))
+            .ToHashSet();
+
+        var repos = plan.Repos
+            .Select(r => r.Effective with
+            {
+                Config = r.EffectiveConfig with
+                {
+                    Inputs = [.. r.EffectiveConfig.Inputs.Where(
+                        i => !overridden.Contains((r.Name, Planning.PlanTargets.Input(i.Name))))],
+                },
+            })
+            .ToList();
+
+        return Resolve(repos, plan.EffectiveBindings, plan.DeclaredPorts);
+    }
+
     /// <summary>Stack port name → the set of host ports it may take. Ports with no restriction are absent.</summary>
     public static IReadOnlyDictionary<string, IReadOnlySet<int>> Resolve(
         IReadOnlyList<ResolvedRepo> repos,

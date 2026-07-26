@@ -1,4 +1,5 @@
 using Sprig.Core.Config;
+using Sprig.Core.Shared;
 using Sprig.Core.Stacks;
 using Sprig.Core.Workspaces;
 
@@ -21,6 +22,21 @@ public sealed record PlannedRepo(
 {
     public string Name => Source.Name;
     public string Root => Source.Root;
+
+    /// <summary>
+    /// Compose services a shared resource has taken responsibility for, so this repo's own copy isn't
+    /// generated. Never something a repo can declare — suppression is a property of the plan, not of the
+    /// tracked config, which is why it lives here rather than on <see cref="EffectiveConfig"/>.
+    /// </summary>
+    public IReadOnlyList<ComposeSuppression> Suppress { get; init; } = [];
+
+    /// <summary>
+    /// Extra variables an overlay published into this repo's scope, keyed as <c>shared.&lt;value&gt;</c> and
+    /// <c>shared.&lt;resource&gt;.&lt;value&gt;</c>. Raw templates — they may reference each other and
+    /// <c>${sprig.workspace}</c>/<c>${sprig.repo}</c>, and are resolved once at bind time along with
+    /// everything else, so there is exactly one place where substitution happens.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> SharedValues { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
     /// The source repo re-pointed at <see cref="EffectiveConfig"/>, for the handful of collaborators that

@@ -59,7 +59,12 @@ public static class WorkspacePlanner
     /// saying which layer produced it.
     /// </summary>
     public static BoundPlan Bind(WorkspacePlan plan, IReadOnlyDictionary<string, int> allocatedPorts)
-        => BindCore(plan, SprigScope.ForWorkspace(plan.Workspace, allocatedPorts), allocatedPorts);
+    {
+        var portValues = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (name, port) in allocatedPorts)
+            portValues[$"ports.{name}"] = port.ToString(CultureInfo.InvariantCulture);
+        return BindCore(plan, portValues, allocatedPorts);
+    }
 
     /// <summary>
     /// Bind for display <b>before</b> anything is allocated: each referenced port renders as a
@@ -68,13 +73,13 @@ public static class WorkspacePlanner
     /// </summary>
     public static BoundPlan Preview(WorkspacePlan plan)
     {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["workspace"] = plan.Workspace };
+        var portValues = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in plan.ReferencedPorts)
-            values[$"ports.{name}"] = $"{{{name}}}";
-        return BindCore(plan, new DictionaryVariableSource(values), new Dictionary<string, int>());
+            portValues[$"ports.{name}"] = $"{{{name}}}";
+        return BindCore(plan, portValues, new Dictionary<string, int>());
     }
 
-    static BoundPlan BindCore(WorkspacePlan plan, IVariableSource portScope,
+    static BoundPlan BindCore(WorkspacePlan plan, IReadOnlyDictionary<string, string> portValues,
         IReadOnlyDictionary<string, int> allocatedPorts)
     {
         var notes = new List<PlanNote>();
@@ -91,7 +96,19 @@ public static class WorkspacePlanner
         var repos = new List<BoundRepo>(plan.Repos.Count);
         foreach (var repo in plan.Repos)
         {
+            // A binding expression sees the stack's ports plus anything an overlay published for this
+            // repo — an overridden input usually points straight at a shared resource's value.
+            var bindingValues = new Dictionary<string, string>(portValues, StringComparer.Ordinal)
+            {
+                ["workspace"] = plan.Workspace,
+            };
+            foreach (var (key, template) in repo.SharedValues) bindingValues[key] = template;
+            var portScope = new DictionaryVariableSource(bindingValues);
+
+            // Env and compose templates see the repo's own inputs instead of the ports behind them —
+            // plus the same overlay values, so an injected env template can name them directly.
             var inputValues = new Dictionary<string, string>(StringComparer.Ordinal) { ["workspace"] = plan.Workspace };
+            foreach (var (key, template) in repo.SharedValues) inputValues[key] = template;
             var resolved = new Dictionary<string, string>(StringComparer.Ordinal);
 
             foreach (var (input, expr) in repo.Bindings)
@@ -112,7 +129,10 @@ public static class WorkspacePlanner
             }
 
             var scope = new DictionaryVariableSource(inputValues);
-            repos.Add(new BoundRepo(repo.Source, repo.EffectiveConfig, resolved, scope));
+            repos.Add(new BoundRepo(repo.Source, repo.EffectiveConfig, resolved, scope)
+            {
+                Suppress = repo.Suppress,
+            });
 
             // Carry through the plan-time notes that aren't about inputs (env keys, compose paths,
             // suppressed services), resolving each against this repo's scope now that it exists.
@@ -124,7 +144,11 @@ public static class WorkspacePlanner
                 {
                     Value = Display(note.Value, scope) ?? note.Value,
                     Expression = note.Value,
-                    Replaced = Display(note.Replaced, scope),
+                    // Deliberately left as a template. The displaced value is written in terms of inputs
+                    // the *same* overlay may have just rewritten, so resolving it against the post-override
+                    // scope would report a "was" that was never true. An input note is different: it
+                    // resolves against ports, which no overlay touches.
+                    Replaced = note.Replaced,
                 });
             }
         }

@@ -70,26 +70,36 @@ ones survive. No overlays yet, no docker, no behaviour change beyond port GC.
 **Goal:** shared-resource definitions that rewrite a plan. Still no docker — this milestone is entirely
 deterministic and unit-testable.
 
-- [ ] `SharedResourceDefinition` + `SharedResourceStore` (`%LOCALAPPDATA%\sprig\shared\<name>.json`):
-      `name`, `enabled`, `capacity`, `whenIdle`, `compose`, `port`, `values`, `attach`, `detach`,
-      `injects[]`.
-- [ ] `injects[]` shape: `{ repo, inputs{}, env[], suppress[] }` — `repo` doubles as applies-to.
-- [ ] `SharedScope` — resolves `${sprig.shared.<value>}` against the resource's own `values`, which may
-      themselves reference `${sprig.workspace}`.
-- [ ] `OverlayEngine.Apply(plan, resources)` → new plan + notes:
+- [x] `SharedResourceDefinition` + `SharedResourceStore` (`%LOCALAPPDATA%\sprig\shared\<name>.json`):
+      `name`, `enabled`, `capacity`, `whenIdle`, `compose`, `allowedPorts`, `values`, `attach`, `detach`,
+      `injects[]`. Unknown keys are rejected on save — an ignored key in an overlay is an override that
+      silently never fires.
+- [x] `injects[]` shape: `{ repo, inputs{}, env[], compose[], suppress[] }` — `repo` doubles as applies-to.
+- [x] Resource values are published into each injected repo's scope as `${sprig.shared.<value>}` and
+      `${sprig.shared.<resource>.<value>}`, left as raw templates so substitution still happens in exactly
+      one place (bind). `${sprig.repo}` is available alongside `${sprig.workspace}`.
+- [x] `OverlayEngine.Apply(plan, resources)` → new plan + notes:
       - replace `bindings[repo][input]` (preferred layer);
       - replace/add `env[file].set[KEY]` on the effective config;
-      - replace/add `compose[file].overrides[path]`.
-- [ ] **I2** — every op's target must resolve or it's a `SharedResourceException` naming the resource, the
-      repo, and the target. `optional: true` opts out per-op.
-- [ ] **Conflict detection** — two enabled overlays writing one target is a hard error naming both.
-- [ ] **I1 validator** — an overlay may not introduce an input the repo doesn't declare, nor an env file
-      the repo doesn't already target unless explicitly `add: true`.
-- [ ] Forbidden targets: `setup[]`, worktree path, branch.
-- [ ] `sprig plan` renders `shared` notes with strikethrough originals; `--no-shared` skips the engine.
-- [ ] Tests: precedence, conflict, unresolved target, I1 round-trip (apply then strip == unlayered plan).
+      - replace/add `compose[file].overrides[path]`;
+      - collect `suppress[]` onto the plan (applied in M2).
+- [x] **I2** — every op's target must resolve or it's a `SharedResourceException` naming the resource, the
+      repo, and the target. `add: true` is the deliberate opt-out.
+- [x] **Conflict detection** — two enabled overlays writing one target is a hard error naming both.
+- [x] **I1 validator** — an overlay may not introduce an input the repo doesn't declare, nor an env file or
+      compose path the repo doesn't already target unless explicitly `add: true`.
+- [x] Forbidden targets: `setup[]`, worktree path, branch — structurally, the injection shape can't name them.
+- [x] `PortConstraintResolver` skips inputs an overlay has taken over: an overridden input no longer feeds
+      a stack port, so its `allowedPorts` has nothing left to constrain.
+- [x] `sprig plan` renders `shared` notes with the displaced value; `--no-shared` skips the engine on both
+      `plan` and `create`. `sprig shared ls|show|enable|disable|rm` (extraction is M4).
+- [x] Tests: precedence, conflict, unresolved target, disabled/unreachable no-ops, the repo's own config
+      never mutated, `--no-shared` reproducing the unlayered workspace, end-to-end create.
 
 **Commit:** `Add the shared-resource overlay engine`
+
+> **Note.** After M1 an overlay rewrites values but nothing manages the container behind them. A resource
+> defined now will point a workspace at infrastructure that isn't running until M3 lands.
 
 ---
 

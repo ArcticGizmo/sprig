@@ -13,6 +13,8 @@ public interface ISprigPaths
     string InstancesDir { get; }
     /// <summary>Directory holding stack/template definitions.</summary>
     string StacksDir { get; }
+    /// <summary>Directory holding machine-local shared-resource definitions and their compose fragments.</summary>
+    string SharedDir { get; }
     /// <summary>The known-repos registry file.</summary>
     string ReposFile { get; }
     /// <summary>The port-allocation store file.</summary>
@@ -42,6 +44,7 @@ public sealed class SprigPaths : ISprigPaths
     public string Root { get; }
     public string InstancesDir => Path.Combine(Root, "instances");
     public string StacksDir => Path.Combine(Root, "stacks");
+    public string SharedDir => Path.Combine(Root, "shared");
     public string ReposFile => Path.Combine(Root, "repos.json");
     public string PortsFile => Path.Combine(Root, "ports.json");
     public string SettingsFile => Path.Combine(Root, "settings.json");

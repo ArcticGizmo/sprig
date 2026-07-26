@@ -133,9 +133,12 @@ public partial class ReposViewModel : PageViewModel
         Busy = true; IsolateError = null; Status = null;
         try
         {
-            await AppServices.RunAsync(() => Services.Workspaces.Create(repo.Path, name));
+            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(repo.Path, name));
             IsIsolating = false;
-            Status = $"created workspace '{name}' — open the Workspaces tab to run or remove it";
+            var setupFail = SetupWarning.Summarize(record);
+            Status = setupFail is null
+                ? $"created workspace '{name}' — open the Workspaces tab to run or remove it"
+                : $"created workspace '{name}', but {setupFail} — the worktree was kept; finish setup manually";
             Services.NotifyStoreChanged();
         }
         catch (Exception ex) { IsolateError = ex.Message; }

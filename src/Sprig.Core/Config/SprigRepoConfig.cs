@@ -28,6 +28,14 @@ public sealed record SprigRepoConfig
     /// <summary>Docker compose override declarations (path-based edits only), one per compose file.</summary>
     public IReadOnlyList<ComposeConfig> Compose { get; init; } = [];
 
+    /// <summary>
+    /// Free-form commands run in order at the worktree root right after it is created (e.g.
+    /// <c>npm ci</c>, <c>dotnet restore</c>) — the "install this project's dependencies" step.
+    /// Each runs via the platform shell. A failing command <b>warns but does not roll back</b> the
+    /// workspace, unlike a worktree/env/compose failure. Values are literal (no <c>${sprig.*}</c>).
+    /// </summary>
+    public IReadOnlyList<string> Setup { get; init; } = [];
+
     /// <summary>Captures any unrecognised top-level keys so the validator can reject them.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Unknown { get; init; } = new();

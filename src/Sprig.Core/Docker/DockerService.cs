@@ -8,7 +8,17 @@ public sealed class DockerService(IProcessRunner runner) : IDockerService
 {
     public bool IsAvailable()
     {
+        // `compose version` only prints the plugin version — it never contacts the engine, so it
+        // stays true even when Docker Desktop is stopped. That's why IsEngineRunning exists.
         try { return runner.Run("docker", ["compose", "version"]).Success; }
+        catch (ProcessException) { return false; }
+    }
+
+    public bool IsEngineRunning()
+    {
+        // `compose ls` queries the engine for running projects, so it fails ("cannot connect to the
+        // Docker daemon") when the engine is down — a real reachability probe, not just a CLI check.
+        try { return runner.Run("docker", ["compose", "ls"]).Success; }
         catch (ProcessException) { return false; }
     }
 

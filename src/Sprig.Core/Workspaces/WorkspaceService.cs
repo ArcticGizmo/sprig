@@ -25,7 +25,8 @@ public sealed partial class WorkspaceService(
     EnvClobberService env,
     ComposeGenerator compose,
     IDockerService docker,
-    ISprigPaths paths)
+    ISprigPaths paths,
+    Setup.SetupRunner? setup = null)
 {
     public const string ConfigFileName = ".sprig.json";
     public const string GeneratedComposeName = "docker-compose.sprig.yml";
@@ -113,6 +114,14 @@ public sealed partial class WorkspaceService(
                     composePaths.Add(dest);
                 }
 
+                // Install the repo's dependencies in the fresh worktree. This is the last step and
+                // deliberately soft: SetupRunner never throws on a non-zero exit, so a failed install
+                // is recorded (and later surfaced as a warning) but does NOT trip the rollback below —
+                // the worktree/env/compose are already good and worth keeping.
+                var setupOutcomes = setup is not null && repo.Config.Setup.Count > 0
+                    ? setup.Run(repo.Config.Setup, plan.Worktree)
+                    : [];
+
                 repoRecords.Add(new InstanceRepo
                 {
                     Name = repo.Name,
@@ -121,6 +130,7 @@ public sealed partial class WorkspaceService(
                     Branch = branch,
                     GeneratedComposePaths = composePaths,
                     Inputs = wired.Inputs[repo.Name],
+                    Setup = setupOutcomes,
                 });
             }
 

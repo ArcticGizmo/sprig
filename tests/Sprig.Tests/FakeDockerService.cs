@@ -6,6 +6,10 @@ namespace Sprig.Tests;
 public sealed class FakeDockerService : IDockerService
 {
     public bool Available { get; set; } = true;
+
+    /// <summary>Whether the (fake) engine is reachable. Independent of <see cref="Available"/> so a
+    /// test can model "CLI installed but Docker Desktop stopped".</summary>
+    public bool EngineRunning { get; set; } = true;
     public List<string> Ups { get; } = [];
     public List<(string project, bool volumes)> Downs { get; } = [];
     public List<ContainerStatus> PsResult { get; } = [];
@@ -14,6 +18,7 @@ public sealed class FakeDockerService : IDockerService
     public List<IReadOnlyList<string>> ComposeFilesSeen { get; } = [];
 
     public bool IsAvailable() => Available;
+    public bool IsEngineRunning() => Available && EngineRunning;
 
     public void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
     {

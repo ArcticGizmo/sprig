@@ -9,6 +9,7 @@ using Sprig.Core.Init;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
+using Sprig.Core.Setup;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
@@ -35,7 +36,7 @@ public static class CliApp
         var ports = new FilePortStore(paths, new FileSettingsStore(paths));
         var instances = new InstanceStore(paths);
         var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), new DockerService(runner), paths);
+            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner));
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
         var stacks = new StackStore(paths, registry, instances);
@@ -90,7 +91,16 @@ public static class CliApp
             Console.WriteLine($"  {r.Name}: {r.WorktreePath}  [{r.Branch}]");
             if (r.Inputs.Count > 0)
                 Console.WriteLine($"    inputs: {FormatKv(r.Inputs)}");
+            foreach (var s in r.Setup)
+            {
+                Console.WriteLine($"    setup {(s.Success ? "✓" : "✗")} {s.Command}{(s.Success ? "" : $" (exit {s.ExitCode})")}");
+                if (!s.Success && !string.IsNullOrWhiteSpace(s.Output))
+                    foreach (var line in s.Output.TrimEnd().Split('\n'))
+                        Console.WriteLine($"      {line.TrimEnd()}");
+            }
         }
+        if (record.Repos.Any(r => r.Setup.Any(s => !s.Success)))
+            Console.WriteLine("  note: a setup command failed — the workspace was kept; finish setup manually in the worktree.");
         return 0;
     }
 

@@ -272,6 +272,27 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void Setup_commands_round_trip_through_load_and_save()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"),
+            """{ "schema":2, "name":"api", "setup":["npm ci"] }""");
+
+        var editor = RepoEditViewModel.Load(dir);
+        Assert.Equal(["npm ci"], editor.Setup.Select(x => x.Command));
+
+        editor.AddSetupCommandCommand.Execute(null);
+        editor.Setup[1].Command = "dotnet restore";
+        editor.AddSetupCommandCommand.Execute(null);   // a blank row is dropped on save
+        Assert.True(editor.Save());
+
+        var reloaded = RepoEditViewModel.Load(dir);
+        Assert.Equal(["npm ci", "dotnet restore"], reloaded.Setup.Select(x => x.Command));
+    }
+
+    [Fact]
     public void Repo_path_suggestions_are_repo_relative_and_include_files()
     {
         using var s = new TempStore();

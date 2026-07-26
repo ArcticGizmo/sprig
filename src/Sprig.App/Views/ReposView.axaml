@@ -216,6 +216,22 @@
                             </ItemsControl>
                         </StackPanel>
 
+                        <!-- setup -->
+                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasSetup}">
+                            <TextBlock Text="SETUP (run at the worktree root after create)" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource MutedBrush}" />
+                            <ItemsControl ItemsSource="{Binding SelectedConfig.Setup}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="sys:String">
+                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                            <Run Text="$ " Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding}" />
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
                     </StackPanel>
                 </ScrollViewer>
 
@@ -443,6 +459,32 @@
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- setup: free-form commands run at the worktree root after create -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="SETUP COMMANDS" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="+ Add command" Command="{Binding AddSetupCommandCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                           Text="Run in order at the worktree root after it's created (e.g. npm ci, dotnet restore). Each runs via your shell; a failure warns but won't undo the workspace." />
+                                <ItemsControl ItemsSource="{Binding Setup}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SetupCommandRow">
+                                            <Grid ColumnDefinitions="*,32" ColumnSpacing="8" Margin="2,0,0,6">
+                                                <TextBox Grid.Column="0" Text="{Binding Command, Mode=TwoWay}" MinWidth="0"
+                                                         PlaceholderText="npm ci" FontFamily="Consolas,monospace" />
+                                                <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="0" Width="32"
+                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

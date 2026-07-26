@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Sprig.Core.Setup;
 
 namespace Sprig.Core.Store;
 
@@ -46,4 +47,9 @@ public sealed record InstanceRepo
 
     /// <summary>This repo's resolved input values (input name → value) as supplied by the stack.</summary>
     public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Outcome of this repo's <c>setup</c> commands, in order (empty if none declared).
+    /// Recorded even on failure — setup warns rather than rolling back — so the failure survives
+    /// for the UI/CLI to surface.</summary>
+    public IReadOnlyList<SetupOutcome> Setup { get; init; } = [];
 }

@@ -22,6 +22,7 @@ isolation surface. Unknown top-level keys are rejected by the validator.
 | `inputs` | array | no | The values this repo needs, referenced as `${sprig.<name>}` in its templates. |
 | `env` | array | no | Which `.env.*` files to clobber and which keys to set. |
 | `compose` | array | no | Docker compose override declarations (path-based), one entry per compose file. Omit or leave empty if the repo has no infra. |
+| `setup` | string[] | no | Free-form commands run at the worktree root after it's created (e.g. `npm ci`). See below. |
 
 ### `inputs[]` — what the repo consumes
 
@@ -97,6 +98,32 @@ want overridden.
 | `overrides[]` | array | Path-based value replacements. |
 | `overrides[].path` | string[] | YAML path segments, e.g. `["services","postgres","ports","0"]`. |
 | `overrides[].template` | string | Resolved value to place at that path (a `${sprig...}` template). |
+
+### `setup[]` — post-create commands (optional)
+
+After sprig materialises a workspace (worktree → `.env` → compose), the worktree is a fresh checkout
+with no installed dependencies. `setup` is an ordered list of free-form commands that run at that
+point so the worktree is actually runnable — the declarative equivalent of `cd`-ing in and running
+the install by hand.
+
+```jsonc
+{ "schema": 2, "name": "vue-app", "setup": ["npm ci"] }
+```
+
+- **Where:** each command runs with the **worktree root** as its working directory (the isolated copy,
+  not the source repo).
+- **How:** via the platform shell — `cmd.exe /c <command>` on Windows, `/bin/sh -c <command>`
+  elsewhere — so ordinary shell commands work. Keep each entry a single command; complex quoting or
+  `&&` chaining inside one entry can be finicky on Windows `cmd`.
+- **Order & short-circuit:** commands run top-to-bottom; the first one that exits non-zero **stops the
+  rest** (a later step usually depends on an earlier one).
+- **On failure — a soft warning, not a rollback.** Unlike a bad worktree/env/compose (which rolls the
+  whole create back), a failing setup command leaves the workspace **created**. The failure is
+  recorded on the instance and surfaced as a warning in the app and CLI, so you can finish the install
+  by hand in the worktree.
+- **No substitution:** setup commands are literal — `${sprig.*}` is not expanded inside them.
+
+Edit the list in the app's repo editor ("Setup commands").
 
 ### Templates
 
@@ -286,6 +313,8 @@ When you `create` a workspace from a stack, sprig:
 1. Allocates a real, non-colliding number for each stack port.
 2. For each repo, evaluates every input's binding to build that repo's input scope.
 3. Clobbers the repo's `.env.*` files and generates its compose file from that scope.
+4. Runs each repo's `setup` commands at its worktree root (a failure here is a **soft warning** — the
+   workspace is kept, not rolled back).
 
 Any declared input without a binding is a **hard failure** (with rollback) — the error names the
 repo, the input, and its example, so you know exactly what to add.

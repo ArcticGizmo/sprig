@@ -36,6 +36,7 @@ public static class SprigConfigValidator
         ValidateInputs(config, issues);
         ValidateEnv(config, issues);
         ValidateCompose(config, issues);
+        ValidateSetup(config, issues);
 
         foreach (var reference in ConfigReferences.UndeclaredReferences(config))
             issues.Add(new("template",
@@ -108,6 +109,13 @@ public static class SprigConfigValidator
                     issues.Add(new($"{at}.template", "must be a non-empty template"));
             }
         }
+    }
+
+    static void ValidateSetup(SprigRepoConfig config, List<ValidationIssue> issues)
+    {
+        for (var i = 0; i < config.Setup.Count; i++)
+            if (string.IsNullOrWhiteSpace(config.Setup[i]))
+                issues.Add(new($"setup[{i}]", "must be a non-empty command"));
     }
 
     static bool IsIdentifier(string s)

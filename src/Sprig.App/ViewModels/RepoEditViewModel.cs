@@ -31,6 +31,17 @@ public partial class InputEditRow : ObservableObject
     [RelayCommand] private void Remove() => _remove(this);
 }
 
+/// <summary>One editable <c>setup</c> command — a free-form line run at the worktree root.</summary>
+public partial class SetupCommandRow : ObservableObject
+{
+    readonly Action<SetupCommandRow> _remove;
+    public SetupCommandRow(Action<SetupCommandRow> remove) => _remove = remove;
+
+    [ObservableProperty] private string _command = "";
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
 /// <summary>One editable template file path an env override seeds from.</summary>
 public partial class TemplateFileRow : ObservableObject
 {
@@ -407,6 +418,9 @@ public partial class RepoEditViewModel : ObservableObject
     /// <summary>The compose files this repo overrides — one editable card each (add/remove).</summary>
     public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
 
+    /// <summary>Free-form commands run at the worktree root after it's created (add/remove/reorder-by-hand).</summary>
+    public ObservableCollection<SetupCommandRow> Setup { get; } = [];
+
     /// <summary>True when at least one input is declared — gates the inputs column header.</summary>
     public bool HasInputs => Inputs.Count > 0;
 
@@ -460,6 +474,9 @@ public partial class RepoEditViewModel : ObservableObject
             vm.Compose.Add(row);
         }
 
+        foreach (var cmd in c.Setup)
+            vm.Setup.Add(new SetupCommandRow(vm.RemoveSetupRow) { Command = cmd });
+
         vm.RefreshMissingInputRefs();
         return vm;
     }
@@ -467,6 +484,7 @@ public partial class RepoEditViewModel : ObservableObject
     void RemoveInputRow(InputEditRow r) => Inputs.Remove(r);
     void RemoveEnvRow(EnvFileEditRow r) => Env.Remove(r);
     void RemoveComposeRow(ComposeFileEditRow r) => Compose.Remove(r);
+    void RemoveSetupRow(SetupCommandRow r) => Setup.Remove(r);
 
     // -- ${sprig.*} variables (workspace + declared inputs) --------------------
 
@@ -561,6 +579,9 @@ public partial class RepoEditViewModel : ObservableObject
     [RelayCommand]
     private void AddComposeFile()
         => Compose.Add(new ComposeFileEditRow(RemoveComposeRow, RepoFileExists, ReadRepoFile, SprigVariableNames));
+
+    [RelayCommand]
+    private void AddSetupCommand() => Setup.Add(new SetupCommandRow(RemoveSetupRow));
 
     /// <summary>True if a repo-relative path names a file that exists in the repo (cheap, best-effort).</summary>
     public bool RepoFileExists(string file)
@@ -683,6 +704,7 @@ public partial class RepoEditViewModel : ObservableObject
             File = c.File.Trim(),
             Overrides = c.CurrentOverrides,
         }).ToList(),
+        Setup = Setup.Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList(),
     };
 
     /// <summary>Validate the edited config and, if valid, write it back to <c>.sprig.json</c>.</summary>

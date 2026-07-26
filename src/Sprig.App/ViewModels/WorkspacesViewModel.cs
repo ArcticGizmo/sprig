@@ -53,13 +53,69 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty] private bool _removeForce;
 
     // Create-workspace flow.
-    [ObservableProperty] private bool _isCreating;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
+    private bool _isCreating;
     [ObservableProperty] private string? _newStack;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _createError;
 
     /// <summary>Bring the new workspace's infra up right after creating it (default on).</summary>
-    [ObservableProperty] private bool _startInfraOnCreate = true;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
+    private bool _startInfraOnCreate = true;
+
+    /// <summary>Whether the Docker engine is reachable, probed while the create modal is open.
+    /// Optimistically true until the probe answers, so the warning never flashes before we know.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
+    private bool _dockerRunning = true;
+
+    /// <summary>True while the engine probe is in flight (drives the "Checking…" affordance).</summary>
+    [ObservableProperty] private bool _checkingDocker;
+
+    /// <summary>Warn in the create modal when "start infra" is asked for but the engine isn't running —
+    /// so the user finds out before hitting Create, not as an after-the-fact soft warning.</summary>
+    public bool ShowDockerWarning => IsCreating && StartInfraOnCreate && !DockerRunning && !CheckingDocker;
+
+    partial void OnCheckingDockerChanged(bool value) => OnPropertyChanged(nameof(ShowDockerWarning));
+
+    /// <summary>Re-probe the engine when "start infra" is (re)ticked — it may have come up meanwhile.</summary>
+    partial void OnStartInfraOnCreateChanged(bool value)
+    {
+        if (value && IsCreating) _ = ProbeDockerAsync();
+    }
+
+    /// <summary>Probe the Docker engine off the UI thread and update <see cref="DockerRunning"/>.</summary>
+    async Task ProbeDockerAsync()
+    {
+        CheckingDocker = true;
+        try { DockerRunning = await AppServices.RunAsync(() => Services.Docker.IsEngineRunning()); }
+        catch { DockerRunning = false; }
+        finally { CheckingDocker = false; }
+    }
+
+    /// <summary>Re-run the engine probe (the modal's "Recheck" affordance after starting Docker).</summary>
+    [RelayCommand]
+    private Task RecheckDocker() => ProbeDockerAsync();
+
+    /// <summary>Launch Docker Desktop from the create modal (no workspace selected yet, unlike
+    /// <see cref="OpenDockerCommand"/>).</summary>
+    [RelayCommand]
+    private void OpenDockerDesktop()
+    {
+        try
+        {
+            var exe = DockerDesktopPath();
+            if (exe is null)
+            {
+                CreateError = "Docker Desktop wasn't found in its default location — start it manually, then Recheck.";
+                return;
+            }
+            Process.Start(new ProcessStartInfo { FileName = exe, UseShellExecute = true });
+        }
+        catch (Exception ex) { CreateError = $"couldn't open Docker Desktop: {ex.Message}"; }
+    }
 
     public ObservableCollection<string> AvailableStacks { get; } = [];
 
@@ -129,7 +185,9 @@ public partial class WorkspacesViewModel : PageViewModel
         AvailableStacks.Clear();
         foreach (var n in names) AvailableStacks.Add(n);
         NewStack = AvailableStacks.FirstOrDefault();
+        DockerRunning = true;   // optimistic until the probe answers
         IsCreating = true;
+        if (StartInfraOnCreate) _ = ProbeDockerAsync();
     }
 
     [RelayCommand]
@@ -172,8 +230,12 @@ public partial class WorkspacesViewModel : PageViewModel
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == name) ?? Selected;
             StatusMessage = started ? $"created '{name}' and started its infra" : $"created '{name}'";
-            Error = infraWarning is null ? null
-                : $"created '{name}', but couldn't start its infra: {infraWarning}";
+            // Both a setup failure and an infra-start failure are soft warnings — the workspace itself
+            // was created. Surface whichever happened (setup first, since it ran first).
+            var setupWarning = SetupWarning.Summarize(record);
+            Error = setupWarning is not null ? $"created '{name}', but {setupWarning} — finish setup manually in the worktree"
+                : infraWarning is not null ? $"created '{name}', but couldn't start its infra: {infraWarning}"
+                : null;
             Services.NotifyStoreChanged();
         }
         catch (Exception ex)

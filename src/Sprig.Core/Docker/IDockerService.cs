@@ -11,8 +11,13 @@ public sealed record ContainerStatus(string Name, string State);
 /// </summary>
 public interface IDockerService
 {
-    /// <summary>True if <c>docker compose</c> is usable on this machine.</summary>
+    /// <summary>True if the <c>docker compose</c> CLI is installed on this machine. Note this does
+    /// NOT prove the engine is running — use <see cref="IsEngineRunning"/> for that.</summary>
     bool IsAvailable();
+
+    /// <summary>True if the Docker engine/daemon is actually reachable (Docker Desktop running), not
+    /// merely that the CLI is installed. This is the check that decides whether <c>up</c> will work.</summary>
+    bool IsEngineRunning();
 
     void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName);
 

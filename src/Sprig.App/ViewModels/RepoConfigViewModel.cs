@@ -23,12 +23,13 @@ public sealed record ComposeInfo(string File, IReadOnlyList<KvRow> Overrides);
 public sealed class RepoConfigViewModel
 {
     RepoConfigViewModel(string name, IReadOnlyList<InputRow> inputs, IReadOnlyList<EnvGroup> env,
-        IReadOnlyList<ComposeInfo> compose, string? error)
+        IReadOnlyList<ComposeInfo> compose, IReadOnlyList<string> setup, string? error)
     {
         Name = name;
         Inputs = inputs;
         Env = env;
         Compose = compose;
+        Setup = setup;
         Error = error;
     }
 
@@ -36,12 +37,14 @@ public sealed class RepoConfigViewModel
     public IReadOnlyList<InputRow> Inputs { get; }
     public IReadOnlyList<EnvGroup> Env { get; }
     public IReadOnlyList<ComposeInfo> Compose { get; }
+    public IReadOnlyList<string> Setup { get; }
     public string? Error { get; }
 
     public bool Ok => Error is null;
     public bool HasInputs => Inputs.Count > 0;
     public bool HasEnv => Env.Count > 0;
     public bool HasCompose => Compose.Count > 0;
+    public bool HasSetup => Setup.Count > 0;
 
     public static RepoConfigViewModel Load(string repoPath)
     {
@@ -57,11 +60,12 @@ public sealed class RepoConfigViewModel
                     e.Set.Select(kv => new KvRow(kv.Key, kv.Value)).ToList())).ToList(),
                 c.Compose.Select(comp => new ComposeInfo(comp.File,
                     comp.Overrides.Select(o => new KvRow(string.Join(".", o.Path), o.Template)).ToList())).ToList(),
+                c.Setup,
                 error: null);
         }
         catch (Exception ex)
         {
-            return new RepoConfigViewModel("", [], [], [], ex.Message);
+            return new RepoConfigViewModel("", [], [], [], [], ex.Message);
         }
     }
 }

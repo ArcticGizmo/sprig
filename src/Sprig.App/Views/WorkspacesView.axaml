@@ -259,6 +259,25 @@
                     <CheckBox IsChecked="{Binding StartInfraOnCreate, Mode=TwoWay}"
                               Content="Start its Docker infrastructure now"
                               ToolTip.Tip="Runs docker compose up right after creating. Ignored if the stack has no infra." />
+
+                    <!-- Proactive engine check: if "start infra" is asked for but Docker Desktop isn't
+                         running, say so now (with a way to fix it) instead of failing after create. -->
+                    <Border IsVisible="{Binding ShowDockerWarning}" CornerRadius="6" Padding="10,8"
+                            Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}" BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <TextBlock Foreground="{StaticResource WarnBrush}" FontSize="12" TextWrapping="Wrap"
+                                       Text="⚠ Docker isn't running. Start Docker Desktop and recheck, or the workspace will be created without starting its infra (you can start it later from the Workspaces list)." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Open Docker Desktop" Command="{Binding OpenDockerDesktopCommand}"
+                                        FontSize="12" Padding="8,3" />
+                                <Button Content="Recheck" Command="{Binding RecheckDockerCommand}"
+                                        FontSize="12" Padding="8,3" IsEnabled="{Binding !CheckingDocker}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock IsVisible="{Binding CheckingDocker}" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                               Text="Checking Docker…" />
+
                     <TextBlock IsVisible="{Binding CreateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding CreateError}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">

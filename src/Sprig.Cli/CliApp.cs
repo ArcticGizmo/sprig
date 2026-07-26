@@ -6,6 +6,7 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Init;
+using Sprig.Core.Planning;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
@@ -49,6 +50,7 @@ public static class CliApp
             return command switch
             {
                 "create" => Create(svc, resolver, rest, json),
+                "plan" => Plan(svc, resolver, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
@@ -103,6 +105,70 @@ public static class CliApp
             Console.WriteLine("  note: a setup command failed — the workspace was kept; finish setup manually in the worktree.");
         return 0;
     }
+
+    /// <summary>
+    /// Print every value a workspace resolves to, and which layer produced it. With <c>--stack</c> this is
+    /// a dry run — nothing is allocated or written, so ports show as <c>{name}</c> placeholders. Given an
+    /// existing workspace it re-plans against the ports that workspace actually holds.
+    /// </summary>
+    static int Plan(WorkspaceService svc, StackResolver resolver, string[] args, bool json)
+    {
+        var stackName = Args.TakeOption(ref args, "--stack");
+        var repo = Args.TakeOption(ref args, "--repo");
+        var name = Args.TakeOption(ref args, "--name") ?? Args.FirstPositional(args);
+
+        BoundPlan plan;
+        if (stackName is not null || repo is not null)
+        {
+            var stack = stackName is not null ? resolver.Resolve(stackName) : svc.ResolveSingleRepo(repo!);
+            plan = svc.PreviewPlan(stack, name ?? "preview");
+        }
+        else
+        {
+            var workspace = name ?? throw new ArgumentException(
+                "plan requires a workspace name, or --stack <name> / --repo <path> for a dry run");
+            var record = svc.Get(workspace)
+                ?? throw new ArgumentException($"unknown workspace '{workspace}'");
+            var stack = record.Stack is { } s ? resolver.Resolve(s)
+                : throw new ArgumentException(
+                    $"workspace '{workspace}' wasn't created from a stack — nothing to re-plan");
+            plan = svc.ExplainPlan(stack, workspace);
+        }
+
+        if (json) { WriteJson(plan); return 0; }
+
+        var allocated = plan.Ports.Count > 0;
+        Console.WriteLine($"plan for '{plan.Workspace}'{(plan.StackName is { } st ? $" from stack '{st}'" : "")}"
+            + (allocated ? "" : "  (dry run — no ports allocated)"));
+
+        foreach (var note in plan.Notes.Where(n => n.Repo is null))
+            Console.WriteLine($"  {Layer(note.Layer)} {note.Target,-28} {note.Value}");
+        foreach (var port in plan.UnreferencedPorts)
+            Console.WriteLine($"  {"-",-8} {PlanTargets.Port(port),-28} not allocated — nothing references it");
+
+        foreach (var boundRepo in plan.Repos)
+        {
+            Console.WriteLine($"  {boundRepo.Name}");
+            foreach (var note in plan.NotesFor(boundRepo.Name))
+            {
+                Console.WriteLine($"    {Layer(note.Layer)} {note.Target,-26} {note.Value}");
+                if (note.Expression is { } expr)
+                    Console.WriteLine($"    {"",-8} {"",-26} from {expr}");
+                if (note.Replaced is { } was)
+                    Console.WriteLine($"    {"",-8} {"",-26} was  {was}"
+                        + (note.Source is { } src ? $"  (overridden by {src})" : ""));
+            }
+        }
+        return 0;
+    }
+
+    static string Layer(PlanLayer layer) => layer switch
+    {
+        PlanLayer.Repo => "[repo]  ",
+        PlanLayer.Stack => "[stack] ",
+        PlanLayer.Shared => "[shared]",
+        _ => "[?]     ",
+    };
 
     static int Repo(RepoRegistryStore registry, string[] args, bool json)
     {
@@ -407,6 +473,7 @@ public static class CliApp
 
             COMMANDS:
                 create <name> --stack <s> | --repo <path>   Create an isolated workspace
+                plan <name> | --stack <s> | --repo <path>   Show every value and the layer that set it
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift
                 up <name>                     Bring the workspace's docker infra up

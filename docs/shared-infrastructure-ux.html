@@ -1,0 +1,1420 @@
+<title>Sprig — Shared infrastructure</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    color-scheme: dark;
+
+    /* Sprig's own palette (src/Sprig.App/App.axaml) — same tokens as the sibling
+       design docs, so this reads as one series. */
+    --ground: #131319;
+    --form: #181820;
+    --panel: #1f1f2a;
+    --panel-2: #23232f;
+    --fg: #e1e1eb;
+    --title: #f5f5fa;
+    --muted: #8c8ca0;
+    --muted-2: #5f5f70;
+    --border: #2d2d3c;
+
+    /* Layer convention, used everywhere without exception:
+         grey = repo   (.sprig.json, tracked, shared with your team)
+         blue = stack  (central store, the wiring you already author)
+         teal = shared (machine-local overlay — this document's new idea) */
+    --repo: #8c8ca0;
+    --repo-soft: #26262f;
+    --wire: #60a5fa;
+    --wire-soft: #26375a;
+    --pool: #2dd4bf;
+    --pool-soft: #123830;
+    --pool-line: #1d5c52;
+
+    --signal: #4ade80;
+    --signal-soft: #1c3a2a;
+    --warn: #fbbf24;
+    --warn-soft: #3a2f10;
+    --danger: #f87171;
+    --danger-soft: #3a1d1d;
+
+    --font-sans: system-ui, "Segoe UI", Roboto, -apple-system, sans-serif;
+    --font-mono: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, "SF Mono", monospace;
+
+    --maxw: 1080px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 560px at 82% -10%, #12302c 0%, rgba(18,48,44,0) 58%),
+      radial-gradient(900px 500px at 4% 2%, #17202f 0%, rgba(23,32,47,0) 55%),
+      var(--ground);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- type ---------- */
+  h1, h2, h3, h4 { color: var(--title); text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2.05rem, 4.5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.022em; font-weight: 750; }
+  h2 { font-size: clamp(1.42rem, 3vw, 1.92rem); line-height: 1.12; letter-spacing: -0.015em; font-weight: 700; }
+  h3 { font-size: 1.1rem; letter-spacing: -0.01em; font-weight: 650; }
+  h4 { font-size: 0.95rem; font-weight: 650; }
+  p { margin: 0; }
+  a { color: var(--pool); }
+
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+  }
+  .mono { font-family: var(--font-mono); }
+
+  .tok {
+    font-family: var(--font-mono); font-size: 0.86em;
+    background: var(--wire-soft); color: #a9cbfb;
+    padding: 0.08em 0.42em; border-radius: 5px; white-space: nowrap;
+  }
+  .tok.t { background: var(--pool-soft); color: #7ee8d8; }
+  .tok.n { background: var(--repo-soft); color: #b6b6c6; }
+  .tok.g { background: var(--signal-soft); color: #8ce7ac; }
+  .tok.r { background: var(--danger-soft); color: #f6a6a6; }
+  .tok.y { background: var(--warn-soft); color: #f7d489; }
+
+  /* layer chip — the load-bearing UI atom of this document */
+  .lay {
+    font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 5px; white-space: nowrap; font-weight: 600;
+  }
+  .lay.repo { color: #b6b6c6; background: var(--repo-soft); border: 1px solid #34343f; }
+  .lay.stack { color: #a9cbfb; background: var(--wire-soft); border: 1px solid #2f4670; }
+  .lay.shared { color: #7ee8d8; background: var(--pool-soft); border: 1px solid var(--pool-line); }
+
+  /* ---------- hero ---------- */
+  header.hero { padding: 84px 0 36px; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 14px; margin-bottom: 26px;
+  }
+  .kicker .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pool); box-shadow: 0 0 10px var(--pool); }
+  header.hero p.lede { font-size: 1.16rem; color: var(--fg); max-width: 66ch; margin-top: 22px; }
+  header.hero p.lede b { color: var(--title); font-weight: 650; }
+  .metabar {
+    display: flex; flex-wrap: wrap; gap: 8px 26px; margin-top: 34px;
+    padding-top: 22px; border-top: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted);
+  }
+  .metabar b { color: var(--fg); font-weight: 600; }
+
+  /* ---------- sections ---------- */
+  section { padding: 44px 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 6px; }
+  .sec-head .num { font-family: var(--font-mono); font-size: 0.8rem; color: var(--pool); letter-spacing: 0.1em; padding-top: 4px; }
+  .sec-sub { color: var(--muted); max-width: 70ch; margin-top: 12px; font-size: 1.01rem; }
+  .sec-sub b { color: var(--fg); font-weight: 600; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
+  .panel.pool { border-color: var(--pool-line); background: linear-gradient(165deg, #16302c, #1a1a24 68%); }
+  .panel.warn { border-color: #4a3d17; background: linear-gradient(165deg, #2a2313, #1a1a24 68%); }
+  .panel.bad { border-color: #5a2a2a; background: linear-gradient(165deg, #2a1618, #1a1a24 68%); }
+  .panel.tight { padding: 16px 18px; }
+
+  /* app-chrome mockups */
+  .app-chrome { background: var(--form); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .app-titlebar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); background: #14141b;
+    font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted);
+  }
+  .app-titlebar .lamp { width: 9px; height: 9px; border-radius: 50%; background: #33333f; }
+  .app-titlebar .right { margin-left: auto; color: var(--muted-2); }
+  .app-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .field-label { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); letter-spacing: 0.04em; }
+
+  /* ---------- the v1 autopsy (01) ---------- */
+  .autopsy { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+  .autopsy .side { border: 1px solid var(--border); border-radius: 14px; padding: 18px; background: var(--panel); display: flex; flex-direction: column; gap: 11px; }
+  .autopsy .side.bad { border-color: #5a2a2a; }
+  .autopsy .side .cap { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .autopsy .side p { color: var(--muted); font-size: 0.93rem; }
+  .autopsy .side p b { color: var(--fg); font-weight: 600; }
+
+  .swap { display: flex; flex-direction: column; gap: 8px; }
+  .swap-row {
+    display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: center;
+    border: 1px solid var(--border); border-radius: 10px; background: #101017; padding: 10px 13px;
+  }
+  .swap-row .tag { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+  .swap-row .line { font-family: var(--font-mono); font-size: 0.79rem; color: var(--fg); overflow-x: auto; white-space: nowrap; }
+  .swap-row.now { border-color: #2b3d5c; }
+  .swap-row.now .tag { color: var(--wire); }
+  .swap-row.next { border-color: var(--pool-line); background: #0f221f; }
+  .swap-row.next .tag { color: var(--pool); }
+  .swap-row.cost { border-color: #5a2a2a; background: #1c1216; }
+  .swap-row.cost .tag { color: var(--danger); }
+  em.hi { font-style: normal; color: var(--wire); background: var(--wire-soft); padding: 0.05em 0.3em; border-radius: 4px; }
+  em.hip { font-style: normal; color: #7ee8d8; background: var(--pool-soft); padding: 0.05em 0.3em; border-radius: 4px; }
+  em.hir { font-style: normal; color: #f6a6a6; background: var(--danger-soft); padding: 0.05em 0.3em; border-radius: 4px; }
+
+  /* ---------- capacity meter ---------- */
+  .meter { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 0.78rem; }
+  .pips { display: flex; gap: 4px; }
+  .pips i { width: 22px; height: 10px; border-radius: 3px; background: #2a2a38; border: 1px solid var(--border); }
+  .pips i.used { background: var(--pool); border-color: var(--pool); box-shadow: 0 0 8px rgba(45,212,191,0.35); }
+  .pips i.used.idle { background: var(--pool-line); border-color: var(--pool-line); box-shadow: none; }
+  .pips i.hot { background: var(--warn); border-color: var(--warn); box-shadow: 0 0 8px rgba(251,191,36,0.35); }
+  .meter .count { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .meter .lbl { color: var(--muted); }
+
+  /* ---------- board ---------- */
+  .board-shell { margin-top: 24px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--form); }
+  .board-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: #14141b;
+    font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted);
+  }
+  .board-bar .sp { margin-left: auto; }
+  .board-grid {
+    background:
+      linear-gradient(0deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 100% 28px,
+      linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 28px 100%;
+    overflow-x: auto;
+  }
+  svg.board { display: block; width: 100%; min-width: 700px; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 16px; border-top: 1px solid var(--border); background: #14141b; }
+  .legend span { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+  .legend i.dot { width: 9px; height: 9px; border-radius: 50%; }
+
+  /* ---------- rows ---------- */
+  .rows { display: flex; flex-direction: column; gap: 7px; }
+  .row {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+    border: 1px solid var(--border); border-radius: 9px; background: #101017;
+    padding: 10px 13px; font-family: var(--font-mono); font-size: 0.82rem;
+  }
+  .row .k { color: var(--fg); }
+  .row .v { color: #a9cbfb; overflow-x: auto; white-space: nowrap; }
+  .row .v.t { color: #7ee8d8; }
+  .row .v.m { color: var(--muted); }
+  .row.sel { border-color: var(--pool-line); background: #0f221f; }
+  .row.off { opacity: 0.5; }
+  .row.strike .k, .row.strike .v { text-decoration: line-through; text-decoration-color: var(--muted-2); }
+
+  /* provenance row — the plan view */
+  .prow {
+    display: grid; grid-template-columns: 74px 168px 1fr; gap: 12px; align-items: start;
+    border: 1px solid var(--border); border-radius: 9px; background: #101017; padding: 10px 13px;
+    font-family: var(--font-mono); font-size: 0.81rem;
+  }
+  .prow .key { color: var(--fg); overflow-x: auto; }
+  .prow .val { display: flex; flex-direction: column; gap: 3px; overflow-x: auto; }
+  .prow .val .live { color: #a9cbfb; white-space: nowrap; }
+  .prow .val .live.t { color: #7ee8d8; }
+  .prow .val .was { color: var(--muted-2); text-decoration: line-through; font-size: 0.94em; white-space: nowrap; }
+  .prow.overridden { border-color: var(--pool-line); background: #0f1f1d; }
+
+  .chk { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--muted-2); display: inline-block; position: relative; flex: none; }
+  .chk.on { background: var(--pool); border-color: var(--pool); }
+  .chk.on::after { content: "✓"; position: absolute; inset: 0; color: #06211d; font-size: 11px; line-height: 13px; text-align: center; font-weight: 800; }
+
+  .badge { font-family: var(--font-mono); font-size: 0.68rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .badge.pool { color: var(--pool); background: var(--pool-soft); }
+  .badge.iso { color: var(--wire); background: var(--wire-soft); }
+  .badge.ok { color: var(--signal); background: var(--signal-soft); }
+  .badge.warn { color: var(--warn); background: var(--warn-soft); }
+  .badge.bad { color: var(--danger); background: var(--danger-soft); }
+  .badge.mute { color: var(--muted); background: #24242f; }
+
+  .btn {
+    font-family: var(--font-mono); font-size: 0.77rem; cursor: default;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--fg);
+    padding: 6px 12px; border-radius: 7px;
+  }
+  .btn.primary { background: var(--pool); color: #06211d; border-color: var(--pool); font-weight: 650; }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .btn.danger { border-color: #5a2a2a; color: var(--danger); background: #1e1214; }
+  .btn:focus-visible { outline: 2px solid var(--pool); outline-offset: 2px; }
+
+  /* ---------- terminal ---------- */
+  pre.term {
+    margin: 0; font-family: var(--font-mono); font-size: 0.79rem; line-height: 1.66;
+    background: #0d0d13; border: 1px solid var(--border); border-radius: 10px;
+    padding: 15px 17px; overflow-x: auto; color: var(--fg); tab-size: 2;
+  }
+  pre.term .c { color: var(--muted-2); }
+  pre.term .p { color: var(--pool); }
+  pre.term .b { color: var(--wire); }
+  pre.term .g { color: var(--signal); }
+  pre.term .y { color: var(--warn); }
+  pre.term .r { color: var(--danger); }
+  pre.term .d { color: var(--muted); }
+  pre.term b { color: var(--title); font-weight: 650; }
+
+  /* ---------- lifecycle ---------- */
+  .life { display: flex; flex-direction: column; }
+  .life-step {
+    display: grid; grid-template-columns: 150px 1fr 210px; gap: 18px; align-items: start;
+    padding: 15px 0; border-top: 1px solid var(--border);
+  }
+  .life-step:first-child { border-top: none; }
+  .life-step .when { display: flex; flex-direction: column; gap: 5px; }
+  .life-step .when .cmd { font-family: var(--font-mono); font-size: 0.84rem; color: var(--title); }
+  .life-step .when .ph { font-family: var(--font-mono); font-size: 0.67rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+  .life-step .what { color: var(--muted); font-size: 0.93rem; }
+  .life-step .what b { color: var(--fg); font-weight: 600; }
+  .counters { display: flex; flex-direction: column; gap: 6px; }
+  .ctr { display: grid; grid-template-columns: 80px 1fr; gap: 10px; align-items: center; font-family: var(--font-mono); font-size: 0.73rem; color: var(--muted); }
+  .ctr .cv { display: flex; align-items: center; gap: 8px; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; border-radius: 3px; background: #26262f; flex: 1; overflow: hidden; border: 1px solid var(--border); }
+  .bar > i { display: block; height: 100%; }
+  .bar > i.p { background: var(--pool); }
+  .bar > i.g { background: var(--signal); }
+
+  /* ---------- tables ---------- */
+  .tbl-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 660px; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 12px 15px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-family: var(--font-mono); font-size: 0.71rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: #14141b; font-weight: 600; }
+  td.mono { font-family: var(--font-mono); font-size: 0.81rem; }
+  td .yes { color: var(--signal); }
+  td .no { color: var(--muted-2); }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---------- cards ---------- */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .cards.two { grid-template-columns: repeat(2, 1fr); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .card .mark { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pool); }
+  .card p { color: var(--muted); font-size: 0.93rem; }
+  .card p b { color: var(--fg); font-weight: 600; }
+
+  /* ---------- risks ---------- */
+  .risks { display: flex; flex-direction: column; gap: 14px; }
+  .risk { display: grid; grid-template-columns: 46px 1fr; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .risk .sev { display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.95rem; font-weight: 700; color: #0d0d13; }
+  .risk .sev.high { background: var(--danger); }
+  .risk .sev.mid { background: var(--warn); }
+  .risk .sev.low { background: var(--signal); }
+  .risk .rbody { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+  .risk .rbody p { color: var(--muted); font-size: 0.94rem; }
+  .risk .rbody p b { color: var(--fg); font-weight: 600; }
+  .risk .fix { font-size: 0.92rem; color: var(--fg); border-left: 2px solid var(--pool); padding-left: 12px; }
+  .risk .fix b { color: var(--pool); font-weight: 650; }
+
+  /* ---------- milestones ---------- */
+  .miles { display: flex; flex-direction: column; gap: 12px; }
+  .mile { display: grid; grid-template-columns: 124px 1fr; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .mile .rail { padding: 16px; border-right: 1px solid var(--border); background: linear-gradient(180deg, #1c1c26, #17171f); display: flex; flex-direction: column; gap: 8px; }
+  .mile .rail .idx { font-family: var(--font-mono); font-size: 1.25rem; color: var(--title); font-weight: 700; }
+  .mile .rail .cost { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+  .effort { display: flex; gap: 3px; }
+  .effort i { width: 8px; height: 8px; border-radius: 2px; background: #2f2f3d; }
+  .effort i.on { background: var(--signal); }
+  .effort.mid i.on { background: var(--warn); }
+  .effort.hi i.on { background: var(--danger); }
+  .mile .body { padding: 16px 20px; display: flex; flex-direction: column; gap: 7px; }
+  .mile .body p { color: var(--muted); font-size: 0.93rem; }
+  .mile .body .ships { font-family: var(--font-mono); font-size: 0.75rem; color: var(--pool); }
+
+  /* ---------- questions ---------- */
+  .qs { display: flex; flex-direction: column; gap: 12px; }
+  .q { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 0 12px 12px 0; background: var(--panel); padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+  .q p { color: var(--muted); font-size: 0.93rem; }
+  .q .lean { font-size: 0.9rem; color: var(--fg); }
+  .q .lean b { color: var(--warn); font-weight: 650; }
+
+  footer { padding: 36px 0 70px; color: var(--muted-2); font-family: var(--font-mono); font-size: 0.78rem; border-top: 1px solid var(--border); margin-top: 26px; display: flex; flex-direction: column; gap: 6px; }
+
+  @media (max-width: 860px) {
+    .cards, .cards.two, .autopsy { grid-template-columns: 1fr; }
+    .life-step { grid-template-columns: 1fr; gap: 10px; }
+    .prow { grid-template-columns: 1fr; gap: 6px; }
+    .mile { grid-template-columns: 1fr; }
+    .mile .rail { flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--border); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker"><span class="dot"></span> Sprig · design exploration · shared infrastructure · rev 2</div>
+    <h1>Your machine's resources are<br>your business, not your repo's.</h1>
+    <p class="lede">
+      One postgres per workspace is expensive, and pooling it is worth doing. But
+      <b>an optimisation that only some people want must not cost the people who don't want it anything</b> —
+      and the first draft of this design failed that test. This revision makes a shared resource an
+      <b>overlay</b>: it is defined once, machine-locally, and <b>injects itself</b> into any plan that
+      matches. Nothing in <span class="tok n">.sprig.json</span> changes. Nothing in a stack changes.
+      Turn it off and you are exactly where you started.
+    </p>
+    <div class="metabar">
+      <span>New surface · <b>Set up → Shared</b></span>
+      <span>Schema changes to shared files · <b style="color:var(--signal)">none</b></span>
+      <span>Precedence · <b>repo → stack → shared</b></span>
+      <span>Status · <b>proposal, rev 2</b></span>
+    </div>
+  </header>
+
+  <!-- ============ 01 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">01</span><div><span class="eyebrow">Autopsy</span><h2>What the first draft got wrong</h2></div></div>
+    <p class="sec-sub">
+      Rev 1 said: to share a database server, the repo must stop declaring a <b>port</b> and start declaring a
+      <b>connection string</b>, because only the stack can know the database name. Locally coherent. Globally
+      wrong — it makes a permanent edit to a <b>tracked file every teammate reads</b> in order to serve a
+      machine-local optimisation that most of them aren't using.
+    </p>
+
+    <div class="autopsy">
+      <div class="side bad">
+        <span class="cap">Rev 1 — the tax</span>
+        <h4>Everyone pays for one person's pooling</h4>
+        <div class="swap">
+          <div class="swap-row now">
+            <span class="tag">was</span>
+            <span class="line">inputs: [ { name: <em class="hi">dbPort</em>, example: <em class="hi">5432</em> } ]</span>
+          </div>
+          <div class="swap-row cost">
+            <span class="tag">became</span>
+            <span class="line">inputs: [ { name: <em class="hir">dbUrl</em>, example: <em class="hir">"Host=…;Port=…;Database=…;Username=…;Password=…"</em> } ]</span>
+          </div>
+        </div>
+        <p>Now a developer with <b>one worktree and a private postgres</b> — the majority — has to author a
+          whole connection string in their stack binding where <span class="tok">${sprig.ports.postgres_port}</span>
+          did the job. They got a worse experience so somebody else could save a container.</p>
+      </div>
+      <div class="side">
+        <span class="cap">Rev 2 — the inversion</span>
+        <h4>The optimisation carries its own cost</h4>
+        <div class="swap">
+          <div class="swap-row now">
+            <span class="tag">repo</span>
+            <span class="line">inputs: [ { name: <em class="hi">dbPort</em>, example: <em class="hi">5432</em> } ]&nbsp;&nbsp;<span style="color:var(--muted-2)">← untouched</span></span>
+          </div>
+          <div class="swap-row next">
+            <span class="tag">shared</span>
+            <span class="line">postgres-16 injects: dbPort → <em class="hip">5432</em>, and rewrites the one env key that pins the db name</span>
+          </div>
+        </div>
+        <p>The knowledge that "this machine pools postgres" lives <b>only where that's true</b>. A teammate
+          who clones the repo and builds the same stack gets a private postgres on an allocated port, and
+          never learns this feature exists.</p>
+      </div>
+    </div>
+
+    <div class="panel pool" style="margin-top:18px">
+      <h3 style="margin-bottom:8px">The reframe that makes it hold together</h3>
+      <p style="color:var(--muted);font-size:0.95rem">
+        A shared resource is <b style="color:var(--fg)">not a third producer</b> that repos or stacks reference —
+        that would break sprig's one-directional promise and put a machine-local concept into shared files.
+        It's a <b style="color:var(--fg)">transform applied to the resolved plan</b>, after the stack has
+        produced every value and before anything is written to disk. Values still flow one way, stack → repo.
+        The overlay is a lens over that flow, and it is the only layer that knows it exists.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 02 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">02</span><div><span class="eyebrow">The layers</span><h2>Three layers, one direction, strict precedence</h2></div></div>
+    <p class="sec-sub">
+      Each layer may write over the one above it, and nothing may write upward. That single rule is what keeps
+      a layered system explainable — and it is the rule every error message, badge and diff in this document
+      is built to expose.
+    </p>
+
+    <div class="board-shell">
+      <div class="board-bar">
+        <span>Resolution order · <b class="mono" style="color:var(--fg)">repo</b> → <b class="mono" style="color:var(--wire)">stack</b> → <b class="mono" style="color:var(--pool)">shared</b></span>
+        <span class="sp"></span>
+        <span>last writer wins · conflicts are errors, never silent</span>
+      </div>
+      <div class="board-grid">
+        <svg class="board" viewBox="0 0 1000 372" role="img" aria-label="Three layers: repo declares templates, stack supplies values, shared overlay overrides them; the final plan is materialised to disk.">
+          <!-- L0 repo -->
+          <rect x="34" y="26" width="700" height="86" rx="11" fill="#1c1c25" stroke="#34343f" />
+          <text x="56" y="52" fill="#b6b6c6" font-family="ui-monospace,Consolas,monospace" font-size="13">repo · .sprig.json</text>
+          <text x="56" y="72" fill="#6c6c80" font-family="ui-monospace,Consolas,monospace" font-size="10.5">tracked · shared with your team · declares what it needs and where values land</text>
+          <text x="56" y="95" fill="#8c8ca0" font-family="ui-monospace,Consolas,monospace" font-size="11">inputs[ dbPort ] · env['.env'].set[ ConnectionStrings__Default ] · compose[ services.postgres ]</text>
+          <rect x="762" y="52" width="204" height="34" rx="8" fill="#26262f" stroke="#34343f" />
+          <text x="864" y="74" fill="#b6b6c6" font-family="ui-monospace,Consolas,monospace" font-size="11" text-anchor="middle">never knows about below</text>
+
+          <path d="M384 112 L384 134" stroke="#3a3a48" stroke-width="1.5" />
+          <path d="M384 134 l-5 -7 h10 z" fill="#3a3a48" />
+
+          <!-- L1 stack -->
+          <rect x="34" y="136" width="700" height="86" rx="11" fill="#18202e" stroke="#2f4670" />
+          <text x="56" y="162" fill="#a9cbfb" font-family="ui-monospace,Consolas,monospace" font-size="13">stack · stacks/web+api.json</text>
+          <text x="56" y="182" fill="#6c7f9c" font-family="ui-monospace,Consolas,monospace" font-size="10.5">central store · exportable · supplies every declared input</text>
+          <text x="56" y="205" fill="#8fb4e0" font-family="ui-monospace,Consolas,monospace" font-size="11">bindings[ dotnet-api ][ dbPort ] = ${sprig.ports.postgres_port}   →   8034</text>
+          <rect x="762" y="162" width="204" height="34" rx="8" fill="#1c2941" stroke="#2f4670" />
+          <text x="864" y="184" fill="#a9cbfb" font-family="ui-monospace,Consolas,monospace" font-size="11" text-anchor="middle">may override the repo</text>
+
+          <path d="M384 222 L384 244" stroke="#1d5c52" stroke-width="1.5" />
+          <path d="M384 244 l-5 -7 h10 z" fill="#1d5c52" />
+
+          <!-- L2 shared -->
+          <rect x="34" y="246" width="700" height="90" rx="11" fill="#153029" stroke="#1d5c52" />
+          <text x="56" y="272" fill="#7ee8d8" font-family="ui-monospace,Consolas,monospace" font-size="13">shared · shared/postgres-16.json</text>
+          <text x="56" y="292" fill="#4e9c92" font-family="ui-monospace,Consolas,monospace" font-size="10.5">machine-local · never exported · opt-in · injects itself where it matches</text>
+          <text x="56" y="315" fill="#7ee8d8" font-family="ui-monospace,Consolas,monospace" font-size="11">dbPort → 5432   ·   env['.env'].set[ ConnectionStrings__Default ] → Database=sprig_feature_x</text>
+          <rect x="762" y="272" width="204" height="34" rx="8" fill="#123830" stroke="#1d5c52" />
+          <text x="864" y="294" fill="#7ee8d8" font-family="ui-monospace,Consolas,monospace" font-size="11" text-anchor="middle">may override both</text>
+
+          <!-- output -->
+          <path d="M384 336 L384 352" stroke="#4ade80" stroke-width="1.5" />
+          <path d="M384 352 l-5 -7 h10 z" fill="#4ade80" />
+          <text x="404" y="356" fill="#4ade80" font-family="ui-monospace,Consolas,monospace" font-size="11">the plan → .env files, generated compose, setup</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:#8c8ca0"></i> repo — tracked, team-wide</span>
+        <span><i style="background:#60a5fa"></i> stack — central store, exportable</span>
+        <span><i style="background:#2dd4bf"></i> shared — machine-local overlay</span>
+      </div>
+    </div>
+
+    <h3 style="margin-top:30px">What an overlay may and may not touch</h3>
+    <div class="tbl-scroll" style="margin-top:14px">
+      <table>
+        <thead><tr><th>Target</th><th>Operation</th><th>Why it's allowed</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">bindings[repo][input]</td>
+            <td>replace</td>
+            <td><b>The preferred level.</b> If the repo already exposes the right input, override there — it's one value, it survives the repo renaming things internally, and it shows up in the wiring view.</td>
+          </tr>
+          <tr>
+            <td class="mono">env[file].set[KEY]</td>
+            <td>replace · add</td>
+            <td>The fallback when no input covers the value — e.g. a database name baked into a connection string. Reaches a layer deeper, and pays for it (see <span class="mono">R1</span>).</td>
+          </tr>
+          <tr>
+            <td class="mono">compose[file].overrides[path]</td>
+            <td>replace · add</td>
+            <td>Point a container at the shared host/port, or set a hostname on the shared network.</td>
+          </tr>
+          <tr>
+            <td class="mono">compose[file].services[name]</td>
+            <td>suppress</td>
+            <td>The whole reason for the feature: don't start the repo's own postgres. Prunes dangling <span class="mono">depends_on</span> and orphaned volumes with it.</td>
+          </tr>
+          <tr>
+            <td class="mono">setup[] · worktree · branch</td>
+            <td><span class="no">forbidden</span></td>
+            <td>An overlay configures infrastructure. It does not get to change what code you check out or what commands run against it.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-sub" style="margin-top:20px">
+      <b>Prefer the highest layer that can express the change.</b> sprig applies that rule itself during
+      extraction — it looks for an input that already carries the value and only reaches down into
+      <span class="tok">env[].set</span> when there isn't one, and it tells you which it picked and why.
+    </p>
+  </section>
+
+  <!-- ============ 03 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">03</span><div><span class="eyebrow">The centrepiece</span><h2>Every value says which layer produced it</h2></div></div>
+    <p class="sec-sub">
+      A hidden layer that quietly rewrites values is a debugging trap unless you answer one question
+      instantly: <b>why is this value what it is?</b> So the plan is a first-class, inspectable object —
+      shown before create, stored on the workspace, and printable at any time. Every entry carries a layer
+      chip and, when it was overridden, the value it would otherwise have had.
+    </p>
+
+    <div class="app-chrome" style="margin-top:24px">
+      <div class="app-titlebar">
+        <span class="lamp"></span><span class="lamp"></span><span class="lamp"></span>
+        <span>Workspaces › feature-x › plan</span>
+        <span class="right">2 values overridden by 1 shared resource</span>
+      </div>
+      <div class="app-body">
+        <span class="field-label">dotnet-api · inputs</span>
+        <div class="rows">
+          <div class="prow overridden">
+            <span><span class="lay shared">shared</span></span>
+            <span class="key">dbPort</span>
+            <span class="val">
+              <span class="live t">5432</span>
+              <span class="was">8034 &nbsp;— stack · ${sprig.ports.postgres_port}</span>
+            </span>
+          </div>
+          <div class="prow">
+            <span><span class="lay stack">stack</span></span>
+            <span class="key">port</span>
+            <span class="val"><span class="live">8021</span></span>
+          </div>
+        </div>
+
+        <span class="field-label">dotnet-api · .env</span>
+        <div class="rows">
+          <div class="prow overridden">
+            <span><span class="lay shared">shared</span></span>
+            <span class="key">ConnectionStrings__Default</span>
+            <span class="val">
+              <span class="live t">Host=localhost;Port=5432;Database=sprig_feature_x;Username=sprig;Password=sprig</span>
+              <span class="was">Host=localhost;Port=8034;Database=librarydb;Username=library;Password=library_pass</span>
+            </span>
+          </div>
+          <div class="prow">
+            <span><span class="lay repo">repo</span></span>
+            <span class="key">PORT</span>
+            <span class="val"><span class="live">8021</span></span>
+          </div>
+        </div>
+
+        <span class="field-label">dotnet-api · docker-compose.yml</span>
+        <div class="rows">
+          <div class="prow overridden">
+            <span><span class="lay shared">shared</span></span>
+            <span class="key">services.postgres</span>
+            <span class="val">
+              <span class="live t">suppressed — provided by postgres-16</span>
+              <span class="was">postgres:16-alpine · ports 8034:5432 · volume pgdata</span>
+            </span>
+          </div>
+          <div class="prow overridden">
+            <span><span class="lay shared">shared</span></span>
+            <span class="key">services.api.depends_on</span>
+            <span class="val">
+              <span class="live t">[ ]</span>
+              <span class="was">[ postgres ]</span>
+            </span>
+          </div>
+        </div>
+
+        <span class="field-label">stack ports</span>
+        <div class="rows">
+          <div class="prow">
+            <span><span class="lay stack">stack</span></span>
+            <span class="key">api_port</span>
+            <span class="val"><span class="live">8021</span></span>
+          </div>
+          <div class="prow overridden">
+            <span><span class="lay shared">shared</span></span>
+            <span class="key">postgres_port</span>
+            <span class="val">
+              <span class="live t">not allocated — nothing references it any more</span>
+              <span class="was">would have taken 8034</span>
+            </span>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+          <span class="btn">Create without shared resources</span>
+          <span class="btn primary">Create feature-x</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cards" style="margin-top:20px">
+      <div class="card">
+        <span class="mark">falls out for free</span>
+        <h3>Ports get garbage-collected</h3>
+        <p>Once <span class="mono">dbPort</span> is overridden, <b>nothing references <span class="mono">postgres_port</span></b>,
+          so it isn't allocated. The saving includes a port, and nobody had to declare that.</p>
+      </div>
+      <div class="card">
+        <span class="mark">falls out for free</span>
+        <h3>The same view explains a plain workspace</h3>
+        <p>With no overlays active every chip reads <b>repo</b> or <b>stack</b> and nothing is struck through.
+          It's a good debugging surface either way — which is how it earns its keep.</p>
+      </div>
+      <div class="card">
+        <span class="mark">falls out for free</span>
+        <h3>One-off overrides are the same machinery</h3>
+        <p><span class="mono">sprig create … --set dotnet-api.dbPort=5555</span> is just another writer on the
+          bottom layer. Not v1 scope, but the model already allows it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">04</span><div><span class="eyebrow">Authoring</span><h2>Extract it from a repo, and let sprig write the injection</h2></div></div>
+    <p class="sec-sub">
+      Nobody should hand-author override rules. The entry point is a button on the compose overlay you
+      already visit in the repo editor: pick the service, and sprig lifts it out, recognises the image, and
+      works out <b>which layer to inject at</b> for every value the repo will need back.
+    </p>
+
+    <div class="app-chrome" style="margin-top:24px">
+      <div class="app-titlebar">
+        <span class="lamp"></span><span class="lamp"></span><span class="lamp"></span>
+        <span>Repos › dotnet-api › docker-compose.yml</span>
+        <span class="right">Extract shared resource</span>
+      </div>
+      <div class="app-body">
+        <span class="field-label">Which services should be pooled?</span>
+        <div class="rows">
+          <div class="row sel">
+            <span class="chk on"></span>
+            <span class="v t">postgres&nbsp;&nbsp;<span style="color:var(--muted)">postgres:16-alpine · volume pgdata · 5432</span></span>
+            <span class="badge pool">postgres preset</span>
+          </div>
+          <div class="row">
+            <span class="chk"></span>
+            <span class="v m">redis&nbsp;&nbsp;<span style="color:var(--muted-2)">redis:7 · 6379</span></span>
+            <span class="badge mute">redis preset</span>
+          </div>
+          <div class="row off">
+            <span class="chk"></span>
+            <span class="v m">api&nbsp;&nbsp;<span style="color:var(--muted-2)">build . — this is your app, not infrastructure</span></span>
+            <span class="badge mute">can't pool</span>
+          </div>
+        </div>
+
+        <span class="field-label" style="margin-top:6px">Name, capacity, address</span>
+        <div class="rows">
+          <div class="row"><span class="k">name</span><span class="v t">postgres-16</span><span class="badge mute">from image tag</span></div>
+          <div class="row">
+            <span class="k">capacity</span>
+            <span class="v"><span class="meter"><span class="pips"><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i></span><span class="count">5 workspaces</span></span></span>
+            <span class="badge mute">default</span>
+          </div>
+          <div class="row"><span class="k">host port</span><span class="v">5432</span><span class="badge pool">leased under @shared/postgres-16</span></div>
+          <div class="row"><span class="k">database</span><span class="v t">sprig_${sprig.workspace}</span><span class="badge pool">editable</span></div>
+        </div>
+
+        <div class="panel pool tight" style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="badge pool">chosen for you</span>
+            <h4 style="margin:0">Where each value gets injected</h4>
+          </div>
+          <div class="rows">
+            <div class="prow">
+              <span><span class="lay stack">stack</span></span>
+              <span class="key">dbPort</span>
+              <span class="val"><span class="live t">5432</span><span class="was" style="text-decoration:none;color:var(--muted-2)">dotnet-api already declares this input — cleanest place to override</span></span>
+            </div>
+            <div class="prow">
+              <span><span class="lay repo">repo</span></span>
+              <span class="key">.env → ConnectionStrings__Default</span>
+              <span class="val"><span class="live t">Host=…;Port=…;Database=sprig_${sprig.workspace};…</span><span class="was" style="text-decoration:none;color:var(--warn)">no input carries the database name, so this reaches into the env template</span></span>
+            </div>
+          </div>
+          <p style="color:var(--muted);font-size:0.9rem">
+            The second one is the coupling this design pays for. If dotnet-api ever renames that key, the
+            override stops matching — so sprig fails loudly rather than quietly reverting you to a private
+            postgres. <span class="mono" style="color:var(--muted-2)">See R1.</span>
+          </p>
+          <div style="display:flex;gap:8px">
+            <span class="btn">Change the injection point…</span>
+            <span class="btn ghost">Ask dotnet-api's owner for a dbName input instead</span>
+          </div>
+        </div>
+
+        <span class="field-label" style="margin-top:6px">Applies to</span>
+        <div class="rows">
+          <div class="row sel"><span class="chk on"></span><span class="v m">any stack containing <span class="tok n">dotnet-api</span></span><span class="badge pool">recommended</span></div>
+          <div class="row"><span class="chk"></span><span class="v m">only the stack <span class="tok">web+api</span></span><span class="badge mute">narrower</span></div>
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+          <span class="btn ghost">Cancel</span>
+          <span class="btn">Preview the plan diff</span>
+          <span class="btn primary">Create shared resource</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="sec-sub" style="margin-top:20px">
+      <b>Applies-to by repo, not by stack</b>, is what makes this cheap to live with: extract once against the
+      repo you took it from, and every stack that uses that repo — today and next month — pools automatically.
+      No per-stack wiring, and no shared file learns about it.
+    </p>
+  </section>
+
+  <!-- ============ 05 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">05</span><div><span class="eyebrow">Mechanics</span><h2>Six things that could break this, and what stops them</h2></div></div>
+    <p class="sec-sub">
+      Pondering the overlay approach turned up one genuinely hard problem, one required refactor, and four
+      things that are only dangerous if handled naively. None of them is a reason not to build it; all of
+      them shape what M0 has to contain.
+    </p>
+
+    <div class="risks" style="margin-top:24px">
+      <div class="risk">
+        <div class="sev high">R1</div>
+        <div class="rbody">
+          <h3>The coupling doesn't disappear — it flips direction</h3>
+          <p>Rev 1 made the <b>repo</b> declare a contract (<span class="mono">dbUrl</span>), which was
+            expensive but honest: the repo owner could see it. Rev 2 has the overlay reach into repo
+            internals — a specific env KEY, a specific compose path — <b>across a boundary the repo owner
+            doesn't know exists</b>. Rename <span class="mono">ConnectionStrings__Default</span> and the
+            overlay stops matching. Handled naively, you'd get a silent revert to a private postgres that
+            isn't running, and a connection error three layers away from the cause.</p>
+          <p class="fix"><b>Fix:</b> an override whose target doesn't resolve is a <b>hard failure at plan
+            time</b>, never a skip — with <span class="mono">optional: true</span> as the deliberate escape.
+            <span class="mono">doctor</span> validates every enabled overlay against current repo configs
+            without needing a workspace. And the repo editor shows the reverse view — <i>"1 shared resource
+            overrides this key on this machine"</i> — so the coupling is visible from both ends.</p>
+        </div>
+      </div>
+
+      <div class="risk">
+        <div class="sev mid">R2</div>
+        <div class="rbody">
+          <h3>Port allocation has to move</h3>
+          <p><span class="mono">StackResolver</span> allocates ports as part of producing a
+            <span class="mono">ResolvedStack</span>. But overlays must apply <b>before</b> allocation, or
+            every pooled workspace still burns a <span class="mono">postgres_port</span> nobody references —
+            which quietly cancels part of the saving the feature exists for.</p>
+          <p class="fix"><b>Fix:</b> split resolution from allocation. <span class="mono">resolve wiring →
+            apply overlays → collect surviving port references → allocate</span>. This is the real refactor
+            in this proposal, and it's also what produces the inspectable plan object in section 03, so it
+            pays for itself twice.</p>
+        </div>
+      </div>
+
+      <div class="risk">
+        <div class="sev mid">R3</div>
+        <div class="rbody">
+          <h3>A workspace must remember which overlays it was built with</h3>
+          <p>Overlays are machine-local and toggleable. Toggle one off while a workspace built with it is
+            alive, and <span class="mono">down</span> tries to release a slot it doesn't hold, while the
+            repo's own postgres — suppressed at create, so never configured — is suddenly expected to exist.</p>
+          <p class="fix"><b>Fix:</b> the applied overlay set is <b>pinned into the instance record at create</b>
+            and read from there for that workspace's whole life. Editing an overlay's definition is blocked
+            while any workspace references it — the same rule stacks already follow.</p>
+        </div>
+      </div>
+
+      <div class="risk">
+        <div class="sev mid">R4</div>
+        <div class="rbody">
+          <h3>Two overlays, one target</h3>
+          <p>Two shared resources both wanting to write <span class="mono">.env →
+            ConnectionStrings__Default</span> is not hypothetical once you have postgres and a
+            connection-pooler overlay. Last-writer-wins in a layer people forget exists is a very expensive
+            afternoon.</p>
+          <p class="fix"><b>Fix:</b> a conflict is a <b>hard error naming both overlays and the target</b>.
+            No priority field, no ordering rules — if two overlays disagree, a human decides.</p>
+        </div>
+      </div>
+
+      <div class="risk">
+        <div class="sev mid">R5</div>
+        <div class="rbody">
+          <h3>Two repos in one workspace, one database name</h3>
+          <p>If an overlay applies to two repos in the same stack, the default
+            <span class="mono">sprig_${sprig.workspace}</span> resolves identically for both — and they'd
+            share a database inside a feature whose entire point is that they shouldn't.</p>
+          <p class="fix"><b>Fix:</b> detect it at plan time and say so, rather than defending against it with
+            a cleverer default: <i>"dotnet-api and reporting-api would both use sprig_feature_x — add
+            <span class="mono">${sprig.repo}</span> to the database template."</i> One-click fix included.</p>
+        </div>
+      </div>
+
+      <div class="risk">
+        <div class="sev low">R6</div>
+        <div class="rbody">
+          <h3>Discoverability is now the dominant UX cost</h3>
+          <p>Rev 1's cost was visible and permanent (a changed tracked file). Rev 2's cost is invisible and
+            machine-local, which is better — but it means someone will one day ask why their app is on 5432
+            when their stack clearly says 8034. <b>This is the trade being made</b>, deliberately.</p>
+          <p class="fix"><b>Fix:</b> section 03 is the answer, everywhere. Layer chips on every value, an
+            "overridden" marker in the repo and stack editors, a persistent
+            <span class="mono">1 shared resource active</span> chip on the workspace, and
+            <span class="mono">sprig plan</span> in the CLI.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 06 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">06</span><div><span class="eyebrow">Capacity</span><h2>Slots, and the two counters that drive everything</h2></div></div>
+    <p class="sec-sub">
+      A resource declares how many workspaces may be <b>attached</b> at once. Each attached workspace holds
+      one <b>slot</b>, and a slot owns a namespace — a database, a vhost, a bucket, or just an index. The
+      subtlety worth getting right: <b>attached</b> and <b>running</b> are different counters and drive
+      different things.
+    </p>
+
+    <div class="board-shell">
+      <div class="board-bar">
+        <span>Shared · <b class="mono" style="color:var(--pool)">postgres-16</b></span>
+        <span class="badge ok">up</span>
+        <span class="sp"></span>
+        <span class="meter">
+          <span class="lbl">attached</span>
+          <span class="pips"><i class="used"></i><i class="used idle"></i><i class="used"></i><i></i><i></i></span>
+          <span class="count">3 / 5</span>
+        </span>
+      </div>
+      <div class="board-grid">
+        <svg class="board" viewBox="0 0 1000 330" role="img" aria-label="Three workspaces attached to slots on a shared postgres; one is stopped but keeps its database; two slots free.">
+          <defs>
+            <linearGradient id="poolfill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#173b35" />
+              <stop offset="1" stop-color="#12262a" />
+            </linearGradient>
+          </defs>
+
+          <path d="M262 64 C 400 64, 470 100, 618 100" fill="none" stroke="#2dd4bf" stroke-width="2" />
+          <path d="M262 139 C 400 139, 470 140, 618 140" fill="none" stroke="#1d5c52" stroke-width="2" stroke-dasharray="5 4" />
+          <path d="M262 214 C 400 214, 470 180, 618 180" fill="none" stroke="#2dd4bf" stroke-width="2" />
+
+          <g>
+            <rect x="30" y="38" width="232" height="52" rx="9" fill="#1f1f2a" stroke="#2b3d5c" />
+            <circle cx="50" cy="64" r="4.5" fill="#4ade80" />
+            <text x="64" y="60" fill="#f5f5fa" font-family="ui-monospace,Consolas,monospace" font-size="13">feature-x</text>
+            <text x="64" y="78" fill="#8c8ca0" font-family="ui-monospace,Consolas,monospace" font-size="10.5">worktree · ports 8021, 8022 · up</text>
+          </g>
+          <g>
+            <rect x="30" y="113" width="232" height="52" rx="9" fill="#1a1a22" stroke="#2d2d3c" />
+            <circle cx="50" cy="139" r="4.5" fill="#5f5f70" />
+            <text x="64" y="135" fill="#c9c9d6" font-family="ui-monospace,Consolas,monospace" font-size="13">bugfix-9</text>
+            <text x="64" y="153" fill="#5f5f70" font-family="ui-monospace,Consolas,monospace" font-size="10.5">worktree · ports 8034, 8035 · stopped</text>
+          </g>
+          <g>
+            <rect x="30" y="188" width="232" height="52" rx="9" fill="#1f1f2a" stroke="#2b3d5c" />
+            <circle cx="50" cy="214" r="4.5" fill="#4ade80" />
+            <text x="64" y="210" fill="#f5f5fa" font-family="ui-monospace,Consolas,monospace" font-size="13">spike-auth</text>
+            <text x="64" y="228" fill="#8c8ca0" font-family="ui-monospace,Consolas,monospace" font-size="10.5">worktree · ports 8047, 8048 · up</text>
+          </g>
+          <g>
+            <rect x="30" y="263" width="232" height="44" rx="9" fill="none" stroke="#2d2d3c" stroke-dasharray="4 5" />
+            <text x="64" y="290" fill="#5f5f70" font-family="ui-monospace,Consolas,monospace" font-size="12">next workspace…</text>
+          </g>
+
+          <rect x="618" y="38" width="352" height="252" rx="13" fill="url(#poolfill)" stroke="#1d5c52" stroke-width="1.5" />
+          <text x="640" y="66" fill="#7ee8d8" font-family="ui-monospace,Consolas,monospace" font-size="13.5">postgres-16</text>
+          <text x="866" y="66" fill="#4ade80" font-family="ui-monospace,Consolas,monospace" font-size="10.5">● running</text>
+          <line x1="618" y1="80" x2="970" y2="80" stroke="#1d5c52" />
+
+          <circle cx="618" cy="100" r="5" fill="#2dd4bf" />
+          <text x="640" y="105" fill="#e1e1eb" font-family="ui-monospace,Consolas,monospace" font-size="11.5">slot 1</text>
+          <text x="706" y="105" fill="#7ee8d8" font-family="ui-monospace,Consolas,monospace" font-size="11.5">sprig_feature_x</text>
+
+          <circle cx="618" cy="140" r="5" fill="#1d5c52" />
+          <text x="640" y="145" fill="#8c8ca0" font-family="ui-monospace,Consolas,monospace" font-size="11.5">slot 2</text>
+          <text x="706" y="145" fill="#4e9c92" font-family="ui-monospace,Consolas,monospace" font-size="11.5">sprig_bugfix_9</text>
+          <text x="866" y="145" fill="#5f5f70" font-family="ui-monospace,Consolas,monospace" font-size="10">idle</text>
+
+          <circle cx="618" cy="180" r="5" fill="#2dd4bf" />
+          <text x="640" y="185" fill="#e1e1eb" font-family="ui-monospace,Consolas,monospace" font-size="11.5">slot 3</text>
+          <text x="706" y="185" fill="#7ee8d8" font-family="ui-monospace,Consolas,monospace" font-size="11.5">sprig_spike_auth</text>
+
+          <circle cx="618" cy="220" r="5" fill="none" stroke="#3a3a4a" stroke-dasharray="2 2" />
+          <text x="640" y="225" fill="#5f5f70" font-family="ui-monospace,Consolas,monospace" font-size="11.5">slot 4</text>
+          <text x="706" y="225" fill="#3f3f4e" font-family="ui-monospace,Consolas,monospace" font-size="11.5">free</text>
+
+          <circle cx="618" cy="260" r="5" fill="none" stroke="#3a3a4a" stroke-dasharray="2 2" />
+          <text x="640" y="265" fill="#5f5f70" font-family="ui-monospace,Consolas,monospace" font-size="11.5">slot 5</text>
+          <text x="706" y="265" fill="#3f3f4e" font-family="ui-monospace,Consolas,monospace" font-size="11.5">free</text>
+
+          <line x1="618" y1="278" x2="970" y2="278" stroke="#1d5c52" />
+          <text x="640" y="298" fill="#8c8ca0" font-family="ui-monospace,Consolas,monospace" font-size="10.5">localhost:5432 · volume sprig_shared_pg16 · project sprig-shared-postgres-16</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:#2dd4bf"></i> attached &amp; running</span>
+        <span><i style="background:#1d5c52"></i> attached, workspace stopped</span>
+        <span><i class="dot" style="background:#4ade80;border-radius:50%"></i> container up</span>
+        <span><i style="background:#2b3d5c"></i> the workspace's own isolated resources</span>
+      </div>
+    </div>
+
+    <div class="cards two" style="margin-top:20px">
+      <div class="card" style="border-color:var(--pool-line)">
+        <span class="mark">counter 1</span>
+        <h3>Attached — <span class="mono">create</span> to <span class="mono">rm</span></h3>
+        <p>Taken when the workspace is created, held until it's removed. <b>This is what capacity limits.</b>
+          It owns your data, so a stopped workspace keeps its database — exactly as it keeps its worktree.</p>
+      </div>
+      <div class="card" style="border-color:#2a4a34">
+        <span class="mark">counter 2</span>
+        <h3>Running — <span class="mono">up</span> to <span class="mono">down</span></h3>
+        <p>A plain refcount over attached workspaces that are up. <b>This is what starts and stops the
+          container.</b> First <span class="mono">up</span> provisions; last <span class="mono">down</span>
+          deprovisions. Nobody waits on anybody else.</p>
+      </div>
+    </div>
+
+    <div class="life" style="margin-top:26px">
+      <div class="life-step">
+        <div class="when"><span class="cmd">sprig create</span><span class="ph">attach</span></div>
+        <div class="what">Apply overlays to the plan, then reserve a slot — <b>fails here if full, before any
+          worktree exists</b>. Start the container if needed, run <b>attach</b>
+          (<span class="mono">CREATE DATABASE sprig_feature_x</span>), stop it again if nothing is running.
+          Pin the overlay set onto the instance record.</div>
+        <div class="counters">
+          <div class="ctr"><span>attached</span><span class="cv"><span class="bar"><i class="p" style="width:20%"></i></span>1/5</span></div>
+          <div class="ctr"><span>running</span><span class="cv"><span class="bar"></span>0</span></div>
+        </div>
+      </div>
+      <div class="life-step">
+        <div class="when"><span class="cmd">sprig up</span><span class="ph">provision</span></div>
+        <div class="what"><b>0 → 1 starts the container</b> and waits for its healthcheck, then the
+          workspace's own compose comes up with the suppressed services absent.</div>
+        <div class="counters">
+          <div class="ctr"><span>attached</span><span class="cv"><span class="bar"><i class="p" style="width:20%"></i></span>1/5</span></div>
+          <div class="ctr"><span>running</span><span class="cv"><span class="bar"><i class="g" style="width:33%"></i></span>1</span></div>
+        </div>
+      </div>
+      <div class="life-step">
+        <div class="when"><span class="cmd">sprig up</span> <span class="mono" style="color:var(--muted-2);font-size:0.78rem">×2</span><span class="ph">no-op</span></div>
+        <div class="what">Already up and healthy — nothing to do but join. <b>This is the payoff:</b> the
+          second and third workspace start instantly instead of waiting on a cold database.</div>
+        <div class="counters">
+          <div class="ctr"><span>attached</span><span class="cv"><span class="bar"><i class="p" style="width:60%"></i></span>3/5</span></div>
+          <div class="ctr"><span>running</span><span class="cv"><span class="bar"><i class="g" style="width:100%"></i></span>3</span></div>
+        </div>
+      </div>
+      <div class="life-step">
+        <div class="when"><span class="cmd">sprig down</span><span class="ph">release</span></div>
+        <div class="what">Refcount down; slot and database <b>untouched</b>. The last one out stops the
+          container, keeping volumes — so every attached workspace's data survives.</div>
+        <div class="counters">
+          <div class="ctr"><span>attached</span><span class="cv"><span class="bar"><i class="p" style="width:60%"></i></span>3/5</span></div>
+          <div class="ctr"><span>running</span><span class="cv"><span class="bar"><i class="g" style="width:33%"></i></span>1</span></div>
+        </div>
+      </div>
+      <div class="life-step">
+        <div class="when"><span class="cmd">sprig rm</span><span class="ph">detach</span></div>
+        <div class="what">Run <b>detach</b> (<span class="mono">DROP DATABASE sprig_feature_x</span>) and free
+          the slot. <b>The only command that destroys shared data</b>, and only ever this workspace's slice.</div>
+        <div class="counters">
+          <div class="ctr"><span>attached</span><span class="cv"><span class="bar"><i class="p" style="width:40%"></i></span>2/5</span></div>
+          <div class="ctr"><span>running</span><span class="cv"><span class="bar"><i class="g" style="width:33%"></i></span>1</span></div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:32px">Hitting the ceiling</h3>
+    <div class="cards two" style="margin-top:14px;align-items:start">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span class="field-label">A create that fits</span>
+        <pre class="term"><span class="d">$</span> <b>sprig create feature-x --stack web+api</b>
+
+  <span class="p">shared</span>   postgres-16   slot <span class="g">4</span> of 5   <span class="p">sprig_feature_x</span>
+           <span class="d">overrides dbPort and 1 env key in dotnet-api</span>
+  <span class="b">ports</span>    api_port 8021 · frontend_port 8022
+           <span class="d">postgres_port not needed</span>
+  <span class="b">worktrees</span> dotnet-api · vue-app
+
+<span class="g">✓</span> workspace <b>feature-x</b> ready
+  <span class="d">sprig plan feature-x</span>  to see every value and its layer</pre>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span class="field-label">A create that doesn't</span>
+        <pre class="term"><span class="d">$</span> <b>sprig create review-pr --stack web+api</b>
+
+<span class="r">✗</span> <b>postgres-16 is full</b> — 5 of 5 slots attached.
+
+  <span class="d">demo-thursday  sprig_demo_thursday  22d ago  stopped</span>
+  <span class="d">old-migration  sprig_old_migration  19d ago  stopped</span>
+  <span class="d">bugfix-9       sprig_bugfix_9        2d ago  stopped</span>
+  <span class="d">feature-x      sprig_feature_x       3d ago  up</span>
+  <span class="d">spike-auth     sprig_spike_auth      6h ago  up</span>
+
+  <span class="y">A slot is a database, not a container</span> — stopped
+  workspaces still hold theirs.
+
+  <span class="d">free one:</span>    sprig rm demo-thursday
+  <span class="d">raise it:</span>    Shared → postgres-16 → capacity
+  <span class="d">skip pooling:</span> sprig create review-pr --no-shared
+
+<span class="d">Nothing was created.</span></pre>
+      </div>
+    </div>
+    <p class="sec-sub" style="margin-top:18px">
+      Holders are listed <b>oldest first</b>, so the one you've forgotten is the one you read first. The
+      model is taught in one line rather than linked. And the last option is the one rev 1 couldn't offer:
+      <b>opt out and carry on</b>, because without the overlay the stack is still a complete, valid stack.
+    </p>
+  </section>
+
+  <!-- ============ 07 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">07</span><div><span class="eyebrow">Off is a first-class state</span><h2>The single-worktree developer never meets this feature</h2></div></div>
+    <p class="sec-sub">
+      This is the test rev 1 failed, so it's worth being explicit about what "off" means at every level. Some
+      people want one docker project per tree because it's predictable and contained — that's a legitimate
+      preference, not a failure to optimise.
+    </p>
+
+    <div class="tbl-scroll" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Scope</th><th>How you turn it off</th><th>What you get</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">never used it</td>
+            <td>Do nothing. Don't open the Shared page.</td>
+            <td>Today's sprig, unchanged. No new required fields, no schema bump, <b>no new concepts in any file you share with anyone</b>.</td>
+          </tr>
+          <tr>
+            <td class="mono">one workspace</td>
+            <td><span class="mono">sprig create x --no-shared</span>, or the button on the plan preview.</td>
+            <td>A private postgres on an allocated port for that workspace only. Recorded on the instance, so its whole lifecycle stays consistent.</td>
+          </tr>
+          <tr>
+            <td class="mono">one resource</td>
+            <td>Toggle <span class="mono">enabled</span> off on the resource.</td>
+            <td>New workspaces stop pooling. Existing ones keep working — they pinned their overlays at create (<span class="mono">R3</span>).</td>
+          </tr>
+          <tr>
+            <td class="mono">one stack</td>
+            <td>Narrow the resource's <span class="mono">applies to</span>, or exclude that stack.</td>
+            <td>Everything else keeps pooling. The stack file itself is never edited, so nothing leaks into your export.</td>
+          </tr>
+          <tr>
+            <td class="mono">your teammate</td>
+            <td>Nothing to do — it was never in the repo or the stack.</td>
+            <td>They clone, register the repo, build the stack, and get a private postgres. They will not find out this feature exists.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel pool" style="margin-top:18px">
+      <p style="color:var(--muted);font-size:0.95rem">
+        <b style="color:var(--fg)">The property that makes all of this true:</b> a stack must still be
+        complete and valid <i>without</i> any overlay. An overlay may only ever <b>replace a value that
+        already resolves</b> — never supply a missing one. That single constraint is what guarantees "off"
+        is always a working configuration, and it's worth enforcing in the validator rather than trusting.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 08 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">08</span><div><span class="eyebrow">The page</span><h2>Set up → Shared</h2></div></div>
+    <p class="sec-sub">
+      List + detail, like Repos and Stacks. The detail answers the three questions you arrive with:
+      <b>is it running</b>, <b>who's holding my slots</b>, and <b>what is it changing on my machine</b>.
+    </p>
+
+    <div class="app-chrome" style="margin-top:24px">
+      <div class="app-titlebar">
+        <span class="lamp"></span><span class="lamp"></span><span class="lamp"></span>
+        <span>Shared › postgres-16</span>
+        <span class="right">Sprig</span>
+      </div>
+      <div class="app-body">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <h3 style="margin:0">postgres-16</h3>
+          <span class="badge ok">running</span>
+          <span class="badge mute">postgres:16-alpine</span>
+          <span class="badge mute">localhost:5432</span>
+          <span class="meter" style="margin-left:auto">
+            <span class="lbl">attached</span>
+            <span class="pips"><i class="used"></i><i class="used idle"></i><i class="used"></i><i class="used idle"></i><i class="hot"></i></span>
+            <span class="count">5 / 5</span>
+          </span>
+        </div>
+
+        <div class="panel warn tight" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span class="badge warn">at capacity</span>
+          <p style="color:var(--muted);font-size:0.9rem;flex:1;min-width:240px">The next workspace on a stack using dotnet-api will fail to create. 3 of 5 slots belong to workspaces that haven't run in over a week.</p>
+          <span class="btn">Review stale slots</span>
+        </div>
+
+        <span class="field-label" style="margin-top:4px">Slots</span>
+        <div class="rows">
+          <div class="row"><span class="k" style="width:120px">feature-x</span><span class="v t">sprig_feature_x</span><span class="badge ok">up · 3d</span></div>
+          <div class="row"><span class="k" style="width:120px">spike-auth</span><span class="v t">sprig_spike_auth</span><span class="badge ok">up · 6h</span></div>
+          <div class="row"><span class="k" style="width:120px">bugfix-9</span><span class="v t">sprig_bugfix_9</span><span class="badge mute">stopped · 2d</span></div>
+          <div class="row off"><span class="k" style="width:120px">old-migration</span><span class="v t">sprig_old_migration</span><span class="badge warn">stopped · 19d</span></div>
+          <div class="row off"><span class="k" style="width:120px">demo-thursday</span><span class="v t">sprig_demo_thursday</span><span class="badge warn">stopped · 22d</span></div>
+        </div>
+
+        <span class="field-label" style="margin-top:4px">What it changes — <span style="color:var(--muted-2)">on this machine only</span></span>
+        <div class="rows">
+          <div class="prow">
+            <span><span class="lay stack">stack</span></span>
+            <span class="key">dotnet-api · dbPort</span>
+            <span class="val"><span class="live t">5432</span></span>
+          </div>
+          <div class="prow">
+            <span><span class="lay repo">repo</span></span>
+            <span class="key">dotnet-api · .env</span>
+            <span class="val"><span class="live t">ConnectionStrings__Default</span><span class="was" style="text-decoration:none;color:var(--muted-2)">still present in dotnet-api ✓ &nbsp;last checked just now</span></span>
+          </div>
+          <div class="prow">
+            <span><span class="lay repo">repo</span></span>
+            <span class="key">dotnet-api · compose</span>
+            <span class="val"><span class="live t">suppress services.postgres</span><span class="was" style="text-decoration:none;color:var(--muted-2)">still present in dotnet-api ✓</span></span>
+          </div>
+        </div>
+
+        <span class="field-label" style="margin-top:4px">Reaches</span>
+        <div class="rows">
+          <div class="row"><span class="k">stack web+api</span><span class="v m">contains dotnet-api</span><span class="badge pool">2 workspaces</span></div>
+          <div class="row"><span class="k">stack api-only</span><span class="v m">contains dotnet-api</span><span class="badge pool">3 workspaces</span></div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <span class="btn">Stop</span>
+          <span class="btn">Open a psql shell</span>
+          <span class="btn">Raise capacity</span>
+          <span class="btn">Disable</span>
+          <span class="btn danger">Delete…</span>
+        </div>
+        <p style="color:var(--muted-2);font-size:0.82rem" class="mono">Compose, outputs and injection points are locked while slots are attached — the same rule stacks follow.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:30px">Commands that get more careful</h3>
+    <div class="tbl-scroll" style="margin-top:14px">
+      <table>
+        <thead><tr><th>Command</th><th>Isolated infra</th><th>Shared resource</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">down --volumes</td>
+            <td>Wipes this workspace's volumes.</td>
+            <td><span class="no">Untouched.</span> A flag on one workspace must never delete another's data — the output says so and points at <span class="mono">sprig rm</span>.</td>
+          </tr>
+          <tr>
+            <td class="mono">reset</td>
+            <td>Recreates the workspace's containers.</td>
+            <td>Detach + re-attach this slot only — <b>a clean database without disturbing anyone else.</b></td>
+          </tr>
+          <tr>
+            <td class="mono">shared rm &lt;name&gt;</td>
+            <td>—</td>
+            <td>Blocked while any slot is attached. Forcing it lists every workspace and database it destroys and requires typing the name.</td>
+          </tr>
+          <tr>
+            <td class="mono">doctor</td>
+            <td>Detects orphaned or deleted worktrees.</td>
+            <td>Reclaims slots whose workspace is gone, flags databases with no slot, stops a container with a zero refcount, and <b>re-validates every overlay target against current repo configs</b> (<span class="mono">R1</span>).</td>
+          </tr>
+          <tr>
+            <td class="mono">plan</td>
+            <td>—</td>
+            <td>New. Prints section 03 for an existing workspace or a hypothetical create. The first thing to run when a value surprises you.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 09 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">09</span><div><span class="eyebrow">Shape</span><h2>What it looks like on disk</h2></div></div>
+    <p class="sec-sub">
+      Sketch, not a spec. The point of showing it is what <b>isn't</b> here: no change to
+      <span class="tok n">.sprig.json</span>, no change to a stack definition, no schema bump to anything
+      you'd share.
+    </p>
+
+    <div class="cards two" style="margin-top:22px;align-items:start">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span class="field-label">shared/postgres-16.json <span style="color:var(--muted-2)">— the only new file</span></span>
+        <pre class="term">{
+  <span class="p">"schema"</span>: 1,
+  <span class="p">"name"</span>: <span class="g">"postgres-16"</span>,
+  <span class="p">"enabled"</span>: true,
+  <span class="p">"capacity"</span>: 5,
+  <span class="p">"whenIdle"</span>: <span class="g">"stop"</span>,          <span class="c">// or "keep"</span>
+  <span class="p">"compose"</span>: <span class="g">"postgres-16.compose.yml"</span>,
+  <span class="p">"port"</span>: { <span class="p">"allowedPorts"</span>: <span class="g">"5432"</span> },
+
+  <span class="c">// this resource's own values. ${sprig.workspace}</span>
+  <span class="c">// is what makes one of them per-workspace.</span>
+  <span class="p">"values"</span>: {
+    <span class="p">"host"</span>: <span class="g">"localhost"</span>,
+    <span class="p">"port"</span>: <span class="g">"${sprig.shared.port}"</span>,
+    <span class="p">"database"</span>: <span class="g">"sprig_${sprig.workspace}"</span>,
+    <span class="p">"user"</span>: <span class="g">"sprig"</span>, <span class="p">"password"</span>: <span class="g">"sprig"</span>
+  },
+
+  <span class="p">"attach"</span>: [<span class="g">"psql -U sprig -c 'CREATE DATABASE \"${sprig.shared.database}\"'"</span>],
+  <span class="p">"detach"</span>: [<span class="g">"psql -U sprig -c 'DROP DATABASE IF EXISTS \"${sprig.shared.database}\"'"</span>],
+
+  <span class="c">// ── how it injects itself ──────────────────</span>
+  <span class="y">"injects"</span>: [{
+    <span class="p">"repo"</span>: <span class="g">"dotnet-api"</span>,          <span class="c">// = applies-to</span>
+
+    <span class="c">// highest layer that can carry the value</span>
+    <span class="b">"inputs"</span>: { <span class="p">"dbPort"</span>: <span class="g">"${sprig.shared.port}"</span> },
+
+    <span class="c">// reach deeper only where no input exists</span>
+    <span class="b">"env"</span>: [{ <span class="p">"file"</span>: <span class="g">".env"</span>, <span class="p">"set"</span>: {
+      <span class="p">"ConnectionStrings__Default"</span>:
+        <span class="g">"Host=${sprig.shared.host};Port=${sprig.shared.port};Database=${sprig.shared.database};Username=${sprig.shared.user};Password=${sprig.shared.password}"</span>
+    } }],
+
+    <span class="b">"suppress"</span>: [{ <span class="p">"file"</span>: <span class="g">"docker-compose.yml"</span>,
+                   <span class="p">"services"</span>: [<span class="g">"postgres"</span>] }]
+  }]
+}</pre>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span class="field-label">.sprig.json <span style="color:var(--signal)">— unchanged</span></span>
+        <pre class="term">{
+  <span class="p">"schema"</span>: 2,
+  <span class="p">"name"</span>: <span class="g">"dotnet-api"</span>,
+  <span class="p">"inputs"</span>: [
+    { <span class="p">"name"</span>: <span class="g">"port"</span>,   <span class="p">"example"</span>: <span class="g">"5000"</span> },
+    { <span class="p">"name"</span>: <span class="g">"dbPort"</span>, <span class="p">"example"</span>: <span class="g">"5432"</span> }
+  ],
+  <span class="p">"env"</span>: [{ <span class="p">"file"</span>: <span class="g">".env"</span>, <span class="p">"set"</span>: {
+    <span class="p">"ConnectionStrings__Default"</span>:
+      <span class="g">"Host=localhost;Port=${sprig.dbPort};Database=librarydb;…"</span>
+  } }],
+  <span class="p">"compose"</span>: [{ <span class="p">"file"</span>: <span class="g">"docker-compose.yml"</span>, … }]
+}</pre>
+
+        <span class="field-label" style="margin-top:6px">stacks/web+api.json <span style="color:var(--signal)">— unchanged</span></span>
+        <pre class="term">{
+  <span class="p">"schema"</span>: 2,
+  <span class="p">"name"</span>: <span class="g">"web+api"</span>,
+  <span class="p">"ports"</span>: [<span class="g">"frontend_port"</span>, <span class="g">"api_port"</span>, <span class="g">"postgres_port"</span>],
+  <span class="p">"bindings"</span>: { <span class="p">"dotnet-api"</span>: {
+    <span class="p">"port"</span>:   <span class="g">"${sprig.ports.api_port}"</span>,
+    <span class="p">"dbPort"</span>: <span class="g">"${sprig.ports.postgres_port}"</span>
+  }, … }
+}
+<span class="c">// postgres_port is still declared and still correct.
+// With the overlay on, nothing references it, so it
+// simply isn't allocated. Turn the overlay off and it
+// is allocated again. Neither file ever knew.</span></pre>
+
+        <span class="field-label" style="margin-top:6px">instances/feature-x/instance.json <span style="color:var(--warn)">— two new fields</span></span>
+        <pre class="term">{
+  <span class="p">"workspace"</span>: <span class="g">"feature-x"</span>, …,
+  <span class="y">"appliedOverlays"</span>: [<span class="g">"postgres-16"</span>],   <span class="c">// pinned — R3</span>
+  <span class="y">"slots"</span>: [{ <span class="p">"resource"</span>: <span class="g">"postgres-16"</span>, <span class="p">"slot"</span>: 1,
+              <span class="p">"values"</span>: { <span class="p">"database"</span>: <span class="g">"sprig_feature_x"</span> } }]
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 10 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">10</span><div><span class="eyebrow">Delivery</span><h2>Six milestones, risk-first</h2></div></div>
+    <p class="sec-sub">
+      The plan refactor (<span class="mono">R2</span>) comes first because everything else sits on it, and
+      because it's independently useful — <span class="mono">sprig plan</span> is a better debugging story
+      than sprig has today, overlays or not.
+    </p>
+
+    <div class="miles" style="margin-top:24px">
+      <div class="mile">
+        <div class="rail"><span class="idx">M0</span><span class="cost">foundation</span><span class="effort mid"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div>
+        <div class="body">
+          <h3>The plan object, and splitting resolve from allocate</h3>
+          <p>Introduce <span class="mono">WorkspacePlan</span> between <span class="mono">ResolvedStack</span>
+            and materialisation, with per-value layer provenance. Move port allocation after plan
+            construction so unreferenced ports can be dropped.</p>
+          <span class="ships">ships: sprig plan — layer-annotated, no overlays needed</span>
+        </div>
+      </div>
+      <div class="mile">
+        <div class="rail"><span class="idx">M1</span><span class="cost">overlay</span><span class="effort mid"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></div>
+        <div class="body">
+          <h3>The overlay engine</h3>
+          <p>The shared-resource store, <span class="mono">injects[]</span> application over the plan,
+            target resolution with hard failure (<span class="mono">R1</span>), conflict detection
+            (<span class="mono">R4</span>), and the "off must still be valid" validator rule.
+            <b>No docker yet</b> — this is all deterministic and unit-testable.</p>
+          <span class="ships">ships: overrides visibly change a plan</span>
+        </div>
+      </div>
+      <div class="mile">
+        <div class="rail"><span class="idx">M2</span><span class="cost">compose</span><span class="effort mid"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div>
+        <div class="body">
+          <h3>Suppression &amp; pruning</h3>
+          <p><span class="mono">ComposeGenerator</span> learns structural removal, not just scalar override:
+            drop services, prune <span class="mono">depends_on</span>, drop orphaned volumes, skip a file
+            emptied entirely.</p>
+          <span class="ships">ships: nothing runs twice</span>
+        </div>
+      </div>
+      <div class="mile">
+        <div class="rail"><span class="idx">M3</span><span class="cost">lifecycle</span><span class="effort hi"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div>
+        <div class="body">
+          <h3>Slots, refcount, attach &amp; detach</h3>
+          <p>The two counters wired into create/up/down/rm, the lease ledger on the port store's file-lock
+            pattern, health waiting, <span class="mono">whenIdle</span>, overlay pinning
+            (<span class="mono">R3</span>), <span class="mono">--no-shared</span>. Integration-tested
+            against a real postgres — this is the part most likely to surprise us.</p>
+          <span class="ships">ships: the feature actually saves resources</span>
+        </div>
+      </div>
+      <div class="mile">
+        <div class="rail"><span class="idx">M4</span><span class="cost">authoring</span><span class="effort mid"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div>
+        <div class="body">
+          <h3>Extraction, presets, injection-point selection</h3>
+          <p>Lift a service out of a repo compose file, detect the image, fill values and attach/detach from a
+            preset, and pick the highest layer that can carry each value — section 04's flow, CLI first.</p>
+          <span class="ships">ships: sprig shared extract --repo … --service …</span>
+        </div>
+      </div>
+      <div class="mile">
+        <div class="rail"><span class="idx">M5</span><span class="cost">app</span><span class="effort hi"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div>
+        <div class="body">
+          <h3>The Shared page, layer chips everywhere, doctor</h3>
+          <p>Sections 03, 04 and 08: the list + detail page, the extract overlay, layer chips on every value in
+            the workspace/repo/stack editors, the "overridden on this machine" reverse view, stale-slot
+            nudges, and overlay-target validation in <span class="mono">doctor</span>.</p>
+          <span class="ships">ships: discoverable, and safe to leave running for a month</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 11 ============ -->
+  <section>
+    <div class="sec-head"><span class="num">11</span><div><span class="eyebrow">Decide before M0</span><h2>Four questions</h2></div></div>
+    <div class="qs" style="margin-top:22px">
+      <div class="q">
+        <h4>Is a slot held from create-to-remove, or only while running?</h4>
+        <p>Create-to-remove means a stopped workspace keeps its data but keeps eating capacity. Running-only
+          means better utilisation but a workspace that goes down and comes back may find its data gone.</p>
+        <p class="lean"><b>Leaning:</b> create-to-remove — you said "attached", and losing a stopped
+          workspace's database would betray the isolation promise. Assumed throughout.</p>
+      </div>
+      <div class="q">
+        <h4>How far does "override any layer" go in v1?</h4>
+        <p>Mechanically this is a patch system — it could target anything. A full patch UI is a lot of rope,
+          and a lot of surface to explain.</p>
+        <p class="lean"><b>Leaning:</b> ship the general mechanism in core (it's simpler than a restricted
+          one), but only surface <b>resource-shaped</b> overlays in the UI for v1. Per-workspace
+          <span class="mono">--set</span> comes free and can stay CLI-only until it's asked for.</p>
+      </div>
+      <div class="q">
+        <h4>Should <span class="mono">whenIdle</span> default to stop or keep?</h4>
+        <p>Stopping honours "deprovision when nothing is connected", but a solo user toggling one workspace
+          pays a cold start each time.</p>
+        <p class="lean"><b>Leaning:</b> default <span class="mono">stop</span>, with <span class="mono">keep</span>
+          one click away — and a nudge offering it after the third stop-start cycle in a day.</p>
+      </div>
+      <div class="q">
+        <h4>Do overlays ever get exported?</h4>
+        <p>They're machine-local by design, which is the whole argument. But a team standardising on a pooled
+          postgres would want to hand one around, and that's a reasonable thing to want.</p>
+        <p class="lean"><b>Leaning:</b> reuse the stack export/import shape, defer past M5, and never make
+          import automatic — an overlay arriving without you choosing it would undo the property this
+          revision exists to protect.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Sprig · design exploration · shared infrastructure · rev 2 · proposal, not a commitment</div>
+    <div>Rev 1 attached shared resources to stacks and required repos to declare connection strings. Superseded — see section 01.</div>
+    <div>Layer convention throughout: grey = repo · blue = stack · teal = shared. Dark-only by design, matching the app.</div>
+  </footer>
+
+</div>

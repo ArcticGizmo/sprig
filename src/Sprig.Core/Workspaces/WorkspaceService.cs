@@ -4,6 +4,7 @@ using Sprig.Core.Config;
 using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
+using Sprig.Core.Planning;
 using Sprig.Core.Ports;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
@@ -59,8 +60,11 @@ public sealed partial class WorkspaceService(
     public IReadOnlyList<WorkspaceStep> PlanCreate(ResolvedStack stack, string workspace)
     {
         ValidateCreate(stack, workspace);
+        // Derive the checklist from the plan, not the raw stack, so the rows a UI pre-renders keep
+        // matching what create actually does once a layer above the stack can add or remove work.
+        var plan = WorkspacePlanner.Plan(stack, workspace);
         var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
-        foreach (var repo in stack.Repos)
+        foreach (var repo in plan.EffectiveRepos)
         {
             steps.Add(new(CreateStepIds.Worktree(repo.Name), $"Create worktree — {repo.Name}"));
             steps.Add(new(CreateStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
@@ -121,9 +125,13 @@ public sealed partial class WorkspaceService(
 
         var branch = $"sprig/{workspace}";
 
+        // Stage 1: what we intend to do, before a single port is reserved. Hard-fails on an unbound
+        // input, so a stack that can't produce a workspace says so before touching the filesystem.
+        var plan = WorkspacePlanner.Plan(stack, workspace);
+
         // Pre-compute each repo's sibling worktree path and guard against collisions.
         var plans = new List<RepoPlan>();
-        foreach (var repo in stack.Repos)
+        foreach (var repo in plan.EffectiveRepos)
         {
             var parent = Directory.GetParent(repo.Root)?.FullName
                 ?? throw new WorkspaceException($"repo '{repo.Root}' has no parent directory for a sibling worktree");
@@ -140,36 +148,40 @@ public sealed partial class WorkspaceService(
         var current = CreateStepIds.Ports;
         try
         {
-            // The stack owns the ports; allocate one real non-colliding number per named port.
-            // A repo input may pin its port to a fixed set (e.g. pre-registered Auth0 callbacks);
-            // resolve those onto the stack ports so allocation only draws from the allowed set.
+            // The stack owns the ports; allocate one real non-colliding number per named port that the
+            // plan still references — a port nothing points at is not reserved. A repo input may pin its
+            // port to a fixed set (e.g. pre-registered Auth0 callbacks); resolve those onto the stack
+            // ports so allocation only draws from the allowed set.
             progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Running));
-            var constraints = PortConstraintResolver.Resolve(stack.Repos, stack.Bindings, stack.Ports);
-            var requests = stack.Ports
+            var constraints = PortConstraintResolver.Resolve(
+                plan.EffectiveRepos, plan.EffectiveBindings, plan.DeclaredPorts);
+            var requests = plan.ReferencedPorts
                 .Select(p => new PortRequest(p, constraints.GetValueOrDefault(p)))
                 .ToList();
             var allPorts = ports.Acquire(workspace, requests);
             portsAcquired = true;
 
-            // Resolve per-repo input scopes from the stack's bindings (hard-fails on an unbound input).
-            var wired = StackWiring.Resolve(workspace, allPorts, stack.Repos, stack.Bindings);
+            // Stage 2: feed the allocated numbers back in and resolve every expression.
+            var bound = WorkspacePlanner.Bind(plan, allPorts);
+            var boundByName = bound.Repos.ToDictionary(r => r.Name, StringComparer.Ordinal);
             progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Done));
 
             var repoRecords = new List<InstanceRepo>();
-            foreach (var plan in plans)
+            foreach (var repoPlan in plans)
             {
-                var repo = plan.Repo;
-                var repoScope = wired.ScopeFor(repo.Name);
+                var repo = repoPlan.Repo;
+                var boundRepo = boundByName[repo.Name];
+                var repoScope = boundRepo.Scope;
 
                 current = CreateStepIds.Worktree(repo.Name);
                 progress?.Report(new(current, WorkspaceStepState.Running));
-                git.AddWorktree(repo.Root, plan.Worktree, branch);
-                addedWorktrees.Add((repo.Root, plan.Worktree));
+                git.AddWorktree(repo.Root, repoPlan.Worktree, branch);
+                addedWorktrees.Add((repo.Root, repoPlan.Worktree));
                 progress?.Report(new(current, WorkspaceStepState.Done));
 
                 current = CreateStepIds.Env(repo.Name);
                 progress?.Report(new(current, WorkspaceStepState.Running));
-                env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
+                env.Apply(repo.Config, repo.Root, repoPlan.Worktree, repoScope);
                 progress?.Report(new(current, WorkspaceStepState.Done));
 
                 // A repo may override several compose files; generate one isolated copy per file,
@@ -198,7 +210,7 @@ public sealed partial class WorkspaceService(
                 {
                     var setupStep = CreateStepIds.Setup(repo.Name);
                     progress?.Report(new(setupStep, WorkspaceStepState.Running));
-                    setupOutcomes = RunSetup(repo, plan.Worktree, progress);
+                    setupOutcomes = RunSetup(repo, repoPlan.Worktree, progress);
                     var failed = setupOutcomes.FirstOrDefault(o => !o.Success);
                     progress?.Report(failed is null
                         ? new(setupStep, WorkspaceStepState.Done)
@@ -209,10 +221,10 @@ public sealed partial class WorkspaceService(
                 {
                     Name = repo.Name,
                     SourcePath = repo.Root,
-                    WorktreePath = plan.Worktree,
+                    WorktreePath = repoPlan.Worktree,
                     Branch = branch,
                     GeneratedComposePaths = composePaths,
-                    Inputs = wired.Inputs[repo.Name],
+                    Inputs = boundRepo.Inputs,
                     Setup = setupOutcomes,
                 });
             }
@@ -256,6 +268,25 @@ public sealed partial class WorkspaceService(
             throw new WorkspaceException("nothing to create: the stack has no repos");
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
+    }
+
+    /// <summary>
+    /// Dry-run the plan for a workspace that doesn't exist yet. Nothing is allocated and nothing is
+    /// written, so ports render as <c>{name}</c> placeholders. Hard-fails on an unbound input, which
+    /// makes this the cheapest way to find out whether a stack can actually produce a workspace.
+    /// </summary>
+    public BoundPlan PreviewPlan(ResolvedStack stack, string workspace)
+        => WorkspacePlanner.Preview(WorkspacePlanner.Plan(stack, workspace));
+
+    /// <summary>
+    /// Re-plan an existing workspace against the ports it actually holds — the "why is this value what it
+    /// is?" view for something already on disk.
+    /// </summary>
+    public BoundPlan ExplainPlan(ResolvedStack stack, string workspace)
+    {
+        var record = instances.TryLoad(workspace)
+            ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        return WorkspacePlanner.Bind(WorkspacePlanner.Plan(stack, workspace), record.Ports);
     }
 
     /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>

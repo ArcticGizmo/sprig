@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`sprig plan`** — see every value a workspace resolves to and which layer set it, before you create anything. Pass `--stack` for a dry run (nothing is allocated, ports show as `{name}` placeholders) or a workspace name to re-plan one that already exists.
+
+### Changed
+- **A stack port nothing binds to is no longer reserved.** It never did anything; now it doesn't hold a number hostage either.
+
 ---
 
 ## [v0.3.3] - 2026-07-27

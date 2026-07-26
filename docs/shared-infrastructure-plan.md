@@ -194,19 +194,30 @@ a real postgres.
 
 **Goal:** make the hidden layer discoverable, and safe to leave running for a month.
 
-- [ ] **Set up → Shared** — list + detail: capacity meter, slot table, "what it changes", "reaches",
-      start/stop/disable/delete with the typed-name confirmation.
-- [ ] Extract overlay on the repo editor's compose surface.
-- [ ] **Layer chips everywhere** — the plan view on workspace detail, and "overridden on this machine"
-      markers in the repo and stack editors (the reverse view that makes R1's coupling visible from both
-      ends).
+- [x] **Set up → Shared** — list + detail between Repos and Stacks: running badge, address, capacity
+      meter, slot table, "what it changes" with layer chips, "reaches", and
+      start / stop / enable-disable / capacity / reclaim / delete.
+- [x] **Extract flow in the app** — pick repo → compose file → service, preview the proposal (published
+      values, each override with the reason for its layer, warnings, the lifted fragment), then accept.
+      Nothing is written until you do, and the host port is leased only on accept.
+- [x] **Typed-name delete** that lists every workspace and database it destroys, with the button disabled
+      until the name matches — and which now actually takes the container and volume with it.
+- [x] Stale-slot nudge and the at-capacity banner, with Reclaim inline.
+- [x] Fixed app-wide: Fluent's default selection was an off-palette purple, invisible until a page
+      auto-selected a row. Every list now uses the nav's accent tint.
+- [ ] **Layer chips outside this page** — the plan view on workspace detail, and "overridden on this
+      machine" markers in the repo and stack editors (the reverse view that makes R1's coupling visible
+      from the repo owner's side).
 - [ ] Create preview shows the plan diff; "Create without shared resources" button.
 - [ ] `doctor`: reclaim slots whose workspace is gone, flag databases with no slot, stop a container with a
       zero refcount, and **re-validate every enabled overlay's targets against current repo configs**.
-- [ ] Stale-slot nudge when a resource is at capacity.
 - [ ] Docs: `config-reference.md` gains a shared-resource section; `user-guide.md` gains a walkthrough.
 
 **Commit:** `Add the Shared page and layer provenance to the app`
+
+> **Verified in the running app** against the real `sprig-example-dotnet` repo: extract postgres:17 →
+> create a workspace → slot 1 holds `sprig_pool-test` on one container → capacity, at-capacity banner,
+> and the typed delete confirmation. Captures in `captures/`.
 
 ---
 

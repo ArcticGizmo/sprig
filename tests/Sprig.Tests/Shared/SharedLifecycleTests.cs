@@ -265,6 +265,37 @@ public class SharedLifecycleTests
         Assert.Empty(h.Shared.Leases.List("postgres-16"));   // the slot went back
     }
 
+    // Deleting a resource is the one operation that destroys data belonging to more than one workspace,
+    // so it has to actually do it — "removed" that leaves a running postgres and an orphaned volume is
+    // worse than either outcome on its own.
+    [Fact]
+    public void Destroy_takes_the_container_and_its_volumes()
+    {
+        using var h = new Harness();
+        using var repo = new TempGitRepo("api");
+        h.Save(Postgres());
+        h.Svc.Create(Stack(repo), "feature-x");
+
+        h.Shared.Runner.Destroy(Postgres());
+
+        Assert.Contains(("sprig-shared-postgres-16", true), h.Docker.Downs);
+    }
+
+    // Every ordinary lifecycle path keeps volumes. Only Destroy doesn't.
+    [Fact]
+    public void No_ordinary_lifecycle_step_ever_wipes_the_shared_volume()
+    {
+        using var h = new Harness();
+        using var repo = new TempGitRepo("api");
+        h.Save(Postgres());
+        h.Svc.Create(Stack(repo), "feature-x");
+        h.Svc.Up("feature-x");
+        h.Svc.Down("feature-x", removeVolumes: true);
+        h.Svc.Remove("feature-x", force: true);
+
+        Assert.DoesNotContain(h.Docker.Downs, d => d.project == "sprig-shared-postgres-16" && d.volumes);
+    }
+
     // I3: a workspace materialises against the overlays pinned on its record. Toggling a resource off
     // must not make an existing workspace's teardown try to release a slot it never held, or vice versa.
     [Fact]

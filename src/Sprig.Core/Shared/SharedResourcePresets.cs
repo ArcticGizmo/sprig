@@ -39,18 +39,23 @@ public sealed record SharedResourcePreset(
                 ["database"] = "sprig_${sprig.workspace}",
                 ["user"] = "postgres",
                 ["password"] = "postgres",
+                // psql with no -d connects to a database named after the user, which usually doesn't
+                // exist. Admin commands need one that does: whatever the image was told to create,
+                // falling back to the `postgres` database initdb always makes.
+                ["maintenance"] = "postgres",
                 ["url"] = "postgres://${sprig.shared.user}:${sprig.shared.password}@${sprig.shared.host}:${sprig.shared.port}/${sprig.shared.database}",
             },
             [
-                """psql -U "${sprig.shared.user}" -tc "SELECT 1 FROM pg_database WHERE datname='${sprig.shared.database}'" | grep -q 1 || psql -U "${sprig.shared.user}" -c 'CREATE DATABASE "${sprig.shared.database}"'""",
+                """psql -U "${sprig.shared.user}" -d "${sprig.shared.maintenance}" -tc "SELECT 1 FROM pg_database WHERE datname='${sprig.shared.database}'" | grep -q 1 || psql -U "${sprig.shared.user}" -d "${sprig.shared.maintenance}" -c 'CREATE DATABASE "${sprig.shared.database}"'""",
             ],
-            ["""psql -U "${sprig.shared.user}" -c 'DROP DATABASE IF EXISTS "${sprig.shared.database}"'"""],
+            ["""psql -U "${sprig.shared.user}" -d "${sprig.shared.maintenance}" -c 'DROP DATABASE IF EXISTS "${sprig.shared.database}"'"""],
             ["connectionstring", "database_url", "db_url", "databaseurl", "dburl", "postgres_url"],
             new Dictionary<string, IReadOnlyList<string>>
             {
                 // The official image creates POSTGRES_USER, defaulting to 'postgres' when unset.
                 ["user"] = ["POSTGRES_USER"],
                 ["password"] = ["POSTGRES_PASSWORD"],
+                ["maintenance"] = ["POSTGRES_DB"],
             }),
 
         new("mysql", 3306,

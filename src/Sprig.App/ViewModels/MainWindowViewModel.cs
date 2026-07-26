@@ -91,13 +91,14 @@ public partial class MainWindowViewModel : ViewModelBase
         var nav = new Navigator();
         _nav = nav;
         var repos = new ReposViewModel(services);
+        var shared = new SharedViewModel(services);
         var stacks = new StacksViewModel(services, nav);
         var workspaces = new WorkspacesViewModel(services, nav);
         var home = new HomeViewModel(services, nav);
         // Settings is built here (rather than lower down) so the navigator can reach it — coachmark
         // preconditions navigate to it.
         Settings = new SettingsViewModel(services);
-        nav.Configure(Navigate, home, repos, stacks, workspaces, Settings);
+        nav.Configure(Navigate, home, repos, stacks, workspaces, shared, Settings);
 
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
@@ -115,6 +116,9 @@ public partial class MainWindowViewModel : ViewModelBase
             home,
             new NavHeaderViewModel("Set up"),
             repos,
+            // Between Repos and Stacks: you extract a shared resource from a repo, and a stack's
+            // workspaces are what end up pooling it.
+            shared,
             stacks,
             new NavHeaderViewModel("Run"),
             workspaces,

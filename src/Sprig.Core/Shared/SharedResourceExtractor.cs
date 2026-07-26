@@ -39,6 +39,41 @@ public sealed record ExtractionProposal(
 /// </summary>
 public static partial class SharedResourceExtractor
 {
+    /// <summary>
+    /// The services in one of a repo's compose files, with whether sprig knows how to pool each one — what
+    /// a picker needs to offer a choice rather than a text box.
+    /// </summary>
+    /// <param name="Poolable">
+    /// False for a service built from source: that's the app itself, and pooling your own app across
+    /// workspaces would defeat the isolation the workspace exists for.
+    /// </param>
+    public sealed record ComposeService(string Name, string? Image, bool HasPreset, bool Poolable);
+
+    /// <summary>List the services in a repo's compose file. Empty if the file is missing or unparsable.</summary>
+    public static IReadOnlyList<ComposeService> Services(string repoRoot, string composeFile)
+    {
+        var path = Path.Combine(repoRoot, composeFile);
+        if (!File.Exists(path)) return [];
+
+        YamlMappingNode services;
+        try
+        {
+            if (Map(Parse(File.ReadAllText(path)), "services") is not { } found) return [];
+            services = found;
+        }
+        catch (SharedResourceException) { return []; }
+
+        var result = new List<ComposeService>();
+        foreach (var (key, value) in services.Children)
+        {
+            if (key is not YamlScalarNode { Value: { } name } || value is not YamlMappingNode node) continue;
+            var image = Scalar(node, "image");
+            var built = Value(node, "build") is not null;
+            result.Add(new ComposeService(name, image, SharedResourcePreset.For(image) is not null, !built));
+        }
+        return result;
+    }
+
     /// <summary>Propose a shared resource from <paramref name="service"/> in one of the repo's compose files.</summary>
     /// <exception cref="SharedResourceException">The file or service isn't there.</exception>
     /// <param name="hostPort">

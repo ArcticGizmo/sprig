@@ -17,6 +17,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`sprig shared up | down | reclaim`**, and `down`/`rm` refuse while workspaces are still attached.
 - **`sprig shared extract`** — point it at a service in one of your repos and it builds the whole thing: recognises the image, reads the credentials the container actually uses, leases a host port, and works out which layer each override belongs at. It prints the proposal first and writes nothing without `--yes`.
 - **A connection string it can't confidently rewrite is a warning, not a guess** — because the failure that would cause is four workspaces silently writing to the same database.
+- **A Shared page in the app**, between Repos and Stacks. See whether a resource is running and where repos reach it, who's holding your slots, and — since an overlay changes values without appearing in any file you share — exactly what it's changing on this machine. Extract a new one from any repo without leaving the page.
+
+### Fixed
+- **List selection is no longer an off-palette purple.** It was Fluent's default, invisible until a page selected a row for you.
 
 ### Changed
 - **A stack port nothing binds to is no longer reserved.** It never did anything; now it doesn't hold a number hostage either.

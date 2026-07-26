@@ -1,0 +1,450 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:shared="clr-namespace:Sprig.Core.Shared;assembly=Sprig.Core"
+             x:Class="Sprig.App.Views.SharedView"
+             x:DataType="vm:SharedViewModel">
+    <UserControl.Styles>
+        <!-- Layer chips. Teal is always "shared"; the base layers keep the app's ordinary colours. -->
+        <Style Selector="Border.chip">
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="7,1" />
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="Border.chip TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontFamily" Value="Consolas,monospace" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.chip.pool">
+            <Setter Property="Background" Value="#262DD4BF" />
+        </Style>
+        <Style Selector="Border.chip.pool TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource PoolBrush}" />
+        </Style>
+        <Style Selector="Border.chip.stack">
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="Border.chip.stack TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Consolas,monospace" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Margin="28,20,24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: header + resource list -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                <TextBlock Grid.Column="0" Text="Shared" FontSize="22" FontWeight="SemiBold"
+                           Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="New shared resource" Command="{Binding BeginExtractCommand}"
+                        Background="{StaticResource PoolBrush}" Foreground="#06211D" />
+            </Grid>
+
+            <ListBox Grid.Row="1" IsVisible="{Binding HasResources}"
+                     ItemsSource="{Binding Resources}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SharedResourceItem">
+                        <StackPanel Spacing="4" Margin="2,6">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold" />
+                                <Border Grid.Column="1" Classes="chip pool" IsVisible="{Binding IsRunning}">
+                                    <TextBlock Text="running" />
+                                </Border>
+                            </Grid>
+                            <TextBlock Text="{Binding CapacityLabel}" FontSize="11" Classes="mono"
+                                       Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="disabled" FontSize="11" IsVisible="{Binding IsDisabled}"
+                                       Foreground="{StaticResource WarnBrush}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- Right: detail card -->
+        <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1" CornerRadius="8" Padding="18">
+            <Panel>
+                <!-- empty state: explain the trade before anyone commits to it -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="460" Spacing="12"
+                            IsVisible="{Binding !HasResources}">
+                    <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                               Text="A shared resource pools one container across several workspaces — each gets its own database instead of its own port." />
+                    <TextBlock TextWrapping="Wrap" TextAlignment="Center" FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"
+                               Text="It lives only on this machine. Nothing is added to your repos or your stacks, and turning it off puts every workspace back on private infrastructure." />
+                    <Button Content="Extract one from a repo  →" Command="{Binding BeginExtractCommand}"
+                            Background="{StaticResource PoolBrush}" Foreground="#06211D"
+                            HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <ScrollViewer IsVisible="{Binding HasSelected}">
+                    <StackPanel Spacing="16">
+
+                        <!-- header: is it running, and where do repos reach it -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="{Binding Selected.Name}" FontSize="18" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
+                                    <Border Classes="chip pool" VerticalAlignment="Center"
+                                            IsVisible="{Binding Selected.IsRunning}">
+                                        <TextBlock Text="running" />
+                                    </Border>
+                                    <Border Classes="chip" VerticalAlignment="Center"
+                                            IsVisible="{Binding !Selected.IsRunning}">
+                                        <TextBlock Text="stopped" />
+                                    </Border>
+                                    <Border Classes="chip" VerticalAlignment="Center"
+                                            IsVisible="{Binding Selected.IsDisabled}">
+                                        <TextBlock Text="disabled" Foreground="{StaticResource WarnBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                    <TextBlock Classes="mono" Text="{Binding Selected.Address}"
+                                               Foreground="{StaticResource PoolBrush}" />
+                                    <TextBlock FontSize="12" Text="{Binding Selected.WhenIdleLabel}"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Classes="mono" VerticalAlignment="Top"
+                                       Text="{Binding Selected.CapacityLabel}"
+                                       Foreground="{StaticResource FgBrush}" />
+                        </Grid>
+
+                        <TextBlock IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource OkBrush}" Text="{Binding Status}" TextWrapping="Wrap" />
+                        <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
+
+                        <!-- at capacity: say what will fail, and why it probably shouldn't -->
+                        <Border IsVisible="{Binding Selected.AtCapacity}" CornerRadius="6" Padding="12"
+                                Background="{StaticResource FormBgBrush}"
+                                BorderBrush="{StaticResource WarnBrush}" BorderThickness="1">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Text="At capacity" FontWeight="SemiBold"
+                                               Foreground="{StaticResource WarnBrush}" />
+                                    <TextBlock Text="{Binding Selected.CapacityWarning}" FontSize="12"
+                                               TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Reclaim stale slots" VerticalAlignment="Center"
+                                        Command="{Binding ReclaimCommand}" />
+                            </Grid>
+                        </Border>
+
+                        <!-- actions -->
+                        <WrapPanel>
+                            <Button Content="Start" Margin="0,0,8,8" Command="{Binding StartCommand}"
+                                    IsVisible="{Binding !Selected.IsRunning}" IsEnabled="{Binding !Busy}" />
+                            <Button Content="Stop" Margin="0,0,8,8" Command="{Binding StopCommand}"
+                                    IsVisible="{Binding Selected.IsRunning}" IsEnabled="{Binding !Busy}" />
+                            <Button Content="{Binding Selected.EnabledLabel}" Margin="0,0,8,8"
+                                    Command="{Binding ToggleEnabledCommand}" IsEnabled="{Binding !Busy}" />
+                            <Button Content="Capacity" Margin="0,0,8,8"
+                                    Command="{Binding BeginEditCapacityCommand}" IsEnabled="{Binding !Busy}" />
+                            <Button Content="Reclaim" Margin="0,0,8,8" Command="{Binding ReclaimCommand}"
+                                    IsEnabled="{Binding !Busy}" />
+                            <Button Content="Delete…" Margin="0,0,8,8" Command="{Binding BeginDeleteCommand}"
+                                    Foreground="{StaticResource DangerBrush}" IsEnabled="{Binding !Busy}" />
+                        </WrapPanel>
+
+                        <!-- capacity editor -->
+                        <Border IsVisible="{Binding EditingCapacity}" CornerRadius="6" Padding="12"
+                                Background="{StaticResource FormBgBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                            <StackPanel Spacing="8">
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                           Text="How many workspaces may be attached at once. Each attached workspace holds one slot and owns a database in this container — including the stopped ones." />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBox Text="{Binding CapacityText, Mode=TwoWay}" Width="90" />
+                                    <Button Content="Save" Command="{Binding SaveCapacityCommand}"
+                                            Background="{StaticResource PoolBrush}" Foreground="#06211D" />
+                                    <Button Content="Cancel" Command="{Binding CancelEditCapacityCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- delete: typed confirmation, because this one destroys other workspaces' data -->
+                        <Border IsVisible="{Binding ConfirmingDelete}" CornerRadius="6" Padding="14"
+                                Background="{StaticResource FormBgBrush}"
+                                BorderBrush="{StaticResource DangerBrush}" BorderThickness="1">
+                            <StackPanel Spacing="10">
+                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
+                                           Text="Delete this shared resource? Its container and volume go with it — every attached workspace loses the database it holds here." />
+                                <ItemsControl ItemsSource="{Binding Selected.Slots}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SlotRow">
+                                            <TextBlock Classes="mono" FontSize="11" Margin="0,1"
+                                                       Foreground="{StaticResource DangerBrush}">
+                                                <Run Text="{Binding Workspace}" />
+                                                <Run Text="  →  " />
+                                                <Run Text="{Binding Namespace}" />
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}">
+                                    <Run Text="Type" />
+                                    <Run Text="{Binding Selected.Name}" FontWeight="SemiBold"
+                                         Foreground="{StaticResource FgBrush}" />
+                                    <Run Text="to confirm." />
+                                </TextBlock>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBox Text="{Binding DeleteConfirmText, Mode=TwoWay}" Width="220" />
+                                    <Button Content="Delete" Command="{Binding ConfirmDeleteCommand}"
+                                            IsEnabled="{Binding CanConfirmDelete}"
+                                            Foreground="{StaticResource DangerBrush}" />
+                                    <Button Content="Cancel" Command="{Binding CancelDeleteCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- slots -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="section" Text="SLOTS" />
+                            <TextBlock IsVisible="{Binding !Selected.HasSlots}" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Text="Nothing attached. A slot is taken when a workspace is created and given back when it's removed — so a stopped workspace still holds its database." />
+                            <ItemsControl ItemsSource="{Binding Selected.Slots}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SlotRow">
+                                        <Grid ColumnDefinitions="70,150,*,Auto" Margin="0,2">
+                                            <TextBlock Grid.Column="0" Classes="mono" FontSize="11"
+                                                       Text="{Binding SlotLabel}"
+                                                       Foreground="{StaticResource MutedBrush}" />
+                                            <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Workspace}"
+                                                       Foreground="{StaticResource FgBrush}" />
+                                            <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Namespace}"
+                                                       Foreground="{StaticResource PoolBrush}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="3" FontSize="11" Text="{Binding Detail}"
+                                                       Foreground="{StaticResource MutedBrush}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- what it changes: the whole price of a hidden layer, paid here -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="section" Text="WHAT IT CHANGES — ON THIS MACHINE ONLY" />
+                            <ItemsControl ItemsSource="{Binding Selected.Changes}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ChangeRow">
+                                        <Grid ColumnDefinitions="52,Auto,*" Margin="0,3" ColumnSpacing="8">
+                                            <Border Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                    Classes="chip" Classes.stack="{Binding IsStackLayer}">
+                                                <TextBlock Text="{Binding LayerLabel}" />
+                                            </Border>
+                                            <TextBlock Grid.Column="1" Classes="mono" FontSize="11" Text="{Binding Repo}"
+                                                       VerticalAlignment="Top" MaxWidth="150"
+                                                       Foreground="{StaticResource MutedBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <StackPanel Grid.Column="2" Spacing="1">
+                                                <TextBlock Classes="mono" Text="{Binding Target}"
+                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" />
+                                                <SelectableTextBlock Classes="mono" FontSize="11" Text="{Binding Value}"
+                                                                     Foreground="{StaticResource PoolBrush}"
+                                                                     TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock IsVisible="{Binding Selected.IsLocked}" FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{StaticResource WarnBrush}" Text="{Binding Selected.LockNote}" />
+                        </StackPanel>
+
+                        <!-- reaches -->
+                        <StackPanel Spacing="6" IsVisible="{Binding Selected.HasReaches}">
+                            <TextBlock Classes="section" Text="REACHES" />
+                            <ItemsControl ItemsSource="{Binding Selected.Reaches}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ReachRow">
+                                        <Grid ColumnDefinitions="150,*,Auto" Margin="0,2">
+                                            <TextBlock Grid.Column="0" Classes="mono" Text="{Binding Stack}"
+                                                       Foreground="{StaticResource FgBrush}" />
+                                            <TextBlock Grid.Column="1" FontSize="12" Foreground="{StaticResource MutedBrush}">
+                                                <Run Text="contains" />
+                                                <Run Text="{Binding ViaRepos}" />
+                                            </TextBlock>
+                                            <TextBlock Grid.Column="2" FontSize="11" Text="{Binding WorkspacesLabel}"
+                                                       Foreground="{StaticResource MutedBrush}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Panel>
+        </Border>
+
+        <!-- Extract overlay -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsExtracting}" Background="#B0000000"
+                Margin="-28,-20,-24,-16">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="22" Width="900" MaxHeight="760"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,14">
+                        <TextBlock Text="New shared resource" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                   Text="Pick a service in one of your repos. Sprig lifts it out, recognises the image, reads the credentials the container actually uses, and works out which layer each override belongs at. Nothing is written until you accept it." />
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,14,0,0">
+                        <TextBlock IsVisible="{Binding ExtractError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{StaticResource DangerBrush}" Text="{Binding ExtractError}" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                            <Button Content="Preview" Command="{Binding BuildPreviewCommand}"
+                                    IsEnabled="{Binding CanPreview}" />
+                            <Button Content="Create shared resource" Command="{Binding AcceptExtractCommand}"
+                                    IsEnabled="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                    Background="{StaticResource PoolBrush}" Foreground="#06211D" />
+                            <Button Content="Cancel" Command="{Binding CancelExtractCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ScrollViewer>
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Text="Repo" Classes="section" />
+                                    <ComboBox ItemsSource="{Binding ExtractRepos}" HorizontalAlignment="Stretch"
+                                              SelectedItem="{Binding ExtractRepo, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ExtractRepoOption">
+                                                <TextBlock Text="{Binding Name}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock Text="Compose file" Classes="section" />
+                                    <ComboBox ItemsSource="{Binding ExtractFiles}" HorizontalAlignment="Stretch"
+                                              SelectedItem="{Binding ExtractFile, Mode=TwoWay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="4">
+                                    <TextBlock Text="Service" Classes="section" />
+                                    <ComboBox ItemsSource="{Binding ExtractServices}" HorizontalAlignment="Stretch"
+                                              SelectedItem="{Binding ExtractService, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="shared:SharedResourceExtractor+ComposeService">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Name}" />
+                                                    <TextBlock Text="{Binding Image}" FontSize="11"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                    <TextBlock Text="can't pool" FontSize="11"
+                                                               IsVisible="{Binding !Poolable}"
+                                                               Foreground="{StaticResource WarnBrush}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Text="Name" Classes="section" />
+                                    <TextBox Text="{Binding ExtractName, Mode=TwoWay}" />
+                                    <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                               Text="Taken from the image tag, so two versions of the same thing stay two pools rather than quietly becoming one." />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock Text="Capacity" Classes="section" />
+                                    <TextBox Text="{Binding ExtractCapacity, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Preview -->
+                            <StackPanel Spacing="12"
+                                        IsVisible="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <Border Height="1" Background="{StaticResource BorderBrush}" />
+
+                                <StackPanel Spacing="6">
+                                    <TextBlock Classes="section" Text="IT WILL PUBLISH" />
+                                    <ItemsControl ItemsSource="{Binding Preview.Values}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PreviewValue">
+                                                <Grid ColumnDefinitions="110,*" Margin="0,1">
+                                                    <TextBlock Grid.Column="0" Classes="mono" Text="{Binding Key}"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                    <SelectableTextBlock Grid.Column="1" Classes="mono" Text="{Binding Display}"
+                                                                         Foreground="{StaticResource PoolBrush}" TextWrapping="Wrap" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                               Text="A host port is leased from sprig's range when you accept — the service's usual number is often already taken by something sprig can't see." />
+                                </StackPanel>
+
+                                <StackPanel Spacing="8">
+                                    <TextBlock Classes="section" Text="WHAT IT WILL CHANGE, AND WHY THERE" />
+                                    <ItemsControl ItemsSource="{Binding Preview.Choices}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="shared:ExtractionChoice">
+                                                <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
+                                                        Padding="10" Margin="0,0,0,6">
+                                                    <StackPanel Spacing="3">
+                                                        <SelectableTextBlock Classes="mono" Text="{Binding Target}"
+                                                                             Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" />
+                                                        <SelectableTextBlock Classes="mono" FontSize="11" Text="{Binding Value}"
+                                                                             Foreground="{StaticResource PoolBrush}" TextWrapping="Wrap" />
+                                                        <TextBlock FontSize="11" Text="{Binding Why}" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource MutedBrush}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- Warnings are the honest half: what sprig would not decide for you. -->
+                                <Border IsVisible="{Binding Preview.HasWarnings}" CornerRadius="6" Padding="12"
+                                        Background="{StaticResource FormBgBrush}"
+                                        BorderBrush="{StaticResource WarnBrush}" BorderThickness="1">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="Needs your attention" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource WarnBrush}" />
+                                        <ItemsControl ItemsSource="{Binding Preview.Warnings}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:CompileBindings="False">
+                                                    <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
+                                                               Margin="0,2" Foreground="{StaticResource FgBrush}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <Expander Header="Compose fragment">
+                                    <SelectableTextBlock Classes="mono" FontSize="11" Text="{Binding Preview.Fragment}"
+                                                         Foreground="{StaticResource MutedBrush}" />
+                                </Expander>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

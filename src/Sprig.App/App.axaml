@@ -11,6 +11,22 @@
 
     <Application.Styles>
         <FluentTheme />
+
+        <!-- Fluent's default selection is an off-palette purple. It was invisible while no page
+             auto-selected a row; the Shared page does, so bring it in line with the nav's active
+             state (the same accent tint) for every list in the app. -->
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3360A5FA" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="ListBoxItem:selected:focus:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3360A5FA" />
+        </Style>
     </Application.Styles>
 
     <Application.Resources>
@@ -30,5 +46,9 @@
         <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
         <SolidColorBrush x:Key="DangerBrush" Color="#F87171" />
         <SolidColorBrush x:Key="DevBrush" Color="#FF5FB0" />
+        <!-- Shared/pooled infrastructure. Teal throughout, so "shared with other workspaces" never
+             reads the same as the blue used for a workspace's own isolated resources. -->
+        <SolidColorBrush x:Key="PoolBrush" Color="#2DD4BF" />
+        <SolidColorBrush x:Key="PoolDimBrush" Color="#1D5C52" />
     </Application.Resources>
 </Application>

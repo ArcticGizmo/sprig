@@ -19,11 +19,18 @@ public sealed class Navigator
     ReposViewModel? _repos;
     StacksViewModel? _stacks;
     WorkspacesViewModel? _workspaces;
+    SharedViewModel? _shared;
     PageViewModel? _settings;
 
-    public void Configure(Action<PageViewModel> navigate, PageViewModel home,
-        ReposViewModel repos, StacksViewModel stacks, WorkspacesViewModel workspaces,
-        PageViewModel? settings = null)
+    public void Configure(
+        Action<PageViewModel> navigate,
+        PageViewModel home,
+        ReposViewModel repos,
+        StacksViewModel stacks,
+        WorkspacesViewModel workspaces,
+        SharedViewModel shared,
+        PageViewModel? settings = null
+    )
     {
         _navigate = navigate;
         _home = home;
@@ -31,6 +38,7 @@ public sealed class Navigator
         _stacks = stacks;
         _workspaces = workspaces;
         _settings = settings;
+        _shared = shared;
     }
 
     /// <summary>Wire the setup-guide launcher (owned by the main window).</summary>
@@ -59,7 +67,8 @@ public sealed class Navigator
     /// <summary>Go to Repos and pre-fill the Add-repo modal with a folder, so a guide's Add is one click.</summary>
     public void PrimeAddRepo(string path)
     {
-        if (_repos is null) return;
+        if (_repos is null)
+            return;
         Go(_repos);
         _repos.PrimeAdd(path);
     }
@@ -70,7 +79,8 @@ public sealed class Navigator
     /// <summary>Select an already-registered repo and open its editor (so its inputs can be pointed at).</summary>
     public void EditRepo(string name)
     {
-        if (_repos is null) return;
+        if (_repos is null)
+            return;
         Go(_repos);
         _repos.Selected = _repos.Repos.FirstOrDefault(r => r.Name == name) ?? _repos.Selected;
         if (_repos.Selected is not null && _repos.BeginEditCommand.CanExecute(null))
@@ -78,10 +88,25 @@ public sealed class Navigator
     }
 
     public void GoHome() => Go(_home);
+
     public void GoToRepos() => Go(_repos);
+
     public void GoToStacks() => Go(_stacks);
+
     public void GoToWorkspaces() => Go(_workspaces);
+
+    public void GoToShared() => Go(_shared);
+
     public void GoToSettings() => Go(_settings);
+
+    /// <summary>Jump to Shared and open the extract flow.</summary>
+    public void NewSharedResource()
+    {
+        if (_shared is null)
+            return;
+        Go(_shared);
+        _shared.BeginExtractCommand.Execute(null);
+    }
 
     /// <summary>
     /// Open the stack builder with every registered repo selected and auto-wired — the state in which the
@@ -89,12 +114,16 @@ public sealed class Navigator
     /// </summary>
     public Task OpenStackBuilderWired()
     {
-        if (_stacks is null) return Task.CompletedTask;
+        if (_stacks is null)
+            return Task.CompletedTask;
 
         Go(_stacks);
-        if (_stacks.NewStackCommand.CanExecute(null)) _stacks.NewStackCommand.Execute(null);
-        foreach (var choice in _stacks.RepoChoices) choice.IsSelected = true;
-        if (_stacks.AutoWireCommand.CanExecute(null)) _stacks.AutoWireCommand.Execute(null);
+        if (_stacks.NewStackCommand.CanExecute(null))
+            _stacks.NewStackCommand.Execute(null);
+        foreach (var choice in _stacks.RepoChoices)
+            choice.IsSelected = true;
+        if (_stacks.AutoWireCommand.CanExecute(null))
+            _stacks.AutoWireCommand.Execute(null);
 
         return Task.CompletedTask;
     }
@@ -102,7 +131,8 @@ public sealed class Navigator
     /// <summary>Show the Stacks page with no builder open, so the "New stack" button is on screen.</summary>
     public void ShowStacksFresh()
     {
-        if (_stacks is null) return;
+        if (_stacks is null)
+            return;
         Go(_stacks);
         if (_stacks.IsCreating && _stacks.CancelCreateCommand.CanExecute(null))
             _stacks.CancelCreateCommand.Execute(null);
@@ -115,26 +145,31 @@ public sealed class Navigator
     /// </summary>
     public void PrepareStackBuilder(string name)
     {
-        if (_stacks is null) return;
+        if (_stacks is null)
+            return;
         Go(_stacks);
         if (!_stacks.IsCreating && _stacks.NewStackCommand.CanExecute(null))
             _stacks.NewStackCommand.Execute(null);
         _stacks.NewName = name;
-        foreach (var choice in _stacks.RepoChoices) choice.IsSelected = true;  // selection auto-wires
-        if (_stacks.AutoWireCommand.CanExecute(null)) _stacks.AutoWireCommand.Execute(null);
+        foreach (var choice in _stacks.RepoChoices)
+            choice.IsSelected = true; // selection auto-wires
+        if (_stacks.AutoWireCommand.CanExecute(null))
+            _stacks.AutoWireCommand.Execute(null);
     }
 
     /// <summary>Save the stack the builder is composing — a guide step's "Show me".</summary>
     public Task CreateStack()
     {
-        if (_stacks is { } s && s.CreateCommand.CanExecute(null)) s.CreateCommand.Execute(null);
+        if (_stacks is { } s && s.CreateCommand.CanExecute(null))
+            s.CreateCommand.Execute(null);
         return Task.CompletedTask;
     }
 
     /// <summary>Show the Workspaces page with no create form open, so "New workspace" is on screen.</summary>
     public void ShowWorkspacesFresh()
     {
-        if (_workspaces is null) return;
+        if (_workspaces is null)
+            return;
         Go(_workspaces);
         if (_workspaces.IsCreating && _workspaces.CancelCreateCommand.CanExecute(null))
             _workspaces.CancelCreateCommand.Execute(null);
@@ -146,40 +181,60 @@ public sealed class Navigator
     /// </summary>
     public void PrepareNewWorkspace(string name)
     {
-        if (_workspaces is null) return;
+        if (_workspaces is null)
+            return;
         Go(_workspaces);
-        if (!_workspaces.IsCreating) _workspaces.NewWorkspaceCommand.Execute(null);
+        if (!_workspaces.IsCreating)
+            _workspaces.NewWorkspaceCommand.Execute(null);
         _workspaces.NewName = name;
-        _workspaces.StartInfraOnCreate = false;   // teaching worktrees/ports/compose; no daemon needed
+        _workspaces.StartInfraOnCreate = false; // teaching worktrees/ports/compose; no daemon needed
         _workspaces.NewStack ??= _workspaces.AvailableStacks.FirstOrDefault();
     }
 
     /// <summary>Create the workspace the form describes — a guide step's "Show me". Async (real worktrees).</summary>
-    public Task CreateWorkspace()
-        => _workspaces is { } w && w.CreateCommand.CanExecute(null)
+    public Task CreateWorkspace() =>
+        _workspaces is { } w && w.CreateCommand.CanExecute(null)
             ? w.CreateCommand.ExecuteAsync(null)
             : Task.CompletedTask;
 
     /// <summary>Run Reconcile on the selected workspace, so any drift is detected and shown (the drift guide).</summary>
-    public Task Reconcile()
-        => _workspaces is { } w && w.ReconcileCommand.CanExecute(null)
+    public Task Reconcile() =>
+        _workspaces is { } w && w.ReconcileCommand.CanExecute(null)
             ? w.ReconcileCommand.ExecuteAsync(null)
             : Task.CompletedTask;
 
     /// <summary>Repair the selected workspace, rebuilding missing worktrees — a guide step's "Show me".</summary>
-    public Task Repair()
-        => _workspaces is { } w && w.RepairCommand.CanExecute(null)
+    public Task Repair() =>
+        _workspaces is { } w && w.RepairCommand.CanExecute(null)
             ? w.RepairCommand.ExecuteAsync(null)
             : Task.CompletedTask;
 
     /// <summary>Jump to Repos and open the Add-repo modal.</summary>
-    public void AddRepo() { if (_repos is null) return; Go(_repos); _repos.OpenAddCommand.Execute(null); }
+    public void AddRepo()
+    {
+        if (_repos is null)
+            return;
+        Go(_repos);
+        _repos.OpenAddCommand.Execute(null);
+    }
 
     /// <summary>Jump to Stacks and open the New-stack builder.</summary>
-    public void NewStack() { if (_stacks is null) return; Go(_stacks); _stacks.NewStackCommand.Execute(null); }
+    public void NewStack()
+    {
+        if (_stacks is null)
+            return;
+        Go(_stacks);
+        _stacks.NewStackCommand.Execute(null);
+    }
 
     /// <summary>Jump to Workspaces and open the New-workspace flow.</summary>
-    public void NewWorkspace() { if (_workspaces is null) return; Go(_workspaces); _workspaces.NewWorkspaceCommand.Execute(null); }
+    public void NewWorkspace()
+    {
+        if (_workspaces is null)
+            return;
+        Go(_workspaces);
+        _workspaces.NewWorkspaceCommand.Execute(null);
+    }
 
     // "Go there and show something" — a page whose detail panel is empty teaches nothing, so these
     // select the first row on the way in. Generic navigation, not tour-specific.
@@ -187,7 +242,8 @@ public sealed class Navigator
     /// <summary>Jump to Repos with the first repo selected, so its config panel is populated.</summary>
     public void ShowFirstRepo()
     {
-        if (_repos is null) return;
+        if (_repos is null)
+            return;
         Go(_repos);
         _repos.Selected ??= _repos.Repos.FirstOrDefault();
     }
@@ -195,7 +251,8 @@ public sealed class Navigator
     /// <summary>Jump to Stacks with the first stack selected, so its wiring summary is populated.</summary>
     public void ShowFirstStack()
     {
-        if (_stacks is null) return;
+        if (_stacks is null)
+            return;
         Go(_stacks);
         _stacks.Selected ??= _stacks.Stacks.FirstOrDefault();
     }
@@ -203,7 +260,8 @@ public sealed class Navigator
     /// <summary>Jump to Workspaces with the first workspace selected, so its detail panel is populated.</summary>
     public void ShowFirstWorkspace()
     {
-        if (_workspaces is null) return;
+        if (_workspaces is null)
+            return;
         Go(_workspaces);
         _workspaces.Selected ??= _workspaces.Workspaces.FirstOrDefault();
     }
@@ -214,13 +272,15 @@ public sealed class Navigator
     /// </summary>
     public Task StartFirstWorkspaceInfra()
     {
-        if (_workspaces is null) return Task.CompletedTask;
+        if (_workspaces is null)
+            return Task.CompletedTask;
         ShowFirstWorkspace();
         return _workspaces.UpCommand.ExecuteAsync(null);
     }
 
     void Go(PageViewModel? page)
     {
-        if (page is not null) _navigate(page);
+        if (page is not null)
+            _navigate(page);
     }
 }

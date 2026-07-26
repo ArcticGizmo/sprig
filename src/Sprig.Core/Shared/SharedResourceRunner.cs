@@ -67,6 +67,18 @@ public sealed class SharedResourceRunner(
         return true;
     }
 
+    /// <summary>
+    /// Tear the resource down completely — container, network <b>and volumes</b>. This is the only
+    /// operation that destroys data belonging to more than one workspace, so it exists as its own verb
+    /// rather than as a flag on <see cref="StopIfIdle"/>: nothing in the ordinary lifecycle should be one
+    /// mistyped argument away from it.
+    /// </summary>
+    public void Destroy(SharedResourceDefinition resource)
+    {
+        if (!IsManaged(resource) || !docker.IsAvailable()) return;
+        docker.Down([ComposePath(resource)!], paths.SharedDir, ProjectName(resource.Name), removeVolumes: true);
+    }
+
     /// <summary>True when the resource's own containers are up right now.</summary>
     public bool IsRunning(SharedResourceDefinition resource)
         => IsManaged(resource) && docker.IsAvailable()

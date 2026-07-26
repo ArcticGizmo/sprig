@@ -280,19 +280,28 @@ public static class CliApp
                 return 0;
 
             case "rm":
+                var force = Args.TakeFlag(ref tail, "--force");
                 var rmName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared rm requires a name");
                 var attached = shared.Leases.List(rmName);
-                if (attached.Count > 0)
+                if (attached.Count > 0 && !force)
                 {
                     Console.Error.WriteLine(
-                        $"'{rmName}' still has {attached.Count} attached workspace(s): " +
-                        $"{string.Join(", ", attached.Select(a => a.Workspace))}" + Environment.NewLine +
-                        "  remove those workspaces first — deleting the resource would strand their data.");
+                        $"'{rmName}' still has {attached.Count} attached workspace(s):" + Environment.NewLine +
+                        string.Join(Environment.NewLine,
+                            attached.Select(a => $"  {a.Workspace,-18} {string.Join(", ", a.Namespaces.Select(n => n.Label))}")) +
+                        Environment.NewLine +
+                        "  remove those workspaces first, or --force to delete it and their data with it.");
                     return 1;
                 }
+
+                // Take the container and its volumes with it — otherwise "removed" leaves a running
+                // postgres and a volume nothing references any more.
+                if (store.Get(rmName) is { } doomed) shared.Runner.Destroy(doomed);
+                foreach (var held in attached) shared.Leases.Release(rmName, held.Workspace);
                 store.Remove(rmName);
                 ports.Release(SharedPortHolder(rmName));
-                Console.WriteLine($"removed shared resource '{rmName}'");
+                Console.WriteLine($"removed shared resource '{rmName}'"
+                    + (attached.Count > 0 ? $" and the data of {attached.Count} workspace(s)" : ""));
                 return 0;
 
             default:
@@ -697,7 +706,7 @@ public static class CliApp
                 plan <name> | --stack <s> | --repo <path> [--no-shared]   Show every value and the layer that set it
                 shared extract --repo <r> --service <s> [--file f] [--name n] [--capacity 5] [--yes]
                 shared ls | show <name> | up <name> | down <name> [--force]
-                shared enable <name> | disable <name> | reclaim | rm <name>
+                shared enable <name> | disable <name> | reclaim | rm <name> [--force]
                                               Machine-local pooled infrastructure (overlays)
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift

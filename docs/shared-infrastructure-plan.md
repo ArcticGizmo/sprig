@@ -107,12 +107,18 @@ deterministic and unit-testable.
 
 **Goal:** stop the repo's own postgres from starting. Structural compose edits, not just scalar overrides.
 
-- [ ] `ComposeGenerator` learns removal: drop `services.<name>`, prune it from every other service's
-      `depends_on` (both list and map forms), drop volumes/networks left unreferenced.
-- [ ] A compose file whose every service is suppressed generates **no file at all**.
-- [ ] `suppress[]` flows from the overlay into the effective config and out through the plan.
-- [ ] Tests: dangling `depends_on` pruned, orphaned volume dropped, emptied file skipped, an untouched
-      compose file is byte-identical to today's output.
+- [x] `ComposePruner`: drop `services.<name>`, prune it from every other service's `depends_on` (both list
+      and map forms), and drop the volumes/networks the suppression **orphaned**.
+- [x] Orphaned means *referenced before, unreferenced after* — a volume that was already unused stays put.
+      Suppression removes what it broke; it is not a licence to tidy up the rest of someone's compose file.
+- [x] Overrides run **before** pruning, so a repo's perfectly valid override of a soon-to-be-removed
+      service doesn't become a "path not found".
+- [x] A compose file whose every service is suppressed generates **no file at all** (`GenerateToFile`
+      returns null and the path never reaches the instance record).
+- [x] `suppress[]` flows overlay → plan → `BoundRepo.Suppress` → generation.
+- [x] Tests: both `depends_on` forms, orphaned vs pre-existing-unreferenced volumes, network dropped when
+      its last user goes, emptied file skipped, a missing service named clearly, and no-suppression output
+      byte-identical to before.
 
 **Commit:** `Suppress overlay-provided services from generated compose`
 

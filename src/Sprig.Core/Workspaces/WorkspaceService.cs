@@ -104,6 +104,21 @@ public sealed partial class WorkspaceService(
     /// <summary>Whether this repo has setup commands to run (and a runner to run them).</summary>
     bool HasSetup(ResolvedRepo repo) => setup is not null && repo.Config.Setup.Count > 0;
 
+    /// <summary>The services a shared resource provides for one of this repo's compose files.</summary>
+    static IReadOnlyList<string> SuppressedIn(BoundRepo repo, string file)
+        => [.. repo.Suppress.Where(s => SamePath(s.File, file)).Select(s => s.Service)];
+
+    // '\' and '/' reach the same file, and './x' is 'x' — two spellings must not read as two files.
+    static bool SamePath(string a, string b)
+        => string.Equals(Trim(a), Trim(b), StringComparison.OrdinalIgnoreCase);
+
+    static string Trim(string file)
+    {
+        var path = file.Replace('\\', '/');
+        while (path.StartsWith("./", StringComparison.Ordinal)) path = path[2..];
+        return path.TrimStart('/');
+    }
+
     /// <summary>Run the repo's setup commands one at a time, reporting each as its own sub-step and
     /// streaming its live output to the progress sink. Stops at the first failure (a later command
     /// usually depends on an earlier one); the failed command's row goes Warning — setup never rolls
@@ -210,8 +225,12 @@ public sealed partial class WorkspaceService(
                     {
                         var dest = Path.Combine(paths.InstanceDir(workspace),
                             $"docker-compose.{repo.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
-                        compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, dest);
-                        composePaths.Add(dest);
+                        var suppressed = SuppressedIn(boundRepo, composeCfg.File);
+                        // Null means every service in the file was provided by a shared resource, so
+                        // there is no file to write and nothing for this workspace to bring up.
+                        if (compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg,
+                                repoScope, dest, suppressed) is { } written)
+                            composePaths.Add(written);
                     }
                     progress?.Report(new(current, WorkspaceStepState.Done));
                 }

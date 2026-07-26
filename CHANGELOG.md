@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`sprig plan`** — see every value a workspace resolves to and which layer set it, before you create anything. Pass `--stack` for a dry run (nothing is allocated, ports show as `{name}` placeholders) or a workspace name to re-plan one that already exists.
 - **Shared resources (groundwork).** A machine-local overlay can now pool infrastructure across workspaces by rewriting values on their way to the worktree — without changing a single line of `.sprig.json` or of a stack. Define one in `shared/`, list it with `sprig shared ls`, and see exactly what it changes in `sprig plan`. The containers themselves aren't managed yet.
 - **`--no-shared`** on `create` and `plan` — build a workspace with private infrastructure as though the feature didn't exist.
+- **A shared resource switches off the repo's own copy.** The service it replaces is left out of the generated compose, along with the `depends_on` entries and volumes that would dangle without it — so nothing runs twice, and nothing fails to start.
 
 ### Changed
 - **A stack port nothing binds to is no longer reserved.** It never did anything; now it doesn't hold a number hostage either.

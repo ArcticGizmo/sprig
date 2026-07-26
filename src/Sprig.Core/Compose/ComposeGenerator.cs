@@ -16,8 +16,41 @@ public sealed class ComposeException(string message) : Exception(message);
 /// </summary>
 public sealed class ComposeGenerator
 {
-    /// <summary>Apply overrides to <paramref name="sourceYaml"/> and return the generated YAML text.</summary>
-    public string Generate(string sourceYaml, ComposeConfig compose, IVariableSource scope)
+    /// <summary>
+    /// Apply overrides to <paramref name="sourceYaml"/> and return the generated YAML text.
+    /// <paramref name="suppress"/> names services a shared resource provides instead, which are removed
+    /// along with the references that would dangle without them.
+    /// </summary>
+    public string Generate(string sourceYaml, ComposeConfig compose, IVariableSource scope,
+        IReadOnlyList<string>? suppress = null)
+        => Render(sourceYaml, compose, scope, suppress).Yaml;
+
+    /// <summary>
+    /// Read the source compose file, apply overrides, write to <paramref name="destPath"/>; returns it —
+    /// or <c>null</c> when every service in the file was suppressed, in which case nothing is written.
+    /// A compose file with no services left is not an empty file to bring up; it's a file that shouldn't
+    /// exist, and handing docker one is a confusing way to say "there was nothing to do here".
+    /// </summary>
+    public string? GenerateToFile(string sourceComposePath, ComposeConfig compose, IVariableSource scope,
+        string destPath, IReadOnlyList<string>? suppress = null)
+    {
+        if (!File.Exists(sourceComposePath))
+            throw new ComposeException($"compose file not found: {sourceComposePath}");
+
+        var result = Render(File.ReadAllText(sourceComposePath), compose, scope, suppress,
+            Path.GetFileName(sourceComposePath));
+        if (result.ServicesLeft == 0) return null;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+        File.WriteAllText(destPath, result.Yaml);
+        return destPath;
+    }
+
+    /// <summary>The generated YAML plus how many services survived suppression.</summary>
+    readonly record struct RenderResult(string Yaml, int ServicesLeft);
+
+    RenderResult Render(string sourceYaml, ComposeConfig compose, IVariableSource scope,
+        IReadOnlyList<string>? suppress, string? fileLabel = null)
     {
         var stream = new YamlStream();
         using (var reader = new StringReader(sourceYaml))
@@ -30,28 +63,22 @@ public sealed class ComposeGenerator
             throw new ComposeException("compose file is empty");
 
         var root = stream.Documents[0].RootNode;
+
+        // Overrides run first. An override that targets a service about to be removed is simply wasted
+        // work — resolving paths against the pruned document would instead fail on a path that was
+        // perfectly valid in the file the repo committed.
         foreach (var over in compose.Overrides)
         {
             var value = SubstitutionEngine.Resolve(over.Template, scope);
             SetAtPath(root, over.Path, value);
         }
 
+        var left = ComposePruner.Prune(root, suppress, fileLabel ?? compose.File);
+
         var sb = new StringBuilder();
         using (var writer = new StringWriter(sb))
             stream.Save(writer, assignAnchors: false);
-        return sb.ToString();
-    }
-
-    /// <summary>Read the source compose file, apply overrides, write to <paramref name="destPath"/>; returns it.</summary>
-    public string GenerateToFile(string sourceComposePath, ComposeConfig compose, IVariableSource scope, string destPath)
-    {
-        if (!File.Exists(sourceComposePath))
-            throw new ComposeException($"compose file not found: {sourceComposePath}");
-
-        var yaml = Generate(File.ReadAllText(sourceComposePath), compose, scope);
-        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-        File.WriteAllText(destPath, yaml);
-        return destPath;
+        return new RenderResult(sb.ToString(), left);
     }
 
     static void SetAtPath(YamlNode root, IReadOnlyList<string> path, string value)

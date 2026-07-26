@@ -164,6 +164,74 @@ public class SharedOverlayCreateTests
         Assert.Null(svc.Get("doomed"));
     }
 
+    // M2 end to end: the point of the whole feature is that the repo's own postgres does not start.
+    [Fact]
+    public void The_generated_compose_leaves_out_the_service_the_resource_provides()
+    {
+        const string composeConfig = """
+            {
+              "schema": 2, "name": "api",
+              "inputs": [ { "name": "port", "example": "5000" }, { "name": "dbPort", "example": "5432" } ],
+              "compose": [ { "file": "docker-compose.yml", "overrides": [
+                  { "path": ["services","api","ports","0"], "template": "${sprig.port}:5000" }
+              ] } ]
+            }
+            """;
+        const string composeYaml = """
+            services:
+              api:
+                image: api:latest
+                depends_on: [postgres]
+                ports: ["5000:5000"]
+              postgres:
+                image: postgres:16
+                volumes: [pgdata:/var/lib/postgresql/data]
+            volumes:
+              pgdata:
+            """;
+
+        using var store = new TempStore();
+        using var repo = new TempGitRepo("api");
+        var (svc, resources) = Build(store);
+
+        File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), composeConfig);
+        File.WriteAllText(Path.Combine(repo.Path, "docker-compose.yml"), composeYaml);
+        var config = SprigConfigLoader.LoadFromFile(Path.Combine(repo.Path, ".sprig.json"));
+        var stack = new ResolvedStack("api", [new ResolvedRepo(config.Name, repo.Path, config)],
+            ["api_port", "postgres_port"],
+            new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["api"] = new Dictionary<string, string>
+                {
+                    ["port"] = "${sprig.ports.api_port}",
+                    ["dbPort"] = "${sprig.ports.postgres_port}",
+                },
+            });
+
+        var postgres = Postgres();
+        resources.Save(postgres with
+        {
+            Injects =
+            [
+                new ResourceInjection
+                {
+                    Repo = "api",
+                    Inputs = new Dictionary<string, string> { ["dbPort"] = "${sprig.shared.port}" },
+                    Suppress = [new InjectedSuppress { File = "docker-compose.yml", Services = ["postgres"] }],
+                },
+            ],
+        });
+
+        var record = svc.Create(stack, "feature-x");
+
+        var generated = File.ReadAllText(Assert.Single(record.Repos[0].ComposePaths));
+        Assert.DoesNotContain("postgres:16", generated);
+        Assert.DoesNotContain("pgdata", generated);        // orphaned by the suppression
+        Assert.DoesNotContain("depends_on", generated);    // emptied, so the key went with it
+        Assert.Contains("api:latest", generated);
+        Assert.Contains($"{record.Ports["api_port"]}:5000", generated);
+    }
+
     [Fact]
     public void The_plan_preview_shows_the_override_without_creating_anything()
     {

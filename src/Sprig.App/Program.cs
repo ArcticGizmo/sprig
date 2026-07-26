@@ -22,7 +22,7 @@ internal static class Program
         if (args.Length > 0 && args[0] == "check-update")
         {
             var notice = Updates.UpdateChecker.CheckAsync().GetAwaiter().GetResult();
-            Console.WriteLine(notice ?? "up to date (or no feed configured / not installed via Velopack)");
+            Console.WriteLine(notice ?? "up to date (or not installed via Velopack)");
             return 0;
         }
 

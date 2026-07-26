@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.3.2] - 2026-07-26
+
+### Changed
+- **Updates now come from GitHub Releases by default** — no environment variable needed to find them.
+
+---
+
 ## [v0.3.1] - 2026-07-26
 
 ### Added

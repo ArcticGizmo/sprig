@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Velopack;
+using Velopack.Sources;
 
 namespace Sprig.App.Updates;
 
@@ -36,13 +37,18 @@ public sealed class UpdateCheckResult
 /// banner is notification-only; applying is an explicit, user-driven action.
 /// </summary>
 /// <remarks>
-/// The feed is read from the <c>SPRIG_UPDATE_FEED</c> environment variable (a directory path or a
-/// URL). If it is unset, or the app wasn't installed via Velopack (e.g. run from the build output),
-/// the check is a no-op. Any failure is swallowed — a flaky feed must never block launch.
+/// The feed defaults to the project's GitHub Releases (<see cref="DefaultFeedUrl"/>). Setting
+/// <c>SPRIG_UPDATE_FEED</c> (a directory path or a URL) overrides it — handy for testing an update
+/// flow against a local folder without publishing a release. If the app wasn't installed via Velopack
+/// (e.g. run from the build output), the check is a no-op. Any failure is swallowed — a flaky feed
+/// must never block launch.
 /// </remarks>
 public static class UpdateChecker
 {
     public const string FeedEnvVar = "SPRIG_UPDATE_FEED";
+
+    /// <summary>The release feed used when <see cref="FeedEnvVar"/> is unset: sprig's GitHub Releases.</summary>
+    public const string DefaultFeedUrl = "https://github.com/ArcticGizmo/sprig";
 
     /// <summary>
     /// Full-detail check used by the About page. Never throws; returns <see cref="UpdateAvailability"/>
@@ -51,12 +57,13 @@ public static class UpdateChecker
     public static async Task<UpdateCheckResult> CheckDetailedAsync()
     {
         var feed = Environment.GetEnvironmentVariable(FeedEnvVar);
-        if (string.IsNullOrWhiteSpace(feed))
-            return new UpdateCheckResult { Availability = UpdateAvailability.NotApplicable };
 
         try
         {
-            var manager = new UpdateManager(feed);
+            // Default to the GitHub Releases feed; SPRIG_UPDATE_FEED overrides it (local folder or URL).
+            var manager = string.IsNullOrWhiteSpace(feed)
+                ? new UpdateManager(new GithubSource(DefaultFeedUrl, accessToken: null, prerelease: false))
+                : new UpdateManager(feed);
             if (!manager.IsInstalled)
                 return new UpdateCheckResult { Availability = UpdateAvailability.NotApplicable };
 

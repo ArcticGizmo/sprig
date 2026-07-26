@@ -31,12 +31,14 @@ public class SharedOverlayCreateTests
 
     static (WorkspaceService Svc, SharedResourceStore Resources) Build(TempStore s)
     {
-        var resources = new SharedResourceStore(s.Paths);
+        // No compose fragment on these resources, so nothing here needs docker: the overlay rewrites
+        // values, and the container lifecycle has nothing to manage.
+        var shared = new SharedInfrastructure(s.Paths, new FakeDockerService { Available = false });
         var svc = new WorkspaceService(
             new GitService(new ProcessRunner()), new FilePortStore(s.Paths), new InstanceStore(s.Paths),
             new EnvClobberService(), new ComposeGenerator(), new FakeDockerService { Available = false },
-            s.Paths, null, resources);
-        return (svc, resources);
+            s.Paths, null, shared);
+        return (svc, shared.Resources);
     }
 
     static ResolvedStack Stack(TempGitRepo repo)

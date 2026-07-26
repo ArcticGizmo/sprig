@@ -22,9 +22,27 @@ public sealed class DockerService(IProcessRunner runner) : IDockerService
         catch (ProcessException) { return false; }
     }
 
-    public void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
-        => runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), "up", "-d"], projectDirectory)
-                 .EnsureSuccess();
+    public void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool wait = false)
+    {
+        string[] tail = wait ? ["up", "-d", "--wait"] : ["up", "-d"];
+        runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), .. tail], projectDirectory)
+              .EnsureSuccess();
+    }
+
+    public (bool Success, string Output) Exec(IReadOnlyList<string> composeFiles, string projectDirectory,
+        string projectName, string service, string command)
+    {
+        // -T because there's no TTY here, and `sh -c` so an attach command can be an ordinary one-liner
+        // with quoting and pipes rather than a pre-split argv.
+        try
+        {
+            var r = runner.Run("docker",
+                [.. Base(composeFiles, projectDirectory, projectName), "exec", "-T", service, "sh", "-c", command],
+                projectDirectory);
+            return (r.Success, string.IsNullOrWhiteSpace(r.StdErr) ? r.StdOut : r.StdErr);
+        }
+        catch (ProcessException ex) { return (false, ex.Message); }
+    }
 
     public void Down(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool removeVolumes = false)
     {

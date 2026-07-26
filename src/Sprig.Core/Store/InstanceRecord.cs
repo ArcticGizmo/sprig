@@ -16,6 +16,34 @@ public sealed record InstanceRecord
     public IReadOnlyDictionary<string, int> Ports { get; init; } = new Dictionary<string, int>();
     public string? LastStatus { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>
+    /// The shared resources whose overlays shaped this workspace, pinned at create. Read from here for the
+    /// workspace's whole life rather than from whatever is enabled now: toggle a resource off with a live
+    /// workspace built on it and <c>down</c> would otherwise try to release a slot it never held, while the
+    /// repo's own postgres — suppressed at create, so never configured — would suddenly be expected to exist.
+    /// </summary>
+    public IReadOnlyList<string> AppliedOverlays { get; init; } = [];
+
+    /// <summary>The slots this workspace holds on shared resources, and what they own there.</summary>
+    public IReadOnlyList<InstanceSlot> Slots { get; init; } = [];
+}
+
+/// <summary>A workspace's hold on one shared resource, as recorded on its instance.</summary>
+public sealed record InstanceSlot
+{
+    public required string Resource { get; init; }
+    public int Slot { get; init; }
+
+    /// <summary>One entry per repo the resource injected — usually one, more when a resource serves several.</summary>
+    public IReadOnlyList<InstanceNamespace> Namespaces { get; init; } = [];
+}
+
+/// <summary>One namespace inside a slot: the resolved values (database, user, …) for one repo.</summary>
+public sealed record InstanceNamespace
+{
+    public required string Repo { get; init; }
+    public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>One repo's materialised state within an instance.</summary>

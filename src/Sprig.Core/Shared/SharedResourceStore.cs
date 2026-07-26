@@ -64,6 +64,13 @@ public sealed partial class SharedResourceStore(ISprigPaths paths)
         foreach (var key in resource.Unknown.Keys)
             issues.Add($"unknown key '{key}'");
 
+        if ((resource.Attach.Count > 0 || resource.Detach.Count > 0)
+            && string.IsNullOrWhiteSpace(resource.ExecService))
+            issues.Add("attach/detach commands need an execService — which container should they run in?");
+        if ((resource.Attach.Count > 0 || resource.Detach.Count > 0)
+            && string.IsNullOrWhiteSpace(resource.Compose))
+            issues.Add("attach/detach commands need a compose fragment to run against");
+
         if (resource.Injects.Count == 0)
             issues.Add("injects[] is empty — the resource would never apply to anything");
 

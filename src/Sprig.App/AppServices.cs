@@ -27,7 +27,7 @@ public sealed class AppServices
     public WorkspaceReconciler Reconciler { get; }
     public RepoRegistryStore Repos { get; }
     public StackStore Stacks { get; }
-    public SharedResourceStore Shared { get; }
+    public SharedInfrastructure Shared { get; }
     public StackResolver StackResolver { get; }
     public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
@@ -58,7 +58,7 @@ public sealed class AppServices
         var ports = new FilePortStore(Paths, Settings);
         Ports = ports;
         var instances = new InstanceStore(Paths);
-        Shared = new SharedResourceStore(Paths);
+        Shared = new SharedInfrastructure(Paths, Docker);
         Workspaces = new WorkspaceService(Git, ports, instances, new EnvClobberService(),
             new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner), Shared);
         Reconciler = new WorkspaceReconciler(Git, instances);

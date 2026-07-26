@@ -19,7 +19,20 @@ public interface IDockerService
     /// merely that the CLI is installed. This is the check that decides whether <c>up</c> will work.</summary>
     bool IsEngineRunning();
 
-    void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName);
+    /// <summary>
+    /// <c>up -d</c>. With <paramref name="wait"/> it adds <c>--wait</c>, so the call doesn't return until
+    /// every container is running (or healthy, where a healthcheck is declared) — what a shared resource
+    /// needs before anyone runs a command against it.
+    /// </summary>
+    void Up(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool wait = false);
+
+    /// <summary>
+    /// Run a command inside one of the project's containers (<c>exec -T</c>, via the platform shell).
+    /// Returns whether it succeeded and whatever it wrote, rather than throwing — attaching a slot is
+    /// retried while a just-started database finishes coming up, and a failed attempt isn't yet a failure.
+    /// </summary>
+    (bool Success, string Output) Exec(IReadOnlyList<string> composeFiles, string projectDirectory,
+        string projectName, string service, string command);
 
     /// <summary><c>down</c> keeps volumes; <paramref name="removeVolumes"/> = <c>down -v</c>.</summary>
     void Down(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool removeVolumes = false);

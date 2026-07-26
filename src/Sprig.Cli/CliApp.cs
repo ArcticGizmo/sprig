@@ -37,9 +37,9 @@ public static class CliApp
         var git = new GitService(runner);
         var ports = new FilePortStore(paths, new FileSettingsStore(paths));
         var instances = new InstanceStore(paths);
-        var sharedStore = new SharedResourceStore(paths);
+        var sharedInfra = new SharedInfrastructure(paths, new DockerService(runner));
         var svc = new WorkspaceService(git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner), sharedStore);
+            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner), sharedInfra);
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
         var stacks = new StackStore(paths, registry, instances);
@@ -53,7 +53,7 @@ public static class CliApp
             {
                 "create" => Create(svc, resolver, rest, json),
                 "plan" => Plan(svc, resolver, rest, json),
-                "shared" => SharedCmd(sharedStore, rest, json),
+                "shared" => SharedCmd(sharedInfra, svc, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
@@ -177,8 +177,9 @@ public static class CliApp
     };
 
     /// <summary>Machine-local shared resources: the overlays that pool infrastructure across workspaces.</summary>
-    static int SharedCmd(SharedResourceStore store, string[] args, bool json)
+    static int SharedCmd(SharedInfrastructure shared, WorkspaceService svc, string[] args, bool json)
     {
+        var store = shared.Resources;
         var sub = Args.FirstPositional(args) ?? "ls";
         var tail = args.Where(a => a != sub).ToArray();
         switch (sub)
@@ -192,15 +193,25 @@ public static class CliApp
                     return 0;
                 }
                 foreach (var r in all)
-                    Console.WriteLine($"  {(r.Enabled ? "on " : "off")} {r.Name,-22} capacity {r.Capacity}  " +
+                {
+                    var held = shared.Leases.List(r.Name).Count;
+                    Console.WriteLine($"  {(r.Enabled ? "on " : "off")} {r.Name,-22} " +
+                                      $"{held}/{r.Capacity} attached  {(shared.Runner.IsRunning(r) ? "running" : "stopped"),-8}" +
                                       $"injects {string.Join(", ", r.Injects.Select(i => i.Repo))}");
+                }
                 return 0;
 
             case "show":
                 var showName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared show requires a name");
                 var res = store.Get(showName) ?? throw new ArgumentException($"unknown shared resource '{showName}'");
                 if (json) { WriteJson(res); return 0; }
-                Console.WriteLine($"{res.Name}  {(res.Enabled ? "enabled" : "disabled")}  capacity {res.Capacity}  whenIdle {res.WhenIdle}");
+                var slots = shared.Leases.List(res.Name);
+                Console.WriteLine($"{res.Name}  {(res.Enabled ? "enabled" : "disabled")}  " +
+                                  $"{slots.Count}/{res.Capacity} attached  {(shared.Runner.IsRunning(res) ? "running" : "stopped")}  " +
+                                  $"whenIdle {res.WhenIdle}");
+                foreach (var slot in slots)
+                    Console.WriteLine($"  slot {slot.Slot}  {slot.Workspace,-18} " +
+                                      $"{string.Join(", ", slot.Namespaces.Select(n => n.Label))}");
                 foreach (var (k, v) in res.Values.OrderBy(v => v.Key, StringComparer.Ordinal))
                     Console.WriteLine($"  value  {k,-14} {v}");
                 foreach (var inject in res.Injects)
@@ -228,14 +239,56 @@ public static class CliApp
                 Console.WriteLine($"{sub}d '{toggleName}'");
                 return 0;
 
+            case "up":
+                var upName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared up requires a name");
+                var toStart = store.Get(upName) ?? throw new ArgumentException($"unknown shared resource '{upName}'");
+                shared.Runner.EnsureUp(toStart);
+                Console.WriteLine($"started '{upName}'");
+                return 0;
+
+            case "down":
+                var downName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared down requires a name");
+                var toStop = store.Get(downName) ?? throw new ArgumentException($"unknown shared resource '{downName}'");
+                var holders = shared.Leases.List(downName);
+                if (holders.Count > 0 && !Args.TakeFlag(ref tail, "--force"))
+                {
+                    Console.Error.WriteLine(
+                        $"'{downName}' is attached to {holders.Count} workspace(s): " +
+                        $"{string.Join(", ", holders.Select(h => h.Workspace))}" + Environment.NewLine +
+                        "  stopping it will disconnect them. Their data is safe. Use --force to go ahead.");
+                    return 1;
+                }
+                shared.Runner.StopIfIdle(toStop with { WhenIdle = "stop" }, otherUsers: false);
+                Console.WriteLine($"stopped '{downName}'");
+                return 0;
+
+            case "reclaim":
+                var known = svc.List().Select(i => i.Workspace).ToList();
+                var dropped = shared.Leases.Reclaim(known);
+                if (dropped.Count == 0) Console.WriteLine("no stale slots");
+                foreach (var slot in dropped)
+                    Console.WriteLine($"reclaimed slot {slot.Slot} on '{slot.Resource}' " +
+                                      $"(workspace '{slot.Workspace}' no longer exists)");
+                return 0;
+
             case "rm":
                 var rmName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared rm requires a name");
+                var attached = shared.Leases.List(rmName);
+                if (attached.Count > 0)
+                {
+                    Console.Error.WriteLine(
+                        $"'{rmName}' still has {attached.Count} attached workspace(s): " +
+                        $"{string.Join(", ", attached.Select(a => a.Workspace))}" + Environment.NewLine +
+                        "  remove those workspaces first — deleting the resource would strand their data.");
+                    return 1;
+                }
                 store.Remove(rmName);
                 Console.WriteLine($"removed shared resource '{rmName}'");
                 return 0;
 
             default:
-                Console.Error.WriteLine($"unknown shared subcommand: {sub} (ls, show, enable, disable, rm)");
+                Console.Error.WriteLine(
+                    $"unknown shared subcommand: {sub} (ls, show, up, down, enable, disable, reclaim, rm)");
                 return 1;
         }
     }
@@ -455,7 +508,8 @@ public static class CliApp
     static int Up(WorkspaceService svc, string[] args)
     {
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("up requires a workspace name");
-        svc.Up(ws);
+        foreach (var s in svc.Up(ws))
+            Console.WriteLine($"  shared  {s.Resource} ready");
         Console.WriteLine($"infra up for '{ws}'");
         return 0;
     }
@@ -464,8 +518,19 @@ public static class CliApp
     {
         var volumes = Args.TakeFlag(ref args, "--volumes");
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("down requires a workspace name");
-        svc.Down(ws, volumes);
+        var shared = svc.Down(ws, volumes);
         Console.WriteLine($"infra down for '{ws}'{(volumes ? " (volumes removed)" : "")}");
+
+        // Say what happened to the pooled containers. "postgres-16 kept running — spike-auth is still up"
+        // is the sentence that makes a shared container feel understood rather than mysterious.
+        foreach (var s in shared)
+            Console.WriteLine(s.Stopped
+                ? $"  shared  {s.Resource} stopped — nothing left using it" +
+                  Environment.NewLine + "          your databases are safe in the shared volume"
+                : $"  shared  {s.Resource} kept running — still used by {string.Join(", ", s.StillUsedBy)}");
+        if (volumes && shared.Count > 0)
+            Console.WriteLine("  note: shared volumes were not touched — use `sprig rm` to drop this " +
+                              "workspace's database.");
         return 0;
     }
 
@@ -544,7 +609,8 @@ public static class CliApp
             COMMANDS:
                 create <name> --stack <s> | --repo <path> [--no-shared]   Create an isolated workspace
                 plan <name> | --stack <s> | --repo <path> [--no-shared]   Show every value and the layer that set it
-                shared ls | show <name> | enable <name> | disable <name> | rm <name>
+                shared ls | show <name> | up <name> | down <name> [--force]
+                shared enable <name> | disable <name> | reclaim | rm <name>
                                               Machine-local pooled infrastructure (overlays)
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift

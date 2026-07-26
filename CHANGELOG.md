@@ -12,6 +12,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Shared resources (groundwork).** A machine-local overlay can now pool infrastructure across workspaces by rewriting values on their way to the worktree — without changing a single line of `.sprig.json` or of a stack. Define one in `shared/`, list it with `sprig shared ls`, and see exactly what it changes in `sprig plan`. The containers themselves aren't managed yet.
 - **`--no-shared`** on `create` and `plan` — build a workspace with private infrastructure as though the feature didn't exist.
 - **A shared resource switches off the repo's own copy.** The service it replaces is left out of the generated compose, along with the `depends_on` entries and volumes that would dangle without it — so nothing runs twice, and nothing fails to start.
+- **Shared resources now run.** One container serves several workspaces, each with its own database: the first workspace to come up starts it, the last one down stops it, and `sprig rm` drops just that workspace's data. A stopped workspace keeps its database, exactly as it keeps its worktree.
+- **A pool that's full tells you who's holding it** — oldest first, with three ways out. Slots belonging to workspaces that no longer exist are reclaimed rather than reported.
+- **`sprig shared up | down | reclaim`**, and `down`/`rm` refuse while workspaces are still attached.
 
 ### Changed
 - **A stack port nothing binds to is no longer reserved.** It never did anything; now it doesn't hold a number hostage either.

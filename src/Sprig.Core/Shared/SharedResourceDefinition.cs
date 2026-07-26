@@ -29,13 +29,13 @@ public sealed record SharedResourceDefinition
     /// <summary>How many workspaces may be attached at once. Each attached workspace holds one slot. (M3.)</summary>
     public int Capacity { get; init; } = 5;
 
-    /// <summary>What to do with the container when no attached workspace is running — <c>stop</c> or <c>keep</c>. (M3.)</summary>
+    /// <summary>What to do with the container when no attached workspace is running — <c>stop</c> or <c>keep</c>.</summary>
     public string WhenIdle { get; init; } = "stop";
 
-    /// <summary>The compose fragment that stands this resource up, relative to the shared store dir. (M3.)</summary>
+    /// <summary>The compose fragment that stands this resource up, relative to the shared store dir.</summary>
     public string? Compose { get; init; }
 
-    /// <summary>Which host port this resource may take, as a <c>PortSetSpec</c> (e.g. <c>"5432"</c>). (M3.)</summary>
+    /// <summary>Which host port this resource may take, as a <c>PortSetSpec</c> (e.g. <c>"5432"</c>). (M4.)</summary>
     public string? AllowedPorts { get; init; }
 
     /// <summary>
@@ -46,10 +46,21 @@ public sealed record SharedResourceDefinition
     /// </summary>
     public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
 
-    /// <summary>Commands run inside the container when a workspace attaches (e.g. <c>CREATE DATABASE</c>). (M3.)</summary>
+    /// <summary>
+    /// Which service in <see cref="Compose"/> attach/detach commands run inside. Required whenever either
+    /// list is non-empty — a fragment may define more than one container, and guessing which one owns the
+    /// data is not a guess worth making.
+    /// </summary>
+    public string? ExecService { get; init; }
+
+    /// <summary>
+    /// Commands run inside the container when a workspace attaches (e.g. <c>CREATE DATABASE</c>). They
+    /// resolve <c>${sprig.shared.*}</c> against the attaching slot's namespace, plus
+    /// <c>${sprig.workspace}</c>, <c>${sprig.repo}</c> and <c>${sprig.slot}</c>.
+    /// </summary>
     public IReadOnlyList<string> Attach { get; init; } = [];
 
-    /// <summary>Commands run when a workspace detaches (e.g. <c>DROP DATABASE</c>). (M3.)</summary>
+    /// <summary>Commands run when a workspace detaches (e.g. <c>DROP DATABASE</c>).</summary>
     public IReadOnlyList<string> Detach { get; init; } = [];
 
     /// <summary>How this resource rewrites a plan, one entry per repo it applies to.</summary>
@@ -82,7 +93,7 @@ public sealed record ResourceInjection
     /// <summary>Compose path overrides — point a container at the shared host/port.</summary>
     public IReadOnlyList<InjectedCompose> Compose { get; init; } = [];
 
-    /// <summary>Services this resource provides, so the repo's own copy isn't started. (Applied in M2.)</summary>
+    /// <summary>Services this resource provides, so the repo's own copy isn't started.</summary>
     public IReadOnlyList<InjectedSuppress> Suppress { get; init; } = [];
 
     [JsonExtensionData]

@@ -29,7 +29,7 @@ public sealed partial class WorkspaceService(
     IDockerService docker,
     ISprigPaths paths,
     Setup.SetupRunner? setup = null,
-    Shared.SharedResourceStore? shared = null)
+    Shared.SharedInfrastructure? shared = null)
 {
     public const string ConfigFileName = ".sprig.json";
     public const string GeneratedComposeName = "docker-compose.sprig.yml";
@@ -59,7 +59,7 @@ public sealed partial class WorkspaceService(
     {
         var plan = WorkspacePlanner.Plan(stack, workspace);
         if (options?.NoShared == true || shared is null) return plan;
-        return OverlayEngine.Apply(plan, shared.Active());
+        return OverlayEngine.Apply(plan, shared.Resources.Active());
     }
 
     /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
@@ -174,6 +174,7 @@ public sealed partial class WorkspaceService(
         }
 
         var portsAcquired = false;
+        IReadOnlyList<SharedSlot> slots = [];
         var addedWorktrees = new List<(string root, string worktree)>();
         // The step whose real work is currently in flight, so the catch can paint the right row red.
         var current = CreateStepIds.Ports;
@@ -195,6 +196,9 @@ public sealed partial class WorkspaceService(
             var bound = WorkspacePlanner.Bind(plan, allPorts);
             var boundByName = bound.Repos.ToDictionary(r => r.Name, StringComparer.Ordinal);
             progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Done));
+
+            // Attach before any worktree exists: a full pool should cost you the message and nothing else.
+            slots = Attach(plan, bound, workspace);
 
             var repoRecords = new List<InstanceRepo>();
             foreach (var repoPlan in plans)
@@ -271,6 +275,8 @@ public sealed partial class WorkspaceService(
                 Stack = stack.StackName,
                 Repos = repoRecords,
                 Ports = new Dictionary<string, int>(allPorts),
+                AppliedOverlays = [.. slots.Select(sl => sl.Resource)],
+                Slots = ToRecords(slots),
                 LastStatus = "created",
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -288,6 +294,7 @@ public sealed partial class WorkspaceService(
                 TryQuiet(() => git.DeleteBranch(root, branch));
                 WorktreeInspector.TryDeleteDirectory(worktree);
             }
+            RollBackAttach(slots);
             if (portsAcquired) TryQuiet(() => ports.Release(workspace));
             TryQuiet(() => instances.Delete(workspace));
             throw;
@@ -374,6 +381,10 @@ public sealed partial class WorkspaceService(
             return;
         }
 
+        // Step 0: give back the workspace's slice of any shared resource. This is the only command that
+        // destroys shared data, and only ever this workspace's namespace within it.
+        var detachProblems = DetachAll(record);
+
         // Step 1 of the S3 matrix: infra down (and wipe volumes) before touching worktrees.
         var dockerUp = docker.IsAvailable();
         foreach (var repo in record.Repos.Where(r => r.ComposePaths.Count > 0))
@@ -429,6 +440,13 @@ public sealed partial class WorkspaceService(
 
         Step(progress, RemoveStepIds.Ports, () => ports.Release(workspace));
         Step(progress, RemoveStepIds.Record, () => instances.Delete(workspace));
+
+        // The slot is gone either way; stop the container if this was the last one using it. Reported
+        // last so a failed detach still surfaces rather than being swallowed by the sweep.
+        StopSharedFor(record);
+        if (detachProblems.Count > 0)
+            progress?.Report(new(RemoveStepIds.Record, WorkspaceStepState.Warning,
+                string.Join("; ", detachProblems)));
     }
 
     /// <summary>Run one best-effort teardown step, reporting Running → Done, or Warning if it throws
@@ -447,22 +465,30 @@ public sealed partial class WorkspaceService(
         }
     }
 
-    /// <summary>Bring the workspace's infra up.</summary>
-    public void Up(string workspace)
+    /// <summary>Bring the workspace's infra up — shared resources first, so they're ready to serve it.</summary>
+    public IReadOnlyList<SharedOutcome> Up(string workspace)
     {
         var record = RequireWithInfra(workspace, out var infraRepos);
+        StartSharedFor(record);
         foreach (var repo in infraRepos)
             docker.Up(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
         instances.Save(record with { LastStatus = "running" });
+        return [.. record.Slots.Select(sl => new SharedOutcome(sl.Resource, false, []))];
     }
 
-    /// <summary>Stop the workspace's infra; <paramref name="removeVolumes"/> wipes data.</summary>
-    public void Down(string workspace, bool removeVolumes = false)
+    /// <summary>
+    /// Stop the workspace's infra, then any shared resource nothing else is still running against.
+    /// <paramref name="removeVolumes"/> wipes this workspace's own data — never a shared volume, because a
+    /// flag on one workspace must not delete another's database. Returns what happened to each shared
+    /// resource so the caller can say whether it stopped and, if not, who is keeping it alive.
+    /// </summary>
+    public IReadOnlyList<SharedOutcome> Down(string workspace, bool removeVolumes = false)
     {
         var record = RequireWithInfra(workspace, out var infraRepos);
         foreach (var repo in infraRepos)
             docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes);
         instances.Save(record with { LastStatus = "stopped" });
+        return StopSharedFor(record);
     }
 
     /// <summary>Restart the workspace's infra (down then up, keeping volumes).</summary>
@@ -487,7 +513,9 @@ public sealed partial class WorkspaceService(
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
         infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
-        if (infraRepos.Count == 0)
+        // A workspace whose every service came from a shared resource has no compose files of its own,
+        // but it certainly has infrastructure — so slots count too.
+        if (infraRepos.Count == 0 && record.Slots.Count == 0)
             throw new WorkspaceException($"workspace '{workspace}' has no docker infrastructure");
         if (!docker.IsAvailable())
             throw new WorkspaceException(

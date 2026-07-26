@@ -129,22 +129,31 @@ deterministic and unit-testable.
 **Goal:** the part that actually saves resources — and the riskiest, so it gets integration tests against
 a real postgres.
 
-- [ ] `SharedLeaseStore` (`shared/leases.json`) on the same file-lock pattern as `FilePortStore`.
-- [ ] **Counter 1 — attached** (`create` → `rm`): slot reserved at create, capacity enforced *before* any
-      worktree exists, released at rm.
-- [ ] **Counter 2 — running** (`up` → `down`): refcount over attached workspaces that are up; 0→1 starts
-      the shared project, 1→0 stops it (volumes kept).
-- [ ] Shared compose runs as its own project `sprig-shared-<name>`; its host port is leased from the
-      existing port ledger under the pseudo-workspace `@shared/<name>`.
-- [ ] `attach` / `detach` command execution inside the container, with healthcheck waiting and a timeout.
-- [ ] **I3** — `appliedOverlays` and `slots` pinned onto `InstanceRecord` at create and read from there for
-      the workspace's whole life. Editing a resource is blocked while any workspace references it.
-- [ ] `--no-shared` on create; `down --volumes` never touches shared volumes; `reset` = detach + re-attach
-      this slot only.
-- [ ] The "full" error: holders listed oldest-first, the one-line model explanation, three ways out.
-- [ ] Multi-repo namespace collision detected at plan time (R5).
+- [x] `SharedLeaseStore` (`shared/leases.json`) on the same file-lock pattern as `FilePortStore`.
+- [x] **Counter 1 — attached** (`create` → `rm`): slot reserved at create, capacity enforced *before* any
+      worktree exists, released at rm. **Decided:** create→rm, so a stopped workspace keeps its database.
+- [x] **Counter 2 — running** (`up` → `down`): 0→1 starts the shared project, 1→0 stops it (volumes kept).
+      **Decided:** "is anyone else running?" is answered by **asking docker**, not by reading `LastStatus` —
+      a record says what sprig last did, not what is true, and a crash would otherwise strand a container.
+- [x] Shared compose runs as its own project `sprig-shared-<name>`, so a workspace teardown can never take
+      it with it.
+- [x] `attach` / `detach` run via `docker compose exec -T <execService> sh -c`, after `up --wait`, retried
+      with backoff — `--wait` reaches "running or healthy", which for a database without a declared probe
+      is not yet "accepting connections".
+- [x] **I3** — `appliedOverlays` and `slots` pinned onto `InstanceRecord` at create and read from there for
+      the workspace's whole life.
+- [x] `--no-shared` on create; `down --volumes` never touches a shared volume.
+- [x] The "full" error: holders oldest-first, the one-line model explanation, three ways out — and stale
+      slots reclaimed *before* declaring full, so a phantom lease can't cost you a real one.
+- [x] Multi-repo namespace collision detected at attach time, naming `${sprig.repo}` as the fix (R5).
+- [x] `sprig shared up|down|reclaim`; `down`/`rm` refuse while workspaces are attached unless forced.
+- [x] Tests: slot reuse, capacity message, reclamation, attach/detach commands, refcounted stop,
+      `whenIdle: keep`, ordering of up, `--volumes` safety, failed-attach rollback, and I3 under a toggle.
 
 **Commit:** `Add shared-resource slots, refcounting and attach/detach`
+
+> **Deferred to M5:** a real end-to-end run against a live postgres. Every path here is covered by the
+> fake docker service, as the rest of sprig's docker paths are.
 
 ---
 

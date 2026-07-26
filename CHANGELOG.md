@@ -15,6 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Shared resources now run.** One container serves several workspaces, each with its own database: the first workspace to come up starts it, the last one down stops it, and `sprig rm` drops just that workspace's data. A stopped workspace keeps its database, exactly as it keeps its worktree.
 - **A pool that's full tells you who's holding it** — oldest first, with three ways out. Slots belonging to workspaces that no longer exist are reclaimed rather than reported.
 - **`sprig shared up | down | reclaim`**, and `down`/`rm` refuse while workspaces are still attached.
+- **`sprig shared extract`** — point it at a service in one of your repos and it builds the whole thing: recognises the image, reads the credentials the container actually uses, leases a host port, and works out which layer each override belongs at. It prints the proposal first and writes nothing without `--yes`.
+- **A connection string it can't confidently rewrite is a warning, not a guess** — because the failure that would cause is four workspaces silently writing to the same database.
 
 ### Changed
 - **A stack port nothing binds to is no longer reserved.** It never did anything; now it doesn't hold a number hostage either.

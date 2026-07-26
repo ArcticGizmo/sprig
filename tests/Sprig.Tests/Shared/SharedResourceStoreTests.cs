@@ -56,11 +56,40 @@ public class SharedResourceStoreTests
         Assert.Equal(["postgres-16"], resources.Active().Select(r => r.Name));
     }
 
+    // The lease ledger lives in the same directory. Listing it as a resource produced a blank row that
+    // couldn't be shown, enabled or removed.
+    [Fact]
+    public void The_lease_ledger_is_not_a_resource()
+    {
+        using var store = new TempStore();
+        var resources = new SharedResourceStore(store.Paths);
+        resources.Save(Postgres());
+        new SharedLeaseStore(store.Paths).Acquire(Postgres(), "a",
+            [new SlotNamespace("dotnet-api", new Dictionary<string, string>())], ["a"]);
+
+        Assert.Equal(["postgres-16"], resources.List().Select(r => r.Name));
+    }
+
     [Fact]
     public void Listing_an_empty_store_is_fine()
     {
         using var store = new TempStore();
         Assert.Empty(new SharedResourceStore(store.Paths).List());
+    }
+
+    [Fact]
+    public void Remove_takes_the_compose_fragment_with_it()
+    {
+        using var store = new TempStore();
+        var resources = new SharedResourceStore(store.Paths);
+        resources.Save(Postgres() with { Compose = "postgres-16.compose.yml" });
+        var fragment = Path.Combine(store.Paths.SharedDir, "postgres-16.compose.yml");
+        File.WriteAllText(fragment, "services: {}");
+
+        resources.Remove("postgres-16");
+
+        Assert.Null(resources.Get("postgres-16"));
+        Assert.False(File.Exists(fragment));   // an orphaned fragment is just litter
     }
 
     [Fact]

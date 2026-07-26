@@ -53,7 +53,7 @@ public static class CliApp
             {
                 "create" => Create(svc, resolver, rest, json),
                 "plan" => Plan(svc, resolver, rest, json),
-                "shared" => SharedCmd(sharedInfra, svc, rest, json),
+                "shared" => SharedCmd(sharedInfra, svc, registry, git, ports, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
@@ -158,7 +158,7 @@ public static class CliApp
             foreach (var note in plan.NotesFor(boundRepo.Name))
             {
                 Console.WriteLine($"    {Layer(note.Layer)} {note.Target,-26} {note.Value}");
-                if (note.Expression is { } expr)
+                if (note.Expression is { } expr && expr != note.Value)
                     Console.WriteLine($"    {"",-8} {"",-26} from {expr}");
                 if (note.Replaced is { } was)
                     Console.WriteLine($"    {"",-8} {"",-26} was  {was}"
@@ -167,6 +167,10 @@ public static class CliApp
         }
         return 0;
     }
+
+    /// <summary>The pseudo-workspace a shared resource's host port is leased under, so `sprig ports`
+    /// can say who holds it and nothing else can take it.</summary>
+    static string SharedPortHolder(string resource) => $"@shared/{resource}";
 
     static string Layer(PlanLayer layer) => layer switch
     {
@@ -177,7 +181,8 @@ public static class CliApp
     };
 
     /// <summary>Machine-local shared resources: the overlays that pool infrastructure across workspaces.</summary>
-    static int SharedCmd(SharedInfrastructure shared, WorkspaceService svc, string[] args, bool json)
+    static int SharedCmd(SharedInfrastructure shared, WorkspaceService svc,
+        RepoRegistryStore registry, IGitService git, IPortStore ports, string[] args, bool json)
     {
         var store = shared.Resources;
         var sub = Args.FirstPositional(args) ?? "ls";
@@ -239,6 +244,9 @@ public static class CliApp
                 Console.WriteLine($"{sub}d '{toggleName}'");
                 return 0;
 
+            case "extract":
+                return Extract(shared, registry, git, ports, tail, json);
+
             case "up":
                 var upName = Args.FirstPositional(tail) ?? throw new ArgumentException("shared up requires a name");
                 var toStart = store.Get(upName) ?? throw new ArgumentException($"unknown shared resource '{upName}'");
@@ -283,14 +291,92 @@ public static class CliApp
                     return 1;
                 }
                 store.Remove(rmName);
+                ports.Release(SharedPortHolder(rmName));
                 Console.WriteLine($"removed shared resource '{rmName}'");
                 return 0;
 
             default:
                 Console.Error.WriteLine(
-                    $"unknown shared subcommand: {sub} (ls, show, up, down, enable, disable, reclaim, rm)");
+                    $"unknown shared subcommand: {sub} " +
+                    "(extract, ls, show, up, down, enable, disable, reclaim, rm)");
                 return 1;
         }
+    }
+
+    /// <summary>
+    /// Lift a service out of a repo's compose file into a shared resource. Prints what it would do — the
+    /// overrides, the layer each one lands at, and why — and only writes with --yes.
+    /// </summary>
+    static int Extract(SharedInfrastructure shared, RepoRegistryStore registry, IGitService git,
+        IPortStore ports, string[] args, bool json)
+    {
+        var apply = Args.TakeFlag(ref args, "--yes");
+        var repoName = Args.TakeOption(ref args, "--repo")
+            ?? throw new ArgumentException("shared extract requires --repo <name>");
+        var service = Args.TakeOption(ref args, "--service")
+            ?? throw new ArgumentException("shared extract requires --service <name>");
+        var file = Args.TakeOption(ref args, "--file");
+        var name = Args.TakeOption(ref args, "--name");
+        var capacity = int.TryParse(Args.TakeOption(ref args, "--capacity"), out var c) ? c : 5;
+
+        var entry = registry.Get(repoName)
+            ?? throw new ArgumentException($"unknown repo '{repoName}' — register it with `sprig repo add`");
+        var root = git.ResolveRepoRoot(entry.Path);
+        var config = SprigConfigLoader.LoadFromFile(Path.Combine(root, WorkspaceService.ConfigFileName));
+
+        file ??= config.Compose.FirstOrDefault()?.File
+            ?? throw new ArgumentException($"'{repoName}' declares no compose files to extract from");
+
+        var proposal = SharedResourceExtractor.Propose(config, root, file, service, name, capacity);
+
+        // A shared container binds one host port for everybody, so it comes from sprig's ledger like any
+        // other — the service's conventional number is often already taken by something sprig can't see.
+        if (apply)
+        {
+            var leased = ports.Acquire(SharedPortHolder(proposal.Resource.Name), [new PortRequest("port")]);
+            proposal = SharedResourceExtractor.Propose(config, root, file, service, name, capacity,
+                leased["port"]);
+        }
+
+        if (json) { WriteJson(proposal); return 0; }
+
+        Console.WriteLine($"{proposal.Resource.Name}  from {repoName} / {file} / {service}");
+        Console.WriteLine($"  capacity {proposal.Resource.Capacity}   " +
+                          $"execService {proposal.Resource.ExecService ?? "-"}   " +
+                          (apply ? $"host port {proposal.HostPort}" : "host port allocated on save"));
+        foreach (var (key, value) in proposal.Resource.Values.OrderBy(v => v.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  value    {key,-12} {value}");
+
+        Console.WriteLine();
+        Console.WriteLine("  what it would change:");
+        foreach (var choice in proposal.Choices)
+        {
+            Console.WriteLine($"    {Layer(choice.Layer)} {choice.Target}");
+            Console.WriteLine($"    {"",-8} = {choice.Value}");
+            Console.WriteLine($"    {"",-8}   {choice.Why}");
+        }
+
+        foreach (var warning in proposal.Warnings)
+            Console.WriteLine($"  ! {warning}");
+
+        if (!apply)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  nothing written. Re-run with --yes to create it.");
+            return proposal.Warnings.Count > 0 ? 1 : 0;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(shared.Resources.FilePath(proposal.Resource.Name))!);
+        File.WriteAllText(
+            Path.Combine(Path.GetDirectoryName(shared.Resources.FilePath(proposal.Resource.Name))!,
+                proposal.ComposeFragmentFileName),
+            proposal.ComposeFragment);
+        shared.Resources.Save(proposal.Resource);
+
+        Console.WriteLine();
+        Console.WriteLine($"created shared resource '{proposal.Resource.Name}'");
+        Console.WriteLine($"  run `sprig plan --stack <name>` to see it applied before creating anything.");
+        return 0;
     }
 
     static int Repo(RepoRegistryStore registry, string[] args, bool json)
@@ -609,6 +695,7 @@ public static class CliApp
             COMMANDS:
                 create <name> --stack <s> | --repo <path> [--no-shared]   Create an isolated workspace
                 plan <name> | --stack <s> | --repo <path> [--no-shared]   Show every value and the layer that set it
+                shared extract --repo <r> --service <s> [--file f] [--name n] [--capacity 5] [--yes]
                 shared ls | show <name> | up <name> | down <name> [--force]
                 shared enable <name> | disable <name> | reclaim | rm <name>
                                               Machine-local pooled infrastructure (overlays)

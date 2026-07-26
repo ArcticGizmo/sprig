@@ -27,23 +27,40 @@ public sealed partial class SharedResourceStore(ISprigPaths paths)
 
     public SharedResourceDefinition? Get(string name) => JsonFile.Read<SharedResourceDefinition>(FilePath(name));
 
+    /// <summary>The lease ledger shares this directory, and it is not a resource.</summary>
+    public const string LedgerFileName = "leases.json";
+
     /// <summary>Every defined resource, enabled or not, by name.</summary>
     public IReadOnlyList<SharedResourceDefinition> List()
     {
         if (!Directory.Exists(paths.SharedDir)) return [];
         return [.. Directory.EnumerateFiles(paths.SharedDir, "*.json")
+            .Where(f => !string.Equals(Path.GetFileName(f), LedgerFileName, StringComparison.OrdinalIgnoreCase))
             .Select(JsonFile.Read<SharedResourceDefinition>)
             .OfType<SharedResourceDefinition>()
+            // Anything else that deserialises without a name isn't a resource either — better to ignore a
+            // stray file than to list a blank row that can't be shown, enabled, or removed.
+            .Where(r => !string.IsNullOrWhiteSpace(r.Name))
             .OrderBy(r => r.Name, StringComparer.Ordinal)];
     }
 
     /// <summary>The resources that should take part in a plan right now — the enabled ones.</summary>
     public IReadOnlyList<SharedResourceDefinition> Active() => [.. List().Where(r => r.Enabled)];
 
+    /// <summary>Delete a resource and the compose fragment it owns — an orphaned fragment is just litter.</summary>
     public void Remove(string name)
     {
+        // Read the definition first: its fragment path is the only record of what belongs to it.
+        var fragment = Get(name)?.Compose;
+
         var file = FilePath(name);
         if (File.Exists(file)) File.Delete(file);
+
+        if (fragment is { Length: > 0 } && !Path.IsPathRooted(fragment))
+        {
+            var path = Path.Combine(paths.SharedDir, fragment);
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 
     public string FilePath(string name) => Path.Combine(paths.SharedDir, $"{name}.json");

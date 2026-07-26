@@ -161,17 +161,32 @@ a real postgres.
 
 **Goal:** nobody hand-authors override rules.
 
-- [ ] `SharedResourceExtractor` — lift a service (plus its volumes/networks) out of a repo compose file
-      into a resource definition, recording provenance.
-- [ ] Preset library keyed on image: postgres, mysql, redis, mongo. Fills `values`, `attach`, `detach`,
-      health, and default capacity.
-- [ ] **Injection-point selection** — for each value the repo needs back, pick the highest layer that can
-      carry it and record *why*, so the UI and CLI can explain the choice.
-- [ ] `sprig shared extract --repo <name> --service <svc>`, `sprig shared list|show|enable|disable|rm`.
-- [ ] Tests: extraction round-trip, preset detection, injection point chosen at the input layer when an
-      input exists and the env layer when it doesn't.
+- [x] `SharedResourceExtractor` — lift a service (plus the volumes that hold its data) out of a repo
+      compose file into a resource definition, dropping the parts that belonged to the repo
+      (`container_name` would collide; its `depends_on` stayed behind).
+- [x] Preset library keyed on image: postgres, mysql, redis, mongo. Fills `values`, `attach`, `detach`,
+      `execService`, and default capacity. The name comes from the image tag (`postgres-16`) so version
+      skew produces two pools rather than one wrong one.
+- [x] **Credentials are read off the lifted service**, not asserted. The container initialises with
+      whatever env the repo gave it; a preset that claims a username the image never created produces a
+      resource whose own attach command can't log in. *(Found by running it against real docker.)*
+- [x] **The host port is leased from the port ledger** under `@shared/<name>`, not the service's
+      conventional number — a machine already running postgres has 5432 taken by something sprig can't
+      see. *(Also found by running it.)*
+- [x] **Injection-point selection** — the port input is read from the repo's own compose override rather
+      than guessed from a name; the namespace override reaches into the env template only where no input
+      carries it. Each choice records *why*.
+- [x] A connection string sprig can't confidently rewrite becomes a **warning, not a guess** — the failure
+      it prevents is four workspaces silently sharing one database.
+- [x] `sprig shared extract --repo <r> --service <s> [--yes]` — prints the proposal and writes nothing
+      without `--yes`.
+- [x] Tests: extraction shape, preset/name detection, both injection layers, rewrite shapes recognised and
+      not, fragment contents, and unknown-image behaviour.
 
 **Commit:** `Extract shared resources from repo compose files`
+
+> **Verified end to end against real docker:** extract → create two workspaces → each gets its own
+> database on one container → `up`/`down` refcounting → `rm` drops only its own database.
 
 ---
 

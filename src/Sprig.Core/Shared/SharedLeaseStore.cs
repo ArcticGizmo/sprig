@@ -31,7 +31,7 @@ public sealed record SharedSlot(string Resource, int Slot, string Workspace,
 /// </summary>
 public sealed class SharedLeaseStore(ISprigPaths paths)
 {
-    string LedgerPath => Path.Combine(paths.SharedDir, "leases.json");
+    string LedgerPath => Path.Combine(paths.SharedDir, SharedResourceStore.LedgerFileName);
 
     /// <summary>Take the lowest free slot on <paramref name="resource"/> for this workspace.</summary>
     /// <param name="known">

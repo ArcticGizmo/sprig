@@ -7,9 +7,13 @@ namespace Sprig.Core.Processes;
 /// </summary>
 public interface IProcessRunner
 {
+    /// <param name="onOutput">Optional sink called with each stdout/stderr line as it arrives, for
+    /// callers that want to stream live output (e.g. a setup install). The full output is still
+    /// captured and returned in the <see cref="ProcessResult"/> regardless.</param>
     ProcessResult Run(
         string executable,
         IReadOnlyList<string> arguments,
         string? workingDirectory = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Action<string>? onOutput = null);
 }

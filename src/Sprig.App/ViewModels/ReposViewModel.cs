@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Stacks;
+using Sprig.Core.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
@@ -22,6 +23,10 @@ public partial class ReposViewModel : PageViewModel
     }
 
     public override string Title => "Repos";
+
+    /// <summary>Raised when the isolate quick-create begins, carrying the checklist view-model for the
+    /// view to open in its own non-blocking progress window.</summary>
+    public event Action<OperationProgressViewModel>? OperationStarted;
 
     public ObservableCollection<RegisteredRepo> Repos { get; } = [];
 
@@ -130,18 +135,39 @@ public partial class ReposViewModel : PageViewModel
         if (repo is null) return;
         if (name.Length == 0) { IsolateError = "enter a workspace name"; return; }
 
+        // Resolve + plan up front so pre-flight problems stay in the inline isolate form.
+        ResolvedStack resolved;
+        IReadOnlyList<WorkspaceStep> plan;
+        try
+        {
+            resolved = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo.Path));
+            plan = Services.Workspaces.PlanCreate(resolved, name);
+        }
+        catch (Exception ex) { IsolateError = ex.Message; return; }
+
+        var modal = new OperationProgressViewModel($"Creating workspace '{name}'");
+        modal.Load(plan);
+        IsIsolating = false;
+        OperationStarted?.Invoke(modal);
+
         Busy = true; IsolateError = null; Status = null;
         try
         {
-            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(repo.Path, name));
-            IsIsolating = false;
+            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
+            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(resolved, name, progress));
             var setupFail = SetupWarning.Summarize(record);
             Status = setupFail is null
                 ? $"created workspace '{name}' — open the Workspaces tab to run or remove it"
                 : $"created workspace '{name}', but {setupFail} — the worktree was kept; finish setup manually";
             Services.NotifyStoreChanged();
+            modal.Finish(
+                setupFail is null ? $"Created '{name}'." : $"Created '{name}', but {setupFail}.",
+                setupFail is null ? WorkspaceStepState.Done : WorkspaceStepState.Warning);
         }
-        catch (Exception ex) { IsolateError = ex.Message; }
+        catch (Exception ex)
+        {
+            modal.Finish($"Couldn't create '{name}': {ex.Message}", WorkspaceStepState.Error);
+        }
         finally { Busy = false; }
     }
 

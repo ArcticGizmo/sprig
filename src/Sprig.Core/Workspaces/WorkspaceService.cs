@@ -48,17 +48,76 @@ public sealed partial class WorkspaceService(
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
 
     /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
-    public InstanceRecord Create(string repoPath, string workspace)
-        => Create(ResolveSingleRepo(repoPath), workspace);
+    public InstanceRecord Create(string repoPath, string workspace,
+        IProgress<WorkspaceStepProgress>? progress = null)
+        => Create(ResolveSingleRepo(repoPath), workspace, progress);
 
-    /// <summary>Create an isolated workspace from a resolved stack (1+ repos). Rolls back on failure.</summary>
-    public InstanceRecord Create(ResolvedStack stack, string workspace)
+    /// <summary>The ordered checklist <see cref="Create(ResolvedStack, string, IProgress{WorkspaceStepProgress})"/>
+    /// will work through, computed up front so a UI can show every row before execution starts. Runs the
+    /// same cheap pre-flight validation as create, so a bad name / duplicate workspace fails here rather
+    /// than mid-checklist.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanCreate(ResolvedStack stack, string workspace)
     {
-        ValidateName(workspace);
-        if (stack.Repos.Count == 0)
-            throw new WorkspaceException("nothing to create: the stack has no repos");
-        if (instances.TryLoad(workspace) is not null)
-            throw new WorkspaceException($"workspace '{workspace}' already exists");
+        ValidateCreate(stack, workspace);
+        var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
+        foreach (var repo in stack.Repos)
+        {
+            steps.Add(new(CreateStepIds.Worktree(repo.Name), $"Create worktree — {repo.Name}"));
+            steps.Add(new(CreateStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
+            if (repo.Config.Compose.Count > 0)
+                steps.Add(new(CreateStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
+            if (HasSetup(repo))
+            {
+                // A parent "Install dependencies" row with one indented sub-row per command, so each
+                // command's progress (and live output) is visible on its own line.
+                steps.Add(new(CreateStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
+                for (var i = 0; i < repo.Config.Setup.Count; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(repo.Config.Setup[i])) continue;
+                    steps.Add(new(CreateStepIds.SetupCommand(repo.Name, i), repo.Config.Setup[i]) { SubStep = true });
+                }
+            }
+        }
+        steps.Add(new(CreateStepIds.Record, "Save workspace record"));
+        return steps;
+    }
+
+    /// <summary>Whether this repo has setup commands to run (and a runner to run them).</summary>
+    bool HasSetup(ResolvedRepo repo) => setup is not null && repo.Config.Setup.Count > 0;
+
+    /// <summary>Run the repo's setup commands one at a time, reporting each as its own sub-step and
+    /// streaming its live output to the progress sink. Stops at the first failure (a later command
+    /// usually depends on an earlier one); the failed command's row goes Warning — setup never rolls
+    /// the workspace back — and any commands after it stay Pending (unreached).</summary>
+    IReadOnlyList<Setup.SetupOutcome> RunSetup(ResolvedRepo repo, string worktree,
+        IProgress<WorkspaceStepProgress>? progress)
+    {
+        var outcomes = new List<Setup.SetupOutcome>();
+        for (var i = 0; i < repo.Config.Setup.Count; i++)
+        {
+            var command = repo.Config.Setup[i];
+            if (string.IsNullOrWhiteSpace(command)) continue;
+
+            var id = CreateStepIds.SetupCommand(repo.Name, i);
+            progress?.Report(new(id, WorkspaceStepState.Running));
+            var outcome = setup!.RunCommand(command, worktree,
+                onOutput: line => progress?.Report(new(id, WorkspaceStepState.Running) { Output = line }));
+            outcomes.Add(outcome);
+            progress?.Report(outcome.Success
+                ? new(id, WorkspaceStepState.Done)
+                : new(id, WorkspaceStepState.Warning, $"exited {outcome.ExitCode}"));
+            if (!outcome.Success) break;
+        }
+        return outcomes;
+    }
+
+    /// <summary>Create an isolated workspace from a resolved stack (1+ repos). Rolls back on failure.
+    /// Reports checklist progress to <paramref name="progress"/> if supplied (steps match
+    /// <see cref="PlanCreate"/>).</summary>
+    public InstanceRecord Create(ResolvedStack stack, string workspace,
+        IProgress<WorkspaceStepProgress>? progress = null)
+    {
+        ValidateCreate(stack, workspace);
 
         var branch = $"sprig/{workspace}";
 
@@ -77,11 +136,14 @@ public sealed partial class WorkspaceService(
 
         var portsAcquired = false;
         var addedWorktrees = new List<(string root, string worktree)>();
+        // The step whose real work is currently in flight, so the catch can paint the right row red.
+        var current = CreateStepIds.Ports;
         try
         {
             // The stack owns the ports; allocate one real non-colliding number per named port.
             // A repo input may pin its port to a fixed set (e.g. pre-registered Auth0 callbacks);
             // resolve those onto the stack ports so allocation only draws from the allowed set.
+            progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Running));
             var constraints = PortConstraintResolver.Resolve(stack.Repos, stack.Bindings, stack.Ports);
             var requests = stack.Ports
                 .Select(p => new PortRequest(p, constraints.GetValueOrDefault(p)))
@@ -91,6 +153,7 @@ public sealed partial class WorkspaceService(
 
             // Resolve per-repo input scopes from the stack's bindings (hard-fails on an unbound input).
             var wired = StackWiring.Resolve(workspace, allPorts, stack.Repos, stack.Bindings);
+            progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Done));
 
             var repoRecords = new List<InstanceRepo>();
             foreach (var plan in plans)
@@ -98,29 +161,49 @@ public sealed partial class WorkspaceService(
                 var repo = plan.Repo;
                 var repoScope = wired.ScopeFor(repo.Name);
 
+                current = CreateStepIds.Worktree(repo.Name);
+                progress?.Report(new(current, WorkspaceStepState.Running));
                 git.AddWorktree(repo.Root, plan.Worktree, branch);
                 addedWorktrees.Add((repo.Root, plan.Worktree));
+                progress?.Report(new(current, WorkspaceStepState.Done));
 
+                current = CreateStepIds.Env(repo.Name);
+                progress?.Report(new(current, WorkspaceStepState.Running));
                 env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
+                progress?.Report(new(current, WorkspaceStepState.Done));
 
                 // A repo may override several compose files; generate one isolated copy per file,
                 // named so files from different source paths never collide in the instance dir.
                 var composePaths = new List<string>();
-                foreach (var composeCfg in repo.Config.Compose)
+                if (repo.Config.Compose.Count > 0)
                 {
-                    var dest = Path.Combine(paths.InstanceDir(workspace),
-                        $"docker-compose.{repo.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
-                    compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, dest);
-                    composePaths.Add(dest);
+                    current = CreateStepIds.Compose(repo.Name);
+                    progress?.Report(new(current, WorkspaceStepState.Running));
+                    foreach (var composeCfg in repo.Config.Compose)
+                    {
+                        var dest = Path.Combine(paths.InstanceDir(workspace),
+                            $"docker-compose.{repo.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
+                        compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, dest);
+                        composePaths.Add(dest);
+                    }
+                    progress?.Report(new(current, WorkspaceStepState.Done));
                 }
 
                 // Install the repo's dependencies in the fresh worktree. This is the last step and
                 // deliberately soft: SetupRunner never throws on a non-zero exit, so a failed install
-                // is recorded (and later surfaced as a warning) but does NOT trip the rollback below —
+                // is recorded (and surfaced here as a Warning) but does NOT trip the rollback below —
                 // the worktree/env/compose are already good and worth keeping.
-                var setupOutcomes = setup is not null && repo.Config.Setup.Count > 0
-                    ? setup.Run(repo.Config.Setup, plan.Worktree)
-                    : [];
+                IReadOnlyList<Setup.SetupOutcome> setupOutcomes = [];
+                if (HasSetup(repo))
+                {
+                    var setupStep = CreateStepIds.Setup(repo.Name);
+                    progress?.Report(new(setupStep, WorkspaceStepState.Running));
+                    setupOutcomes = RunSetup(repo, plan.Worktree, progress);
+                    var failed = setupOutcomes.FirstOrDefault(o => !o.Success);
+                    progress?.Report(failed is null
+                        ? new(setupStep, WorkspaceStepState.Done)
+                        : new(setupStep, WorkspaceStepState.Warning, $"'{failed.Command}' exited {failed.ExitCode} — worktree kept"));
+                }
 
                 repoRecords.Add(new InstanceRepo
                 {
@@ -134,6 +217,8 @@ public sealed partial class WorkspaceService(
                 });
             }
 
+            current = CreateStepIds.Record;
+            progress?.Report(new(current, WorkspaceStepState.Running));
             var record = new InstanceRecord
             {
                 Workspace = workspace,
@@ -144,10 +229,12 @@ public sealed partial class WorkspaceService(
                 CreatedAt = DateTimeOffset.UtcNow,
             };
             instances.Save(record);
+            progress?.Report(new(current, WorkspaceStepState.Done));
             return record;
         }
-        catch
+        catch (Exception ex)
         {
+            progress?.Report(new(current, WorkspaceStepState.Error, ex.Message));
             // Best-effort rollback across every repo materialised so far.
             foreach (var (root, worktree) in addedWorktrees)
             {
@@ -159,6 +246,16 @@ public sealed partial class WorkspaceService(
             TryQuiet(() => instances.Delete(workspace));
             throw;
         }
+    }
+
+    /// <summary>Shared cheap pre-flight validation for create (used by both create and its planner).</summary>
+    void ValidateCreate(ResolvedStack stack, string workspace)
+    {
+        ValidateName(workspace);
+        if (stack.Repos.Count == 0)
+            throw new WorkspaceException("nothing to create: the stack has no repos");
+        if (instances.TryLoad(workspace) is not null)
+            throw new WorkspaceException($"workspace '{workspace}' already exists");
     }
 
     /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>
@@ -175,12 +272,34 @@ public sealed partial class WorkspaceService(
 
     sealed record RepoPlan(ResolvedRepo Repo, string Worktree);
 
+    /// <summary>The ordered checklist <see cref="Remove(string, bool, IProgress{WorkspaceStepProgress})"/>
+    /// will work through for the given record, computed up front so a UI can show every row before
+    /// teardown starts.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanRemove(InstanceRecord record, bool force)
+    {
+        var steps = new List<WorkspaceStep>();
+        foreach (var repo in record.Repos.Where(r => r.ComposePaths.Count > 0))
+            steps.Add(new(RemoveStepIds.Infra(repo.Name), $"Stop containers — {repo.Name}"));
+        foreach (var repo in record.Repos)
+        {
+            steps.Add(new(RemoveStepIds.Worktree(repo.Name), $"Remove worktree — {repo.Name}"));
+            if (force && repo.Branch is not null)
+                steps.Add(new(RemoveStepIds.Branch(repo.Name), $"Delete branch — {repo.Name}"));
+        }
+        steps.Add(new(RemoveStepIds.Ports, "Release ports"));
+        steps.Add(new(RemoveStepIds.Record, "Delete workspace record"));
+        return steps;
+    }
+
     /// <summary>
     /// Tear down a workspace. Layered and idempotent: each step tolerates its target already
     /// being gone. The branch is deleted only when <paramref name="force"/> is set; the record
-    /// is removed last so an interrupted teardown is resumable.
+    /// is removed last so an interrupted teardown is resumable. Reports checklist progress to
+    /// <paramref name="progress"/> if supplied (steps match <see cref="PlanRemove"/>); because
+    /// teardown is best-effort, a step whose action throws is reported as a Warning, not an Error —
+    /// the sweep always runs to completion.
     /// </summary>
-    public void Remove(string workspace, bool force = false)
+    public void Remove(string workspace, bool force = false, IProgress<WorkspaceStepProgress>? progress = null)
     {
         var record = instances.TryLoad(workspace);
         if (record is null)
@@ -191,42 +310,76 @@ public sealed partial class WorkspaceService(
         }
 
         // Step 1 of the S3 matrix: infra down (and wipe volumes) before touching worktrees.
-        if (docker.IsAvailable())
+        var dockerUp = docker.IsAvailable();
+        foreach (var repo in record.Repos.Where(r => r.ComposePaths.Count > 0))
         {
-            foreach (var repo in record.Repos.Where(r => r.ComposePaths.Count > 0))
-                TryQuiet(() => docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes: true));
+            var id = RemoveStepIds.Infra(repo.Name);
+            if (!dockerUp)
+            {
+                progress?.Report(new(id, WorkspaceStepState.Warning, "Docker unavailable — containers not stopped"));
+                continue;
+            }
+            Step(progress, id, () =>
+                docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes: true));
         }
 
         foreach (var repo in record.Repos)
         {
             var isRepo = git.IsGitRepo(repo.SourcePath);
-            var state = WorktreeInspector.Classify(git, repo.SourcePath, repo.WorktreePath);
 
-            switch (state)
+            Step(progress, RemoveStepIds.Worktree(repo.Name), () =>
             {
-                case WorktreeState.Healthy when isRepo:
-                    TryQuiet(() => git.RemoveWorktree(repo.SourcePath, repo.WorktreePath));
-                    break;
-                case WorktreeState.MissingFolder when isRepo:
-                    TryQuiet(() => git.Prune(repo.SourcePath));
-                    break;
-                case WorktreeState.Orphaned:
-                    WorktreeInspector.TryDeleteDirectory(repo.WorktreePath);
-                    if (isRepo) TryQuiet(() => git.Prune(repo.SourcePath));
-                    break;
-                case WorktreeState.Gone:
-                    break;
-            }
+                var state = WorktreeInspector.Classify(git, repo.SourcePath, repo.WorktreePath);
+                switch (state)
+                {
+                    case WorktreeState.Healthy when isRepo:
+                        TryQuiet(() => git.RemoveWorktree(repo.SourcePath, repo.WorktreePath));
+                        break;
+                    case WorktreeState.MissingFolder when isRepo:
+                        TryQuiet(() => git.Prune(repo.SourcePath));
+                        break;
+                    case WorktreeState.Orphaned:
+                        WorktreeInspector.TryDeleteDirectory(repo.WorktreePath);
+                        if (isRepo) TryQuiet(() => git.Prune(repo.SourcePath));
+                        break;
+                    case WorktreeState.Gone:
+                        break;
+                }
 
-            // Guarantee the folder is gone even if the git remove left it (or wasn't a repo).
-            WorktreeInspector.TryDeleteDirectory(repo.WorktreePath);
+                // Guarantee the folder is gone even if the git remove left it (or wasn't a repo).
+                WorktreeInspector.TryDeleteDirectory(repo.WorktreePath);
 
-            if (force && repo.Branch is not null && isRepo && git.BranchExists(repo.SourcePath, repo.Branch))
-                TryQuiet(() => git.DeleteBranch(repo.SourcePath, repo.Branch));
+                // A folder that survives every attempt is a real problem worth a yellow row.
+                if (Directory.Exists(repo.WorktreePath))
+                    throw new WorkspaceException($"worktree folder could not be removed: {repo.WorktreePath}");
+            });
+
+            if (force && repo.Branch is not null)
+                Step(progress, RemoveStepIds.Branch(repo.Name), () =>
+                {
+                    if (isRepo && git.BranchExists(repo.SourcePath, repo.Branch))
+                        git.DeleteBranch(repo.SourcePath, repo.Branch);
+                });
         }
 
-        TryQuiet(() => ports.Release(workspace));
-        instances.Delete(workspace);
+        Step(progress, RemoveStepIds.Ports, () => ports.Release(workspace));
+        Step(progress, RemoveStepIds.Record, () => instances.Delete(workspace));
+    }
+
+    /// <summary>Run one best-effort teardown step, reporting Running → Done, or Warning if it throws
+    /// (teardown never aborts on a single failed layer — the exception is surfaced, not propagated).</summary>
+    static void Step(IProgress<WorkspaceStepProgress>? progress, string id, Action action)
+    {
+        progress?.Report(new(id, WorkspaceStepState.Running));
+        try
+        {
+            action();
+            progress?.Report(new(id, WorkspaceStepState.Done));
+        }
+        catch (Exception ex)
+        {
+            progress?.Report(new(id, WorkspaceStepState.Warning, ex.Message));
+        }
     }
 
     /// <summary>Bring the workspace's infra up.</summary>

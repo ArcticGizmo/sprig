@@ -10,7 +10,8 @@ public sealed class ProcessRunner : IProcessRunner
         string executable,
         IReadOnlyList<string> arguments,
         string? workingDirectory = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? onOutput = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -30,8 +31,10 @@ public sealed class ProcessRunner : IProcessRunner
 
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        // Line handlers run on threadpool threads; onOutput must be safe to call from there (it is —
+        // the UI marshals via Progress<T>). stdout and stderr interleave in arrival order for the stream.
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { stdout.AppendLine(e.Data); onOutput?.Invoke(e.Data); } };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { stderr.AppendLine(e.Data); onOutput?.Invoke(e.Data); } };
 
         try
         {

@@ -12,11 +12,29 @@ namespace Sprig.App.Views;
 
 public partial class ReposView : UserControl
 {
+    ReposViewModel? _hooked;
+
     public ReposView()
     {
         InitializeComponent();
         // Feed the path field's auto-complete from the view model's directory suggestions.
         RepoPathBox.AsyncPopulator = PopulatePathsAsync;
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_hooked is not null) _hooked.OperationStarted -= ShowProgress;
+        _hooked = DataContext as ReposViewModel;
+        if (_hooked is not null) _hooked.OperationStarted += ShowProgress;
+    }
+
+    /// <summary>Open the isolate checklist in its own non-blocking window.</summary>
+    void ShowProgress(OperationProgressViewModel vm)
+    {
+        var window = new OperationProgressWindow { DataContext = vm };
+        if (TopLevel.GetTopLevel(this) is Window owner) window.Show(owner);
+        else window.Show();
     }
 
     Task<IEnumerable<object>> PopulatePathsAsync(string? text, CancellationToken ct)

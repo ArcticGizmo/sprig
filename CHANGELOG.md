@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.3.1] - 2026-07-26
+
+### Added
+- **Setup commands.** A repo declares `setup` steps (`npm ci`, `dotnet restore`) that run in the fresh worktree on create.
+- **A failed install warns instead of rolling back** — the worktree stays put so you can finish it by hand.
+- **Create and teardown get a live progress window** — a non-blocking checklist, one row per step, that you can leave open while you carry on.
+- **Each step shows its state at a glance** — waiting, running, done, warned, or failed.
+- **Install commands appear as sub-items, streaming their output** — watch each one scroll past instead of guessing whether it hung.
+
+---
+
 ## [v0.3.0] - 2026-07-25
 
 ### Added

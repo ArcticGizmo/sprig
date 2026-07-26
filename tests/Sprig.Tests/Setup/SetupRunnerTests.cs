@@ -12,11 +12,14 @@ public class SetupRunnerTests
         public List<RecordingProcessRunner.Invocation> Calls { get; } = [];
 
         public ProcessResult Run(string executable, IReadOnlyList<string> arguments,
-            string? workingDirectory = null, CancellationToken ct = default)
+            string? workingDirectory = null, CancellationToken ct = default, Action<string>? onOutput = null)
         {
             Calls.Add(new RecordingProcessRunner.Invocation(executable, arguments, workingDirectory));
             var command = arguments[^1];
             var (exit, stdout, stderr) = script(command);
+            if (onOutput is not null)
+                foreach (var line in (stdout + stderr).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    onOutput(line.TrimEnd('\r'));
             return new ProcessResult(executable, arguments, exit, stdout, stderr);
         }
     }

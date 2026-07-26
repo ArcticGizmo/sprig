@@ -24,6 +24,10 @@ public partial class WorkspacesViewModel : PageViewModel
 
     public override string Title => "Workspaces";
 
+    /// <summary>Raised when a create/teardown begins, carrying the checklist view-model for the view to
+    /// open in its own non-blocking progress window (keeps this view-model free of Avalonia window types).</summary>
+    public event Action<OperationProgressViewModel>? OperationStarted;
+
     /// <summary>False when no stacks exist — a workspace can't be created without one (upstream empty state).</summary>
     [ObservableProperty] private bool _hasAnyStacks;
 
@@ -201,30 +205,60 @@ public partial class WorkspacesViewModel : PageViewModel
         if (string.IsNullOrEmpty(stack)) { CreateError = "pick a stack (define one in the Stacks tab first)"; return; }
         if (string.IsNullOrEmpty(name)) { CreateError = "enter a workspace name"; return; }
 
+        // Resolve + plan up front so pre-flight problems (bad name, duplicate, bad stack) stay in the
+        // inline create form; only once we have a real plan do we hand off to the progress window.
+        ResolvedStack resolved;
+        IReadOnlyList<WorkspaceStep> plan;
+        try
+        {
+            resolved = await AppServices.RunAsync(() => Services.StackResolver.Resolve(stack));
+            plan = Services.Workspaces.PlanCreate(resolved, name);
+        }
+        catch (Exception ex) { CreateError = ex.Message; return; }
+
+        var startInfra = StartInfraOnCreate;
+        var modal = new OperationProgressViewModel($"Creating workspace '{name}'");
+        modal.Load(plan);
+        // "Start infrastructure" is driven here (not by the service) — append it as the final row.
+        var infraStep = startInfra ? modal.AddStep("infra", "Start infrastructure") : null;
+        IsCreating = false;
+        OperationStarted?.Invoke(modal);
+
         Busy = true;
         CreateError = null;
         try
         {
-            var record = await AppServices.RunAsync(() =>
-            {
-                var resolved = Services.StackResolver.Resolve(stack);
-                return Services.Workspaces.Create(resolved, name);
-            });
-            IsCreating = false;
+            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
+            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(resolved, name, progress));
 
             // Optionally bring the infra up straight away. A failure here (e.g. Docker not running)
             // is a soft warning — the workspace itself was created successfully.
             var hasInfra = record.Repos.Any(r => r.ComposePaths.Count > 0);
             var started = false;
             string? infraWarning = null;
-            if (hasInfra && StartInfraOnCreate)
+            if (infraStep is not null)
             {
-                try
+                if (!hasInfra)
                 {
-                    await AppServices.RunAsync(() => Services.Workspaces.Up(name));
-                    started = true;
+                    infraStep.Detail = "no Docker infrastructure in this stack";
+                    infraStep.State = WorkspaceStepState.Done;
                 }
-                catch (Exception ex) { infraWarning = ex.Message; }
+                else
+                {
+                    infraStep.State = WorkspaceStepState.Running;
+                    try
+                    {
+                        await AppServices.RunAsync(() => Services.Workspaces.Up(name));
+                        started = true;
+                        infraStep.State = WorkspaceStepState.Done;
+                    }
+                    catch (Exception ex)
+                    {
+                        infraWarning = ex.Message;
+                        infraStep.Detail = ex.Message;
+                        infraStep.State = WorkspaceStepState.Warning;
+                    }
+                }
             }
 
             await RefreshCore();
@@ -237,10 +271,16 @@ public partial class WorkspacesViewModel : PageViewModel
                 : infraWarning is not null ? $"created '{name}', but couldn't start its infra: {infraWarning}"
                 : null;
             Services.NotifyStoreChanged();
+
+            var warned = setupWarning is not null || infraWarning is not null;
+            modal.Finish(
+                warned ? Error! : started ? $"Created '{name}' and started its infra." : $"Created '{name}'.",
+                warned ? WorkspaceStepState.Warning : WorkspaceStepState.Done);
         }
         catch (Exception ex)
         {
-            CreateError = ex.Message;
+            // The create form is already closed — surface the failure in the progress window instead.
+            modal.Finish($"Couldn't create '{name}': {ex.Message}", WorkspaceStepState.Error);
         }
         finally
         {
@@ -372,12 +412,50 @@ public partial class WorkspacesViewModel : PageViewModel
         var force = RemoveForce;
         if (item is null) return;
         ConfirmingRemove = false;
-        await Guard(async () =>
+
+        var record = await AppServices.RunAsync(() => Services.Workspaces.Get(item.Name));
+        if (record is null)
         {
-            await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force));
+            // No record to build a checklist from — fall back to the plain guarded sweep.
+            await Guard(async () =>
+            {
+                await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force));
+                await RefreshCore();
+                Services.NotifyStoreChanged();
+            }, status: $"removed '{item.Name}'");
+            return;
+        }
+
+        var modal = new OperationProgressViewModel($"Removing workspace '{item.Name}'");
+        modal.Load(Services.Workspaces.PlanRemove(record, force));
+        OperationStarted?.Invoke(modal);
+
+        Busy = true;
+        Error = null;
+        StatusMessage = null;
+        try
+        {
+            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
+            await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force, progress));
             await RefreshCore();
             Services.NotifyStoreChanged();
-        }, status: $"removed '{item.Name}'");
+            StatusMessage = $"removed '{item.Name}'";
+
+            // Teardown never hard-fails; a yellow row means a best-effort layer needed attention.
+            var warned = modal.Steps.Any(s => s.State == WorkspaceStepState.Warning);
+            modal.Finish(
+                warned ? $"Removed '{item.Name}' — some steps needed attention." : $"Removed '{item.Name}'.",
+                warned ? WorkspaceStepState.Warning : WorkspaceStepState.Done);
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            modal.Finish($"Couldn't remove '{item.Name}': {ex.Message}", WorkspaceStepState.Error);
+        }
+        finally
+        {
+            Busy = false;
+        }
     }
 
     async Task Lifecycle(Action<string> action, string ok)

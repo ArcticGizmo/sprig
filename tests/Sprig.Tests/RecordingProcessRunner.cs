@@ -12,9 +12,14 @@ public sealed class RecordingProcessRunner : IProcessRunner
     public string StdOut { get; set; } = "";
     public string StdErr { get; set; } = "";
 
-    public ProcessResult Run(string executable, IReadOnlyList<string> arguments, string? workingDirectory = null, CancellationToken ct = default)
+    public ProcessResult Run(string executable, IReadOnlyList<string> arguments, string? workingDirectory = null,
+        CancellationToken ct = default, Action<string>? onOutput = null)
     {
         Calls.Add(new Invocation(executable, arguments, workingDirectory));
+        // Replay the canned output through the stream sink so streaming callers can be exercised.
+        if (onOutput is not null)
+            foreach (var line in (StdOut + StdErr).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                onOutput(line.TrimEnd('\r'));
         return new ProcessResult(executable, arguments, ExitCode, StdOut, StdErr);
     }
 

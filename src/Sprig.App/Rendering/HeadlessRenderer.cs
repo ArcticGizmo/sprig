@@ -11,6 +11,7 @@ using Sprig.App.ViewModels;
 using Sprig.App.Views;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 
 namespace Sprig.App.Rendering;
 
@@ -113,6 +114,10 @@ internal static class HeadlessRenderer
             changelog.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "changelog.png"));
             changelog.Close();
 
+            // The create/teardown progress window, with a representative mix of step states so every
+            // indicator (pending, running spinner, warning, done) is visible in one frame.
+            RenderProgressModal(outDir);
+
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
             return 0;
         }
@@ -121,6 +126,48 @@ internal static class HeadlessRenderer
             Console.Error.WriteLine($"headless render failed: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>Render the operation-progress checklist mid-run: ports/env/compose done, a soft setup
+    /// warning, one step spinning, and later steps still pending.</summary>
+    static void RenderProgressModal(string outDir)
+    {
+        var progress = new OperationProgressViewModel("Creating workspace 'feature-auth'");
+        progress.Load(
+        [
+            new WorkspaceStep("ports", "Allocate ports"),
+            new WorkspaceStep("vue:worktree", "Create worktree — vue"),
+            new WorkspaceStep("vue:env", "Apply environment — vue"),
+            new WorkspaceStep("vue:compose", "Generate compose — vue"),
+            new WorkspaceStep("vue:setup", "Install dependencies — vue"),
+            new WorkspaceStep("vue:setup:0", "npm ci") { SubStep = true },
+            new WorkspaceStep("vue:setup:1", "npm run build") { SubStep = true },
+            new WorkspaceStep("record", "Save workspace record"),
+        ]);
+        progress.AddStep("infra", "Start infrastructure");
+        progress.Apply(new("ports", WorkspaceStepState.Done));
+        progress.Apply(new("vue:worktree", WorkspaceStepState.Done));
+        progress.Apply(new("vue:env", WorkspaceStepState.Done));
+        progress.Apply(new("vue:compose", WorkspaceStepState.Done));
+        progress.Apply(new("vue:setup", WorkspaceStepState.Running));
+        progress.Apply(new("vue:setup:0", WorkspaceStepState.Done));
+        progress.Apply(new("vue:setup:1", WorkspaceStepState.Running));
+        // A few streamed output lines for the currently-running command.
+        foreach (var line in new[]
+                 {
+                     "> vite build",
+                     "vite v5.4.2 building for production...",
+                     "transforming (247) src/components/App.vue",
+                     "✓ 312 modules transformed.",
+                     "rendering chunks...",
+                 })
+            progress.Apply(new("vue:setup:1", WorkspaceStepState.Running) { Output = line });
+
+        var window = new OperationProgressWindow { DataContext = progress };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "operation_progress.png"));
+        window.Close();
     }
 
     static void Capture(MainWindowViewModel vm, string path)

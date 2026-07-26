@@ -1,0 +1,101 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        x:Class="Sprig.App.Views.OperationProgressWindow"
+        x:DataType="vm:OperationProgressViewModel"
+        Width="480" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{StaticResource FormBgBrush}"
+        Title="sprig — working…">
+
+    <Window.Styles>
+        <!-- Blue "loading" ring: a partial arc (via the dash gap) rotating continuously. -->
+        <Style Selector="Ellipse.spinner">
+            <Setter Property="RenderTransform" Value="rotate(0deg)" />
+            <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+            <Style.Animations>
+                <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="RotateTransform.Angle" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="RotateTransform.Angle" Value="360" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="24">
+
+        <!-- Heading -->
+        <TextBlock Grid.Row="0" Text="{Binding Heading}" FontSize="17" FontWeight="SemiBold"
+                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+        <!-- Checklist -->
+        <ScrollViewer Grid.Row="1" MaxHeight="420" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Steps}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OperationStepViewModel">
+                        <StackPanel Margin="{Binding RowMargin}">
+                            <Grid ColumnDefinitions="24,*">
+                                <!-- Status indicator: static circle+glyph, or the spinner while running -->
+                                <Panel Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center"
+                                       HorizontalAlignment="Center">
+                                    <!-- Pending / done / warning / error -->
+                                    <Ellipse Width="16" Height="16" StrokeThickness="1.6"
+                                             Stroke="{Binding IndicatorBrush}"
+                                             IsVisible="{Binding ShowStaticIndicator}" />
+                                    <TextBlock Text="{Binding Glyph}" FontSize="11" FontWeight="Bold"
+                                               Foreground="{Binding IndicatorBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               IsVisible="{Binding ShowStaticIndicator}" />
+                                    <!-- Running spinner -->
+                                    <Ellipse Classes="spinner" Width="16" Height="16" StrokeThickness="2"
+                                             Stroke="{StaticResource AccentBrush}"
+                                             StrokeDashArray="18,7"
+                                             IsVisible="{Binding IsRunning}" />
+                                </Panel>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Label}" FontSize="{Binding LabelSize}"
+                                               FontFamily="{Binding LabelFont}"
+                                               Foreground="{Binding LabelBrush}" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                                    <TextBlock Text="{Binding Detail}" FontSize="11"
+                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="200"
+                                               IsVisible="{Binding HasDetail}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Live command output (tail), shown while running or after a warning/error -->
+                            <Border IsVisible="{Binding ShowOutput}" Margin="24,4,0,2"
+                                    Background="#12000000" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="4" Padding="8,6">
+                                <TextBlock Text="{Binding LiveOutput}"
+                                           FontFamily="Cascadia Code, Consolas, monospace" FontSize="11"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                            </Border>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Summary + Close -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,18,0,0">
+            <TextBlock Grid.Column="0" Text="{Binding Summary}" IsVisible="{Binding HasSummary}"
+                       Foreground="{Binding SummaryBrush}" FontSize="12.5" TextWrapping="Wrap"
+                       VerticalAlignment="Center" Margin="0,0,12,0" />
+            <Button Grid.Column="1" x:Name="CloseButton" Content="Close" Click="OnCloseClick"
+                    IsEnabled="{Binding CanClose}" Padding="16,8" FontWeight="SemiBold"
+                    Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                    VerticalAlignment="Center" />
+        </Grid>
+    </Grid>
+</Window>

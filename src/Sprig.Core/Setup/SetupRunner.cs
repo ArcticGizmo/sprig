@@ -31,14 +31,21 @@ public sealed class SetupRunner(IProcessRunner runner)
         foreach (var command in commands)
         {
             if (string.IsNullOrWhiteSpace(command)) continue;
-            var outcome = RunOne(command, workingDirectory, ct);
+            var outcome = RunCommand(command, workingDirectory, ct: ct);
             outcomes.Add(outcome);
             if (!outcome.Success) break;   // a failed step poisons the rest — stop and report
         }
         return outcomes;
     }
 
-    SetupOutcome RunOne(string command, string workingDirectory, CancellationToken ct)
+    /// <summary>Run a single command at <paramref name="workingDirectory"/>, streaming each output line to
+    /// <paramref name="onOutput"/> as it arrives (for a live view). Never throws — a non-zero exit or a
+    /// shell that won't start is captured as a failed <see cref="SetupOutcome"/>.</summary>
+    public SetupOutcome RunCommand(string command, string workingDirectory,
+        Action<string>? onOutput = null, CancellationToken ct = default)
+        => RunOne(command, workingDirectory, onOutput, ct);
+
+    SetupOutcome RunOne(string command, string workingDirectory, Action<string>? onOutput, CancellationToken ct)
     {
         var (shell, args) = OperatingSystem.IsWindows()
             ? ("cmd.exe", new[] { "/c", command })
@@ -48,7 +55,7 @@ public sealed class SetupRunner(IProcessRunner runner)
         // so one broken command never aborts workspace creation.
         try
         {
-            var r = runner.Run(shell, args, workingDirectory, ct);
+            var r = runner.Run(shell, args, workingDirectory, ct, onOutput);
             return new SetupOutcome(command, r.ExitCode, Cap(Combine(r.StdOut, r.StdErr)));
         }
         catch (OperationCanceledException) { throw; }

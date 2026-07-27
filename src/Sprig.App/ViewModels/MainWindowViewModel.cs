@@ -52,7 +52,10 @@ public partial class MainWindowViewModel : ViewModelBase
     public static string TitleFor(AppServices services)
         => "Sprig" + Sprig.Core.Store.AppProfile.DisplaySuffix + (services.IsDemoStore ? " — Guided tour" : "");
 
-    public MainWindowViewModel(AppServices services, AppSession? session = null)
+    /// <param name="dockerIsRunning">Overrides the Docker probe the tour uses to decide whether to offer
+    /// starting containers. Tests supply it so the script is deterministic on any machine; production
+    /// leaves it null and the real daemon is asked.</param>
+    public MainWindowViewModel(AppServices services, AppSession? session = null, Func<bool>? dockerIsRunning = null)
     {
         _session = session;
         IsTour = services.IsDemoStore;
@@ -82,14 +85,16 @@ public partial class MainWindowViewModel : ViewModelBase
             workspaces,
         ];
 
-        Tour = new TourGuideViewModel(nav);
+        // The tour offers to start containers only when a daemon is actually up; the probe shells out to
+        // docker, so it's handed over as a func for StartAsync to run off the UI thread.
+        Tour = new TourGuideViewModel(nav, dockerIsRunning ?? services.Docker.IsEngineRunning);
 
         // Land on Home (the front door), not on the last step of the pipeline.
         _currentPage = home;
         home.IsActive = true;
 
         // In a tour the narration is the point, so it starts itself rather than waiting to be found.
-        if (IsTour) Tour.Start();
+        if (IsTour) _ = Tour.StartAsync();
 
         _ = CheckForUpdatesAsync();
     }

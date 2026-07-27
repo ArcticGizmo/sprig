@@ -198,8 +198,10 @@
                     </StackPanel>
 
                     <Button Grid.Column="1" Classes="link" Content="Back" Command="{Binding Tour.BackCommand}"
-                            IsVisible="{Binding Tour.CanGoBack}" VerticalAlignment="Center" />
+                            IsVisible="{Binding Tour.CanGoBack}" IsEnabled="{Binding !Tour.Busy}"
+                            VerticalAlignment="Center" />
                     <Button Grid.Column="2" Content="{Binding Tour.Stop.Cta}" Command="{Binding Tour.NextCommand}"
+                            IsEnabled="{Binding !Tour.Busy}"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold"
                             Padding="14,8" VerticalAlignment="Center" />
                     <Button Grid.Column="3" Classes="link" Content="Explore on my own"

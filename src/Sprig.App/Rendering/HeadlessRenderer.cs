@@ -146,15 +146,25 @@ internal static class HeadlessRenderer
             demo.Sample.Build();
 
             // Walk the real script rather than iterating pages, so each frame is a stop the user
-            // actually sees: the narration, and the page it navigated to, together.
-            var vm = new MainWindowViewModel(demo);
+            // actually sees: the narration, and the page it navigated to, together. Docker is pinned off
+            // so the render stays offline and deterministic — the infra stop is posed separately below.
+            var vm = new MainWindowViewModel(demo, dockerIsRunning: () => false);
+            Pump(vm.Tour.StartAsync());
             for (var stop = 1; stop <= vm.Tour.Count; stop++)
             {
                 Capture(vm, Path.Combine(outDir, $"tour_stop{stop}.png"));
-                vm.Tour.NextCommand.Execute(null);
+                Pump(vm.Tour.NextCommand.ExecuteAsync(null));
             }
 
+            // The optional Docker stop, posed rather than executed (running it would pull an image).
+            var withDocker = new MainWindowViewModel(demo, dockerIsRunning: () => true);
+            Pump(withDocker.Tour.StartAsync());
+            withDocker.Tour.Index = withDocker.Tour.Count - 2;
+            withDocker.CurrentPage = withDocker.Pages.First(p => p.Title == "Workspaces");
+            Capture(withDocker, Path.Combine(outDir, "tour_stop_infra.png"));
+
             // And the sample explored with the narration dismissed ("Explore on my own").
+            vm.CurrentPage = vm.Pages[0];
             vm.Tour.SkipCommand.Execute(null);
             foreach (var page in vm.Pages)
             {
@@ -186,6 +196,17 @@ internal static class HeadlessRenderer
             try { demo.Sample.Destroy(); } catch { /* best-effort */ }
             try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
         }
+    }
+
+    /// <summary>
+    /// Drive an async view-model call to completion on the render thread. The awaited continuations are
+    /// posted to the dispatcher, so blocking on the task would deadlock — the jobs have to be pumped.
+    /// </summary>
+    static void Pump(Task task)
+    {
+        while (!task.IsCompleted)
+            Dispatcher.UIThread.RunJobs();
+        task.GetAwaiter().GetResult();
     }
 
     /// <summary>Render the operation-progress checklist mid-run: ports/env/compose done, a soft setup

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Sprig.App.ViewModels;
 
@@ -72,6 +73,17 @@ public sealed class Navigator
         if (_workspaces is null) return;
         Go(_workspaces);
         _workspaces.Selected ??= _workspaces.Workspaces.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Bring the first workspace's docker infra up, through the page's own Up command — so busy state,
+    /// error surfacing, and the status refresh are the already-tested ones, not a second copy.
+    /// </summary>
+    public Task StartFirstWorkspaceInfra()
+    {
+        if (_workspaces is null) return Task.CompletedTask;
+        ShowFirstWorkspace();
+        return _workspaces.UpCommand.ExecuteAsync(null);
     }
 
     void Go(PageViewModel? page)

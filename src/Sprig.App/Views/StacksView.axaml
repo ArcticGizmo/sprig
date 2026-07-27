@@ -228,18 +228,18 @@
                         <StackPanel Spacing="14">
                             <!-- Canvas: the stack wiring surface -->
                             <StackPanel Spacing="8">
-                                <!-- Leads with the one action that does the work, then the gestures as reference.
-                                     A single run-on sentence covering five interactions was doing all the
-                                     teaching, and buried the fact that Auto-wire makes most of it unnecessary. -->
+                                <!-- Leads with what has already happened, since the canvas arrives wired now.
+                                     The gestures follow as reference rather than as the first instruction —
+                                     one run-on sentence covering five interactions was doing all the teaching. -->
                                 <StackPanel Spacing="3" IsVisible="{Binding CanAutoWire}">
                                     <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
-                                               Text="Start with Auto-wire — it maps every input to a port by convention and leaves anything you've already set alone. Then adjust whatever isn't what you meant." />
+                                               Text="Each input has been wired to a port by convention. Review it and change anything that isn't what you meant — two repos only share a port if you say so." />
                                     <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Text="Drag a port onto an input to rewire it, or drag an input back to a source to unbind it. Click a port to rename it, an input to set a literal value, a ƒ node to edit a transform, or a line to select it." />
                                 </StackPanel>
                                 <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
                                            IsVisible="{Binding !CanAutoWire}"
-                                           Text="Add a repo below to start. sprig reads the inputs it declares, then Auto-wire maps them to ports for you." />
+                                           Text="Add a repo below to start. sprig reads the inputs it declares and wires them to ports for you." />
 
                                 <!-- Column headers, aligned to the canvas columns (the actions are drawn on the canvas). -->
                                 <Grid HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284">

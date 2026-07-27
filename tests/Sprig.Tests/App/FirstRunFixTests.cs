@@ -10,10 +10,27 @@ namespace Sprig.Tests.App;
 /// </summary>
 public class FirstRunFixTests
 {
-    // --- Auto-wire stays an explicit action ---------------------------------
+    // --- Auto-wire on selection, made safe by port provenance ---------------
 
     [Fact]
-    public void Selecting_repos_does_not_wire_anything_on_its_own()
+    public void Selecting_repos_while_creating_wires_them_by_convention()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+
+        // No Auto-wire click: the canvas arrives wired, so the first task is reviewing a guess rather than
+        // authoring wiring before you know what wiring is. (An input already named "port" keeps that name —
+        // StackAutowire only appends the _port suffix when it isn't already there.)
+        Assert.NotEmpty(vm.Ports);
+        Assert.Equal("${sprig.ports.port}", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void Two_repos_declaring_the_same_input_never_end_up_sharing_one_port()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
@@ -21,19 +38,14 @@ public class FirstRunFixTests
         services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "worker", ("port", "6000")));
 
         var vm = new StacksViewModel(services, new Navigator()) { NewName = "svc" };
-        foreach (var c in vm.RepoChoices) c.IsSelected = true;
 
-        // Guards a hazard that a pre-wired canvas would reintroduce (docs/guided-tour-plan.md §11.4):
-        // StackAutowire reuses a port whose name matches, so wiring as each repo is selected makes the
-        // second repo adopt the first repo's port. Two services that each declare `port` would then be
-        // pointed at ONE port and collide at runtime. Batch auto-wire hands out distinct ports instead.
-        Assert.Empty(vm.Ports);
-        Assert.Equal("", Row(vm, "api", "port").Expression);
-        Assert.Equal("", Row(vm, "worker", "port").Expression);
+        // Selected one at a time, which is what a user does — and what previously broke this. Auto-wire
+        // reuses a port whose name matches, so without provenance the second repo adopted the port invented
+        // for the first, pointing two services' own listening ports at one number: a runtime collision, and
+        // the reason the first attempt at this was reverted (docs/guided-tour-plan.md §11.3).
+        vm.RepoChoices.First(c => c.Name == "api").IsSelected = true;
+        vm.RepoChoices.First(c => c.Name == "worker").IsSelected = true;
 
-        vm.AutoWireCommand.Execute(null);
-
-        // Explicit and batched: two ports, not one shared between them.
         Assert.Equal(2, vm.Ports.Count);
         Assert.NotEqual(Row(vm, "api", "port").Expression, Row(vm, "worker", "port").Expression);
     }
@@ -44,14 +56,79 @@ public class FirstRunFixTests
         using var s = new TempStore();
         var services = new AppServices(s.Root);
         services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "web", ("apiUrl", "http://x")));
 
         var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
         vm.RepoChoices.First(c => c.Name == "api").IsSelected = true;
         Row(vm, "api", "port").Expression = "${sprig.ports.mine}";
 
+        // Adding a second repo re-proposes; the hand-written expression must survive every recompute.
+        vm.RepoChoices.First(c => c.Name == "web").IsSelected = true;
         vm.AutoWireCommand.Execute(null);
 
         Assert.Equal("${sprig.ports.mine}", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void A_port_the_user_named_survives_every_recompute()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "web", ("apiUrl", "http://x")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        vm.RepoChoices.First(c => c.Name == "api").IsSelected = true;
+
+        vm.AddNamedPortCommand.Execute("shared_port");
+        Assert.Contains(vm.Ports, p => p.Name == "shared_port");
+
+        // Selecting another repo re-proposes, which deletes auto-wire's own ports. A port the user added by
+        // hand is not auto-wire's to delete.
+        vm.RepoChoices.First(c => c.Name == "web").IsSelected = true;
+
+        Assert.Contains(vm.Ports, p => p.Name == "shared_port");
+    }
+
+    [Fact]
+    public void Renaming_an_auto_port_makes_it_the_users_and_it_stops_being_recomputed()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "web", ("apiUrl", "http://x")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
+        vm.RepoChoices.First(c => c.Name == "api").IsSelected = true;
+
+        // Renaming is an act of intent, so the port (and the binding that followed the rename) is now the
+        // user's — a later recompute must not discard either.
+        vm.Ports.Single().Name = "api_listen";
+        Assert.Equal("${sprig.ports.api_listen}", Row(vm, "api", "port").Expression);
+
+        vm.RepoChoices.First(c => c.Name == "web").IsSelected = true;
+
+        Assert.Contains(vm.Ports, p => p.Name == "api_listen");
+        Assert.Equal("${sprig.ports.api_listen}", Row(vm, "api", "port").Expression);
+    }
+
+    [Fact]
+    public void Auto_wire_is_idempotent()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
+        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "worker", ("port", "6000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "svc" };
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+
+        var ports = vm.Ports.Select(p => p.Name).OrderBy(n => n).ToList();
+        vm.AutoWireCommand.Execute(null);
+        vm.AutoWireCommand.Execute(null);
+
+        // Discarding-then-re-proposing must converge, not accumulate _2/_3 suffixes on every pass.
+        Assert.Equal(ports, vm.Ports.Select(p => p.Name).OrderBy(n => n).ToList());
     }
 
     [Fact]

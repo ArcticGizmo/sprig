@@ -489,26 +489,33 @@ obviously appealing and will come up again.
 - **The builder's instruction paragraph** now leads with Auto-wire as the one action that does the work,
   with the five gestures following as reference rather than as the first thing read.
 
-**Withdrawn — auto-wire on open.** `StackAutowire` reuses an existing port whose name matches
-(`StackAutowire.cs:93`). That is right when the port was named by the *user*, but wiring incrementally as
-each repo is selected feeds it ports auto-wire itself invented moments earlier, so the second repo adopts
-the first repo's port. Two services that each declare `port` would be silently pointed at one and collide
-at runtime — precisely the hazard the batch path documents itself as avoiding
-(`StackAutowire.cs:26-29`), reintroduced through the back door. It was visible in the render as
-`api-port SHARED ×2` where batch auto-wire produces `api-port` and `api-port_2`.
+**Withdrawn, then shipped properly — auto-wire on open.** The first attempt was unsafe.
+`StackAutowire` reuses an existing port whose name matches (`StackAutowire.cs:93`). That is right when the
+port was named by the *user*, but wiring incrementally as each repo is selected feeds it ports auto-wire
+itself invented moments earlier, so the second repo adopts the first repo's port. Two services that each
+declare `port` would be silently pointed at one and collide at runtime — precisely the hazard the batch path
+documents itself as avoiding (`StackAutowire.cs:26-29`), reintroduced through the back door. It was visible
+in the render as `api-port SHARED ×2` where batch auto-wire produces `api-port` and `api-port_2`.
 
-Making it safe needs **port provenance** — knowing which port rows auto-wire created versus which the user
-authored — so a recompute can discard its own guesses and re-propose in one batch pass. That is a real
-change to builder state and wasn't in scope here. Until then the button stays explicit, and
-`FirstRunFixTests.Selecting_repos_does_not_wire_anything_on_its_own` guards the hazard.
+The fix was **port provenance**, now implemented. `StackPortRow.Auto` and `BindingRow.Auto` record whether
+auto-wire or the user produced each row, and `AutoWire` begins by discarding its own previous proposal
+(`DiscardAutoWiring`) so every run is a fresh batch pass over the user's state alone — never one fed the
+ports it invented a moment ago. Ownership transfers to the user on any act of intent: adding a port, naming
+one, typing an expression, or wiring from the canvas. `SetPorts` carries provenance across the rebuild, so a
+port the user named doesn't quietly become auto-wire's to delete.
 
-Two smaller things the attempt turned up, both kept:
+With that in place the canvas wires itself as repos are selected, and correctly: distinct ports, and sharing
+still only ever happens because the user asked for it. Auto-wire is also now idempotent by construction.
+
+Three smaller things the attempt turned up, all kept:
 
 - Editing an existing stack was one step from silently gaining wiring: `EditSelected` selects the repos
   *before* applying the stored bindings, so anything wiring on selection would invent a port for an input
   the saved stack left unbound and keep it. Now covered by a test.
-- Several existing tests encoded "the builder starts blank" only incidentally, via a helper. Worth knowing
-  they are setup assumptions rather than product assertions if this is revisited.
+- Several existing tests encoded "the builder starts blank" only incidentally, via a shared helper — setup
+  assumptions rather than product assertions. They now start from a deliberately cleared canvas
+  (`SelectReposUnwired`), which says what they mean.
+- The tests are what caught both problems, twice. Worth trusting that signal on this surface.
 
 ### 11.4 What's left
 
@@ -520,8 +527,8 @@ One mark's job changed as a result of §11.3: with the scaffold explanation now 
 these values come from?" mark is redundant — that mark becomes "what an input *is*", which the panel
 states but does not teach.
 
-Also outstanding, from the withdrawn fix: **port provenance** in the stack builder, which would make a
-pre-wired canvas safe and is the single biggest remaining win on that surface.
+Nothing outstanding from §11.3 — port provenance shipped, so the builder now opens pre-wired. The
+drag-to-wire mark is consequently less about *how to wire* and more about *how to change* a guess.
 
 Still open: whether coached marks should advance on *the user doing the thing* rather than pressing Next.
 More engaging, considerably more machinery (per-mark completion predicates), and it can trap someone who

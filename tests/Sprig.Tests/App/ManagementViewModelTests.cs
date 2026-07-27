@@ -598,12 +598,27 @@ public class ManagementViewModelTests
         Assert.Contains(vm.Ports, p => p.Name == "api_port");
     }
 
+    /// <summary>
+    /// Select every repo, then clear the wiring auto-wire proposes on selection — for tests that assert on
+    /// one command's own behaviour and need an input row present but a blank canvas to measure against.
+    /// </summary>
+    static void SelectReposUnwired(StacksViewModel vm)
+    {
+        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+        foreach (var port in vm.Ports.ToList()) vm.RemovePortCommand.Execute(port);
+        foreach (var group in vm.Bindings)
+            foreach (var row in group.Rows) row.Expression = "";
+    }
+
     static StacksViewModel WebPlusApi(AppServices services, string root)
     {
         services.Repos.Add(MakeRepoWithInputs(root, "vue", ("apiUrl", "http://localhost:4000")));
         services.Repos.Add(MakeRepoWithInputs(root, "api", ("port", "5000")));
         var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
-        foreach (var c in vm.RepoChoices) c.IsSelected = true;
+
+        // These tests are about deliberately SHARING one port between two repos — the one thing auto-wire
+        // won't propose — so start from a blank canvas and wire it by hand.
+        SelectReposUnwired(vm);
         vm.AddPortCommand.Execute(null);
         vm.Ports.Single().Name = "api_port";
         return vm;
@@ -749,7 +764,7 @@ public class ManagementViewModelTests
         services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
 
         var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
+        SelectReposUnwired(vm);
 
         vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "   "));
 
@@ -858,7 +873,7 @@ public class ManagementViewModelTests
         var services = new AppServices(s.Root);
         services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
         var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
+        SelectReposUnwired(vm);
 
         vm.AddNamedPortCommand.Execute("api_port");
         Assert.Contains(vm.Ports, p => p.Name == "api_port");

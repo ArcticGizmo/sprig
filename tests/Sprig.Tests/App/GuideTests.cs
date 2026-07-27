@@ -36,6 +36,7 @@ public class GuideTests
 
     static Guide RegisterRepo => Guides.All.Single(g => g.Id == Guides.RegisterRepoId);
     static Guide WireStack => Guides.All.Single(g => g.Id == Guides.WireStackId);
+    static Guide RunWorkspace => Guides.All.Single(g => g.Id == Guides.RunWorkspaceId);
 
     [Fact]
     public void The_catalog_exposes_guide_one()
@@ -159,6 +160,45 @@ public class GuideTests
         var stack = Assert.Single(h.Services.Stacks.List());
         Assert.Equal(2, stack.Repos.Count);
         Assert.True(h.Vm.Coach.Index > createIndex);
+    }
+
+    // --- Guide 3: create and run a workspace ---------------------------------
+
+    [Fact]
+    public void Guide_three_starts_at_stack_wired()
+        => Assert.Equal(SampleStage.StackWired, RunWorkspace.Stage);
+
+    [Fact]
+    public async Task Guide_three_ends_on_a_create_step_then_shows_what_was_made()
+    {
+        using var h = new Harness(SampleStage.StackWired);
+        await h.Vm.StartGuide(RunWorkspace, onFinished: () => { });
+
+        Assert.Equal(Anchors.WorkspaceNew, h.Vm.Coach.Mark!.Anchor);
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
+
+        // The create step waits on the user, opening the pre-filled form (infra off, so no daemon needed).
+        Assert.True(h.Vm.Coach.IsWaiting);
+        Assert.Equal(Anchors.WorkspaceCreate, h.Vm.Coach.Mark!.Anchor);
+        Assert.Empty(h.Services.Workspaces.List());
+
+        await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);
+
+        // A workspace now exists (real worktrees), and the wait advanced to the detail step.
+        var record = Assert.Single(h.Services.Workspaces.List());
+        Assert.Equal(2, record.Repos.Count);
+        Assert.Equal(Anchors.WorkspaceDetail, h.Vm.Coach.Mark!.Anchor);
+    }
+
+    [Fact]
+    public void Learn_page_lists_every_guide_in_ladder_order()
+    {
+        using var store = new TempStore();
+        var learn = new LearnViewModel(new AppServices(store.Root), new Navigator());
+
+        Assert.Equal(
+            [RegisterRepo.Title, WireStack.Title, RunWorkspace.Title],
+            learn.Guides.Select(g => g.Title));
     }
 
     [Fact]

@@ -131,6 +131,35 @@ public sealed class Navigator
         return Task.CompletedTask;
     }
 
+    /// <summary>Show the Workspaces page with no create form open, so "New workspace" is on screen.</summary>
+    public void ShowWorkspacesFresh()
+    {
+        if (_workspaces is null) return;
+        Go(_workspaces);
+        if (_workspaces.IsCreating && _workspaces.CancelCreateCommand.CanExecute(null))
+            _workspaces.CancelCreateCommand.Execute(null);
+    }
+
+    /// <summary>
+    /// Open (or keep open) the New-workspace form, pre-filled with a name and the first stack, infra off so a
+    /// guide never depends on Docker. Idempotent, so it can precondition several consecutive steps.
+    /// </summary>
+    public void PrepareNewWorkspace(string name)
+    {
+        if (_workspaces is null) return;
+        Go(_workspaces);
+        if (!_workspaces.IsCreating) _workspaces.NewWorkspaceCommand.Execute(null);
+        _workspaces.NewName = name;
+        _workspaces.StartInfraOnCreate = false;   // teaching worktrees/ports/compose; no daemon needed
+        _workspaces.NewStack ??= _workspaces.AvailableStacks.FirstOrDefault();
+    }
+
+    /// <summary>Create the workspace the form describes — a guide step's "Show me". Async (real worktrees).</summary>
+    public Task CreateWorkspace()
+        => _workspaces is { } w && w.CreateCommand.CanExecute(null)
+            ? w.CreateCommand.ExecuteAsync(null)
+            : Task.CompletedTask;
+
     /// <summary>Jump to Repos and open the Add-repo modal.</summary>
     public void AddRepo() { if (_repos is null) return; Go(_repos); _repos.OpenAddCommand.Execute(null); }
 

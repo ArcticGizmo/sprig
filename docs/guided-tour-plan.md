@@ -4,7 +4,7 @@ A milestone-based plan for an **interactive walkthrough** that shows a new user 
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
 > **Status: M1–M5 shipped; M6 (coachmarks) spiked, triaged, and the first-run fixes done — see §11;
-> M7 (guide library) shipped, now with two guides — see §12, §14; the tour is coachmarks too — see §13.**
+> M7 (guide library) shipped, three guides covering the whole journey — see §12, §14, §15; the tour is coachmarks too — see §13.**
 > Full suite green (457 tests, up from 393), engine behaviour unchanged, verified via headless render
 > (`sprig-gui render <dir>` → `tour_stop*` with spotlight, `coach_case*`, `guide1_*`, `row_highlight`)
 > — see `captures/20260727-*`. Three departures from the plan as written are recorded in §10.
@@ -686,3 +686,33 @@ and the wait advances to the handoff. The render fails if any step's anchor does
 
 The ladder now stands at guides 1–2 authored (register a repo; wire a multi-repo stack), 3–5 still planned
 (run a workspace; the shared-port polyrepo case; drift/repair).
+
+---
+
+## 15. Guide 3 — create and run a workspace
+
+The third guide, and the one that closes the loop: a stack is a plan, a workspace is the real, running,
+isolated thing. Starts at the `StackWired` stage (a stack exists, nothing running) and walks: why a
+workspace → create it → what sprig actually made → how you run and dispose of it.
+
+**Shape.** Four steps. Only the create step waits. Creating a workspace is genuine work — a git worktree per
+repo, port allocation, env/compose generation — so it runs async behind the app's normal progress checklist;
+the store change it ends with (`NotifyStoreChanged`) advances the wait. The form-opening step drives the UI
+in `Prepare` (same UI-vs-store pattern as guide 2), and pre-fills the form with **infra off**, so the guide
+never depends on a Docker daemon.
+
+**The payoff step.** After "Show me", the coach lands on the workspace detail with everything sprig produced
+on screen: two worktrees on `sprig/feature-x` branches, ports allocated for this workspace alone
+(8000/8001/8002), and the resolved `apiUrl` pointing at the API's real port — the abstract model made
+concrete. The copy drives it home: your own repos never moved; this is a copy off to the side.
+
+**Anchors added:** `workspace.new`, `workspace.create`. `workspace.detail` (from the tour) is reused for the
+payoff step.
+
+**Verified:** `captures/20260727-guide3/guide3_step1..4`. Step 2 shows the pre-filled form with Create
+spotlit and a Show-me button; step 3 shows the created workspace `feature-x` with its two worktrees, ports,
+and resolved values.
+
+The ladder now stands at guides 1–3 authored — register a repo, wire a multi-repo stack, run a workspace:
+the whole repo → stack → workspace journey, each stage its own hands-on lesson. Still planned: the shared-port
+polyrepo case (hands-on), and drift/repair (needs a "break a worktree" sandbox action).

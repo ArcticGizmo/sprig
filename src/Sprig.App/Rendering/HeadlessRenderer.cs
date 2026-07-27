@@ -119,6 +119,9 @@ internal static class HeadlessRenderer
             // Guide 2, driven as a user would: open the stack builder, read the wiring, create the stack.
             unresolved += RenderWireStackGuide(outDir);
 
+            // Guide 3: create a workspace from the stack, then see what sprig made.
+            unresolved += RenderRunWorkspaceGuide(outDir);
+
             // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
             unresolved += RenderRowHighlight(outDir);
 
@@ -328,6 +331,53 @@ internal static class HeadlessRenderer
         {
             unresolved++;
             Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 3 ("Create and run a workspace"): why → create (via "Show me", which does the real
+    /// worktree work behind a progress checklist and auto-advances) → what got made → the handoff.
+    /// </summary>
+    static int RenderRunWorkspaceGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide3-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RunWorkspaceId);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.StackWired);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step1");     // why a workspace
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step2");     // create (waiting)
+
+            // "Show me" creates the workspace — real worktrees, behind a progress window — then the store
+            // change auto-advances to the "what got made" step.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step3");     // what sprig made
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step4");     // handoff
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 3 render failed: {ex.Message}");
         }
         finally
         {

@@ -20,6 +20,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="New workspace" Command="{Binding NewWorkspaceCommand}"
+                            AutomationProperties.AutomationId="workspace.new"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                     <Button Content="Refresh" Command="{Binding RefreshCommand}" />
                 </StackPanel>
@@ -283,6 +284,7 @@
                                Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding CreateError}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                         <Button Content="Create" Command="{Binding CreateCommand}"
+                                AutomationProperties.AutomationId="workspace.create"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                         <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
                     </StackPanel>

@@ -36,6 +36,7 @@ public static class Guides
 {
     public const string RegisterRepoId = "register-repo";
     public const string WireStackId = "wire-stack";
+    public const string RunWorkspaceId = "run-workspace";
 
     public static IReadOnlyList<Guide> All { get; } =
     [
@@ -52,6 +53,13 @@ public static class Guides
             "3 min",
             SampleStage.ReposRegistered,
             WireStackSteps),
+
+        new(RunWorkspaceId,
+            "Create and run a workspace",
+            "Spin up a live, isolated copy of a stack.",
+            "3 min",
+            SampleStage.StackWired,
+            RunWorkspaceSteps),
     ];
 
     /// <summary>Guide 1: point sprig at a repo on disk, then read what that repo declares.</summary>
@@ -145,6 +153,52 @@ public static class Guides
                 "That's a multi-repo stack",
                 "Two repos, composed and wired, saved as one reusable set. The last step is to run it: create a workspace, and sprig builds an isolated, live copy of the whole stack. Leave the tour whenever you like — nothing here is yours.")
             { Side = CoachSide.Right },
+        ];
+    }
+
+    /// <summary>
+    /// Guide 3: turn a stack into a running, isolated workspace. Starts at <see cref="SampleStage.StackWired"/>
+    /// (a stack exists, nothing running) and walks: why a workspace → create it → what sprig actually made →
+    /// how you run and dispose of it. The create step waits on the user; creating a workspace is real work
+    /// (a worktree per repo), so it runs behind the same progress checklist the app always uses.
+    /// </summary>
+    static IReadOnlyList<CoachMark> RunWorkspaceSteps(Navigator nav, AppServices services)
+    {
+        const string WorkspaceName = "feature-x";
+        bool WorkspaceCreated() => services.Workspaces.List().Count > 0;
+
+        return
+        [
+            new(Anchors.WorkspaceNew,
+                "A stack is a plan; a workspace is the real thing",
+                "You've got a stack, but nothing's running from it yet. A workspace is a live, isolated copy of the whole stack — its own git worktrees, its own allocated ports, its own docker infra. Let's spin one up.")
+            {
+                Side = CoachSide.Below,
+                Prepare = () => { nav.ShowWorkspacesFresh(); return Task.CompletedTask; },
+            },
+
+            new(Anchors.WorkspaceCreate,
+                "Create it",
+                "The stack and a name are filled in. Click Create — sprig adds a worktree per repo on its own sprig/ branch, allocates ports just for this workspace, and writes each worktree's .env and compose with the resolved values. Or let me.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.PrepareNewWorkspace(WorkspaceName); return Task.CompletedTask; },
+                Completed = WorkspaceCreated,
+                ShowMe = () => nav.CreateWorkspace(),
+            },
+
+            new(Anchors.WorkspaceDetail,
+                "Here's what sprig made",
+                "Two worktrees on sprig/ branches, ports allocated for this workspace alone, and every ${sprig.*} value resolved into real numbers in the generated files. Your own repos never moved — this is a copy off to the side.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; },
+            },
+
+            new(null,
+                "That's the whole journey",
+                "A repo declares what it needs, a stack supplies it, a workspace runs it — isolated, side by side with as many others as you like. Bring its infra up and down from here, and when you're done, delete it and everything it created is cleaned up.")
+            { Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; } },
         ];
     }
 }

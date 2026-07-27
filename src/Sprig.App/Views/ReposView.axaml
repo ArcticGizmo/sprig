@@ -279,6 +279,33 @@
                         <Border Padding="28,0,36,0" MaxWidth="{Binding #EditBody.Bounds.Width}">
                             <StackPanel Spacing="20">
 
+                            <!-- What sprig detected when it scaffolded this config. Only after an add that
+                                 ran init; answers "where did all of this come from?" before the fields do. -->
+                            <Border Background="#14346DF0" BorderBrush="{StaticResource AccentBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="16,14"
+                                    IsVisible="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).HasScaffoldNotes}">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Text="SPRIG FILLED THIS IN FOR YOU" FontSize="10"
+                                                   FontWeight="SemiBold" LetterSpacing="1.4"
+                                                   Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="Dismiss" FontSize="11" Padding="8,3"
+                                                Background="Transparent" Foreground="{StaticResource MutedBrush}"
+                                                Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).DismissScaffoldNotesCommand}" />
+                                    </Grid>
+                                    <TextBlock Text="It read this repo's env files and compose file and turned the port-shaped values it found into declared inputs. Review them below — nothing is written until you save."
+                                               FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+                                    <ItemsControl ItemsSource="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).ScaffoldNotes}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:String">
+                                                <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
+                                                           Margin="0,2" Foreground="{StaticResource MutedBrush}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
                             <!-- inputs -->
                             <StackPanel Spacing="8">
                                 <Grid ColumnDefinitions="*,Auto">
@@ -292,7 +319,10 @@
                                 <Grid ColumnDefinitions="1.2*,0.9*,1.7*,1.1*,32" ColumnSpacing="8" Margin="2,0,0,0"
                                       IsVisible="{Binding HasInputs}">
                                     <TextBlock Grid.Column="0" Text="Name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                    <TextBlock Grid.Column="1" Text="Example" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                    <!-- "Example" alone read as a default, or as a value that gets used. It is
+                                         neither: it documents the shape for whoever wires the stack. -->
+                                    <TextBlock Grid.Column="1" Text="Example shape" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                               ToolTip.Tip="Documentation only — never used as a value. Shows whoever wires the stack what to supply, e.g. 5000 or http://localhost:5000" />
                                     <TextBlock Grid.Column="2" Text="Description" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                     <TextBlock Grid.Column="3" Text="Allowed ports" FontSize="11" Foreground="{StaticResource MutedBrush}"
                                                ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
@@ -307,7 +337,15 @@
                                                          PlaceholderText="5000" />
                                                 <TextBox Grid.Column="2" Text="{Binding Description, Mode=TwoWay}" MinWidth="0"
                                                          PlaceholderText="optional" />
+                                                <!-- Advanced and almost always blank, so it hides behind a link
+                                                     until wanted (and shows itself whenever a value exists). -->
+                                                <Button Grid.Column="3" Content="restrict…" Command="{Binding RestrictCommand}"
+                                                        IsVisible="{Binding ShowRestrictLink}" FontSize="11" Padding="0"
+                                                        Background="Transparent" Foreground="{StaticResource MutedBrush}"
+                                                        HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                        ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports." />
                                                 <TextBox Grid.Column="3" Text="{Binding AllowedPorts, Mode=TwoWay}" MinWidth="0"
+                                                         IsVisible="{Binding ShowRestrictBox}"
                                                          PlaceholderText="8100-8103" FontFamily="Consolas,monospace"
                                                          ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
                                                 <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}"

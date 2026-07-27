@@ -55,6 +55,30 @@ public partial class ReposViewModel : PageViewModel
 
     public bool HasSelected => Selected is not null;
 
+    /// <summary>
+    /// What sprig detected while scaffolding the repo just added — which env keys and compose ports became
+    /// declared inputs, and what it chose not to touch.
+    ///
+    /// <c>InitInspector</c> has always produced these notes and the CLI has always printed them
+    /// (<c>CliApp</c>); the app used to discard them, leaving a first-timer looking at a pre-filled form
+    /// with no account of where any of it came from. Dismissable, because it explains one action rather
+    /// than being a permanent panel.
+    /// </summary>
+    public ObservableCollection<string> ScaffoldNotes { get; } = [];
+
+    [ObservableProperty] private bool _hasScaffoldNotes;
+
+    void ShowScaffoldNotes(IReadOnlyList<string> notes)
+    {
+        ScaffoldNotes.Clear();
+        foreach (var note in notes) ScaffoldNotes.Add(note);
+        HasScaffoldNotes = ScaffoldNotes.Count > 0;
+    }
+
+    /// <summary>Dismiss the scaffold explanation.</summary>
+    [RelayCommand]
+    private void DismissScaffoldNotes() => HasScaffoldNotes = false;
+
     /// <summary>True while the edit form is shown (hides the read-only config view).</summary>
     public bool IsEditing => Editor is not null;
 
@@ -293,12 +317,17 @@ public partial class ReposViewModel : PageViewModel
         Busy = true; Error = null; Status = null;
         try
         {
+            IReadOnlyList<string> notes = [];
             var added = await AppServices.RunAsync(() =>
             {
                 if (runInit)
                 {
                     var proposal = Services.Init.Inspect(path);
                     ConfigJson.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
+                    // Keep the proposal's advisory notes. They explain which env keys and compose ports
+                    // became inputs and why — the exact question someone asks on landing in the editor
+                    // for the first time. The CLI has always printed these; the app used to bin them.
+                    notes = proposal.Notes;
                 }
                 return Services.Repos.Add(path);
             });
@@ -314,6 +343,8 @@ public partial class ReposViewModel : PageViewModel
             Status = IsEditing
                 ? $"registered '{added.Name}' — editing its configuration"
                 : $"registered '{added.Name}'";
+
+            ShowScaffoldNotes(notes);
         }
         catch (Exception ex) { Error = ex.Message; }
         finally { Busy = false; }

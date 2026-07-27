@@ -587,6 +587,14 @@ public partial class StacksViewModel : PageViewModel
 
         OnPropertyChanged(nameof(CanAutoWire));
         RefreshAddableRepos();
+
+        // NOTE: auto-wiring here (as each repo is selected) looks tempting — a pre-wired canvas is a much
+        // easier first task than a blank one — but it is NOT safe, and the attempt is recorded in
+        // docs/guided-tour-plan.md §11.4. StackAutowire reuses a port whose name matches, so wiring
+        // incrementally makes the second repo adopt the port invented for the first: two repos that each
+        // declare their own `port` would be silently pointed at one, which collides at runtime. Batch
+        // auto-wire deliberately hands out distinct ports instead. Doing this properly needs port
+        // provenance (which rows auto-wire created vs the user), so the button stays explicit for now.
         RebuildBuilderWiring();
     }
 

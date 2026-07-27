@@ -468,14 +468,60 @@ the count below is 6–8 marks rather than the 20–25 the field count implies. 
 | TRANSFORM column header with no transform present | **Leave** (or hide until one exists) | Cosmetic. |
 | Port rename/remove, transform editing, line selection | **Leave to discovery** | Secondary; coaching all of it is how a 6-mark script becomes 25. |
 
-### 11.3 Recommended sequencing
+### 11.3 What shipped, and the one fix that was withdrawn
 
-**Do the five fixes before authoring the script.** Two of them — surfacing the scaffold notes, and
-auto-wiring on open — do more for first-run comprehension than any coachmark, and both shrink the script.
-Writing marks first means writing marks that apologise for things you are about to change.
+Four of the five fixes shipped as triaged. The fifth — auto-wiring the canvas on open — was
+**implemented, found to be unsafe, and reverted**, which is worth recording because the idea is
+obviously appealing and will come up again.
 
-Then author roughly 6–8 marks: *input* (once), compose path syntax, drag-to-wire, shared ports, and the
+**Shipped:**
+
+- **The scaffold explanation.** `ReposViewModel` keeps `InitProposal.Notes` and the editor opens with a
+  panel: *"sprig filled this in for you"*, listing what it detected. Dismissable.
+- **"Example" → "Example shape"**, with a tooltip stating it is documentation only and never used as a
+  value.
+- **Port restrictions behind a `restrict…` link** per row, which reveals itself automatically whenever a
+  restriction already exists — so an existing one is never hidden from its owner.
+- **"REPLACEMENTS" → "KEYS SPRIG WILL REWRITE"**, plus a line saying every other line is copied through.
+  The panel was *relabelled rather than removed*: it looked like a duplicate of the merged view above it,
+  but it is the only place to remove an individual override, so deleting it would have cost a feature to
+  satisfy a triage note.
+- **The builder's instruction paragraph** now leads with Auto-wire as the one action that does the work,
+  with the five gestures following as reference rather than as the first thing read.
+
+**Withdrawn — auto-wire on open.** `StackAutowire` reuses an existing port whose name matches
+(`StackAutowire.cs:93`). That is right when the port was named by the *user*, but wiring incrementally as
+each repo is selected feeds it ports auto-wire itself invented moments earlier, so the second repo adopts
+the first repo's port. Two services that each declare `port` would be silently pointed at one and collide
+at runtime — precisely the hazard the batch path documents itself as avoiding
+(`StackAutowire.cs:26-29`), reintroduced through the back door. It was visible in the render as
+`api-port SHARED ×2` where batch auto-wire produces `api-port` and `api-port_2`.
+
+Making it safe needs **port provenance** — knowing which port rows auto-wire created versus which the user
+authored — so a recompute can discard its own guesses and re-propose in one batch pass. That is a real
+change to builder state and wasn't in scope here. Until then the button stays explicit, and
+`FirstRunFixTests.Selecting_repos_does_not_wire_anything_on_its_own` guards the hazard.
+
+Two smaller things the attempt turned up, both kept:
+
+- Editing an existing stack was one step from silently gaining wiring: `EditSelected` selects the repos
+  *before* applying the stored bindings, so anything wiring on selection would invent a port for an input
+  the saved stack left unbound and keep it. Now covered by a test.
+- Several existing tests encoded "the builder starts blank" only incidentally, via a helper. Worth knowing
+  they are setup assumptions rather than product assertions if this is revisited.
+
+### 11.4 What's left
+
+The fixes are done, so the script can now be authored against the improved UI rather than apologising for
+the old one. Roughly 6–8 marks: *input* (once), compose path syntax, drag-to-wire, shared ports, and the
 handoff. Inside the demo store, so the copy can name `sample-api` and the user can type freely.
+
+One mark's job changed as a result of §11.3: with the scaffold explanation now on screen, the "where did
+these values come from?" mark is redundant — that mark becomes "what an input *is*", which the panel
+states but does not teach.
+
+Also outstanding, from the withdrawn fix: **port provenance** in the stack builder, which would make a
+pre-wired canvas safe and is the single biggest remaining win on that surface.
 
 Still open: whether coached marks should advance on *the user doing the thing* rather than pressing Next.
 More engaging, considerably more machinery (per-mark completion predicates), and it can trap someone who

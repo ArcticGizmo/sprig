@@ -566,7 +566,8 @@ public class ManagementViewModelTests
     }
 
     // A repo whose .sprig.json declares inputs, for exercising the builder's wiring aids.
-    static string MakeRepoWithInputs(string root, string name, params (string Name, string Example)[] inputs)
+    // Internal so the first-run fix tests can build the same fixtures.
+    internal static string MakeRepoWithInputs(string root, string name, params (string Name, string Example)[] inputs)
     {
         var dir = Path.Combine(root, name);
         Directory.CreateDirectory(dir);

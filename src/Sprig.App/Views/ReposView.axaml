@@ -69,7 +69,7 @@
                     </TextBlock.IsVisible>
                 </TextBlock>
 
-                <ScrollViewer IsVisible="{Binding ShowReadOnly}">
+                <ScrollViewer IsVisible="{Binding ShowReadOnly}" AutomationProperties.AutomationId="repo.detail">
                     <StackPanel Spacing="16">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Grid.Column="0" Spacing="2">

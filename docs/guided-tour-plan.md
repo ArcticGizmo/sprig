@@ -4,10 +4,10 @@ A milestone-based plan for an **interactive walkthrough** that shows a new user 
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
 > **Status: M1–M5 shipped; M6 (coachmarks) spiked, triaged, and the first-run fixes done — see §11;
-> M7 (guide library) vertical slice shipped — see §12.** Full suite green (460 tests, up from 393),
-> engine behaviour unchanged, verified via headless render (`sprig-gui render <dir>` → `tour_*`,
-> `coach_case*`, and `guide1_*`) — see `captures/20260727-*`.
-> Three departures from the plan as written are recorded in §10.
+> M7 (guide library) vertical slice shipped — see §12; the tour is now coachmarks too — see §13.**
+> Full suite green (457 tests, up from 393), engine behaviour unchanged, verified via headless render
+> (`sprig-gui render <dir>` → `tour_stop*` with spotlight, `coach_case*`, `guide1_*`, `row_highlight`)
+> — see `captures/20260727-*`. Three departures from the plan as written are recorded in §10.
 
 The problem this solves: sprig's learning curve is front-loaded. A first-run user faces three
 empty tables and a vocabulary (repo / stack / workspace / input / binding / port) that only makes
@@ -611,3 +611,41 @@ render if any step's anchor doesn't resolve.
 Still open: whether a waiting step should also accept a UI-only transition (e.g. "the modal is open") as its
 trigger, not just a store change. Guide 1 sidesteps it by priming the modal so registration is one store
 mutation; a guide that needs to wait on pure UI state would want a lightweight UI signal or a short poll.
+
+---
+
+## 13. The tour becomes coachmarks (spotlight everywhere)
+
+The tour and the guides had grown two different looks: the tour was a narration strip pinned to the top of
+the window (`TourGuideViewModel`) that pointed *vaguely* at a page, while the guides used the coachmark
+overlay — a floating callout that dims the page and rings its exact target. The prominent entry point ("Show
+me a working setup") was the one *without* the eye-direction, which is backwards. So the tour was rebuilt as
+a coachmark script, and the strip retired.
+
+**What changed**
+
+- **`TourScript`** replaces `TourGuideViewModel`: the same five/six stops, same copy, now `CoachMark`s. Each
+  middle step spotlights a detail panel — `repo.detail`, `stack.detail`, `workspace.detail`, and (Docker-up
+  only) `workspace.docker`. The opening and closing beats are **whole-page** steps.
+- **Whole-page marks.** `CoachMark.Anchor` is now nullable: null means "dim everything, centre the callout,
+  no warning" — an intentional overview beat, distinct from an anchor that was *supposed* to resolve and
+  didn't (still a flagged failure). Used for "this is one working sprig" and the "now do it with your repo"
+  handoff.
+- **Action-on-Next.** `CoachMark.Perform` runs when the user presses Next, before advancing — the tour's
+  optional "start the containers" step, carried over verbatim. Distinct from a waiting step's `ShowMe`.
+- **One walkthrough engine.** Both the tour and the guides now run through `CoachViewModel` + `CoachOverlay`,
+  so there is a single overlay, a single set of anchors, and one visual language for every step. The old
+  top strip and its view-model are gone.
+- **Docker gate preserved.** The infra step is only in the script when a daemon is up; `MainWindowViewModel`
+  probes off the UI thread before starting the tour, exactly as before.
+
+**Anchors added:** `repo.detail` (Repos read-only config panel), `stack.detail`, `workspace.detail`,
+`workspace.docker`. The row-level `repo.row:<name>` anchor from the previous commit means a step can also
+spotlight one specific repo among several when a guide wants that.
+
+**Verified:** `captures/20260727-tour-spotlight/tour_stop1..5` + `tour_stop_infra`. Step 1 dims the page with
+a centred callout; step 2 rings the `sample-api` config panel; the infra step rings just the Docker row. The
+render fails if any anchored step doesn't resolve, the same gate the guides use.
+
+Net: the tour a first-time user actually sees now directs the eye to exactly what each sentence is about,
+instead of narrating from a strip over an undimmed page.

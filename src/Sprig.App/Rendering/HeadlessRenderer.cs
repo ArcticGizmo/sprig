@@ -103,14 +103,14 @@ internal static class HeadlessRenderer
             guideVm.Guide.Start();
             Capture(guideVm, Path.Combine(outDir, "main_guide.png"));
 
-            // The guided tour: a real sample setup, built into a temp store, so every page renders
-            // populated exactly as a first-time user sees it.
-            RenderGuidedTour(outDir);
+            // The guided tour, now coachmarks: each step spotlights its target over the real sample. An
+            // unresolved anchor here is a failure, same as the spike and guides.
+            var unresolved = RenderGuidedTour(outDir);
 
             // The coachmark spike: one frame per anchor case. Unlike every other capture here, an
             // unresolved anchor is treated as a failure rather than logged — a coachmark pointing at
             // nothing is exactly the bug this harness exists to catch, so it must break the build.
-            var unresolved = RenderCoachSpike(outDir);
+            unresolved += RenderCoachSpike(outDir);
 
             // Guide 1, driven the way a user would: register the sample repo via "Show me", then read what
             // it declares. Also renders the Learn list before and after, to show the completion tick.
@@ -153,47 +153,47 @@ internal static class HeadlessRenderer
     }
 
     /// <summary>
-    /// Build the guided tour's sample setup into a throwaway store and capture each page over it, plus
-    /// the tour banner. Uses the real seeder, so these snapshots are the genuine article — if the
-    /// sample can't be built, the render says so rather than quietly producing empty pages.
+    /// Render the guided tour, now that it's coachmarks: each step over the real sample, dimming the page and
+    /// ringing its target. Docker is pinned so the run is deterministic — the base script (no daemon) is
+    /// walked in full, then the infra step is posed from a Docker-up run. Any step whose anchor doesn't
+    /// resolve is a failure, like the guide render.
     /// </summary>
-    static void RenderGuidedTour(string outDir)
+    static int RenderGuidedTour(string outDir)
     {
         var root = Path.Combine(Path.GetTempPath(), "sprig-render-tour-" + Guid.NewGuid().ToString("N"));
         var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
         try
         {
             demo.Sample.Build();
 
-            // Walk the real script rather than iterating pages, so each frame is a stop the user
-            // actually sees: the narration, and the page it navigated to, together. Docker is pinned off
-            // so the render stays offline and deterministic — the infra stop is posed separately below.
-            var vm = new MainWindowViewModel(demo, dockerIsRunning: () => false);
-            Pump(vm.Tour.StartAsync());
-            for (var stop = 1; stop <= vm.Tour.Count; stop++)
-            {
-                Capture(vm, Path.Combine(outDir, $"tour_stop{stop}.png"));
-                Pump(vm.Tour.NextCommand.ExecuteAsync(null));
-            }
+            // Base script, Docker off: walk every step, capturing the coach frame (callout + spotlight).
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
 
-            // The optional Docker stop, posed rather than executed (running it would pull an image).
-            var withDocker = new MainWindowViewModel(demo, dockerIsRunning: () => true);
-            Pump(withDocker.Tour.StartAsync());
-            withDocker.Tour.Index = withDocker.Tour.Count - 2;
-            withDocker.CurrentPage = withDocker.Pages.First(p => p.Title == "Workspaces");
-            Capture(withDocker, Path.Combine(outDir, "tour_stop_infra.png"));
-
-            // And the sample explored with the narration dismissed ("Explore on my own").
-            vm.CurrentPage = vm.Pages[0];
-            vm.Tour.SkipCommand.Execute(null);
-            foreach (var page in vm.Pages)
+            Pump(vm.StartTour());
+            for (var step = 1; vm.Coach.IsActive; step++)
             {
-                vm.CurrentPage = page;
-                if (page is ReposViewModel repos) repos.Selected = repos.Repos.FirstOrDefault();
-                if (page is StacksViewModel stacks) stacks.Selected = stacks.Stacks.FirstOrDefault();
-                if (page is WorkspacesViewModel workspaces) workspaces.Selected = workspaces.Workspaces.FirstOrDefault();
-                Capture(vm, Path.Combine(outDir, $"tour_{page.Title.ToLowerInvariant()}.png"));
+                unresolved += CaptureCoachStep(window, vm, outDir, $"tour_stop{step}");
+                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
             }
+            window.Close();
+
+            // The optional Docker step, posed rather than executed (running it would pull an image): start a
+            // Docker-up tour and step to the infra mark (second from last).
+            var dwindow = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => true) };
+            dwindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            var dvm = (MainWindowViewModel)dwindow.DataContext!;
+            Pump(dvm.StartTour());
+            // Step (which re-navigates each time) up to the infra mark, second from last. Stop there — Next on
+            // it would Perform the container start, which we don't want in a render.
+            while (dvm.Coach.Index < dvm.Coach.Count - 2)
+                Pump(dvm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(dwindow, dvm, outDir, "tour_stop_infra");
+            dwindow.Close();
 
             // The build checklist the user watches on the way in.
             var progress = new OperationProgressViewModel("Building your sample setup");
@@ -201,21 +201,23 @@ internal static class HeadlessRenderer
             progress.Steps[0].State = WorkspaceStepState.Done;
             progress.Steps[1].State = WorkspaceStepState.Done;
             progress.Steps[2].State = WorkspaceStepState.Running;
-            var window = new OperationProgressWindow { DataContext = progress };
-            window.Show();
+            var pwindow = new OperationProgressWindow { DataContext = progress };
+            pwindow.Show();
             Dispatcher.UIThread.RunJobs();
-            window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "tour_building.png"));
-            window.Close();
+            pwindow.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "tour_building.png"));
+            pwindow.Close();
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"guided-tour render skipped: {ex.Message}");
+            unresolved++;
+            Console.Error.WriteLine($"guided-tour render failed: {ex.Message}");
         }
         finally
         {
             try { demo.Sample.Destroy(); } catch { /* best-effort */ }
             try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
         }
+        return unresolved;
     }
 
     /// <summary>

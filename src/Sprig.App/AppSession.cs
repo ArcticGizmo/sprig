@@ -140,6 +140,6 @@ public sealed class AppSession(Window window)
 
     void StartTourNarration()
     {
-        if (window.DataContext is MainWindowViewModel vm) _ = vm.StartTourNarration();
+        if (window.DataContext is MainWindowViewModel vm) _ = vm.StartTour();
     }
 }

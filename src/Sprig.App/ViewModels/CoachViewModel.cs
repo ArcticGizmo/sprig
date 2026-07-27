@@ -12,13 +12,22 @@ namespace Sprig.App.ViewModels;
 /// The delegates are self-contained closures (built by a script factory that captures the navigator and
 /// services), so the runner just invokes them — it doesn't thread app state through every step.
 /// </summary>
-/// <param name="Anchor">Anchor id (see <c>Coach.Anchors</c>) of the element to highlight.</param>
+/// <param name="Anchor">Anchor id (see <c>Coach.Anchors</c>) of the element to highlight, or null for an
+/// intentional whole-page step: the page dims and the callout centres, with no "not found" warning. Used for
+/// an opening/closing beat that isn't about one control.</param>
 /// <param name="Heading">The claim.</param>
 /// <param name="Body">The explanation — about the concept, not about where the control is.</param>
-public sealed record CoachMark(string Anchor, string Heading, string Body)
+public sealed record CoachMark(string? Anchor, string Heading, string Body)
 {
     /// <summary>Preferred callout side. The view flips it when there isn't room.</summary>
     public CoachSide Side { get; init; } = CoachSide.Below;
+
+    /// <summary>
+    /// An action performed when the user presses Next, before advancing — e.g. the tour's optional "start the
+    /// containers" step. Distinct from <see cref="ShowMe"/> (which belongs to a waiting step): this is an
+    /// explanatory step that also does something on the way out. A failure is the owning page's to surface.
+    /// </summary>
+    public Func<Task>? Perform { get; init; }
 
     /// <summary>
     /// Put the app in the state where the anchor exists — navigate, open an overlay, select a row. Coachmarks
@@ -133,6 +142,15 @@ public partial class CoachViewModel : ViewModelBase
     [RelayCommand]
     private async Task Next()
     {
+        // A step may do something on the way out (the tour's "start the containers"). Run it first, then
+        // advance — a failure is surfaced by the page that owns the action, so the walk just carries on.
+        if (Mark is { Perform: { } perform })
+        {
+            Busy = true;
+            try { await perform(); }
+            finally { Busy = false; }
+        }
+
         if (IsLast) { Finish(); return; }
         Index++;
         await PrepareCurrentAsync();

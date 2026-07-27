@@ -26,11 +26,12 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The guided "Set up sprig" strip (opt-in from Home).</summary>
     public SetupGuideViewModel Guide { get; }
 
-    /// <summary>The guided tour's narration strip. Only meaningful — and only shown — during a tour.</summary>
-    public TourGuideViewModel Tour { get; }
-
-    /// <summary>The coachmark layer: highlights one element at a time and explains it.</summary>
+    /// <summary>The coachmark layer: highlights one element at a time and explains it. Drives both the tour
+    /// and the guides — every walkthrough dims the page and rings its target.</summary>
     public CoachViewModel Coach { get; }
+
+    /// <summary>Probes whether a Docker daemon is up, to gate the tour's optional infra step.</summary>
+    readonly Func<bool> _dockerIsRunning;
 
     /// <summary>The coachmark spike's three marks, bound to this window's navigator (headless render uses it).</summary>
     internal IReadOnlyList<CoachMark> CoachSpikeMarks => Sprig.App.Coach.CoachSpikeScript.Marks(_nav);
@@ -122,8 +123,8 @@ public partial class MainWindowViewModel : ViewModelBase
         ];
 
         // The tour offers to start containers only when a daemon is actually up; the probe shells out to
-        // docker, so it's handed over as a func for StartAsync to run off the UI thread.
-        Tour = new TourGuideViewModel(nav, dockerIsRunning ?? services.Docker.IsEngineRunning);
+        // docker, so it's stored as a func to run off the UI thread when the tour starts.
+        _dockerIsRunning = dockerIsRunning ?? services.Docker.IsEngineRunning;
         Coach = new CoachViewModel(services);
 
         // Land on Home (the front door), not on the last step of the pipeline.
@@ -135,8 +136,15 @@ public partial class MainWindowViewModel : ViewModelBase
         _ = CheckForUpdatesAsync();
     }
 
-    /// <summary>Begin the guided tour's narration strip. Called by <see cref="AppSession"/> for the tour only.</summary>
-    internal Task StartTourNarration() => Tour.StartAsync();
+    /// <summary>
+    /// Begin the guided tour as coachmarks. Called by <see cref="AppSession"/> for the tour only. Probes
+    /// Docker off the UI thread first, so the optional infra step is only in the script when a daemon is up.
+    /// </summary>
+    internal async Task StartTour()
+    {
+        var dockerUp = await AppServices.RunAsync(_dockerIsRunning);
+        await Coach.StartAsync(Sprig.App.Coach.TourScript.Marks(_nav, dockerUp));
+    }
 
     [RelayCommand]
     private void Navigate(PageViewModel page) => CurrentPage = page;

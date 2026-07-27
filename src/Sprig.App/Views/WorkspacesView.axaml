@@ -82,7 +82,7 @@
                 </TextBlock>
 
                 <!-- detail -->
-                <ScrollViewer IsVisible="{Binding HasSelected}">
+                <ScrollViewer IsVisible="{Binding HasSelected}" AutomationProperties.AutomationId="workspace.detail">
                     <StackPanel Spacing="16">
 
                         <!-- title + drift -->
@@ -135,7 +135,8 @@
                                    Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
 
                         <!-- docker status -->
-                        <StackPanel Spacing="8" IsVisible="{Binding Selected.HasInfra}">
+                        <StackPanel Spacing="8" IsVisible="{Binding Selected.HasInfra}"
+                                    AutomationProperties.AutomationId="workspace.docker">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Grid.Column="0" Text="DOCKER" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />

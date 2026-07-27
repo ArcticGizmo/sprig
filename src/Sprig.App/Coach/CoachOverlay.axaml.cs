@@ -63,10 +63,20 @@ public partial class CoachOverlay : UserControl
         Scrim.Width = size.Width;
         Scrim.Height = size.Height;
 
+        // A whole-page step (no anchor) deliberately dims everything and centres the callout — an
+        // opening/closing beat that isn't about one control. Not a failure, so no warning.
+        if (mark.Anchor is null)
+        {
+            vm.AnchorMissing = false;
+            Scrim.Hole = default;
+            Place(Centre(size));
+            return;
+        }
+
         if (!AnchorResolver.TryResolve(AnchorRoot, mark.Anchor, out var target))
         {
-            // Nothing to point at: dim everything, centre the callout, and say so rather than pointing at
-            // an arbitrary corner. The tests turn this state into a build failure.
+            // Nothing to point at, but a step said there should be: dim everything, centre the callout, and
+            // flag it rather than pointing at an arbitrary corner. The tests turn this state into a failure.
             vm.AnchorMissing = true;
             Scrim.Hole = default;
             Place(Centre(size));

@@ -103,6 +103,10 @@ internal static class HeadlessRenderer
             guideVm.Guide.Start();
             Capture(guideVm, Path.Combine(outDir, "main_guide.png"));
 
+            // The guided tour: a real sample setup, built into a temp store, so every page renders
+            // populated exactly as a first-time user sees it.
+            RenderGuidedTour(outDir);
+
             // The "what's new" changelog window (the post-update popup / About viewer).
             var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
             var sections = markdown is null
@@ -125,6 +129,53 @@ internal static class HeadlessRenderer
         {
             Console.Error.WriteLine($"headless render failed: {ex.Message}");
             return 1;
+        }
+    }
+
+    /// <summary>
+    /// Build the guided tour's sample setup into a throwaway store and capture each page over it, plus
+    /// the tour banner. Uses the real seeder, so these snapshots are the genuine article — if the
+    /// sample can't be built, the render says so rather than quietly producing empty pages.
+    /// </summary>
+    static void RenderGuidedTour(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-tour-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        try
+        {
+            demo.Sample.Build();
+
+            var vm = new MainWindowViewModel(demo);
+            foreach (var page in vm.Pages)
+            {
+                vm.CurrentPage = page;
+                // Select the first row so detail panels render populated rather than prompting.
+                if (page is ReposViewModel repos) repos.Selected = repos.Repos.FirstOrDefault();
+                if (page is StacksViewModel stacks) stacks.Selected = stacks.Stacks.FirstOrDefault();
+                if (page is WorkspacesViewModel workspaces) workspaces.Selected = workspaces.Workspaces.FirstOrDefault();
+                Capture(vm, Path.Combine(outDir, $"tour_{page.Title.ToLowerInvariant()}.png"));
+            }
+
+            // The build checklist the user watches on the way in.
+            var progress = new OperationProgressViewModel("Building your sample setup");
+            progress.Load(Sprig.Core.Demo.SampleSetup.PlanBuild());
+            progress.Steps[0].State = WorkspaceStepState.Done;
+            progress.Steps[1].State = WorkspaceStepState.Done;
+            progress.Steps[2].State = WorkspaceStepState.Running;
+            var window = new OperationProgressWindow { DataContext = progress };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "tour_building.png"));
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"guided-tour render skipped: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
         }
     }
 

@@ -8,6 +8,9 @@ namespace Sprig.App.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    /// <summary>Owns the window and the store swap; null in headless renders and VM tests.</summary>
+    readonly AppSession? _session;
+
     /// <summary>The navigable pages, in workflow order: Home, then Repos, Stacks, Workspaces.</summary>
     public IReadOnlyList<PageViewModel> Pages { get; }
 
@@ -33,8 +36,23 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>True when this is an isolated dev instance — drives the pink "- DEV" nav badge.</summary>
     public bool IsDevInstance => Sprig.Core.Store.AppProfile.IsDev;
 
-    public MainWindowViewModel(AppServices services)
+    /// <summary>
+    /// True when the app is showing the guided tour's throwaway sample rather than the user's real
+    /// store — drives the amber banner and swaps the nav's tour entry for an exit.
+    /// </summary>
+    public bool IsTour { get; }
+
+    /// <summary>Raised when an operation wants its progress checklist shown in its own window.</summary>
+    public event Action<OperationProgressViewModel>? OperationStarted;
+
+    /// <summary>Window title for a session: the product name, the dev badge, and the tour marker.</summary>
+    public static string TitleFor(AppServices services)
+        => "Sprig" + Sprig.Core.Store.AppProfile.DisplaySuffix + (services.IsDemoStore ? " — Guided tour" : "");
+
+    public MainWindowViewModel(AppServices services, AppSession? session = null)
     {
+        _session = session;
+        IsTour = services.IsDemoStore;
         var nav = new Navigator();
         var repos = new ReposViewModel(services);
         var stacks = new StacksViewModel(services, nav);
@@ -72,6 +90,33 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [RelayCommand]
     private void DismissUpdateNotice() => UpdateNotice = null;
+
+    /// <summary>
+    /// Show a complete, working setup by entering the guided tour. Builds the sample if it isn't
+    /// there yet, then rebinds the window to the demo store — the real store is left untouched.
+    /// </summary>
+    [RelayCommand]
+    private async Task EnterTour()
+    {
+        if (_session is null) return;
+        await _session.EnterTourAsync(modal => OperationStarted?.Invoke(modal));
+    }
+
+    /// <summary>Leave the tour, delete the sample, and go back to the real store.</summary>
+    [RelayCommand]
+    private async Task ExitTour()
+    {
+        if (_session is null) return;
+        await _session.ExitTourAsync(deleteSample: true);
+    }
+
+    /// <summary>Leave the tour but keep the sample on disk, so re-entering is instant.</summary>
+    [RelayCommand]
+    private async Task ExitTourKeepingSample()
+    {
+        if (_session is null) return;
+        await _session.ExitTourAsync(deleteSample: false);
+    }
 
     partial void OnCurrentPageChanged(PageViewModel value)
     {

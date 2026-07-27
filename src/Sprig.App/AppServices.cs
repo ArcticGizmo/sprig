@@ -31,9 +31,24 @@ public sealed class AppServices
     public ISettingsStore Settings { get; }
     public IPortStore Ports { get; }
 
-    public AppServices(string? root = null)
+    /// <summary>Builds (and removes) the guided tour's throwaway sample setup in <b>this</b> store.</summary>
+    public Core.Demo.SampleSetup Sample { get; }
+
+    /// <summary>
+    /// True when this graph is serving the guided tour's throwaway sample rather than the user's real
+    /// store. Read by <c>MainWindowViewModel</c> to show the tour banner — nothing else should branch
+    /// on it (see docs/guided-tour-plan.md §7).
+    /// </summary>
+    public bool IsDemoStore { get; }
+
+    /// <param name="root">Store root; null means this profile's real store.</param>
+    /// <param name="isDemoStore">Declares this graph as the tour's sample. Stated by the caller rather
+    /// than guessed from <paramref name="root"/>, so a test or a headless render can stand up a tour
+    /// session in a temp directory.</param>
+    public AppServices(string? root = null, bool isDemoStore = false)
     {
         Paths = new SprigPaths(root);
+        IsDemoStore = isDemoStore;
         var runner = new ProcessRunner();
         Git = new GitService(runner);
         Docker = new DockerService(runner);
@@ -48,6 +63,7 @@ public sealed class AppServices
         Stacks = new StackStore(Paths, Repos, instances);
         StackResolver = new StackResolver(Repos, Stacks, Git);
         Init = new InitInspector(Git);
+        Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Stacks, StackResolver, Workspaces);
     }
 
     /// <summary>

@@ -32,6 +32,13 @@ public sealed class SprigPaths : ISprigPaths
         => Root = root ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProfile.DataFolderName);
 
+    /// <summary>
+    /// Root of the guided tour's throwaway demo store — a sibling of the real one, never the same
+    /// directory. Pass it where a store root is expected to run entirely against the sample.
+    /// </summary>
+    public static string DemoRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProfile.DemoFolderName);
+
     public string Root { get; }
     public string InstancesDir => Path.Combine(Root, "instances");
     public string StacksDir => Path.Combine(Root, "stacks");

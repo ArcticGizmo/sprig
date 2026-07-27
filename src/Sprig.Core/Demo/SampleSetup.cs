@@ -54,6 +54,29 @@ public sealed class SampleSetup(
 
     string MarkerPath => Path.Combine(paths.Root, MarkerFileName);
 
+    // Step ids for the build checklist. Deliberately coarse: someone meeting sprig for the first time
+    // is served better by four plain-English phases than by the full per-repo create checklist (which
+    // names worktrees and env clobbering — concepts the tour hasn't taught yet).
+    static class Steps
+    {
+        public const string Scaffold = "sample:scaffold";
+        public const string Register = "sample:register";
+        public const string Stack = "sample:stack";
+        public const string Workspace = "sample:workspace";
+    }
+
+    /// <summary>
+    /// The checklist <see cref="Build"/> reports against, for a UI to render up front. Matches the
+    /// ids <see cref="Build"/> reports, the same contract <c>WorkspaceService.PlanCreate</c> has.
+    /// </summary>
+    public static IReadOnlyList<WorkspaceStep> PlanBuild() =>
+    [
+        new(Steps.Scaffold, "Create two sample repos"),
+        new(Steps.Register, "Register them with sprig"),
+        new(Steps.Stack, "Define a stack that wires them together"),
+        new(Steps.Workspace, $"Create the '{WorkspaceName}' workspace"),
+    ];
+
     /// <summary>
     /// The already-built sample, or null if there isn't a usable one. "Usable" means the record
     /// exists <i>and</i> every worktree it names is still on disk — a half-deleted sample counts as
@@ -86,15 +109,26 @@ public sealed class SampleSetup(
 
         try
         {
-            ScaffoldRepo(SampleFixtures.ApiRepo, SampleFixtures.ApiFiles);
-            ScaffoldRepo(SampleFixtures.WebRepo, SampleFixtures.WebFiles);
+            Run(progress, Steps.Scaffold, () =>
+            {
+                ScaffoldRepo(SampleFixtures.ApiRepo, SampleFixtures.ApiFiles);
+                ScaffoldRepo(SampleFixtures.WebRepo, SampleFixtures.WebFiles);
+            });
 
-            repos.Add(Path.Combine(SampleReposDir, SampleFixtures.ApiRepo));
-            repos.Add(Path.Combine(SampleReposDir, SampleFixtures.WebRepo));
+            Run(progress, Steps.Register, () =>
+            {
+                repos.Add(Path.Combine(SampleReposDir, SampleFixtures.ApiRepo));
+                repos.Add(Path.Combine(SampleReposDir, SampleFixtures.WebRepo));
+            });
 
-            stacks.Save(SampleFixtures.Stack());
+            Run(progress, Steps.Stack, () => stacks.Save(SampleFixtures.Stack()));
 
-            return workspaces.Create(resolver.Resolve(SampleFixtures.StackName), WorkspaceName, progress);
+            // The inner create reports against its own step ids, which this coarse checklist has no
+            // rows for; a UI ignores unknown ids, so they're simply not forwarded.
+            InstanceRecord? record = null;
+            Run(progress, Steps.Workspace,
+                () => record = workspaces.Create(resolver.Resolve(SampleFixtures.StackName), WorkspaceName));
+            return record!;
         }
         catch (Exception ex)
         {
@@ -133,6 +167,19 @@ public sealed class SampleSetup(
     {
         Directory.CreateDirectory(paths.Root);
         File.WriteAllText(MarkerPath, MarkerContent);
+    }
+
+    /// <summary>Run one build phase, reporting Running → Done around it (Error if it throws).</summary>
+    static void Run(IProgress<WorkspaceStepProgress>? progress, string stepId, Action work)
+    {
+        progress?.Report(new(stepId, WorkspaceStepState.Running));
+        try { work(); }
+        catch (Exception ex)
+        {
+            progress?.Report(new(stepId, WorkspaceStepState.Error, ex.Message));
+            throw;
+        }
+        progress?.Report(new(stepId, WorkspaceStepState.Done));
     }
 
     void ScaffoldRepo(string name, IReadOnlyList<SampleFile> files)

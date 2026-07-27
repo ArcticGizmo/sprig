@@ -96,6 +96,15 @@
                 <!-- Pinned to the bottom of the nav, below the workflow pages -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="2">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
+                    <!-- Entering the tour rebuilds the whole window against a demo store, so this is not
+                         a page and deliberately isn't in the workflow list. Hidden while in the tour —
+                         the banner is the way out. -->
+                    <Button Classes="nav" Command="{Binding EnterTourCommand}" IsVisible="{Binding !IsTour}">
+                        <Border Classes="navitem">
+                            <TextBlock Text="Show me a working setup" FontSize="14" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                        </Border>
+                    </Button>
                     <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}">
                         <Border Classes="navitem" Classes.active="{Binding Settings.IsActive}">
                             <TextBlock Text="Settings" FontSize="14"
@@ -150,6 +159,25 @@
 
         <!-- Content -->
         <DockPanel Grid.Column="1" LastChildFill="True">
+            <!-- Guided tour banner. Persistent and unmissable: everything on screen while this shows is
+                 a throwaway sample, and the user must never mistake it for their own setup. -->
+            <Border DockPanel.Dock="Top" Padding="16,10" Background="#3BF59E0B"
+                    BorderBrush="{StaticResource WarnBrush}" BorderThickness="0,0,0,1"
+                    IsVisible="{Binding IsTour}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="GUIDED TOUR" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
+                                   Foreground="{StaticResource WarnBrush}" />
+                        <TextBlock Text="This is a working sample sprig built for you — two repos, a stack, and a running workspace. Nothing here is yours, and it all gets deleted when you leave."
+                                   FontSize="12" Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="link" Content="Leave, keep the sample"
+                            Command="{Binding ExitTourKeepingSampleCommand}" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="Exit tour" Command="{Binding ExitTourCommand}"
+                            Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold"
+                            Padding="14,8" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
             <!-- Update-available notice (notification only; does not auto-update) -->
             <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
                     IsVisible="{Binding UpdateNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">

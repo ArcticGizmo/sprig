@@ -125,7 +125,7 @@
             </Border>
 
             <!-- Ports in use -->
-            <Border Classes="panel">
+            <Border Classes="panel" AutomationProperties.AutomationId="settings.portsInUse">
                 <StackPanel Spacing="12">
                     <TextBlock Classes="phead" Text="PORTS IN USE" />
                     <TextBlock Classes="help" Text="No ports are currently allocated to a workspace."

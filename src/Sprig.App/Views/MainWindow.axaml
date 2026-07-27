@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        xmlns:coach="clr-namespace:Sprig.App.Coach"
         x:Class="Sprig.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1280" Height="820"
@@ -259,5 +260,10 @@
 
             <ContentControl Content="{Binding CurrentPage}" Margin="0" />
         </DockPanel>
+
+        <!-- Coachmark layer: a sibling of everything, spanning both columns, so it can highlight a nav item,
+             a page control, or a shape drawn inside the wiring canvas. AnchorRoot is set in code-behind. -->
+        <coach:CoachOverlay x:Name="Coachmarks" Grid.Column="0" Grid.ColumnSpan="2"
+                            DataContext="{Binding Coach}" />
     </Grid>
 </Window>

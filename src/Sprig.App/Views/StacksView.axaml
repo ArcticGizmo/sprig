@@ -245,6 +245,7 @@
                                         BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                         <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
+                                                               AutomationProperties.AutomationId="stack.canvas"
                                                                HorizontalAlignment="Center"
                                                                WireCommand="{Binding WirePinCommand}"
                                                                UnwireCommand="{Binding UnwirePinCommand}"

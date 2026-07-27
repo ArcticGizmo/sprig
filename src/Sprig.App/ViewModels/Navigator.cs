@@ -18,15 +18,18 @@ public sealed class Navigator
     ReposViewModel? _repos;
     StacksViewModel? _stacks;
     WorkspacesViewModel? _workspaces;
+    PageViewModel? _settings;
 
     public void Configure(Action<PageViewModel> navigate, PageViewModel home,
-        ReposViewModel repos, StacksViewModel stacks, WorkspacesViewModel workspaces)
+        ReposViewModel repos, StacksViewModel stacks, WorkspacesViewModel workspaces,
+        PageViewModel? settings = null)
     {
         _navigate = navigate;
         _home = home;
         _repos = repos;
         _stacks = stacks;
         _workspaces = workspaces;
+        _settings = settings;
     }
 
     /// <summary>Wire the setup-guide launcher (owned by the main window).</summary>
@@ -48,6 +51,23 @@ public sealed class Navigator
     public void GoToRepos() => Go(_repos);
     public void GoToStacks() => Go(_stacks);
     public void GoToWorkspaces() => Go(_workspaces);
+    public void GoToSettings() => Go(_settings);
+
+    /// <summary>
+    /// Open the stack builder with every registered repo selected and auto-wired — the state in which the
+    /// canvas has nodes, ports and cables to point at. A coachmark precondition, not a user-facing action.
+    /// </summary>
+    public Task OpenStackBuilderWired()
+    {
+        if (_stacks is null) return Task.CompletedTask;
+
+        Go(_stacks);
+        if (_stacks.NewStackCommand.CanExecute(null)) _stacks.NewStackCommand.Execute(null);
+        foreach (var choice in _stacks.RepoChoices) choice.IsSelected = true;
+        if (_stacks.AutoWireCommand.CanExecute(null)) _stacks.AutoWireCommand.Execute(null);
+
+        return Task.CompletedTask;
+    }
 
     /// <summary>Jump to Repos and open the Add-repo modal.</summary>
     public void AddRepo() { if (_repos is null) return; Go(_repos); _repos.OpenAddCommand.Execute(null); }

@@ -107,6 +107,11 @@ internal static class HeadlessRenderer
             // populated exactly as a first-time user sees it.
             RenderGuidedTour(outDir);
 
+            // The coachmark spike: one frame per anchor case. Unlike every other capture here, an
+            // unresolved anchor is treated as a failure rather than logged — a coachmark pointing at
+            // nothing is exactly the bug this harness exists to catch, so it must break the build.
+            var unresolved = RenderCoachSpike(outDir);
+
             // The "what's new" changelog window (the post-update popup / About viewer).
             var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
             var sections = markdown is null
@@ -123,6 +128,14 @@ internal static class HeadlessRenderer
             RenderProgressModal(outDir);
 
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
+
+            if (unresolved > 0)
+            {
+                Console.Error.WriteLine(
+                    $"{unresolved} coachmark anchor(s) did not resolve — see the messages above");
+                return 1;
+            }
+
             return 0;
         }
         catch (Exception ex)
@@ -196,6 +209,63 @@ internal static class HeadlessRenderer
             try { demo.Sample.Destroy(); } catch { /* best-effort */ }
             try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
         }
+    }
+
+    /// <summary>
+    /// Render the coachmark spike: one frame per anchor case, over the tour's sample so the canvas has real
+    /// repos to draw. Reports on stderr when a mark's anchor failed to resolve — which is the whole question
+    /// the spike exists to answer, so it must be loud rather than a silently mispositioned callout.
+    /// </summary>
+    /// <returns>How many of the spike's anchors failed to resolve — non-zero fails the render.</returns>
+    static int RenderCoachSpike(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-coach-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            demo.Sample.Build();
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var vm = (MainWindowViewModel)window.DataContext!;
+            var marks = Sprig.App.Coach.CoachSpikeScript.Marks();
+            Pump(vm.Coach.StartAsync(marks));
+
+            for (var i = 0; i < marks.Count; i++)
+            {
+                // Two layout passes: the first realises whatever the precondition opened, the second lets the
+                // overlay's deferred reposition run against it.
+                Dispatcher.UIThread.RunJobs();
+                Dispatcher.UIThread.RunJobs();
+
+                if (vm.Coach.AnchorMissing)
+                {
+                    unresolved++;
+                    Console.Error.WriteLine($"coach spike: anchor '{marks[i].Anchor}' did not resolve");
+                }
+
+                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
+                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            }
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            // A spike that can't run at all is also a failure — otherwise the gate silently passes.
+            unresolved++;
+            Console.Error.WriteLine($"coach spike render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+
+        return unresolved;
     }
 
     /// <summary>

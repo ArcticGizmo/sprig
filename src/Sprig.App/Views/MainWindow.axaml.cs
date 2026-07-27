@@ -16,6 +16,8 @@ public partial class MainWindow : Window
         // crisp at any size/DPI. Built from data generated out of sprig.svg — see SprigLogo.
         LogoImage.Source = SprigLogo.Create();
         DataContextChanged += OnDataContextChanged;
+        // Anchors are resolved against the window's own content, so a coachmark can point at anything in it.
+        Coachmarks.AnchorRoot = this;
     }
 
     // The DataContext is swapped when entering/leaving the guided tour, so the hook is re-attached

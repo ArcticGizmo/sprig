@@ -17,7 +17,10 @@
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                 <TextBlock Grid.Column="0" Text="Repos" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
+                <!-- AutomationProperties.AutomationId doubles as the coachmark anchor (see Coach/Anchors)
+                     and as accessibility/UI-automation identity. One attribute, no coach code in the view. -->
                 <Button Grid.Column="1" Content="Add repo" Command="{Binding OpenAddCommand}"
+                        AutomationProperties.AutomationId="repos.add"
                         Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
             </Grid>
 

@@ -23,6 +23,13 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The guided tour's narration strip. Only meaningful — and only shown — during a tour.</summary>
     public TourGuideViewModel Tour { get; }
 
+    /// <summary>The coachmark layer: highlights one element at a time and explains it.</summary>
+    public CoachViewModel Coach { get; }
+
+    /// <summary>Run the coachmark spike — three marks proving the mechanism against its three anchor cases.</summary>
+    [RelayCommand]
+    private Task StartCoachSpike() => Coach.StartAsync(Sprig.App.Coach.CoachSpikeScript.Marks());
+
     /// <summary>The Settings page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
     public SettingsViewModel Settings { get; }
 
@@ -64,13 +71,15 @@ public partial class MainWindowViewModel : ViewModelBase
         var stacks = new StacksViewModel(services, nav);
         var workspaces = new WorkspacesViewModel(services, nav);
         var home = new HomeViewModel(services, nav);
-        nav.Configure(Navigate, home, repos, stacks, workspaces);
+        // Settings is built here (rather than lower down) so the navigator can reach it — coachmark
+        // preconditions navigate to it.
+        Settings = new SettingsViewModel(services);
+        nav.Configure(Navigate, home, repos, stacks, workspaces, Settings);
 
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
         nav.SetTourLauncher(() => EnterTourCommand.Execute(null));
 
-        Settings = new SettingsViewModel(services);
         About = new AboutViewModel();
 
         // Settings + About are navigable (so they get active-state highlighting) but live in the
@@ -89,6 +98,7 @@ public partial class MainWindowViewModel : ViewModelBase
         // The tour offers to start containers only when a daemon is actually up; the probe shells out to
         // docker, so it's handed over as a func for StartAsync to run off the UI thread.
         Tour = new TourGuideViewModel(nav, dockerIsRunning ?? services.Docker.IsEngineRunning);
+        Coach = new CoachViewModel(nav);
 
         // Land on Home (the front door), not on the last step of the pipeline.
         _currentPage = home;

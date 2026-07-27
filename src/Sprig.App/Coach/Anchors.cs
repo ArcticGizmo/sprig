@@ -21,6 +21,8 @@ public static class Anchors
     public const string StackDetail = "stack.detail";
     public const string WorkspaceDetail = "workspace.detail";
     public const string WorkspaceDocker = "workspace.docker";
+    public const string StackNew = "stack.new";
+    public const string StackCreate = "stack.create";
     public const string SettingsPortsInUse = "settings.portsInUse";
     public const string StackCanvas = "stack.canvas";
 
@@ -37,6 +39,8 @@ public static class Anchors
         ReposAdd,
         RepoInputs,
         RepoDetail,
+        StackNew,
+        StackCreate,
         StackDetail,
         WorkspaceDetail,
         WorkspaceDocker,

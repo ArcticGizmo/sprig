@@ -4,7 +4,7 @@ A milestone-based plan for an **interactive walkthrough** that shows a new user 
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
 > **Status: M1–M5 shipped; M6 (coachmarks) spiked, triaged, and the first-run fixes done — see §11;
-> M7 (guide library) vertical slice shipped — see §12; the tour is now coachmarks too — see §13.**
+> M7 (guide library) shipped, now with two guides — see §12, §14; the tour is coachmarks too — see §13.**
 > Full suite green (457 tests, up from 393), engine behaviour unchanged, verified via headless render
 > (`sprig-gui render <dir>` → `tour_stop*` with spotlight, `coach_case*`, `guide1_*`, `row_highlight`)
 > — see `captures/20260727-*`. Three departures from the plan as written are recorded in §10.
@@ -649,3 +649,40 @@ render fails if any anchored step doesn't resolve, the same gate the guides use.
 
 Net: the tour a first-time user actually sees now directs the eye to exactly what each sentence is about,
 instead of narrating from a strip over an undimmed page.
+
+---
+
+## 14. Guide 2 — wire up a multi-repo stack
+
+The second authored guide, and the first that teaches *building* rather than registering. Starts at the
+`ReposRegistered` stage (both sample repos known, no stack) and walks: why a stack → open the builder → read
+the auto-wiring → create it → where to go next.
+
+**Shape.** Five steps. Only the last-but-one waits on the user (the store gains a stack — `Create`s
+`NotifyStoreChanged` drives the advance); the builder-driving steps are explanation steps whose `Prepare`
+opens and wires the builder, because *opening a builder is UI state, not a store change*. This is the
+pragmatic answer to the open question from §12.5 — rather than add UI-state polling, a guide drives the UI
+transitions itself and only *waits* on the real commits.
+
+**Honest about sharing.** The guide teaches what auto-wire actually produces: each repo's inputs get their
+*own* ports, so two services never collide by accident (`StackAutowire` never assumes sharing). The
+shared-port case — the web app pointed at the API's exact port — is described as the deliberate drag it is,
+not faked. A future guide can teach sharing hands-on; this one teaches composition.
+
+**Two mechanism fixes it forced, both improvements across all guides:**
+
+- **The callout had no "Show me" button, and showed "Next" on waiting steps.** So a waiting step could be
+  Next-skipped and the escape hatch was unreachable by mouse (only the render called it). Fixed: an
+  explanation step shows Next; a waiting step shows **Show me** (the escape hatch) and no Next, so the user
+  must do the thing or ask the coach to. This also fixed guide 1's waiting step.
+- **`PrepareStackBuilder` is idempotent** — it won't reset an already-open builder — so it can be the
+  precondition on several consecutive steps without wiping the user's progress when they step forward.
+
+**Anchors added:** `stack.new` (New-stack button), `stack.create` (the builder's Create button).
+
+**Verified:** `captures/20260727-guide2-showme/guide2_step1..5`. Step 2 shows the builder open, both repos
+auto-wired on the canvas; step 4 spotlights Create stack with a Show-me button; "Show me" saves the stack
+and the wait advances to the handoff. The render fails if any step's anchor doesn't resolve.
+
+The ladder now stands at guides 1–2 authored (register a repo; wire a multi-repo stack), 3–5 still planned
+(run a workspace; the shared-port polyrepo case; drift/repair).

@@ -99,6 +99,38 @@ public sealed class Navigator
         return Task.CompletedTask;
     }
 
+    /// <summary>Show the Stacks page with no builder open, so the "New stack" button is on screen.</summary>
+    public void ShowStacksFresh()
+    {
+        if (_stacks is null) return;
+        Go(_stacks);
+        if (_stacks.IsCreating && _stacks.CancelCreateCommand.CanExecute(null))
+            _stacks.CancelCreateCommand.Execute(null);
+    }
+
+    /// <summary>
+    /// Open (or keep open) the stack builder over every registered repo, named and auto-wired, so a guide
+    /// can point at the wiring. Idempotent: if the builder is already open it isn't reset, so this can be a
+    /// precondition on several consecutive steps without wiping the user's progress.
+    /// </summary>
+    public void PrepareStackBuilder(string name)
+    {
+        if (_stacks is null) return;
+        Go(_stacks);
+        if (!_stacks.IsCreating && _stacks.NewStackCommand.CanExecute(null))
+            _stacks.NewStackCommand.Execute(null);
+        _stacks.NewName = name;
+        foreach (var choice in _stacks.RepoChoices) choice.IsSelected = true;  // selection auto-wires
+        if (_stacks.AutoWireCommand.CanExecute(null)) _stacks.AutoWireCommand.Execute(null);
+    }
+
+    /// <summary>Save the stack the builder is composing — a guide step's "Show me".</summary>
+    public Task CreateStack()
+    {
+        if (_stacks is { } s && s.CreateCommand.CanExecute(null)) s.CreateCommand.Execute(null);
+        return Task.CompletedTask;
+    }
+
     /// <summary>Jump to Repos and open the Add-repo modal.</summary>
     public void AddRepo() { if (_repos is null) return; Go(_repos); _repos.OpenAddCommand.Execute(null); }
 

@@ -19,6 +19,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="Import" Click="ImportStack" />
                     <Button Content="New stack" Command="{Binding NewStackCommand}"
+                            AutomationProperties.AutomationId="stack.new"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                 </StackPanel>
             </Grid>
@@ -220,6 +221,7 @@
                                    Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                             <Button Content="{Binding OverlayCta}" Command="{Binding CreateCommand}"
+                                    AutomationProperties.AutomationId="stack.create"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                             <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
                         </StackPanel>

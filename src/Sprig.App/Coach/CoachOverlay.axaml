@@ -38,10 +38,17 @@
                             IsVisible="{Binding CanGoBack}" IsEnabled="{Binding !Busy}"
                             Background="Transparent" Foreground="{StaticResource FgBrush}"
                             Padding="8,4" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <!-- Explanation step: Next advances. Waiting step: no Next (the user must do the thing);
+                         "Show me" is the escape hatch that performs it for them. Exactly one is shown. -->
                     <Button Grid.Column="3" Content="{Binding NextLabel}" Command="{Binding NextCommand}"
-                            IsEnabled="{Binding !Busy}"
+                            IsVisible="{Binding !IsWaiting}" IsEnabled="{Binding !Busy}"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220"
                             FontWeight="SemiBold" Padding="14,7" />
+                    <Button Grid.Column="3" Content="Show me" Command="{Binding ShowMeCommand}"
+                            IsVisible="{Binding IsWaiting}" IsEnabled="{Binding !Busy}"
+                            Background="Transparent" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                            Foreground="{StaticResource AccentBrush}" Padding="14,6"
+                            ToolTip.Tip="Stuck? I'll do this step for you." />
                 </Grid>
             </StackPanel>
         </Border>

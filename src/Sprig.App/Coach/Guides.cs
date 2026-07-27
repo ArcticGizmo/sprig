@@ -35,6 +35,7 @@ public sealed record Guide(
 public static class Guides
 {
     public const string RegisterRepoId = "register-repo";
+    public const string WireStackId = "wire-stack";
 
     public static IReadOnlyList<Guide> All { get; } =
     [
@@ -44,6 +45,13 @@ public static class Guides
             "2 min",
             SampleStage.RepoOnDisk,
             RegisterRepoSteps),
+
+        new(WireStackId,
+            "Wire up a multi-repo stack",
+            "Compose two repos into one runnable stack.",
+            "3 min",
+            SampleStage.ReposRegistered,
+            WireStackSteps),
     ];
 
     /// <summary>Guide 1: point sprig at a repo on disk, then read what that repo declares.</summary>
@@ -82,6 +90,61 @@ public static class Guides
                 Side = CoachSide.Right,
                 Prepare = () => { nav.EditRepo(SampleFixtures.ApiRepo); return Task.CompletedTask; },
             },
+        ];
+    }
+
+    /// <summary>
+    /// Guide 2: compose the two registered repos into one stack. Starts at <see cref="SampleStage.ReposRegistered"/>
+    /// (both repos known, no stack), and walks: why a stack → open the builder → read the auto-wiring →
+    /// create it. Only the final step waits on the user; the builder-driving steps prepare state and advance
+    /// on Next, since opening a builder is UI state, not a store change.
+    /// </summary>
+    static IReadOnlyList<CoachMark> WireStackSteps(Navigator nav, AppServices services)
+    {
+        const string StackName = "web+api";
+        // At this stage there are no stacks; the first one to appear is the one the user just built.
+        bool StackCreated() => services.Stacks.List().Count > 0;
+
+        return
+        [
+            new(Anchors.StackNew,
+                "Two repos, nothing tying them together",
+                "sample-api and sample-web are both registered, but on their own they don't know about each other. A stack composes repos into one runnable set and supplies the values each one needs. Let's build one.")
+            {
+                Side = CoachSide.Below,
+                Prepare = () => { nav.ShowStacksFresh(); return Task.CompletedTask; },
+            },
+
+            new(Anchors.StackCanvas,
+                "Both repos, wired by convention",
+                "Here's the builder. Both repos sit on the right, the stack's ports on the left. Selecting the repos auto-wired every input to a port — each cable shows what feeds what. sample-api's port and dbPort, sample-web's port and apiUrl: all supplied by the stack.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
+            },
+
+            new(Anchors.StackCanvas,
+                "Each repo gets its own ports — unless you say otherwise",
+                "Auto-wire gives every input a separate port, so two services never collide by accident. When you *do* want two repos to share one — the web app talking to the API's exact port — you drag one onto the other. Sharing is always a deliberate choice, never a surprise.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
+            },
+
+            new(Anchors.StackCreate,
+                "Save the wiring as a stack",
+                "Rename it if you like, then Create stack to save this composition — or let me. Once it exists, any workspace can be built from it.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
+                Completed = StackCreated,
+                ShowMe = () => nav.CreateStack(),
+            },
+
+            new(Anchors.Nav("Workspaces"),
+                "That's a multi-repo stack",
+                "Two repos, composed and wired, saved as one reusable set. The last step is to run it: create a workspace, and sprig builds an isolated, live copy of the whole stack. Leave the tour whenever you like — nothing here is yours.")
+            { Side = CoachSide.Right },
         ];
     }
 }

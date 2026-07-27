@@ -116,6 +116,9 @@ internal static class HeadlessRenderer
             // it declares. Also renders the Learn list before and after, to show the completion tick.
             unresolved += RenderRegisterRepoGuide(outDir);
 
+            // Guide 2, driven as a user would: open the stack builder, read the wiring, create the stack.
+            unresolved += RenderWireStackGuide(outDir);
+
             // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
             unresolved += RenderRowHighlight(outDir);
 
@@ -325,6 +328,55 @@ internal static class HeadlessRenderer
         {
             unresolved++;
             Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 2 ("Wire up a multi-repo stack") the way a user drives it: the builder-driving steps, then
+    /// the create step via "Show me" (which saves the stack and auto-advances), then the handoff. Any step
+    /// whose anchor doesn't resolve is a failure.
+    /// </summary>
+    static int RenderWireStackGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide2-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.WireStackId);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step1");     // why a stack
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step2");     // builder + wiring
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step3");     // own ports / sharing
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step4");     // create (waiting)
+
+            // "Show me" creates the stack, which fires StoreChanged and auto-advances to the handoff.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step5");     // handoff
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 2 render failed: {ex.Message}");
         }
         finally
         {

@@ -9,6 +9,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.3.3] - 2026-07-27
+
+### Added
+- **Guided tour** — "Show me a working setup" spins up a throwaway sample to explore, then deletes it.
+- **Spotlight coachmarks** — the tour dims the page and rings each thing as it explains it.
+- **Learn library** — four hands-on lessons: register a repo, wire a stack, run a workspace, recover from drift.
+- **All in a throwaway sandbox** — a separate demo store, never your real repos, gone when you leave.
+
+### Changed
+- **The repo editor explains what sprig scaffolded** for you, instead of a pre-filled form with no backstory.
+- **The stack builder opens pre-wired** — review the auto-wiring instead of a blank canvas.
+- **"Example" is now "Example shape"** — it's documentation for the stack, never a value.
+- **Port restrictions tuck behind a "restrict…" link** until you actually want them.
+
+---
+
 ## [v0.3.2] - 2026-07-26
 
 ### Changed

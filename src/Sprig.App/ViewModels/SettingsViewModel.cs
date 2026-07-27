@@ -1,11 +1,15 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Ports;
 using Sprig.Core.Settings;
+using Sprig.Core.Store;
 
 namespace Sprig.App.ViewModels;
 
@@ -44,6 +48,10 @@ public partial class SettingsViewModel : PageViewModel
     [ObservableProperty] private bool _checkIsInUse;
     [ObservableProperty] private bool _checkIsOutOfRange;
 
+    // --- Guided-tour sample ---
+    [ObservableProperty] private bool _hasSample;
+    [ObservableProperty] private string _sampleMessage = "";
+
     public SettingsViewModel(AppServices services)
     {
         _services = services;
@@ -55,6 +63,38 @@ public partial class SettingsViewModel : PageViewModel
         // Re-sync on entry: leases change as workspaces come and go, and settings may have changed.
         LoadFromStore();
         RunCheck();
+        RefreshSample();
+    }
+
+    /// <summary>
+    /// Whether the guided tour left a sample store on disk. Someone who abandoned the tour should be able
+    /// to reclaim that space without re-entering it, so this reports on the demo store from here — the
+    /// third and last place teardown is reachable from (banner, exit, and this).
+    /// </summary>
+    void RefreshSample()
+    {
+        HasSample = Directory.Exists(SprigPaths.DemoRoot);
+        SampleMessage = "";
+    }
+
+    /// <summary>
+    /// Delete the guided tour's sample: its containers, worktrees, branches, store and sample repos. Acts
+    /// on a graph rooted at the demo store, never this page's own (real) one.
+    /// </summary>
+    [RelayCommand]
+    private async Task DeleteSample()
+    {
+        var demo = new AppServices(SprigPaths.DemoRoot, isDemoStore: true);
+        try
+        {
+            await AppServices.RunAsync(demo.Sample.Destroy);
+            SampleMessage = "Sample deleted.";
+        }
+        catch (Exception ex)
+        {
+            SampleMessage = $"Couldn't delete it: {ex.Message}";
+        }
+        HasSample = Directory.Exists(SprigPaths.DemoRoot);
     }
 
     void LoadFromStore()

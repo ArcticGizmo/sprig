@@ -1,0 +1,117 @@
+using Sprig.Core.Stacks;
+
+namespace Sprig.Core.Demo;
+
+/// <summary>One file written into a scaffolded sample repo, and the embedded resource it comes from.</summary>
+/// <param name="RelativePath">Destination path relative to the repo root.</param>
+/// <param name="Resource">Manifest resource name inside this assembly.</param>
+public sealed record SampleFile(string RelativePath, string Resource);
+
+/// <summary>
+/// The guided tour's fixture content: two throwaway repos and the stack that wires them together.
+///
+/// Everything here is <b>content, not code</b> — the repo files are embedded verbatim and written to
+/// disk unmodified, so nothing can generate them wrongly. They are authored to the same
+/// <c>.sprig.json</c> schema a user's repo uses, which means a schema change breaks them; the tests
+/// load these exact bytes through the real loader and validator so that breakage fails CI rather
+/// than a new user's first launch (see docs/guided-tour-plan.md §7).
+/// </summary>
+public static class SampleFixtures
+{
+    /// <summary>Registry/binding name of the sample backend (matches <c>name</c> in its config).</summary>
+    public const string ApiRepo = "sample-api";
+
+    /// <summary>Registry/binding name of the sample front end (matches <c>name</c> in its config).</summary>
+    public const string WebRepo = "sample-web";
+
+    /// <summary>Name of the stack that wires the two sample repos together.</summary>
+    public const string StackName = "sample";
+
+    // Stack port names. The tour leans on api_port being consumed by BOTH repos.
+    public const string ApiPort = "api_port";
+    public const string WebPort = "web_port";
+    public const string DbPort = "db_port";
+
+    const string Prefix = "Sprig.Demo.";
+
+    public static IReadOnlyList<SampleFile> ApiFiles { get; } =
+    [
+        new(".sprig.json", Prefix + "api.sprig.json"),
+        new(".env.template", Prefix + "api.env.template"),
+        new(".gitignore", Prefix + "api.gitignore"),
+        new("docker-compose.yml", Prefix + "api.docker-compose.yml"),
+        new("README.md", Prefix + "api.README.md"),
+    ];
+
+    public static IReadOnlyList<SampleFile> WebFiles { get; } =
+    [
+        new(".sprig.json", Prefix + "web.sprig.json"),
+        new(".env.template", Prefix + "web.env.template"),
+        new(".gitignore", Prefix + "web.gitignore"),
+        new("README.md", Prefix + "web.README.md"),
+    ];
+
+    /// <summary>
+    /// The sample stack. Three ports, and — the point of the whole tour — <c>api_port</c> feeds two
+    /// consumers: the API's own <c>port</c>, and the URL handed to the web app. The explicit
+    /// <see cref="StackDefinition.Shares"/> entry is what makes the wiring canvas draw that as one
+    /// cable reaching two repos.
+    /// </summary>
+    public static StackDefinition Stack() => new()
+    {
+        Name = StackName,
+        Repos = [ApiRepo, WebRepo],
+        Ports = [ApiPort, WebPort, DbPort],
+        Bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
+        {
+            [ApiRepo] = new Dictionary<string, string>
+            {
+                ["port"] = $"${{sprig.ports.{ApiPort}}}",
+                ["dbPort"] = $"${{sprig.ports.{DbPort}}}",
+            },
+            [WebRepo] = new Dictionary<string, string>
+            {
+                ["port"] = $"${{sprig.ports.{WebPort}}}",
+                ["apiUrl"] = $"http://localhost:${{sprig.ports.{ApiPort}}}",
+            },
+        },
+        Shares =
+        [
+            new SharedPort
+            {
+                Port = ApiPort,
+                Consumers =
+                [
+                    new PortConsumer { Repo = ApiRepo, Input = "port" },
+                    new PortConsumer { Repo = WebRepo, Input = "apiUrl" },
+                ],
+            },
+        ],
+    };
+
+    /// <summary>Read one embedded fixture as text.</summary>
+    public static string Read(string resource)
+    {
+        var assembly = typeof(SampleFixtures).Assembly;
+        using var stream = assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidOperationException(
+                $"missing embedded sample fixture '{resource}' — check the EmbeddedResource LogicalName in Sprig.Core.csproj");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>Write a repo's fixture files into <paramref name="repoDir"/>, creating it if needed.</summary>
+    public static void WriteTo(IReadOnlyList<SampleFile> files, string repoDir)
+    {
+        Directory.CreateDirectory(repoDir);
+        foreach (var file in files)
+        {
+            var dest = Path.Combine(repoDir, file.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.WriteAllText(dest, Read(file.Resource));
+        }
+    }
+
+    /// <summary>Every fixture in the tour, for tests that assert all of them are present and valid.</summary>
+    public static IEnumerable<SampleFile> All => ApiFiles.Concat(WebFiles);
+}

@@ -20,6 +20,7 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="New workspace" Command="{Binding NewWorkspaceCommand}"
+                            AutomationProperties.AutomationId="workspace.new"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                     <Button Content="Refresh" Command="{Binding RefreshCommand}" />
                 </StackPanel>
@@ -82,7 +83,7 @@
                 </TextBlock>
 
                 <!-- detail -->
-                <ScrollViewer IsVisible="{Binding HasSelected}">
+                <ScrollViewer IsVisible="{Binding HasSelected}" AutomationProperties.AutomationId="workspace.detail">
                     <StackPanel Spacing="16">
 
                         <!-- title + drift -->
@@ -106,6 +107,7 @@
                             <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
                                     ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
                             <Button Content="Repair" Command="{Binding RepairCommand}"
+                                    AutomationProperties.AutomationId="workspace.repair"
                                     ToolTip.Tip="Fix drift: prune stale registrations and remove orphaned folders. Healthy worktrees are never touched." />
                             <Button Content="Remove" Command="{Binding RemoveCommand}"
                                     Foreground="{StaticResource DangerBrush}" />
@@ -135,7 +137,8 @@
                                    Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
 
                         <!-- docker status -->
-                        <StackPanel Spacing="8" IsVisible="{Binding Selected.HasInfra}">
+                        <StackPanel Spacing="8" IsVisible="{Binding Selected.HasInfra}"
+                                    AutomationProperties.AutomationId="workspace.docker">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Grid.Column="0" Text="DOCKER" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
@@ -282,6 +285,7 @@
                                Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding CreateError}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                         <Button Content="Create" Command="{Binding CreateCommand}"
+                                AutomationProperties.AutomationId="workspace.create"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                         <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
                     </StackPanel>

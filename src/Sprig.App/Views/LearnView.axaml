@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.LearnView"
+             x:DataType="vm:LearnViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="28,22,28,28" Spacing="18" MaxWidth="760" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Learn sprig" FontSize="22" FontWeight="SemiBold"
+                           Foreground="{StaticResource TitleBrush}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                           Text="Short, hands-on lessons — each one walks you through a single idea in a throwaway sandbox, so you can click around without touching your own repos. Nothing you do here is permanent." />
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding Guides}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GuideItemViewModel">
+                        <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="12" Padding="18,16" Margin="0,0,0,12">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                                <!-- Completion tick -->
+                                <Border Grid.Column="0" Width="26" Height="26" CornerRadius="13" VerticalAlignment="Center"
+                                        Background="{StaticResource OkBrush}" IsVisible="{Binding Completed}">
+                                    <TextBlock Text="✓" Foreground="#0B1220" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <Border Grid.Column="0" Width="26" Height="26" CornerRadius="13" VerticalAlignment="Center"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                        IsVisible="{Binding !Completed}" />
+
+                                <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="12.5" TextWrapping="Wrap"
+                                               Foreground="{StaticResource FgBrush}" />
+                                    <TextBlock Text="{Binding Duration}" FontSize="11"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                </StackPanel>
+
+                                <Button Grid.Column="2" Content="{Binding ActionLabel}" Command="{Binding StartCommand}"
+                                        VerticalAlignment="Center" Padding="16,8"
+                                        Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                        FontWeight="SemiBold" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

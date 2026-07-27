@@ -103,6 +103,31 @@ internal static class HeadlessRenderer
             guideVm.Guide.Start();
             Capture(guideVm, Path.Combine(outDir, "main_guide.png"));
 
+            // The guided tour, now coachmarks: each step spotlights its target over the real sample. An
+            // unresolved anchor here is a failure, same as the spike and guides.
+            var unresolved = RenderGuidedTour(outDir);
+
+            // The coachmark spike: one frame per anchor case. Unlike every other capture here, an
+            // unresolved anchor is treated as a failure rather than logged — a coachmark pointing at
+            // nothing is exactly the bug this harness exists to catch, so it must break the build.
+            unresolved += RenderCoachSpike(outDir);
+
+            // Guide 1, driven the way a user would: register the sample repo via "Show me", then read what
+            // it declares. Also renders the Learn list before and after, to show the completion tick.
+            unresolved += RenderRegisterRepoGuide(outDir);
+
+            // Guide 2, driven as a user would: open the stack builder, read the wiring, create the stack.
+            unresolved += RenderWireStackGuide(outDir);
+
+            // Guide 3: create a workspace from the stack, then see what sprig made.
+            unresolved += RenderRunWorkspaceGuide(outDir);
+
+            // Guide 4 (drift): break a worktree, then Repair it.
+            unresolved += RenderRepairDriftGuide(outDir);
+
+            // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
+            unresolved += RenderRowHighlight(outDir);
+
             // The "what's new" changelog window (the post-update popup / About viewer).
             var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
             var sections = markdown is null
@@ -119,6 +144,14 @@ internal static class HeadlessRenderer
             RenderProgressModal(outDir);
 
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
+
+            if (unresolved > 0)
+            {
+                Console.Error.WriteLine(
+                    $"{unresolved} coachmark anchor(s) did not resolve — see the messages above");
+                return 1;
+            }
+
             return 0;
         }
         catch (Exception ex)
@@ -126,6 +159,411 @@ internal static class HeadlessRenderer
             Console.Error.WriteLine($"headless render failed: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// Render the guided tour, now that it's coachmarks: each step over the real sample, dimming the page and
+    /// ringing its target. Docker is pinned so the run is deterministic — the base script (no daemon) is
+    /// walked in full, then the infra step is posed from a Docker-up run. Any step whose anchor doesn't
+    /// resolve is a failure, like the guide render.
+    /// </summary>
+    static int RenderGuidedTour(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-tour-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            demo.Sample.Build();
+
+            // Base script, Docker off: walk every step, capturing the coach frame (callout + spotlight).
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartTour());
+            for (var step = 1; vm.Coach.IsActive; step++)
+            {
+                unresolved += CaptureCoachStep(window, vm, outDir, $"tour_stop{step}");
+                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            }
+            window.Close();
+
+            // The optional Docker step, posed rather than executed (running it would pull an image): start a
+            // Docker-up tour and step to the infra mark (second from last).
+            var dwindow = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => true) };
+            dwindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            var dvm = (MainWindowViewModel)dwindow.DataContext!;
+            Pump(dvm.StartTour());
+            // Step (which re-navigates each time) up to the infra mark, second from last. Stop there — Next on
+            // it would Perform the container start, which we don't want in a render.
+            while (dvm.Coach.Index < dvm.Coach.Count - 2)
+                Pump(dvm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(dwindow, dvm, outDir, "tour_stop_infra");
+            dwindow.Close();
+
+            // The build checklist the user watches on the way in.
+            var progress = new OperationProgressViewModel("Building your sample setup");
+            progress.Load(Sprig.Core.Demo.SampleSetup.PlanBuild());
+            progress.Steps[0].State = WorkspaceStepState.Done;
+            progress.Steps[1].State = WorkspaceStepState.Done;
+            progress.Steps[2].State = WorkspaceStepState.Running;
+            var pwindow = new OperationProgressWindow { DataContext = progress };
+            pwindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            pwindow.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "tour_building.png"));
+            pwindow.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guided-tour render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render the coachmark spike: one frame per anchor case, over the tour's sample so the canvas has real
+    /// repos to draw. Reports on stderr when a mark's anchor failed to resolve — which is the whole question
+    /// the spike exists to answer, so it must be loud rather than a silently mispositioned callout.
+    /// </summary>
+    /// <returns>How many of the spike's anchors failed to resolve — non-zero fails the render.</returns>
+    static int RenderCoachSpike(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-coach-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            demo.Sample.Build();
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var vm = (MainWindowViewModel)window.DataContext!;
+            var marks = vm.CoachSpikeMarks;
+            Pump(vm.Coach.StartAsync(marks));
+
+            for (var i = 0; i < marks.Count; i++)
+            {
+                // Two layout passes: the first realises whatever the precondition opened, the second lets the
+                // overlay's deferred reposition run against it.
+                Dispatcher.UIThread.RunJobs();
+                Dispatcher.UIThread.RunJobs();
+
+                if (vm.Coach.AnchorMissing)
+                {
+                    unresolved++;
+                    Console.Error.WriteLine($"coach spike: anchor '{marks[i].Anchor}' did not resolve");
+                }
+
+                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
+                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            }
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            // A spike that can't run at all is also a failure — otherwise the gate silently passes.
+            unresolved++;
+            Console.Error.WriteLine($"coach spike render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 1 ("Register your first repo") the way a user experiences it: the Learn list, then each
+    /// coachmark, driving the middle (waiting) step via "Show me" so the auto-advance path is exercised, then
+    /// the Learn list again with its completion tick. Any step whose anchor doesn't resolve is a failure.
+    /// </summary>
+    static int RenderRegisterRepoGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All[0];
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.RepoOnDisk);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            // The Learn list, before starting.
+            vm.CurrentPage = vm.Learn;
+            SettleFrame(window, outDir, "guide1_learn");
+
+            // Start the guide; the first (waiting) step highlights Add repo.
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step1");
+
+            // The user is stuck → "Show me" registers the repo, which fires StoreChanged and auto-advances.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step2");
+
+            // Read the declared inputs, then finish.
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step3");
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done → onFinished
+
+            // The Learn list again, now ticked.
+            vm.Learn.Refresh();
+            vm.CurrentPage = vm.Learn;
+            SettleFrame(window, outDir, "guide1_learn_done");
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 4 ("Recover from drift"): the opening step breaks a worktree and reconciles so drift
+    /// shows; the repair step (via "Show me") prunes it, which fires a store change and auto-advances.
+    /// </summary>
+    static int RenderRepairDriftGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide4-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RepairDriftId);
+            demo.Sample.Build();  // full Running sample
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step1");     // drift shown
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step2");     // repair (waiting)
+
+            // "Show me" repairs (prunes the stale registration), which fires a store change and advances.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step3");     // recovered
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 4 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 3 ("Create and run a workspace"): why → create (via "Show me", which does the real
+    /// worktree work behind a progress checklist and auto-advances) → what got made → the handoff.
+    /// </summary>
+    static int RenderRunWorkspaceGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide3-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RunWorkspaceId);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.StackWired);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step1");     // why a workspace
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step2");     // create (waiting)
+
+            // "Show me" creates the workspace — real worktrees, behind a progress window — then the store
+            // change auto-advances to the "what got made" step.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step3");     // what sprig made
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step4");     // handoff
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 3 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 2 ("Wire up a multi-repo stack") the way a user drives it: the builder-driving steps, then
+    /// the create step via "Show me" (which saves the stack and auto-advances), then the handoff. Any step
+    /// whose anchor doesn't resolve is a failure.
+    /// </summary>
+    static int RenderWireStackGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide2-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.WireStackId);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step1");     // why a stack
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step2");     // builder + wiring
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step3");     // own ports / sharing
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step4");     // create (waiting)
+
+            // "Show me" creates the stack, which fires StoreChanged and auto-advances to the handoff.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step5");     // handoff
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 2 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Prove the row-level spotlight: point a coachmark at one specific repo row (anchored from its data)
+    /// with two repos registered, so the cut-out lands on exactly that row and everything else dims.
+    /// </summary>
+    static int RenderRowHighlight(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-row-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            // Show the repo list and let its rows realise, then spotlight just sample-api.
+            vm.CurrentPage = vm.Pages.OfType<ReposViewModel>().First();
+            Dispatcher.UIThread.RunJobs();
+            Dispatcher.UIThread.RunJobs();
+
+            var mark = new CoachMark(
+                Sprig.App.Coach.Anchors.RepoRow(Sprig.Core.Demo.SampleFixtures.ApiRepo),
+                "This is a repo",
+                "Each row is a repo sprig knows about. Everything else is dimmed so your eye goes straight to this one.")
+            { Side = CoachSide.Right };
+
+            Pump(vm.Coach.StartAsync([mark]));
+            unresolved += CaptureCoachStep(window, vm, outDir, "row_highlight");
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"row-highlight render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>Let two layout passes run, capture the current coach frame, and report an unresolved anchor.</summary>
+    static int CaptureCoachStep(MainWindow window, MainWindowViewModel vm, string outDir, string name)
+    {
+        Dispatcher.UIThread.RunJobs();
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
+        if (!vm.Coach.AnchorMissing) return 0;
+        Console.Error.WriteLine($"{name}: anchor '{vm.Coach.Mark?.Anchor}' did not resolve");
+        return 1;
+    }
+
+    static void SettleFrame(MainWindow window, string outDir, string name)
+    {
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
+    }
+
+    /// <summary>Tick a guide complete in the demo store's own settings, so the render can show the tick.</summary>
+    static void MarkDemoGuideDone(AppServices demo, string guideId)
+    {
+        var settings = demo.Settings.Get();
+        if (!settings.CompletedGuides.Contains(guideId)) settings.CompletedGuides.Add(guideId);
+        demo.Settings.Save(settings);
+    }
+
+    /// <summary>
+    /// Drive an async view-model call to completion on the render thread. The awaited continuations are
+    /// posted to the dispatcher, so blocking on the task would deadlock — the jobs have to be pumped.
+    /// </summary>
+    static void Pump(Task task)
+    {
+        while (!task.IsCompleted)
+            Dispatcher.UIThread.RunJobs();
+        task.GetAwaiter().GetResult();
     }
 
     /// <summary>Render the operation-progress checklist mid-run: ports/env/compose done, a soft setup

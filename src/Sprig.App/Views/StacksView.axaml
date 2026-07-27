@@ -19,6 +19,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="Import" Click="ImportStack" />
                     <Button Content="New stack" Command="{Binding NewStackCommand}"
+                            AutomationProperties.AutomationId="stack.new"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                 </StackPanel>
             </Grid>
@@ -98,7 +99,7 @@
                 </TextBlock>
 
                 <!-- detail: the selected stack's configuration -->
-                <ScrollViewer IsVisible="{Binding HasSelected}">
+                <ScrollViewer IsVisible="{Binding HasSelected}" AutomationProperties.AutomationId="stack.detail">
                     <StackPanel Spacing="16">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Grid.Column="0" Text="{Binding Selected.Name}" FontSize="18" FontWeight="SemiBold"
@@ -220,6 +221,7 @@
                                    Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                             <Button Content="{Binding OverlayCta}" Command="{Binding CreateCommand}"
+                                    AutomationProperties.AutomationId="stack.create"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                             <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
                         </StackPanel>
@@ -228,8 +230,18 @@
                         <StackPanel Spacing="14">
                             <!-- Canvas: the stack wiring surface -->
                             <StackPanel Spacing="8">
-                                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Drag a port (or the workspace source, or 'create new…') onto an input to wire it — or drag an input back to a source. Click an input to edit its value; click a port to rename/remove it; click a ƒ node to edit it; click a line to select it (then delete or edit)." />
+                                <!-- Leads with what has already happened, since the canvas arrives wired now.
+                                     The gestures follow as reference rather than as the first instruction —
+                                     one run-on sentence covering five interactions was doing all the teaching. -->
+                                <StackPanel Spacing="3" IsVisible="{Binding CanAutoWire}">
+                                    <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                               Text="Each input has been wired to a port by convention. Review it and change anything that isn't what you meant — two repos only share a port if you say so." />
+                                    <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Drag a port onto an input to rewire it, or drag an input back to a source to unbind it. Click a port to rename it, an input to set a literal value, a ƒ node to edit a transform, or a line to select it." />
+                                </StackPanel>
+                                <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                           IsVisible="{Binding !CanAutoWire}"
+                                           Text="Add a repo below to start. sprig reads the inputs it declares and wires them to ports for you." />
 
                                 <!-- Column headers, aligned to the canvas columns (the actions are drawn on the canvas). -->
                                 <Grid HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284">
@@ -245,6 +257,7 @@
                                         BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
                                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                         <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
+                                                               AutomationProperties.AutomationId="stack.canvas"
                                                                HorizontalAlignment="Center"
                                                                WireCommand="{Binding WirePinCommand}"
                                                                UnwireCommand="{Binding UnwirePinCommand}"

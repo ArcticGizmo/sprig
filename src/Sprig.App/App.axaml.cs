@@ -17,12 +17,15 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var services = new AppServices();
-            var main = new MainWindow { DataContext = new MainWindowViewModel(services) };
-            // A dev instance writes to a separate store; badge the title so it's obvious which one is running.
-            main.Title += Sprig.Core.Store.AppProfile.DisplaySuffix;
+            // The session owns which store the window is bound to, so the guided tour can swap the
+            // whole app onto a throwaway demo store and back. It also sets the title (which badges a
+            // dev instance, and marks a tour).
+            var main = new MainWindow();
+            var session = new AppSession(main);
+            session.ShowReal();
+
             desktop.MainWindow = main;
-            MaybeShowChangelog(services, main);
+            MaybeShowChangelog(session.Services, main);
         }
         base.OnFrameworkInitializationCompleted();
     }

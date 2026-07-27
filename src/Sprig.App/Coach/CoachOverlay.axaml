@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:coach="clr-namespace:Sprig.App.Coach"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Coach.CoachOverlay"
+             x:DataType="vm:CoachViewModel"
+             IsVisible="{Binding IsActive}">
+
+    <!-- The scrim fills the layer; the callout is positioned in code against the resolved anchor rect,
+         which is why this is a Canvas rather than something that lays itself out. -->
+    <Canvas x:Name="Layer">
+        <coach:CoachScrim x:Name="Scrim" />
+
+        <Border x:Name="Callout" MaxWidth="380" CornerRadius="10" Padding="16,14"
+                Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                BoxShadow="0 8 28 0 #90000000">
+            <StackPanel Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="{Binding StepCounter}" FontSize="10" FontWeight="SemiBold"
+                               LetterSpacing="1.4" Foreground="{StaticResource AccentBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="ANCHOR NOT FOUND" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.4"
+                               Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center"
+                               IsVisible="{Binding AnchorMissing}" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding Mark.Heading}" FontSize="15" FontWeight="SemiBold"
+                           TextWrapping="Wrap" Foreground="{StaticResource TitleBrush}" />
+                <TextBlock Text="{Binding Mark.Body}" FontSize="12.5" TextWrapping="Wrap"
+                           Foreground="{StaticResource FgBrush}" />
+
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,4,0,0">
+                    <Button Grid.Column="0" Content="Skip" Command="{Binding SkipCommand}"
+                            Background="Transparent" Foreground="{StaticResource MutedBrush}" Padding="0"
+                            VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="Back" Command="{Binding BackCommand}"
+                            IsVisible="{Binding CanGoBack}" IsEnabled="{Binding !Busy}"
+                            Background="Transparent" Foreground="{StaticResource FgBrush}"
+                            Padding="8,4" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <!-- Explanation step: Next advances. Waiting step: no Next (the user must do the thing);
+                         "Show me" is the escape hatch that performs it for them. Exactly one is shown. -->
+                    <Button Grid.Column="3" Content="{Binding NextLabel}" Command="{Binding NextCommand}"
+                            IsVisible="{Binding !IsWaiting}" IsEnabled="{Binding !Busy}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                            FontWeight="SemiBold" Padding="14,7" />
+                    <Button Grid.Column="3" Content="Show me" Command="{Binding ShowMeCommand}"
+                            IsVisible="{Binding IsWaiting}" IsEnabled="{Binding !Busy}"
+                            Background="Transparent" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                            Foreground="{StaticResource AccentBrush}" Padding="14,6"
+                            ToolTip.Tip="Stuck? I'll do this step for you." />
+                </Grid>
+            </StackPanel>
+        </Border>
+    </Canvas>
+</UserControl>

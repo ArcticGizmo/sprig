@@ -319,6 +319,9 @@ public partial class WorkspacesViewModel : PageViewModel
             await AppServices.RunAsync(() => Services.Reconciler.Repair(item.Name));
             var report = await AppServices.RunAsync(() => Services.Reconciler.Inspect(item.Name));
             ApplyDrift(item, report);
+            // Repair rebuilds worktrees — reality changed, so announce it (state-driven surfaces refresh,
+            // and a coach step waiting on a healthy workspace advances).
+            Services.NotifyStoreChanged();
         }, status: "repaired");
     }
 

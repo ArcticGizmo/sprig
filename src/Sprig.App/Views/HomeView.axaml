@@ -90,8 +90,17 @@
                            Foreground="{StaticResource TitleBrush}" />
                 <TextBlock TextWrapping="Wrap" FontSize="14" Foreground="{StaticResource MutedBrush}"
                            Text="sprig gives each workspace its own git worktree, branch, ports and docker infra — so you can build a feature and a hotfix side by side, and never touch your main checkout." />
-                <Button Classes="link" Content="Walk me through setup  →" Command="{Binding StartGuideCommand}"
-                        HorizontalAlignment="Left" Margin="0,4,0,0" />
+                <!-- Two different first-run questions: "how do I start" and "what am I aiming at". The
+                     second is the one an empty app can't answer on its own, so it gets the solid button. -->
+                <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,8,0,0">
+                    <Button Content="Show me a working setup  →" Command="{Binding ShowWorkingSetupCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                            FontWeight="SemiBold" Padding="14,9" CornerRadius="8" />
+                    <Button Classes="link" Content="Walk me through setup  →" Command="{Binding StartGuideCommand}"
+                            VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                           Text="The tour builds two sample repos in a throwaway store so you can see a finished setup before touching your own. It's deleted when you leave." />
             </StackPanel>
 
             <!-- Compact header (configured) -->

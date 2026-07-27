@@ -18,6 +18,12 @@ public partial class StacksViewModel : PageViewModel
     protected readonly AppServices Services;
     readonly Navigator _nav;
 
+    /// <summary>
+    /// True while auto-wire is writing, so the row change handlers don't mistake its own edits for the user
+    /// taking ownership of a port or a binding.
+    /// </summary>
+    bool _applyingAutoWire;
+
     public StacksViewModel(AppServices services, Navigator nav)
     {
         Services = services;
@@ -403,7 +409,11 @@ public partial class StacksViewModel : PageViewModel
             var renamed = row.Name.Trim();
             var previous = row.CommittedName;
             if (previous.Length > 0 && renamed.Length > 0 && previous != renamed)
+            {
                 PropagatePortRename(previous, renamed);
+                // Naming a port is an act of intent: it stops being auto-wire's to recompute away.
+                if (!_applyingAutoWire) row.Auto = false;
+            }
             row.CommittedName = renamed;
         }
 
@@ -423,9 +433,10 @@ public partial class StacksViewModel : PageViewModel
     }
 
     /// <summary>Create a port row wired for change tracking (rename propagation + previews).</summary>
-    StackPortRow NewPortRow(string name = "")
+    /// <param name="auto">True only when auto-wire is proposing this port; every other caller is the user.</param>
+    StackPortRow NewPortRow(string name = "", bool auto = false)
     {
-        var row = new StackPortRow { Name = name, CommittedName = name };
+        var row = new StackPortRow { Name = name, CommittedName = name, Auto = auto };
         row.PropertyChanged += OnPortRowChanged;
         return row;
     }
@@ -587,6 +598,16 @@ public partial class StacksViewModel : PageViewModel
 
         OnPropertyChanged(nameof(CanAutoWire));
         RefreshAddableRepos();
+
+        // Wire by convention as soon as there's something to wire, so the canvas arrives as a guess to
+        // review rather than a blank board to author. Safe now that ports and bindings carry provenance:
+        // AutoWire discards its own previous proposal first, so this is a fresh batch pass over the user's
+        // state every time — never one that feeds itself the ports it invented a moment ago.
+        //
+        // Creating only. Editing must show exactly what was saved, and EditSelected picks the repos before
+        // applying stored bindings, so wiring here would invent bindings for inputs the stack left unbound.
+        if (CanAutoWire && !IsEditing) AutoWire();
+
         RebuildBuilderWiring();
     }
 
@@ -613,7 +634,13 @@ public partial class StacksViewModel : PageViewModel
 
     void OnBindingRowChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BindingRow.Expression)) RebuildBuilderWiring();
+        if (e.PropertyName != nameof(BindingRow.Expression)) return;
+
+        // Any hand edit (typing, or wiring from the canvas) takes the expression away from auto-wire, so a
+        // later recompute leaves it alone. Suppressed while auto-wire is the one writing.
+        if (!_applyingAutoWire && sender is BindingRow row) row.Auto = false;
+
+        RebuildBuilderWiring();
     }
 
     /// <summary>A repo's declared inputs, or an empty list if it's gone or its config won't parse.</summary>
@@ -639,32 +666,76 @@ public partial class StacksViewModel : PageViewModel
         var repos = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
         if (repos.Count == 0) return;
 
-        var autowireRepos = repos.Select(r => new AutowireRepo(r, LoadInputs(r))).ToList();
+        _applyingAutoWire = true;
+        try
+        {
+            // Throw away the previous proposal first, so what follows is a single batch pass over the
+            // user's state alone. Without this, re-proposing feeds StackAutowire the ports it invented
+            // last time; because it reuses a port whose name matches, a second repo would adopt the
+            // first repo's port and two services each declaring `port` would collide at runtime.
+            // Provenance is what makes re-proposing safe, and therefore automatic.
+            DiscardAutoWiring();
 
-        var existingBindings = Bindings.ToDictionary(
-            g => g.Repo,
-            g => (IReadOnlyDictionary<string, string>)g.Rows
-                .Where(r => !string.IsNullOrWhiteSpace(r.Expression))
-                .ToDictionary(r => r.Input, r => r.Expression.Trim()));
+            var autowireRepos = repos.Select(r => new AutowireRepo(r, LoadInputs(r))).ToList();
 
-        var existingPorts = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+            var existingBindings = Bindings.ToDictionary(
+                g => g.Repo,
+                g => (IReadOnlyDictionary<string, string>)g.Rows
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Expression))
+                    .ToDictionary(r => r.Input, r => r.Expression.Trim()));
 
-        var proposal = StackAutowire.Propose(autowireRepos, existingPorts, existingBindings);
+            var existingPorts = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
 
-        SetPorts(proposal.Ports);
-        foreach (var group in Bindings)
-            if (proposal.Bindings.TryGetValue(group.Repo, out var proposed))
-                foreach (var row in group.Rows)
-                    if (proposed.TryGetValue(row.Input, out var expr))
-                        row.Expression = expr;
+            var proposal = StackAutowire.Propose(autowireRepos, existingPorts, existingBindings);
+
+            SetPorts(proposal.Ports);
+            foreach (var group in Bindings)
+                if (proposal.Bindings.TryGetValue(group.Repo, out var proposed))
+                    foreach (var row in group.Rows)
+                        if (proposed.TryGetValue(row.Input, out var expr) && row.Expression != expr)
+                        {
+                            row.Expression = expr;
+                            row.Auto = true;
+                        }
+        }
+        finally { _applyingAutoWire = false; }
     }
 
-    /// <summary>Replace the port rows (re-subscribing change events) and refresh previews + autosuggest.</summary>
+    /// <summary>
+    /// Drop everything the last auto-wire proposed — its ports and the expressions it wrote — leaving only
+    /// what the user authored. Anything the user added, renamed, typed or wired by hand survives.
+    /// </summary>
+    void DiscardAutoWiring()
+    {
+        foreach (var group in Bindings)
+            foreach (var row in group.Rows)
+                if (row.Auto)
+                {
+                    row.Expression = "";
+                    row.Auto = false;
+                }
+
+        foreach (var port in Ports.Where(p => p.Auto).ToList())
+        {
+            port.PropertyChanged -= OnPortRowChanged;
+            Ports.Remove(port);
+        }
+    }
+
+    /// <summary>
+    /// Replace the port rows (re-subscribing change events) and refresh previews + autosuggest. Called by
+    /// auto-wire with its proposal, which includes the user's own ports — so provenance is carried across
+    /// rather than reset, or a user-named port would silently become auto-wire's to delete next time.
+    /// </summary>
     void SetPorts(IEnumerable<string> names)
     {
+        var userNamed = Ports.Where(p => !p.Auto)
+            .Select(p => p.Name.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+
         foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
-        foreach (var n in names) Ports.Add(NewPortRow(n));
+        foreach (var n in names) Ports.Add(NewPortRow(n, auto: !userNamed.Contains(n)));
         ReindexPortPreviews();
         RebuildBindingVariables();
         RebuildBuilderWiring();
@@ -684,6 +755,13 @@ public partial class StackPortRow : ViewModelBase
 
     /// <summary>The last committed name, so a rename can be detected and propagated to bindings.</summary>
     public string CommittedName { get; set; } = "";
+
+    /// <summary>
+    /// True when auto-wire created this port, false when the user did (added it, renamed it, or loaded it
+    /// from a saved stack). Auto-wire discards its own ports before re-proposing, so it always runs against
+    /// the user's state alone — see <c>StacksViewModel.AutoWire</c>.
+    /// </summary>
+    public bool Auto { get; set; }
 }
 
 public sealed partial class RepoBindingGroup(string repo) : ViewModelBase
@@ -699,6 +777,12 @@ public partial class BindingRow(string input, string? example) : ViewModelBase
 
     /// <summary>The one expression that fills this input — the single source of truth the canvas edits.</summary>
     [ObservableProperty] private string _expression = "";
+
+    /// <summary>
+    /// True when auto-wire wrote this expression, false once the user touches it. Auto-wire clears its own
+    /// bindings before re-proposing, so a hand-written expression is never recomputed away.
+    /// </summary>
+    public bool Auto { get; set; }
 }
 
 /// <summary>Read-only projection of a stack's bindings for one repo (detail panel).</summary>

@@ -84,6 +84,13 @@ public partial class HomeViewModel : PageViewModel
     /// <summary>Launch the guided setup strip (first-run "walk me through setup").</summary>
     [RelayCommand] private void StartGuide() => _nav.StartSetupGuide();
 
+    /// <summary>
+    /// Enter the guided tour — a complete working setup, built for the user to click around. Offered
+    /// alongside "walk me through setup" because the two answer different first-run questions: how do I
+    /// start, versus what am I aiming at.
+    /// </summary>
+    [RelayCommand] private void ShowWorkingSetup() => _nav.EnterTour();
+
     // Quick actions / links.
     [RelayCommand] private void NewWorkspace() => _nav.NewWorkspace();
     [RelayCommand] private void AddRepo() => _nav.AddRepo();

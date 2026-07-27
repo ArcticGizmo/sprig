@@ -21,10 +21,51 @@ namespace Sprig.App.Controls;
 /// transform colour; hovering a port dims the other cables and shows a tooltip naming what consumes
 /// it. Layout is deterministic and derived from <see cref="WiringGraph"/>; this control only draws.
 /// </summary>
-public sealed class WiringCanvas : Control, ICustomHitTest
+public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
 {
     // The whole board is interactive (it's drawn, not templated, so give it a solid hit area).
     public bool HitTest(Point point) => true;
+
+    /// <summary>
+    /// Publish a drawn element's geometry so a coachmark can point at it. Nothing new is computed — these
+    /// are the same rects <see cref="BuildLayout"/> already produces for hit-testing and dragging, so the
+    /// coach can never disagree with what the user sees or can click.
+    ///
+    /// Meaningful only after a layout pass (<see cref="MeasureOverride"/> runs <c>BuildLayout</c>). Before
+    /// that, or for anything not currently drawn, this returns false and the coach skips the step.
+    /// </summary>
+    public bool TryGetAnchor(string anchorId, out Rect bounds)
+    {
+        bounds = default;
+
+        if (anchorId == Coach.Anchors.StackAutoWire)
+        {
+            bounds = _autoWireRect;
+            return bounds is { Width: > 0, Height: > 0 };
+        }
+
+        if (Suffix(anchorId, "stack.port:") is { } port)
+            return _portRects.TryGetValue(port, out bounds);
+
+        if (Suffix(anchorId, "stack.node:") is { } repo)
+        {
+            var match = _repoBoxes.FirstOrDefault(b => b.Repo == repo);
+            if (match.Repo is null) return false;
+            bounds = match.Rect;
+            return true;
+        }
+
+        if (Suffix(anchorId, "stack.pin:") is { } pin)
+        {
+            var slash = pin.IndexOf('/');
+            return slash > 0 && _pinHit.TryGetValue((pin[..slash], pin[(slash + 1)..]), out bounds);
+        }
+
+        return false;
+
+        static string? Suffix(string id, string prefix)
+            => id.StartsWith(prefix, StringComparison.Ordinal) ? id[prefix.Length..] : null;
+    }
 
     public static readonly StyledProperty<WiringGraph?> GraphProperty =
         AvaloniaProperty.Register<WiringCanvas, WiringGraph?>(nameof(Graph));

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        xmlns:coach="clr-namespace:Sprig.App.Coach"
         x:Class="Sprig.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1280" Height="820"
@@ -96,6 +97,15 @@
                 <!-- Pinned to the bottom of the nav, below the workflow pages -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="2">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
+                    <!-- Entering the tour rebuilds the whole window against a demo store, so this is not
+                         a page and deliberately isn't in the workflow list. Hidden while in the tour —
+                         the banner is the way out. -->
+                    <Button Classes="nav" Command="{Binding EnterTourCommand}" IsVisible="{Binding !IsTour}">
+                        <Border Classes="navitem">
+                            <TextBlock Text="Show me a working setup" FontSize="14" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                        </Border>
+                    </Button>
                     <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}">
                         <Border Classes="navitem" Classes.active="{Binding Settings.IsActive}">
                             <TextBlock Text="Settings" FontSize="14"
@@ -125,7 +135,10 @@
                             </DataTemplate>
                             <!-- Navigable page (matches any PageViewModel subclass) -->
                             <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
+                                <!-- Anchor id bound from the page title (nav:<Title>), so a coachmark can point
+                                     at a specific nav entry — e.g. the tour showing where you'd go next. -->
                                 <Button Classes="nav"
+                                        AutomationProperties.AutomationId="{Binding Title, StringFormat='nav:{0}'}"
                                         Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
                                         CommandParameter="{Binding}">
                                     <Border Classes="navitem" Classes.active="{Binding IsActive}">
@@ -150,6 +163,28 @@
 
         <!-- Content -->
         <DockPanel Grid.Column="1" LastChildFill="True">
+            <!-- Sandbox banner. Persistent and unmissable: everything on screen while this shows is a
+                 throwaway sample, and the user must never mistake it for their own setup. Neutral copy so it
+                 reads true in both the tour (fully built) and a guide (built only part-way). -->
+            <Border DockPanel.Dock="Top" Padding="16,10" Background="#3BF59E0B"
+                    BorderBrush="{StaticResource WarnBrush}" BorderThickness="0,0,0,1"
+                    IsVisible="{Binding IsTour}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="SANDBOX" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
+                                   Foreground="{StaticResource WarnBrush}" />
+                        <TextBlock Text="You're in a throwaway sample built for learning. Nothing here is yours, and it's all deleted when you leave — so click around freely."
+                                   FontSize="12" Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="link" Content="Leave, keep the sample"
+                            Command="{Binding ExitTourKeepingSampleCommand}" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="Exit tour" Command="{Binding ExitTourCommand}"
+                            Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold"
+                            Padding="14,8" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+            <!-- The tour is now coachmarks (the CoachOverlay below), not a top strip — so it dims the page and
+                 rings each target like the guides do. -->
             <!-- Update-available notice (notification only; does not auto-update) -->
             <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
                     IsVisible="{Binding UpdateNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
@@ -200,5 +235,10 @@
 
             <ContentControl Content="{Binding CurrentPage}" Margin="0" />
         </DockPanel>
+
+        <!-- Coachmark layer: a sibling of everything, spanning both columns, so it can highlight a nav item,
+             a page control, or a shape drawn inside the wiring canvas. AnchorRoot is set in code-behind. -->
+        <coach:CoachOverlay x:Name="Coachmarks" Grid.Column="0" Grid.ColumnSpan="2"
+                            DataContext="{Binding Coach}" />
     </Grid>
 </Window>

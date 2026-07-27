@@ -28,6 +28,32 @@ public partial class InputEditRow : ObservableObject
     /// <summary>Optional port restriction spec (e.g. <c>8100-8103</c>) — see <c>PortSetSpec</c>.</summary>
     [ObservableProperty] private string _allowedPorts = "";
 
+    /// <summary>
+    /// Whether this row's port-restriction editor is showing.
+    ///
+    /// Restricting ports is an advanced case (the classic one is Auth0 callback URLs that must be
+    /// pre-registered per port); nearly every input leaves it blank. So the field stays behind a link until
+    /// it's wanted, rather than sitting at the same visual weight as the input's name.
+    /// </summary>
+    [ObservableProperty] private bool _restricting;
+
+    /// <summary>Offer the restriction editor — nothing set, and not asked for yet.</summary>
+    public bool ShowRestrictLink => !Restricting && string.IsNullOrWhiteSpace(AllowedPorts);
+
+    /// <summary>Show the editor once asked for, or whenever a restriction already exists.</summary>
+    public bool ShowRestrictBox => !ShowRestrictLink;
+
+    partial void OnRestrictingChanged(bool value) => RaiseRestrictVisibility();
+    partial void OnAllowedPortsChanged(string value) => RaiseRestrictVisibility();
+
+    void RaiseRestrictVisibility()
+    {
+        OnPropertyChanged(nameof(ShowRestrictLink));
+        OnPropertyChanged(nameof(ShowRestrictBox));
+    }
+
+    [RelayCommand] private void Restrict() => Restricting = true;
+
     [RelayCommand] private void Remove() => _remove(this);
 }
 

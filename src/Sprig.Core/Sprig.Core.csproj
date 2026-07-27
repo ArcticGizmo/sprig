@@ -14,4 +14,19 @@
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Guided-tour fixtures: the two sample repos' files, embedded so they ship with the app and
+         are written to disk verbatim. LogicalName is set explicitly (rather than relying on the
+         path-derived default) so SampleFixtures can name them without tracking the folder layout. -->
+    <EmbeddedResource Include="Demo\Fixtures\api.sprig.json" LogicalName="Sprig.Demo.api.sprig.json" />
+    <EmbeddedResource Include="Demo\Fixtures\api.env.template" LogicalName="Sprig.Demo.api.env.template" />
+    <EmbeddedResource Include="Demo\Fixtures\api.gitignore" LogicalName="Sprig.Demo.api.gitignore" />
+    <EmbeddedResource Include="Demo\Fixtures\api.docker-compose.yml" LogicalName="Sprig.Demo.api.docker-compose.yml" />
+    <EmbeddedResource Include="Demo\Fixtures\api.README.md" LogicalName="Sprig.Demo.api.README.md" />
+    <EmbeddedResource Include="Demo\Fixtures\web.sprig.json" LogicalName="Sprig.Demo.web.sprig.json" />
+    <EmbeddedResource Include="Demo\Fixtures\web.env.template" LogicalName="Sprig.Demo.web.env.template" />
+    <EmbeddedResource Include="Demo\Fixtures\web.gitignore" LogicalName="Sprig.Demo.web.gitignore" />
+    <EmbeddedResource Include="Demo\Fixtures\web.README.md" LogicalName="Sprig.Demo.web.README.md" />
+  </ItemGroup>
+
 </Project>

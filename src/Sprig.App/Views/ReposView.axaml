@@ -33,7 +33,11 @@
                      ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="core:RegisteredRepo">
-                        <StackPanel Spacing="2" Margin="2,6">
+                        <!-- Anchor id is bound from the row's own data (repo.row:<name>), so a coachmark can
+                             spotlight one specific repo among many — the list-row equivalent of the canvas's
+                             per-port anchors. Resolved by the same visual-tree walk as any chrome anchor. -->
+                        <StackPanel Spacing="2" Margin="2,6"
+                                    AutomationProperties.AutomationId="{Binding Name, StringFormat='repo.row:{0}'}">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding Path}" FontSize="11" Foreground="{StaticResource MutedBrush}"
                                        TextTrimming="CharacterEllipsis" />

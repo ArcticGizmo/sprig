@@ -46,6 +46,12 @@ public static class Anchors
     /// <summary>One repo input's pin (its jack + label), e.g. <c>stack.pin:sample-web/apiUrl</c>.</summary>
     public static string StackPin(string repo, string input) => $"stack.pin:{repo}/{input}";
 
+    // --- List rows (AutomationId bound from row data in XAML) ---
+
+    /// <summary>A specific repo's row in the Repos list, e.g. <c>repo.row:sample-api</c> — so a coachmark
+    /// can spotlight one repo among several and dim the rest.</summary>
+    public static string RepoRow(string name) => $"repo.row:{name}";
+
     /// <summary>The canvas's auto-wire button (drawn, not a control).</summary>
     public const string StackAutoWire = "stack.autoWire";
 }

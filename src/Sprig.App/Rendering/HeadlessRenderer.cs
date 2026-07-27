@@ -116,6 +116,9 @@ internal static class HeadlessRenderer
             // it declares. Also renders the Learn list before and after, to show the completion tick.
             unresolved += RenderRegisterRepoGuide(outDir);
 
+            // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
+            unresolved += RenderRowHighlight(outDir);
+
             // The "what's new" changelog window (the post-update popup / About viewer).
             var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
             var sections = markdown is null
@@ -320,6 +323,53 @@ internal static class HeadlessRenderer
         {
             unresolved++;
             Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Prove the row-level spotlight: point a coachmark at one specific repo row (anchored from its data)
+    /// with two repos registered, so the cut-out lands on exactly that row and everything else dims.
+    /// </summary>
+    static int RenderRowHighlight(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-row-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            // Show the repo list and let its rows realise, then spotlight just sample-api.
+            vm.CurrentPage = vm.Pages.OfType<ReposViewModel>().First();
+            Dispatcher.UIThread.RunJobs();
+            Dispatcher.UIThread.RunJobs();
+
+            var mark = new CoachMark(
+                Sprig.App.Coach.Anchors.RepoRow(Sprig.Core.Demo.SampleFixtures.ApiRepo),
+                "This is a repo",
+                "Each row is a repo sprig knows about. Everything else is dimmed so your eye goes straight to this one.")
+            { Side = CoachSide.Right };
+
+            Pump(vm.Coach.StartAsync([mark]));
+            unresolved += CaptureCoachStep(window, vm, outDir, "row_highlight");
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"row-highlight render failed: {ex.Message}");
         }
         finally
         {

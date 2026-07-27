@@ -77,6 +77,9 @@ public class CoachAnchorTests
             .EnumerateFiles(AppRoot(), "*.axaml", SearchOption.AllDirectories)
             .SelectMany(file => pattern.Matches(File.ReadAllText(file)))
             .Select(m => m.Groups[1].Value)
+            // Skip binding expressions (repo.row:<name> and the like): those are dynamic anchors built from
+            // row data, validated by their Anchors.* helper, not literal vocabulary entries.
+            .Where(id => !id.StartsWith('{'))
             .ToList();
     }
 

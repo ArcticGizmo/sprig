@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Sprig.App.Coach;
+using Sprig.App.ViewModels;
 
 namespace Sprig.Tests.App;
 
@@ -42,7 +43,7 @@ public class CoachAnchorTests
     {
         var chrome = AnchorIdsInViews();
 
-        foreach (var mark in CoachSpikeScript.Marks())
+        foreach (var mark in CoachSpikeScript.Marks(new Navigator()))
         {
             // Drawn anchors (canvas contents) aren't in XAML — they're resolved through IAnchorSource, and
             // their prefixes are owned by WiringCanvas.TryGetAnchor.

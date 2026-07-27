@@ -283,10 +283,32 @@ public partial class ReposViewModel : PageViewModel
         catch { return []; }
     }
 
+    /// <summary>
+    /// A folder path a guide has suggested, so opening Add repo lands with it already filled in. Cleared
+    /// once used. Lets "register your first repo" hand-hold to a single Confirm without the user having to
+    /// know where the sample lives.
+    /// </summary>
+    string? _primedPath;
+
+    /// <summary>Pre-fill the next Add-repo modal with this folder (a coachmark precondition).</summary>
+    public void PrimeAdd(string path) => _primedPath = path;
+
+    /// <summary>
+    /// Register a repo by path, driving the exact same flow as the modal's Confirm — so a guide's "Show me"
+    /// lands the user in the same editor, with the same StoreChanged, as doing it by hand. Detection is
+    /// synchronous, so <see cref="PathHasConfig"/> is correct immediately after setting the path.
+    /// </summary>
+    public Task AddPathAsync(string path)
+    {
+        NewPath = path;
+        return AddInternal(runInit: !PathHasConfig);
+    }
+
     [RelayCommand]
     private void OpenAdd()
     {
-        NewPath = "";
+        NewPath = _primedPath ?? "";
+        _primedPath = null;
         Error = null;
         Status = null;
         IsAdding = true;

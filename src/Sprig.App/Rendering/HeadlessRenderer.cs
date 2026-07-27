@@ -112,6 +112,10 @@ internal static class HeadlessRenderer
             // nothing is exactly the bug this harness exists to catch, so it must break the build.
             var unresolved = RenderCoachSpike(outDir);
 
+            // Guide 1, driven the way a user would: register the sample repo via "Show me", then read what
+            // it declares. Also renders the Learn list before and after, to show the completion tick.
+            unresolved += RenderRegisterRepoGuide(outDir);
+
             // The "what's new" changelog window (the post-update popup / About viewer).
             var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
             var sections = markdown is null
@@ -231,7 +235,7 @@ internal static class HeadlessRenderer
             Dispatcher.UIThread.RunJobs();
 
             var vm = (MainWindowViewModel)window.DataContext!;
-            var marks = Sprig.App.Coach.CoachSpikeScript.Marks();
+            var marks = vm.CoachSpikeMarks;
             Pump(vm.Coach.StartAsync(marks));
 
             for (var i = 0; i < marks.Count; i++)
@@ -266,6 +270,88 @@ internal static class HeadlessRenderer
         }
 
         return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 1 ("Register your first repo") the way a user experiences it: the Learn list, then each
+    /// coachmark, driving the middle (waiting) step via "Show me" so the auto-advance path is exercised, then
+    /// the Learn list again with its completion tick. Any step whose anchor doesn't resolve is a failure.
+    /// </summary>
+    static int RenderRegisterRepoGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All[0];
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.RepoOnDisk);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            // The Learn list, before starting.
+            vm.CurrentPage = vm.Learn;
+            SettleFrame(window, outDir, "guide1_learn");
+
+            // Start the guide; the first (waiting) step highlights Add repo.
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step1");
+
+            // The user is stuck → "Show me" registers the repo, which fires StoreChanged and auto-advances.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step2");
+
+            // Read the declared inputs, then finish.
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step3");
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done → onFinished
+
+            // The Learn list again, now ticked.
+            vm.Learn.Refresh();
+            vm.CurrentPage = vm.Learn;
+            SettleFrame(window, outDir, "guide1_learn_done");
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>Let two layout passes run, capture the current coach frame, and report an unresolved anchor.</summary>
+    static int CaptureCoachStep(MainWindow window, MainWindowViewModel vm, string outDir, string name)
+    {
+        Dispatcher.UIThread.RunJobs();
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
+        if (!vm.Coach.AnchorMissing) return 0;
+        Console.Error.WriteLine($"{name}: anchor '{vm.Coach.Mark?.Anchor}' did not resolve");
+        return 1;
+    }
+
+    static void SettleFrame(MainWindow window, string outDir, string name)
+    {
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
+    }
+
+    /// <summary>Tick a guide complete in the demo store's own settings, so the render can show the tick.</summary>
+    static void MarkDemoGuideDone(AppServices demo, string guideId)
+    {
+        var settings = demo.Settings.Get();
+        if (!settings.CompletedGuides.Contains(guideId)) settings.CompletedGuides.Add(guideId);
+        demo.Settings.Save(settings);
     }
 
     /// <summary>

@@ -56,6 +56,51 @@ public class SampleSetupTests
         }
     }
 
+    [Theory]
+    [InlineData(SampleStage.RepoOnDisk)]
+    [InlineData(SampleStage.ReposRegistered)]
+    [InlineData(SampleStage.StackWired)]
+    [InlineData(SampleStage.Running)]
+    public void BuildTo_stops_at_the_requested_stage_and_reports_it(SampleStage stage)
+    {
+        using var h = new Harness();
+
+        h.Sample.BuildTo(stage);
+
+        Assert.Equal(stage, h.Sample.CurrentStage());
+
+        // Each stage is exactly the one before it plus one more thing — the ladder a guide climbs.
+        Assert.True(Directory.Exists(Path.Combine(h.Sample.SampleReposDir, SampleFixtures.ApiRepo)));
+        Assert.Equal(stage >= SampleStage.ReposRegistered, h.Repos.Get(SampleFixtures.ApiRepo) is not null);
+        Assert.Equal(stage >= SampleStage.StackWired, h.Stacks.Get(SampleFixtures.StackName) is not null);
+        Assert.Equal(stage == SampleStage.Running, h.Sample.Existing() is not null);
+    }
+
+    [Fact]
+    public void BuildTo_resets_a_further_along_sandbox_back_to_an_earlier_stage()
+    {
+        using var h = new Harness();
+
+        h.Sample.BuildTo(SampleStage.Running);
+        Assert.Equal(SampleStage.Running, h.Sample.CurrentStage());
+
+        // Re-entering an earlier guide has to hand back the earlier starting point, not the leftovers of a
+        // later one. Rebuilding from clean is what keeps guides independent.
+        h.Sample.BuildTo(SampleStage.RepoOnDisk);
+
+        Assert.Equal(SampleStage.RepoOnDisk, h.Sample.CurrentStage());
+        Assert.Null(h.Repos.Get(SampleFixtures.ApiRepo));
+        Assert.Null(h.Stacks.Get(SampleFixtures.StackName));
+        Assert.Null(h.Sample.Existing());
+    }
+
+    [Fact]
+    public void CurrentStage_is_null_before_anything_is_built()
+    {
+        using var h = new Harness();
+        Assert.Null(h.Sample.CurrentStage());
+    }
+
     [Fact]
     public void Build_produces_two_repos_three_ports_and_a_worktree_each()
     {

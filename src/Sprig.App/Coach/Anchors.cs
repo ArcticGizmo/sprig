@@ -16,6 +16,7 @@ public static class Anchors
 {
     // --- Chrome (AutomationId in XAML) ---
     public const string ReposAdd = "repos.add";
+    public const string RepoInputs = "repo.inputs";
     public const string SettingsPortsInUse = "settings.portsInUse";
     public const string StackCanvas = "stack.canvas";
 
@@ -30,6 +31,7 @@ public static class Anchors
     public static IReadOnlyList<string> Chrome { get; } =
     [
         ReposAdd,
+        RepoInputs,
         SettingsPortsInUse,
         StackCanvas,
     ];

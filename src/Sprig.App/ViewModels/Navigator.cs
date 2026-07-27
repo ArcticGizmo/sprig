@@ -14,6 +14,7 @@ public sealed class Navigator
     Action<PageViewModel> _navigate = static _ => { };
     Action _startGuide = static () => { };
     Action _enterTour = static () => { };
+    Action<Coach.Guide> _enterGuide = static _ => { };
     PageViewModel? _home;
     ReposViewModel? _repos;
     StacksViewModel? _stacks;
@@ -46,6 +47,35 @@ public sealed class Navigator
     /// swap is involved — only the main window does.
     /// </summary>
     public void EnterTour() => _enterTour();
+
+    /// <summary>Wire the guide launcher (owned by the main window — it resets the sandbox and swaps stores).</summary>
+    public void SetGuideEntry(Action<Coach.Guide> enter) => _enterGuide = enter;
+
+    /// <summary>Start a guided lesson. Routed through here so the Learn page needn't know about the swap.</summary>
+    public void EnterGuide(Coach.Guide guide) => _enterGuide(guide);
+
+    // --- Coachmark preconditions & escape hatches (used by the guides) ---
+
+    /// <summary>Go to Repos and pre-fill the Add-repo modal with a folder, so a guide's Add is one click.</summary>
+    public void PrimeAddRepo(string path)
+    {
+        if (_repos is null) return;
+        Go(_repos);
+        _repos.PrimeAdd(path);
+    }
+
+    /// <summary>Register a repo by path through the real add flow — a guide step's "Show me".</summary>
+    public Task RegisterRepo(string path) => _repos?.AddPathAsync(path) ?? Task.CompletedTask;
+
+    /// <summary>Select an already-registered repo and open its editor (so its inputs can be pointed at).</summary>
+    public void EditRepo(string name)
+    {
+        if (_repos is null) return;
+        Go(_repos);
+        _repos.Selected = _repos.Repos.FirstOrDefault(r => r.Name == name) ?? _repos.Selected;
+        if (_repos.Selected is not null && _repos.BeginEditCommand.CanExecute(null))
+            _repos.BeginEditCommand.Execute(null);
+    }
 
     public void GoHome() => Go(_home);
     public void GoToRepos() => Go(_repos);

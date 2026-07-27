@@ -3,10 +3,10 @@
 A milestone-based plan for an **interactive walkthrough** that shows a new user what a *working*
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
-> **Status: M1–M5 shipped; M6 (coachmarks) spiked and triaged — see §11.** Full suite green
-> (436 tests, up from 393), engine behaviour unchanged,
-> verified via headless render (`sprig-gui render <dir>` → `tour_stop1..5`, `tour_stop_infra`,
-> `tour_building`, and the per-page `tour_*` frames) — see `captures/20260727-guided-tour-m*`.
+> **Status: M1–M5 shipped; M6 (coachmarks) spiked, triaged, and the first-run fixes done — see §11;
+> M7 (guide library) vertical slice shipped — see §12.** Full suite green (460 tests, up from 393),
+> engine behaviour unchanged, verified via headless render (`sprig-gui render <dir>` → `tour_*`,
+> `coach_case*`, and `guide1_*`) — see `captures/20260727-*`.
 > Three departures from the plan as written are recorded in §10.
 
 The problem this solves: sprig's learning curve is front-loaded. A first-run user faces three
@@ -533,3 +533,81 @@ drag-to-wire mark is consequently less about *how to wire* and more about *how t
 Still open: whether coached marks should advance on *the user doing the thing* rather than pressing Next.
 More engaging, considerably more machinery (per-mark completion predicates), and it can trap someone who
 can't work out the gesture. Recommend Next-to-advance first, and revisit only if the flow feels passive.
+
+---
+
+## 12. M7 — the guide library (vertical slice)
+
+§11 built a coach that *narrates* a finished setup. That teaches the model but never hand-holds a user
+through *doing* a task, which is what "so they know where to look" actually asks for. M7 is the layer that
+does: a library of small lessons, each teaching one concept by walking the user through performing it in the
+throwaway sandbox. This is the vertical slice — the machinery plus guide 1 end to end — deliberately scoped
+so the risky parts are proven before four more guides' worth of copy is written.
+
+### 12.1 What a guide is
+
+A **guide** is one concept + the sandbox stage it starts from + an ordered list of coachmarks. Two kinds of
+step, and the difference is the whole point:
+
+- **Explanation** — a Next button, for something already on screen.
+- **Waiting** (`Completed` predicate + `ShowMe`) — the callout highlights a control and the guide *waits*
+  for the user to actually do the thing, advancing itself when the store change it's watching for arrives.
+  Nobody is ever trapped: **Show me** performs the action for them, and because it drives the same store
+  mutation, the auto-advance can't diverge from the user's own route.
+
+Advance-on-action was the deferred question from §11.4; the user's brief ("hand-hold through the entire
+experience") turns it from optional to required. It's the mechanism that makes a guide feel like guidance
+rather than a slideshow.
+
+### 12.2 Staged fixtures — the sandbox before the lesson
+
+A guide about *registering* a repo has to start with a repo on disk that *isn't registered yet* — the
+opposite of the tour's fully-built end state. So `SampleSetup` gained `BuildTo(SampleStage)` over four
+rungs — `RepoOnDisk → ReposRegistered → StackWired → Running` — each the one before it plus one step. A
+guide names the stage just *before* the concept it teaches, and entering it rebuilds the sandbox from clean
+to that stage. Rebuilding (rather than reusing) is what keeps guides independent and replayable: a
+half-finished previous attempt can never leak into the next.
+
+### 12.3 The ladder
+
+Only guide 1 is authored (the slice). The rest are the plan, not code yet:
+
+| # | Guide | Starts at | Teaches |
+|---|---|---|---|
+| 1 | **Register your first repo** ✅ | `RepoOnDisk` | registration; what an input *is* |
+| 2 | Wire a one-repo stack | `ReposRegistered` | ports, bindings — the simplest wiring |
+| 3 | Create and run a workspace | `StackWired` | worktrees, port allocation, up/down |
+| 4 | Two repos that talk to each other | `ReposRegistered` | the polyrepo lesson: shared ports, the `apiUrl` case |
+| 5 | When something drifts | `Running` | breaks a worktree, then repairs it — `doctor`/reconcile, impossible to show on a healthy setup |
+
+A **Learn** nav entry lists them with a duration and a completion tick; progress is recorded in
+`SprigSettings.CompletedGuides` against the **real** store (the demo store a guide runs in is deleted on
+exit, so completion can't live there).
+
+### 12.4 Guide 1, verified end to end
+
+`captures/20260727-guide1-v2/guide1_*`: the Learn list → the waiting step highlighting **Add repo** with the
+modal pre-primed to the sample folder (manual route is a single Confirm) → **Show me** registering the repo,
+which auto-advances into the editor → the callout on the repo's declared inputs → the Learn list again with
+its tick and a **Replay** button. The headless renderer drives this exactly as a user would and fails the
+render if any step's anchor doesn't resolve.
+
+### 12.5 Decisions and cost
+
+- **A guide reuses the tour's store swap, banner, and exit.** A guide runs in the demo store, so the sandbox
+  banner and its exit are already there. The tour *narration* strip is now started explicitly by the tour
+  path only (not from the view-model constructor), so a guide doesn't also show the tour script. The banner
+  copy was made stage-neutral, because "a stack and a running workspace" is false at `RepoOnDisk`.
+- **Steps close over `nav`/`services` at build time**, so the runner just invokes `Prepare` / `Completed` /
+  `ShowMe` and never threads app state through the walk. Wait predicates are store-shaped (`repos.Get(...)`),
+  and `StoreChanged` is treated as UI-thread-raised — the same assumption `HomeViewModel` already relies on,
+  which also keeps the machinery unit-testable with no Avalonia dispatcher.
+- **The honest cost is the remaining four guides.** The machinery is done and proven; guides 2–5 are
+  authored copy plus a completion predicate each. Guide 5 (drift) needs a "break a worktree" sandbox action,
+  the one rung that isn't just fixture staging.
+- **Escape hatch is "Show me does it for you"**, chosen over skip-the-step (which can leave the sandbox in a
+  state a later step assumes) — so the guide is never a dead end.
+
+Still open: whether a waiting step should also accept a UI-only transition (e.g. "the modal is open") as its
+trigger, not just a store change. Guide 1 sidesteps it by priming the modal so registration is one store
+mutation; a guide that needs to wait on pure UI state would want a lightweight UI signal or a short poll.

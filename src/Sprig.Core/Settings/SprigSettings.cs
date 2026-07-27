@@ -27,6 +27,12 @@ public sealed class SprigSettings
     /// </summary>
     public string? LastSeenVersion { get; set; }
 
+    /// <summary>
+    /// Ids of the guided lessons the user has finished, so the Learn list can tick them off. Recorded
+    /// against the <b>real</b> store, not the throwaway demo store a guide runs in.
+    /// </summary>
+    public List<string> CompletedGuides { get; set; } = new();
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -40,5 +46,6 @@ public sealed class SprigSettings
         RestrictedPorts = new List<int>(RestrictedPorts),
         ShowChangelogOnUpdate = ShowChangelogOnUpdate,
         LastSeenVersion = LastSeenVersion,
+        CompletedGuides = new List<string>(CompletedGuides),
     };
 }

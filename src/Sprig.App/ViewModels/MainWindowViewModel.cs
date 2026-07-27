@@ -11,6 +11,12 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>Owns the window and the store swap; null in headless renders and VM tests.</summary>
     readonly AppSession? _session;
 
+    /// <summary>The store this window is bound to — the demo store during a tour or guide.</summary>
+    readonly AppServices _services;
+
+    /// <summary>Navigation + coachmark preconditions for scripts built at runtime.</summary>
+    readonly Navigator _nav;
+
     /// <summary>The navigable pages, in workflow order: Home, then Repos, Stacks, Workspaces.</summary>
     public IReadOnlyList<PageViewModel> Pages { get; }
 
@@ -26,12 +32,26 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The coachmark layer: highlights one element at a time and explains it.</summary>
     public CoachViewModel Coach { get; }
 
+    /// <summary>The coachmark spike's three marks, bound to this window's navigator (headless render uses it).</summary>
+    internal IReadOnlyList<CoachMark> CoachSpikeMarks => Sprig.App.Coach.CoachSpikeScript.Marks(_nav);
+
+    /// <summary>
+    /// Start a guide's coachmarks over the (already prepared) demo store. Called by <see cref="AppSession"/>
+    /// after it has reset the sandbox and bound this window. <paramref name="onFinished"/> fires only if the
+    /// user completes the guide, so completion is recorded but abandonment isn't.
+    /// </summary>
+    public Task StartGuide(Sprig.App.Coach.Guide guide, System.Action onFinished)
+        => Coach.StartAsync(guide.Build(_nav, _services), onFinished);
+
     /// <summary>Run the coachmark spike — three marks proving the mechanism against its three anchor cases.</summary>
     [RelayCommand]
-    private Task StartCoachSpike() => Coach.StartAsync(Sprig.App.Coach.CoachSpikeScript.Marks());
+    private Task StartCoachSpike() => Coach.StartAsync(CoachSpikeMarks);
 
     /// <summary>The Settings page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
     public SettingsViewModel Settings { get; }
+
+    /// <summary>The Learn page — the library of guided lessons.</summary>
+    public LearnViewModel Learn { get; }
 
     /// <summary>The About page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
     public AboutViewModel About { get; }
@@ -65,8 +85,10 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(AppServices services, AppSession? session = null, Func<bool>? dockerIsRunning = null)
     {
         _session = session;
+        _services = services;
         IsTour = services.IsDemoStore;
         var nav = new Navigator();
+        _nav = nav;
         var repos = new ReposViewModel(services);
         var stacks = new StacksViewModel(services, nav);
         var workspaces = new WorkspacesViewModel(services, nav);
@@ -79,12 +101,14 @@ public partial class MainWindowViewModel : ViewModelBase
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
         nav.SetTourLauncher(() => EnterTourCommand.Execute(null));
+        nav.SetGuideEntry(guide => EnterGuideCommand.Execute(guide));
 
+        Learn = new LearnViewModel(services, nav);
         About = new AboutViewModel();
 
         // Settings + About are navigable (so they get active-state highlighting) but live in the
         // bottom nav slot rather than the workflow list, so they're not in NavItems.
-        Pages = [home, repos, stacks, workspaces, Settings, About];
+        Pages = [home, repos, stacks, workspaces, Learn, Settings, About];
         NavItems =
         [
             home,
@@ -93,22 +117,26 @@ public partial class MainWindowViewModel : ViewModelBase
             stacks,
             new NavHeaderViewModel("Run"),
             workspaces,
+            new NavHeaderViewModel("Learn"),
+            Learn,
         ];
 
         // The tour offers to start containers only when a daemon is actually up; the probe shells out to
         // docker, so it's handed over as a func for StartAsync to run off the UI thread.
         Tour = new TourGuideViewModel(nav, dockerIsRunning ?? services.Docker.IsEngineRunning);
-        Coach = new CoachViewModel(nav);
+        Coach = new CoachViewModel(services);
 
         // Land on Home (the front door), not on the last step of the pipeline.
         _currentPage = home;
         home.IsActive = true;
 
-        // In a tour the narration is the point, so it starts itself rather than waiting to be found.
-        if (IsTour) _ = Tour.StartAsync();
-
+        // The tour narration is NOT auto-started here, because a guide runs in the same demo store and must
+        // not also show the tour script. AppSession starts whichever one it entered.
         _ = CheckForUpdatesAsync();
     }
+
+    /// <summary>Begin the guided tour's narration strip. Called by <see cref="AppSession"/> for the tour only.</summary>
+    internal Task StartTourNarration() => Tour.StartAsync();
 
     [RelayCommand]
     private void Navigate(PageViewModel page) => CurrentPage = page;
@@ -141,6 +169,14 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (_session is null) return;
         await _session.ExitTourAsync(deleteSample: false);
+    }
+
+    /// <summary>Start a guided lesson — resets the sandbox to its stage, then hand-holds the user through it.</summary>
+    [RelayCommand]
+    private async Task EnterGuide(Sprig.App.Coach.Guide? guide)
+    {
+        if (_session is null || guide is null) return;
+        await _session.EnterGuideAsync(guide, modal => OperationStarted?.Invoke(modal));
     }
 
     partial void OnCurrentPageChanged(PageViewModel value)

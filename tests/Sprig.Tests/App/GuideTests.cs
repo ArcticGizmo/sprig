@@ -1,0 +1,136 @@
+using Sprig.App;
+using Sprig.App.Coach;
+using Sprig.App.ViewModels;
+using Sprig.Core.Demo;
+
+namespace Sprig.Tests.App;
+
+/// <summary>
+/// Cover for the guide layer: the waiting/advance machinery in <see cref="CoachViewModel"/>, and guide 1
+/// driven the way a user drives it. A guide hand-holds by waiting for the user to act, so the behaviour that
+/// matters most is that a store change advances a waiting step, and "Show me" reaches the same place.
+/// </summary>
+public class GuideTests
+{
+    /// <summary>A demo store at a chosen stage, with a real MainWindowViewModel over it.</summary>
+    sealed class Harness : IDisposable
+    {
+        public string Root { get; }
+        public AppServices Services { get; }
+        public MainWindowViewModel Vm { get; }
+
+        public Harness(SampleStage stage)
+        {
+            Root = Path.Combine(Path.GetTempPath(), "sprig-guide-test-" + Guid.NewGuid().ToString("N"));
+            Services = new AppServices(Root, isDemoStore: true);
+            Services.Sample.BuildTo(stage);
+            Vm = new MainWindowViewModel(Services, dockerIsRunning: () => false);
+        }
+
+        public void Dispose()
+        {
+            try { Services.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    static Guide RegisterRepo => Guides.All.Single(g => g.Id == Guides.RegisterRepoId);
+
+    [Fact]
+    public void The_catalog_exposes_guide_one()
+    {
+        var guide = RegisterRepo;
+        Assert.Equal(SampleStage.RepoOnDisk, guide.Stage);
+        Assert.False(string.IsNullOrWhiteSpace(guide.Title));
+        Assert.False(string.IsNullOrWhiteSpace(guide.Subtitle));
+    }
+
+    [Fact]
+    public async Task Guide_one_starts_on_a_waiting_step_that_highlights_add_repo()
+    {
+        using var h = new Harness(SampleStage.RepoOnDisk);
+
+        await h.Vm.StartGuide(RegisterRepo, onFinished: () => { });
+
+        Assert.True(h.Vm.Coach.IsActive);
+        Assert.Equal(Anchors.ReposAdd, h.Vm.Coach.Mark!.Anchor);
+        Assert.True(h.Vm.Coach.IsWaiting, "the first step should wait for the user to register the repo");
+    }
+
+    [Fact]
+    public async Task Registering_the_repo_advances_the_waiting_step_by_itself()
+    {
+        using var h = new Harness(SampleStage.RepoOnDisk);
+        await h.Vm.StartGuide(RegisterRepo, onFinished: () => { });
+
+        // The user registers sample-api however they like — here through the repo page's own add flow, which
+        // is what fires StoreChanged. The waiting step is watching for exactly that.
+        var apiPath = Path.Combine(h.Services.Sample.SampleReposDir, SampleFixtures.ApiRepo);
+        await new ReposViewModel(h.Services).AddPathAsync(apiPath);
+
+        Assert.Equal(1, h.Vm.Coach.Index); // advanced off the waiting step on its own
+        Assert.Equal(Anchors.RepoInputs, h.Vm.Coach.Mark!.Anchor);
+    }
+
+    [Fact]
+    public async Task Show_me_reaches_the_same_place_as_doing_it_by_hand()
+    {
+        using var h = new Harness(SampleStage.RepoOnDisk);
+        await h.Vm.StartGuide(RegisterRepo, onFinished: () => { });
+
+        Assert.Null(h.Services.Repos.Get(SampleFixtures.ApiRepo));
+
+        await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);
+
+        // Show me registered the repo and, via the same StoreChanged path, advanced the wait.
+        Assert.NotNull(h.Services.Repos.Get(SampleFixtures.ApiRepo));
+        Assert.Equal(1, h.Vm.Coach.Index);
+    }
+
+    [Fact]
+    public async Task Finishing_the_last_step_reports_completion_but_skipping_does_not()
+    {
+        using var h = new Harness(SampleStage.RepoOnDisk);
+        var finished = 0;
+        await h.Vm.StartGuide(RegisterRepo, onFinished: () => finished++);
+
+        await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);      // step 1 → 2
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);        // step 2 → 3
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);        // Done
+
+        Assert.False(h.Vm.Coach.IsActive);
+        Assert.Equal(1, finished);
+    }
+
+    [Fact]
+    public async Task Skipping_does_not_report_completion()
+    {
+        using var h = new Harness(SampleStage.RepoOnDisk);
+        var finished = 0;
+        await h.Vm.StartGuide(RegisterRepo, onFinished: () => finished++);
+
+        h.Vm.Coach.SkipCommand.Execute(null);
+
+        Assert.False(h.Vm.Coach.IsActive);
+        Assert.Equal(0, finished);
+    }
+
+    [Fact]
+    public void Learn_page_reflects_completion_from_settings()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+
+        var before = new LearnViewModel(services, new Navigator());
+        Assert.False(before.Guides.Single(g => g.Title == RegisterRepo.Title).Completed);
+
+        var settings = services.Settings.Get();
+        settings.CompletedGuides.Add(Guides.RegisterRepoId);
+        services.Settings.Save(settings);
+
+        var after = new LearnViewModel(services, new Navigator());
+        var item = after.Guides.Single(g => g.Title == RegisterRepo.Title);
+        Assert.True(item.Completed);
+        Assert.Equal("Replay", item.ActionLabel);
+    }
+}

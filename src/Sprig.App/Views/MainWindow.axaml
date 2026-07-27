@@ -160,16 +160,17 @@
 
         <!-- Content -->
         <DockPanel Grid.Column="1" LastChildFill="True">
-            <!-- Guided tour banner. Persistent and unmissable: everything on screen while this shows is
-                 a throwaway sample, and the user must never mistake it for their own setup. -->
+            <!-- Sandbox banner. Persistent and unmissable: everything on screen while this shows is a
+                 throwaway sample, and the user must never mistake it for their own setup. Neutral copy so it
+                 reads true in both the tour (fully built) and a guide (built only part-way). -->
             <Border DockPanel.Dock="Top" Padding="16,10" Background="#3BF59E0B"
                     BorderBrush="{StaticResource WarnBrush}" BorderThickness="0,0,0,1"
                     IsVisible="{Binding IsTour}">
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
                     <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
-                        <TextBlock Text="GUIDED TOUR" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
+                        <TextBlock Text="SANDBOX" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
                                    Foreground="{StaticResource WarnBrush}" />
-                        <TextBlock Text="This is a working sample sprig built for you — two repos, a stack, and a running workspace. Nothing here is yours, and it all gets deleted when you leave."
+                        <TextBlock Text="You're in a throwaway sample built for learning. Nothing here is yours, and it's all deleted when you leave — so click around freely."
                                    FontSize="12" Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
                     </StackPanel>
                     <Button Grid.Column="1" Classes="link" Content="Leave, keep the sample"

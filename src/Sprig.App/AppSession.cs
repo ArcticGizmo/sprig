@@ -1,8 +1,11 @@
 using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Sprig.App.Coach;
 using Sprig.App.ViewModels;
 using Sprig.App.Views;
+using Sprig.Core.Demo;
+using Sprig.Core.Settings;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -41,6 +44,7 @@ public sealed class AppSession(Window window)
         if (await AppServices.RunAsync(() => demo.Sample.Existing()) is not null)
         {
             Bind(demo);
+            StartTourNarration();
             return;
         }
 
@@ -55,6 +59,7 @@ public sealed class AppSession(Window window)
             modal.Finish("Sample setup ready — this is what a working sprig looks like.",
                 WorkspaceStepState.Done);
             Bind(demo);
+            StartTourNarration();
         }
         catch (Exception ex)
         {
@@ -62,6 +67,55 @@ public sealed class AppSession(Window window)
             // the real store, which was never touched.
             modal.Finish($"Couldn't build the sample: {ex.Message}", WorkspaceStepState.Error);
         }
+    }
+
+    /// <summary>
+    /// Reset the demo sandbox to the guide's starting stage, bind the window to it, and start the guide's
+    /// coachmarks. A guide always rebuilds the sandbox from clean (it hands the user a known starting point),
+    /// so re-entering a guide can never inherit a previous run's mess.
+    /// </summary>
+    public async Task EnterGuideAsync(Guide guide, Action<OperationProgressViewModel> showProgress)
+    {
+        var demo = new AppServices(SprigPaths.DemoRoot, isDemoStore: true);
+
+        var modal = new OperationProgressViewModel($"Setting up: {guide.Title}");
+        modal.Load(SampleSetup.PlanBuild(guide.Stage));
+        showProgress(modal);
+
+        try
+        {
+            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
+            await AppServices.RunAsync(() => demo.Sample.BuildTo(guide.Stage, progress));
+            modal.Finish("Ready — follow the highlights.", WorkspaceStepState.Done);
+        }
+        catch (Exception ex)
+        {
+            // The sandbox unwinds itself on failure; stay on the real store, which was never touched.
+            modal.Finish($"Couldn't set up the lesson: {ex.Message}", WorkspaceStepState.Error);
+            return;
+        }
+
+        Bind(demo);
+        if (window.DataContext is MainWindowViewModel vm)
+            _ = vm.StartGuide(guide, () => MarkGuideComplete(guide.Id));
+    }
+
+    /// <summary>
+    /// Record a finished guide against the <b>real</b> store's settings — never the demo store's, which is
+    /// deleted on exit. Reads and writes a real settings store directly, independent of whichever store the
+    /// window is currently bound to.
+    /// </summary>
+    static void MarkGuideComplete(string guideId)
+    {
+        try
+        {
+            var settingsStore = new FileSettingsStore(new SprigPaths());
+            var settings = settingsStore.Get();
+            if (settings.CompletedGuides.Contains(guideId)) return;
+            settings.CompletedGuides.Add(guideId);
+            settingsStore.Save(settings);
+        }
+        catch { /* completion ticks are a nicety; never let one fail a lesson */ }
     }
 
     /// <summary>
@@ -82,5 +136,10 @@ public sealed class AppSession(Window window)
         Services = services;
         window.DataContext = new MainWindowViewModel(services, this);
         window.Title = MainWindowViewModel.TitleFor(services);
+    }
+
+    void StartTourNarration()
+    {
+        if (window.DataContext is MainWindowViewModel vm) _ = vm.StartTourNarration();
     }
 }

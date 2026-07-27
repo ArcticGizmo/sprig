@@ -10,6 +10,24 @@ public sealed class SampleSetupException(string message, Exception? inner = null
     : Exception(message, inner);
 
 /// <summary>
+/// How far to build the sample. Guides start the sandbox at the stage <i>before</i> the concept they teach,
+/// so the user performs the step themselves: "register your first repo" starts at <see cref="RepoOnDisk"/>,
+/// the polyrepo wiring guide at <see cref="ReposRegistered"/>, and so on. The guided tour uses
+/// <see cref="Running"/> — the whole thing, already done.
+/// </summary>
+public enum SampleStage
+{
+    /// <summary>Sample repos are real git repos on disk, but nothing is registered with sprig yet.</summary>
+    RepoOnDisk,
+    /// <summary>Both repos registered; no stack defined.</summary>
+    ReposRegistered,
+    /// <summary>A stack wiring the repos is saved; no workspace created.</summary>
+    StackWired,
+    /// <summary>A workspace exists — the full worked example.</summary>
+    Running,
+}
+
+/// <summary>
 /// Builds a complete, working sprig setup out of nothing, for the guided tour: two throwaway git
 /// repos, a stack wiring them together, and one workspace created from it.
 ///
@@ -66,16 +84,18 @@ public sealed class SampleSetup(
     }
 
     /// <summary>
-    /// The checklist <see cref="Build"/> reports against, for a UI to render up front. Matches the
-    /// ids <see cref="Build"/> reports, the same contract <c>WorkspaceService.PlanCreate</c> has.
+    /// The checklist <see cref="BuildTo"/> reports against, for a UI to render up front — only the steps that
+    /// actually run for <paramref name="stage"/>, so a guide starting at an early stage doesn't show later
+    /// rows that never complete. Matches the ids <see cref="BuildTo"/> reports.
     /// </summary>
-    public static IReadOnlyList<WorkspaceStep> PlanBuild() =>
-    [
-        new(Steps.Scaffold, "Create two sample repos"),
-        new(Steps.Register, "Register them with sprig"),
-        new(Steps.Stack, "Define a stack that wires them together"),
-        new(Steps.Workspace, $"Create the '{WorkspaceName}' workspace"),
-    ];
+    public static IReadOnlyList<WorkspaceStep> PlanBuild(SampleStage stage = SampleStage.Running)
+    {
+        var steps = new List<WorkspaceStep> { new(Steps.Scaffold, "Create two sample repos") };
+        if (stage >= SampleStage.ReposRegistered) steps.Add(new(Steps.Register, "Register them with sprig"));
+        if (stage >= SampleStage.StackWired) steps.Add(new(Steps.Stack, "Define a stack that wires them together"));
+        if (stage >= SampleStage.Running) steps.Add(new(Steps.Workspace, $"Create the '{WorkspaceName}' workspace"));
+        return steps;
+    }
 
     /// <summary>
     /// The already-built sample, or null if there isn't a usable one. "Usable" means the record
@@ -90,17 +110,30 @@ public sealed class SampleSetup(
     }
 
     /// <summary>
-    /// Build the sample setup, or return the existing one. Idempotent, and safe to call after a
-    /// crash or a half-finished attempt: leftover state is destroyed rather than repaired.
+    /// Build the whole worked example (<see cref="SampleStage.Running"/>), or return the existing one.
+    /// Idempotent, and safe after a crash or a half-finished attempt: leftover state is destroyed rather
+    /// than repaired.
     /// </summary>
     /// <param name="progress">Optional checklist progress from the underlying workspace create.</param>
     public InstanceRecord Build(IProgress<WorkspaceStepProgress>? progress = null)
     {
         MarkStore();
-
         if (Existing() is { } ready) return ready;
+        BuildTo(SampleStage.Running, progress);
+        return Existing()!;
+    }
 
-        // Leftovers from an abandoned attempt: no state here is worth keeping.
+    /// <summary>
+    /// Reset the demo store and build the sample up to (and including) <paramref name="stage"/>. Always
+    /// starts clean — a guide hands the user a known, replayable starting point, so a previous attempt's
+    /// leftovers are cleared rather than reasoned about.
+    /// </summary>
+    public void BuildTo(SampleStage stage, IProgress<WorkspaceStepProgress>? progress = null)
+    {
+        MarkStore();
+
+        // A guide mutates the sandbox (that's the point), so re-entering must reset it. Rebuilding from
+        // scratch each time keeps guides independent and immune to a half-finished previous run.
         if (Directory.Exists(SampleReposDir) || workspaces.Get(WorkspaceName) is not null)
         {
             Destroy();
@@ -114,28 +147,42 @@ public sealed class SampleSetup(
                 ScaffoldRepo(SampleFixtures.ApiRepo, SampleFixtures.ApiFiles);
                 ScaffoldRepo(SampleFixtures.WebRepo, SampleFixtures.WebFiles);
             });
+            if (stage == SampleStage.RepoOnDisk) return;
 
             Run(progress, Steps.Register, () =>
             {
                 repos.Add(Path.Combine(SampleReposDir, SampleFixtures.ApiRepo));
                 repos.Add(Path.Combine(SampleReposDir, SampleFixtures.WebRepo));
             });
+            if (stage == SampleStage.ReposRegistered) return;
 
             Run(progress, Steps.Stack, () => stacks.Save(SampleFixtures.Stack()));
+            if (stage == SampleStage.StackWired) return;
 
             // The inner create reports against its own step ids, which this coarse checklist has no
             // rows for; a UI ignores unknown ids, so they're simply not forwarded.
-            InstanceRecord? record = null;
             Run(progress, Steps.Workspace,
-                () => record = workspaces.Create(resolver.Resolve(SampleFixtures.StackName), WorkspaceName));
-            return record!;
+                () => workspaces.Create(resolver.Resolve(SampleFixtures.StackName), WorkspaceName));
         }
         catch (Exception ex)
         {
-            // Never leave the user in a half-built tour: unwind, then report what actually failed.
+            // Never leave the user in a half-built sandbox: unwind, then report what actually failed.
             TryQuietly(Destroy);
             throw new SampleSetupException($"could not build the sample setup: {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// The stage the demo store is currently at, or null if there's no sample present. Read when deciding
+    /// whether a guide's starting stage is already in place (a cheap reuse) or needs a rebuild.
+    /// </summary>
+    public SampleStage? CurrentStage()
+    {
+        if (!Directory.Exists(SampleReposDir)) return null;
+        if (Existing() is not null) return SampleStage.Running;
+        if (stacks.Get(SampleFixtures.StackName) is not null) return SampleStage.StackWired;
+        if (repos.Get(SampleFixtures.ApiRepo) is not null) return SampleStage.ReposRegistered;
+        return SampleStage.RepoOnDisk;
     }
 
     /// <summary>

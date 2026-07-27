@@ -1,0 +1,2 @@
+# .env is generated per worktree by sprig, so it is never committed — just like a real repo.
+.env

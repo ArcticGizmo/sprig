@@ -1,0 +1,16 @@
+# The sample API's infrastructure, exactly as it would be committed in a real repo.
+#
+# sprig never edits this file. It generates an isolated COPY per workspace with the
+# container name and host port rewritten, so two workspaces can run this database at
+# the same time without colliding. Look at the generated copy to see the difference.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sample-db
+    environment:
+      POSTGRES_USER: sample
+      POSTGRES_PASSWORD: sample
+      POSTGRES_DB: sample
+    ports:
+      - "5432:5432"
+    restart: unless-stopped

@@ -19,6 +19,17 @@ public static class AppProfile
     /// <summary>Suffix for user-facing labels (e.g. the window title) — <c>""</c> or <c>" (Dev)"</c>.</summary>
     public static string DisplaySuffix => IsDev ? " (Dev)" : "";
 
+    /// <summary>
+    /// The store folder name for the guided tour's throwaway sample — this profile's name plus
+    /// <c>" (Demo)"</c>. A third store, isolated from both the real one and a dev one, so the tour
+    /// can build (and delete) a whole working setup without going anywhere near real data.
+    ///
+    /// This is deliberately the ONLY thing that distinguishes a tour run from a normal one: the
+    /// store root differs and the app shows a banner. Nothing below <c>MainWindowViewModel</c>
+    /// should ever branch on "am I in the tour?" — see docs/guided-tour-plan.md §7.
+    /// </summary>
+    public static string DemoFolderName => DataFolderName + " (Demo)";
+
     static bool ComputeIsDev()
     {
         // SPRIG_DEV overrides the build default: "0"/"false" forces release, any other value forces dev.

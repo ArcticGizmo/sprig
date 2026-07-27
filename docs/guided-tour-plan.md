@@ -3,7 +3,8 @@
 A milestone-based plan for an **interactive walkthrough** that shows a new user what a *working*
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
-> **Status: M1–M5 shipped.** Full suite green (432 tests, up from 393), engine behaviour unchanged,
+> **Status: M1–M5 shipped; M6 (coachmarks) spiked and triaged — see §11.** Full suite green
+> (436 tests, up from 393), engine behaviour unchanged,
 > verified via headless render (`sprig-gui render <dir>` → `tour_stop1..5`, `tour_stop_infra`,
 > `tour_building`, and the per-page `tour_*` frames) — see `captures/20260727-guided-tour-m*`.
 > Three departures from the plan as written are recorded in §10.
@@ -393,3 +394,89 @@ Windows, because git writes its object files read-only and `Directory.Delete` re
 amount of retrying fixes it — the attribute has to be cleared first. That affects any code deleting
 a git repo on Windows, and `TempGitRepo` in the tests has the same latent problem (it swallows the
 failure, so it leaks temp directories instead of reporting).
+
+---
+
+## 11. M6 — coachmarks: mechanism spike and triage
+
+The sandbox answers *"what does a finished setup look like?"*. It does not answer *"what do I type in
+these fields?"* — the wall of inputs a first-timer meets on **add repo → repo config → stack builder**.
+Coachmarks answer that, and coaching *inside the sample* means a beginner can type into real fields
+with nothing at stake.
+
+### 11.1 The mechanism is proven
+
+Spiked and shipped ahead of any script (`src/Sprig.App/Coach/`), against the three anchor cases a real
+script has to survive — verified in `captures/20260727-coach-spike-final/coach_case{1,2,3}.png`:
+
+| Case | How it anchors | Result |
+|---|---|---|
+| Plain control | `AutomationProperties.AutomationId` in XAML | One attribute, no coach code in the view |
+| Below the fold | `BringIntoView()` then flush layout before measuring | Correct rect; callout flips side and clamps on screen |
+| Drawn, not a control | `IAnchorSource` on `WiringCanvas` | Exact; resolves two nested `ScrollViewer`s deep |
+
+`AutomationProperties.AutomationId` rather than a bespoke attached property, because it costs nothing
+when the coach isn't running and earns its keep twice more — accessibility identity, and a hook for any
+future UI test. The canvas publishes the rects `BuildLayout` already computes for hit-testing, keyed on
+domain identity, so a highlight can never disagree with what the user can click.
+
+**Brittleness — the objection that normally sinks coachmarks — is handled by two checks.** Source-scanning
+tests keep `Anchors.Chrome` and the views in step in *both* directions, and the headless renderer *fails*
+(exit 1) when a mark's anchor doesn't resolve, which catches "declared in XAML but never realised".
+Verified by renaming an anchor and watching three tests fail with actionable messages.
+
+Anchoring turned out to be the easy half. The expensive parts are **preconditions** (every mark needs the
+app put into a state where its target exists — that belongs in `Navigator`, e.g. `OpenStackBuilderWired`)
+and **callout placement on the canvas**, where a 380px callout covers a lot of board.
+
+### 11.2 Triage: fix in place, or coach?
+
+The premise of this pass: **if a screen needs a coachmark to be usable, the coachmark becomes its
+permanent documentation.** So every element on the first-run path was classified as *fix* (an in-place
+change removes the need to explain), *coach* (a real concept, worth teaching once), or *leave* (already
+clear). The important correction it produced: the wall is **not** fourteen blank fields. `InitInspector`
+already proposes a complete config from detected env keys and compose ports, so the user is *reviewing*
+pre-filled fields, not authoring. That is a comprehension problem, not a data-entry one — which is why
+the count below is 6–8 marks rather than the 20–25 the field count implies. You teach concepts once.
+
+#### Add a repo — not the wall
+
+| Element | Verdict | Why |
+|---|---|---|
+| Folder + Browse + live git detection + "found a .sprig.json / it'll be created" | **Leave** | One decision, live feedback, states the consequence. Genuinely good. |
+
+#### Repo config editor — the first real wall
+
+| Element | Verdict | Why |
+|---|---|---|
+| **Scaffold notes are discarded** | **Fix — highest value on the path** | `ReposViewModel.cs:300` calls `Init.Inspect` and drops `proposal.Notes`; the CLI prints them (`CliApp.cs:212`). sprig already explains what it guessed and why, then bins it in the GUI. Surfacing them answers "why are these fields here and where did these values come from?" — and removes an estimated 3–4 marks. |
+| "INPUTS (supplied by the stack)" | **Coach** (once) | "Input" is *the* load-bearing concept. Not a UI defect — teach it. |
+| **"Example" column** | **Fix** | The label implies a default, or a value that gets used. It is documentation for whoever writes the binding. Rename, or explain in the header. |
+| **"Allowed ports" column** | **Fix — progressive disclosure** | Auth0-class advanced feature at equal visual weight to Name; almost every repo leaves it blank. Collapse behind a per-row "restrict…". Removes a mark *and* declutters permanently. |
+| "Gitignored — safe to override", "Found in the repo" | **Leave** | Live, specific, already teaching. |
+| Merged-view explanation sentence | **Leave** | Already does the job. |
+| **"REPLACEMENTS" panel** | **Fix** | A second representation of the same data as the merged view directly above it. Two views of one thing is a comprehension cost, not a feature. |
+| Compose overrides — YAML path syntax (`services.db.ports.0`) | **Coach** | Path-based targeting is a genuine concept. |
+
+#### Stack builder — the second wall
+
+| Element | Verdict | Why |
+|---|---|---|
+| **Auto-wire is opt-in** | **Fix — highest value on this surface** | After auto-wire the builder is nearly done. Opening it with repos selected should wire immediately and frame the canvas as *"review what I guessed"*. That turns authoring into reviewing and removes most of the need to coach the drag gesture at all. |
+| **The instruction paragraph** | **Fix, then coach the gesture once** | Five distinct interactions in one run-on sentence, and visually truncated at the panel edge ("click a f node"). Prose compensating for undiscoverable affordances. Fix the truncation and split it per element; coach drag-to-wire once, on a real port. |
+| **Shared ports** (the `api-port_2` case) | **Coach** | `StackAutowire` deliberately never assumes sharing — two services' own listening ports must not collide (`StackAutowire.cs:26-29`). Intent about sharing is the one thing it cannot infer, so this is a real teaching moment, and it is exactly the concept the sample stack was built around. |
+| TRANSFORM column header with no transform present | **Leave** (or hide until one exists) | Cosmetic. |
+| Port rename/remove, transform editing, line selection | **Leave to discovery** | Secondary; coaching all of it is how a 6-mark script becomes 25. |
+
+### 11.3 Recommended sequencing
+
+**Do the five fixes before authoring the script.** Two of them — surfacing the scaffold notes, and
+auto-wiring on open — do more for first-run comprehension than any coachmark, and both shrink the script.
+Writing marks first means writing marks that apologise for things you are about to change.
+
+Then author roughly 6–8 marks: *input* (once), compose path syntax, drag-to-wire, shared ports, and the
+handoff. Inside the demo store, so the copy can name `sample-api` and the user can type freely.
+
+Still open: whether coached marks should advance on *the user doing the thing* rather than pressing Next.
+More engaging, considerably more machinery (per-mark completion predicates), and it can trap someone who
+can't work out the gesture. Recommend Next-to-advance first, and revisit only if the flow feels passive.

@@ -68,6 +68,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
+        nav.SetTourLauncher(() => EnterTourCommand.Execute(null));
 
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel();

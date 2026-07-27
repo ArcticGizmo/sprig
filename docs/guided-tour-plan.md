@@ -3,6 +3,11 @@
 A milestone-based plan for an **interactive walkthrough** that shows a new user what a *working*
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
+> **Status: M1–M5 shipped.** Full suite green (432 tests, up from 393), engine behaviour unchanged,
+> verified via headless render (`sprig-gui render <dir>` → `tour_stop1..5`, `tour_stop_infra`,
+> `tour_building`, and the per-page `tour_*` frames) — see `captures/20260727-guided-tour-m*`.
+> Three departures from the plan as written are recorded in §10.
+
 The problem this solves: sprig's learning curve is front-loaded. A first-run user faces three
 empty tables and a vocabulary (repo / stack / workspace / input / binding / port) that only makes
 sense once you've seen values flowing through it. The existing front door
@@ -347,12 +352,44 @@ Settings row so a user who abandoned the tour can always reclaim the space.
 
 ## 9. Open questions
 
-1. **Naming.** "Demo", "Tour", "Sample setup", "Try it"? A Debug build's demo store would be
-   `sprig (Dev) (Demo)` under the naive rule — clunky but honest. Low stakes, decide once.
-2. **Should the CLI expose it?** `sprig demo build/destroy` is nearly free once M1 exists, useful
-   for development, and arguably valuable in its own right for CLI-first users.
-3. **Graduation path.** After the tour, the strongest possible next step is "now do that with *your*
-   repo" — i.e. hand the user straight to the existing setup guide with the sample still fresh in
-   mind. Worth designing deliberately rather than just exiting to an empty real store.
-4. **Should the sample include a deliberate failure?** Sprig's `doctor` / reconcile behaviour is a
-   genuine selling point and impossible to demonstrate on a healthy setup. Tempting; adds scope.
+1. **Naming.** *Resolved:* "guided tour" in the UI, `Demo` in the code (`DemoFolderName`,
+   `IsDemoStore`) since that names the *store*, not the experience. A Debug build's demo store is
+   `sprig (Dev) (Demo)` — clunky but honest, and it only ever appears in a path.
+2. **Should the CLI expose it?** *Still open.* `sprig demo build/destroy` is nearly free now that
+   `SampleSetup` exists, and would be useful for development as much as for CLI-first users.
+3. **Graduation path.** *Resolved:* the tour's last stop is the handoff — it says what a repo needs
+   (one committed `.sprig.json`, which sprig writes for you) and that leaving deletes the sample.
+   It does not auto-launch the setup guide; landing the user on a real, empty Home with the model
+   fresh is enough, and forcing them into another flow on the way out would be presumptuous.
+4. **Should the sample include a deliberate failure?** *Still open, still tempting.* `doctor` /
+   reconcile is a genuine selling point and can't be shown on a healthy setup. The cheap version:
+   a sixth stop that deletes a worktree behind the user's back and then repairs it.
+
+---
+
+## 10. Departures from this plan during implementation
+
+Recorded because each was a decision made against the plan, not an oversight.
+
+1. **Stops 4–5 were re-planned (§5, M3).** The plan assumed an in-app viewer for the *generated*
+   `.env` and compose file. There isn't one — `EnvOverlay`/`ComposeOverlay` are for *authoring*
+   declarations, and generated files are reached via "Open in…". Rather than build a viewer (real
+   scope, and the plan's whole premise is reusing what exists), stop 4 narrates the resolved values
+   already on the Workspaces detail panel and points at the worktree, and stop 5 became the
+   graduation step that was parked as open question 3.
+2. **Narration is its own view model, not a mode on `SetupGuideViewModel` (§2, M3).** The plan said
+   extend it. On reading it closely, that class is a projection of *store counts* that advances when
+   the user creates something; the tour is a fixed script advanced by an index over a setup that
+   already exists. Sharing one class would have meant every property meaning two things depending on
+   a mode flag — the exact cost §7 exists to avoid. They share the strip's styles instead, which is
+   where restyling actually happens.
+3. **`IsDemoStore` is declared, not inferred (§2, M2).** The first cut compared the store root
+   against `SprigPaths.DemoRoot`. Making the caller state it is both more honest and what lets the
+   headless renderer stand up a real tour session in a temp directory — which is how every
+   `tour_*.png` frame gets produced.
+
+Also worth noting, since it was a bug rather than a decision: `Destroy` originally failed on
+Windows, because git writes its object files read-only and `Directory.Delete` refuses those. No
+amount of retrying fixes it — the attribute has to be cleared first. That affects any code deleting
+a git repo on Windows, and `TempGitRepo` in the tests has the same latent problem (it swallows the
+failure, so it leaks temp directories instead of reporting).

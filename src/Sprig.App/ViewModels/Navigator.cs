@@ -13,6 +13,7 @@ public sealed class Navigator
 {
     Action<PageViewModel> _navigate = static _ => { };
     Action _startGuide = static () => { };
+    Action _enterTour = static () => { };
     PageViewModel? _home;
     ReposViewModel? _repos;
     StacksViewModel? _stacks;
@@ -33,6 +34,15 @@ public sealed class Navigator
 
     /// <summary>Open the guided setup strip.</summary>
     public void StartSetupGuide() => _startGuide();
+
+    /// <summary>Wire the guided-tour launcher (owned by the main window, which does the store swap).</summary>
+    public void SetTourLauncher(Action enter) => _enterTour = enter;
+
+    /// <summary>
+    /// Enter the guided tour. Routed through here so a page can offer it without knowing that a store
+    /// swap is involved — only the main window does.
+    /// </summary>
+    public void EnterTour() => _enterTour();
 
     public void GoHome() => Go(_home);
     public void GoToRepos() => Go(_repos);

@@ -109,6 +109,21 @@
                 </StackPanel>
             </Border>
 
+            <!-- Guided-tour sample (only when one is on disk) -->
+            <Border Classes="panel" IsVisible="{Binding HasSample}">
+                <StackPanel Spacing="12">
+                    <TextBlock Classes="phead" Text="GUIDED TOUR SAMPLE" />
+                    <TextBlock Classes="help" TextWrapping="Wrap"
+                               Text="The guided tour's throwaway setup is still on disk — two sample repos, their worktrees and a demo store. Deleting it stops any containers it started and frees the space; the tour rebuilds it next time." />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="Delete the sample" Command="{Binding DeleteSampleCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource DangerBrush}" />
+                        <TextBlock Text="{Binding SampleMessage}" VerticalAlignment="Center"
+                                   Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Ports in use -->
             <Border Classes="panel">
                 <StackPanel Spacing="12">

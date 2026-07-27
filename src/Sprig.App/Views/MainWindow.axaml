@@ -178,6 +178,35 @@
                             Padding="14,8" VerticalAlignment="Center" />
                 </Grid>
             </Border>
+            <!-- Guided tour narration. A fixed script over the sample; the copy describes the model,
+                 never the chrome, so moving a control can't silently invalidate a step. -->
+            <Border DockPanel.Dock="Top" IsVisible="{Binding Tour.IsActive}"
+                    Background="#1460A5FA" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1"
+                    Padding="24,12">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="18">
+                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="{Binding Tour.Stop.Kicker}" FontSize="10" FontWeight="SemiBold"
+                                       LetterSpacing="1.5" Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="{Binding Tour.StepCounter}" FontSize="10"
+                                       Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Tour.Stop.Heading}" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Tour.Stop.Hint}" FontSize="12" MaxWidth="820"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Button Grid.Column="1" Classes="link" Content="Back" Command="{Binding Tour.BackCommand}"
+                            IsVisible="{Binding Tour.CanGoBack}" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="{Binding Tour.Stop.Cta}" Command="{Binding Tour.NextCommand}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold"
+                            Padding="14,8" VerticalAlignment="Center" />
+                    <Button Grid.Column="3" Classes="link" Content="Explore on my own"
+                            Command="{Binding Tour.SkipCommand}" IsVisible="{Binding !Tour.IsLastStop}"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
             <!-- Update-available notice (notification only; does not auto-update) -->
             <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
                     IsVisible="{Binding UpdateNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">

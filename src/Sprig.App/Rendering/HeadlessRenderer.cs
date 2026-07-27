@@ -145,11 +145,20 @@ internal static class HeadlessRenderer
         {
             demo.Sample.Build();
 
+            // Walk the real script rather than iterating pages, so each frame is a stop the user
+            // actually sees: the narration, and the page it navigated to, together.
             var vm = new MainWindowViewModel(demo);
+            for (var stop = 1; stop <= vm.Tour.Count; stop++)
+            {
+                Capture(vm, Path.Combine(outDir, $"tour_stop{stop}.png"));
+                vm.Tour.NextCommand.Execute(null);
+            }
+
+            // And the sample explored with the narration dismissed ("Explore on my own").
+            vm.Tour.SkipCommand.Execute(null);
             foreach (var page in vm.Pages)
             {
                 vm.CurrentPage = page;
-                // Select the first row so detail panels render populated rather than prompting.
                 if (page is ReposViewModel repos) repos.Selected = repos.Repos.FirstOrDefault();
                 if (page is StacksViewModel stacks) stacks.Selected = stacks.Stacks.FirstOrDefault();
                 if (page is WorkspacesViewModel workspaces) workspaces.Selected = workspaces.Workspaces.FirstOrDefault();

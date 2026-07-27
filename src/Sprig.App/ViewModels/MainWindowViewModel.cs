@@ -20,6 +20,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The guided "Set up sprig" strip (opt-in from Home).</summary>
     public SetupGuideViewModel Guide { get; }
 
+    /// <summary>The guided tour's narration strip. Only meaningful — and only shown — during a tour.</summary>
+    public TourGuideViewModel Tour { get; }
+
     /// <summary>The Settings page — pinned to the bottom of the nav, outside the workflow sequence.</summary>
     public SettingsViewModel Settings { get; }
 
@@ -79,9 +82,15 @@ public partial class MainWindowViewModel : ViewModelBase
             workspaces,
         ];
 
+        Tour = new TourGuideViewModel(nav);
+
         // Land on Home (the front door), not on the last step of the pipeline.
         _currentPage = home;
         home.IsActive = true;
+
+        // In a tour the narration is the point, so it starts itself rather than waiting to be found.
+        if (IsTour) Tour.Start();
+
         _ = CheckForUpdatesAsync();
     }
 

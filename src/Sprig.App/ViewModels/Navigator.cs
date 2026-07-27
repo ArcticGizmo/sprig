@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace Sprig.App.ViewModels;
 
@@ -45,6 +46,33 @@ public sealed class Navigator
 
     /// <summary>Jump to Workspaces and open the New-workspace flow.</summary>
     public void NewWorkspace() { if (_workspaces is null) return; Go(_workspaces); _workspaces.NewWorkspaceCommand.Execute(null); }
+
+    // "Go there and show something" — a page whose detail panel is empty teaches nothing, so these
+    // select the first row on the way in. Generic navigation, not tour-specific.
+
+    /// <summary>Jump to Repos with the first repo selected, so its config panel is populated.</summary>
+    public void ShowFirstRepo()
+    {
+        if (_repos is null) return;
+        Go(_repos);
+        _repos.Selected ??= _repos.Repos.FirstOrDefault();
+    }
+
+    /// <summary>Jump to Stacks with the first stack selected, so its wiring summary is populated.</summary>
+    public void ShowFirstStack()
+    {
+        if (_stacks is null) return;
+        Go(_stacks);
+        _stacks.Selected ??= _stacks.Stacks.FirstOrDefault();
+    }
+
+    /// <summary>Jump to Workspaces with the first workspace selected, so its detail panel is populated.</summary>
+    public void ShowFirstWorkspace()
+    {
+        if (_workspaces is null) return;
+        Go(_workspaces);
+        _workspaces.Selected ??= _workspaces.Workspaces.FirstOrDefault();
+    }
 
     void Go(PageViewModel? page)
     {

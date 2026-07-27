@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Sprig.App.ViewModels;
+using Sprig.Core.Demo;
 
 namespace Sprig.App.Coach;
 
@@ -23,6 +24,13 @@ public static class TourScript
             "This is one working sprig, built for you",
             "Two repos, one stack wiring them together, and a workspace running from it. Everything you're about to see is real — the same engine your own repos will use.")
         { Prepare = () => { nav.GoHome(); return Task.CompletedTask; } },
+
+        // Orient first: spotlight the actual repo in the list, so "a repo" is a thing on screen before the
+        // next step explains what it declares.
+        new(Anchors.RepoRow(SampleFixtures.ApiRepo),
+            "Start with the repos",
+            "Two repos are registered here. This one, sample-api, is the backend. Everything else is dimmed so it's clear which one we mean.")
+        { Side = CoachSide.Right, Prepare = () => { nav.ShowFirstRepo(); return Task.CompletedTask; } },
 
         new(Anchors.RepoDetail,
             "A repo only declares what it needs",

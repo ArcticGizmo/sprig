@@ -12,10 +12,10 @@ namespace Sprig.Tests.App;
 public class TourScriptTests
 {
     [Fact]
-    public void Without_docker_the_tour_is_five_steps()
+    public void Without_docker_the_tour_is_six_steps()
     {
         var marks = TourScript.Marks(new Navigator(), includeInfra: false);
-        Assert.Equal(5, marks.Count);
+        Assert.Equal(6, marks.Count);
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public class TourScriptTests
     {
         var marks = TourScript.Marks(new Navigator(), includeInfra: true);
 
-        Assert.Equal(6, marks.Count);
+        Assert.Equal(7, marks.Count);
         // The infra step is the only one that performs an action, and it is never the finale.
         var performing = marks.Select((m, i) => (m, i)).Where(x => x.m.Perform is not null).Select(x => x.i).ToList();
         Assert.Equal([marks.Count - 2], performing);
@@ -41,13 +41,23 @@ public class TourScriptTests
     }
 
     [Fact]
+    public void The_repos_section_spotlights_the_row_then_its_detail()
+    {
+        var marks = TourScript.Marks(new Navigator(), includeInfra: false);
+
+        // First the actual repo row (orientation), then the panel that shows what it declares.
+        Assert.Equal(Anchors.RepoRow("sample-api"), marks[1].Anchor);
+        Assert.Equal(Anchors.RepoDetail, marks[2].Anchor);
+    }
+
+    [Fact]
     public void The_middle_steps_spotlight_the_detail_panels_in_pipeline_order()
     {
         var marks = TourScript.Marks(new Navigator(), includeInfra: false);
 
-        Assert.Equal(Anchors.RepoDetail, marks[1].Anchor);
-        Assert.Equal(Anchors.StackDetail, marks[2].Anchor);
-        Assert.Equal(Anchors.WorkspaceDetail, marks[3].Anchor);
+        Assert.Equal(Anchors.RepoDetail, marks[2].Anchor);
+        Assert.Equal(Anchors.StackDetail, marks[3].Anchor);
+        Assert.Equal(Anchors.WorkspaceDetail, marks[4].Anchor);
     }
 
     [Fact]
@@ -80,6 +90,12 @@ public class TourScriptTests
     {
         foreach (var m in TourScript.Marks(new Navigator(), includeInfra: true))
             if (m.Anchor is { } anchor)
-                Assert.Contains(anchor, Anchors.Chrome);
+            {
+                // A dynamic row anchor (repo.row:<name>) is validated by its Anchors helper, not the static
+                // chrome list; everything else must be a declared chrome anchor.
+                var isRow = anchor.StartsWith("repo.row:");
+                Assert.True(isRow || Anchors.Chrome.Contains(anchor),
+                    $"tour step points at '{anchor}', which is neither a declared chrome anchor nor a repo row");
+            }
     }
 }

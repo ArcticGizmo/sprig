@@ -29,7 +29,7 @@ public static class TourScript
         // next step explains what it declares.
         new(Anchors.RepoRow(SampleFixtures.ApiRepo),
             "Start with the repos",
-            "Two repos are registered here. This one, sample-api, is the backend. Everything else is dimmed so it's clear which one we mean.")
+            "Two repos are registered here. This one, sample-api, is the backend.")
         { Side = CoachSide.Right, Prepare = () => { nav.ShowFirstRepo(); return Task.CompletedTask; } },
 
         new(Anchors.RepoDetail,
@@ -37,10 +37,21 @@ public static class TourScript
             "sample-api asks for a port and a database port. It never says which numbers — that isn't its decision. A repo is a pure consumer, which is why it stays portable.")
         { Side = CoachSide.Left, Prepare = () => { nav.ShowFirstRepo(); return Task.CompletedTask; } },
 
+        // Point at where you'd go next, before actually going there.
+        new(Anchors.Nav("Stacks"),
+            "Once a repo is defined, wire it up here",
+            "A repo says what it needs but never where the values come from. That's a stack's job — it's the next stop, where you bind each repo's inputs to real ports.")
+        { Side = CoachSide.Right },
+
         new(Anchors.StackDetail,
             "The stack owns the ports and supplies every value",
             "Three named ports, and each repo's inputs bound to them. Look at sample-web's apiUrl: it's built from api_port — the same port sample-api runs on. One value, two consumers, and neither repo knows about the other.")
         { Side = CoachSide.Left, Prepare = () => { nav.ShowFirstStack(); return Task.CompletedTask; } },
+
+        new(Anchors.Nav("Workspaces"),
+            "Then bring it to life here",
+            "When you create a workspace, sprig builds an isolated copy of the whole stack — a worktree and branch per repo, its own allocated ports, its own docker infra — that you can actually run.")
+        { Side = CoachSide.Right },
 
         new(Anchors.WorkspaceDetail,
             "Real numbers, written into real files",

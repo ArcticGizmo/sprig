@@ -135,7 +135,10 @@
                             </DataTemplate>
                             <!-- Navigable page (matches any PageViewModel subclass) -->
                             <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
+                                <!-- Anchor id bound from the page title (nav:<Title>), so a coachmark can point
+                                     at a specific nav entry — e.g. the tour showing where you'd go next. -->
                                 <Button Classes="nav"
+                                        AutomationProperties.AutomationId="{Binding Title, StringFormat='nav:{0}'}"
                                         Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
                                         CommandParameter="{Binding}">
                                     <Border Classes="navitem" Classes.active="{Binding IsActive}">

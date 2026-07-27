@@ -60,6 +60,10 @@ public static class Anchors
     /// can spotlight one repo among several and dim the rest.</summary>
     public static string RepoRow(string name) => $"repo.row:{name}";
 
+    /// <summary>A left-nav entry by its page title, e.g. <c>nav:Stacks</c> — so a step can point at where
+    /// you'd go next.</summary>
+    public static string Nav(string pageTitle) => $"nav:{pageTitle}";
+
     /// <summary>The canvas's auto-wire button (drawn, not a control).</summary>
     public const string StackAutoWire = "stack.autoWire";
 }

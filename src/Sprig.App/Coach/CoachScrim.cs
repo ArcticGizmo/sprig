@@ -24,13 +24,24 @@ public sealed class CoachScrim : Control, ICustomHitTest
         set => SetValue(HoleProperty, value);
     }
 
+    /// <summary>
+    /// Whether the spotlit control can be clicked. True for a waiting step (the user must operate the
+    /// highlighted control to advance); false for an explanation step, where the spotlight only directs the
+    /// eye and every click outside the callout is swallowed — so a narrated step can't be clicked away from.
+    /// </summary>
+    public bool Interactive { get; set; }
+
     static CoachScrim()
     {
         AffectsRender<CoachScrim>(HoleProperty);
     }
 
-    /// <summary>Block clicks everywhere except inside the hole, so the coached control stays usable.</summary>
-    public bool HitTest(Point point) => !Hole.Inflate(Padding).Contains(point);
+    /// <summary>
+    /// Block clicks so a walkthrough can't be navigated away from mid-step. The callout buttons sit above the
+    /// scrim and always work. When the step is interactive, the hole is a pass-through so the user can
+    /// operate the highlighted control; otherwise everything under the scrim is blocked.
+    /// </summary>
+    public bool HitTest(Point point) => !(Interactive && Hole.Inflate(Padding).Contains(point));
 
     const double Padding = 6;
     const double Radius = 8;

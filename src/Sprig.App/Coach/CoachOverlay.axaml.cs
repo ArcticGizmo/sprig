@@ -62,6 +62,9 @@ public partial class CoachOverlay : UserControl
 
         Scrim.Width = size.Width;
         Scrim.Height = size.Height;
+        // A waiting step needs the user to operate the highlighted control; an explanation step is
+        // eye-direction only and swallows every click but the callout's, so it can't be clicked away from.
+        Scrim.Interactive = mark.IsWaiting;
 
         // A whole-page step (no anchor) deliberately dims everything and centres the callout — an
         // opening/closing beat that isn't about one control. Not a failure, so no warning.

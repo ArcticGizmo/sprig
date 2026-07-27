@@ -107,6 +107,7 @@
                             <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
                                     ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
                             <Button Content="Repair" Command="{Binding RepairCommand}"
+                                    AutomationProperties.AutomationId="workspace.repair"
                                     ToolTip.Tip="Fix drift: prune stale registrations and remove orphaned folders. Healthy worktrees are never touched." />
                             <Button Content="Remove" Command="{Binding RemoveCommand}"
                                     Foreground="{StaticResource DangerBrush}" />

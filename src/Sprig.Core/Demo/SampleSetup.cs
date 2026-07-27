@@ -186,6 +186,21 @@ public sealed class SampleSetup(
     }
 
     /// <summary>
+    /// Deliberately break the sample workspace by deleting one repo's worktree folder out from under git —
+    /// the "someone ran rm on it" scenario the drift guide teaches. Reality now disagrees with the instance
+    /// record; <c>WorkspaceReconciler</c> classifies it as a missing folder, and Repair rebuilds it. The
+    /// source repo is never touched.
+    /// </summary>
+    public void BreakWorktree()
+    {
+        var record = workspaces.Get(WorkspaceName)
+            ?? throw new SampleSetupException("no sample workspace to break — build it first");
+        var repo = record.Repos.FirstOrDefault()
+            ?? throw new SampleSetupException("the sample workspace has no repos");
+        if (Directory.Exists(repo.WorktreePath)) DeleteTree(repo.WorktreePath);
+    }
+
+    /// <summary>
     /// Remove everything the sample owns — containers, worktrees, branches, store, sample repos —
     /// by deleting the demo store root. Best-effort throughout: a stopped Docker daemon or a
     /// half-built sample must never block cleanup of the files.

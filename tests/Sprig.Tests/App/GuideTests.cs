@@ -10,6 +10,7 @@ namespace Sprig.Tests.App;
 /// driven the way a user drives it. A guide hand-holds by waiting for the user to act, so the behaviour that
 /// matters most is that a store change advances a waiting step, and "Show me" reaches the same place.
 /// </summary>
+[Collection("git-heavy")]
 public class GuideTests
 {
     /// <summary>A demo store at a chosen stage, with a real MainWindowViewModel over it.</summary>
@@ -37,6 +38,7 @@ public class GuideTests
     static Guide RegisterRepo => Guides.All.Single(g => g.Id == Guides.RegisterRepoId);
     static Guide WireStack => Guides.All.Single(g => g.Id == Guides.WireStackId);
     static Guide RunWorkspace => Guides.All.Single(g => g.Id == Guides.RunWorkspaceId);
+    static Guide RepairDrift => Guides.All.Single(g => g.Id == Guides.RepairDriftId);
 
     [Fact]
     public void The_catalog_exposes_guide_one()
@@ -190,6 +192,33 @@ public class GuideTests
         Assert.Equal(Anchors.WorkspaceDetail, h.Vm.Coach.Mark!.Anchor);
     }
 
+    // --- Guide 4: recover from drift -----------------------------------------
+
+    [Fact]
+    public void Guide_four_starts_from_a_running_workspace()
+        => Assert.Equal(SampleStage.Running, RepairDrift.Stage);
+
+    [Fact]
+    public async Task Guide_four_breaks_a_worktree_then_repair_resolves_the_drift()
+    {
+        using var h = new Harness(SampleStage.Running);
+        await h.Vm.StartGuide(RepairDrift, onFinished: () => { });
+
+        // The opening step deletes a worktree behind the user's back and reconciles, so drift is real.
+        var drifted = h.Services.Reconciler.Inspect(SampleSetup.WorkspaceName);
+        Assert.NotNull(drifted);
+        Assert.True(drifted!.HasDrift, "the opening step should have broken a worktree");
+
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
+        Assert.True(h.Vm.Coach.IsWaiting);
+        Assert.Equal(Anchors.WorkspaceRepair, h.Vm.Coach.Mark!.Anchor);
+
+        // Repair reconciles record and reality; the drift is gone and the wait advances on its own.
+        await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);
+        Assert.False(h.Services.Reconciler.Inspect(SampleSetup.WorkspaceName)!.HasDrift);
+        Assert.Null(h.Vm.Coach.Mark!.Anchor);   // advanced to the whole-page finale
+    }
+
     [Fact]
     public void Learn_page_lists_every_guide_in_ladder_order()
     {
@@ -197,7 +226,7 @@ public class GuideTests
         var learn = new LearnViewModel(new AppServices(store.Root), new Navigator());
 
         Assert.Equal(
-            [RegisterRepo.Title, WireStack.Title, RunWorkspace.Title],
+            [RegisterRepo.Title, WireStack.Title, RunWorkspace.Title, RepairDrift.Title],
             learn.Guides.Select(g => g.Title));
     }
 

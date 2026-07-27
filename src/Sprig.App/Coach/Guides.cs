@@ -37,6 +37,7 @@ public static class Guides
     public const string RegisterRepoId = "register-repo";
     public const string WireStackId = "wire-stack";
     public const string RunWorkspaceId = "run-workspace";
+    public const string RepairDriftId = "repair-drift";
 
     public static IReadOnlyList<Guide> All { get; } =
     [
@@ -60,6 +61,13 @@ public static class Guides
             "3 min",
             SampleStage.StackWired,
             RunWorkspaceSteps),
+
+        new(RepairDriftId,
+            "Recover from drift",
+            "See how sprig detects and fixes a broken workspace.",
+            "2 min",
+            SampleStage.Running,
+            RepairDriftSteps),
     ];
 
     /// <summary>Guide 1: point sprig at a repo on disk, then read what that repo declares.</summary>
@@ -198,6 +206,50 @@ public static class Guides
             new(null,
                 "That's the whole journey",
                 "A repo declares what it needs, a stack supplies it, a workspace runs it — isolated, side by side with as many others as you like. Bring its infra up and down from here, and when you're done, delete it and everything it created is cleaned up.")
+            { Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; } },
+        ];
+    }
+
+    /// <summary>
+    /// Guide 4 (the safety net): what happens when a workspace drifts from its record — a worktree deleted
+    /// out from under sprig — and how Repair reconciles the two. Starts at <see cref="SampleStage.Running"/>,
+    /// breaks a worktree in the opening step, and waits on the user to Repair. Teaches the actual behaviour:
+    /// Repair prunes the stale registration (it does not resurrect deleted work), leaving a known state.
+    /// </summary>
+    static IReadOnlyList<CoachMark> RepairDriftSteps(Navigator nav, AppServices services)
+    {
+        // After the break, sample-api's worktree is MissingFolder (drift). After Repair prunes the stale
+        // registration it becomes Gone — no longer drift. So "resolved" is the absence of drift, not health.
+        bool DriftResolved() => services.Reconciler.Inspect(SampleSetup.WorkspaceName) is { HasDrift: false };
+
+        return
+        [
+            new(Anchors.WorkspaceDetail,
+                "Something went missing",
+                "I've just deleted one of this workspace's worktrees behind your back — a stray cleanup, a folder gone. Your real repo is untouched, but the record now expects a worktree that isn't there. sprig checked, and flagged the mismatch: that's the drift marker.")
+            {
+                Side = CoachSide.Left,
+                Prepare = async () =>
+                {
+                    nav.ShowFirstWorkspace();
+                    services.Sample.BreakWorktree();
+                    await nav.Reconcile();   // surface the drift so the detail shows it
+                },
+            },
+
+            new(Anchors.WorkspaceRepair,
+                "Let sprig reconcile it",
+                "Click Repair. sprig lines the record back up with reality — here, it prunes the stale registration for the folder that's gone. Healthy worktrees are never touched, and your source repo is never involved. Or Show me.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; },
+                Completed = DriftResolved,
+                ShowMe = () => nav.Repair(),
+            },
+
+            new(null,
+                "Nothing here is unrecoverable",
+                "That's the safety net. However a workspace gets into a half-state — a deleted worktree, an orphaned folder, a half-finished teardown — sprig can always detect the drift and bring record and reality back into line. Which is exactly why you can delete things freely.")
             { Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; } },
         ];
     }

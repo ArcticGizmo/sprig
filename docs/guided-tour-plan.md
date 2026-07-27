@@ -4,7 +4,7 @@ A milestone-based plan for an **interactive walkthrough** that shows a new user 
 sprig setup looks like, by handing them one — pre-built, fully populated, and safe to break.
 
 > **Status: M1–M5 shipped; M6 (coachmarks) spiked, triaged, and the first-run fixes done — see §11;
-> M7 (guide library) shipped, three guides covering the whole journey — see §12, §14, §15; the tour is coachmarks too — see §13.**
+> M7 (guide library) shipped, four guides — see §12, §14, §15, §16; the tour is coachmarks too — see §13.**
 > Full suite green (457 tests, up from 393), engine behaviour unchanged, verified via headless render
 > (`sprig-gui render <dir>` → `tour_stop*` with spotlight, `coach_case*`, `guide1_*`, `row_highlight`)
 > — see `captures/20260727-*`. Three departures from the plan as written are recorded in §10.
@@ -716,3 +716,41 @@ and resolved values.
 The ladder now stands at guides 1–3 authored — register a repo, wire a multi-repo stack, run a workspace:
 the whole repo → stack → workspace journey, each stage its own hands-on lesson. Still planned: the shared-port
 polyrepo case (hands-on), and drift/repair (needs a "break a worktree" sandbox action).
+
+---
+
+## 16. Guide 4 — recover from drift (the safety net)
+
+The `doctor`/reconcile behaviour is sprig's quiet selling point, and it's impossible to show on a healthy
+setup — so this guide *breaks* one on purpose. Starts at the `Running` stage, and its opening step deletes
+one of the workspace's worktrees behind the user's back (a new `SampleSetup.BreakWorktree`), then reconciles
+so the drift is on screen: `sample-api: worktree folder missing — run Repair`, `sample-web: ✓ in sync`.
+
+**Shape.** Three steps: the break (explanation, spotlighting the drift), Repair (waiting), and the reassurance
+finale. The user clicks Repair — or Show me — and the drift resolves.
+
+**Honest about what Repair does.** Repair does *not* resurrect deleted work; for a missing folder it prunes
+the stale git registration, taking the state from `MissingFolder` (drift) to `Gone` (a clean, known state).
+So the completion predicate is `!HasDrift`, not "healthy", and the copy says "lines the record back up with
+reality", not "rebuilds your worktree". Teaching the real behaviour is the whole point — the promise is *no
+half-state is ever stuck*, not *nothing is ever lost*.
+
+**The plumbing it needed:**
+
+- `SampleSetup.BreakWorktree()` — deletes one repo's worktree folder (never the source repo), the sandbox
+  action §12.5 flagged as the one rung that isn't just fixture staging.
+- **Repair now fires `NotifyStoreChanged`** — it rebuilds/prunes worktrees, so reality changed; that's what
+  lets the waiting step advance (reconcile stays read-only and silent, correctly).
+
+**Anchors added:** `workspace.repair`. Verified: `captures/20260727-guide4-drift/guide4_step1..3` — step 1
+shows the real drift, step 2 spotlights Repair, step 3 confirms recovery.
+
+**Test-suite note:** the guide and sample tests spawn real `git` worktree operations; under parallel load a
+worktree op occasionally hiccupped (one intermittent failure). They're now in a `git-heavy` collection that
+runs them serially, which removes the contention.
+
+The ladder now stands at four authored guides: register a repo, wire a multi-repo stack, run a workspace, and
+recover from drift. The one still open from the original five is the **shared-port** polyrepo case — teaching
+two repos deliberately sharing one port. It's the trickiest to hand-hold: sharing is a canvas *drag*, which
+produces builder state rather than a store change, so a true waiting step there needs either UI-state polling
+(the mechanism deferred in §12.5) or a Show-me-driven demonstration. A decision for when it's picked up.

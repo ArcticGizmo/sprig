@@ -22,6 +22,7 @@ public static class Anchors
     public const string WorkspaceNew = "workspace.new";
     public const string WorkspaceCreate = "workspace.create";
     public const string WorkspaceDetail = "workspace.detail";
+    public const string WorkspaceRepair = "workspace.repair";
     public const string WorkspaceDocker = "workspace.docker";
     public const string StackNew = "stack.new";
     public const string StackCreate = "stack.create";
@@ -47,6 +48,7 @@ public static class Anchors
         WorkspaceNew,
         WorkspaceCreate,
         WorkspaceDetail,
+        WorkspaceRepair,
         WorkspaceDocker,
         SettingsPortsInUse,
         StackCanvas,

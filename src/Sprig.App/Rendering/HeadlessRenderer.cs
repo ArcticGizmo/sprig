@@ -122,6 +122,9 @@ internal static class HeadlessRenderer
             // Guide 3: create a workspace from the stack, then see what sprig made.
             unresolved += RenderRunWorkspaceGuide(outDir);
 
+            // Guide 4 (drift): break a worktree, then Repair it.
+            unresolved += RenderRepairDriftGuide(outDir);
+
             // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
             unresolved += RenderRowHighlight(outDir);
 
@@ -331,6 +334,50 @@ internal static class HeadlessRenderer
         {
             unresolved++;
             Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 4 ("Recover from drift"): the opening step breaks a worktree and reconciles so drift
+    /// shows; the repair step (via "Show me") prunes it, which fires a store change and auto-advances.
+    /// </summary>
+    static int RenderRepairDriftGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide4-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RepairDriftId);
+            demo.Sample.Build();  // full Running sample
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step1");     // drift shown
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step2");     // repair (waiting)
+
+            // "Show me" repairs (prunes the stale registration), which fires a store change and advances.
+            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
+            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step3");     // recovered
+            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"guide 4 render failed: {ex.Message}");
         }
         finally
         {

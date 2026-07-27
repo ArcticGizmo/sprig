@@ -160,6 +160,18 @@ public sealed class Navigator
             ? w.CreateCommand.ExecuteAsync(null)
             : Task.CompletedTask;
 
+    /// <summary>Run Reconcile on the selected workspace, so any drift is detected and shown (the drift guide).</summary>
+    public Task Reconcile()
+        => _workspaces is { } w && w.ReconcileCommand.CanExecute(null)
+            ? w.ReconcileCommand.ExecuteAsync(null)
+            : Task.CompletedTask;
+
+    /// <summary>Repair the selected workspace, rebuilding missing worktrees — a guide step's "Show me".</summary>
+    public Task Repair()
+        => _workspaces is { } w && w.RepairCommand.CanExecute(null)
+            ? w.RepairCommand.ExecuteAsync(null)
+            : Task.CompletedTask;
+
     /// <summary>Jump to Repos and open the Add-repo modal.</summary>
     public void AddRepo() { if (_repos is null) return; Go(_repos); _repos.OpenAddCommand.Execute(null); }
 

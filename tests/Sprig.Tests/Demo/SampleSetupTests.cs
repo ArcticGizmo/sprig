@@ -18,6 +18,7 @@ namespace Sprig.Tests.Demo;
 /// Real git (the sample repos are really initialised and committed); fake Docker, because
 /// <see cref="WorkspaceService.Create"/> only generates compose files and never starts containers.
 /// </summary>
+[Collection("git-heavy")]
 public class SampleSetupTests
 {
     /// <summary>A demo store in a temp dir, wired exactly as the app wires the real one.</summary>

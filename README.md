@@ -21,6 +21,8 @@ throwaway worktree.
   same stack run side by side without port clashes.
 - **Isolated docker infra** — sprig generates a per-workspace compose file (project name
   `sprig-<workspace>`) so containers, networks, and volumes don't collide.
+- **Partial workspaces** — deselect the repos you don't need this time. Their worktrees, env files and
+  compose files are never generated, and any port left with nothing to serve isn't provisioned.
 - **One-directional config** — a repo declares only the _inputs_ it needs; a _stack_ supplies
   every value. Easy to trace: values flow one way, stack → repo.
 - **Drift-safe** — `reconcile`/`doctor` detects and repairs record-vs-reality drift (a deleted
@@ -54,6 +56,7 @@ sprig stack create web+api --repos my-frontend,my-api \
 
 # 3. Create an isolated workspace from the stack
 sprig create feature-x --stack web+api      # worktrees + branches + allocated ports
+sprig create api-only --stack web+api --without my-frontend   # partial: just the repos you need
 
 # 4. Bring its docker infra up, work, then tear it down
 sprig up feature-x

@@ -16,6 +16,19 @@ public sealed record InstanceRecord
     public IReadOnlyDictionary<string, int> Ports { get; init; } = new Dictionary<string, int>();
     public string? LastStatus { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Stack repos deliberately left out when this workspace was created (a <i>partial</i>
+    /// workspace). Recorded, not acted on: teardown only ever walks <see cref="Repos"/>. Empty for a
+    /// full workspace, and for one created from an ad-hoc repo.</summary>
+    public IReadOnlyList<string> ExcludedRepos { get; init; } = [];
+
+    /// <summary>Stack ports this workspace never provisioned because only <see cref="ExcludedRepos"/>
+    /// referenced them — kept so the UI can explain why a stack port has no number here.</summary>
+    public IReadOnlyList<string> SkippedPorts { get; init; } = [];
+
+    /// <summary>True when this workspace holds a subset of its stack's repos.</summary>
+    [JsonIgnore]
+    public bool IsPartial => ExcludedRepos.Count > 0;
 }
 
 /// <summary>One repo's materialised state within an instance.</summary>

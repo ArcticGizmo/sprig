@@ -190,7 +190,7 @@ public static class Guides
                 "The stack and a name are filled in. Click Create — sprig adds a worktree per repo on its own sprig/ branch, allocates ports just for this workspace, and writes each worktree's .env and compose with the resolved values. Or let me.")
             {
                 Side = CoachSide.Left,
-                Prepare = () => { nav.PrepareNewWorkspace(WorkspaceName); return Task.CompletedTask; },
+                Prepare = () => nav.PrepareNewWorkspace(WorkspaceName),
                 Completed = WorkspaceCreated,
                 ShowMe = () => nav.CreateWorkspace(),
             },

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Core.Stacks;
 using Sprig.Core.Workspaces;
 
 namespace Sprig.App.ViewModels;
@@ -63,6 +64,79 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty] private string? _newStack;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _createError;
+
+    /// <summary>The chosen stack's repos, each tickable — untick one to create a <i>partial</i>
+    /// workspace without it. Rebuilt whenever the stack selection changes.</summary>
+    public ObservableCollection<WorkspaceRepoChoiceViewModel> NewRepos { get; } = [];
+
+    /// <summary>The stack definition behind <see cref="NewRepos"/>, needed to work out which ports a
+    /// deselection orphans. Null until a stack is picked.</summary>
+    StackDefinition? _newStackDef;
+
+    /// <summary>Only worth showing the repo checklist when there's a choice to make.</summary>
+    public bool CanChooseRepos => NewRepos.Count > 1;
+
+    /// <summary>True once at least one repo is unticked — the workspace will be partial.</summary>
+    public bool IsPartialSelection => NewRepos.Any(r => !r.Included);
+
+    /// <summary>Plain-language consequence of the current deselection: which repos are left out and
+    /// which stack ports that leaves with no consumer (so they won't be provisioned). Null when the
+    /// whole stack is selected.</summary>
+    public string? PartialHint
+    {
+        get
+        {
+            if (_newStackDef is null || !IsPartialSelection) return null;
+            var excluded = NewRepos.Where(r => !r.Included).Select(r => r.Name).ToList();
+            var kept = NewRepos.Where(r => r.Included).Select(r => r.Name).ToList();
+            if (kept.Count == 0) return "Pick at least one repo.";
+
+            var skipped = StackSelection.OrphanedPorts(_newStackDef, kept);
+            var hint = $"Partial workspace — no worktree, env or compose for {string.Join(", ", excluded)}.";
+            return skipped.Count == 0 ? hint
+                : $"{hint} Ports left with no consumer won't be provisioned: {string.Join(", ", skipped)}.";
+        }
+    }
+
+    /// <summary>Recompute the partial-selection surface after a repo is ticked or unticked.</summary>
+    void OnRepoChoiceChanged()
+    {
+        OnPropertyChanged(nameof(IsPartialSelection));
+        OnPropertyChanged(nameof(PartialHint));
+    }
+
+    /// <summary>The in-flight checklist load, so opening the modal can wait for the repos to land
+    /// (and so a test can too) rather than racing a fire-and-forget.</summary>
+    Task _repoLoad = Task.CompletedTask;
+
+    partial void OnNewStackChanged(string? value) => _repoLoad = LoadStackReposAsync(value);
+
+    /// <summary>Load the picked stack's repos into the checklist (all ticked by default, so the
+    /// default create is exactly what it was before partial workspaces existed).</summary>
+    async Task LoadStackReposAsync(string? stackName)
+    {
+        NewRepos.Clear();
+        _newStackDef = null;
+        NotifyRepoChoicesChanged();
+        if (string.IsNullOrEmpty(stackName)) return;
+
+        StackDefinition? def;
+        try { def = await AppServices.RunAsync(() => Services.Stacks.Get(stackName)); }
+        catch { def = null; }
+        // A slow load losing a race with a newer pick must not repopulate the old stack's repos.
+        if (def is null || def.Name != NewStack) return;
+
+        _newStackDef = def;
+        foreach (var repo in def.Repos)
+            NewRepos.Add(new WorkspaceRepoChoiceViewModel(repo, OnRepoChoiceChanged));
+        NotifyRepoChoicesChanged();
+    }
+
+    void NotifyRepoChoicesChanged()
+    {
+        OnPropertyChanged(nameof(CanChooseRepos));
+        OnRepoChoiceChanged();
+    }
 
     /// <summary>Bring the new workspace's infra up right after creating it (default on).</summary>
     [ObservableProperty]
@@ -189,6 +263,7 @@ public partial class WorkspacesViewModel : PageViewModel
         AvailableStacks.Clear();
         foreach (var n in names) AvailableStacks.Add(n);
         NewStack = AvailableStacks.FirstOrDefault();
+        await _repoLoad;        // open with the repo checklist already filled in
         DockerRunning = true;   // optimistic until the probe answers
         IsCreating = true;
         if (StartInfraOnCreate) _ = ProbeDockerAsync();
@@ -205,13 +280,19 @@ public partial class WorkspacesViewModel : PageViewModel
         if (string.IsNullOrEmpty(stack)) { CreateError = "pick a stack (define one in the Stacks tab first)"; return; }
         if (string.IsNullOrEmpty(name)) { CreateError = "enter a workspace name"; return; }
 
+        // Null selection = the whole stack, which keeps a full create on exactly the path it always took.
+        var selection = IsPartialSelection
+            ? NewRepos.Where(r => r.Included).Select(r => r.Name).ToList()
+            : null;
+        if (selection is { Count: 0 }) { CreateError = "pick at least one repo"; return; }
+
         // Resolve + plan up front so pre-flight problems (bad name, duplicate, bad stack) stay in the
         // inline create form; only once we have a real plan do we hand off to the progress window.
         ResolvedStack resolved;
         IReadOnlyList<WorkspaceStep> plan;
         try
         {
-            resolved = await AppServices.RunAsync(() => Services.StackResolver.Resolve(stack));
+            resolved = await AppServices.RunAsync(() => Services.StackResolver.Resolve(stack, selection));
             plan = Services.Workspaces.PlanCreate(resolved, name);
         }
         catch (Exception ex) { CreateError = ex.Message; return; }
@@ -263,7 +344,8 @@ public partial class WorkspacesViewModel : PageViewModel
 
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == name) ?? Selected;
-            StatusMessage = started ? $"created '{name}' and started its infra" : $"created '{name}'";
+            var partialNote = record.IsPartial ? $" (partial — without {string.Join(", ", record.ExcludedRepos)})" : "";
+            StatusMessage = (started ? $"created '{name}' and started its infra" : $"created '{name}'") + partialNote;
             // Both a setup failure and an infra-start failure are soft warnings — the workspace itself
             // was created. Surface whichever happened (setup first, since it ran first).
             var setupWarning = SetupWarning.Summarize(record);

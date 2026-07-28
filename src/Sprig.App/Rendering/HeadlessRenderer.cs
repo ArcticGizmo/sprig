@@ -128,6 +128,9 @@ internal static class HeadlessRenderer
             // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
             unresolved += RenderRowHighlight(outDir);
 
+            // Partial workspaces: the create form with a repo unticked, and the workspace it makes.
+            unresolved += RenderPartialWorkspace(outDir);
+
             // The "what's new" changelog window (the post-update popup / About viewer).
             var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
             var sections = markdown is null
@@ -528,6 +531,63 @@ internal static class HeadlessRenderer
             try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
         }
         return unresolved;
+    }
+
+    /// <summary>
+    /// Render the partial-workspace flow against the sample stack: the create form with a repo unticked
+    /// (so the checklist and the "these ports won't be provisioned" warning are both visible), then the
+    /// workspace it produces, badged partial. Uses the demo sample rather than the live store so the
+    /// repo names, ports and orphan set are the same every run.
+    /// </summary>
+    static int RenderPartialWorkspace(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-partial-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var failures = 0;
+        try
+        {
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.StackWired);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            var workspaces = vm.Pages.OfType<WorkspacesViewModel>().First();
+            vm.CurrentPage = workspaces;
+            Dispatcher.UIThread.RunJobs();
+
+            // Open the create form and drop the web app: web_port is only ever consumed by it, so that
+            // port goes unprovisioned, while api_port survives (the API still uses it).
+            Pump(workspaces.NewWorkspaceCommand.ExecuteAsync(null));
+            workspaces.NewName = "api-only";
+            workspaces.StartInfraOnCreate = false;      // no docker in a render run
+            workspaces.NewRepos.First(r => r.Name == Sprig.Core.Demo.SampleFixtures.WebRepo).Included = false;
+            SettleFrame(window, outDir, "workspace_partial_create");
+
+            Pump(workspaces.CreateCommand.ExecuteAsync(null));
+            Dispatcher.UIThread.RunJobs();
+            SettleFrame(window, outDir, "workspace_partial_detail");
+
+            if (workspaces.Selected is not { IsPartial: true })
+            {
+                Console.Error.WriteLine("partial-workspace render: the created workspace isn't marked partial");
+                failures++;
+            }
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Error.WriteLine($"partial-workspace render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return failures;
     }
 
     /// <summary>Let two layout passes run, capture the current coach frame, and report an unresolved anchor.</summary>

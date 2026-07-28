@@ -48,7 +48,7 @@ public static class CliApp
         {
             return command switch
             {
-                "create" => Create(svc, resolver, rest, json),
+                "create" => Create(svc, resolver, stacks, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
                 "rm" or "remove" => Rm(svc, rest),
@@ -71,19 +71,28 @@ public static class CliApp
         }
     }
 
-    static int Create(WorkspaceService svc, StackResolver resolver, string[] args, bool json)
+    static int Create(WorkspaceService svc, StackResolver resolver, StackStore stacks, string[] args, bool json)
     {
         var stackName = Args.TakeOption(ref args, "--stack");
         var repo = Args.TakeOption(ref args, "--repo");
+        var only = Args.TakeList(ref args, "--only");
+        var without = Args.TakeList(ref args, "--without");
         var workspace = Args.FirstPositional(args)
             ?? throw new ArgumentException("create requires a workspace name");
 
-        var record = stackName is not null ? svc.Create(resolver.Resolve(stackName), workspace)
+        if ((only.Count > 0 || without.Count > 0) && stackName is null)
+            throw new ArgumentException("--only/--without narrow a stack — they need --stack <name>");
+
+        var record = stackName is not null
+                ? svc.Create(resolver.Resolve(stackName, Selection(stacks, stackName, only, without)), workspace)
             : repo is not null ? svc.Create(repo, workspace)
             : throw new ArgumentException("create requires --stack <name> or --repo <path>");
 
         if (json) { WriteJson(record); return 0; }
         Console.WriteLine($"created workspace '{record.Workspace}'{(record.Stack is { } st ? $" from stack '{st}'" : "")}");
+        if (record.IsPartial)
+            Console.WriteLine($"  partial: without {string.Join(", ", record.ExcludedRepos)}" +
+                (record.SkippedPorts.Count > 0 ? $"; ports not provisioned: {string.Join(", ", record.SkippedPorts)}" : ""));
         if (record.Ports.Count > 0)
             Console.WriteLine($"  ports: {FormatPorts(record.Ports)}");
         foreach (var r in record.Repos)
@@ -102,6 +111,32 @@ public static class CliApp
         if (record.Repos.Any(r => r.Setup.Any(s => !s.Success)))
             Console.WriteLine("  note: a setup command failed — the workspace was kept; finish setup manually in the worktree.");
         return 0;
+    }
+
+    /// <summary>Turn <c>--only</c>/<c>--without</c> into the repo subset to create (null = the whole
+    /// stack). <c>--without</c> is resolved against the stack's repo list so the two flags are
+    /// interchangeable ways of saying the same thing; naming an unknown repo is an error either way.</summary>
+    static IReadOnlyList<string>? Selection(StackStore stacks, string stackName,
+        List<string> only, List<string> without)
+    {
+        if (only.Count == 0 && without.Count == 0) return null;
+        var stack = stacks.Get(stackName) ?? throw new StackException($"unknown stack '{stackName}'");
+
+        // Validate both lists against the stack (Include does it for --only; do the same for --without
+        // so a typo'd exclusion fails loudly instead of silently keeping every repo).
+        var included = StackSelection.Include(stack, only.Count > 0 ? only : null);
+        var unknown = without.Where(r => !stack.Repos.Contains(r, StringComparer.Ordinal)).ToList();
+        if (unknown.Count > 0)
+            throw new StackException(
+                $"stack '{stackName}' has no repo{(unknown.Count == 1 ? "" : "s")} " +
+                $"{string.Join(", ", unknown.Select(r => $"'{r}'"))} " +
+                $"(it has: {string.Join(", ", stack.Repos)})");
+
+        var drop = new HashSet<string>(without, StringComparer.Ordinal);
+        var selection = included.Where(r => !drop.Contains(r)).ToList();
+        if (selection.Count == 0)
+            throw new StackException($"that leaves no repos to create from stack '{stackName}'");
+        return selection;
     }
 
     static int Repo(RepoRegistryStore registry, string[] args, bool json)
@@ -290,6 +325,12 @@ public static class CliApp
         if (json) { WriteJson(new { record, drift = report }); return 0; }
 
         Console.WriteLine($"workspace: {record.Workspace}   status: {record.LastStatus}   created: {record.CreatedAt:u}");
+        if (record.IsPartial)
+        {
+            Console.WriteLine($"partial: stack '{record.Stack}' without {string.Join(", ", record.ExcludedRepos)}");
+            if (record.SkippedPorts.Count > 0)
+                Console.WriteLine($"  ports not provisioned: {string.Join(", ", record.SkippedPorts)}");
+        }
         Console.WriteLine($"ports: {FormatPorts(record.Ports)}");
         foreach (var r in record.Repos)
         {
@@ -407,6 +448,9 @@ public static class CliApp
 
             COMMANDS:
                 create <name> --stack <s> | --repo <path>   Create an isolated workspace
+                              [--only a,b | --without c]   Partial workspace: a subset of the
+                                                           stack's repos (ports left with no
+                                                           consumer aren't provisioned)
                 ls                            List workspaces
                 info <name>                   Show a workspace's repos, ports, drift
                 up <name>                     Bring the workspace's docker infra up
@@ -459,6 +503,12 @@ static class Args
         while ((v = TakeOption(ref args, name)) is not null) values.Add(v);
         return values;
     }
+
+    /// <summary>Take a list option, accepting both <c>--name a,b</c> and a repeated <c>--name</c>.</summary>
+    public static List<string> TakeList(ref string[] args, string name)
+        => TakeAll(ref args, name)
+            .SelectMany(v => v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToList();
 
     public static string? FirstPositional(string[] args)
         => args.FirstOrDefault(a => !a.StartsWith('-'));

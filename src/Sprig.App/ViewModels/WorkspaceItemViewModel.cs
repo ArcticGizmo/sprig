@@ -25,6 +25,17 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     public string Stack => Record.Stack ?? "(ad-hoc)";
     public string ReposSummary => string.Join(", ", Record.Repos.Select(r => r.Name));
 
+    /// <summary>True when this workspace holds a subset of its stack's repos — drives the list badge.</summary>
+    public bool IsPartial => Record.IsPartial;
+
+    /// <summary>What a partial workspace left out, and which stack ports that meant skipping (empty
+    /// string for a full workspace, so the label can be bound unconditionally).</summary>
+    public string PartialSummary => !Record.IsPartial ? "" :
+        $"without {string.Join(", ", Record.ExcludedRepos)}" +
+        (Record.SkippedPorts.Count > 0
+            ? $" · ports not provisioned: {string.Join(", ", Record.SkippedPorts)}"
+            : "");
+
     /// <summary>Allocated ports as a compact ":5173 :5080" summary (empty when none).</summary>
     public string PortsSummary => string.Join(" ", Record.Ports.OrderBy(p => p.Key).Select(p => ":" + p.Value));
     public IReadOnlyList<RepoLineViewModel> Repos { get; }

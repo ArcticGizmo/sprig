@@ -113,7 +113,9 @@ public sealed partial class WorkspaceService(
 
     /// <summary>Create an isolated workspace from a resolved stack (1+ repos). Rolls back on failure.
     /// Reports checklist progress to <paramref name="progress"/> if supplied (steps match
-    /// <see cref="PlanCreate"/>).</summary>
+    /// <see cref="PlanCreate"/>). A partial stack (see <see cref="ResolvedStack.ExcludedRepos"/>)
+    /// needs no special handling here: it arrives already narrowed, so only its repos are
+    /// materialised and only its ports are allocated.</summary>
     public InstanceRecord Create(ResolvedStack stack, string workspace,
         IProgress<WorkspaceStepProgress>? progress = null)
     {
@@ -225,6 +227,8 @@ public sealed partial class WorkspaceService(
                 Stack = stack.StackName,
                 Repos = repoRecords,
                 Ports = new Dictionary<string, int>(allPorts),
+                ExcludedRepos = stack.ExcludedRepos,
+                SkippedPorts = stack.SkippedPorts,
                 LastStatus = "created",
                 CreatedAt = DateTimeOffset.UtcNow,
             };

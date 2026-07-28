@@ -9,13 +9,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [v0.3.3] - 2026-07-27
+## [v0.3.3] - 2026-07-28
 
 ### Added
+- **Partial workspaces** — untick the repos you don't need before creating.
+- **A deselected repo gets nothing** — no worktree, no `.env`, no compose.
+- **Ports left with no consumer aren't provisioned** — sprig names them before you commit.
+- **`sprig create feat --stack web+api --without web`** (or `--only api`) for the terminal.
 - **Guided tour** — "Show me a working setup" spins up a throwaway sample to explore, then deletes it.
 - **Spotlight coachmarks** — the tour dims the page and rings each thing as it explains it.
 - **Learn library** — four hands-on lessons: register a repo, wire a stack, run a workspace, recover from drift.
 - **All in a throwaway sandbox** — a separate demo store, never your real repos, gone when you leave.
+- **A licence** — MIT, in case anyone was waiting on that.
 
 ### Changed
 - **The repo editor explains what sprig scaffolded** for you, instead of a pre-filled form with no backstory.

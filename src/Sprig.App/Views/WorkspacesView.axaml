@@ -35,6 +35,10 @@
                             <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
                                 <Run Text="{Binding Stack}" /><Run Text="  ·  " /><Run Text="{Binding Status}" />
                             </TextBlock>
+                            <TextBlock IsVisible="{Binding IsPartial}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                       Foreground="{StaticResource WarnBrush}">
+                                <Run Text="partial · " /><Run Text="{Binding PartialSummary}" />
+                            </TextBlock>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -94,6 +98,12 @@
                                 <Run Text="stack: " /><Run Text="{Binding Selected.Stack}" />
                                 <Run Text="   status: " /><Run Text="{Binding Selected.Status}" />
                                 <Run Text="   drift: " /><Run Text="{Binding Selected.Drift, FallbackValue='—'}" />
+                            </TextBlock>
+                            <!-- A partial workspace holds only some of its stack's repos; say which are
+                                 missing (and which stack ports went unprovisioned as a result). -->
+                            <TextBlock IsVisible="{Binding Selected.IsPartial}" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{StaticResource WarnBrush}">
+                                <Run Text="partial workspace — " /><Run Text="{Binding Selected.PartialSummary}" />
                             </TextBlock>
                         </StackPanel>
 
@@ -254,6 +264,22 @@
                         <TextBlock Text="Stack" Foreground="{StaticResource MutedBrush}" FontSize="12" />
                         <ComboBox ItemsSource="{Binding AvailableStacks}" SelectedItem="{Binding NewStack, Mode=TwoWay}"
                                   HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <!-- Partial workspace: untick a repo you don't need this time. Only shown when the
+                         stack has more than one repo (nothing to choose otherwise). -->
+                    <StackPanel Spacing="4" IsVisible="{Binding CanChooseRepos}">
+                        <TextBlock Text="Repos" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <ItemsControl ItemsSource="{Binding NewRepos}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WorkspaceRepoChoiceViewModel">
+                                    <CheckBox IsChecked="{Binding Included, Mode=TwoWay}" Content="{Binding Name}"
+                                              Margin="0,1" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock IsVisible="{Binding PartialHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Text="{Binding PartialHint}" TextWrapping="Wrap" FontSize="11"
+                                   Foreground="{StaticResource WarnBrush}" />
                     </StackPanel>
                     <StackPanel Spacing="4">
                         <TextBlock Text="Workspace name" Foreground="{StaticResource MutedBrush}" FontSize="12" />

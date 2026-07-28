@@ -57,6 +57,12 @@ Add-repo → Build-a-stack → Spin-up flows in order and auto-advances as you g
 ### Workspaces
 - **New workspace**: pick a stack, name the workspace, Create. sprig makes the worktrees, branches,
   and allocated ports.
+- **Partial workspaces**: the create form lists the stack's repos, all ticked. Untick the ones you
+  don't need this time and sprig leaves them out entirely — no worktree, no `.env`, and their compose
+  files are ignored, so `up` only starts the infra of the repos you kept. Any stack port left with no
+  consumer isn't provisioned either; the form names the ports you'll lose before you commit, and the
+  workspace is badged **partial** afterwards. A port a repo you *kept* still references (a frontend's
+  `apiUrl`, say) is provisioned as usual, even when the repo behind it is one you dropped.
 - Selecting a workspace shows its per-repo detail (branch, worktree path, resolved inputs, drift
   state) and a lifecycle toolbar:
   - **Up / Down / Reset** — docker infra (shown only when the stack actually declares infra).
@@ -137,6 +143,19 @@ sprig create quick --repo C:\code\my-api      # ad-hoc, single repo, no stack
 
 Create prints the allocated ports and each repo's resolved inputs. If a repo declares an input the
 stack doesn't bind, create fails and names the missing repo + input + example.
+
+Only need part of the stack? Narrow it — the two flags are interchangeable, and both accept a
+comma-separated list (or repeat the flag):
+
+```sh
+sprig create backend-only --stack web+api --without web   # everything but web
+sprig create backend-only --stack web+api --only api      # the same thing, said the other way
+```
+
+A deselected repo is left out completely: no worktree, no `.env`, and its compose files are never
+generated, so the workspace's infra is only what the kept repos declare. Stack ports left with no
+consumer aren't provisioned — create and `sprig info` list them under `ports not provisioned`, and
+they stay free for other workspaces. A port a kept repo still references is provisioned as normal.
 
 ```sh
 sprig ls                      # all workspaces (repos, ports, status)

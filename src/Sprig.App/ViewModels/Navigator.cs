@@ -143,12 +143,14 @@ public sealed class Navigator
     /// <summary>
     /// Open (or keep open) the New-workspace form, pre-filled with a name and the first stack, infra off so a
     /// guide never depends on Docker. Idempotent, so it can precondition several consecutive steps.
+    /// <para>Awaits the open: the form loads its stacks and repo checklist asynchronously, and its own
+    /// resets would otherwise land <i>after</i> the fields set here.</para>
     /// </summary>
-    public void PrepareNewWorkspace(string name)
+    public async Task PrepareNewWorkspace(string name)
     {
         if (_workspaces is null) return;
         Go(_workspaces);
-        if (!_workspaces.IsCreating) _workspaces.NewWorkspaceCommand.Execute(null);
+        if (!_workspaces.IsCreating) await _workspaces.NewWorkspaceCommand.ExecuteAsync(null);
         _workspaces.NewName = name;
         _workspaces.StartInfraOnCreate = false;   // teaching worktrees/ports/compose; no daemon needed
         _workspaces.NewStack ??= _workspaces.AvailableStacks.FirstOrDefault();

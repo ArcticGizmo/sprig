@@ -1,0 +1,123 @@
+using Sprig.App.ViewModels;
+
+namespace Sprig.Tests.App;
+
+/// <summary>The repo editor edits modules as tabs: inputs stay shared, each module is a tab with its own
+/// env/compose/setup, and modules can be added and removed down to zero.</summary>
+public class RepoEditModuleTests
+{
+    static string Write(TempStore s, string json)
+    {
+        var dir = Path.Combine(s.Root, "repo");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), json);
+        return dir;
+    }
+
+    [Fact]
+    public void Load_builds_one_tab_per_module_selecting_the_first()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """
+            { "schema":3, "name":"mono",
+              "inputs":[ { "name":"port" } ],
+              "modules":[
+                { "name":"web", "path":"apps/web",
+                  "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.port}" } } ], "setup":["npm ci"] },
+                { "name":"api", "path":"apps/api", "setup":["dotnet restore"] } ] }
+            """);
+
+        var e = RepoEditViewModel.Load(dir);
+
+        Assert.Equal(["web", "api"], e.Modules.Select(m => m.Name));
+        Assert.Same(e.Modules[0], e.SelectedModule);
+        Assert.Single(e.Inputs);                          // inputs shared, edited once above the tabs
+        Assert.Equal("apps/web", e.Modules[0].Path);
+        Assert.Equal(".env.local", e.Modules[0].Env.First().File);
+        Assert.Equal(["npm ci"], e.Modules[0].Setup.Select(x => x.Command));
+        Assert.Equal(["dotnet restore"], e.Modules[1].Setup.Select(x => x.Command));
+    }
+
+    [Fact]
+    public void Build_round_trips_modules()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """
+            { "schema":3, "name":"mono",
+              "modules":[
+                { "name":"web", "path":"apps/web", "setup":["npm ci"] },
+                { "name":"api", "path":"apps/api", "setup":["dotnet restore"] } ] }
+            """);
+
+        var built = RepoEditViewModel.Load(dir).Build();
+
+        Assert.Equal(3, built.Schema);
+        Assert.Equal(["web", "api"], built.Modules.Select(m => m.Name));
+        Assert.Equal(["apps/web", "apps/api"], built.Modules.Select(m => m.Path));
+        Assert.Equal(["npm ci"], built.Modules[0].Setup);
+        Assert.Null(built.Env);   // nothing at the legacy top level
+    }
+
+    [Fact]
+    public void Add_module_appends_a_selectable_tab_with_a_unique_name()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """{ "schema":3, "name":"empty" }""");
+        var e = RepoEditViewModel.Load(dir);
+        Assert.Empty(e.Modules);
+        Assert.False(e.HasModules);
+
+        e.AddModuleCommand.Execute(null);
+        e.AddModuleCommand.Execute(null);
+
+        Assert.Equal(["module", "module-2"], e.Modules.Select(m => m.Name));
+        Assert.Same(e.Modules[1], e.SelectedModule);   // newest is selected
+        Assert.True(e.HasModules);
+    }
+
+    [Fact]
+    public void Remove_module_can_go_down_to_zero()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"only", "setup":["x"] } ] }""");
+        var e = RepoEditViewModel.Load(dir);
+
+        e.SelectedModule!.RemoveCommand.Execute(null);
+
+        Assert.Empty(e.Modules);
+        Assert.Null(e.SelectedModule);
+        Assert.False(e.HasModules);
+    }
+
+    [Fact]
+    public void A_reference_in_the_second_module_surfaces_as_a_shared_missing_input()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """
+            { "schema":3, "name":"mono",
+              "modules":[
+                { "name":"web" },
+                { "name":"api", "env":[ { "file":".env", "set":{ "P":"${sprig.apiPort}" } } ] } ] }
+            """);
+
+        var e = RepoEditViewModel.Load(dir);
+
+        // The hint lives once above the tabs, aggregated across every module.
+        Assert.Contains("apiPort", e.MissingInputRefs);
+        Assert.True(e.HasMissingInputRefs);
+    }
+
+    [Fact]
+    public void Deleting_all_modules_then_saving_writes_an_empty_module_list()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"only", "setup":["x"] } ] }""");
+        var e = RepoEditViewModel.Load(dir);
+
+        e.SelectedModule!.RemoveCommand.Execute(null);
+        Assert.True(e.Save());
+
+        var reloaded = RepoEditViewModel.Load(dir);
+        Assert.Empty(reloaded.Modules);
+    }
+}

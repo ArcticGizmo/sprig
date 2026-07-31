@@ -436,6 +436,81 @@
                                 </Border>
                             </StackPanel>
 
+                            <!-- modules: one tab per module (its own env/compose/setup); inputs above are shared -->
+                            <StackPanel Spacing="12">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="MODULES" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="+ Add module" Command="{Binding AddModuleCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+
+                                <!-- tab strip -->
+                                <ListBox ItemsSource="{Binding Modules}" SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
+                                         Background="Transparent" Padding="0" BorderThickness="0"
+                                         IsVisible="{Binding HasModules}">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Padding" Value="12,5" />
+                                            <Setter Property="CornerRadius" Value="4" />
+                                            <Setter Property="Background" Value="Transparent" />
+                                        </Style>
+                                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                            <Setter Property="Background" Value="{StaticResource FormBgBrush}" />
+                                        </Style>
+                                    </ListBox.Styles>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ModuleEditTab">
+                                            <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="12"
+                                                       Foreground="{StaticResource FgBrush}" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <!-- empty state -->
+                                <Border IsVisible="{Binding !HasModules}" Background="{StaticResource FormBgBrush}"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="18">
+                                    <StackPanel Spacing="10" HorizontalAlignment="Center">
+                                        <TextBlock Text="No modules yet. A module is a slice of the repo — its own .env files, compose files and setup commands."
+                                                   FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                                   TextAlignment="Center" MaxWidth="440" />
+                                        <Button Content="+ Add module" Command="{Binding AddModuleCommand}" HorizontalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- selected module detail -->
+                                <ContentControl Content="{Binding SelectedModule}">
+                                    <ContentControl.ContentTemplate>
+                                        <DataTemplate x:DataType="vm:ModuleEditTab">
+                                            <StackPanel Spacing="16">
+
+                                            <!-- module header: name, path, delete -->
+                                            <Border Background="{StaticResource FormBgBrush}" CornerRadius="6" Padding="12">
+                                                <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12">
+                                                    <StackPanel Grid.Column="0" Spacing="3">
+                                                        <TextBlock Text="Module name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                                        <TextBox Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
+                                                                 PlaceholderText="web" FontFamily="Consolas,monospace" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="3">
+                                                        <TextBlock Text="Path (subdirectory, optional)" FontSize="11"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   ToolTip.Tip="The module's directory (e.g. apps/web). Its .env/compose paths resolve under it, and setup runs there. Leave blank for the repo root." />
+                                                        <AutoCompleteBox Text="{Binding Path, Mode=TwoWay}" MinWidth="0"
+                                                                         FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
+                                                                         Loaded="RepoPathBoxLoaded"
+                                                                         PlaceholderText="apps/web" FontFamily="Consolas,monospace" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2" Content="Delete module" Command="{Binding RemoveCommand}"
+                                                            VerticalAlignment="Bottom" Padding="10,5"
+                                                            Background="Transparent" Foreground="{StaticResource DangerBrush}"
+                                                            BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" />
+                                                </Grid>
+                                            </Border>
+
                             <!-- env -->
                             <StackPanel Spacing="8">
                                 <Grid ColumnDefinitions="*,Auto">
@@ -567,7 +642,7 @@
                                             FontSize="11" Padding="8,3" />
                                 </Grid>
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Run in order at the worktree root after it's created (e.g. npm ci, dotnet restore). Each runs via your shell; a failure warns but won't undo the workspace." />
+                                           Text="Run in order in the module's directory after the worktree is created (e.g. npm ci, dotnet restore). Each runs via your shell; a failure warns but won't undo the workspace." />
                                 <ItemsControl ItemsSource="{Binding Setup}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SetupCommandRow">
@@ -582,6 +657,12 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                            </StackPanel>
+
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ContentControl.ContentTemplate>
+                                </ContentControl>
                             </StackPanel>
 
                             </StackPanel>

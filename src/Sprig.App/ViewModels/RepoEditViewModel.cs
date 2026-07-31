@@ -198,6 +198,10 @@ public partial class EnvFileEditRow : ObservableObject
 
     partial void OnFileChanged(string value) => Reclassify();
 
+    /// <summary>Re-evaluate git status + overlay — used when the owning module's path changes, since the
+    /// file resolves under it (the classify/keys callbacks read the module path live).</summary>
+    public void Refresh() => Reclassify();
+
     /// <summary>Recompute the git status and rebuild the merged-env overlay off the UI thread. Runs on
     /// a <see cref="File"/> edit and whenever the seed templates change (they add their own keys).</summary>
     void Reclassify()
@@ -353,6 +357,10 @@ public partial class ComposeFileEditRow : ObservableObject
 
     partial void OnFileChanged(string value) => Rebuild();
 
+    /// <summary>Re-evaluate existence + overlay — used when the owning module's path changes, since the
+    /// compose file resolves under it (the exists/read callbacks read the module path live).</summary>
+    public void Refresh() => Rebuild();
+
     partial void OnFoundChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowFound));
@@ -399,19 +407,99 @@ public partial class ComposeFileEditRow : ObservableObject
 }
 
 /// <summary>
+/// One editable module tab: its name, its path (subdirectory), and its own env / compose / setup
+/// rows. Inputs are not here — they are shared and edited once above the tabs. The env/compose rows
+/// reuse the owner's git-safety + overlay machinery, prepending this module's path (read live) so the
+/// checks resolve under it; changing the path re-evaluates every row.
+/// </summary>
+public partial class ModuleEditTab : ObservableObject
+{
+    readonly RepoEditViewModel _owner;
+
+    public ModuleEditTab(RepoEditViewModel owner, string name, string path)
+    {
+        _owner = owner;
+        _name = name;
+        _path = path;
+        Env.CollectionChanged += OnOverrideRowsChanged;
+        Compose.CollectionChanged += OnOverrideRowsChanged;
+    }
+
+    /// <summary>Module name — the tab label, and the module's identity (unique within the repo).</summary>
+    [ObservableProperty] private string _name;
+
+    /// <summary>Optional subdirectory the module lives in (e.g. <c>apps/web</c>); its files resolve under it.</summary>
+    [ObservableProperty] private string _path;
+
+    public ObservableCollection<EnvFileEditRow> Env { get; } = [];
+    public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
+    public ObservableCollection<SetupCommandRow> Setup { get; } = [];
+
+    /// <summary>Raised whenever this module's env/compose overrides change (rows added/removed/edited), so
+    /// the owner can recompute the shared "referenced but not declared" input hint across every module.</summary>
+    public event EventHandler? OverridesChanged;
+
+    // The file resolves under the module path, so moving the module re-runs every row's git-safety and
+    // existence check, and its overrides may now name different inputs.
+    partial void OnPathChanged(string value)
+    {
+        foreach (var e in Env) e.Refresh();
+        foreach (var c in Compose) c.Refresh();
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A fresh env row wired to this module (removal, and path-aware git/keys/exists callbacks).</summary>
+    public EnvFileEditRow NewEnvRow() => new(
+        r => Env.Remove(r),
+        (f, ct) => _owner.ClassifyEnvFileAsync(RepoEditViewModel.JoinPath(Path, f), ct),
+        f => _owner.EnvKeysFor(RepoEditViewModel.JoinPath(Path, f)),
+        f => _owner.EnvExamplesFor(RepoEditViewModel.JoinPath(Path, f)),
+        f => _owner.RepoFileExists(RepoEditViewModel.JoinPath(Path, f)),
+        _owner.SprigVariableNames);
+
+    /// <summary>A fresh compose row wired to this module (removal, and path-aware exists/read callbacks).</summary>
+    public ComposeFileEditRow NewComposeRow() => new(
+        r => Compose.Remove(r),
+        f => _owner.RepoFileExists(RepoEditViewModel.JoinPath(Path, f)),
+        f => _owner.ReadRepoFile(RepoEditViewModel.JoinPath(Path, f)),
+        _owner.SprigVariableNames);
+
+    [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
+    [RelayCommand] private void AddComposeFile() => Compose.Add(NewComposeRow());
+    [RelayCommand] private void AddSetupCommand() => Setup.Add(new SetupCommandRow(r => Setup.Remove(r)));
+
+    /// <summary>Delete this whole module (allowed down to zero, so a repo can be rebuilt from scratch).</summary>
+    [RelayCommand] private void Remove() => _owner.RemoveModule(this);
+
+    void OnOverrideRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (var i in e.OldItems) Unsubscribe(i);
+        if (e.NewItems is not null) foreach (var i in e.NewItems) Subscribe(i);
+        OverridesChanged?.Invoke(this, EventArgs.Empty);
+
+        void Subscribe(object? i)
+        {
+            if (i is EnvFileEditRow ef) ef.OverridesChanged += Bubble;
+            else if (i is ComposeFileEditRow cf) cf.OverridesChanged += Bubble;
+        }
+        void Unsubscribe(object? i)
+        {
+            if (i is EnvFileEditRow ef) ef.OverridesChanged -= Bubble;
+            else if (i is ComposeFileEditRow cf) cf.OverridesChanged -= Bubble;
+        }
+    }
+
+    void Bubble(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
+}
+
+/// <summary>
 /// Editable view over a repo's <c>.sprig.json</c>. The repo <b>name</b> is intentionally not
-/// editable here — it is the registry/stack key, so renaming is a separate operation — but every
-/// value it declares (inputs, env overrides, compose overrides) can be changed and saved back.
+/// editable here — it is the registry/stack key, so renaming is a separate operation. Inputs are
+/// declared once (shared), then each <b>module</b> is a tab with its own env / compose / setup.
 /// </summary>
 public partial class RepoEditViewModel : ObservableObject
 {
     int _schema = SprigConfigLoader.SupportedSchema;
-
-    // Until the multi-module tab editor lands (Milestone 4) this form edits a single module's
-    // env/compose/setup as a flat surface. These remember which module to persist back into, so a
-    // single-module config round-trips losslessly (name + path preserved).
-    string _moduleName = SprigConfigMigration.DefaultModuleName;
-    string _modulePath = "";
 
     /// <summary>Repo-relative paths (forward-slash) of every git-tracked file, for a cheap
     /// per-keystroke lookup. Populated once at <see cref="Load"/> from a single git call.</summary>
@@ -427,10 +515,9 @@ public partial class RepoEditViewModel : ObservableObject
         // Keep the ${sprig.*} variable list live: it feeds token autocomplete + validity, and inputs
         // can be added/renamed in this same form.
         Inputs.CollectionChanged += OnInputsChanged;
-        // Env/compose overrides are where ${sprig.*} inputs get referenced — track their rows so the
-        // "referenced but not declared" quick-add list stays current as overrides are edited.
-        Env.CollectionChanged += OnOverrideRowsChanged;
-        Compose.CollectionChanged += OnOverrideRowsChanged;
+        // A module's overrides are where ${sprig.*} inputs get referenced — track each module so the
+        // shared "referenced but not declared" quick-add list stays current across every module.
+        Modules.CollectionChanged += OnModulesChanged;
         RefreshSprigVariableNames();
     }
 
@@ -445,13 +532,15 @@ public partial class RepoEditViewModel : ObservableObject
     public string Name { get; private set; } = "";
 
     public ObservableCollection<InputEditRow> Inputs { get; } = [];
-    public ObservableCollection<EnvFileEditRow> Env { get; } = [];
 
-    /// <summary>The compose files this repo overrides — one editable card each (add/remove).</summary>
-    public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
+    /// <summary>The repo's module tabs — each with its own env / compose / setup. Add/remove down to zero.</summary>
+    public ObservableCollection<ModuleEditTab> Modules { get; } = [];
 
-    /// <summary>Free-form commands run at the worktree root after it's created (add/remove/reorder-by-hand).</summary>
-    public ObservableCollection<SetupCommandRow> Setup { get; } = [];
+    /// <summary>The module tab currently shown below the strip (null when there are none).</summary>
+    [ObservableProperty] private ModuleEditTab? _selectedModule;
+
+    /// <summary>True when at least one module exists — gates the module detail vs. the empty state.</summary>
+    public bool HasModules => Modules.Count > 0;
 
     /// <summary>True when at least one input is declared — gates the inputs column header.</summary>
     public bool HasInputs => Inputs.Count > 0;
@@ -489,44 +578,76 @@ public partial class RepoEditViewModel : ObservableObject
                 AllowedPorts = i.AllowedPorts ?? "",
             });
 
-        // Source the env/compose/setup from the module surface, flattening across modules into this
-        // flat form (Milestone 4 splits them back into per-module tabs). Remember the first module's
-        // identity so Build persists back into it.
-        var modules = c.EffectiveModules;
-        if (modules.Count > 0)
+        // One tab per module; each hydrates its own env/compose/setup rows (path-aware via the tab).
+        foreach (var m in c.EffectiveModules)
         {
-            vm._moduleName = modules[0].Name;
-            vm._modulePath = modules[0].Path;
+            var tab = new ModuleEditTab(vm, m.Name, m.Path);
+            foreach (var e in m.Env)
+            {
+                var row = tab.NewEnvRow();
+                foreach (var t in e.Templates ?? [])
+                    row.Templates.Add(new TemplateFileRow(r => row.Templates.Remove(r), vm.RepoFileExists) { Path = t });
+                row.Seed(e.File, e.Set);   // sets the seed overrides, then the file (which builds the overlay)
+                tab.Env.Add(row);
+            }
+            foreach (var comp in m.Compose)
+            {
+                var row = tab.NewComposeRow();
+                row.Seed(comp.File, comp.Overrides);
+                tab.Compose.Add(row);
+            }
+            foreach (var cmd in m.Setup)
+                tab.Setup.Add(new SetupCommandRow(r => tab.Setup.Remove(r)) { Command = cmd });
+            vm.Modules.Add(tab);
         }
-
-        foreach (var e in modules.SelectMany(m => m.Env))
-        {
-            var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.EnvExamplesFor,
-                vm.RepoFileExists, vm.SprigVariableNames);
-            foreach (var t in e.Templates ?? [])
-                file.Templates.Add(new TemplateFileRow(r => file.Templates.Remove(r), vm.RepoFileExists) { Path = t });
-            file.Seed(e.File, e.Set);   // sets the seed overrides, then the file (which builds the overlay)
-            vm.Env.Add(file);
-        }
-
-        foreach (var comp in modules.SelectMany(m => m.Compose))
-        {
-            var row = new ComposeFileEditRow(vm.RemoveComposeRow, vm.RepoFileExists, vm.ReadRepoFile, vm.SprigVariableNames);
-            row.Seed(comp.File, comp.Overrides);
-            vm.Compose.Add(row);
-        }
-
-        foreach (var cmd in modules.SelectMany(m => m.Setup))
-            vm.Setup.Add(new SetupCommandRow(vm.RemoveSetupRow) { Command = cmd });
+        vm.SelectedModule = vm.Modules.FirstOrDefault();
 
         vm.RefreshMissingInputRefs();
         return vm;
     }
 
+    // -- modules ---------------------------------------------------------------
+
+    void OnModulesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+            foreach (ModuleEditTab t in e.OldItems) t.OverridesChanged -= OnModuleOverridesChanged;
+        if (e.NewItems is not null)
+            foreach (ModuleEditTab t in e.NewItems) t.OverridesChanged += OnModuleOverridesChanged;
+        OnPropertyChanged(nameof(HasModules));
+        RefreshMissingInputRefs();
+    }
+
+    void OnModuleOverridesChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
+
+    /// <summary>Add a new, empty module (auto-named uniquely) and select it.</summary>
+    [RelayCommand]
+    private void AddModule()
+    {
+        var tab = new ModuleEditTab(this, UniqueModuleName(), "");
+        Modules.Add(tab);
+        SelectedModule = tab;
+    }
+
+    /// <summary>Remove a module tab (allowed down to zero); keep a sensible tab selected.</summary>
+    public void RemoveModule(ModuleEditTab tab)
+    {
+        var idx = Modules.IndexOf(tab);
+        if (idx < 0) return;
+        Modules.Remove(tab);
+        if (SelectedModule is null || ReferenceEquals(SelectedModule, tab))
+            SelectedModule = Modules.Count == 0 ? null : Modules[Math.Min(idx, Modules.Count - 1)];
+    }
+
+    string UniqueModuleName()
+    {
+        var taken = Modules.Select(m => m.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains("module")) return "module";
+        for (var i = 2; ; i++)
+            if (!taken.Contains($"module-{i}")) return $"module-{i}";
+    }
+
     void RemoveInputRow(InputEditRow r) => Inputs.Remove(r);
-    void RemoveEnvRow(EnvFileEditRow r) => Env.Remove(r);
-    void RemoveComposeRow(ComposeFileEditRow r) => Compose.Remove(r);
-    void RemoveSetupRow(SetupCommandRow r) => Setup.Remove(r);
 
     // -- ${sprig.*} variables (workspace + declared inputs) --------------------
 
@@ -549,28 +670,6 @@ public partial class RepoEditViewModel : ObservableObject
     }
 
     // -- referenced-but-undeclared inputs (quick add) --------------------------
-
-    void OnOverrideRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (e.OldItems is not null)
-            foreach (var item in e.OldItems) Unsubscribe(item);
-        if (e.NewItems is not null)
-            foreach (var item in e.NewItems) Subscribe(item);
-        RefreshMissingInputRefs();
-
-        void Subscribe(object? item)
-        {
-            if (item is EnvFileEditRow ef) ef.OverridesChanged += OnOverrideChanged;
-            else if (item is ComposeFileEditRow cf) cf.OverridesChanged += OnOverrideChanged;
-        }
-        void Unsubscribe(object? item)
-        {
-            if (item is EnvFileEditRow ef) ef.OverridesChanged -= OnOverrideChanged;
-            else if (item is ComposeFileEditRow cf) cf.OverridesChanged -= OnOverrideChanged;
-        }
-    }
-
-    void OnOverrideChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
 
     /// <summary>Recompute which referenced <c>${sprig.*}</c> inputs aren't declared yet, off the live
     /// edit state. Cheap and best-effort — a refresh must never interrupt editing.</summary>
@@ -609,21 +708,9 @@ public partial class RepoEditViewModel : ObservableObject
         foreach (var n in names) SprigVariableNames.Add(n);
     }
 
-    // -- compose ---------------------------------------------------------------
+    // -- file/git helpers (shared by every module's rows) ----------------------
 
     [RelayCommand] private void AddInput() => Inputs.Add(new InputEditRow(RemoveInputRow));
-
-    [RelayCommand]
-    private void AddEnvFile()
-        => Env.Add(new EnvFileEditRow(RemoveEnvRow, ClassifyEnvFileAsync, EnvKeysFor, EnvExamplesFor,
-            RepoFileExists, SprigVariableNames));
-
-    [RelayCommand]
-    private void AddComposeFile()
-        => Compose.Add(new ComposeFileEditRow(RemoveComposeRow, RepoFileExists, ReadRepoFile, SprigVariableNames));
-
-    [RelayCommand]
-    private void AddSetupCommand() => Setup.Add(new SetupCommandRow(RemoveSetupRow));
 
     /// <summary>True if a repo-relative path names a file that exists in the repo (cheap, best-effort).</summary>
     public bool RepoFileExists(string file)
@@ -718,52 +805,40 @@ public partial class RepoEditViewModel : ObservableObject
 
     /// <summary>A repo-relative path for a module file: the module's base path joined to the file
     /// (forward-slash), or just the file when the module is at the repo root.</summary>
-    static string Join(string basePath, string file) =>
+    internal static string JoinPath(string basePath, string file) =>
         string.IsNullOrEmpty(basePath) ? file : $"{basePath.Replace('\\', '/').TrimEnd('/')}/{file}";
 
-    /// <summary>Reconstruct a full config from the edited fields (round-trips every declared value).
-    /// The edited env/compose/setup are persisted into a single module (schema 3); a config with none of
-    /// those declares zero modules.</summary>
-    public SprigRepoConfig Build()
+    /// <summary>Reconstruct a full config from the edited fields — inputs (shared) plus one module per
+    /// tab, each with its env / compose / setup. Zero tabs → a config that declares no modules.</summary>
+    public SprigRepoConfig Build() => new()
     {
-        var env = Env.Select(e =>
+        Schema = _schema,
+        Name = Name,
+        Inputs = Inputs.Select(i => new InputDeclaration
         {
-            var templates = e.Templates
-                .Select(t => t.Path.Trim())
-                .Where(p => p.Length > 0)
-                .ToList();
-            return new EnvOverride
+            Name = i.Name.Trim(),
+            Example = Blank(i.Example),
+            Description = Blank(i.Description),
+            AllowedPorts = Blank(i.AllowedPorts),
+        }).ToList(),
+        Modules = Modules.Select(t => new ModuleDeclaration
+        {
+            Name = t.Name.Trim(),
+            Path = t.Path.Trim(),
+            Env = t.Env.Select(e =>
             {
-                File = e.File.Trim(),
-                Templates = templates.Count > 0 ? templates : null,
-                Set = new Dictionary<string, string>(e.CurrentSet, StringComparer.Ordinal),
-            };
-        }).ToList();
-        var compose = Compose.Select(c => new ComposeConfig
-        {
-            File = c.File.Trim(),
-            Overrides = c.CurrentOverrides,
-        }).ToList();
-        var setup = Setup.Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList();
-
-        var modules = env.Count == 0 && compose.Count == 0 && setup.Count == 0
-            ? new List<ModuleDeclaration>()
-            : [new ModuleDeclaration { Name = _moduleName, Path = _modulePath, Env = env, Compose = compose, Setup = setup }];
-
-        return new SprigRepoConfig
-        {
-            Schema = _schema,
-            Name = Name,
-            Inputs = Inputs.Select(i => new InputDeclaration
-            {
-                Name = i.Name.Trim(),
-                Example = Blank(i.Example),
-                Description = Blank(i.Description),
-                AllowedPorts = Blank(i.AllowedPorts),
+                var templates = e.Templates.Select(x => x.Path.Trim()).Where(p => p.Length > 0).ToList();
+                return new EnvOverride
+                {
+                    File = e.File.Trim(),
+                    Templates = templates.Count > 0 ? templates : null,
+                    Set = new Dictionary<string, string>(e.CurrentSet, StringComparer.Ordinal),
+                };
             }).ToList(),
-            Modules = modules,
-        };
-    }
+            Compose = t.Compose.Select(c => new ComposeConfig { File = c.File.Trim(), Overrides = c.CurrentOverrides }).ToList(),
+            Setup = t.Setup.Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList(),
+        }).ToList(),
+    };
 
     /// <summary>Validate the edited config and, if valid, write it back to <c>.sprig.json</c>.</summary>
     /// <returns>True on success; otherwise <see cref="Error"/> holds the reason.</returns>
@@ -774,7 +849,7 @@ public partial class RepoEditViewModel : ObservableObject
         // Overriding a git-tracked file would leave the worktree permanently dirty, so refuse it —
         // sprig only clobbers untracked (typically gitignored) env files. Files resolve under their module.
         var tracked = config.EffectiveModules
-            .SelectMany(m => m.Env.Select(e => Join(m.Path, e.File)))
+            .SelectMany(m => m.Env.Select(e => JoinPath(m.Path, e.File)))
             .Where(IsTracked)
             .ToList();
         if (tracked.Count > 0)
@@ -786,7 +861,7 @@ public partial class RepoEditViewModel : ObservableObject
         // Every compose override target must exist in the repo — otherwise generation fails at
         // workspace-creation time with a much less obvious error. (Blank is caught by the validator.)
         var missingCompose = config.EffectiveModules
-            .SelectMany(m => m.Compose.Select(cc => Join(m.Path, cc.File)))
+            .SelectMany(m => m.Compose.Select(cc => JoinPath(m.Path, cc.File)))
             .Where(rel => rel.Length > 0 && !System.IO.File.Exists(Path.Combine(RepoPath, rel)))
             .ToList();
         if (missingCompose.Count > 0)

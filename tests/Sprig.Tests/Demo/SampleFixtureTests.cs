@@ -95,7 +95,7 @@ public class SampleFixtureTests
 
         // The override targets services.db.ports[0]; if the compose fixture stops declaring that
         // path, ComposeGenerator throws at create time. Cheap structural check, clear failure.
-        var compose = Assert.Single(config.Compose);
+        var compose = Assert.Single(Assert.Single(config.Modules).Compose);
         Assert.Contains(compose.Overrides, o => o.Path.SequenceEqual(new[] { "services", "db", "ports", "0" }));
         Assert.Contains("db:", yaml);
         Assert.Contains("ports:", yaml);

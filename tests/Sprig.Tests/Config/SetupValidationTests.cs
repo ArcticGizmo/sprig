@@ -33,7 +33,8 @@ public class SetupValidationTests
 
         var config = SprigConfigLoader.Parse(json);
 
-        Assert.Equal(new[] { "npm ci", "dotnet restore" }, config.Setup);
+        // Migrated to schema 3: the flat setup is folded into the default module.
+        Assert.Equal(new[] { "npm ci", "dotnet restore" }, Assert.Single(config.Modules).Setup);
         Assert.True(SprigConfigValidator.Validate(config).IsValid);
     }
 }

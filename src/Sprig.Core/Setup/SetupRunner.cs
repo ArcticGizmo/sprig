@@ -6,6 +6,10 @@ namespace Sprig.Core.Setup;
 public sealed record SetupOutcome(string Command, int ExitCode, string Output)
 {
     public bool Success => ExitCode == 0;
+
+    /// <summary>The module this command belonged to (schema 3+), for grouping in the UI/CLI. Null on
+    /// records written before modules, and for the single default module of a migrated flat config.</summary>
+    public string? Module { get; init; }
 }
 
 /// <summary>

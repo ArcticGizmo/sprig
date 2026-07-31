@@ -407,6 +407,12 @@ public partial class RepoEditViewModel : ObservableObject
 {
     int _schema = SprigConfigLoader.SupportedSchema;
 
+    // Until the multi-module tab editor lands (Milestone 4) this form edits a single module's
+    // env/compose/setup as a flat surface. These remember which module to persist back into, so a
+    // single-module config round-trips losslessly (name + path preserved).
+    string _moduleName = SprigConfigMigration.DefaultModuleName;
+    string _modulePath = "";
+
     /// <summary>Repo-relative paths (forward-slash) of every git-tracked file, for a cheap
     /// per-keystroke lookup. Populated once at <see cref="Load"/> from a single git call.</summary>
     readonly HashSet<string> _tracked = new(StringComparer.OrdinalIgnoreCase);
@@ -483,7 +489,17 @@ public partial class RepoEditViewModel : ObservableObject
                 AllowedPorts = i.AllowedPorts ?? "",
             });
 
-        foreach (var e in c.Env)
+        // Source the env/compose/setup from the module surface, flattening across modules into this
+        // flat form (Milestone 4 splits them back into per-module tabs). Remember the first module's
+        // identity so Build persists back into it.
+        var modules = c.EffectiveModules;
+        if (modules.Count > 0)
+        {
+            vm._moduleName = modules[0].Name;
+            vm._modulePath = modules[0].Path;
+        }
+
+        foreach (var e in modules.SelectMany(m => m.Env))
         {
             var file = new EnvFileEditRow(vm.RemoveEnvRow, vm.ClassifyEnvFileAsync, vm.EnvKeysFor, vm.EnvExamplesFor,
                 vm.RepoFileExists, vm.SprigVariableNames);
@@ -493,14 +509,14 @@ public partial class RepoEditViewModel : ObservableObject
             vm.Env.Add(file);
         }
 
-        foreach (var comp in c.Compose)
+        foreach (var comp in modules.SelectMany(m => m.Compose))
         {
             var row = new ComposeFileEditRow(vm.RemoveComposeRow, vm.RepoFileExists, vm.ReadRepoFile, vm.SprigVariableNames);
             row.Seed(comp.File, comp.Overrides);
             vm.Compose.Add(row);
         }
 
-        foreach (var cmd in c.Setup)
+        foreach (var cmd in modules.SelectMany(m => m.Setup))
             vm.Setup.Add(new SetupCommandRow(vm.RemoveSetupRow) { Command = cmd });
 
         vm.RefreshMissingInputRefs();
@@ -700,19 +716,17 @@ public partial class RepoEditViewModel : ObservableObject
 
     static string Normalize(string file) => (file ?? "").Replace('\\', '/').Trim().TrimStart('/');
 
-    /// <summary>Reconstruct a full config from the edited fields (round-trips every declared value).</summary>
-    public SprigRepoConfig Build() => new()
+    /// <summary>A repo-relative path for a module file: the module's base path joined to the file
+    /// (forward-slash), or just the file when the module is at the repo root.</summary>
+    static string Join(string basePath, string file) =>
+        string.IsNullOrEmpty(basePath) ? file : $"{basePath.Replace('\\', '/').TrimEnd('/')}/{file}";
+
+    /// <summary>Reconstruct a full config from the edited fields (round-trips every declared value).
+    /// The edited env/compose/setup are persisted into a single module (schema 3); a config with none of
+    /// those declares zero modules.</summary>
+    public SprigRepoConfig Build()
     {
-        Schema = _schema,
-        Name = Name,
-        Inputs = Inputs.Select(i => new InputDeclaration
-        {
-            Name = i.Name.Trim(),
-            Example = Blank(i.Example),
-            Description = Blank(i.Description),
-            AllowedPorts = Blank(i.AllowedPorts),
-        }).ToList(),
-        Env = Env.Select(e =>
+        var env = Env.Select(e =>
         {
             var templates = e.Templates
                 .Select(t => t.Path.Trim())
@@ -724,14 +738,32 @@ public partial class RepoEditViewModel : ObservableObject
                 Templates = templates.Count > 0 ? templates : null,
                 Set = new Dictionary<string, string>(e.CurrentSet, StringComparer.Ordinal),
             };
-        }).ToList(),
-        Compose = Compose.Select(c => new ComposeConfig
+        }).ToList();
+        var compose = Compose.Select(c => new ComposeConfig
         {
             File = c.File.Trim(),
             Overrides = c.CurrentOverrides,
-        }).ToList(),
-        Setup = Setup.Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList(),
-    };
+        }).ToList();
+        var setup = Setup.Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList();
+
+        var modules = env.Count == 0 && compose.Count == 0 && setup.Count == 0
+            ? new List<ModuleDeclaration>()
+            : [new ModuleDeclaration { Name = _moduleName, Path = _modulePath, Env = env, Compose = compose, Setup = setup }];
+
+        return new SprigRepoConfig
+        {
+            Schema = _schema,
+            Name = Name,
+            Inputs = Inputs.Select(i => new InputDeclaration
+            {
+                Name = i.Name.Trim(),
+                Example = Blank(i.Example),
+                Description = Blank(i.Description),
+                AllowedPorts = Blank(i.AllowedPorts),
+            }).ToList(),
+            Modules = modules,
+        };
+    }
 
     /// <summary>Validate the edited config and, if valid, write it back to <c>.sprig.json</c>.</summary>
     /// <returns>True on success; otherwise <see cref="Error"/> holds the reason.</returns>
@@ -740,8 +772,11 @@ public partial class RepoEditViewModel : ObservableObject
         var config = Build();
 
         // Overriding a git-tracked file would leave the worktree permanently dirty, so refuse it —
-        // sprig only clobbers untracked (typically gitignored) env files.
-        var tracked = config.Env.Where(e => IsTracked(e.File)).Select(e => e.File).ToList();
+        // sprig only clobbers untracked (typically gitignored) env files. Files resolve under their module.
+        var tracked = config.EffectiveModules
+            .SelectMany(m => m.Env.Select(e => Join(m.Path, e.File)))
+            .Where(IsTracked)
+            .ToList();
         if (tracked.Count > 0)
         {
             Error = $"these env files are tracked by git and can't be overridden: {string.Join(", ", tracked)}";
@@ -750,9 +785,9 @@ public partial class RepoEditViewModel : ObservableObject
 
         // Every compose override target must exist in the repo — otherwise generation fails at
         // workspace-creation time with a much less obvious error. (Blank is caught by the validator.)
-        var missingCompose = config.Compose
-            .Where(cc => cc.File.Length > 0 && !System.IO.File.Exists(Path.Combine(RepoPath, cc.File)))
-            .Select(cc => cc.File)
+        var missingCompose = config.EffectiveModules
+            .SelectMany(m => m.Compose.Select(cc => Join(m.Path, cc.File)))
+            .Where(rel => rel.Length > 0 && !System.IO.File.Exists(Path.Combine(RepoPath, rel)))
             .ToList();
         if (missingCompose.Count > 0)
         {

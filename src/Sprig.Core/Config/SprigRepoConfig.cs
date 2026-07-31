@@ -19,26 +19,95 @@ public sealed record SprigRepoConfig
     /// <summary>
     /// The values this repo needs to run, referenced as <c>${sprig.&lt;name&gt;}</c> in its env/compose
     /// templates. A repo is a pure consumer: the stack supplies these per-repo (see StackDefinition).
+    /// Inputs are declared once at the repo level and <b>shared across every module</b>.
     /// </summary>
     public IReadOnlyList<InputDeclaration> Inputs { get; init; } = [];
 
-    /// <summary>Which <c>.env.*</c> files to clobber and which keys to set (values are <c>${sprig...}</c> templates).</summary>
+    /// <summary>
+    /// The repo's modules (schema 3+). Each module is a slice of the repo (e.g. a monorepo
+    /// subdirectory) with its own <c>.env</c> files, compose files and setup commands, sharing the
+    /// repo-level <see cref="Inputs"/>. A schema-2 file has no modules; <see cref="SprigConfigMigration"/>
+    /// lifts its flat <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/> into a single default
+    /// module on load.
+    /// </summary>
+    public IReadOnlyList<ModuleDeclaration> Modules { get; init; } = [];
+
+    /// <summary>
+    /// <b>Legacy (schema ≤ 2), load-only.</b> Which <c>.env.*</c> files to clobber and which keys to set.
+    /// A schema-2 file carries these at the top level; migration moves them into a default module and
+    /// clears them, so on a normalised schema-3 config this is empty. New shape: <see cref="ModuleDeclaration.Env"/>.
+    /// </summary>
     public IReadOnlyList<EnvOverride> Env { get; init; } = [];
 
-    /// <summary>Docker compose override declarations (path-based edits only), one per compose file.</summary>
+    /// <summary><b>Legacy (schema ≤ 2), load-only.</b> Docker compose override declarations; see <see cref="Env"/>.
+    /// New shape: <see cref="ModuleDeclaration.Compose"/>.</summary>
     public IReadOnlyList<ComposeConfig> Compose { get; init; } = [];
 
     /// <summary>
-    /// Free-form commands run in order at the worktree root right after it is created (e.g.
-    /// <c>npm ci</c>, <c>dotnet restore</c>) — the "install this project's dependencies" step.
-    /// Each runs via the platform shell. A failing command <b>warns but does not roll back</b> the
-    /// workspace, unlike a worktree/env/compose failure. Values are literal (no <c>${sprig.*}</c>).
+    /// <b>Legacy (schema ≤ 2), load-only.</b> Free-form post-create commands; see <see cref="Env"/>.
+    /// New shape: <see cref="ModuleDeclaration.Setup"/>.
     /// </summary>
     public IReadOnlyList<string> Setup { get; init; } = [];
 
     /// <summary>Captures any unrecognised top-level keys so the validator can reject them.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Unknown { get; init; } = new();
+
+    /// <summary>
+    /// The modules to materialise, unifying the two shapes a config can be in. A normalised schema-3
+    /// config carries only <see cref="Modules"/> (its top-level lists are empty). A config still in the
+    /// legacy flat shape — one built directly (tests, the editor's pre-modules <c>Build</c>) rather than
+    /// loaded through the migrating loader — surfaces its top-level <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/>
+    /// as one implicit root module (name <c>"app"</c>, empty path), followed by any declared modules.
+    /// Every consumer iterates this, so both shapes behave identically.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<ModuleDeclaration> EffectiveModules
+    {
+        get
+        {
+            if (Env.Count == 0 && Compose.Count == 0 && Setup.Count == 0)
+                return Modules;
+            var list = new List<ModuleDeclaration>(Modules.Count + 1)
+            {
+                new() { Name = SprigConfigMigration.DefaultModuleName, Path = "", Env = Env, Compose = Compose, Setup = Setup },
+            };
+            list.AddRange(Modules);
+            return list;
+        }
+    }
+}
+
+/// <summary>
+/// A slice of a repo (schema 3+): its own <c>.env</c> files, compose files and setup commands, plus an
+/// optional <see cref="Path"/> — the subdirectory the module lives in (a monorepo slice). A module's
+/// env/compose file paths resolve under <see cref="Path"/>, and its <see cref="Setup"/> runs in
+/// <c>&lt;worktree&gt;/&lt;path&gt;</c>. Inputs are not per-module — they are shared at the repo level.
+/// </summary>
+public sealed record ModuleDeclaration
+{
+    /// <summary>Module name — the tab label. Unique within the repo; identifier chars only.</summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>
+    /// Optional working directory for the module, relative to the repo/worktree root (e.g.
+    /// <c>apps/web</c>). Empty means the repo root (a single-slice repo). Env/compose file paths are
+    /// resolved under it and setup runs in it.
+    /// </summary>
+    public string Path { get; init; } = "";
+
+    /// <summary>Which <c>.env.*</c> files (relative to <see cref="Path"/>) to clobber and which keys to set.</summary>
+    public IReadOnlyList<EnvOverride> Env { get; init; } = [];
+
+    /// <summary>Docker compose override declarations (relative to <see cref="Path"/>), one per compose file.</summary>
+    public IReadOnlyList<ComposeConfig> Compose { get; init; } = [];
+
+    /// <summary>
+    /// Free-form commands run in order in <c>&lt;worktree&gt;/&lt;path&gt;</c> right after the worktree is
+    /// created (e.g. <c>npm ci</c>). Each runs via the platform shell; a failing command warns but does
+    /// not roll back the workspace. Values are literal (no <c>${sprig.*}</c>).
+    /// </summary>
+    public IReadOnlyList<string> Setup { get; init; } = [];
 }
 
 /// <summary>

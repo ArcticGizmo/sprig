@@ -52,15 +52,17 @@ public sealed class RepoConfigViewModel
         try
         {
             var c = SprigConfigLoader.LoadFromFile(configPath);
+            // Flatten the module surface for now; Milestone 3 splits env/compose/setup into per-module tabs.
+            var modules = c.EffectiveModules;
             return new RepoConfigViewModel(
                 c.Name,
                 c.Inputs.Select(i => new InputRow(i.Name, i.Example, i.Description, i.AllowedPorts)).ToList(),
-                c.Env.Select(e => new EnvGroup(e.File,
+                modules.SelectMany(m => m.Env).Select(e => new EnvGroup(e.File,
                     e.Templates ?? [],
                     e.Set.Select(kv => new KvRow(kv.Key, kv.Value)).ToList())).ToList(),
-                c.Compose.Select(comp => new ComposeInfo(comp.File,
+                modules.SelectMany(m => m.Compose).Select(comp => new ComposeInfo(comp.File,
                     comp.Overrides.Select(o => new KvRow(string.Join(".", o.Path), o.Template)).ToList())).ToList(),
-                c.Setup,
+                modules.SelectMany(m => m.Setup).ToList(),
                 error: null);
         }
         catch (Exception ex)

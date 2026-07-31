@@ -131,6 +131,27 @@ public class RepoEditModuleTests
     }
 
     [Fact]
+    public void File_suggestions_start_from_the_module_path_not_the_repo_root()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"api", "path":"apps/api" } ] }""");
+        Directory.CreateDirectory(Path.Combine(dir, "apps", "api"));
+        File.WriteAllText(Path.Combine(dir, "apps", "api", "docker-compose.yml"), "services: {}\n");
+        File.WriteAllText(Path.Combine(dir, "root-only.yml"), "x\n");   // at the repo root
+
+        var e = RepoEditViewModel.Load(dir);
+
+        // A module's file field suggests from within the module's path, returning module-relative paths.
+        var inModule = e.SuggestRepoPaths("docker", basePath: "apps/api");
+        Assert.Contains("docker-compose.yml", inModule);       // not "apps/api/docker-compose.yml"
+        Assert.DoesNotContain("root-only.yml", inModule);      // the repo-root file is not in scope
+
+        // The module-path picker itself (no base path) still enumerates from the repo root.
+        Assert.Contains("root-only.yml", e.SuggestRepoPaths("root"));
+        Assert.Contains("apps/", e.SuggestRepoPaths("apps"));  // a directory, drillable
+    }
+
+    [Fact]
     public void Deleting_all_modules_then_saving_writes_an_empty_module_list()
     {
         using var s = new TempStore();

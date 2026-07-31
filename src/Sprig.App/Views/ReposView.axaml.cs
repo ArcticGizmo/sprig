@@ -45,17 +45,20 @@ public partial class ReposView : UserControl
         return Task.FromResult(items);
     }
 
-    // The env-file and compose-file boxes are created inside data templates, so we can't wire their
-    // populators by name from the constructor. Attach as each loads; suggestions come from the active
-    // editor (repo-rooted), read lazily so they survive the editor being swapped out.
+    // The env-file, compose-file and module-path boxes are created inside data templates, so we can't
+    // wire their populators by name from the constructor. Attach as each loads; suggestions come from the
+    // active editor, read lazily so they survive the editor being swapped out. A module's env/compose
+    // files are relative to that module's path, so those boxes suggest from within it; the module-path
+    // picker itself (DataContext is the module tab) suggests from the repo root.
     void RepoPathBoxLoaded(object? sender, RoutedEventArgs e)
     {
         if (sender is not AutoCompleteBox box) return;
         box.AsyncPopulator = (text, ct) =>
         {
             var editor = (DataContext as ReposViewModel)?.Editor;
-            IEnumerable<object> items = editor is null ? [] : editor.SuggestRepoPaths(text ?? "").Cast<object>();
-            return Task.FromResult(items);
+            if (editor is null) return Task.FromResult<IEnumerable<object>>([]);
+            var basePath = box.DataContext is ModuleEditTab ? "" : editor.SelectedModule?.Path ?? "";
+            return Task.FromResult(editor.SuggestRepoPaths(text ?? "", basePath).Cast<object>());
         };
     }
 

@@ -786,21 +786,26 @@ public partial class RepoEditViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Path suggestions for a repo-relative file field (env files, the compose file): file-system
-    /// entries under the repo root whose trailing segment matches what's been typed, returned as
-    /// repo-relative forward-slash paths (directories keep a trailing slash so you can drill in).
-    /// Pure + best-effort (never throws).
+    /// Path suggestions for a file field: file-system entries whose trailing segment matches what's been
+    /// typed, returned as forward-slash paths (directories keep a trailing slash so you can drill in).
+    /// <paramref name="basePath"/> is the directory the field's values are relative to — the module's
+    /// path for its env/compose files, or empty for the module-path picker itself. Enumeration starts
+    /// there, but the returned suggestions stay relative to it (matching the stored value). Pure +
+    /// best-effort (never throws).
     /// </summary>
-    public IReadOnlyList<string> SuggestRepoPaths(string input)
+    public IReadOnlyList<string> SuggestRepoPaths(string input, string basePath = "")
     {
         input = (input ?? "").Replace('\\', '/').TrimStart('/');
+        var baseDir = (basePath ?? "").Replace('\\', '/').Trim().Trim('/');
         try
         {
             var slash = input.LastIndexOf('/');
             var relDir = slash < 0 ? "" : input[..slash];
             var prefix = slash < 0 ? input : input[(slash + 1)..];
 
-            var absDir = relDir.Length == 0 ? RepoPath : Path.Combine(RepoPath, relDir);
+            // Enumerate under <repo>/<basePath>/<relDir>; the returned rel is relative to basePath.
+            var root = baseDir.Length == 0 ? RepoPath : Path.Combine(RepoPath, baseDir.Replace('/', Path.DirectorySeparatorChar));
+            var absDir = relDir.Length == 0 ? root : Path.Combine(root, relDir);
             if (!Directory.Exists(absDir)) return [];
 
             return Directory.EnumerateFileSystemEntries(absDir)

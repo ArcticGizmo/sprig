@@ -171,73 +171,122 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <!-- env -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasEnv}">
-                            <TextBlock Text="ENV OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Env}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:EnvGroup">
-                                        <StackPanel Spacing="2" Margin="0,0,0,6">
-                                            <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
-                                            <TextBlock FontSize="11" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}"
-                                                       TextWrapping="Wrap" IsVisible="{Binding HasTemplates}">
-                                                <Run Text="seeded from: " /><Run Text="{Binding TemplatesSummary}" />
-                                            </TextBlock>
-                                            <ItemsControl ItemsSource="{Binding Items}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:KvRow">
-                                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                            <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                        </TextBlock>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
+                        <!-- modules -->
+                        <StackPanel Spacing="12" IsVisible="{Binding SelectedConfig.HasModules}">
+                            <TextBlock Text="MODULES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+
+                            <!-- tab strip: one tab per module -->
+                            <ListBox ItemsSource="{Binding SelectedConfig.Modules}"
+                                     SelectedItem="{Binding SelectedConfig.SelectedModule, Mode=TwoWay}"
+                                     Background="Transparent" Padding="0" BorderThickness="0">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.Styles>
+                                    <Style Selector="ListBoxItem">
+                                        <Setter Property="Padding" Value="12,5" />
+                                        <Setter Property="CornerRadius" Value="4" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                    </Style>
+                                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="{StaticResource FormBgBrush}" />
+                                    </Style>
+                                </ListBox.Styles>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModuleTabView">
+                                        <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="12"
+                                                   Foreground="{StaticResource FgBrush}" />
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- selected module detail -->
+                            <StackPanel Spacing="14">
+                                <TextBlock FontSize="11" FontFamily="Consolas,monospace" Foreground="{StaticResource MutedBrush}"
+                                           IsVisible="{Binding SelectedConfig.SelectedModule.HasPath}">
+                                    <Run Text="path: " /><Run Text="{Binding SelectedConfig.SelectedModule.Path}"
+                                                                Foreground="{StaticResource AccentBrush}" />
+                                </TextBlock>
+
+                                <TextBlock Text="This module declares no env, compose or setup yet."
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                           IsVisible="{Binding SelectedConfig.SelectedModule.IsEmpty}" />
+
+                                <!-- env -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasEnv}">
+                                    <TextBlock Text="ENV OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Env}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:EnvGroup">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
+                                                    <TextBlock FontSize="11" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}"
+                                                               TextWrapping="Wrap" IsVisible="{Binding HasTemplates}">
+                                                        <Run Text="seeded from: " /><Run Text="{Binding TemplatesSummary}" />
+                                                    </TextBlock>
+                                                    <ItemsControl ItemsSource="{Binding Items}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:KvRow">
+                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- compose -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasCompose}">
+                                    <TextBlock Text="COMPOSE OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Compose}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ComposeInfo">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
+                                                    <ItemsControl ItemsSource="{Binding Overrides}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:KvRow">
+                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="{Binding Key}" /><Run Text=" → " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- setup -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasSetup}">
+                                    <TextBlock Text="SETUP (run in the module's directory after create)" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Setup}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:String">
+                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                    <Run Text="$ " Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
 
-                        <!-- compose -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasCompose}">
-                            <TextBlock Text="COMPOSE OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Compose}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ComposeInfo">
-                                        <StackPanel Spacing="2" Margin="0,0,0,6">
-                                            <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
-                                            <ItemsControl ItemsSource="{Binding Overrides}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:KvRow">
-                                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                            <Run Text="{Binding Key}" /><Run Text=" → " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                        </TextBlock>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-
-                        <!-- setup -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasSetup}">
-                            <TextBlock Text="SETUP (run at the worktree root after create)" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Setup}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="sys:String">
-                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                            <Run Text="$ " Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding}" />
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
+                        <TextBlock Text="No modules declared — open Edit to add one." FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   IsVisible="{Binding !SelectedConfig.HasModules}" />
 
                     </StackPanel>
                 </ScrollViewer>

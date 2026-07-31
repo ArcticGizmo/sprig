@@ -59,7 +59,7 @@ public class RepoEditModuleTests
     }
 
     [Fact]
-    public void Add_module_appends_a_selectable_tab_with_a_unique_name()
+    public void Add_module_appends_a_selectable_blank_tab_for_the_user_to_name()
     {
         using var s = new TempStore();
         var dir = Write(s, """{ "schema":3, "name":"empty" }""");
@@ -70,7 +70,9 @@ public class RepoEditModuleTests
         e.AddModuleCommand.Execute(null);
         e.AddModuleCommand.Execute(null);
 
-        Assert.Equal(["module", "module-2"], e.Modules.Select(m => m.Name));
+        // Names are left blank on purpose — the user types them; the view autofocuses the name box.
+        Assert.Equal(["", ""], e.Modules.Select(m => m.Name));
+        Assert.True(e.FocusNewModuleRequested);        // view is asked to focus the new module's name
         Assert.Same(e.Modules[1], e.SelectedModule);   // newest is selected
         Assert.True(e.HasModules);
     }

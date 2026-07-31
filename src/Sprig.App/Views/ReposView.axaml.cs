@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Sprig.App.ViewModels;
 
 namespace Sprig.App.Views;
@@ -60,6 +61,33 @@ public partial class ReposView : UserControl
             var basePath = box.DataContext is ModuleEditTab ? "" : editor.SelectedModule?.Path ?? "";
             return Task.FromResult(editor.SuggestRepoPaths(text ?? "", basePath).Cast<object>());
         };
+    }
+
+    // The multi-module add flow's path boxes are created inside a data template, so (like the editor's
+    // path boxes) their populator is wired as each loads. Suggestions are directories under the folder
+    // being added (the repo isn't registered yet, so this reads the view model's NewPath, not an editor).
+    void ModuleSpecPathBoxLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not AutoCompleteBox box) return;
+        box.AsyncPopulator = (text, ct) =>
+        {
+            var vm = DataContext as ReposViewModel;
+            if (vm is null) return Task.FromResult<IEnumerable<object>>([]);
+            return Task.FromResult(vm.SuggestRepoSubdirs(text ?? "").Cast<object>());
+        };
+    }
+
+    // The module name box lives in a data template, so it can't be focused by name. "+ Add module" leaves
+    // the name blank and sets a one-shot flag; when the new tab's editor loads we consume the flag and put
+    // the cursor in the name box. Loaded also fires when switching between existing tabs — the flag gates
+    // that so we only steal focus for a module the user just added.
+    void ModuleNameBoxLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not TextBox box) return;
+        var editor = (DataContext as ReposViewModel)?.Editor;
+        if (editor is null || !editor.FocusNewModuleRequested) return;
+        editor.FocusNewModuleRequested = false;
+        Dispatcher.UIThread.Post(() => box.Focus(), DispatcherPriority.Input);
     }
 
     async void BrowseRepoFolder(object? sender, RoutedEventArgs e)

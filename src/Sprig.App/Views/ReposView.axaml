@@ -512,6 +512,7 @@
                                                     <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Top">
                                                         <TextBlock Text="Module name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                                         <TextBox Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
+                                                                 Loaded="ModuleNameBoxLoaded"
                                                                  PlaceholderText="web" FontFamily="Consolas,monospace" />
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top">
@@ -749,6 +750,59 @@
                     <TextBlock IsVisible="{Binding DetectHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap"
                                Text="{Binding DetectHint}" />
+
+                    <!-- module-structure choice: only for a new git repo with no .sprig.json yet -->
+                    <StackPanel Spacing="10" IsVisible="{Binding NeedsModuleChoice}">
+                        <TextBlock Text="How is this repo structured?" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton GroupName="moduleStructure" Content="Single module"
+                                         IsChecked="{Binding !MultiModule}" />
+                            <RadioButton GroupName="moduleStructure" Content="Multiple modules"
+                                         IsChecked="{Binding MultiModule, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <!-- single: scan the whole repo into one root module -->
+                        <TextBlock IsVisible="{Binding !MultiModule}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="Sprig scans the whole repo and sets up one module at the root." />
+
+                        <!-- multiple: define each module's name + path; each path is scanned in turn -->
+                        <StackPanel Spacing="8" IsVisible="{Binding MultiModule}">
+                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                       Text="Name each module and point it at a subdirectory. Sprig scans each path and scaffolds its env / compose. Inputs are shared across them." />
+                            <Grid ColumnDefinitions="1.6*,1.1*,Auto" ColumnSpacing="8" Margin="0,0,0,-2">
+                                <TextBlock Grid.Column="0" Text="Path (subdirectory)" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock Grid.Column="1" Text="Name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding ModuleSpecs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModuleSpecRow">
+                                        <StackPanel Spacing="2" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="1.6*,1.1*,Auto" ColumnSpacing="8">
+                                                <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding Path, Mode=TwoWay}"
+                                                                 FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
+                                                                 Loaded="ModuleSpecPathBoxLoaded"
+                                                                 PlaceholderText="apps/web" FontFamily="Consolas,monospace" />
+                                                <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
+                                                         PlaceholderText="web" FontFamily="Consolas,monospace" />
+                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="10,2" />
+                                            </Grid>
+                                            <TextBlock IsVisible="{Binding ShowPathFound}" FontSize="11"
+                                                       Foreground="{StaticResource OkBrush}" Text="✓ Directory exists in the repo." />
+                                            <TextBlock IsVisible="{Binding ShowPathMissing}" FontSize="11" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource WarnBrush}"
+                                                       Text="⚠ No such directory in the repo yet — the module is still created (empty) for you to fill in." />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="+ Add module" Command="{Binding AddModuleSpecRowCommand}"
+                                    FontSize="11" Padding="8,3" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </StackPanel>
+
                     <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">

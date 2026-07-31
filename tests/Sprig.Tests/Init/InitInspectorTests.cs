@@ -268,4 +268,105 @@ public class InitInspectorTests : IDisposable
 
         Assert.Empty(Env(p));
     }
+
+    // -- explicit multi-module scaffolding -------------------------------------
+
+    InitProposal Inspect(params ModuleSpec[] modules) => new InitInspector(_git).Inspect(_repo, modules);
+
+    [Fact]
+    public void Scopes_detection_to_each_module_path_with_module_relative_files()
+    {
+        Write("apps/web/.env.local", "PORT=3000\n");
+        Write("services/api/.env.local", "PORT=5000\n");
+
+        var p = Inspect(new ModuleSpec("web", "apps/web"), new ModuleSpec("api", "services/api"));
+
+        Assert.Equal(["web", "api"], p.Config.Modules.Select(m => m.Name));
+
+        var web = p.Config.Modules[0];
+        Assert.Equal("apps/web", web.Path);
+        Assert.Equal(".env.local", Assert.Single(web.Env).File);   // stored relative to the module path
+
+        var api = p.Config.Modules[1];
+        Assert.Equal("services/api", api.Path);
+        Assert.Equal(".env.local", Assert.Single(api.Env).File);
+    }
+
+    [Fact]
+    public void A_module_only_sees_files_under_its_own_path()
+    {
+        Write("apps/web/.env.local", "PORT=3000\n");
+        Write("services/api/.env.local", "PORT=5000\n");
+
+        // The web module must not pick up the api module's env file.
+        var web = Assert.Single(Inspect(new ModuleSpec("web", "apps/web")).Config.Modules);
+        var env = Assert.Single(web.Env);
+        Assert.Equal(".env.local", env.File);
+        Assert.Single(env.Set);   // only web's PORT
+    }
+
+    [Fact]
+    public void Rebases_compose_file_paths_under_the_module()
+    {
+        Write("apps/web/docker-compose.yml", """
+            services:
+              web:
+                ports:
+                  - "3000:3000"
+            """);
+
+        var p = Inspect(new ModuleSpec("web", "apps/web"));
+        var web = Assert.Single(p.Config.Modules);
+        Assert.Equal("docker-compose.yml", Assert.Single(web.Compose).File);
+        Assert.Contains(p.Config.Inputs, i => i.Name == "web_port" && i.Example == "3000");
+    }
+
+    [Fact]
+    public void Keeps_a_defined_module_even_when_its_path_yields_nothing()
+    {
+        Write("apps/web/.env.local", "PORT=3000\n");
+
+        // The api path has no detectable surface (and doesn't even exist) — it's still created, empty.
+        var proposal = Inspect(new ModuleSpec("web", "apps/web"), new ModuleSpec("api", "services/api"));
+
+        Assert.Equal(["web", "api"], proposal.Config.Modules.Select(m => m.Name));
+        var api = proposal.Config.Modules[1];
+        Assert.Empty(api.Env);
+        Assert.Empty(api.Compose);
+    }
+
+    [Fact]
+    public void Shares_and_deduplicates_inputs_across_modules()
+    {
+        // Both modules expose a "postgres" compose service → both want the input name "postgres_port".
+        Write("a/docker-compose.yml", """
+            services:
+              postgres:
+                ports:
+                  - "6001:5432"
+            """);
+        Write("b/docker-compose.yml", """
+            services:
+              postgres:
+                ports:
+                  - "6002:5432"
+            """);
+
+        var p = Inspect(new ModuleSpec("a", "a"), new ModuleSpec("b", "b"));
+
+        // Names are unique repo-wide (shared dedup), and there are two of them.
+        Assert.Equal(2, p.Config.Inputs.Count);
+        Assert.Equal(p.Config.Inputs.Select(i => i.Name).Distinct().Count(), p.Config.Inputs.Count);
+    }
+
+    [Fact]
+    public void Empty_module_list_falls_back_to_the_single_default_module()
+    {
+        Write(".env", "PORT=6010\n");
+        var p = new InitInspector(_git).Inspect(_repo, []);
+
+        var module = Assert.Single(p.Config.Modules);
+        Assert.Equal("app", module.Name);
+        Assert.Equal("", module.Path);
+    }
 }

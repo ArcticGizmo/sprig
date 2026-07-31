@@ -628,13 +628,20 @@ public partial class RepoEditViewModel : ObservableObject
 
     void OnModuleOverridesChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
 
-    /// <summary>Add a new, empty module (auto-named uniquely) and select it.</summary>
+    /// <summary>Set by <see cref="AddModule"/> so the view knows to focus the name box of the module it
+    /// just added (and leaves it blank for the user to type). The view reads this once, as the new tab's
+    /// editor loads, then clears it — switching between existing tabs must not steal focus.</summary>
+    public bool FocusNewModuleRequested { get; set; }
+
+    /// <summary>Add a new module and select it. The name is left blank on purpose — the user names it — and
+    /// the view autofocuses the name box (see <see cref="FocusNewModuleRequested"/>).</summary>
     [RelayCommand]
     private void AddModule()
     {
-        var tab = new ModuleEditTab(this, UniqueModuleName(), "");
+        var tab = new ModuleEditTab(this, "", "");
         Modules.Add(tab);
         SelectedModule = tab;
+        FocusNewModuleRequested = true;
     }
 
     /// <summary>Remove a module tab (allowed down to zero); keep a sensible tab selected.</summary>
@@ -645,14 +652,6 @@ public partial class RepoEditViewModel : ObservableObject
         Modules.Remove(tab);
         if (SelectedModule is null || ReferenceEquals(SelectedModule, tab))
             SelectedModule = Modules.Count == 0 ? null : Modules[Math.Min(idx, Modules.Count - 1)];
-    }
-
-    string UniqueModuleName()
-    {
-        var taken = Modules.Select(m => m.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (!taken.Contains("module")) return "module";
-        for (var i = 2; ; i++)
-            if (!taken.Contains($"module-{i}")) return $"module-{i}";
     }
 
     void RemoveInputRow(InputEditRow r) => Inputs.Remove(r);

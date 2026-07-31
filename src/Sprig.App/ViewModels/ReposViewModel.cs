@@ -7,10 +7,49 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Core.Init;
 using Sprig.Core.Stacks;
 using Sprig.Core.Workspaces;
 
 namespace Sprig.App.ViewModels;
+
+/// <summary>One editable module definition in the "multiple modules" branch of Add repo: a name and the
+/// subdirectory it lives in. Sprig scans each path and scaffolds a module for it. The ✓/⚠ hint mirrors
+/// the editor's module-path check — informational only, it never blocks create.</summary>
+public partial class ModuleSpecRow : ObservableObject
+{
+    readonly Action<ModuleSpecRow> _remove;
+    readonly Func<string, bool> _dirExists;
+
+    public ModuleSpecRow(Action<ModuleSpecRow> remove, Func<string, bool> dirExists)
+    {
+        _remove = remove;
+        _dirExists = dirExists;
+    }
+
+    /// <summary>Module name — the tab label and the module's identity (unique within the repo).</summary>
+    [ObservableProperty] private string _name = "";
+
+    /// <summary>Subdirectory the module lives in (e.g. <c>apps/web</c>); detection is scoped under it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPathFound), nameof(ShowPathMissing))]
+    private string _path = "";
+
+    /// <summary>Green ✓: the path names a directory that exists in the repo.</summary>
+    public bool ShowPathFound => Path.Trim().Length > 0 && _dirExists(Path.Trim());
+
+    /// <summary>Amber ⚠: a path was entered but no such directory exists yet (doesn't block create).</summary>
+    public bool ShowPathMissing => Path.Trim().Length > 0 && !_dirExists(Path.Trim());
+
+    /// <summary>Re-check the path hint — called when the repo folder above it changes.</summary>
+    public void RefreshPathHint()
+    {
+        OnPropertyChanged(nameof(ShowPathFound));
+        OnPropertyChanged(nameof(ShowPathMissing));
+    }
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
 
 public partial class ReposViewModel : PageViewModel
 {
@@ -52,6 +91,74 @@ public partial class ReposViewModel : PageViewModel
 
     /// <summary>Plain-language explanation of what "Add" will do for the entered path.</summary>
     [ObservableProperty] private string _detectHint = "";
+
+    /// <summary>Whether the user chose "multiple modules" for a repo with no <c>.sprig.json</c> yet.
+    /// False = a single default module scanning the whole repo.</summary>
+    [ObservableProperty] private bool _multiModule;
+
+    /// <summary>The module definitions (name + path) for the "multiple modules" branch — each becomes a
+    /// scanned, scaffolded module. Populated with one blank row when that branch is chosen.</summary>
+    public ObservableCollection<ModuleSpecRow> ModuleSpecs { get; } = [];
+
+    /// <summary>Show the module-structure choice: a new git repo is entered that has no config yet, so
+    /// we can ask whether to scaffold one module or several before creating.</summary>
+    public bool NeedsModuleChoice => IsAdding && PathEntered && GitOk && !PathHasConfig;
+
+    partial void OnMultiModuleChanged(bool value)
+    {
+        // Entering the multi-module branch with no rows yet: seed one so there's something to fill in.
+        if (value && ModuleSpecs.Count == 0) AddModuleSpecRow();
+        OnPropertyChanged(nameof(AddButtonLabel));
+    }
+
+    /// <summary>Add a blank module definition row to the "multiple modules" list.</summary>
+    [RelayCommand]
+    private void AddModuleSpecRow()
+        => ModuleSpecs.Add(new ModuleSpecRow(r => ModuleSpecs.Remove(r), RepoSubdirExists));
+
+    /// <summary>True if a repo-relative path names a directory under the entered repo folder (best-effort).</summary>
+    public bool RepoSubdirExists(string rel)
+    {
+        var root = NewPath.Trim();
+        var sub = (rel ?? "").Trim();
+        if (root.Length == 0 || sub.Length == 0) return false;
+        try { return Directory.Exists(Path.Combine(root, sub)); }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Subdirectory suggestions for a module-path field in the multi-module add flow: directories under
+    /// the entered repo folder whose trailing segment matches what's typed, returned as repo-relative
+    /// forward-slash paths with a trailing slash so you can drill in. Mirrors the editor's module-path
+    /// picker, but rooted at <see cref="NewPath"/> (the repo isn't registered yet). Pure + best-effort.
+    /// </summary>
+    public IReadOnlyList<string> SuggestRepoSubdirs(string input)
+    {
+        var root = NewPath.Trim();
+        if (root.Length == 0) return [];
+        input = (input ?? "").Replace('\\', '/').TrimStart('/');
+        try
+        {
+            var slash = input.LastIndexOf('/');
+            var relDir = slash < 0 ? "" : input[..slash];
+            var prefix = slash < 0 ? input : input[(slash + 1)..];
+
+            var absDir = relDir.Length == 0
+                ? root
+                : Path.Combine(root, relDir.Replace('/', Path.DirectorySeparatorChar));
+            if (!Directory.Exists(absDir)) return [];
+
+            return Directory.EnumerateDirectories(absDir)
+                .Select(Path.GetFileName)
+                .Where(n => !string.IsNullOrEmpty(n) && n != ".git")
+                .Where(n => n!.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .Take(30)
+                .Select(n => relDir.Length == 0 ? $"{n}/" : $"{relDir}/{n}/")
+                .ToList();
+        }
+        catch { return []; }
+    }
 
     public bool HasSelected => Selected is not null;
 
@@ -101,7 +208,9 @@ public partial class ReposViewModel : PageViewModel
 
     /// <summary>Adapts the modal's primary button to what the path actually needs — either way it
     /// opens the editor afterwards, so the label says so.</summary>
-    public string AddButtonLabel => PathHasConfig ? "Load & edit" : "Create & edit";
+    public string AddButtonLabel => PathHasConfig ? "Load & edit"
+        : MultiModule ? "Create modules & edit"
+        : "Create & edit";
 
     /// <summary>A path has been entered — drives the git-status highlight in the modal.</summary>
     public bool PathEntered => !string.IsNullOrWhiteSpace(NewPath);
@@ -221,19 +330,28 @@ public partial class ReposViewModel : PageViewModel
         Status = $"saved changes to '{name}'";
     }
 
-    partial void OnPathHasConfigChanged(bool value) => OnPropertyChanged(nameof(AddButtonLabel));
+    partial void OnPathHasConfigChanged(bool value)
+    {
+        OnPropertyChanged(nameof(AddButtonLabel));
+        OnPropertyChanged(nameof(NeedsModuleChoice));
+    }
 
     partial void OnPathIsGitRepoChanged(bool value)
     {
         OnPropertyChanged(nameof(GitOk));
         OnPropertyChanged(nameof(GitMissing));
+        OnPropertyChanged(nameof(NeedsModuleChoice));
     }
+
+    partial void OnIsAddingChanged(bool value) => OnPropertyChanged(nameof(NeedsModuleChoice));
 
     partial void OnNewPathChanged(string value)
     {
         OnPropertyChanged(nameof(PathEntered));
         OnPropertyChanged(nameof(GitOk));
         OnPropertyChanged(nameof(GitMissing));
+        OnPropertyChanged(nameof(NeedsModuleChoice));
+        foreach (var r in ModuleSpecs) r.RefreshPathHint();   // paths resolve under the entered folder
 
         var p = value.Trim();
         if (p.Length == 0) { PathHasConfig = false; PathIsGitRepo = false; DetectHint = ""; return; }
@@ -311,6 +429,8 @@ public partial class ReposViewModel : PageViewModel
         _primedPath = null;
         Error = null;
         Status = null;
+        MultiModule = false;
+        ModuleSpecs.Clear();
         IsAdding = true;
     }
 
@@ -321,9 +441,29 @@ public partial class ReposViewModel : PageViewModel
         Error = null;
     }
 
-    /// <summary>Single primary action for the modal — inits only when the repo has no config yet.</summary>
+    /// <summary>Single primary action for the modal — inits only when the repo has no config yet. When
+    /// the user chose "multiple modules", scaffold from their definitions; otherwise a single default.</summary>
     [RelayCommand]
-    private Task ConfirmAdd() => AddInternal(runInit: !PathHasConfig);
+    private Task ConfirmAdd()
+    {
+        if (PathHasConfig) return AddInternal(runInit: false);
+        if (MultiModule)
+        {
+            // Named rows become modules (paths optional). Blank-name rows are skipped — an empty name
+            // can't be a module — and if that leaves nothing, ask for at least one.
+            var specs = ModuleSpecs
+                .Select(r => new ModuleSpec(r.Name.Trim(), r.Path.Trim()))
+                .Where(s => s.Name.Length > 0)
+                .ToList();
+            if (specs.Count == 0)
+            {
+                Error = "add at least one module (give it a name), or choose Single module";
+                return Task.CompletedTask;
+            }
+            return AddInternal(runInit: true, specs);
+        }
+        return AddInternal(runInit: true);
+    }
 
     [RelayCommand]
     private Task Add() => AddInternal(runInit: false);
@@ -331,7 +471,7 @@ public partial class ReposViewModel : PageViewModel
     [RelayCommand]
     private Task InitAndAdd() => AddInternal(runInit: true);
 
-    async Task AddInternal(bool runInit)
+    async Task AddInternal(bool runInit, IReadOnlyList<ModuleSpec>? moduleSpecs = null)
     {
         var path = NewPath.Trim();
         if (string.IsNullOrEmpty(path)) { Error = "enter a repo path"; return; }
@@ -344,7 +484,11 @@ public partial class ReposViewModel : PageViewModel
             {
                 if (runInit)
                 {
-                    var proposal = Services.Init.Inspect(path);
+                    // Given explicit module definitions, scan each one's path; otherwise a single default
+                    // module scanning the whole repo.
+                    var proposal = moduleSpecs is { Count: > 0 }
+                        ? Services.Init.Inspect(path, moduleSpecs)
+                        : Services.Init.Inspect(path);
                     ConfigJson.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
                     // Keep the proposal's advisory notes. They explain which env keys and compose ports
                     // became inputs and why — the exact question someone asks on landing in the editor
@@ -355,6 +499,8 @@ public partial class ReposViewModel : PageViewModel
             });
             NewPath = "";
             IsAdding = false;
+            MultiModule = false;
+            ModuleSpecs.Clear();
             Reload();
             Services.NotifyStoreChanged();
 

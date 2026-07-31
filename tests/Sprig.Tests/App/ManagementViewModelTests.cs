@@ -24,7 +24,11 @@ public class ManagementViewModelTests
     /// tab — the one a migrated config produced, or a freshly added empty one.</summary>
     static ModuleEditTab Mod(RepoEditViewModel e)
     {
-        if (e.Modules.Count == 0) e.AddModuleCommand.Execute(null);
+        if (e.Modules.Count == 0)
+        {
+            e.AddModuleCommand.Execute(null);
+            e.SelectedModule!.Name = "app";   // "+ Add module" leaves the name blank for the user to type;
+        }                                     // these tests need a named (saveable) module to work against.
         return e.SelectedModule!;
     }
 
@@ -94,6 +98,64 @@ public class ManagementViewModelTests
         // The scaffolded config opens for editing straight away.
         Assert.True(vm.IsEditing);
         Assert.Equal("bare", vm.Editor!.Name);
+    }
+
+    [Fact]
+    public async Task Repos_modal_scaffolds_multiple_modules_from_definitions()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var repo = Path.Combine(s.Root, "mono");
+        Directory.CreateDirectory(Path.Combine(repo, "apps", "web"));
+        Directory.CreateDirectory(Path.Combine(repo, "services", "api"));
+        File.WriteAllText(Path.Combine(repo, "apps", "web", ".env.local"), "PORT=3000\n");
+        File.WriteAllText(Path.Combine(repo, "services", "api", ".env.local"), "PORT=5000\n");
+
+        var vm = new ReposViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = repo;
+        vm.MultiModule = true;   // seeds one blank module row
+
+        vm.ModuleSpecs[0].Name = "web";
+        vm.ModuleSpecs[0].Path = "apps/web";
+        vm.AddModuleSpecRowCommand.Execute(null);
+        vm.ModuleSpecs[1].Name = "api";
+        vm.ModuleSpecs[1].Path = "services/api";
+
+        Assert.Equal("Create modules & edit", vm.AddButtonLabel);
+
+        await vm.ConfirmAddCommand.ExecuteAsync(null);
+
+        Assert.Null(vm.Error);
+        Assert.False(vm.IsAdding);
+
+        // Both modules were scanned and written, each with its env file stored relative to its path.
+        var config = Sprig.Core.Config.SprigConfigLoader.LoadFromFile(Path.Combine(repo, ".sprig.json"));
+        Assert.Equal(["web", "api"], config.Modules.Select(m => m.Name));
+        Assert.Equal("apps/web", config.Modules[0].Path);
+        Assert.Equal(".env.local", config.Modules[0].Env.Single().File);
+        Assert.Equal("services/api", config.Modules[1].Path);
+        Assert.Equal(".env.local", config.Modules[1].Env.Single().File);
+    }
+
+    [Fact]
+    public async Task Repos_modal_multi_module_needs_at_least_one_named_module()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var repo = Path.Combine(s.Root, "mono");
+        Directory.CreateDirectory(repo);
+
+        var vm = new ReposViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = repo;
+        vm.MultiModule = true;   // seeds one blank (unnamed) row and nothing else
+
+        await vm.ConfirmAddCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.Error);                                    // asked to name a module
+        Assert.False(File.Exists(Path.Combine(repo, ".sprig.json"))); // nothing scaffolded
+        Assert.True(vm.IsAdding);                                    // modal stays open
     }
 
     [Fact]

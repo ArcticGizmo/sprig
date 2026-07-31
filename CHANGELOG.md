@@ -7,6 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Monorepo support — modules.** A repo can declare as many **modules** as you like, each a slice
+  with its own `.env` files, docker compose files and setup commands, plus an optional **path** (the
+  subdirectory it lives in). Setup runs in the module's directory; its env/compose paths resolve there.
+- **Modules as tabs.** The repo preview and editor now show a **tab per module**; the editor has
+  **+ Add module** and **Delete module** (down to zero, so you can rebuild from scratch).
+- **Inputs stay shared, pinned above the tabs** — so you see everything declared while editing any
+  module, and the "variables you should add" hint spans every module.
+
+### Changed
+- **Schema 3.** `.sprig.json` moves `env`/`compose`/`setup` inside modules. Existing schema-2 files
+  are migrated on load into a single `app` module — lossless, and rewritten on the next save. `sprig
+  init` now emits schema 3; the CLI groups a workspace's setup output by module.
+
 ---
 
 ## [v0.3.3] - 2026-07-28

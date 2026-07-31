@@ -37,12 +37,25 @@ Add-repo → Build-a-stack → Spin-up flows in order and auto-advances as you g
 ### Repos
 - **Add repo** — browse to a git folder. If it already has a `.sprig.json` it's registered as-is;
   if not, sprig inspects the repo, proposes one, writes it, and registers — in one step.
-- Selecting a repo shows its declared **inputs** (name + example) and where they're used (env /
-  compose overrides). **Edit** opens an in-place editor for the `.sprig.json`; **Open in…** launches
-  Explorer / VS Code / a terminal.
+- Selecting a repo shows its declared **inputs** (name + example) and, below them, a **tab per
+  module** summarising where those inputs are used (that module's env / compose / setup). **Edit**
+  opens an in-place editor for the `.sprig.json`; **Open in…** launches Explorer / VS Code / a terminal.
 - A repo that declares **no inputs** offers **Isolate this repo** — spin up a workspace straight
   from it, no stack needed (the ad-hoc path).
 - **Unregister selected** removes it from the registry (never touches the repo on disk).
+
+#### Monorepos — one repo, many modules
+A repo is made of **modules** — slices with their own `.env` files, docker compose files and setup
+commands. A single-app repo has one module; a monorepo has several (e.g. `apps/web`, `apps/api`).
+- **Inputs stay shared and sit at the top**, above the module tabs — so while editing any module you
+  can see every input already declared (no duplicating a port per module) and the "variables you
+  should add" hint spans all modules.
+- In the editor, each module is a **tab**. Give it a **name** and an optional **path** (the
+  subdirectory it lives in) — its env/compose paths resolve under that path, and its setup runs there.
+- **+ Add module** adds a tab; **Delete module** removes one — all the way down to zero, so you can
+  rebuild a repo's modules from scratch.
+- Older single-app `.sprig.json` files are upgraded automatically: their env/compose/setup become one
+  module named `app`, rewritten the next time you save.
 
 ### Stacks
 - **New stack** opens the builder: name it (validated live — path-safe characters only, so you

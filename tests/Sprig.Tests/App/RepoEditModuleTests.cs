@@ -108,6 +108,29 @@ public class RepoEditModuleTests
     }
 
     [Fact]
+    public void Module_path_flags_a_missing_directory_but_does_not_block_save()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"web" } ] }""");
+        Directory.CreateDirectory(Path.Combine(dir, "apps", "web"));   // exists; apps/api does not
+        var e = RepoEditViewModel.Load(dir);
+        var tab = e.Modules[0];
+
+        Assert.False(tab.ShowPathFound);    // empty path = repo root → no hint either way
+        Assert.False(tab.ShowPathMissing);
+
+        tab.Path = "apps/web";
+        Assert.True(tab.ShowPathFound);
+        Assert.False(tab.ShowPathMissing);
+
+        tab.Path = "apps/api";              // no such directory
+        Assert.False(tab.ShowPathFound);
+        Assert.True(tab.ShowPathMissing);
+
+        Assert.True(e.Save());              // informational only — a missing directory still saves
+    }
+
+    [Fact]
     public void Deleting_all_modules_then_saving_writes_an_empty_module_list()
     {
         using var s = new TempStore();

@@ -429,7 +429,15 @@ public partial class ModuleEditTab : ObservableObject
     [ObservableProperty] private string _name;
 
     /// <summary>Optional subdirectory the module lives in (e.g. <c>apps/web</c>); its files resolve under it.</summary>
-    [ObservableProperty] private string _path;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowPathFound), nameof(ShowPathMissing))]
+    private string _path;
+
+    /// <summary>Green ✓: the module's path names a directory that exists in the repo.</summary>
+    public bool ShowPathFound => Path.Trim().Length > 0 && _owner.RepoDirExists(Path);
+
+    /// <summary>Amber ⚠: a path was entered but no such directory exists (informational — doesn't block save).</summary>
+    public bool ShowPathMissing => Path.Trim().Length > 0 && !_owner.RepoDirExists(Path);
 
     public ObservableCollection<EnvFileEditRow> Env { get; } = [];
     public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
@@ -718,6 +726,16 @@ public partial class RepoEditViewModel : ObservableObject
         var rel = (file ?? "").Trim();
         if (rel.Length == 0) return false;
         try { return System.IO.File.Exists(Path.Combine(RepoPath, rel)); }
+        catch { return false; }
+    }
+
+    /// <summary>True if a repo-relative path names a directory that exists in the repo — drives a module's
+    /// path ✓/⚠ hint (informational only; a missing dir doesn't block save).</summary>
+    public bool RepoDirExists(string dir)
+    {
+        var rel = (dir ?? "").Trim();
+        if (rel.Length == 0) return false;
+        try { return Directory.Exists(Path.Combine(RepoPath, rel)); }
         catch { return false; }
     }
 

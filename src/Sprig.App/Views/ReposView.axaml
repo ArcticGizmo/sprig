@@ -181,23 +181,29 @@
                                      Background="Transparent" Padding="0" BorderThickness="0">
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal" Spacing="4" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6" />
                                     </ItemsPanelTemplate>
                                 </ListBox.ItemsPanel>
                                 <ListBox.Styles>
                                     <Style Selector="ListBoxItem">
-                                        <Setter Property="Padding" Value="12,5" />
-                                        <Setter Property="CornerRadius" Value="4" />
-                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="Padding" Value="18,9" />
+                                        <Setter Property="CornerRadius" Value="7" />
+                                        <Setter Property="Background" Value="{StaticResource FormBgBrush}" />
+                                    </Style>
+                                    <Style Selector="ListBoxItem /template/ ContentPresenter">
+                                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="CornerRadius" Value="7" />
                                     </Style>
                                     <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                        <Setter Property="Background" Value="{StaticResource FormBgBrush}" />
+                                        <Setter Property="Background" Value="#2660A5FA" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                                     </Style>
                                 </ListBox.Styles>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ModuleTabView">
-                                        <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="12"
-                                                   Foreground="{StaticResource FgBrush}" />
+                                        <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="14"
+                                                   FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
@@ -359,7 +365,9 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- inputs -->
+                            <!-- inputs card (shared across every module) -->
+                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="10" Padding="18,16">
                             <StackPanel Spacing="8" AutomationProperties.AutomationId="repo.inputs">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="INPUTS (supplied by the stack)" FontSize="11"
@@ -435,8 +443,11 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
+                            </Border>
 
-                            <!-- modules: one tab per module (its own env/compose/setup); inputs above are shared -->
+                            <!-- modules card: one tab per module (its own env/compose/setup); inputs above are shared -->
+                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="10" Padding="18,16">
                             <StackPanel Spacing="12">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="MODULES" FontSize="11" FontWeight="SemiBold"
@@ -450,22 +461,29 @@
                                          Background="Transparent" Padding="0" BorderThickness="0"
                                          IsVisible="{Binding HasModules}">
                                     <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
                                     </ListBox.ItemsPanel>
                                     <ListBox.Styles>
                                         <Style Selector="ListBoxItem">
-                                            <Setter Property="Padding" Value="12,5" />
-                                            <Setter Property="CornerRadius" Value="4" />
-                                            <Setter Property="Background" Value="Transparent" />
+                                            <Setter Property="Padding" Value="18,9" />
+                                            <Setter Property="CornerRadius" Value="7" />
+                                            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
                                         </Style>
+                                        <Style Selector="ListBoxItem /template/ ContentPresenter">
+                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                            <Setter Property="CornerRadius" Value="7" />
+                                        </Style>
+                                        <!-- selected tab: accent-tinted fill + accent border so it clearly reads as active -->
                                         <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                            <Setter Property="Background" Value="{StaticResource FormBgBrush}" />
+                                            <Setter Property="Background" Value="#2660A5FA" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                                         </Style>
                                     </ListBox.Styles>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ModuleEditTab">
-                                            <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="12"
-                                                       Foreground="{StaticResource FgBrush}" />
+                                            <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="14"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
                                 </ListBox>
@@ -488,24 +506,30 @@
                                             <StackPanel Spacing="16">
 
                                             <!-- module header: name, path, delete -->
-                                            <Border Background="{StaticResource FormBgBrush}" CornerRadius="6" Padding="12">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="12">
                                                 <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12">
-                                                    <StackPanel Grid.Column="0" Spacing="3">
+                                                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Top">
                                                         <TextBlock Text="Module name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                                         <TextBox Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
                                                                  PlaceholderText="web" FontFamily="Consolas,monospace" />
                                                     </StackPanel>
-                                                    <StackPanel Grid.Column="1" Spacing="3">
+                                                    <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top">
                                                         <TextBlock Text="Path (subdirectory, optional)" FontSize="11"
                                                                    Foreground="{StaticResource MutedBrush}"
                                                                    ToolTip.Tip="The module's directory (e.g. apps/web). Its .env/compose paths resolve under it, and setup runs there. Leave blank for the repo root." />
                                                         <AutoCompleteBox Text="{Binding Path, Mode=TwoWay}" MinWidth="0"
                                                                          FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
                                                                          Loaded="RepoPathBoxLoaded"
-                                                                         PlaceholderText="apps/web" FontFamily="Consolas,monospace" />
+                                                                         PlaceholderText="apps/web (blank = repo root)" FontFamily="Consolas,monospace" />
+                                                        <TextBlock IsVisible="{Binding ShowPathFound}" FontSize="11"
+                                                                   Foreground="{StaticResource OkBrush}" Text="✓ Directory exists in the repo." />
+                                                        <TextBlock IsVisible="{Binding ShowPathMissing}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource WarnBrush}"
+                                                                   Text="⚠ No such directory in the repo — check the path (setup would run somewhere that doesn't exist)." />
                                                     </StackPanel>
                                                     <Button Grid.Column="2" Content="Delete module" Command="{Binding RemoveCommand}"
-                                                            VerticalAlignment="Bottom" Padding="10,5"
+                                                            VerticalAlignment="Top" Margin="0,18,0,0" Padding="10,5"
                                                             Background="Transparent" Foreground="{StaticResource DangerBrush}"
                                                             BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" />
                                                 </Grid>
@@ -522,8 +546,8 @@
                                 <ItemsControl ItemsSource="{Binding Env}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:EnvFileEditRow">
-                                            <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
-                                                    Padding="10" Margin="0,0,0,10">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
                                                 <StackPanel Spacing="6">
                                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                                         <AutoCompleteBox Grid.Column="0" MinWidth="0"
@@ -547,7 +571,7 @@
                                                                Text="{Binding NotIgnoredMessage}" />
 
                                                     <!-- seed templates: an inset panel so it reads as its own thing, not part of the keys -->
-                                                    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                                             BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,4,0,0">
                                                         <StackPanel Spacing="4">
                                                             <Grid ColumnDefinitions="*,Auto">
@@ -605,8 +629,8 @@
                                 <ItemsControl ItemsSource="{Binding Compose}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ComposeFileEditRow">
-                                            <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
-                                                    Padding="10" Margin="0,0,0,10">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
                                                 <StackPanel Spacing="6">
                                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                                         <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding File, Mode=TwoWay}"
@@ -664,6 +688,7 @@
                                     </ContentControl.ContentTemplate>
                                 </ContentControl>
                             </StackPanel>
+                            </Border>
 
                             </StackPanel>
                         </Border>

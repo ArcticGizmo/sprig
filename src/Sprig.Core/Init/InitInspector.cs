@@ -52,12 +52,20 @@ public sealed class InitInspector
         var compose = DetectCompose(repoRoot, inputs, used, notes);
 
         var name = Path.GetFileName(repoRoot.TrimEnd('\\', '/'));
+        // Propose a schema-3 config. Detected env/compose go into a single default module at the repo
+        // root; splitting a monorepo into several modules by directory is a later enhancement.
+        var modules = envOverrides.Count > 0 || compose.Count > 0
+            ? new List<ModuleDeclaration>
+            {
+                new() { Name = SprigConfigMigration.DefaultModuleName, Path = "", Env = envOverrides, Compose = compose },
+            }
+            : [];
         var config = new SprigRepoConfig
         {
+            Schema = SprigConfigLoader.SupportedSchema,
             Name = name,
             Inputs = inputs,
-            Env = envOverrides,
-            Compose = compose,
+            Modules = modules,
         };
 
         if (inputs.Count == 0 && compose.Count == 0)

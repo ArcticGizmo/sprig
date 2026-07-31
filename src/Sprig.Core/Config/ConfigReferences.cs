@@ -44,7 +44,7 @@ public static partial class ConfigReferences
         // Walk both the legacy flat surface (schema ≤2 / the editor's pre-modules shape) and the module
         // surface, so undeclared-input detection works whichever shape the config is in. Inputs are shared
         // at the repo level, so every module's templates are checked against the same declared set.
-        foreach (var t in EnvComposeTemplates(config.Env, config.Compose))
+        foreach (var t in EnvComposeTemplates(config.Env ?? [], config.Compose ?? []))
             yield return t;
         foreach (var module in config.Modules)
             foreach (var t in EnvComposeTemplates(module.Env, module.Compose))

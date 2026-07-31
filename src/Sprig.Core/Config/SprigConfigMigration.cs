@@ -18,7 +18,7 @@ public static class SprigConfigMigration
     {
         if (config.Schema >= 3) return config;
 
-        var hasFlat = config.Env.Count > 0 || config.Compose.Count > 0 || config.Setup.Count > 0;
+        var hasFlat = config.Env is { Count: > 0 } || config.Compose is { Count: > 0 } || config.Setup is { Count: > 0 };
         var modules = hasFlat
             ? new List<ModuleDeclaration>
             {
@@ -26,9 +26,9 @@ public static class SprigConfigMigration
                 {
                     Name = DefaultModuleName,
                     Path = "",
-                    Env = config.Env,
-                    Compose = config.Compose,
-                    Setup = config.Setup,
+                    Env = config.Env ?? [],
+                    Compose = config.Compose ?? [],
+                    Setup = config.Setup ?? [],
                 },
             }
             : [];
@@ -37,9 +37,9 @@ public static class SprigConfigMigration
         {
             Schema = 3,
             Modules = modules,
-            Env = [],
-            Compose = [],
-            Setup = [],
+            Env = null,
+            Compose = null,
+            Setup = null,
         };
     }
 }

@@ -100,12 +100,22 @@ public static class CliApp
             Console.WriteLine($"  {r.Name}: {r.WorktreePath}  [{r.Branch}]");
             if (r.Inputs.Count > 0)
                 Console.WriteLine($"    inputs: {FormatKv(r.Inputs)}");
-            foreach (var s in r.Setup)
+            // Group setup by module; only show module headers when a repo has more than one, so a
+            // single-module (or legacy) repo prints exactly as before.
+            var setupByModule = r.Setup.GroupBy(s => s.Module).ToList();
+            var showModuleHeaders = setupByModule.Count > 1;
+            foreach (var group in setupByModule)
             {
-                Console.WriteLine($"    setup {(s.Success ? "✓" : "✗")} {s.Command}{(s.Success ? "" : $" (exit {s.ExitCode})")}");
-                if (!s.Success && !string.IsNullOrWhiteSpace(s.Output))
-                    foreach (var line in s.Output.TrimEnd().Split('\n'))
-                        Console.WriteLine($"      {line.TrimEnd()}");
+                if (showModuleHeaders && group.Key is { } module)
+                    Console.WriteLine($"    module {module}:");
+                var indent = showModuleHeaders ? "      " : "    ";
+                foreach (var s in group)
+                {
+                    Console.WriteLine($"{indent}setup {(s.Success ? "✓" : "✗")} {s.Command}{(s.Success ? "" : $" (exit {s.ExitCode})")}");
+                    if (!s.Success && !string.IsNullOrWhiteSpace(s.Output))
+                        foreach (var line in s.Output.TrimEnd().Split('\n'))
+                            Console.WriteLine($"{indent}  {line.TrimEnd()}");
+                }
             }
         }
         if (record.Repos.Any(r => r.Setup.Any(s => !s.Success)))

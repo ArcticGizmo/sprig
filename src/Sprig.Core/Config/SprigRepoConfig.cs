@@ -35,19 +35,20 @@ public sealed record SprigRepoConfig
     /// <summary>
     /// <b>Legacy (schema ≤ 2), load-only.</b> Which <c>.env.*</c> files to clobber and which keys to set.
     /// A schema-2 file carries these at the top level; migration moves them into a default module and
-    /// clears them, so on a normalised schema-3 config this is empty. New shape: <see cref="ModuleDeclaration.Env"/>.
+    /// nulls them, so a normalised schema-3 config never re-serialises them. New shape:
+    /// <see cref="ModuleDeclaration.Env"/>. Null (not empty) when absent, so it is omitted on write.
     /// </summary>
-    public IReadOnlyList<EnvOverride> Env { get; init; } = [];
+    public IReadOnlyList<EnvOverride>? Env { get; init; }
 
     /// <summary><b>Legacy (schema ≤ 2), load-only.</b> Docker compose override declarations; see <see cref="Env"/>.
     /// New shape: <see cref="ModuleDeclaration.Compose"/>.</summary>
-    public IReadOnlyList<ComposeConfig> Compose { get; init; } = [];
+    public IReadOnlyList<ComposeConfig>? Compose { get; init; }
 
     /// <summary>
     /// <b>Legacy (schema ≤ 2), load-only.</b> Free-form post-create commands; see <see cref="Env"/>.
     /// New shape: <see cref="ModuleDeclaration.Setup"/>.
     /// </summary>
-    public IReadOnlyList<string> Setup { get; init; } = [];
+    public IReadOnlyList<string>? Setup { get; init; }
 
     /// <summary>Captures any unrecognised top-level keys so the validator can reject them.</summary>
     [JsonExtensionData]
@@ -66,11 +67,16 @@ public sealed record SprigRepoConfig
     {
         get
         {
-            if (Env.Count == 0 && Compose.Count == 0 && Setup.Count == 0)
+            var hasFlat = Env is { Count: > 0 } || Compose is { Count: > 0 } || Setup is { Count: > 0 };
+            if (!hasFlat)
                 return Modules;
             var list = new List<ModuleDeclaration>(Modules.Count + 1)
             {
-                new() { Name = SprigConfigMigration.DefaultModuleName, Path = "", Env = Env, Compose = Compose, Setup = Setup },
+                new()
+                {
+                    Name = SprigConfigMigration.DefaultModuleName, Path = "",
+                    Env = Env ?? [], Compose = Compose ?? [], Setup = Setup ?? [],
+                },
             };
             list.AddRange(Modules);
             return list;

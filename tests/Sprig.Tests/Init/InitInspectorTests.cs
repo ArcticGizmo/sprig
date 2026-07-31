@@ -1,9 +1,15 @@
+using Sprig.Core.Config;
 using Sprig.Core.Init;
 
 namespace Sprig.Tests.Init;
 
 public class InitInspectorTests : IDisposable
 {
+    // init proposes a single default module; these expose its env/compose for the assertions (empty
+    // when nothing was detected). Keeps the tests focused on detection, not the module wrapper.
+    static IReadOnlyList<EnvOverride> Env(InitProposal p) => p.Config.EffectiveModules.SelectMany(m => m.Env).ToList();
+    static IReadOnlyList<ComposeConfig> Compose(InitProposal p) => p.Config.EffectiveModules.SelectMany(m => m.Compose).ToList();
+
     readonly string _repo = Path.Combine(Path.GetTempPath(), "sprig-init-" + Guid.NewGuid().ToString("N"));
     readonly FakeGitService _git = new();
 
@@ -29,11 +35,11 @@ public class InitInspectorTests : IDisposable
         var p = Inspect();
 
         Assert.Single(p.Config.Inputs);
-        Assert.Single(p.Config.Env);
-        Assert.Equal(".env", p.Config.Env[0].File);
+        Assert.Single(Env(p));
+        Assert.Equal(".env", Env(p)[0].File);
         var input = p.Config.Inputs[0];
         Assert.Equal("6010", input.Example);
-        Assert.Equal($"${{sprig.{input.Name}}}", p.Config.Env[0].Set["PORT"]);
+        Assert.Equal($"${{sprig.{input.Name}}}", Env(p)[0].Set["PORT"]);
     }
 
     [Fact]
@@ -59,7 +65,7 @@ public class InitInspectorTests : IDisposable
             """);
         var p = Inspect();
 
-        var compose = Assert.Single(p.Config.Compose);
+        var compose = Assert.Single(Compose(p));
         Assert.Equal("docker-compose.yml", compose.File);
         var ovr = compose.Overrides;
         Assert.Contains(ovr, o => o.Path.SequenceEqual(["services", "postgres", "container_name"])
@@ -95,7 +101,7 @@ public class InitInspectorTests : IDisposable
         var p = Inspect();
 
         Assert.Equal(["apps/web/compose.yaml", "docker-compose.yml"],
-            p.Config.Compose.Select(c => c.File).OrderBy(f => f));
+            Compose(p).Select(c => c.File).OrderBy(f => f));
         Assert.Contains(p.Config.Inputs, i => i.Name == "api_port" && i.Example == "5000");
         Assert.Contains(p.Config.Inputs, i => i.Name == "web_port" && i.Example == "3000");
         Assert.DoesNotContain(p.Config.Inputs, i => i.Example == "9999");
@@ -123,6 +129,27 @@ public class InitInspectorTests : IDisposable
         Write(".env", "PORT=3000\n");
         var p = Inspect();
         Assert.Equal(Path.GetFileName(_repo), p.Config.Name);
+    }
+
+    [Fact]
+    public void Proposes_schema_3_with_a_single_default_module()
+    {
+        Write(".env", "PORT=3000\n");
+        var p = Inspect();
+
+        Assert.Equal(3, p.Config.Schema);
+        var module = Assert.Single(p.Config.Modules);
+        Assert.Equal("app", module.Name);
+        Assert.Equal("", module.Path);
+        Assert.Null(p.Config.Env);   // nothing at the legacy top level
+    }
+
+    [Fact]
+    public void Proposes_no_modules_when_nothing_is_detected()
+    {
+        var p = Inspect();
+        Assert.Empty(p.Config.Modules);
+        Assert.Equal(3, p.Config.Schema);
     }
 
     [Fact]
@@ -159,7 +186,7 @@ public class InitInspectorTests : IDisposable
 
         var p = Inspect();
 
-        var env = Assert.Single(p.Config.Env);
+        var env = Assert.Single(Env(p));
         Assert.Equal(".env.local", env.File);                 // the untracked file is the target
         Assert.Equal([".env"], env.Templates);                // the tracked variant seeds it
         Assert.Single(p.Config.Inputs);                       // PORT deduped across target + template
@@ -176,7 +203,7 @@ public class InitInspectorTests : IDisposable
 
         var p = Inspect();
 
-        var env = Assert.Single(p.Config.Env);
+        var env = Assert.Single(Env(p));
         Assert.Equal(".env.local", env.File);
         Assert.Equal([".env"], env.Templates);
         Assert.True(env.Set.ContainsKey("PORT"));
@@ -192,7 +219,7 @@ public class InitInspectorTests : IDisposable
 
         var p = Inspect();
 
-        Assert.Empty(p.Config.Env);
+        Assert.Empty(Env(p));
         Assert.Empty(p.Config.Inputs);
     }
 
@@ -202,7 +229,7 @@ public class InitInspectorTests : IDisposable
         Write("apps/web/.env.local", "PORT=3000\n");
         var p = Inspect();
 
-        var env = Assert.Single(p.Config.Env);
+        var env = Assert.Single(Env(p));
         Assert.Equal("apps/web/.env.local", env.File);
     }
 
@@ -216,7 +243,7 @@ public class InitInspectorTests : IDisposable
 
         var p = Inspect();
 
-        var env = Assert.Single(p.Config.Env);
+        var env = Assert.Single(Env(p));
         Assert.Equal("api/.env.local", env.File);
         Assert.Null(env.Templates);   // nothing tracked next to it
     }
@@ -230,7 +257,7 @@ public class InitInspectorTests : IDisposable
 
         var p = Inspect();
 
-        Assert.Empty(p.Config.Env);
+        Assert.Empty(Env(p));
     }
 
     [Fact]
@@ -239,6 +266,6 @@ public class InitInspectorTests : IDisposable
         Write(".env.local", "NAME=hello\nDEBUG=true\n");
         var p = Inspect();
 
-        Assert.Empty(p.Config.Env);
+        Assert.Empty(Env(p));
     }
 }

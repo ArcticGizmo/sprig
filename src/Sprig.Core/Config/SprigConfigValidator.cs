@@ -40,9 +40,9 @@ public static class SprigConfigValidator
         // must be unique by their *effective* path (module path + file) across the whole repo, so the same
         // filename may appear in two modules at different paths but never collide.
         var seenComposePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        ValidateEnv(config.Env, "env", issues);
-        ValidateCompose(config.Compose, "compose", "", seenComposePaths, issues);
-        ValidateSetup(config.Setup, "setup", issues);
+        ValidateEnv(config.Env ?? [], "env", issues);
+        ValidateCompose(config.Compose ?? [], "compose", "", seenComposePaths, issues);
+        ValidateSetup(config.Setup ?? [], "setup", issues);
         ValidateModules(config, seenComposePaths, issues);
 
         foreach (var reference in ConfigReferences.UndeclaredReferences(config))

@@ -39,8 +39,8 @@ public class SprigConfigLoaderTests
         Assert.Equal("dotnet-api", c.Name);
         Assert.Equal(["port", "dbPort"], c.Inputs.Select(i => i.Name));
         Assert.Equal("5000", c.Inputs[0].Example);
-        Assert.Empty(c.Env);
-        Assert.Empty(c.Compose);
+        Assert.Null(c.Env);       // legacy top-level cleared on migration (omitted on write)
+        Assert.Null(c.Compose);
 
         var module = Assert.Single(c.Modules);
         Assert.Equal(SprigConfigMigration.DefaultModuleName, module.Name);
@@ -275,9 +275,9 @@ public class SprigConfigMigrationTests
 
         Assert.Equal(3, c.Schema);
         Assert.Equal(["port"], c.Inputs.Select(i => i.Name));   // inputs stay at the repo level
-        Assert.Empty(c.Env);
-        Assert.Empty(c.Compose);
-        Assert.Empty(c.Setup);
+        Assert.Null(c.Env);
+        Assert.Null(c.Compose);
+        Assert.Null(c.Setup);
 
         var m = Assert.Single(c.Modules);
         Assert.Equal("app", m.Name);

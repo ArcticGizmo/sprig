@@ -782,7 +782,7 @@
                                             <Grid ColumnDefinitions="1.6*,1.1*,Auto" ColumnSpacing="8">
                                                 <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding Path, Mode=TwoWay}"
                                                                  FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
-                                                                 Loaded="ModuleSpecPathBoxLoaded"
+                                                                 Loaded="ModuleSpecPathBoxLoaded" GotFocus="ModuleSpecPathBoxGotFocus"
                                                                  PlaceholderText="apps/web" FontFamily="Consolas,monospace" />
                                                 <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
                                                          PlaceholderText="web" FontFamily="Consolas,monospace" />

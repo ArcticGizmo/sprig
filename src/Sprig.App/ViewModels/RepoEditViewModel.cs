@@ -305,8 +305,13 @@ public partial class EnvFileEditRow : ObservableObject
 
     void BubbleOverridesChanged(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>A fresh template row wired to this env row's module-aware existence check, so its ✓/⚠
+    /// hint resolves the path under the owning module (not the repo root). Used both when adding a row
+    /// and when hydrating saved templates on load.</summary>
+    public TemplateFileRow NewTemplateRow() => new(r => Templates.Remove(r), _exists);
+
     [RelayCommand] private void Remove() => _remove(this);
-    [RelayCommand] private void AddTemplate() => Templates.Add(new TemplateFileRow(r => Templates.Remove(r), _exists));
+    [RelayCommand] private void AddTemplate() => Templates.Add(NewTemplateRow());
 }
 
 /// <summary>One editable docker-compose override: the target file plus its own interactive overlay.</summary>
@@ -594,7 +599,13 @@ public partial class RepoEditViewModel : ObservableObject
             {
                 var row = tab.NewEnvRow();
                 foreach (var t in e.Templates ?? [])
-                    row.Templates.Add(new TemplateFileRow(r => row.Templates.Remove(r), vm.RepoFileExists) { Path = t });
+                {
+                    // Use the row's module-aware existence check so a template under the module path
+                    // (e.g. apps/web/.env.template) resolves correctly, not against the repo root.
+                    var tr = row.NewTemplateRow();
+                    tr.Path = t;
+                    row.Templates.Add(tr);
+                }
                 row.Seed(e.File, e.Set);   // sets the seed overrides, then the file (which builds the overlay)
                 tab.Env.Add(row);
             }

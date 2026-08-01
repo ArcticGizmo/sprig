@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -75,6 +76,14 @@ public partial class ReposView : UserControl
             if (vm is null) return Task.FromResult<IEnumerable<object>>([]);
             return Task.FromResult(vm.SuggestRepoSubdirs(text ?? "").Cast<object>());
         };
+    }
+
+    // Focusing (clicking into) a module-path box shows its directory suggestions straight away. The
+    // AutoCompleteBox only searches on a text change, so opening the drop-down is what kicks the async
+    // populator — and with MinimumPrefixLength=0 an empty box still lists the repo root's directories.
+    void ModuleSpecPathBoxGotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (sender is AutoCompleteBox box) box.IsDropDownOpen = true;
     }
 
     // The module name box lives in a data template, so it can't be focused by name. "+ Add module" leaves

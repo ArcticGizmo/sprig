@@ -39,6 +39,31 @@ public class RepoEditModuleTests
     }
 
     [Fact]
+    public void Loaded_env_template_resolves_existence_under_the_module_path()
+    {
+        using var s = new TempStore();
+        var dir = Write(s, """
+            { "schema":3, "name":"mono",
+              "inputs":[ { "name":"port" } ],
+              "modules":[
+                { "name":"web", "path":"apps/web",
+                  "env":[ { "file":".env.local", "templates":[".env.template"],
+                            "set":{ "PORT":"${sprig.port}" } } ] } ] }
+            """);
+        // The template lives under the module path — the existence hint must resolve it there,
+        // not against the repo root.
+        Directory.CreateDirectory(Path.Combine(dir, "apps", "web"));
+        File.WriteAllText(Path.Combine(dir, "apps", "web", ".env.template"), "PORT=3000\n");
+
+        var e = RepoEditViewModel.Load(dir);
+        var template = e.Modules[0].Env.Single().Templates.Single();
+
+        Assert.Equal(".env.template", template.Path);
+        Assert.True(template.ShowFound);      // found under apps/web
+        Assert.False(template.ShowMissing);
+    }
+
+    [Fact]
     public void Build_round_trips_modules()
     {
         using var s = new TempStore();

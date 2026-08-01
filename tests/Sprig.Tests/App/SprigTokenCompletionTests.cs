@@ -36,6 +36,57 @@ public class SprigTokenCompletionTests
         Assert.False(SprigTokenCompletion.Matches("plain", "${sprig.workspace}"));
     }
 
+    [Theory]
+    [InlineData("$", "$")]                       // a bare '$' is enough to start completing
+    [InlineData("url=$", "$")]
+    [InlineData("$vi", "$vi")]                    // '$' + text, no braces
+    [InlineData("http://x:$ports.vi", "$ports.vi")]
+    public void TrailingFragment_treats_a_bare_dollar_as_an_open_token(string text, string expected)
+        => Assert.Equal(expected, SprigTokenCompletion.TrailingFragment(text));
+
+    [Theory]
+    [InlineData("price is $5.00 ")]              // trailing space → the '$5.00' run is closed off
+    [InlineData("a $5:00")]                       // ':' isn't token-shaped
+    public void TrailingFragment_ignores_a_non_token_dollar(string text)
+        => Assert.Null(SprigTokenCompletion.TrailingFragment(text));
+
+    [Fact]
+    public void A_bare_dollar_offers_every_token()
+    {
+        Assert.True(SprigTokenCompletion.Matches("$", "${sprig.workspace}"));
+        Assert.True(SprigTokenCompletion.Matches("url=$", "${sprig.ports.vite_url}"));
+    }
+
+    [Fact]
+    public void Shorthand_matches_anything_to_the_right_of_a_dot()
+    {
+        // "$vite" should surface both the flat input and the dotted stack port.
+        Assert.True(SprigTokenCompletion.Matches("$vite", "${sprig.vite}"));
+        Assert.True(SprigTokenCompletion.Matches("$vite", "${sprig.ports.vite_url}"));
+
+        // ...but not an unrelated token.
+        Assert.False(SprigTokenCompletion.Matches("$vite", "${sprig.workspace}"));
+
+        // a leading segment still matches (typing the namespace)
+        Assert.True(SprigTokenCompletion.Matches("$ports", "${sprig.ports.vite_url}"));
+        // and continuing through a dot keeps matching
+        Assert.True(SprigTokenCompletion.Matches("$ports.vi", "${sprig.ports.vite_url}"));
+        Assert.False(SprigTokenCompletion.Matches("$ports.vi", "${sprig.vite}"));
+    }
+
+    [Fact]
+    public void Replace_splices_a_bare_dollar_shorthand()
+    {
+        // typing "$wo" then accepting ${sprig.workspace} replaces from the '$'
+        var (result, caret) = SprigTokenCompletion.Replace("url=$wo", "url=$wo".Length, "${sprig.workspace}");
+        Assert.Equal("url=${sprig.workspace}", result);
+        Assert.Equal("url=${sprig.workspace}".Length, caret);
+    }
+
+    [Fact]
+    public void Combine_splices_a_bare_dollar_shorthand()
+        => Assert.Equal("PORT=${sprig.vite}", SprigTokenCompletion.Combine("PORT=$vi", "${sprig.vite}"));
+
     [Fact]
     public void Combine_splices_the_token_keeping_the_literal_prefix()
         => Assert.Equal("http://localhost:${sprig.dbPort}",

@@ -9,6 +9,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.0] - 2026-08-01
+
+### Added
+- **Monorepo support** — a repo can declare many **modules**, each with its own `.env`, compose and setup.
+- **Each module gets a `path`** — the subdirectory it lives in; setup runs there and its paths resolve under it.
+- **Modules are tabs** — in the repo preview and editor, with **+ Add module** and delete, down to zero.
+- **Inputs stay shared, pinned above the tabs** — declared once, referenced from any module, no duplicating.
+- **Adding a repo asks: one module or many** — define each module's path and name; sprig autodetects each.
+- **Module path fields suggest directories** — click one and it lists subfolders, no typing required.
+- **File fields autocomplete within the module** — `.env`, compose and template paths suggest from the module's directory.
+- **One-line installer** — `irm https://raw.githubusercontent.com/ArcticGizmo/sprig/main/install.ps1 | iex`; no admin, self-updates in-app.
+- **Verified downloads** — the installer checks each release against its published `SHA256SUMS.txt` and refuses a mismatch.
+
+### Changed
+- **Schema 3** — `env`/`compose`/`setup` moved inside modules. Old files fold into a single `app` module on load (rewritten on next save).
+- **`sprig init` emits schema 3**, and the CLI groups a workspace's setup output by module.
+- **`${sprig.*}` autocomplete triggers on `$`** and matches any dot-segment.
+- **Module editor polish** — section cards, prominent tabs, and a live path-exists check.
+
+---
+
 ## [v0.3.3] - 2026-07-28
 
 ### Added

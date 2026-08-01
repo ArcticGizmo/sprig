@@ -8,6 +8,10 @@ namespace Sprig.Core.Init;
 /// <summary>A proposed <c>.sprig.json</c> plus advisory notes for the user to review.</summary>
 public sealed record InitProposal(SprigRepoConfig Config, IReadOnlyList<string> Notes);
 
+/// <summary>A module to scaffold: its <see cref="Name"/> (tab label) and the repo-relative
+/// <see cref="Path"/> (subdirectory) its detection is scoped to. Empty path = the repo root.</summary>
+public sealed record ModuleSpec(string Name, string Path);
+
 /// <summary>
 /// Detects a repo's isolation surface and proposes a <c>.sprig.json</c>: it turns port-shaped env
 /// keys and compose ports into declared <b>inputs</b> (with example shapes) that the stack will
@@ -41,36 +45,75 @@ public sealed class InitInspector
 
     public InitInspector(IGitService git) => _git = git;
 
+    /// <summary>
+    /// Scaffold a single default module at the repo root, scanning the whole tree. This is the
+    /// "one module" answer to the add-repo structure prompt — and the behaviour when the caller has
+    /// no module opinion. An empty module (nothing detected) is dropped, so a bare repo proposes none.
+    /// </summary>
     public InitProposal Inspect(string repoRoot)
+        => InspectModules(repoRoot, [new ModuleSpec(SprigConfigMigration.DefaultModuleName, "")], dropEmpty: true);
+
+    /// <summary>
+    /// Scaffold the given modules, scoping detection to each one's path. Inputs are shared across every
+    /// module (deduplicated as a single repo-level list). Every named module is kept even when its path
+    /// yields nothing to isolate — the user asked for it, and can fill it in the editor. Falls back to
+    /// the single-default <see cref="Inspect(string)"/> when no modules are supplied.
+    /// </summary>
+    public InitProposal Inspect(string repoRoot, IReadOnlyList<ModuleSpec> modules)
+        => modules.Count == 0 ? Inspect(repoRoot) : InspectModules(repoRoot, modules, dropEmpty: false);
+
+    InitProposal InspectModules(string repoRoot, IReadOnlyList<ModuleSpec> specs, bool dropEmpty)
     {
         var notes = new List<string>();
         var inputs = new List<InputDeclaration>();
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var envOverrides = new List<EnvOverride>();
 
-        DetectEnv(repoRoot, inputs, used, envOverrides, notes);
-        var compose = DetectCompose(repoRoot, inputs, used, notes);
+        // Each module scans only under its own path; inputs/used/notes are shared so port names stay
+        // unique across the whole repo and the review notes read as one list.
+        var modules = new List<ModuleDeclaration>();
+        foreach (var spec in specs)
+        {
+            var module = DetectModule(repoRoot, spec, inputs, used, notes);
+            if (!dropEmpty || module.Env.Count > 0 || module.Compose.Count > 0)
+                modules.Add(module);
+        }
 
-        var name = Path.GetFileName(repoRoot.TrimEnd('\\', '/'));
         var config = new SprigRepoConfig
         {
-            Name = name,
+            Schema = SprigConfigLoader.SupportedSchema,
+            Name = Path.GetFileName(repoRoot.TrimEnd('\\', '/')),
             Inputs = inputs,
-            Env = envOverrides,
-            Compose = compose,
+            Modules = modules,
         };
 
-        if (inputs.Count == 0 && compose.Count == 0)
+        var totalCompose = modules.Sum(m => m.Compose.Count);
+        if (inputs.Count == 0 && totalCompose == 0)
             notes.Add("no ports or compose detected — you'll likely need to author .sprig.json by hand");
         notes.Add("review the proposed inputs (names + examples) — the stack will supply their values");
         return new InitProposal(config, notes);
     }
 
-    void DetectEnv(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used,
+    /// <summary>Detect one module's env/compose, scoped to <paramref name="spec"/>'s path. The returned
+    /// declaration's file paths are relative to that path (as <see cref="ModuleDeclaration.Env"/> expects).</summary>
+    ModuleDeclaration DetectModule(string repoRoot, ModuleSpec spec, List<InputDeclaration> inputs,
+        HashSet<string> used, List<string> notes)
+    {
+        var envOverrides = new List<EnvOverride>();
+        DetectEnv(repoRoot, spec.Path, inputs, used, envOverrides, notes);
+        var compose = DetectCompose(repoRoot, spec.Path, inputs, used, notes);
+        return new ModuleDeclaration { Name = spec.Name, Path = spec.Path, Env = envOverrides, Compose = compose };
+    }
+
+    void DetectEnv(string repoRoot, string moduleRelPath, List<InputDeclaration> inputs, HashSet<string> used,
         List<EnvOverride> envOverrides, List<string> notes)
     {
+        var scanRoot = ScanRoot(repoRoot, moduleRelPath);
+        if (!Directory.Exists(scanRoot)) return;
+
+        // git-tracked lookups stay keyed by repo-relative path, so enumeration keeps repo-relative paths
+        // (also used to read/parse); only the stored File/Templates are rebased under the module path.
         var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
-        var envFiles = EnumerateEnvFiles(repoRoot)
+        var envFiles = EnumerateEnvFiles(repoRoot, scanRoot)
             .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -114,18 +157,22 @@ public sealed class InitInspector
 
                 envOverrides.Add(new EnvOverride
                 {
-                    File = target,
-                    Templates = templates.Count > 0 ? templates : null,
+                    File = ModuleRelative(target, moduleRelPath),
+                    Templates = templates.Count > 0
+                        ? templates.Select(t => ModuleRelative(t, moduleRelPath)).ToList()
+                        : null,
                     Set = set,
                 });
             }
         }
     }
 
-    /// <summary>Repo-relative (forward-slash) paths of every file under the repo whose name matches
-    /// <paramref name="matches"/>, skipping build/dependency directories and stopping at
-    /// <see cref="MaxDepth"/>. Best-effort — unreadable directories are skipped, never thrown.</summary>
-    static IReadOnlyList<string> EnumerateFiles(string repoRoot, Func<string, bool> matches)
+    /// <summary>Repo-relative (forward-slash) paths of every file under <paramref name="scanRoot"/> whose
+    /// name matches <paramref name="matches"/>, skipping build/dependency directories and stopping at
+    /// <see cref="MaxDepth"/> below the scan root. Paths stay relative to <paramref name="repoRoot"/> (so
+    /// git-tracked lookups keep working); <paramref name="scanRoot"/> only bounds the walk. Best-effort —
+    /// unreadable directories are skipped, never thrown.</summary>
+    static IReadOnlyList<string> EnumerateFiles(string repoRoot, string scanRoot, Func<string, bool> matches)
     {
         var results = new List<string>();
 
@@ -149,17 +196,36 @@ public sealed class InitInspector
                     Walk(sub, depth + 1);
         }
 
-        Walk(repoRoot, 0);
+        Walk(scanRoot, 0);
         return results;
     }
 
-    /// <summary>Repo-relative paths of every <c>.env</c>-family file under the repo.</summary>
-    static IReadOnlyList<string> EnumerateEnvFiles(string repoRoot)
-        => EnumerateFiles(repoRoot, IsEnvFamily);
+    /// <summary>Repo-relative paths of every <c>.env</c>-family file under <paramref name="scanRoot"/>.</summary>
+    static IReadOnlyList<string> EnumerateEnvFiles(string repoRoot, string scanRoot)
+        => EnumerateFiles(repoRoot, scanRoot, IsEnvFamily);
 
-    /// <summary>Repo-relative paths of every docker-compose file under the repo.</summary>
-    static IReadOnlyList<string> EnumerateComposeFiles(string repoRoot)
-        => EnumerateFiles(repoRoot, IsComposeFile);
+    /// <summary>Repo-relative paths of every docker-compose file under <paramref name="scanRoot"/>.</summary>
+    static IReadOnlyList<string> EnumerateComposeFiles(string repoRoot, string scanRoot)
+        => EnumerateFiles(repoRoot, scanRoot, IsComposeFile);
+
+    /// <summary>Absolute directory a module's detection scans: the repo root joined with its path (or the
+    /// repo root itself for an empty/root path).</summary>
+    static string ScanRoot(string repoRoot, string moduleRelPath)
+        => string.IsNullOrEmpty(moduleRelPath)
+            ? repoRoot
+            : Path.Combine(repoRoot, moduleRelPath.Replace('/', Path.DirectorySeparatorChar));
+
+    /// <summary>Rebase a repo-relative path to be relative to <paramref name="moduleRelPath"/> — stripping
+    /// the module's directory prefix so the stored value resolves under the module (unchanged for a root
+    /// module, or a path that unexpectedly falls outside the module).</summary>
+    static string ModuleRelative(string repoRelFile, string moduleRelPath)
+    {
+        if (string.IsNullOrEmpty(moduleRelPath)) return repoRelFile;
+        var prefix = moduleRelPath.Replace('\\', '/').Trim('/') + "/";
+        return repoRelFile.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? repoRelFile[prefix.Length..]
+            : repoRelFile;
+    }
 
     /// <summary><c>.env</c> or anything shaped <c>.env.*</c> (e.g. <c>.env.local</c>, <c>.env.example</c>).</summary>
     static bool IsEnvFamily(string fileName)
@@ -177,17 +243,22 @@ public sealed class InitInspector
         return slash < 0 ? "" : relFile[..slash];
     }
 
-    List<ComposeConfig> DetectCompose(string repoRoot, List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
+    List<ComposeConfig> DetectCompose(string repoRoot, string moduleRelPath, List<InputDeclaration> inputs,
+        HashSet<string> used, List<string> notes)
     {
         // Compose files are recursively discovered (monorepos keep several), and — unlike env — are
         // never filtered by git: sprig overrides a compose file by generating a separate copy, so a
         // tracked/committed compose file is a perfectly safe target.
         var result = new List<ComposeConfig>();
-        foreach (var file in EnumerateComposeFiles(repoRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+        var scanRoot = ScanRoot(repoRoot, moduleRelPath);
+        if (!Directory.Exists(scanRoot)) return result;
+
+        // The repo-relative path reads/parses the file; the stored File is rebased under the module.
+        foreach (var file in EnumerateComposeFiles(repoRoot, scanRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
         {
             var overrides = DetectComposeOverrides(repoRoot, file, inputs, used, notes);
             if (overrides.Count > 0)
-                result.Add(new ComposeConfig { File = file, Overrides = overrides });
+                result.Add(new ComposeConfig { File = ModuleRelative(file, moduleRelPath), Overrides = overrides });
         }
         return result;
     }

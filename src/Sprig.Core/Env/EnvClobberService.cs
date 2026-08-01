@@ -16,34 +16,37 @@ public sealed class EnvClobberService
     public const string BeginMarker = "# >>> sprig >>>";
     public const string EndMarker = "# <<< sprig <<<";
 
-    /// <summary>Apply every env override; returns the worktree file paths written.</summary>
+    /// <summary>Apply every module's env overrides; returns the worktree file paths written. Each
+    /// module's files (and its template seeds) resolve under the module's path.</summary>
     public IReadOnlyList<string> Apply(SprigRepoConfig config, string sourceRepo, string worktree, IVariableSource scope)
     {
         var written = new List<string>();
-        foreach (var over in config.Env)
-        {
-            var resolved = Resolve(over, scope);
-            var block = RenderBlock(resolved);
+        foreach (var module in config.EffectiveModules)
+            foreach (var over in module.Env)
+            {
+                var resolved = Resolve(over, scope);
+                var block = RenderBlock(resolved);
 
-            var seed = SeedFor(over, sourceRepo);
+                var seed = SeedFor(over, sourceRepo, module.Path);
 
-            var target = Path.Combine(worktree, over.File);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.WriteAllText(target, Wrap(seed, block));
-            written.Add(target);
-        }
+                var target = Path.Combine(worktree, module.Path, over.File);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllText(target, Wrap(seed, block));
+                written.Add(target);
+            }
         return written;
     }
 
     /// <summary>Remove sprig blocks from the targeted files in the worktree (best-effort).</summary>
     public void Strip(SprigRepoConfig config, string worktree)
     {
-        foreach (var over in config.Env)
-        {
-            var target = Path.Combine(worktree, over.File);
-            if (File.Exists(target))
-                File.WriteAllText(target, StripBlocks(File.ReadAllText(target)));
-        }
+        foreach (var module in config.EffectiveModules)
+            foreach (var over in module.Env)
+            {
+                var target = Path.Combine(worktree, module.Path, over.File);
+                if (File.Exists(target))
+                    File.WriteAllText(target, StripBlocks(File.ReadAllText(target)));
+            }
     }
 
     /// <summary>
@@ -51,7 +54,7 @@ public sealed class EnvClobberService
     /// (block-stripped) contents are concatenated in order — missing ones skipped. Otherwise the
     /// target file's own content in the source repo is used, if it exists.
     /// </summary>
-    static string SeedFor(EnvOverride over, string sourceRepo)
+    static string SeedFor(EnvOverride over, string sourceRepo, string basePath)
     {
         if (over.Templates is { Count: > 0 } templates)
         {
@@ -59,7 +62,7 @@ public sealed class EnvClobberService
             foreach (var rel in templates)
             {
                 if (string.IsNullOrWhiteSpace(rel)) continue;
-                var abs = Path.Combine(sourceRepo, rel);
+                var abs = Path.Combine(sourceRepo, basePath, rel);
                 if (!File.Exists(abs)) continue;
                 var text = StripBlocks(File.ReadAllText(abs));
                 if (text.Length == 0) continue;
@@ -69,7 +72,7 @@ public sealed class EnvClobberService
             return sb.ToString();
         }
 
-        var sourceFile = Path.Combine(sourceRepo, over.File);
+        var sourceFile = Path.Combine(sourceRepo, basePath, over.File);
         return File.Exists(sourceFile) ? StripBlocks(File.ReadAllText(sourceFile)) : "";
     }
 

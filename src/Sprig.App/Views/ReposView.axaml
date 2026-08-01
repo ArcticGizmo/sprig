@@ -171,73 +171,128 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <!-- env -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasEnv}">
-                            <TextBlock Text="ENV OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Env}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:EnvGroup">
-                                        <StackPanel Spacing="2" Margin="0,0,0,6">
-                                            <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
-                                            <TextBlock FontSize="11" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}"
-                                                       TextWrapping="Wrap" IsVisible="{Binding HasTemplates}">
-                                                <Run Text="seeded from: " /><Run Text="{Binding TemplatesSummary}" />
-                                            </TextBlock>
-                                            <ItemsControl ItemsSource="{Binding Items}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:KvRow">
-                                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                            <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                        </TextBlock>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
+                        <!-- modules -->
+                        <StackPanel Spacing="12" IsVisible="{Binding SelectedConfig.HasModules}">
+                            <TextBlock Text="MODULES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+
+                            <!-- tab strip: one tab per module -->
+                            <ListBox ItemsSource="{Binding SelectedConfig.Modules}"
+                                     SelectedItem="{Binding SelectedConfig.SelectedModule, Mode=TwoWay}"
+                                     Background="Transparent" Padding="0" BorderThickness="0">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.Styles>
+                                    <Style Selector="ListBoxItem">
+                                        <Setter Property="Padding" Value="18,9" />
+                                        <Setter Property="CornerRadius" Value="7" />
+                                        <Setter Property="Background" Value="{StaticResource FormBgBrush}" />
+                                    </Style>
+                                    <Style Selector="ListBoxItem /template/ ContentPresenter">
+                                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="CornerRadius" Value="7" />
+                                    </Style>
+                                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#2660A5FA" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                    </Style>
+                                </ListBox.Styles>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModuleTabView">
+                                        <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="14"
+                                                   FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
                                     </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- selected module detail -->
+                            <StackPanel Spacing="14">
+                                <TextBlock FontSize="11" FontFamily="Consolas,monospace" Foreground="{StaticResource MutedBrush}"
+                                           IsVisible="{Binding SelectedConfig.SelectedModule.HasPath}">
+                                    <Run Text="path: " /><Run Text="{Binding SelectedConfig.SelectedModule.Path}"
+                                                                Foreground="{StaticResource AccentBrush}" />
+                                </TextBlock>
+
+                                <TextBlock Text="This module declares no env, compose or setup yet."
+                                           FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                           IsVisible="{Binding SelectedConfig.SelectedModule.IsEmpty}" />
+
+                                <!-- env -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasEnv}">
+                                    <TextBlock Text="ENV OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Env}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:EnvGroup">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
+                                                    <TextBlock FontSize="11" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}"
+                                                               TextWrapping="Wrap" IsVisible="{Binding HasTemplates}">
+                                                        <Run Text="seeded from: " /><Run Text="{Binding TemplatesSummary}" />
+                                                    </TextBlock>
+                                                    <ItemsControl ItemsSource="{Binding Items}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:KvRow">
+                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- compose -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasCompose}">
+                                    <TextBlock Text="COMPOSE OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Compose}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ComposeInfo">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
+                                                    <ItemsControl ItemsSource="{Binding Overrides}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:KvRow">
+                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="{Binding Key}" /><Run Text=" → " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- setup -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasSetup}">
+                                    <TextBlock Text="SETUP (run in the module's directory after create)" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Setup}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:String">
+                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                    <Run Text="$ " Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
 
-                        <!-- compose -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasCompose}">
-                            <TextBlock Text="COMPOSE OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Compose}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:ComposeInfo">
-                                        <StackPanel Spacing="2" Margin="0,0,0,6">
-                                            <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
-                                            <ItemsControl ItemsSource="{Binding Overrides}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:KvRow">
-                                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                            <Run Text="{Binding Key}" /><Run Text=" → " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                        </TextBlock>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-
-                        <!-- setup -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasSetup}">
-                            <TextBlock Text="SETUP (run at the worktree root after create)" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Setup}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="sys:String">
-                                        <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                   Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                            <Run Text="$ " Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding}" />
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
+                        <TextBlock Text="No modules declared — open Edit to add one." FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   IsVisible="{Binding !SelectedConfig.HasModules}" />
 
                     </StackPanel>
                 </ScrollViewer>
@@ -310,7 +365,9 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- inputs -->
+                            <!-- inputs card (shared across every module) -->
+                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="10" Padding="18,16">
                             <StackPanel Spacing="8" AutomationProperties.AutomationId="repo.inputs">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="INPUTS (supplied by the stack)" FontSize="11"
@@ -386,6 +443,98 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
+                            </Border>
+
+                            <!-- modules card: one tab per module (its own env/compose/setup); inputs above are shared -->
+                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="10" Padding="18,16">
+                            <StackPanel Spacing="12">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="MODULES" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="+ Add module" Command="{Binding AddModuleCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+
+                                <!-- tab strip -->
+                                <ListBox ItemsSource="{Binding Modules}" SelectedItem="{Binding SelectedModule, Mode=TwoWay}"
+                                         Background="Transparent" Padding="0" BorderThickness="0"
+                                         IsVisible="{Binding HasModules}">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Padding" Value="18,9" />
+                                            <Setter Property="CornerRadius" Value="7" />
+                                            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+                                        </Style>
+                                        <Style Selector="ListBoxItem /template/ ContentPresenter">
+                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                            <Setter Property="CornerRadius" Value="7" />
+                                        </Style>
+                                        <!-- selected tab: accent-tinted fill + accent border so it clearly reads as active -->
+                                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                            <Setter Property="Background" Value="#2660A5FA" />
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                        </Style>
+                                    </ListBox.Styles>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ModuleEditTab">
+                                            <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace" FontSize="14"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <!-- empty state -->
+                                <Border IsVisible="{Binding !HasModules}" Background="{StaticResource FormBgBrush}"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="18">
+                                    <StackPanel Spacing="10" HorizontalAlignment="Center">
+                                        <TextBlock Text="No modules yet. A module is a slice of the repo — its own .env files, compose files and setup commands."
+                                                   FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                                   TextAlignment="Center" MaxWidth="440" />
+                                        <Button Content="+ Add module" Command="{Binding AddModuleCommand}" HorizontalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- selected module detail -->
+                                <ContentControl Content="{Binding SelectedModule}">
+                                    <ContentControl.ContentTemplate>
+                                        <DataTemplate x:DataType="vm:ModuleEditTab">
+                                            <StackPanel Spacing="16">
+
+                                            <!-- module header: name, path, delete -->
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="12">
+                                                <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="12">
+                                                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Top">
+                                                        <TextBlock Text="Module name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                                        <TextBox Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
+                                                                 Loaded="ModuleNameBoxLoaded"
+                                                                 PlaceholderText="web" FontFamily="Consolas,monospace" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top">
+                                                        <TextBlock Text="Path (subdirectory, optional)" FontSize="11"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   ToolTip.Tip="The module's directory (e.g. apps/web). Its .env/compose paths resolve under it, and setup runs there. Leave blank for the repo root." />
+                                                        <AutoCompleteBox Text="{Binding Path, Mode=TwoWay}" MinWidth="0"
+                                                                         FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
+                                                                         Loaded="RepoPathBoxLoaded"
+                                                                         PlaceholderText="apps/web (blank = repo root)" FontFamily="Consolas,monospace" />
+                                                        <TextBlock IsVisible="{Binding ShowPathFound}" FontSize="11"
+                                                                   Foreground="{StaticResource OkBrush}" Text="✓ Directory exists in the repo." />
+                                                        <TextBlock IsVisible="{Binding ShowPathMissing}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource WarnBrush}"
+                                                                   Text="⚠ No such directory in the repo — check the path (setup would run somewhere that doesn't exist)." />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2" Content="Delete module" Command="{Binding RemoveCommand}"
+                                                            VerticalAlignment="Top" Margin="0,18,0,0" Padding="10,5"
+                                                            Background="Transparent" Foreground="{StaticResource DangerBrush}"
+                                                            BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" />
+                                                </Grid>
+                                            </Border>
 
                             <!-- env -->
                             <StackPanel Spacing="8">
@@ -398,8 +547,8 @@
                                 <ItemsControl ItemsSource="{Binding Env}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:EnvFileEditRow">
-                                            <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
-                                                    Padding="10" Margin="0,0,0,10">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
                                                 <StackPanel Spacing="6">
                                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                                         <AutoCompleteBox Grid.Column="0" MinWidth="0"
@@ -423,7 +572,7 @@
                                                                Text="{Binding NotIgnoredMessage}" />
 
                                                     <!-- seed templates: an inset panel so it reads as its own thing, not part of the keys -->
-                                                    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                                             BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,4,0,0">
                                                         <StackPanel Spacing="4">
                                                             <Grid ColumnDefinitions="*,Auto">
@@ -481,8 +630,8 @@
                                 <ItemsControl ItemsSource="{Binding Compose}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ComposeFileEditRow">
-                                            <Border Background="{StaticResource FormBgBrush}" CornerRadius="6"
-                                                    Padding="10" Margin="0,0,0,10">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
                                                 <StackPanel Spacing="6">
                                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                                         <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding File, Mode=TwoWay}"
@@ -518,7 +667,7 @@
                                             FontSize="11" Padding="8,3" />
                                 </Grid>
                                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Run in order at the worktree root after it's created (e.g. npm ci, dotnet restore). Each runs via your shell; a failure warns but won't undo the workspace." />
+                                           Text="Run in order in the module's directory after the worktree is created (e.g. npm ci, dotnet restore). Each runs via your shell; a failure warns but won't undo the workspace." />
                                 <ItemsControl ItemsSource="{Binding Setup}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SetupCommandRow">
@@ -534,6 +683,13 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
+
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ContentControl.ContentTemplate>
+                                </ContentControl>
+                            </StackPanel>
+                            </Border>
 
                             </StackPanel>
                         </Border>
@@ -594,6 +750,59 @@
                     <TextBlock IsVisible="{Binding DetectHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap"
                                Text="{Binding DetectHint}" />
+
+                    <!-- module-structure choice: only for a new git repo with no .sprig.json yet -->
+                    <StackPanel Spacing="10" IsVisible="{Binding NeedsModuleChoice}">
+                        <TextBlock Text="How is this repo structured?" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <RadioButton GroupName="moduleStructure" Content="Single module"
+                                         IsChecked="{Binding !MultiModule}" />
+                            <RadioButton GroupName="moduleStructure" Content="Multiple modules"
+                                         IsChecked="{Binding MultiModule, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <!-- single: scan the whole repo into one root module -->
+                        <TextBlock IsVisible="{Binding !MultiModule}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Text="Sprig scans the whole repo and sets up one module at the root." />
+
+                        <!-- multiple: define each module's name + path; each path is scanned in turn -->
+                        <StackPanel Spacing="8" IsVisible="{Binding MultiModule}">
+                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                       Text="Name each module and point it at a subdirectory. Sprig scans each path and scaffolds its env / compose. Inputs are shared across them." />
+                            <Grid ColumnDefinitions="1.6*,1.1*,Auto" ColumnSpacing="8" Margin="0,0,0,-2">
+                                <TextBlock Grid.Column="0" Text="Path (subdirectory)" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock Grid.Column="1" Text="Name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding ModuleSpecs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ModuleSpecRow">
+                                        <StackPanel Spacing="2" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="1.6*,1.1*,Auto" ColumnSpacing="8">
+                                                <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding Path, Mode=TwoWay}"
+                                                                 FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
+                                                                 Loaded="ModuleSpecPathBoxLoaded" GotFocus="ModuleSpecPathBoxGotFocus"
+                                                                 PlaceholderText="apps/web" FontFamily="Consolas,monospace" />
+                                                <TextBox Grid.Column="1" Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
+                                                         PlaceholderText="web" FontFamily="Consolas,monospace" />
+                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="10,2" />
+                                            </Grid>
+                                            <TextBlock IsVisible="{Binding ShowPathFound}" FontSize="11"
+                                                       Foreground="{StaticResource OkBrush}" Text="✓ Directory exists in the repo." />
+                                            <TextBlock IsVisible="{Binding ShowPathMissing}" FontSize="11" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource WarnBrush}"
+                                                       Text="⚠ No such directory in the repo yet — the module is still created (empty) for you to fill in." />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="+ Add module" Command="{Binding AddModuleSpecRowCommand}"
+                                    FontSize="11" Padding="8,3" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </StackPanel>
+
                     <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">

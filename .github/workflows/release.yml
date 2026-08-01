@@ -45,6 +45,55 @@ jobs:
           --icon src/Sprig.App/Assets/sprig.ico
           --outputDir releases/
 
+      # SHA256SUMS.txt is what install.ps1 verifies Sprig-win-Setup.exe against before running it, so it
+      # has to describe exactly the bytes that get uploaded - which is why it is generated here, after the
+      # pack, rather than anywhere the contents of releases/ could still change.
+      - name: Generate SHA256SUMS.txt
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Resolve-Path releases
+
+          # install.ps1 resolves this asset by name from the release metadata; a release without it can't be
+          # installed by the one-liner, so fail here rather than publishing a broken install path.
+          if (-not (Test-Path -LiteralPath (Join-Path $dir 'Sprig-win-Setup.exe'))) {
+            Write-Host '::error::Sprig-win-Setup.exe is missing - install.ps1 depends on it.'
+            exit 1
+          }
+
+          # Skipping the manifest keeps a stale one out of the new one: a fresh runner never has one, but a
+          # re-run with a restored releases/ would otherwise list SHA256SUMS.txt's own previous bytes.
+          # Filtered with Where-Object, NOT -Exclude: Get-ChildItem silently IGNORES -Exclude when it is
+          # paired with -LiteralPath, so that spelling looks right and quietly does nothing.
+          $lines = Get-ChildItem -File -LiteralPath $dir |
+            Where-Object Name -ne 'SHA256SUMS.txt' | Sort-Object Name | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          }
+
+          # Written outside releases/ and moved in, so the manifest can never hash itself. LF-terminated
+          # lower-case hex in sha256sum's own format, so `sha256sum -c SHA256SUMS.txt` validates it as-is.
+          # -Force because a bare Move-Item onto an existing destination fails WITHOUT failing the step,
+          # which would publish new binaries beside the previous run's stale manifest.
+          $manifest = Join-Path $dir 'SHA256SUMS.txt'
+          $tmp = Join-Path $env:RUNNER_TEMP 'SHA256SUMS.txt'
+          [System.IO.File]::WriteAllText($tmp, ($lines -join "`n") + "`n")
+          Move-Item -LiteralPath $tmp -Destination $manifest -Force
+
+          # The whole point of the manifest is that it describes the bytes being uploaded, so prove it here
+          # rather than leaving install.ps1's users to discover otherwise. This is the same comparison
+          # install.ps1 makes, run before anything is published.
+          $setup = Join-Path $dir 'Sprig-win-Setup.exe'
+          $want = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not ((Get-Content -LiteralPath $manifest) -contains "$want  Sprig-win-Setup.exe")) {
+            Write-Host "::error::SHA256SUMS.txt does not match Sprig-win-Setup.exe ($want) - refusing to publish."
+            exit 1
+          }
+          Write-Host "Verified SHA256SUMS.txt describes Sprig-win-Setup.exe ($want)"
+
+          '### Published assets' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          '```'                  | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Get-Content -LiteralPath $manifest | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          '```'                  | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

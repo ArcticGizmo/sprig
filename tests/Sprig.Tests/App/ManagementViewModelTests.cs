@@ -20,6 +20,18 @@ public class ManagementViewModelTests
         return dir;
     }
 
+    /// <summary>The editor now edits modules as tabs; these single-module tests work against the current
+    /// tab — the one a migrated config produced, or a freshly added empty one.</summary>
+    static ModuleEditTab Mod(RepoEditViewModel e)
+    {
+        if (e.Modules.Count == 0)
+        {
+            e.AddModuleCommand.Execute(null);
+            e.SelectedModule!.Name = "app";   // "+ Add module" leaves the name blank for the user to type;
+        }                                     // these tests need a named (saveable) module to work against.
+        return e.SelectedModule!;
+    }
+
     [Fact]
     public async Task Repos_register_and_unregister()
     {
@@ -89,6 +101,64 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public async Task Repos_modal_scaffolds_multiple_modules_from_definitions()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var repo = Path.Combine(s.Root, "mono");
+        Directory.CreateDirectory(Path.Combine(repo, "apps", "web"));
+        Directory.CreateDirectory(Path.Combine(repo, "services", "api"));
+        File.WriteAllText(Path.Combine(repo, "apps", "web", ".env.local"), "PORT=3000\n");
+        File.WriteAllText(Path.Combine(repo, "services", "api", ".env.local"), "PORT=5000\n");
+
+        var vm = new ReposViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = repo;
+        vm.MultiModule = true;   // seeds one blank module row
+
+        vm.ModuleSpecs[0].Name = "web";
+        vm.ModuleSpecs[0].Path = "apps/web";
+        vm.AddModuleSpecRowCommand.Execute(null);
+        vm.ModuleSpecs[1].Name = "api";
+        vm.ModuleSpecs[1].Path = "services/api";
+
+        Assert.Equal("Create modules & edit", vm.AddButtonLabel);
+
+        await vm.ConfirmAddCommand.ExecuteAsync(null);
+
+        Assert.Null(vm.Error);
+        Assert.False(vm.IsAdding);
+
+        // Both modules were scanned and written, each with its env file stored relative to its path.
+        var config = Sprig.Core.Config.SprigConfigLoader.LoadFromFile(Path.Combine(repo, ".sprig.json"));
+        Assert.Equal(["web", "api"], config.Modules.Select(m => m.Name));
+        Assert.Equal("apps/web", config.Modules[0].Path);
+        Assert.Equal(".env.local", config.Modules[0].Env.Single().File);
+        Assert.Equal("services/api", config.Modules[1].Path);
+        Assert.Equal(".env.local", config.Modules[1].Env.Single().File);
+    }
+
+    [Fact]
+    public async Task Repos_modal_multi_module_needs_at_least_one_named_module()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        var repo = Path.Combine(s.Root, "mono");
+        Directory.CreateDirectory(repo);
+
+        var vm = new ReposViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = repo;
+        vm.MultiModule = true;   // seeds one blank (unnamed) row and nothing else
+
+        await vm.ConfirmAddCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.Error);                                    // asked to name a module
+        Assert.False(File.Exists(Path.Combine(repo, ".sprig.json"))); // nothing scaffolded
+        Assert.True(vm.IsAdding);                                    // modal stays open
+    }
+
+    [Fact]
     public async Task Repos_add_surfaces_error_for_non_sprig_path()
     {
         using var s = new TempStore();
@@ -126,7 +196,7 @@ public class ManagementViewModelTests
 
         // change the input's example and add a new env override via the overlay
         vm.Editor.Inputs.First().Example = "6000";
-        var env = vm.Editor.Env.First();
+        var env = Mod(vm.Editor!).Env.First();
         await env.StatusReady;                     // let the merged-env overlay build
         var overlay = env.Overlay!;
         overlay.NewKey = "HOST";
@@ -143,7 +213,7 @@ public class ManagementViewModelTests
         // re-read from disk to prove it persisted
         var reloaded = RepoEditViewModel.Load(dir);
         Assert.Equal("6000", reloaded.Inputs.First().Example);
-        Assert.Contains(reloaded.Env.First().CurrentSet, k => k.Key == "HOST" && k.Value == "localhost");
+        Assert.Contains(reloaded.Modules[0].Env.First().CurrentSet, k => k.Key == "HOST" && k.Value == "localhost");
     }
 
     [Fact]
@@ -233,8 +303,9 @@ public class ManagementViewModelTests
             "services:\n  db:\n    image: postgres:16\n");
 
         var editor = RepoEditViewModel.Load(dir);
-        editor.AddComposeFileCommand.Execute(null);
-        var row = editor.Compose.First();
+        var mod = Mod(editor);
+        mod.AddComposeFileCommand.Execute(null);
+        var row = mod.Compose.First();
 
         // a path with no matching file is flagged and blocks the save
         row.File = "nope.yml";
@@ -261,14 +332,15 @@ public class ManagementViewModelTests
         File.WriteAllText(Path.Combine(dir, "web", "compose.yaml"), "services:\n  b:\n    image: y\n");
 
         var editor = RepoEditViewModel.Load(dir);
-        editor.AddComposeFileCommand.Execute(null);
-        editor.Compose[0].File = "docker-compose.yml";
-        editor.AddComposeFileCommand.Execute(null);
-        editor.Compose[1].File = "web/compose.yaml";
+        var mod = Mod(editor);
+        mod.AddComposeFileCommand.Execute(null);
+        mod.Compose[0].File = "docker-compose.yml";
+        mod.AddComposeFileCommand.Execute(null);
+        mod.Compose[1].File = "web/compose.yaml";
         Assert.True(editor.Save());
 
         var reloaded = RepoEditViewModel.Load(dir);
-        Assert.Equal(["docker-compose.yml", "web/compose.yaml"], reloaded.Compose.Select(c => c.File));
+        Assert.Equal(["docker-compose.yml", "web/compose.yaml"], reloaded.Modules[0].Compose.Select(c => c.File));
     }
 
     [Fact]
@@ -281,15 +353,16 @@ public class ManagementViewModelTests
             """{ "schema":2, "name":"api", "setup":["npm ci"] }""");
 
         var editor = RepoEditViewModel.Load(dir);
-        Assert.Equal(["npm ci"], editor.Setup.Select(x => x.Command));
+        var mod = Mod(editor);
+        Assert.Equal(["npm ci"], mod.Setup.Select(x => x.Command));
 
-        editor.AddSetupCommandCommand.Execute(null);
-        editor.Setup[1].Command = "dotnet restore";
-        editor.AddSetupCommandCommand.Execute(null);   // a blank row is dropped on save
+        mod.AddSetupCommandCommand.Execute(null);
+        mod.Setup[1].Command = "dotnet restore";
+        mod.AddSetupCommandCommand.Execute(null);   // a blank row is dropped on save
         Assert.True(editor.Save());
 
         var reloaded = RepoEditViewModel.Load(dir);
-        Assert.Equal(["npm ci", "dotnet restore"], reloaded.Setup.Select(x => x.Command));
+        Assert.Equal(["npm ci", "dotnet restore"], reloaded.Modules[0].Setup.Select(x => x.Command));
     }
 
     [Fact]
@@ -335,8 +408,9 @@ public class ManagementViewModelTests
         git.IgnoredFiles.Add(".env.local"); // gitignored → safe
         var editor = RepoEditViewModel.Load(dir, git);
 
-        editor.AddEnvFileCommand.Execute(null);
-        var row = editor.Env.First();
+        var mod = Mod(editor);
+        mod.AddEnvFileCommand.Execute(null);
+        var row = mod.Env.First();
 
         row.File = ".env";
         await row.StatusReady;
@@ -374,8 +448,9 @@ public class ManagementViewModelTests
         File.WriteAllText(Path.Combine(dir, ".env.template"), "PORT=\nDATABASE_URL=\n");
 
         var editor = RepoEditViewModel.Load(dir);
-        editor.AddEnvFileCommand.Execute(null);
-        var row = editor.Env.First();
+        var mod = Mod(editor);
+        mod.AddEnvFileCommand.Execute(null);
+        var row = mod.Env.First();
 
         row.File = ".env.local";
         await row.StatusReady;
@@ -396,8 +471,9 @@ public class ManagementViewModelTests
         File.WriteAllText(Path.Combine(dir, "shared.env"), "SHARED_SECRET=\nAPI_KEY=\n");
 
         var editor = RepoEditViewModel.Load(dir);
-        editor.AddEnvFileCommand.Execute(null);
-        var row = editor.Env.First();
+        var mod = Mod(editor);
+        mod.AddEnvFileCommand.Execute(null);
+        var row = mod.Env.First();
         row.File = ".env.local";
         await row.StatusReady;
 
@@ -422,7 +498,7 @@ public class ManagementViewModelTests
             """);
 
         var editor = RepoEditViewModel.Load(dir);
-        await editor.Env.First().StatusReady;   // let the env overlay settle
+        await Mod(editor).Env.First().StatusReady;   // let the env overlay settle
 
         // "port" is referenced by the override but not declared → surfaced for quick add,
         // and that same gap blocks the save.
@@ -451,8 +527,9 @@ public class ManagementViewModelTests
         var git = new FakeGitService();
         git.IgnoredFiles.Add(".env.local");
         var editor = RepoEditViewModel.Load(dir, git);
-        editor.AddEnvFileCommand.Execute(null);
-        var row = editor.Env.First();
+        var mod = Mod(editor);
+        mod.AddEnvFileCommand.Execute(null);
+        var row = mod.Env.First();
 
         // gitignored → safe
         row.File = ".env.local";

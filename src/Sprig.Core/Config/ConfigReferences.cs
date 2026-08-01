@@ -41,11 +41,24 @@ public static partial class ConfigReferences
 
     static IEnumerable<string> Templates(SprigRepoConfig config)
     {
-        foreach (var env in config.Env)
-            foreach (var v in env.Set.Values)
+        // Walk both the legacy flat surface (schema ≤2 / the editor's pre-modules shape) and the module
+        // surface, so undeclared-input detection works whichever shape the config is in. Inputs are shared
+        // at the repo level, so every module's templates are checked against the same declared set.
+        foreach (var t in EnvComposeTemplates(config.Env ?? [], config.Compose ?? []))
+            yield return t;
+        foreach (var module in config.Modules)
+            foreach (var t in EnvComposeTemplates(module.Env, module.Compose))
+                yield return t;
+    }
+
+    static IEnumerable<string> EnvComposeTemplates(
+        IReadOnlyList<EnvOverride> env, IReadOnlyList<ComposeConfig> compose)
+    {
+        foreach (var e in env)
+            foreach (var v in e.Set.Values)
                 yield return v;
-        foreach (var compose in config.Compose)
-            foreach (var o in compose.Overrides)
+        foreach (var c in compose)
+            foreach (var o in c.Overrides)
                 yield return o.Template;
     }
 

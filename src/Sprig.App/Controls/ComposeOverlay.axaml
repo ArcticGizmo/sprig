@@ -105,7 +105,7 @@
                               IsVisible="{Binding IsToken}">
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                         <Button.Flyout>
-                          <Flyout>
+                          <Flyout FlyoutPresenterClasses="cardflyout">
                             <Border Padding="14" MinWidth="380" MaxWidth="480">
                             <StackPanel Spacing="9">
                               <StackPanel Spacing="2">

@@ -35,8 +35,15 @@ and generates a delta.
 
 Releases are automated by [`.github/workflows/release.yml`](../.github/workflows/release.yml),
 triggered by **pushing a `v*` tag**. On a `windows-latest` runner it derives the version from the
-tag, publishes, `vpk pack`s, and creates the GitHub Release with the Velopack feed attached. The
-manual `dotnet publish` + `vpk pack` above is the local equivalent.
+tag, publishes, `vpk pack`s, generates a `SHA256SUMS.txt` describing every packed asset, and creates
+the GitHub Release with the Velopack feed attached. The manual `dotnet publish` + `vpk pack` above is
+the local equivalent (minus the manifest).
+
+The `SHA256SUMS.txt` step runs **after** the pack, so it hashes exactly the bytes being uploaded, and
+it fails the build if `Sprig-win-Setup.exe` is missing or the manifest doesn't match it — a release
+without a matching manifest can't be installed by the one-liner, so it's caught before publish. The
+manifest is sha256sum's own format (lower-case hex, two spaces, filename), so `sha256sum -c
+SHA256SUMS.txt` validates a downloaded release directory as-is.
 
 The flow for a release:
 
@@ -57,7 +64,23 @@ from **About → View changelog**. Parsing lives in `Sprig.Core/Changelog/Change
 
 ## Install
 
-`Setup.exe` installs per-user to `%LocalAppData%\Sprig` (no admin needed) with Start Menu + Desktop
+The primary install path is the PowerShell one-liner ([`install.ps1`](../install.ps1) at the repo root):
+
+```powershell
+irm https://raw.githubusercontent.com/ArcticGizmo/sprig/main/install.ps1 | iex
+```
+
+It resolves the latest GitHub release, fetches `SHA256SUMS.txt` + `Sprig-win-Setup.exe`, verifies the
+installer against the manifest (deleting it rather than running it on any mismatch), then hands off to
+Velopack's setup. Downloading via PowerShell rather than a browser skips the mark-of-the-web, so it
+avoids the SmartScreen "Windows protected your PC" dialog. Pin a version with
+`$env:SPRIG_VERSION = '0.4.0'` before the pipe, or a fork with `$env:SPRIG_REPO`.
+
+> **`install.ps1` must stay pure ASCII** (no BOM) — Windows PowerShell 5.1 decodes it as the system
+> codepage, and a stray em dash becomes a curly quote that silently terminates a string. Run
+> `tools/test-install.ps1` after editing it; it asserts ASCII purity and exercises the manifest parsing.
+
+`Setup.exe` itself installs per-user to `%LocalAppData%\Sprig` (no admin needed) with Start Menu + Desktop
 shortcuts. `--silent` installs without UI. Uninstall via `%LocalAppData%\Sprig\Update.exe
 --uninstall` (or Add/Remove Programs).
 

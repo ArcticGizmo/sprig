@@ -64,18 +64,15 @@ public sealed partial class WorkspaceService(
         {
             steps.Add(new(CreateStepIds.Worktree(repo.Name), $"Create worktree — {repo.Name}"));
             steps.Add(new(CreateStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
-            if (repo.Config.Compose.Count > 0)
+            if (repo.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
                 steps.Add(new(CreateStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
             if (HasSetup(repo))
             {
-                // A parent "Install dependencies" row with one indented sub-row per command, so each
-                // command's progress (and live output) is visible on its own line.
+                // A parent "Install dependencies" row with one indented sub-row per command (across all
+                // the repo's modules, in order), so each command's progress + live output is on its own line.
                 steps.Add(new(CreateStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
-                for (var i = 0; i < repo.Config.Setup.Count; i++)
-                {
-                    if (string.IsNullOrWhiteSpace(repo.Config.Setup[i])) continue;
-                    steps.Add(new(CreateStepIds.SetupCommand(repo.Name, i), repo.Config.Setup[i]) { SubStep = true });
-                }
+                foreach (var cmd in SetupCommands(repo))
+                    steps.Add(new(CreateStepIds.SetupCommand(repo.Name, cmd.Index), cmd.Command) { SubStep = true });
             }
         }
         steps.Add(new(CreateStepIds.Record, "Save workspace record"));
@@ -83,25 +80,44 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>Whether this repo has setup commands to run (and a runner to run them).</summary>
-    bool HasSetup(ResolvedRepo repo) => setup is not null && repo.Config.Setup.Count > 0;
+    bool HasSetup(ResolvedRepo repo) =>
+        setup is not null && repo.Config.EffectiveModules.Any(m => m.Setup.Count > 0);
 
-    /// <summary>Run the repo's setup commands one at a time, reporting each as its own sub-step and
-    /// streaming its live output to the progress sink. Stops at the first failure (a later command
-    /// usually depends on an earlier one); the failed command's row goes Warning — setup never rolls
-    /// the workspace back — and any commands after it stay Pending (unreached).</summary>
+    /// <summary>The repo's setup commands flattened across its modules, in order, with a global index
+    /// (so step ids line up between <see cref="PlanCreate"/> and <see cref="RunSetup"/>) and the module's
+    /// path/name for the working directory and grouping. Blank commands are skipped but still consume an
+    /// index, so the ids are stable regardless of blanks.</summary>
+    static IEnumerable<(int Index, string Command, string ModulePath, string ModuleName)> SetupCommands(ResolvedRepo repo)
+    {
+        var i = -1;
+        foreach (var module in repo.Config.EffectiveModules)
+            foreach (var command in module.Setup)
+            {
+                i++;
+                if (string.IsNullOrWhiteSpace(command)) continue;
+                yield return (i, command, module.Path, module.Name);
+            }
+    }
+
+    /// <summary>Run the repo's setup commands one at a time (each in its module's directory within the
+    /// worktree), reporting each as its own sub-step and streaming its live output to the progress sink.
+    /// Stops at the first failure (a later command usually depends on an earlier one); the failed
+    /// command's row goes Warning — setup never rolls the workspace back — and any commands after it stay
+    /// Pending (unreached).</summary>
     IReadOnlyList<Setup.SetupOutcome> RunSetup(ResolvedRepo repo, string worktree,
         IProgress<WorkspaceStepProgress>? progress)
     {
         var outcomes = new List<Setup.SetupOutcome>();
-        for (var i = 0; i < repo.Config.Setup.Count; i++)
+        foreach (var (index, command, modulePath, moduleName) in SetupCommands(repo))
         {
-            var command = repo.Config.Setup[i];
-            if (string.IsNullOrWhiteSpace(command)) continue;
-
-            var id = CreateStepIds.SetupCommand(repo.Name, i);
+            var cwd = string.IsNullOrEmpty(modulePath)
+                ? worktree
+                : Path.Combine(worktree, modulePath.Replace('/', Path.DirectorySeparatorChar));
+            var id = CreateStepIds.SetupCommand(repo.Name, index);
             progress?.Report(new(id, WorkspaceStepState.Running));
-            var outcome = setup!.RunCommand(command, worktree,
-                onOutput: line => progress?.Report(new(id, WorkspaceStepState.Running) { Output = line }));
+            var outcome = setup!.RunCommand(command, cwd,
+                onOutput: line => progress?.Report(new(id, WorkspaceStepState.Running) { Output = line }))
+                with { Module = moduleName };
             outcomes.Add(outcome);
             progress?.Report(outcome.Success
                 ? new(id, WorkspaceStepState.Done)
@@ -174,20 +190,25 @@ public sealed partial class WorkspaceService(
                 env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
                 progress?.Report(new(current, WorkspaceStepState.Done));
 
-                // A repo may override several compose files; generate one isolated copy per file,
-                // named so files from different source paths never collide in the instance dir.
+                // A repo may override several compose files across its modules; generate one isolated copy
+                // per file, named with the module + a slug of the source path so two files never collide in
+                // the instance dir (the same filename in two modules stays distinct). Each source path is
+                // resolved under its module's directory.
                 var composePaths = new List<string>();
-                if (repo.Config.Compose.Count > 0)
+                var modules = repo.Config.EffectiveModules;
+                if (modules.Any(m => m.Compose.Count > 0))
                 {
                     current = CreateStepIds.Compose(repo.Name);
                     progress?.Report(new(current, WorkspaceStepState.Running));
-                    foreach (var composeCfg in repo.Config.Compose)
-                    {
-                        var dest = Path.Combine(paths.InstanceDir(workspace),
-                            $"docker-compose.{repo.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
-                        compose.GenerateToFile(Path.Combine(repo.Root, composeCfg.File), composeCfg, repoScope, dest);
-                        composePaths.Add(dest);
-                    }
+                    foreach (var module in modules)
+                        foreach (var composeCfg in module.Compose)
+                        {
+                            var dest = Path.Combine(paths.InstanceDir(workspace),
+                                $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
+                            compose.GenerateToFile(
+                                Path.Combine(repo.Root, module.Path, composeCfg.File), composeCfg, repoScope, dest);
+                            composePaths.Add(dest);
+                        }
                     progress?.Report(new(current, WorkspaceStepState.Done));
                 }
 

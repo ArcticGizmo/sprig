@@ -29,12 +29,13 @@ public sealed record Guide(
     System.Func<Navigator, AppServices, IReadOnlyList<CoachMark>> Build);
 
 /// <summary>
-/// The guide catalog — the ladder of lessons, each introducing one concept. Ordered easiest-first. Only the
-/// first is authored so far (the vertical slice); the rest are placeholders in the plan, not here.
+/// The guide catalog — the ladder of lessons, each introducing one concept. Ordered easiest-first:
+/// register a repo, split it into modules, wire a multi-repo stack, run a workspace, and recover from drift.
 /// </summary>
 public static class Guides
 {
     public const string RegisterRepoId = "register-repo";
+    public const string SplitModulesId = "split-modules";
     public const string WireStackId = "wire-stack";
     public const string RunWorkspaceId = "run-workspace";
     public const string RepairDriftId = "repair-drift";
@@ -47,6 +48,13 @@ public static class Guides
             "2 min",
             SampleStage.RepoOnDisk,
             RegisterRepoSteps),
+
+        new(SplitModulesId,
+            "Split a repo into modules",
+            "One repo, many slices — each with its own env, compose and setup.",
+            "2 min",
+            SampleStage.ReposRegistered,
+            SplitModulesSteps),
 
         new(WireStackId,
             "Wire up a multi-repo stack",
@@ -93,24 +101,79 @@ public static class Guides
             // Explanation: registration dropped us into the editor. Point at what the repo declares.
             new(Anchors.RepoInputs,
                 "A repo declares what it needs",
-                "sprig read this repo's committed .sprig.json. These are its inputs — values it needs but never decides for itself, like which port to run on. A stack supplies them, so the repo stays portable.")
+                "These are inputs and they represent what needs to be defined for the repo to be created in isolation")
             {
                 Side = CoachSide.Right,
                 Prepare = () => { nav.EditRepo(SampleFixtures.ApiRepo); return Task.CompletedTask; },
             },
 
-            new(Anchors.RepoInputs,
-                "That's a registered repo",
-                "It declares what it consumes and nothing more — no ports, no URLs, no mention of the other repos. Deciding those values, and wiring repos together, is a stack's job. That's the next guide.")
+            new(Anchors.RepoModules,
+                "And here's where those inputs get used",
+                "For each .env, docker compose and setup command you can reference the previous inputs and they will be injected at run time.")
             {
-                Side = CoachSide.Right,
+                Side = CoachSide.Left,
                 Prepare = () => { nav.EditRepo(SampleFixtures.ApiRepo); return Task.CompletedTask; },
             },
         ];
     }
 
     /// <summary>
-    /// Guide 2: compose the two registered repos into one stack. Starts at <see cref="SampleStage.ReposRegistered"/>
+    /// Guide 2: split a single repo into modules — the monorepo lesson. Starts at
+    /// <see cref="SampleStage.ReposRegistered"/> (sample-api is registered, so its editor opens) and walks:
+    /// what a module is → inputs stay shared → add a second module → what that module owns → the handoff.
+    /// <para>Every step is an explanation that advances on Next, not a waiting step: adding a module is
+    /// editor state, not a store change, and the coach only re-checks a wait on <c>StoreChanged</c>. So the
+    /// module-driving steps put the editor into each state from their <c>Prepare</c> (idempotently), the same
+    /// pattern the stack-builder guide uses for its UI-only transitions.</para>
+    /// </summary>
+    static IReadOnlyList<CoachMark> SplitModulesSteps(Navigator nav, AppServices services)
+    {
+        const string NewModule = "api";
+        const string NewModulePath = "apps/api";
+
+        return
+        [
+            new(Anchors.RepoModules,
+                "One repo can have many slices",
+                "When working with a monorepo you can scope .env, docker compose and setup commands per directory like apps/web, apps/api or apps/mobile.\n\nHere we have an example monorepo with one module defined. In the next steps we will add another.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.PrepareRepoEditor(SampleFixtures.ApiRepo); return Task.CompletedTask; },
+            },
+
+            new(Anchors.RepoInputs,
+                "Inputs stay shared",
+                "Regardless of the number of modules, inputs remain shared across all of them.")
+            {
+                Side = CoachSide.Right,
+                Prepare = () => { nav.PrepareRepoEditor(SampleFixtures.ApiRepo); return Task.CompletedTask; },
+            },
+
+            new(Anchors.RepoAddModule,
+                "Add a second slice",
+                "You can add another module (or more) from here.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.PrepareRepoEditor(SampleFixtures.ApiRepo); return Task.CompletedTask; },
+            },
+
+            new(Anchors.RepoModules,
+                "A module of its own",
+                "Here is the new \"api\" module referencing apps/api. Each of the .env, docker compose and setup commands will resolve RELATIVE to this path.")
+            {
+                Side = CoachSide.Left,
+                Prepare = () => { nav.AddModuleTo(SampleFixtures.ApiRepo, NewModule, NewModulePath); return Task.CompletedTask; },
+            },
+
+            new(null,
+                "Wrapping up",
+                "One registered repo, as many modules as you want, while maintaining a single shared set of inputs.\n\nThe example here is sandboxed so you can mess around with it interactively as much as you want. hit \"Exit\" top right to set up your own repos.")
+            { Prepare = () => { nav.PrepareRepoEditor(SampleFixtures.ApiRepo); return Task.CompletedTask; } },
+        ];
+    }
+
+    /// <summary>
+    /// Guide 3: compose the two registered repos into one stack. Starts at <see cref="SampleStage.ReposRegistered"/>
     /// (both repos known, no stack), and walks: why a stack → open the builder → read the auto-wiring →
     /// create it. Only the final step waits on the user; the builder-driving steps prepare state and advance
     /// on Next, since opening a builder is UI state, not a store change.
@@ -165,7 +228,7 @@ public static class Guides
     }
 
     /// <summary>
-    /// Guide 3: turn a stack into a running, isolated workspace. Starts at <see cref="SampleStage.StackWired"/>
+    /// Guide 4: turn a stack into a running, isolated workspace. Starts at <see cref="SampleStage.StackWired"/>
     /// (a stack exists, nothing running) and walks: why a workspace → create it → what sprig actually made →
     /// how you run and dispose of it. The create step waits on the user; creating a workspace is real work
     /// (a worktree per repo), so it runs behind the same progress checklist the app always uses.
@@ -211,7 +274,7 @@ public static class Guides
     }
 
     /// <summary>
-    /// Guide 4 (the safety net): what happens when a workspace drifts from its record — a worktree deleted
+    /// Guide 5 (the safety net): what happens when a workspace drifts from its record — a worktree deleted
     /// out from under sprig — and how Repair reconciles the two. Starts at <see cref="SampleStage.Running"/>,
     /// breaks a worktree in the opening step, and waits on the user to Repair. Teaches the actual behaviour:
     /// Repair prunes the stale registration (it does not resurrect deleted work), leaving a known state.

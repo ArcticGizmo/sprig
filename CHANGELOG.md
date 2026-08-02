@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.1] - 2026-08-02
+
+### Added
+- **New Learn lesson: "Split a repo into modules"** — a hands-on monorepo walkthrough in the sandbox.
+
+### Changed
+- **Coachmark callouts no longer cover what they're explaining** — they park on a side with room.
+- **The learning path threads modules in** — the first lesson now hands off to the new one.
+
+---
+
 ## [v0.4.0] - 2026-08-01
 
 ### Added

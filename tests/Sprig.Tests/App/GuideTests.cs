@@ -36,6 +36,7 @@ public class GuideTests
     }
 
     static Guide RegisterRepo => Guides.All.Single(g => g.Id == Guides.RegisterRepoId);
+    static Guide SplitModules => Guides.All.Single(g => g.Id == Guides.SplitModulesId);
     static Guide WireStack => Guides.All.Single(g => g.Id == Guides.WireStackId);
     static Guide RunWorkspace => Guides.All.Single(g => g.Id == Guides.RunWorkspaceId);
     static Guide RepairDrift => Guides.All.Single(g => g.Id == Guides.RepairDriftId);
@@ -119,7 +120,78 @@ public class GuideTests
         Assert.Equal(0, finished);
     }
 
-    // --- Guide 2: wire up a multi-repo stack ---------------------------------
+    [Fact]
+    public async Task Guide_one_third_step_points_at_the_module_card()
+    {
+        using var h = new Harness(SampleStage.RepoOnDisk);
+        await h.Vm.StartGuide(RegisterRepo, onFinished: () => { });
+
+        await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);   // step 1 (waiting) → 2: inputs
+        Assert.Equal(Anchors.RepoInputs, h.Vm.Coach.Mark!.Anchor);
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);     // step 2 → 3: the module card
+
+        // Step 3 now introduces modules (and forward-refs the modules guide), so it anchors the module card.
+        Assert.Equal(Anchors.RepoModules, h.Vm.Coach.Mark!.Anchor);
+    }
+
+    // --- Guide 2: split a repo into modules ----------------------------------
+
+    [Fact]
+    public void Guide_split_modules_starts_at_repos_registered()
+        => Assert.Equal(SampleStage.ReposRegistered, SplitModules.Stage);
+
+    [Fact]
+    public async Task Guide_split_modules_opens_the_editor_and_adds_a_second_module()
+    {
+        using var h = new Harness(SampleStage.ReposRegistered);
+        await h.Vm.StartGuide(SplitModules, onFinished: () => { });
+
+        var repos = h.Vm.Pages.OfType<ReposViewModel>().Single();
+
+        // Step 1 opens sample-api's editor (one module: "app") and orients on the module card.
+        Assert.Equal(Anchors.RepoModules, h.Vm.Coach.Mark!.Anchor);
+        Assert.NotNull(repos.Editor);
+        Assert.Single(repos.Editor!.Modules);
+
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // inputs are shared
+        Assert.Equal(Anchors.RepoInputs, h.Vm.Coach.Mark!.Anchor);
+
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // the add-module button
+        Assert.Equal(Anchors.RepoAddModule, h.Vm.Coach.Mark!.Anchor);
+        Assert.Single(repos.Editor!.Modules);              // not added until the next step
+
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // the add step adds a real second module
+        Assert.Equal(Anchors.RepoModules, h.Vm.Coach.Mark!.Anchor);
+        Assert.Equal(2, repos.Editor!.Modules.Count);
+        var added = repos.Editor!.Modules.Last();
+        Assert.Equal("api", added.Name);
+        Assert.Equal("apps/api", added.Path);
+        Assert.Same(added, repos.Editor!.SelectedModule);
+
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // whole-page handoff
+        Assert.Null(h.Vm.Coach.Mark!.Anchor);
+    }
+
+    [Fact]
+    public async Task Guide_split_modules_does_not_stack_duplicate_modules_when_stepping_back()
+    {
+        using var h = new Harness(SampleStage.ReposRegistered);
+        await h.Vm.StartGuide(SplitModules, onFinished: () => { });
+
+        var repos = h.Vm.Pages.OfType<ReposViewModel>().Single();
+
+        // Advance to the add step, then step back and forward again — the add is idempotent.
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // add step
+        Assert.Equal(2, repos.Editor!.Modules.Count);
+
+        await h.Vm.Coach.BackCommand.ExecuteAsync(null);   // back to the add-module button
+        await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // add step again
+        Assert.Equal(2, repos.Editor!.Modules.Count);      // still two, not three
+    }
+
+    // --- Guide 3: wire up a multi-repo stack ---------------------------------
 
     [Fact]
     public void Guide_two_starts_at_repos_registered_and_needs_two_repos()
@@ -226,7 +298,7 @@ public class GuideTests
         var learn = new LearnViewModel(new AppServices(store.Root), new Navigator());
 
         Assert.Equal(
-            [RegisterRepo.Title, WireStack.Title, RunWorkspace.Title, RepairDrift.Title],
+            [RegisterRepo.Title, SplitModules.Title, WireStack.Title, RunWorkspace.Title, RepairDrift.Title],
             learn.Guides.Select(g => g.Title));
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
@@ -95,30 +96,61 @@ public partial class CoachOverlay : UserControl
         Place(Beside(Scrim.Hole, mark.Side, size));
     }
 
-    /// <summary>Pick a callout origin on the requested side, flipping or clamping when it won't fit.</summary>
+    /// <summary>
+    /// Pick a callout origin that sits <b>beside</b> the highlighted element without ever covering it.
+    ///
+    /// The mark's <see cref="CoachSide"/> is a preference, not a command: it's honoured when the callout
+    /// fits in that side's gap, otherwise the side with the most room that fits is chosen. This is the fix
+    /// for a wide or tall anchor (a whole card, a full-width inputs strip): the old code parked on the
+    /// requested side and then <i>clamped</i> the callout back on screen — straight over the thing it was
+    /// explaining. Choosing a side that actually fits means the callout is flush against the hole with a
+    /// gap, so it can't overlap it. Only when no side has room (an anchor that nearly fills the viewport)
+    /// does it fall back to the roomiest side and accept the unavoidable overlap.
+    /// </summary>
     Point Beside(Rect hole, CoachSide side, Size size)
     {
         Callout.Measure(size);
         var want = Callout.DesiredSize;
 
-        var (x, y) = side switch
+        // Room between the hole and each viewport edge — the space a callout on that side has to live in.
+        double RoomOn(CoachSide s) => s switch
         {
-            CoachSide.Above => (hole.Center.X - want.Width / 2, hole.Y - want.Height - Gap),
-            CoachSide.Right => (hole.Right + Gap, hole.Center.Y - want.Height / 2),
-            CoachSide.Left => (hole.X - want.Width - Gap, hole.Center.Y - want.Height / 2),
-            _ => (hole.Center.X - want.Width / 2, hole.Bottom + Gap),
+            CoachSide.Above => hole.Y,
+            CoachSide.Left => hole.X,
+            CoachSide.Right => size.Width - hole.Right,
+            _ => size.Height - hole.Bottom,   // Below
         };
 
-        // Flip to the opposite side when the preferred one overflows, then clamp so the callout is always
-        // fully on screen — a coachmark half off the window edge is worse than one on the "wrong" side.
-        if (side is CoachSide.Below && y + want.Height > size.Height) y = hole.Y - want.Height - Gap;
-        else if (side is CoachSide.Above && y < 0) y = hole.Bottom + Gap;
-        else if (side is CoachSide.Right && x + want.Width > size.Width) x = hole.X - want.Width - Gap;
-        else if (side is CoachSide.Left && x < 0) x = hole.Right + Gap;
+        // The side fits when its room holds the callout's relevant dimension plus a gap to the hole and a
+        // gap to the viewport edge — i.e. the callout can sit entirely outside the hole on that side.
+        bool Fits(CoachSide s) =>
+            RoomOn(s) >= (s is CoachSide.Above or CoachSide.Below ? want.Height : want.Width) + 2 * Gap;
 
+        // Origin for a side: flush against the hole (with a gap), centred on the hole along the other axis
+        // and clamped into the viewport. A fitting side has room, so this centre-clamp on the parallel axis
+        // can never push the callout back over the hole.
+        double CentreX() => Math.Clamp(hole.Center.X - want.Width / 2, Gap, Math.Max(Gap, size.Width - want.Width - Gap));
+        double CentreY() => Math.Clamp(hole.Center.Y - want.Height / 2, Gap, Math.Max(Gap, size.Height - want.Height - Gap));
+        Point Origin(CoachSide s) => s switch
+        {
+            CoachSide.Above => new(CentreX(), hole.Y - want.Height - Gap),
+            CoachSide.Left => new(hole.X - want.Width - Gap, CentreY()),
+            CoachSide.Right => new(hole.Right + Gap, CentreY()),
+            _ => new(CentreX(), hole.Bottom + Gap),   // Below
+        };
+
+        // Try the requested side first, then the rest by how much room they have; take the first that fits.
+        CoachSide[] all = [CoachSide.Above, CoachSide.Below, CoachSide.Left, CoachSide.Right];
+        var order = new[] { side }.Concat(all.Where(s => s != side).OrderByDescending(RoomOn));
+        foreach (var s in order)
+            if (Fits(s)) return Origin(s);
+
+        // No side has room (the anchor nearly fills the viewport): use the roomiest and clamp fully on
+        // screen. Overlap is unavoidable here — this just keeps the callout from running off the edge.
+        var p = Origin(all.OrderByDescending(RoomOn).First());
         return new Point(
-            Math.Clamp(x, Gap, Math.Max(Gap, size.Width - want.Width - Gap)),
-            Math.Clamp(y, Gap, Math.Max(Gap, size.Height - want.Height - Gap)));
+            Math.Clamp(p.X, Gap, Math.Max(Gap, size.Width - want.Width - Gap)),
+            Math.Clamp(p.Y, Gap, Math.Max(Gap, size.Height - want.Height - Gap)));
     }
 
     Point Centre(Size size)

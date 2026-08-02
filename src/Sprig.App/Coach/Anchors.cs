@@ -17,6 +17,8 @@ public static class Anchors
     // --- Chrome (AutomationId in XAML) ---
     public const string ReposAdd = "repos.add";
     public const string RepoInputs = "repo.inputs";
+    public const string RepoModules = "repo.modules";
+    public const string RepoAddModule = "repo.addModule";
     public const string RepoDetail = "repo.detail";
     public const string StackDetail = "stack.detail";
     public const string WorkspaceNew = "workspace.new";
@@ -41,6 +43,8 @@ public static class Anchors
     [
         ReposAdd,
         RepoInputs,
+        RepoModules,
+        RepoAddModule,
         RepoDetail,
         StackNew,
         StackCreate,

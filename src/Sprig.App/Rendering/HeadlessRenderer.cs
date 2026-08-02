@@ -116,13 +116,16 @@ internal static class HeadlessRenderer
             // it declares. Also renders the Learn list before and after, to show the completion tick.
             unresolved += RenderRegisterRepoGuide(outDir);
 
-            // Guide 2, driven as a user would: open the stack builder, read the wiring, create the stack.
+            // Guide 2 (modules): open the repo editor, read the module tabs and shared inputs, add a module.
+            unresolved += RenderSplitModulesGuide(outDir);
+
+            // Guide 3, driven as a user would: open the stack builder, read the wiring, create the stack.
             unresolved += RenderWireStackGuide(outDir);
 
-            // Guide 3: create a workspace from the stack, then see what sprig made.
+            // Guide 4: create a workspace from the stack, then see what sprig made.
             unresolved += RenderRunWorkspaceGuide(outDir);
 
-            // Guide 4 (drift): break a worktree, then Repair it.
+            // Guide 5 (drift): break a worktree, then Repair it.
             unresolved += RenderRepairDriftGuide(outDir);
 
             // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
@@ -337,6 +340,50 @@ internal static class HeadlessRenderer
         {
             unresolved++;
             Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
+        }
+        finally
+        {
+            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+        }
+        return unresolved;
+    }
+
+    /// <summary>
+    /// Render guide 2 ("Split a repo into modules"): open sample-api's editor, orient on its module tabs and
+    /// shared inputs, then add a second module — the coach putting the editor into each state from a step's
+    /// Prepare (adding a module is editor state, not a store change). Any anchored step that doesn't resolve
+    /// is a failure, so this is what runtime-verifies the new repo.modules / repo.addModule anchors.
+    /// </summary>
+    static int RenderSplitModulesGuide(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide-" + Guid.NewGuid().ToString("N"));
+        var demo = new AppServices(root, isDemoStore: true);
+        var unresolved = 0;
+        try
+        {
+            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.SplitModulesId);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
+
+            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var vm = (MainWindowViewModel)window.DataContext!;
+
+            // Walk every step; each Prepare drives the editor forward (open → inputs → add-button → added).
+            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
+            for (var step = 1; vm.Coach.IsActive; step++)
+            {
+                unresolved += CaptureCoachStep(window, vm, outDir, $"guide_modules_step{step}");
+                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+            }
+
+            window.Close();
+        }
+        catch (Exception ex)
+        {
+            unresolved++;
+            Console.Error.WriteLine($"split-modules guide render failed: {ex.Message}");
         }
         finally
         {

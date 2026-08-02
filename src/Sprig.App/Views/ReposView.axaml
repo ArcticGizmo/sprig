@@ -448,11 +448,12 @@
                             <!-- modules card: one tab per module (its own env/compose/setup); inputs above are shared -->
                             <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="1" CornerRadius="10" Padding="18,16">
-                            <StackPanel Spacing="12">
+                            <StackPanel Spacing="12" AutomationProperties.AutomationId="repo.modules">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="MODULES" FontSize="11" FontWeight="SemiBold"
                                                Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                                     <Button Grid.Column="1" Content="+ Add module" Command="{Binding AddModuleCommand}"
+                                            AutomationProperties.AutomationId="repo.addModule"
                                             FontSize="11" Padding="8,3" />
                                 </Grid>
 

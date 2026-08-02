@@ -77,6 +77,43 @@ public sealed class Navigator
             _repos.BeginEditCommand.Execute(null);
     }
 
+    /// <summary>
+    /// Open a registered repo's editor, keeping any in-progress edit. Idempotent: if that repo's editor is
+    /// already open it isn't reloaded, so this can precondition several consecutive module-guide steps
+    /// without discarding a module the previous step added (BeginEdit rebuilds the editor from disk).
+    /// </summary>
+    public void PrepareRepoEditor(string name)
+    {
+        if (_repos is null) return;
+        Go(_repos);
+        if (_repos.Editor is not null && _repos.Selected?.Name == name) return;   // already editing it
+        _repos.Selected = _repos.Repos.FirstOrDefault(r => r.Name == name) ?? _repos.Selected;
+        if (_repos.Selected is not null && _repos.BeginEditCommand.CanExecute(null))
+            _repos.BeginEditCommand.Execute(null);
+    }
+
+    /// <summary>
+    /// Add a second module to a repo's open editor and select it — the modules guide's hands-on step. Adding
+    /// a module is editor state, not a store change, so this is driven from a step's <c>Prepare</c> rather
+    /// than waited on. Idempotent: a module with this name is added at most once, so stepping back and forth
+    /// never stacks duplicates.
+    /// </summary>
+    public void AddModuleTo(string repo, string moduleName, string path)
+    {
+        PrepareRepoEditor(repo);
+        if (_repos?.Editor is not { } editor) return;
+
+        var existing = editor.Modules.FirstOrDefault(m => m.Name.Trim() == moduleName);
+        if (existing is not null) { editor.SelectedModule = existing; return; }
+
+        editor.AddModuleCommand.Execute(null);   // appends a blank, auto-selected tab
+        if (editor.SelectedModule is { } tab)
+        {
+            tab.Name = moduleName;
+            tab.Path = path;
+        }
+    }
+
     public void GoHome() => Go(_home);
     public void GoToRepos() => Go(_repos);
     public void GoToStacks() => Go(_stacks);

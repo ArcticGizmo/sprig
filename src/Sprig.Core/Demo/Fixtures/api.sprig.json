@@ -1,28 +1,37 @@
 {
   // The sample API declares only what it CONSUMES. It never says which port it gets —
   // the stack decides that, and supplies it. Values flow one way: stack → repo.
-  "schema": 2,
+  "schema": 3,
   "name": "sample-api",
   "inputs": [
     { "name": "port", "example": "5000", "description": "Port this API listens on" },
     { "name": "dbPort", "example": "5432", "description": "Port its database binds on the host" }
   ],
-  "env": [
+  // A repo's env/compose/setup live inside a MODULE. This sample is a single slice at the
+  // repo root, so it has one module, "app". A monorepo would list several — apps/web,
+  // apps/api — each with its own path, env, compose and setup. The inputs above stay shared.
+  "modules": [
     {
-      "file": ".env",
-      "templates": [".env.template"],
-      "set": {
-        "PORT": "${sprig.port}",
-        "DATABASE_URL": "postgres://sample:sample@localhost:${sprig.dbPort}/sample"
-      }
-    }
-  ],
-  "compose": [
-    {
-      "file": "docker-compose.yml",
-      "overrides": [
-        { "path": ["services", "db", "container_name"], "template": "sample-db--${sprig.workspace}" },
-        { "path": ["services", "db", "ports", "0"], "template": "${sprig.dbPort}:5432" }
+      "name": "app",
+      "path": "",
+      "env": [
+        {
+          "file": ".env",
+          "templates": [".env.template"],
+          "set": {
+            "PORT": "${sprig.port}",
+            "DATABASE_URL": "postgres://sample:sample@localhost:${sprig.dbPort}/sample"
+          }
+        }
+      ],
+      "compose": [
+        {
+          "file": "docker-compose.yml",
+          "overrides": [
+            { "path": ["services", "db", "container_name"], "template": "sample-db--${sprig.workspace}" },
+            { "path": ["services", "db", "ports", "0"], "template": "${sprig.dbPort}:5432" }
+          ]
+        }
       ]
     }
   ]

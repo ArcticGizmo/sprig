@@ -23,6 +23,7 @@
     <EmbeddedResource Include="Demo\Fixtures\api.gitignore" LogicalName="Sprig.Demo.api.gitignore" />
     <EmbeddedResource Include="Demo\Fixtures\api.docker-compose.yml" LogicalName="Sprig.Demo.api.docker-compose.yml" />
     <EmbeddedResource Include="Demo\Fixtures\api.README.md" LogicalName="Sprig.Demo.api.README.md" />
+    <EmbeddedResource Include="Demo\Fixtures\api.apps-api.README.md" LogicalName="Sprig.Demo.api.apps-api.README.md" />
     <EmbeddedResource Include="Demo\Fixtures\web.sprig.json" LogicalName="Sprig.Demo.web.sprig.json" />
     <EmbeddedResource Include="Demo\Fixtures\web.env.template" LogicalName="Sprig.Demo.web.env.template" />
     <EmbeddedResource Include="Demo\Fixtures\web.gitignore" LogicalName="Sprig.Demo.web.gitignore" />

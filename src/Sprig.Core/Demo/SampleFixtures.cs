@@ -41,6 +41,9 @@ public static class SampleFixtures
         new(".gitignore", Prefix + "api.gitignore"),
         new("docker-compose.yml", Prefix + "api.docker-compose.yml"),
         new("README.md", Prefix + "api.README.md"),
+        // A real subdirectory so the "Split a repo into modules" guide can point a module's path at
+        // apps/api and show the green ✓, rather than a "no such directory" warning in a lesson.
+        new("apps/api/README.md", Prefix + "api.apps-api.README.md"),
     ];
 
     public static IReadOnlyList<SampleFile> WebFiles { get; } =

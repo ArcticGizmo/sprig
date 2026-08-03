@@ -185,14 +185,18 @@
             </Border>
             <!-- The tour is now coachmarks (the CoachOverlay below), not a top strip — so it dims the page and
                  rings each target like the guides do. -->
-            <!-- Update-available notice (notification only; does not auto-update) -->
+            <!-- Update-available notice. Hidden inside any guided experience (tour / lessons / coachmarks),
+                 where a layout-shifting strip would throw off the highlighted anchors. -->
             <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
-                    IsVisible="{Binding UpdateNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                <Grid ColumnDefinitions="*,Auto">
+                    IsVisible="{Binding ShowUpdateNotice}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBlock Grid.Column="0" Text="{Binding UpdateNotice}" Foreground="#0B1220"
                                VerticalAlignment="Center" TextWrapping="Wrap" />
-                    <Button Grid.Column="1" Content="Dismiss" Command="{Binding DismissUpdateNoticeCommand}"
-                            Background="Transparent" Foreground="#0B1220" />
+                    <Button Grid.Column="1" Content="Update now" Command="{Binding UpdateNowCommand}"
+                            Background="#0B1220" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
+                            Padding="14,6" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="Dismiss" Command="{Binding DismissUpdateNoticeCommand}"
+                            Background="Transparent" Foreground="#0B1220" VerticalAlignment="Center" />
                 </Grid>
             </Border>
             <!-- Guided setup strip (opt-in from Home; auto-advances as the store changes) -->

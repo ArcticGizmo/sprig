@@ -64,6 +64,18 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _updateNotice;
 
+    /// <summary>The last update check's result — held so "Update now" can install it without re-checking.</summary>
+    UpdateCheckResult? _updateResult;
+
+    /// <summary>
+    /// Whether the update banner should be on screen: there's a notice to show, and we're not inside a
+    /// guided experience. The tour and every lesson run on the demo store (so <see cref="IsTour"/> covers
+    /// them), and any live coachmark run is <see cref="CoachViewModel.IsActive"/> — in all of those the
+    /// banner would shift the layout the coachmarks anchor to, so it stays hidden.
+    /// </summary>
+    public bool ShowUpdateNotice =>
+        !string.IsNullOrEmpty(UpdateNotice) && !IsTour && !Coach.IsActive && !Guide.IsActive;
+
     /// <summary>True when this is an isolated dev instance — drives the pink "- DEV" nav badge.</summary>
     public bool IsDevInstance => Sprig.Core.Store.AppProfile.IsDev;
 
@@ -131,6 +143,17 @@ public partial class MainWindowViewModel : ViewModelBase
         _currentPage = home;
         home.IsActive = true;
 
+        // The banner hides itself while a guided experience is running (see ShowUpdateNotice); re-evaluate
+        // it whenever the coachmark run or the setup-guide strip toggles.
+        Coach.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(CoachViewModel.IsActive)) OnPropertyChanged(nameof(ShowUpdateNotice));
+        };
+        Guide.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(SetupGuideViewModel.IsActive)) OnPropertyChanged(nameof(ShowUpdateNotice));
+        };
+
         // The tour narration is NOT auto-started here, because a guide runs in the same demo store and must
         // not also show the tour script. AppSession starts whichever one it entered.
         _ = CheckForUpdatesAsync();
@@ -149,8 +172,46 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void Navigate(PageViewModel page) => CurrentPage = page;
 
+    /// <summary>
+    /// Hide the banner and remember the version we hid it for, so it doesn't return until the feed offers a
+    /// different (newer) release. Best-effort: a settings write failure just means the banner may reappear.
+    /// </summary>
     [RelayCommand]
-    private void DismissUpdateNotice() => UpdateNotice = null;
+    private void DismissUpdateNotice()
+    {
+        var dismissed = _updateResult?.AvailableVersion;
+        if (!string.IsNullOrEmpty(dismissed))
+        {
+            try
+            {
+                var settings = _services.Settings.Get();
+                settings.DismissedUpdateVersion = dismissed;
+                _services.Settings.Save(settings);
+            }
+            catch { /* remembering a dismissal is a nicety; never crash over it */ }
+        }
+        UpdateNotice = null;
+    }
+
+    /// <summary>
+    /// Download and install the available update, then restart. Does not return on success. On failure the
+    /// banner stays put with a short message so the user can retry or use the About page.
+    /// </summary>
+    [RelayCommand]
+    private async Task UpdateNow()
+    {
+        if (_updateResult is not { Availability: UpdateAvailability.Available }) return;
+        try
+        {
+            await UpdateChecker.ApplyAsync(_updateResult);
+        }
+        catch
+        {
+            UpdateNotice = "Update failed to install — try again from the About page.";
+        }
+    }
+
+    partial void OnUpdateNoticeChanged(string? value) => OnPropertyChanged(nameof(ShowUpdateNotice));
 
     /// <summary>
     /// Show a complete, working setup by entering the guided tour. Builds the sample if it isn't
@@ -193,7 +254,25 @@ public partial class MainWindowViewModel : ViewModelBase
             page.IsActive = ReferenceEquals(page, value);
     }
 
-    async Task CheckForUpdatesAsync() => UpdateNotice = await UpdateChecker.CheckAsync();
+    async Task CheckForUpdatesAsync()
+    {
+        var result = await UpdateChecker.CheckDetailedAsync();
+        _updateResult = result;
+
+        if (result.Availability != UpdateAvailability.Available)
+            return;
+
+        // Honour a prior dismissal: stay quiet while the feed keeps offering the same version the user
+        // already dismissed, but speak up the moment a different (newer) release appears.
+        string? dismissed = null;
+        try { dismissed = _services.Settings.Get().DismissedUpdateVersion; }
+        catch { /* if settings can't be read, err toward showing the notice */ }
+
+        if (result.AvailableVersion == dismissed)
+            return;
+
+        UpdateNotice = $"Update available: v{result.AvailableVersion} — you have v{result.CurrentVersion}";
+    }
 }
 
 /// <summary>A non-interactive section label in the left nav (e.g. "Set up", "Run").</summary>

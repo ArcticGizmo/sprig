@@ -33,6 +33,13 @@ public sealed class SprigSettings
     /// </summary>
     public List<string> CompletedGuides { get; set; } = new();
 
+    /// <summary>
+    /// The available version the user last dismissed from the update banner. The banner stays hidden while
+    /// the feed keeps offering this same version, and reappears once a different (newer) release shows up.
+    /// Null means nothing has been dismissed.
+    /// </summary>
+    public string? DismissedUpdateVersion { get; set; }
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -47,5 +54,6 @@ public sealed class SprigSettings
         ShowChangelogOnUpdate = ShowChangelogOnUpdate,
         LastSeenVersion = LastSeenVersion,
         CompletedGuides = new List<string>(CompletedGuides),
+        DismissedUpdateVersion = DismissedUpdateVersion,
     };
 }

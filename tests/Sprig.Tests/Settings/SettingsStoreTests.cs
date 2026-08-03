@@ -35,6 +35,17 @@ public class SettingsStoreTests
     }
 
     [Fact]
+    public void Save_then_get_roundtrips_dismissed_update_version()
+    {
+        using var s = new TempStore();
+        var store = new FileSettingsStore(s.Paths);
+
+        store.Save(new SprigSettings { DismissedUpdateVersion = "0.4.2" });
+
+        Assert.Equal("0.4.2", store.Get().DismissedUpdateVersion);
+    }
+
+    [Fact]
     public void Save_dedupes_and_sorts_restricted_ports()
     {
         using var s = new TempStore();

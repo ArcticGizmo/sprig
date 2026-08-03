@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.2] - 2026-08-03
+
+### Added
+- **"Update now" on the update banner** — install the new version in place, no trip to the About page.
+
+### Changed
+- **Dismissing the update banner sticks** — it stays gone until a genuinely newer release turns up.
+- **The update banner keeps out of lessons** — hidden during the tour and guides so it can't shove the coachmarks off their targets.
+
+---
+
 ## [v0.4.1] - 2026-08-02
 
 ### Added

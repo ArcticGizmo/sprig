@@ -142,6 +142,7 @@ The download has been deleted. Retry; if it keeps failing, report it at $(Get-Re
     Write-Host "Sprig $tag is installed and starting." -ForegroundColor Green
     Write-Host '  Find it in the Start Menu; it lives in %LocalAppData%\Sprig (no admin needed).' -ForegroundColor DarkGray
     Write-Host '  Point it at a git repo from the Repos tab, then wire a stack and create a workspace.' -ForegroundColor DarkGray
+    Write-Host '  The sprig CLI is on your PATH too - open a NEW terminal, then run: sprig --help' -ForegroundColor DarkGray
     Write-Host '  Updates from here on are in-app: About -> Check for updates.' -ForegroundColor DarkGray
 }
 

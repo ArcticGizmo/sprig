@@ -15,14 +15,21 @@ or applies it, and builds are **not code-signed** yet.
 
 ## Build a release
 
-From the repo root, publish a self-contained build and pack it:
+From the repo root, publish both executables into one folder and pack it:
 
 ```sh
+# The GUI (sprig-gui.exe) and the CLI (sprig.exe) publish into the SAME folder so they pack together.
 dotnet publish src/Sprig.App/Sprig.App.csproj -c Release -r win-x64 --self-contained true -o ./publish
+dotnet publish src/Sprig.Cli/Sprig.Cli.csproj -c Release -r win-x64 --self-contained true -o ./publish
 
 vpk pack --packId Sprig --packVersion 0.1.0 --packDir ./publish \
   --mainExe sprig-gui.exe --packTitle Sprig --icon src/Sprig.App/Assets/sprig.ico -o ./feed
 ```
+
+They share an identical .NET runtime and `Sprig.Core.dll`, so the second publish overwrites those with
+the same bytes and adds the CLI's own files (`sprig.exe`, `sprig.dll`, `sprig.runtimeconfig.json`).
+`--mainExe` stays `sprig-gui.exe` — that's the app Velopack launches and makes a shortcut for; `sprig.exe`
+just rides along in the package and is put on PATH by an install hook (see [Install](#install)).
 
 `./feed` then contains `Sprig-win-Setup.exe`, `Sprig-<version>-full.nupkg`, a portable zip, and a
 `RELEASES` index. Packing a later `--packVersion` into the same `-o` directory appends to the feed
@@ -83,6 +90,17 @@ avoids the SmartScreen "Windows protected your PC" dialog. Pin a version with
 `Setup.exe` itself installs per-user to `%LocalAppData%\Sprig` (no admin needed) with Start Menu + Desktop
 shortcuts. `--silent` installs without UI. Uninstall via `%LocalAppData%\Sprig\Update.exe
 --uninstall` (or Add/Remove Programs).
+
+### The bundled CLI and PATH
+
+The package ships two executables: `sprig-gui.exe` (the app) and `sprig.exe` (the CLI). An install-time
+Velopack hook adds the install directory (`%LocalAppData%\Sprig\current`, where both exes live) to the
+**user** PATH, so `sprig` is runnable from any newly opened terminal — no admin, machine PATH untouched.
+The uninstall hook removes that entry again. Because `Environment.SetEnvironmentVariable(..., User)`
+broadcasts `WM_SETTINGCHANGE`, freshly launched terminals see it immediately; already-open ones need a
+restart. The hooks live in `Program.Main` (`OnAfterInstallFastCallback` / `OnAfterUpdateFastCallback` /
+`OnBeforeUninstallFastCallback`) and delegate to `Sprig.App/Install/PathRegistration.cs`. Adding is
+idempotent, so the re-assert on update is harmless if the entry is already there.
 
 ## Update notifications
 

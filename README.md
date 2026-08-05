@@ -38,8 +38,9 @@ irm https://raw.githubusercontent.com/ArcticGizmo/sprig/main/install.ps1 | iex
 ```
 
 That's the whole install. No admin rights (it lands in `%LocalAppData%\Sprig\`), a Start Menu shortcut
-and a normal uninstaller in Settings → Apps, and Sprig opens when it's done. Every update after this is
-in-app: **About → Check for updates**.
+and a normal uninstaller in Settings → Apps, and Sprig opens when it's done. It also drops the `sprig`
+CLI on your **PATH** — open a new terminal and run `sprig --help`. Every update after this is in-app:
+**About → Check for updates**.
 
 What the script does, in order: resolves the latest release, fetches `SHA256SUMS.txt` and
 `Sprig-win-Setup.exe`, **checks the installer against the manifest and deletes it rather than run it on
@@ -100,7 +101,8 @@ differ per module.
 
 ## Quick start (CLI)
 
-The terminal covers everything the app does. Build `Sprig.Cli` from source, then:
+The terminal covers everything the app does. The installer puts `sprig` on your PATH (or run it from a
+source build with `dotnet run --project src/Sprig.Cli --`). Then:
 
 ```sh
 # 1. Register the repos you want to isolate (reads each repo's committed .sprig.json)

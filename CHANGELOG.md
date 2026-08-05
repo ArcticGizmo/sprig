@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.3] - 2026-08-06
+
+### Added
+- **The `sprig` CLI ships with the installer** — bundled with the app and added to your PATH, so `sprig --help` works from any new terminal. Removed on uninstall; no admin needed.
+
+---
+
 ## [v0.4.2] - 2026-08-03
 
 ### Added

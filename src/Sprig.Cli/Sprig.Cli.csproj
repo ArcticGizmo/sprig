@@ -9,6 +9,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Ships alongside the GUI in the Velopack package as `sprig.exe`: the command users type, and
+         the name the CLI's own help prints. sprig-gui.exe is the app; sprig.exe is the CLI. -->
+    <AssemblyName>sprig</AssemblyName>
+    <Product>Sprig</Product>
+    <Company>Sprig</Company>
   </PropertyGroup>
 
 </Project>

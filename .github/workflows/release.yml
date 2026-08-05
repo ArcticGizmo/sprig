@@ -28,9 +28,16 @@ jobs:
         id: version
         run: echo "VERSION=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
 
+      # Both exes publish into the same folder so vpk packs them together: sprig-gui.exe (the app,
+      # and Velopack's --mainExe) and sprig.exe (the CLI). They share an identical .NET runtime and
+      # Sprig.Core.dll, so the second publish just overwrites those with the same bytes and adds the
+      # CLI's own files. sprig.exe rides along in the package; the install hook puts it on PATH.
       - name: Publish
         run: |
           dotnet publish src/Sprig.App/Sprig.App.csproj -c Release -r win-x64 --self-contained true `
+            -p:Version=${{ steps.version.outputs.VERSION }} `
+            -o publish/
+          dotnet publish src/Sprig.Cli/Sprig.Cli.csproj -c Release -r win-x64 --self-contained true `
             -p:Version=${{ steps.version.outputs.VERSION }} `
             -o publish/
 

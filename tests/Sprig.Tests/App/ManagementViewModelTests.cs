@@ -737,6 +737,27 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void NewStack_clears_the_live_graph_so_a_prior_session_leaves_no_orphaned_ports()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
+
+        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
+        vm.RepoChoices.Single().IsSelected = true;
+        vm.AutoWireCommand.Execute(null);
+        Assert.NotEmpty(vm.BuilderWiring!.Ports); // the first session wired a port
+
+        vm.NewStackCommand.Execute(null); // reopen the builder for a fresh stack
+
+        // The canvas draws from BuilderWiring, so a stale graph is what surfaces the orphaned port names.
+        Assert.Empty(vm.BuilderWiring!.Ports);
+        Assert.Empty(vm.BuilderWiring.Repos);
+        Assert.Empty(vm.Ports);
+        Assert.Empty(vm.PortNames);
+    }
+
+    [Fact]
     public void Selecting_a_stack_populates_the_detail_summary()
     {
         using var s = new TempStore();

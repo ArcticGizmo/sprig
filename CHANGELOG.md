@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.8] - 2026-08-06
+
+### Fixed
+- **New stack opens on a clean canvas** — a previous session's ports no longer linger there.
+
+---
+
 ## [v0.4.7] - 2026-08-06
 
 ### Changed

@@ -335,9 +335,12 @@ public partial class StacksViewModel : PageViewModel
         EditingOriginalName = null;
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
+        foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
         Bindings.Clear();
         RebuildBindingVariables();
+        // Rebuild the (now empty) graph so the canvas doesn't keep drawing the last session's ports.
+        RebuildBuilderWiring();
         Error = null; Status = null; ImportError = null;
         IsCreating = true;
     }

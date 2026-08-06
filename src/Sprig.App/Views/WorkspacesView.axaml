@@ -131,7 +131,7 @@
                                 <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
                                            Text="Tear down this workspace? Infra is stopped and volumes wiped; worktrees removed." />
                                 <CheckBox IsChecked="{Binding RemoveForce, Mode=TwoWay}"
-                                          Content="Also delete the sprig/&lt;workspace&gt; branch (loses commits made in the worktree)" />
+                                          Content="Also delete the sprig--&lt;workspace&gt; branch (loses commits made in the worktree)" />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Content="Confirm teardown" Command="{Binding ConfirmRemoveCommand}"
                                             Foreground="{StaticResource DangerBrush}" />

@@ -55,7 +55,7 @@ public static class TourScript
 
         new(Anchors.WorkspaceDetail,
             "Real numbers, written into real files",
-            "Each repo got its own worktree on a sprig/ branch, and the ports were allocated for this workspace alone. Those resolved values are already in each worktree's .env and in a generated compose file — open a worktree to see them.")
+            "Each repo got its own worktree on a sprig branch, and the ports were allocated for this workspace alone. Those resolved values are already in each worktree's .env and in a generated compose file — open a worktree to see them.")
         { Side = CoachSide.Left, Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; } },
 
         // Optional, and only when Docker is up: it needs a daemon and pulls an image. Everything else stands

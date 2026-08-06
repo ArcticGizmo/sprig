@@ -250,7 +250,7 @@ public static class Guides
 
             new(Anchors.WorkspaceCreate,
                 "Create it",
-                "The stack and a name are filled in. Click Create — sprig adds a worktree per repo on its own sprig/ branch, allocates ports just for this workspace, and writes each worktree's .env and compose with the resolved values. Or let me.")
+                "The stack and a name are filled in. Click Create — sprig adds a worktree per repo on its own sprig branch, allocates ports just for this workspace, and writes each worktree's .env and compose with the resolved values. Or let me.")
             {
                 Side = CoachSide.Left,
                 Prepare = () => nav.PrepareNewWorkspace(WorkspaceName),
@@ -260,7 +260,7 @@ public static class Guides
 
             new(Anchors.WorkspaceDetail,
                 "Here's what sprig made",
-                "Two worktrees on sprig/ branches, ports allocated for this workspace alone, and every ${sprig.*} value resolved into real numbers in the generated files. Your own repos never moved — this is a copy off to the side.")
+                "Two worktrees on sprig branches, ports allocated for this workspace alone, and every ${sprig.*} value resolved into real numbers in the generated files. Your own repos never moved — this is a copy off to the side.")
             {
                 Side = CoachSide.Left,
                 Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; },

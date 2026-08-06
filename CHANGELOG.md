@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.7] - 2026-08-06
+
+### Changed
+- **`sprig update` narrates itself** — names the feed it's querying instead of sitting silent through the slow bit.
+- **Workspace branches are flat `sprig--<workspace>`** (was `sprig/<workspace>`) — a stray `sprig` branch no longer wedges the whole namespace.
+
+### Fixed
+- **Create checks the target branch first** — a pre-existing branch is flagged in the form, not a raw git `fatal` mid-run.
+
+---
+
 ## [v0.4.6] - 2026-08-06
 
 ### Added

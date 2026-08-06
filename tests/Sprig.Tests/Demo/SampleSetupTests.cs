@@ -117,7 +117,7 @@ public class SampleSetupTests
         foreach (var repo in record.Repos)
         {
             Assert.True(Directory.Exists(repo.WorktreePath), $"missing worktree for {repo.Name}");
-            Assert.Equal($"sprig/{SampleSetup.WorkspaceName}", repo.Branch);
+            Assert.Equal($"sprig--{SampleSetup.WorkspaceName}", repo.Branch);
         }
 
         // Registered through the real registry, so the names stacks bind by are the configs' names.

@@ -16,7 +16,7 @@ repos are never mutated; everything sprig generates lives in a central store or 
 throwaway worktree.
 
 - **Isolated worktrees** — each workspace gets a `<repo>--<workspace>` worktree on a fresh
-  `sprig/<workspace>` branch, off your current `HEAD`. Your main checkout is untouched.
+  `sprig--<workspace>` branch, off your current `HEAD`. Your main checkout is untouched.
 - **Non-colliding ports** — named ports are allocated per workspace, so two workspaces of the
   same stack run side by side without port clashes.
 - **Isolated docker infra** — sprig generates a per-workspace compose file (project name

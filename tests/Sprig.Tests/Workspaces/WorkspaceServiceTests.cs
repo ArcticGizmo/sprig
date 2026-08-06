@@ -42,14 +42,14 @@ public class WorkspaceServiceTests
 
         var wt = repo.SiblingWorktree("feat-a");
         Assert.True(Directory.Exists(wt));
-        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig/feat-a"));
+        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig--feat-a"));
 
         var envText = File.ReadAllText(Path.Combine(wt, ".env"));
         Assert.Equal(2, envText.Split('\n').Count(l => l == "NAME=app--feat-a")); // top + bottom
         Assert.Contains("OTHER=keep", envText);
 
         Assert.NotNull(instances.TryLoad("feat-a"));
-        Assert.Equal("sprig/feat-a", record.Repos[0].Branch);
+        Assert.Equal("sprig--feat-a", record.Repos[0].Branch);
     }
 
     [Fact]
@@ -89,6 +89,23 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public void Create_rejects_when_target_branch_already_exists()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances) = Build(store);
+        // Pre-create the exact branch sprig would cut for this workspace.
+        repo.Git("branch", "sprig--feat-a");
+
+        var ex = Assert.Throws<WorkspaceException>(() => svc.Create(repo.Path, "feat-a"));
+        Assert.Contains("sprig--feat-a", ex.Message);
+        // Pre-flight fails before anything is materialised.
+        Assert.Null(instances.TryLoad("feat-a"));
+        Assert.False(Directory.Exists(repo.SiblingWorktree("feat-a")));
+    }
+
+    [Fact]
     public void Create_rejects_non_git_path()
     {
         using var store = new TempStore();
@@ -123,7 +140,7 @@ public class WorkspaceServiceTests
 
         Assert.False(Directory.Exists(repo.SiblingWorktree("feat-a")));
         Assert.Null(instances.TryLoad("feat-a"));
-        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig/feat-a"));
+        Assert.True(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig--feat-a"));
     }
 
     [Fact]
@@ -137,7 +154,7 @@ public class WorkspaceServiceTests
 
         svc.Remove("feat-a", force: true);
 
-        Assert.False(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig/feat-a"));
+        Assert.False(new GitService(new ProcessRunner()).BranchExists(repo.Path, "sprig--feat-a"));
     }
 
     [Fact]

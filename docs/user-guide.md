@@ -9,7 +9,7 @@ the file formats, see the [configuration reference](config-reference.md).
 - **Repo** — a git repo with a committed `.sprig.json` declaring the inputs it consumes.
 - **Stack** — a named set of repos plus the ports and per-repo bindings that supply those inputs.
   Lives centrally, never in a repo.
-- **Workspace** — a live instance of a stack: one git worktree per repo (on a `sprig/<workspace>`
+- **Workspace** — a live instance of a stack: one git worktree per repo (on a `sprig--<workspace>`
   branch), a set of allocated ports, and optional docker infra.
 - **Central store** — `%LOCALAPPDATA%\sprig`: the repo registry, stack definitions, and the
   per-workspace records that are the source of truth for what should exist.
@@ -190,8 +190,8 @@ sprig reset feature-x         # down then up
 ### 5. Tear down
 
 ```sh
-sprig rm feature-x --yes            # tears down infra + worktrees; keeps the sprig/ branch
-sprig rm feature-x --yes --force    # also deletes the sprig/feature-x branch (loses its commits)
+sprig rm feature-x --yes            # tears down infra + worktrees; keeps the sprig branch
+sprig rm feature-x --yes --force    # also deletes the sprig--feature-x branch (loses its commits)
 ```
 
 Teardown walks each layer independently and idempotently, so an interrupted teardown is resumable.

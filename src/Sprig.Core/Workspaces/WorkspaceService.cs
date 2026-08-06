@@ -137,7 +137,7 @@ public sealed partial class WorkspaceService(
     {
         ValidateCreate(stack, workspace);
 
-        var branch = $"sprig/{workspace}";
+        var branch = BranchFor(workspace);
 
         // Pre-compute each repo's sibling worktree path and guard against collisions.
         var plans = new List<RepoPlan>();
@@ -281,7 +281,22 @@ public sealed partial class WorkspaceService(
             throw new WorkspaceException("nothing to create: the stack has no repos");
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
+
+        // The branch sprig will cut for each repo. A flat 'sprig--<ws>' name (no '/') can't hit git's
+        // directory/file ref conflict, so the only way create fails on it is if that exact branch already
+        // exists — catch it here with a clear message rather than letting `git worktree add` throw a raw fatal.
+        var branch = BranchFor(workspace);
+        foreach (var repo in stack.Repos)
+            if (git.BranchExists(repo.Root, branch))
+                throw new WorkspaceException(
+                    $"branch '{branch}' already exists in repo '{repo.Name}' — delete or rename it, " +
+                    "or choose a different workspace name");
     }
+
+    /// <summary>The branch sprig cuts for a workspace. Flat <c>sprig--&lt;ws&gt;</c> (no <c>/</c>) so it can
+    /// never hit git's directory/file ref conflict the way a <c>sprig/&lt;ws&gt;</c> name would against a
+    /// plain <c>sprig</c> branch. Mirrors the sibling worktree folder convention (<c>&lt;dir&gt;--&lt;ws&gt;</c>).</summary>
+    internal static string BranchFor(string workspace) => $"sprig--{workspace}";
 
     /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>
     public ResolvedStack ResolveSingleRepo(string repoPath)

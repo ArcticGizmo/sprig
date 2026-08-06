@@ -39,7 +39,7 @@ public sealed record InstanceRepo
     public required string SourcePath { get; init; }
     /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>).</summary>
     public required string WorktreePath { get; init; }
-    /// <summary>The sprig-created branch (<c>sprig/&lt;workspace&gt;</c>), if any.</summary>
+    /// <summary>The sprig-created branch (<c>sprig--&lt;workspace&gt;</c>), if any.</summary>
     public string? Branch { get; init; }
 
     /// <summary>The generated compose files in the central store (one per overridden compose file in

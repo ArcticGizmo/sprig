@@ -30,6 +30,7 @@ static class CliUpdater
         VelopackApp.Build().Run();
 
         var feed = Environment.GetEnvironmentVariable(FeedEnvVar);
+        var feedUrl = string.IsNullOrWhiteSpace(feed) ? DefaultFeedUrl : feed;
         var manager = string.IsNullOrWhiteSpace(feed)
             ? new UpdateManager(new GithubSource(DefaultFeedUrl, accessToken: null, prerelease: false))
             : new UpdateManager(feed);
@@ -42,6 +43,9 @@ static class CliUpdater
         }
 
         var current = manager.CurrentVersion?.ToString() ?? "?";
+        Console.WriteLine($"sprig v{current} (installed)");
+        Console.WriteLine($"checking for updates from {feedUrl}…");
+        Console.WriteLine("(this can take a few seconds while we query the release feed)");
         var update = manager.CheckForUpdatesAsync().GetAwaiter().GetResult();
         if (update is null)
         {

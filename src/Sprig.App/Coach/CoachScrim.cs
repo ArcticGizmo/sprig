@@ -9,8 +9,9 @@ namespace Sprig.App.Coach;
 /// The dimming layer with a hole cut out around the coached element, plus a highlight ring on the hole.
 ///
 /// Drawn rather than composed because a cut-out isn't expressible as a control tree. It swallows input
-/// (<see cref="ICustomHitTest"/> over the whole surface) so a coached step can't be clicked past — except
-/// inside the hole, which stays live so the user can actually do the thing being explained.
+/// (<see cref="ICustomHitTest"/> over the whole surface) so a coached step can never be clicked past: the
+/// spotlight only directs the eye, and the user advances solely through the callout's own buttons (Next /
+/// Show me / Skip), which sit above the scrim and always work.
 /// </summary>
 public sealed class CoachScrim : Control, ICustomHitTest
 {
@@ -24,24 +25,17 @@ public sealed class CoachScrim : Control, ICustomHitTest
         set => SetValue(HoleProperty, value);
     }
 
-    /// <summary>
-    /// Whether the spotlit control can be clicked. True for a waiting step (the user must operate the
-    /// highlighted control to advance); false for an explanation step, where the spotlight only directs the
-    /// eye and every click outside the callout is swallowed — so a narrated step can't be clicked away from.
-    /// </summary>
-    public bool Interactive { get; set; }
-
     static CoachScrim()
     {
         AffectsRender<CoachScrim>(HoleProperty);
     }
 
     /// <summary>
-    /// Block clicks so a walkthrough can't be navigated away from mid-step. The callout buttons sit above the
-    /// scrim and always work. When the step is interactive, the hole is a pass-through so the user can
-    /// operate the highlighted control; otherwise everything under the scrim is blocked.
+    /// Block every click under the scrim so a walkthrough can't be clicked past. The callout's own buttons
+    /// (Next / Show me / Skip) sit above the scrim and always work, so a step is only ever advanced through
+    /// the guidance itself — never by clicking the highlighted control (or anything else) underneath.
     /// </summary>
-    public bool HitTest(Point point) => !(Interactive && Hole.Inflate(Padding).Contains(point));
+    public bool HitTest(Point point) => true;
 
     const double Padding = 6;
     const double Radius = 8;

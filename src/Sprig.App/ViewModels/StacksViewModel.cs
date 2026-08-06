@@ -535,6 +535,64 @@ public partial class StacksViewModel : PageViewModel
         Services.NotifyStoreChanged();
     }
 
+    /// <summary>True once there's a graph with more than one port or repo to tidy — gates the button.</summary>
+    public bool CanCleanup => BuilderWiring is { } g && (g.Ports.Count > 1 || g.Repos.Count > 1);
+
+    partial void OnBuilderWiringChanged(WiringGraph? value) => OnPropertyChanged(nameof(CanCleanup));
+
+    /// <summary>
+    /// Tidy the board to minimise cable crossings: reorder both the source rail and the repos so each
+    /// sits near the vertical centre of what it connects to. Pins within a repo stay put (they're its
+    /// declared inputs). Only affects layout order — which now persists — never the wiring itself.
+    /// No-op when it's already tidy.
+    /// </summary>
+    [RelayCommand]
+    private void Cleanup()
+    {
+        if (BuilderWiring is not { } g) return;
+
+        var ports = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var repos = Bindings.Select(b => b.Repo).ToList();
+        var (orderedPorts, orderedRepos) = WiringCleanup.Tidy(ports, repos, g);
+
+        var portsChanged = ApplyOrder(Ports, orderedPorts, p => p.Name.Trim(), OnPortRowChanged);
+        var reposChanged = ApplyOrder(Bindings, orderedRepos, b => b.Repo, handler: null);
+
+        if (portsChanged) ReindexPortPreviews();
+        if (portsChanged || reposChanged) RebuildBuilderWiring();
+    }
+
+    /// <summary>
+    /// Reorder <paramref name="collection"/> so its items follow <paramref name="order"/> (by key);
+    /// items whose key isn't in <paramref name="order"/> (e.g. blank port rows) keep their tail spot.
+    /// Detaches/reattaches <paramref name="handler"/> around the rebuild if the rows raise change events.
+    /// Returns whether anything actually moved.
+    /// </summary>
+    static bool ApplyOrder<T>(ObservableCollection<T> collection, IReadOnlyList<string> order,
+        Func<T, string> key, PropertyChangedEventHandler? handler)
+    {
+        var rank = order.Select((name, i) => (name, i)).ToDictionary(t => t.name, t => t.i, StringComparer.Ordinal);
+        var reordered = collection
+            .Select((item, i) => (item, rankKey: rank.TryGetValue(key(item), out var r) ? r : int.MaxValue, original: i))
+            .OrderBy(t => t.rankKey)
+            .ThenBy(t => t.original) // stable for the untidied tail
+            .Select(t => t.item)
+            .ToList();
+
+        if (reordered.SequenceEqual(collection)) return false;
+
+        if (handler is not null)
+            foreach (var item in collection)
+                if (item is INotifyPropertyChanged npc) npc.PropertyChanged -= handler;
+        collection.Clear();
+        foreach (var item in reordered)
+        {
+            if (handler is not null && item is INotifyPropertyChanged npc) npc.PropertyChanged += handler;
+            collection.Add(item);
+        }
+        return true;
+    }
+
     void ReindexPortPreviews()
     {
         // Preview from the configured range start, so the hint matches what create will actually allocate.

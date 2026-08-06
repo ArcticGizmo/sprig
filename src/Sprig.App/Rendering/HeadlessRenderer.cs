@@ -49,11 +49,11 @@ internal static class HeadlessRenderer
                     stacks.Selected = stacks.Stacks.FirstOrDefault();
                     Capture(vm, Path.Combine(outDir, "main_stacks_detail.png"));
 
-                    // Edit an existing stack (when nothing depends on it).
+                    // Edit an existing stack (when nothing depends on it). The builder is its own window now.
                     if (stacks.EditSelectedCommand.CanExecute(null))
                     {
                         stacks.EditSelectedCommand.Execute(null);
-                        Capture(vm, Path.Combine(outDir, "main_stacks_edit.png"));
+                        CaptureWindow(new StackEditorWindow { DataContext = stacks }, Path.Combine(outDir, "main_stacks_edit.png"));
                         stacks.CancelCreateCommand.Execute(null);
                     }
 
@@ -62,7 +62,9 @@ internal static class HeadlessRenderer
                     stacks.NewName = "web+api";
                     foreach (var c in stacks.RepoChoices) c.IsSelected = true;
                     stacks.AutoWireCommand.Execute(null);
-                    Capture(vm, Path.Combine(outDir, "main_stacks_builder_diagram.png"));
+                    CaptureWindow(new StackEditorWindow { DataContext = stacks }, Path.Combine(outDir, "main_stacks_builder_diagram.png"));
+                    // Back to a clean list before the page snapshot, so it doesn't try to reopen the builder.
+                    stacks.CancelCreateCommand.Execute(null);
                 }
                 // Populate the Settings port-checker so the snapshot shows a status result.
                 if (page is SettingsViewModel settings)
@@ -271,10 +273,13 @@ internal static class HeadlessRenderer
                     Console.Error.WriteLine($"coach spike: anchor '{marks[i].Anchor}' did not resolve");
                 }
 
-                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
+                // Case 3 opens the stack builder in its own window — capture that when it's up.
+                var frameSource = (Avalonia.Controls.Window?)StackEditorWindow.Current ?? window;
+                frameSource.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
                 Pump(vm.Coach.NextCommand.ExecuteAsync(null));
             }
 
+            StackEditorWindow.Current?.Close();
             window.Close();
         }
         catch (Exception ex)
@@ -642,7 +647,9 @@ internal static class HeadlessRenderer
     {
         Dispatcher.UIThread.RunJobs();
         Dispatcher.UIThread.RunJobs();
-        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
+        // The stack builder is its own window now; while it's open that's where the coachmark lives.
+        Avalonia.Controls.Window target = (Avalonia.Controls.Window?)StackEditorWindow.Current ?? window;
+        target.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
         if (!vm.Coach.AnchorMissing) return 0;
         Console.Error.WriteLine($"{name}: anchor '{vm.Coach.Mark?.Anchor}' did not resolve");
         return 1;
@@ -722,6 +729,16 @@ internal static class HeadlessRenderer
         Dispatcher.UIThread.RunJobs();
         var frame = window.CaptureRenderedFrame();
         frame?.Save(path);
+        window.Close();
+    }
+
+    /// <summary>Show a prepared window, snapshot it, and close it — for surfaces that are their own window
+    /// (e.g. the stack editor) rather than a page inside the main window.</summary>
+    static void CaptureWindow(Avalonia.Controls.Window window, string path)
+    {
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(path);
         window.Close();
     }
 

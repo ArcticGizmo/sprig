@@ -205,6 +205,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
     WiringGraph? _laidOut;
     double _height = 300;
     string? _hoverPort;
+    string? _hoverRepo;   // the repo box under the cursor: dims every source and cable not wired to it
     Point _hoverPos;
 
     // Drag-to-wire state. Two gestures: dragging a SOURCE (a port, the workspace, or the phantom
@@ -351,7 +352,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
             var end = SourceEndFor((e.Repo, e.Input));
             if (end is not { } to) continue;
 
-            var dim = _dragPin is null && _dragSource is null && _hoverPort is not null && _hoverPort != e.Port;
+            var dim = EdgeFaded(e.Repo, e.Port);
             Pen pen = dim
                 ? new Pen(new SolidColorBrush(((ISolidColorBrush)Wire).Color, 0.12), 1)
                 : new Pen(Wire, e.Shared ? 3 : 2.2) { LineCap = PenLineCap.Round };
@@ -367,7 +368,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
                     if (!pinModel.UsesWorkspace) continue;
                     if (SourceEndFor((repo.Repo, pinModel.Input)) is not { } to) continue;
 
-                    var dim = _dragPin is null && _dragSource is null && _hoverPort is not null && _hoverPort != WorkspaceSource;
+                    var dim = EdgeFaded(repo.Repo, WorkspaceSource);
                     Pen pen = dim
                         ? new Pen(new SolidColorBrush(((ISolidColorBrush)Ws).Color, 0.12), 1)
                         : new Pen(Ws, g.Workspace.Shared ? 3 : 2.2) { LineCap = PenLineCap.Round };
@@ -380,7 +381,10 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         {
             if (!_pins.TryGetValue(key, out var pin)) continue;
             var outPt = new Point(xf.Rect.Right, xf.Rect.Center.Y);
-            ctx.DrawGeometry(null, new Pen(Xform, 2.4) { LineCap = PenLineCap.Round }, Cable(outPt, pin.Pt));
+            Pen pen = InputFaded(key.Repo, key.Input)
+                ? new Pen(new SolidColorBrush(((ISolidColorBrush)Xform).Color, 0.12), 1)
+                : new Pen(Xform, 2.4) { LineCap = PenLineCap.Round };
+            ctx.DrawGeometry(null, pen, Cable(outPt, pin.Pt));
         }
 
         // Port rail (left).
@@ -388,7 +392,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         {
             if (!_portRects.TryGetValue(port.Name, out var rect)) continue;
             _portAnchor.TryGetValue(port.Name, out var anchor);
-            var faded = _dragPin is null && _hoverPort is not null && _hoverPort != port.Name;
+            var faded = SourceFaded(port.Name);
             var dropTarget = _dragPin is not null && _hoverPort == port.Name;
             var border = port.Shared ? Wire : (port.Used ? Signal : Border);
             var fill = port.Used ? Brush.Parse("#152417") : PanelHead;
@@ -411,7 +415,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         if (_portRects.TryGetValue(WorkspaceSource, out var wsRect))
         {
             _portAnchor.TryGetValue(WorkspaceSource, out var anchor);
-            var faded = _dragPin is null && _hoverPort is not null && _hoverPort != WorkspaceSource;
+            var faded = SourceFaded(WorkspaceSource);
             var used = g.Workspace.Used;
             using (ctx.PushOpacity(faded ? 0.35 : 1.0))
             {
@@ -435,6 +439,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
 
         // Repo nodes (right) with pins on their left edge.
         foreach (var (repoName, node, repo) in _repoBoxes)
+        using (ctx.PushOpacity(RepoFaded(repoName) ? 0.35 : 1.0))
         {
             ctx.DrawRectangle(Panel, new Pen(Border, 1.5), node, 12, 12);
             ctx.DrawRectangle(PanelHead, null, new Rect(node.X, node.Y, NodeW, HeadH), 12, 12);
@@ -471,6 +476,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
 
         // Transform node boxes (centre column), on top of the cables.
         foreach (var (key, xf) in _xforms)
+        using (ctx.PushOpacity(InputFaded(key.Repo, key.Input) ? 0.3 : 1.0))
         {
             var hot = _hoverXform == key || _dropXform == key;
             ctx.DrawRectangle(Brush.Parse("#241626"), new Pen(Xform, hot ? 2 : 1.4), xf.Rect, 6, 6);
@@ -560,6 +566,56 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
 
     /// <summary>The rail's non-port slots (workspace source, phantom create) that aren't real ports.</summary>
     static bool IsSentinel(string name) => name is WorkspaceSource or CreatePortSlot;
+
+    // -- hover focus: dim everything not wired to the port/repo under the cursor ---------------------
+    // Focusing on a repo (hover its box) is the big-stack readability win: every source and cable that
+    // doesn't touch that repo dims away, so its own handful of cables stand out from the crossings.
+    // Hovering a source does the mirror. Both only apply at rest — never mid drag or reorder.
+
+    /// <summary>No drag or reorder in flight — hover-focus dimming applies only when the board is at rest.</summary>
+    bool Idle => _dragPin is null && _dragSource is null && _reorderRepoFrom < 0 && _reorderPortFrom < 0;
+
+    bool RepoUsesWorkspace(string repo) =>
+        _laidOut?.Repos.FirstOrDefault(r => r.Repo == repo)?.Pins.Any(p => p.UsesWorkspace) ?? false;
+
+    /// <summary>A source→pin cable is off-focus when hovering another source, or a repo it doesn't reach.</summary>
+    bool EdgeFaded(string repo, string port) =>
+        Idle && ((_hoverPort is not null && _hoverPort != port) || (_hoverRepo is not null && _hoverRepo != repo));
+
+    /// <summary>An input row (its transform node + segment) is off-focus when it doesn't touch the hover.</summary>
+    bool InputFaded(string repo, string input)
+    {
+        if (!Idle) return false;
+        if (_hoverRepo is not null) return _hoverRepo != repo;
+        if (_hoverPort is null) return false;
+        var g = _laidOut;
+        if (g is null) return false;
+        if (_hoverPort == WorkspaceSource)
+            return !(g.Repos.FirstOrDefault(r => r.Repo == repo)?.Pins.FirstOrDefault(p => p.Input == input)?.UsesWorkspace ?? false);
+        return !g.Edges.Any(e => e.Repo == repo && e.Input == input && e.Port == _hoverPort);
+    }
+
+    /// <summary>A source-rail node (a port or the workspace) is off-focus given the current hover.</summary>
+    bool SourceFaded(string source)
+    {
+        if (!Idle) return false;
+        if (_hoverPort is not null) return _hoverPort != source;
+        if (_hoverRepo is not null)
+            return source == WorkspaceSource
+                ? !RepoUsesWorkspace(_hoverRepo)
+                : !(_laidOut?.Edges.Any(e => e.Port == source && e.Repo == _hoverRepo) ?? false);
+        return false;
+    }
+
+    /// <summary>A repo box is off-focus when hovering a different repo, or a source it doesn't consume.</summary>
+    bool RepoFaded(string repo)
+    {
+        if (!Idle) return false;
+        if (_hoverRepo is not null) return _hoverRepo != repo;
+        if (_hoverPort is null) return false;
+        if (_hoverPort == WorkspaceSource) return !RepoUsesWorkspace(repo);
+        return !(_laidOut?.Edges.Any(e => e.Repo == repo && e.Port == _hoverPort) ?? false);
+    }
 
     // -- hover tooltip: what consumes this port ------------------------------
 
@@ -780,11 +836,15 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         var hit = PortAt(pos);
         var xhit = XformAt(pos);
         var trash = TrashAt(pos);
+        // A repo box under the cursor focuses it (dims everything not wired to it) — but not when the
+        // cursor is on the trash icon, which is its own action.
+        var repoHit = trash is null ? RepoBoxAt(pos) : null;
         var overChrome = _addRepoRect.Contains(pos) || _autoWireRect.Contains(pos);
-        var changed = hit != _hoverPort || xhit != _hoverXform || trash != _hoverTrash;
+        var changed = hit != _hoverPort || xhit != _hoverXform || trash != _hoverTrash || repoHit != _hoverRepo;
         _hoverPort = hit;
         _hoverXform = xhit;
         _hoverTrash = trash;
+        _hoverRepo = repoHit;
         _hoverPos = pos;
         // Redraw on enter/leave, over a port (tooltip follows the cursor), or over hoverable chrome.
         if (changed || hit is not null || overChrome) InvalidateVisual();
@@ -911,7 +971,12 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
-        if (_hoverPort is not null && _dragPin is null && _dragSource is null) { _hoverPort = null; InvalidateVisual(); }
+        if ((_hoverPort is not null || _hoverRepo is not null) && _dragPin is null && _dragSource is null)
+        {
+            _hoverPort = null;
+            _hoverRepo = null;
+            InvalidateVisual();
+        }
         base.OnPointerExited(e);
     }
 
@@ -1137,6 +1202,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
             if (_portRects.TryGetValue(g.Ports[i].Name, out var r) && new Rect(r.X, r.Y, GripW, r.Height).Contains(p))
                 return i;
         return -1;
+    }
+
+    /// <summary>The repo whose box contains <paramref name="p"/> (for hover-focus), or null.</summary>
+    string? RepoBoxAt(Point p)
+    {
+        foreach (var b in _repoBoxes)
+            if (b.Rect.Contains(p)) return b.Repo;
+        return null;
     }
 
     /// <summary>Index into <see cref="_repoBoxes"/> whose header contains <paramref name="p"/> (trash excluded), or -1.</summary>

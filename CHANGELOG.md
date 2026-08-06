@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.5] - 2026-08-06
+
+### Fixed
+- **Compose editor no longer hides its last line** — the bottom padding scrolls into view.
+
+---
+
 ## [v0.4.4] - 2026-08-06
 
 ### Added

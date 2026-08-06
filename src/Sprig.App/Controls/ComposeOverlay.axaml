@@ -89,8 +89,11 @@
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
       <!-- Horizontal scroll disabled so the width is constrained and long lines wrap (WrapPanel)
            instead of running off-screen. -->
-      <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="14,12" MaxHeight="420">
-        <ItemsControl ItemsSource="{Binding Lines}">
+      <!-- Inset lives on the content (Margin), not the ScrollViewer (Padding): ScrollViewer.Padding
+           insets the viewport, so the bottom inset never scrolls into view and the last line sits
+           flush against the fold. A Margin is part of the scrollable extent, so it scrolls in. -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" MaxHeight="420">
+        <ItemsControl ItemsSource="{Binding Lines}" Margin="14,12">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ComposeLineViewModel">
               <ItemsControl ItemsSource="{Binding Runs}" MinHeight="19">

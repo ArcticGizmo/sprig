@@ -4,6 +4,12 @@
     <ProjectReference Include="..\Sprig.Core\Sprig.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- `sprig update` drives Velopack directly (check/download/apply). Keep the version in step
+         with Sprig.App's reference — both must resolve the same feed/package format. -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

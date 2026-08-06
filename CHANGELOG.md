@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.6] - 2026-08-06
+
+### Added
+- **`sprig update`** — install a newer release from the terminal (`--check` just reports one).
+
+### Changed
+- **Update notice moved to the nav** — a quiet entry above Settings, not a banner; click to install.
+- **"Show me a working setup" lives in Learn** — beside the lessons, off the nav.
+
+---
+
 ## [v0.4.5] - 2026-08-06
 
 ### Fixed

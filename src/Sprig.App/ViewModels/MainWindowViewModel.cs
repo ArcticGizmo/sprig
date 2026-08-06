@@ -60,7 +60,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private PageViewModel _currentPage;
 
-    /// <summary>Non-null when a newer version is available; drives the top notification bar.</summary>
+    /// <summary>Non-null when a newer version is available; drives the update entry in the left nav.</summary>
     [ObservableProperty]
     private string? _updateNotice;
 
@@ -68,10 +68,11 @@ public partial class MainWindowViewModel : ViewModelBase
     UpdateCheckResult? _updateResult;
 
     /// <summary>
-    /// Whether the update banner should be on screen: there's a notice to show, and we're not inside a
-    /// guided experience. The tour and every lesson run on the demo store (so <see cref="IsTour"/> covers
-    /// them), and any live coachmark run is <see cref="CoachViewModel.IsActive"/> — in all of those the
-    /// banner would shift the layout the coachmarks anchor to, so it stays hidden.
+    /// Whether the update entry (in the left nav, above Settings) should be on screen: there's a notice
+    /// to show, and we're not inside a guided experience. The tour and every lesson run on the demo store
+    /// (so <see cref="IsTour"/> covers them), and any live coachmark run is
+    /// <see cref="CoachViewModel.IsActive"/> — in all of those a toggling nav row would shift the layout
+    /// the coachmarks anchor to, so it stays hidden.
     /// </summary>
     public bool ShowUpdateNotice =>
         !string.IsNullOrEmpty(UpdateNotice) && !IsTour && !Coach.IsActive && !Guide.IsActive;
@@ -173,29 +174,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private void Navigate(PageViewModel page) => CurrentPage = page;
 
     /// <summary>
-    /// Hide the banner and remember the version we hid it for, so it doesn't return until the feed offers a
-    /// different (newer) release. Best-effort: a settings write failure just means the banner may reappear.
-    /// </summary>
-    [RelayCommand]
-    private void DismissUpdateNotice()
-    {
-        var dismissed = _updateResult?.AvailableVersion;
-        if (!string.IsNullOrEmpty(dismissed))
-        {
-            try
-            {
-                var settings = _services.Settings.Get();
-                settings.DismissedUpdateVersion = dismissed;
-                _services.Settings.Save(settings);
-            }
-            catch { /* remembering a dismissal is a nicety; never crash over it */ }
-        }
-        UpdateNotice = null;
-    }
-
-    /// <summary>
     /// Download and install the available update, then restart. Does not return on success. On failure the
-    /// banner stays put with a short message so the user can retry or use the About page.
+    /// nav entry stays put with a short message so the user can retry (click again) or use the About page.
     /// </summary>
     [RelayCommand]
     private async Task UpdateNow()
@@ -260,15 +240,6 @@ public partial class MainWindowViewModel : ViewModelBase
         _updateResult = result;
 
         if (result.Availability != UpdateAvailability.Available)
-            return;
-
-        // Honour a prior dismissal: stay quiet while the feed keeps offering the same version the user
-        // already dismissed, but speak up the moment a different (newer) release appears.
-        string? dismissed = null;
-        try { dismissed = _services.Settings.Get().DismissedUpdateVersion; }
-        catch { /* if settings can't be read, err toward showing the notice */ }
-
-        if (result.AvailableVersion == dismissed)
             return;
 
         UpdateNotice = $"Update available: v{result.AvailableVersion} — you have v{result.CurrentVersion}";

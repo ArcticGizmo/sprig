@@ -14,6 +14,24 @@
                            Text="Short, hands-on lessons — each one walks you through a single idea in a throwaway sandbox, so you can click around without touching your own repos. Nothing you do here is permanent." />
             </StackPanel>
 
+            <!-- The guided tour: a complete, pre-built sample to click around — broader than any single
+                 lesson, so it sits above the list as the "see it all working" entry. (Moved here from the
+                 left nav.) -->
+            <Border Background="#1460A5FA" BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                    CornerRadius="12" Padding="18,16">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="Show me a working setup" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{StaticResource FgBrush}"
+                                   Text="Spin up a complete throwaway sample — repos, a stack and a workspace already wired together — and click around to see how the pieces fit. Deleted when you leave." />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Show me  →" Command="{Binding ShowWorkingSetupCommand}"
+                            VerticalAlignment="Center" Padding="16,8"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+                </Grid>
+            </Border>
+
             <ItemsControl ItemsSource="{Binding Guides}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:GuideItemViewModel">

@@ -42,6 +42,13 @@ public partial class LearnViewModel : PageViewModel
 
     /// <summary>Refresh ticks after returning from a guide (the page re-activates, but be explicit too).</summary>
     public void Refresh() => Reload();
+
+    /// <summary>
+    /// Enter the guided tour — the complete, pre-built sample to click around, broader than any single
+    /// lesson. Routed through the navigator, which owns the store swap; mirrors the Home page's entry.
+    /// </summary>
+    [RelayCommand]
+    private void ShowWorkingSetup() => _nav.EnterTour();
 }
 
 /// <summary>One lesson in the Learn list: its metadata, whether it's done, and how to start it.</summary>

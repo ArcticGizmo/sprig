@@ -110,6 +110,12 @@ of the left nav) adds a manual path: it shows the installed version and a **Chec
 button; when the feed has a newer release, a **Download & install** button applies it and restarts
 the app. Both surfaces share `UpdateChecker` and honour `SPRIG_UPDATE_FEED`.
 
+The CLI has its own path: **`sprig update`** downloads and installs a newer release in place, and
+**`sprig update --check`** just reports whether one exists. Unlike the app's flow it applies without
+relaunching the UI — it hands off to Velopack's `Update.exe` and exits so `current` (which holds
+`sprig.exe` itself) can be swapped, refusing up front if the desktop app is open and holding those
+files. It uses the same feed as the app; the logic lives in `src/Sprig.Cli/CliUpdater.cs`.
+
 - The feed location comes from the `SPRIG_UPDATE_FEED` environment variable (a directory path or a
   URL). If it's unset — or the app wasn't installed via Velopack (e.g. run from the build output) —
   the check is a no-op. See `src/Sprig.App/Updates/UpdateChecker.cs`.

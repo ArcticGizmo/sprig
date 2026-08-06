@@ -97,13 +97,14 @@
                 <!-- Pinned to the bottom of the nav, below the workflow pages -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="2">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
-                    <!-- Entering the tour rebuilds the whole window against a demo store, so this is not
-                         a page and deliberately isn't in the workflow list. Hidden while in the tour —
-                         the banner is the way out. -->
-                    <Button Classes="nav" Command="{Binding EnterTourCommand}" IsVisible="{Binding !IsTour}">
-                        <Border Classes="navitem">
-                            <TextBlock Text="Show me a working setup" FontSize="14" TextWrapping="Wrap"
-                                       VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" />
+                    <!-- Update-available entry: shown only when the launch-time check found a newer release
+                         (ShowUpdateNotice), and hidden inside any guided experience so it can't shift the
+                         coachmark anchors. Clicking installs the update the check already located. The
+                         accent Background is a local value so the nav hover style can't grey it out. -->
+                    <Button Classes="nav" Command="{Binding UpdateNowCommand}" IsVisible="{Binding ShowUpdateNotice}">
+                        <Border Classes="navitem" Background="{StaticResource AccentBrush}">
+                            <TextBlock Text="{Binding UpdateNotice}" FontSize="12.5" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Foreground="#0B1220" />
                         </Border>
                     </Button>
                     <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}">
@@ -184,21 +185,8 @@
                 </Grid>
             </Border>
             <!-- The tour is now coachmarks (the CoachOverlay below), not a top strip — so it dims the page and
-                 rings each target like the guides do. -->
-            <!-- Update-available notice. Hidden inside any guided experience (tour / lessons / coachmarks),
-                 where a layout-shifting strip would throw off the highlighted anchors. -->
-            <Border DockPanel.Dock="Top" Padding="16,8" Background="{StaticResource AccentBrush}"
-                    IsVisible="{Binding ShowUpdateNotice}">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                    <TextBlock Grid.Column="0" Text="{Binding UpdateNotice}" Foreground="#0B1220"
-                               VerticalAlignment="Center" TextWrapping="Wrap" />
-                    <Button Grid.Column="1" Content="Update now" Command="{Binding UpdateNowCommand}"
-                            Background="#0B1220" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
-                            Padding="14,6" VerticalAlignment="Center" />
-                    <Button Grid.Column="2" Content="Dismiss" Command="{Binding DismissUpdateNoticeCommand}"
-                            Background="Transparent" Foreground="#0B1220" VerticalAlignment="Center" />
-                </Grid>
-            </Border>
+                 rings each target like the guides do. The update-available notice moved to the left nav
+                 (just above Settings) so it never shifts the content layout the coachmarks anchor to. -->
             <!-- Guided setup strip (opt-in from Home; auto-advances as the store changes) -->
             <Border DockPanel.Dock="Top" IsVisible="{Binding Guide.IsActive}"
                     Background="#1460A5FA" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1"

@@ -50,6 +50,7 @@ public static class CliApp
             return command switch
             {
                 "open" => Open(rest),
+                "update" => Update(rest),
                 "create" => Create(svc, resolver, stacks, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
@@ -85,6 +86,14 @@ public static class CliApp
         Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
         Console.WriteLine("opening sprig…");
         return 0;
+    }
+
+    // Install a newer release in place (or, with --check, just report whether one exists). Delegates
+    // to CliUpdater, which drives Velopack's check/download/apply against the same feed as the app.
+    static int Update(string[] args)
+    {
+        var check = Args.TakeFlag(ref args, "--check");
+        return CliUpdater.Run(check);
     }
 
     // In the Velopack package sprig-gui(.exe) sits in the same directory as sprig(.exe), so look
@@ -491,6 +500,7 @@ public static class CliApp
 
             COMMANDS:
                 open                          Launch the sprig desktop app
+                update [--check]              Install a newer release in place (--check only reports)
                 create <name> --stack <s> | --repo <path>   Create an isolated workspace
                               [--only a,b | --without c]   Partial workspace: a subset of the
                                                            stack's repos (ports left with no

@@ -319,6 +319,16 @@ public partial class StacksViewModel : PageViewModel
         foreach (var c in RepoChoices) c.IsSelected = false;
         foreach (var c in RepoChoices) c.IsSelected = stack.Repos.Contains(c.Name);
 
+        // The picker is in registry order, so the binding groups arrive that way. Reorder them to match
+        // the stack's saved repo order, so the canvas opens showing exactly the order that was saved.
+        var savedOrder = stack.Repos.Where(r => Bindings.Any(g => g.Repo == r)).ToList();
+        for (var target = 0; target < savedOrder.Count; target++)
+        {
+            var current = -1;
+            for (var i = 0; i < Bindings.Count; i++) if (Bindings[i].Repo == savedOrder[target]) { current = i; break; }
+            if (current >= 0 && current != target) Bindings.Move(current, target);
+        }
+
         foreach (var group in Bindings)
             if (stack.Bindings.TryGetValue(group.Repo, out var repoBindings))
                 foreach (var row in group.Rows)
@@ -462,7 +472,8 @@ public partial class StacksViewModel : PageViewModel
     private void Create()
     {
         var name = NewName.Trim();
-        var repos = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+        // The canvas order (Bindings) is authoritative — a drag-reorder on the board persists here.
+        var repos = Bindings.Select(g => g.Repo).ToList();
         var bindings = Bindings.ToDictionary(
             g => g.Repo,
             g => (IReadOnlyDictionary<string, string>)g.Rows
@@ -633,6 +644,44 @@ public partial class StacksViewModel : PageViewModel
     private void RemoveStackRepo(string? name)
     {
         if (RepoChoices.FirstOrDefault(c => c.Name == name) is { } choice) choice.IsSelected = false;
+    }
+
+    /// <summary>
+    /// Reorder a repo box on the canvas (drag by its header). The <see cref="Bindings"/> order is the
+    /// authoritative repo order — it's what the graph draws and what save persists — so a move here
+    /// carries straight through to the saved stack. <paramref name="request"/> carries graph indices,
+    /// which map 1:1 to <see cref="Bindings"/>.
+    /// </summary>
+    [RelayCommand]
+    private void ReorderRepo(ReorderRepoRequest? request)
+    {
+        if (request is null || request.From < 0 || request.From >= Bindings.Count) return;
+        var to = Math.Clamp(request.To, 0, Bindings.Count - 1);
+        if (to == request.From) return;
+        Bindings.Move(request.From, to);
+        RebuildBuilderWiring();
+    }
+
+    /// <summary>
+    /// Reorder a port on the rail (drag by its grip). The graph's port list is the non-empty subset of
+    /// <see cref="Ports"/> in order, so we move relative to the target port's real row — keeping any
+    /// blank (not-yet-named) rows where they are. Previews reindex since they track position.
+    /// </summary>
+    [RelayCommand]
+    private void ReorderPort(ReorderPortRequest? request)
+    {
+        if (request is null) return;
+        var named = Ports.Where(p => p.Name.Trim().Length > 0).ToList();
+        if (request.From < 0 || request.From >= named.Count) return;
+        var to = Math.Clamp(request.To, 0, named.Count - 1);
+        if (to == request.From) return;
+
+        var vmFrom = Ports.IndexOf(named[request.From]);
+        var vmTo = Ports.IndexOf(named[to]);
+        if (vmFrom < 0 || vmTo < 0 || vmFrom == vmTo) return;
+        Ports.Move(vmFrom, vmTo);
+        ReindexPortPreviews();
+        RebuildBuilderWiring();
     }
 
     void OnBindingRowChanged(object? sender, PropertyChangedEventArgs e)

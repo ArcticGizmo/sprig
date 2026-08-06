@@ -130,6 +130,14 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
     public static readonly StyledProperty<ICommand?> AutoWireCommandProperty =
         AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(AutoWireCommand));
 
+    /// <summary>Invoked with a <see cref="ReorderRepoRequest"/> when a repo box is dragged to a new slot.</summary>
+    public static readonly StyledProperty<ICommand?> ReorderRepoCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(ReorderRepoCommand));
+
+    /// <summary>Invoked with a <see cref="ReorderPortRequest"/> when a port is dragged to a new rail slot.</summary>
+    public static readonly StyledProperty<ICommand?> ReorderPortCommandProperty =
+        AvaloniaProperty.Register<WiringCanvas, ICommand?>(nameof(ReorderPortCommand));
+
     public WiringGraph? Graph
     {
         get => GetValue(GraphProperty);
@@ -151,6 +159,8 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
     public ICommand? AddRepoCommand { get => GetValue(AddRepoCommandProperty); set => SetValue(AddRepoCommandProperty, value); }
     public ICommand? RemoveRepoCommand { get => GetValue(RemoveRepoCommandProperty); set => SetValue(RemoveRepoCommandProperty, value); }
     public ICommand? AutoWireCommand { get => GetValue(AutoWireCommandProperty); set => SetValue(AutoWireCommandProperty, value); }
+    public ICommand? ReorderRepoCommand { get => GetValue(ReorderRepoCommandProperty); set => SetValue(ReorderRepoCommandProperty, value); }
+    public ICommand? ReorderPortCommand { get => GetValue(ReorderPortCommandProperty); set => SetValue(ReorderPortCommandProperty, value); }
 
     // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -213,6 +223,13 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
     // Line selection: click a cable to select its binding; small Delete / Transform actions appear.
     (string Repo, string Input)? _selectedInput;
     Rect _deleteBtn, _transformBtn; // action hit-boxes, valid while _selectedInput is set
+
+    // Reorder drag: picking a repo box up/down (grabbed by its header) or a port up/down the rail
+    // (grabbed by its grip) to change its position. Indices are into the graph's Repos / Ports lists.
+    int _reorderRepoFrom = -1;
+    int _reorderPortFrom = -1;
+    int _reorderTo = -1; // live insertion index (0..count) while a reorder drag is in flight
+    const double GripW = 16;
 
     static WiringCanvas()
     {
@@ -381,6 +398,7 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
                 ctx.DrawRectangle(fill, pen, rect, 8, 8);
                 if (dropTarget) ctx.DrawRectangle(null, new Pen(Wire, 3), rect.Inflate(3), 10, 10);
                 DrawText(ctx, port.Name, rect, port.Used ? Signal : Muted, 12.5, center: true);
+                if (IsEditable) DrawGrip(ctx, new Rect(rect.X, rect.Y, GripW, rect.Height), Muted);
                 if (port.Shared)
                     DrawText(ctx, "SHARED ×" + port.ConsumerCount,
                         new Rect(rect.X, rect.Y - 15, rect.Width, 13), Wire, 9, center: true);
@@ -420,7 +438,9 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         {
             ctx.DrawRectangle(Panel, new Pen(Border, 1.5), node, 12, 12);
             ctx.DrawRectangle(PanelHead, null, new Rect(node.X, node.Y, NodeW, HeadH), 12, 12);
-            DrawText(ctx, repoName, new Rect(node.X + 14, node.Y, NodeW - 34, HeadH), Title, 13, vcenter: true);
+            var repoTextX = IsEditable ? node.X + 26 : node.X + 14;
+            if (IsEditable) DrawGrip(ctx, new Rect(node.X + 8, node.Y, GripW, HeadH), Muted);
+            DrawText(ctx, repoName, new Rect(repoTextX, node.Y, node.Right - 20 - repoTextX, HeadH), Title, 13, vcenter: true);
 
             // Trash icon (top-right of the header) to remove the repo from the stack.
             if (_repoTrash.TryGetValue(repoName, out var trash))
@@ -508,7 +528,33 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
             DrawText(ctx, "✕", _deleteBtn, Danger, 12, center: true);
         }
 
-        if (_hoverPort is not null && !IsSentinel(_hoverPort) && _dragPin is null && _dragSource is null)
+        // Reorder in flight: a ring on the item being moved and a bright insertion line at the drop slot.
+        if (_reorderRepoFrom >= 0 && _dragMoved && _repoBoxes.Count > 0)
+        {
+            if (_reorderRepoFrom < _repoBoxes.Count)
+                ctx.DrawRectangle(null, new Pen(Wire, 2) { DashStyle = new DashStyle([3, 3], 0) },
+                    _repoBoxes[_reorderRepoFrom].Rect.Inflate(2), 12, 12);
+            var iy = _reorderTo < _repoBoxes.Count
+                ? _repoBoxes[_reorderTo].Rect.Y - RepoGap / 2
+                : _repoBoxes[^1].Rect.Bottom + RepoGap / 2;
+            var rx = BoardW - 24 - NodeW;
+            ctx.DrawLine(new Pen(Wire, 2.5) { LineCap = PenLineCap.Round }, new Point(rx, iy), new Point(rx + NodeW, iy));
+        }
+        if (_reorderPortFrom >= 0 && _dragMoved && g.Ports.Count > 0)
+        {
+            if (_reorderPortFrom < g.Ports.Count && _portRects.TryGetValue(g.Ports[_reorderPortFrom].Name, out var fr))
+                ctx.DrawRectangle(null, new Pen(Wire, 2) { DashStyle = new DashStyle([3, 3], 0) }, fr.Inflate(2), 10, 10);
+            double iy;
+            if (_reorderTo < g.Ports.Count && _portRects.TryGetValue(g.Ports[_reorderTo].Name, out var tr))
+                iy = tr.Y - (PortGap - PortH) / 2;
+            else if (_portRects.TryGetValue(g.Ports[^1].Name, out var lr))
+                iy = lr.Bottom + (PortGap - PortH) / 2;
+            else iy = RailTop;
+            ctx.DrawLine(new Pen(Wire, 2.5) { LineCap = PenLineCap.Round }, new Point(PortX, iy), new Point(PortX + PortW, iy));
+        }
+
+        if (_hoverPort is not null && !IsSentinel(_hoverPort) && _dragPin is null && _dragSource is null
+            && _reorderRepoFrom < 0 && _reorderPortFrom < 0)
             DrawTooltip(ctx, g, _hoverPort);
     }
 
@@ -622,6 +668,30 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
                 OpenExpressionEditor(xkey.Repo, xkey.Input, xf.Expression);
                 e.Handled = true;
             }
+            // A press on a repo header (not its trash) begins a reorder drag for that repo box.
+            else if (RepoHeaderAt(pos) is var repoIdx && repoIdx >= 0)
+            {
+                _selectedInput = null;
+                _reorderRepoFrom = repoIdx;
+                _reorderTo = repoIdx;
+                _pressPos = _dragCursor = pos;
+                _dragMoved = false;
+                e.Pointer.Capture(this);
+                e.Handled = true;
+                InvalidateVisual();
+            }
+            // A press on a port's grip begins a reorder drag for that port (the rest of the port wires).
+            else if (PortGripAt(pos) is var portIdx && portIdx >= 0)
+            {
+                _selectedInput = null;
+                _reorderPortFrom = portIdx;
+                _reorderTo = portIdx;
+                _pressPos = _dragCursor = pos;
+                _dragMoved = false;
+                e.Pointer.Capture(this);
+                e.Handled = true;
+                InvalidateVisual();
+            }
             // 3. A press on a rail slot (port / workspace / create-new) begins a source→input wire drag.
             else if (PortAt(pos) is { } source)
             {
@@ -665,6 +735,26 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         var pos = e.GetPosition(this);
+
+        if (_reorderRepoFrom >= 0)
+        {
+            _dragCursor = pos;
+            if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
+            _reorderTo = RepoInsertIndex(pos.Y);
+            InvalidateVisual();
+            base.OnPointerMoved(e);
+            return;
+        }
+
+        if (_reorderPortFrom >= 0)
+        {
+            _dragCursor = pos;
+            if (!_dragMoved && Distance(_pressPos, pos) > 4) _dragMoved = true;
+            _reorderTo = PortInsertIndex(pos.Y);
+            InvalidateVisual();
+            base.OnPointerMoved(e);
+            return;
+        }
 
         if (_dragSource is not null)
         {
@@ -712,7 +802,42 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
     {
         var pos = e.GetPosition(this);
 
-        if (_dragSource is { } source)
+        if (_reorderRepoFrom >= 0)
+        {
+            e.Pointer.Capture(null);
+            var from = _reorderRepoFrom;
+            var insert = _reorderTo;
+            _reorderRepoFrom = -1;
+            _reorderTo = -1;
+            if (_dragMoved)
+            {
+                var to = insert > from ? insert - 1 : insert; // removal shifts everything after `from` down one
+                if (to != from && to >= 0) ReorderRepoCommand?.Execute(new ReorderRepoRequest(from, to));
+            }
+            _dragMoved = false;
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        else if (_reorderPortFrom >= 0)
+        {
+            e.Pointer.Capture(null);
+            var from = _reorderPortFrom;
+            var insert = _reorderTo;
+            _reorderPortFrom = -1;
+            _reorderTo = -1;
+            if (_dragMoved)
+            {
+                var to = insert > from ? insert - 1 : insert;
+                if (to != from && to >= 0) ReorderPortCommand?.Execute(new ReorderPortRequest(from, to));
+            }
+            // A grip click with no drag still offers the port's rename / remove menu.
+            else if (_laidOut is { } lg && from < lg.Ports.Count)
+                OpenPortMenu(lg.Ports[from].Name);
+            _dragMoved = false;
+            e.Handled = true;
+            InvalidateVisual();
+        }
+        else if (_dragSource is { } source)
         {
             e.Pointer.Capture(null);
             var target = _dropPin;
@@ -887,6 +1012,16 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         flyout.ShowAt(this, showAtPointer: true);
     }
 
+    /// <summary>Draw a drag-handle grip (two columns of dots) centred in the left of <paramref name="zone"/>.</summary>
+    static void DrawGrip(DrawingContext ctx, Rect zone, IBrush brush)
+    {
+        var cx = zone.X + 4;
+        var cy = zone.Center.Y;
+        for (var col = 0; col < 2; col++)
+            for (var row = -1; row <= 1; row++)
+                ctx.DrawEllipse(brush, null, new Point(cx + col * 4, cy + row * 4), 1, 1);
+    }
+
     /// <summary>Draw a minimal trash-can glyph inside <paramref name="r"/>.</summary>
     static void DrawTrash(DrawingContext ctx, Rect r, IBrush brush)
     {
@@ -991,6 +1126,48 @@ public sealed class WiringCanvas : Control, ICustomHitTest, Coach.IAnchorSource
         foreach (var kv in _xforms)
             if (kv.Value.Rect.Contains(p)) return kv.Key;
         return null;
+    }
+
+    /// <summary>Index into the graph's ports whose left-edge grip contains <paramref name="p"/>, or -1.</summary>
+    int PortGripAt(Point p)
+    {
+        var g = _laidOut;
+        if (g is null) return -1;
+        for (var i = 0; i < g.Ports.Count; i++)
+            if (_portRects.TryGetValue(g.Ports[i].Name, out var r) && new Rect(r.X, r.Y, GripW, r.Height).Contains(p))
+                return i;
+        return -1;
+    }
+
+    /// <summary>Index into <see cref="_repoBoxes"/> whose header contains <paramref name="p"/> (trash excluded), or -1.</summary>
+    int RepoHeaderAt(Point p)
+    {
+        for (var i = 0; i < _repoBoxes.Count; i++)
+        {
+            var b = _repoBoxes[i];
+            if (!new Rect(b.Rect.X, b.Rect.Y, NodeW, HeadH).Contains(p)) continue;
+            if (_repoTrash.TryGetValue(b.Repo, out var t) && t.Inflate(3).Contains(p)) return -1; // trash wins
+            return i;
+        }
+        return -1;
+    }
+
+    /// <summary>Insertion index (0..count) among repo boxes for a drop at vertical position <paramref name="y"/>.</summary>
+    int RepoInsertIndex(double y)
+    {
+        for (var i = 0; i < _repoBoxes.Count; i++)
+            if (y < _repoBoxes[i].Rect.Center.Y) return i;
+        return _repoBoxes.Count;
+    }
+
+    /// <summary>Insertion index (0..count) among the graph's ports for a drop at vertical position <paramref name="y"/>.</summary>
+    int PortInsertIndex(double y)
+    {
+        var g = _laidOut;
+        if (g is null) return 0;
+        for (var i = 0; i < g.Ports.Count; i++)
+            if (_portRects.TryGetValue(g.Ports[i].Name, out var r) && y < r.Center.Y) return i;
+        return g.Ports.Count;
     }
 
     /// <summary>The input whose cable runs nearest <paramref name="p"/> (within a small threshold), or null.</summary>

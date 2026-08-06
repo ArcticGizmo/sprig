@@ -272,6 +272,8 @@
                                                                AddableRepos="{Binding AddableRepos}"
                                                                AddRepoCommand="{Binding AddStackRepoCommand}"
                                                                RemoveRepoCommand="{Binding RemoveStackRepoCommand}"
+                                                               ReorderRepoCommand="{Binding ReorderRepoCommand}"
+                                                               ReorderPortCommand="{Binding ReorderPortCommand}"
                                                                AutoWireCommand="{Binding AutoWireCommand}" />
                                     </ScrollViewer>
                                 </Border>

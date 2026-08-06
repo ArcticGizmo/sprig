@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.10] - 2026-08-06
+
+### Changed
+- **Selectable compose values are grey, not green** — colour is saved for values you've actually replaced.
+
+---
+
 ## [v0.4.9] - 2026-08-06
 
 ### Added

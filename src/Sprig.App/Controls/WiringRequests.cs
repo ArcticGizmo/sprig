@@ -23,3 +23,9 @@ public sealed record RenamePortRequest(string OldName, string NewName);
 /// expression — dragging a second source into an existing transform node to fan it in.
 /// </summary>
 public sealed record AppendSourceRequest(string Repo, string Input, string Token);
+
+/// <summary>Move a repo box to a new position in the stack (drag-reorder by its header on the canvas).</summary>
+public sealed record ReorderRepoRequest(int From, int To);
+
+/// <summary>Move a stack port to a new position on the rail (drag-reorder by its grip on the canvas).</summary>
+public sealed record ReorderPortRequest(int From, int To);

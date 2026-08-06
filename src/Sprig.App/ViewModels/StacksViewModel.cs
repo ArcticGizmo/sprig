@@ -319,6 +319,16 @@ public partial class StacksViewModel : PageViewModel
         foreach (var c in RepoChoices) c.IsSelected = false;
         foreach (var c in RepoChoices) c.IsSelected = stack.Repos.Contains(c.Name);
 
+        // The picker is in registry order, so the binding groups arrive that way. Reorder them to match
+        // the stack's saved repo order, so the canvas opens showing exactly the order that was saved.
+        var savedOrder = stack.Repos.Where(r => Bindings.Any(g => g.Repo == r)).ToList();
+        for (var target = 0; target < savedOrder.Count; target++)
+        {
+            var current = -1;
+            for (var i = 0; i < Bindings.Count; i++) if (Bindings[i].Repo == savedOrder[target]) { current = i; break; }
+            if (current >= 0 && current != target) Bindings.Move(current, target);
+        }
+
         foreach (var group in Bindings)
             if (stack.Bindings.TryGetValue(group.Repo, out var repoBindings))
                 foreach (var row in group.Rows)
@@ -462,7 +472,8 @@ public partial class StacksViewModel : PageViewModel
     private void Create()
     {
         var name = NewName.Trim();
-        var repos = RepoChoices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+        // The canvas order (Bindings) is authoritative — a drag-reorder on the board persists here.
+        var repos = Bindings.Select(g => g.Repo).ToList();
         var bindings = Bindings.ToDictionary(
             g => g.Repo,
             g => (IReadOnlyDictionary<string, string>)g.Rows
@@ -522,6 +533,64 @@ public partial class StacksViewModel : PageViewModel
         Status = $"removed stack '{name}'";
         Reload();
         Services.NotifyStoreChanged();
+    }
+
+    /// <summary>True once there's a graph with more than one port or repo to tidy — gates the button.</summary>
+    public bool CanCleanup => BuilderWiring is { } g && (g.Ports.Count > 1 || g.Repos.Count > 1);
+
+    partial void OnBuilderWiringChanged(WiringGraph? value) => OnPropertyChanged(nameof(CanCleanup));
+
+    /// <summary>
+    /// Tidy the board to minimise cable crossings: reorder both the source rail and the repos so each
+    /// sits near the vertical centre of what it connects to. Pins within a repo stay put (they're its
+    /// declared inputs). Only affects layout order — which now persists — never the wiring itself.
+    /// No-op when it's already tidy.
+    /// </summary>
+    [RelayCommand]
+    private void Cleanup()
+    {
+        if (BuilderWiring is not { } g) return;
+
+        var ports = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var repos = Bindings.Select(b => b.Repo).ToList();
+        var (orderedPorts, orderedRepos) = WiringCleanup.Tidy(ports, repos, g);
+
+        var portsChanged = ApplyOrder(Ports, orderedPorts, p => p.Name.Trim(), OnPortRowChanged);
+        var reposChanged = ApplyOrder(Bindings, orderedRepos, b => b.Repo, handler: null);
+
+        if (portsChanged) ReindexPortPreviews();
+        if (portsChanged || reposChanged) RebuildBuilderWiring();
+    }
+
+    /// <summary>
+    /// Reorder <paramref name="collection"/> so its items follow <paramref name="order"/> (by key);
+    /// items whose key isn't in <paramref name="order"/> (e.g. blank port rows) keep their tail spot.
+    /// Detaches/reattaches <paramref name="handler"/> around the rebuild if the rows raise change events.
+    /// Returns whether anything actually moved.
+    /// </summary>
+    static bool ApplyOrder<T>(ObservableCollection<T> collection, IReadOnlyList<string> order,
+        Func<T, string> key, PropertyChangedEventHandler? handler)
+    {
+        var rank = order.Select((name, i) => (name, i)).ToDictionary(t => t.name, t => t.i, StringComparer.Ordinal);
+        var reordered = collection
+            .Select((item, i) => (item, rankKey: rank.TryGetValue(key(item), out var r) ? r : int.MaxValue, original: i))
+            .OrderBy(t => t.rankKey)
+            .ThenBy(t => t.original) // stable for the untidied tail
+            .Select(t => t.item)
+            .ToList();
+
+        if (reordered.SequenceEqual(collection)) return false;
+
+        if (handler is not null)
+            foreach (var item in collection)
+                if (item is INotifyPropertyChanged npc) npc.PropertyChanged -= handler;
+        collection.Clear();
+        foreach (var item in reordered)
+        {
+            if (handler is not null && item is INotifyPropertyChanged npc) npc.PropertyChanged += handler;
+            collection.Add(item);
+        }
+        return true;
     }
 
     void ReindexPortPreviews()
@@ -633,6 +702,44 @@ public partial class StacksViewModel : PageViewModel
     private void RemoveStackRepo(string? name)
     {
         if (RepoChoices.FirstOrDefault(c => c.Name == name) is { } choice) choice.IsSelected = false;
+    }
+
+    /// <summary>
+    /// Reorder a repo box on the canvas (drag by its header). The <see cref="Bindings"/> order is the
+    /// authoritative repo order — it's what the graph draws and what save persists — so a move here
+    /// carries straight through to the saved stack. <paramref name="request"/> carries graph indices,
+    /// which map 1:1 to <see cref="Bindings"/>.
+    /// </summary>
+    [RelayCommand]
+    private void ReorderRepo(ReorderRepoRequest? request)
+    {
+        if (request is null || request.From < 0 || request.From >= Bindings.Count) return;
+        var to = Math.Clamp(request.To, 0, Bindings.Count - 1);
+        if (to == request.From) return;
+        Bindings.Move(request.From, to);
+        RebuildBuilderWiring();
+    }
+
+    /// <summary>
+    /// Reorder a port on the rail (drag by its grip). The graph's port list is the non-empty subset of
+    /// <see cref="Ports"/> in order, so we move relative to the target port's real row — keeping any
+    /// blank (not-yet-named) rows where they are. Previews reindex since they track position.
+    /// </summary>
+    [RelayCommand]
+    private void ReorderPort(ReorderPortRequest? request)
+    {
+        if (request is null) return;
+        var named = Ports.Where(p => p.Name.Trim().Length > 0).ToList();
+        if (request.From < 0 || request.From >= named.Count) return;
+        var to = Math.Clamp(request.To, 0, named.Count - 1);
+        if (to == request.From) return;
+
+        var vmFrom = Ports.IndexOf(named[request.From]);
+        var vmTo = Ports.IndexOf(named[to]);
+        if (vmFrom < 0 || vmTo < 0 || vmFrom == vmTo) return;
+        Ports.Move(vmFrom, vmTo);
+        ReindexPortPreviews();
+        RebuildBuilderWiring();
     }
 
     void OnBindingRowChanged(object? sender, PropertyChangedEventArgs e)

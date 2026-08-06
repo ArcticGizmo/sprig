@@ -19,6 +19,7 @@ public partial class CoachOverlay : UserControl
 {
     CoachViewModel? _hooked;
     Visual? _anchorRoot;
+    bool _suppressed;
 
     /// <summary>The visual anchors are resolved against — the window content. Set by the host.</summary>
     public Visual? AnchorRoot
@@ -26,6 +27,25 @@ public partial class CoachOverlay : UserControl
         get => _anchorRoot;
         set { _anchorRoot = value; Refresh(); }
     }
+
+    /// <summary>
+    /// When true this layer goes dormant — nothing drawn, nothing dimmed, no "anchor not found" — so it
+    /// can defer to another overlay. Used when the stack editor opens in its own window: the main window's
+    /// overlay steps aside so the editor window's overlay owns the coachmark while the builder is up.
+    /// </summary>
+    public bool Suppressed
+    {
+        get => _suppressed;
+        set { if (_suppressed == value) return; _suppressed = value; Refresh(); }
+    }
+
+    /// <summary>
+    /// A secondary layer only ever adds a highlight for anchors it can resolve itself (the editor window's
+    /// canvas); any other mark belongs to the primary layer, so it stays dormant rather than claiming the
+    /// "anchor not found" state. Exactly one primary (the main window's) owns whole-page steps and the
+    /// not-found fallback.
+    /// </summary>
+    public bool Secondary { get; set; }
 
     public CoachOverlay()
     {
@@ -55,7 +75,20 @@ public partial class CoachOverlay : UserControl
 
     void Reposition()
     {
-        if (DataContext is not CoachViewModel vm || !vm.IsActive || vm.Mark is not { } mark) return;
+        // No active run (or no coach bound at all): draw nothing. Hiding the layer explicitly matters when
+        // the DataContext isn't a CoachViewModel — the IsVisible={Binding IsActive} binding can't evaluate
+        // then, so without this the empty callout would linger (e.g. the editor window before a coach is
+        // attached).
+        if (DataContext is not CoachViewModel vm || !vm.IsActive || vm.Mark is not { } mark)
+        {
+            Layer.IsVisible = false;
+            return;
+        }
+
+        // Dormant: draw nothing and don't claim the mark, so another overlay (the editor window's) can.
+        if (Suppressed) { Layer.IsVisible = false; return; }
+        Layer.IsVisible = true;
+
         if (AnchorRoot is null) return;
 
         var size = Layer.Bounds.Size;
@@ -63,14 +96,13 @@ public partial class CoachOverlay : UserControl
 
         Scrim.Width = size.Width;
         Scrim.Height = size.Height;
-        // A waiting step needs the user to operate the highlighted control; an explanation step is
-        // eye-direction only and swallows every click but the callout's, so it can't be clicked away from.
-        Scrim.Interactive = mark.IsWaiting;
 
         // A whole-page step (no anchor) deliberately dims everything and centres the callout — an
-        // opening/closing beat that isn't about one control. Not a failure, so no warning.
+        // opening/closing beat that isn't about one control. A secondary layer never owns these (the
+        // primary does), so it stays dormant. Not a failure, so no warning.
         if (mark.Anchor is null)
         {
+            if (Secondary) { Layer.IsVisible = false; return; }
             vm.AnchorMissing = false;
             Scrim.Hole = default;
             Place(Centre(size));
@@ -79,8 +111,13 @@ public partial class CoachOverlay : UserControl
 
         if (!AnchorResolver.TryResolve(AnchorRoot, mark.Anchor, out var target))
         {
-            // Nothing to point at, but a step said there should be: dim everything, centre the callout, and
-            // flag it rather than pointing at an arbitrary corner. The tests turn this state into a failure.
+            // A secondary layer (the editor window's) only ever adds a highlight for anchors it owns; a
+            // mark it can't resolve belongs to the primary, so it goes dormant without claiming the
+            // "not found" state — otherwise it would clobber the primary's correct resolution.
+            if (Secondary) { Layer.IsVisible = false; return; }
+
+            // Primary, nothing to point at but a step said there should be: dim everything, centre the
+            // callout, and flag it rather than pointing at an arbitrary corner. The tests fail on this.
             vm.AnchorMissing = true;
             Scrim.Hole = default;
             Place(Centre(size));

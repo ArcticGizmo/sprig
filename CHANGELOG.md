@@ -9,6 +9,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.9] - 2026-08-06
+
+### Added
+- **Drag to reorder sources and repos** on the wiring canvas — the order sticks.
+- **"Tidy" button** — reorders sources and repos to cut cable crossings.
+- **Hover a repo to dim everything it isn't wired to** — a busy stack, untangled at a glance.
+
+### Changed
+- **The stack editor opens in a resizable window** — the canvas grows with it, not a cramped overlay.
+- **Guided coachmarks block click-through** — advance with their own buttons, not the UI underneath.
+
+---
+
 ## [v0.4.8] - 2026-08-06
 
 ### Fixed

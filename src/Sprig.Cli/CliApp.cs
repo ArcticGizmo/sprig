@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sprig.Core.Compose;
@@ -48,6 +49,7 @@ public static class CliApp
         {
             return command switch
             {
+                "open" => Open(rest),
                 "create" => Create(svc, resolver, stacks, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
@@ -69,6 +71,37 @@ public static class CliApp
             Console.Error.WriteLine($"error: {ex.Message}");
             return 1;
         }
+    }
+
+    // Launch the desktop app (sprig-gui) that ships alongside the CLI — the escape hatch to the GUI
+    // when you want something more granular than the terminal offers. Detaches (UseShellExecute, no
+    // wait) so the terminal is handed straight back, exactly as if you'd double-clicked the app.
+    static int Open(string[] args)
+    {
+        var exe = LocateGui() ?? throw new FileNotFoundException(
+            "could not find the sprig app (sprig-gui). Install sprig via the installer so both " +
+            "ship together, or build Sprig.App alongside the CLI.");
+
+        Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
+        Console.WriteLine("opening sprig…");
+        return 0;
+    }
+
+    // In the Velopack package sprig-gui(.exe) sits in the same directory as sprig(.exe), so look
+    // beside ourselves first. Failing that (a dev build, where each project has its own bin output),
+    // swap the Sprig.Cli segment of our path for Sprig.App — same bin/<config>/<tfm> layout either
+    // side — and probe there. Covers both worlds with no env var or config to set.
+    static string? LocateGui()
+    {
+        var exeName = OperatingSystem.IsWindows() ? "sprig-gui.exe" : "sprig-gui";
+        var baseDir = AppContext.BaseDirectory;
+
+        foreach (var dir in new[] { baseDir, baseDir.Replace("Sprig.Cli", "Sprig.App") })
+        {
+            var candidate = Path.Combine(dir, exeName);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
     }
 
     static int Create(WorkspaceService svc, StackResolver resolver, StackStore stacks, string[] args, bool json)
@@ -457,6 +490,7 @@ public static class CliApp
                 sprig <command> [options] [--json]
 
             COMMANDS:
+                open                          Launch the sprig desktop app
                 create <name> --stack <s> | --repo <path>   Create an isolated workspace
                               [--only a,b | --without c]   Partial workspace: a subset of the
                                                            stack's repos (ports left with no

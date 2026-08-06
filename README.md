@@ -102,7 +102,8 @@ differ per module.
 ## Quick start (CLI)
 
 The terminal covers everything the app does. The installer puts `sprig` on your PATH (or run it from a
-source build with `dotnet run --project src/Sprig.Cli --`). Then:
+source build with `dotnet run --project src/Sprig.Cli --`). Prefer the GUI for something more
+hands-on? `sprig open` launches the desktop app. Then:
 
 ```sh
 # 1. Register the repos you want to isolate (reads each repo's committed .sprig.json)

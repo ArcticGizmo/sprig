@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.4] - 2026-08-06
+
+### Added
+- **`sprig open`** — launch the desktop app from the terminal, for when you want something more hands-on.
+
+---
+
 ## [v0.4.3] - 2026-08-06
 
 ### Added

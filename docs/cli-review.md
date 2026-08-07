@@ -69,7 +69,7 @@ Ordered by value-for-effort. Checked off as landed on the `cli` branch.
 - [x] **2. `--json` consistency** — honour `--json` across every command
   (mutating ones emit a small `{ ok: true, … }` payload); fix `stack show`
   emitting JSON regardless of the flag.
-- [ ] **3. Parity commands** — add `sprig settings` (view/set port range +
+- [x] **3. Parity commands** — add `sprig settings` (view/set port range +
   restricted ports) and `stack edit` (re-save an existing stack, subject to the
   same dependent-workspace guard).
 - [ ] **4. Retire `templates`** — drop the redundant command (fold into

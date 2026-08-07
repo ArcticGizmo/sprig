@@ -23,9 +23,13 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Workspace name")]
-        public string Name { get; set; } = "";
+        [CommandArgument(0, "[name]")]
+        [Description("Workspace name (omit with -i)")]
+        public string? Name { get; set; }
+
+        [CommandOption("-i|--interactive")]
+        [Description("Pick stack, repos, modules and name interactively")]
+        public bool Interactive { get; set; }
 
         [CommandOption("--stack <name>")]
         [Description("Create from a named stack")]
@@ -46,27 +50,57 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var only = CliFormat.SplitList(s.Only);
-        var without = CliFormat.SplitList(s.Without);
+        if (s.Interactive && s.Json)
+            throw new ArgumentException("-i is interactive — it can't be combined with --json");
 
-        if ((only.Count > 0 || without.Count > 0) && s.Stack is null)
-            throw new ArgumentException("--only/--without narrow a stack — they need --stack <name>");
+        // A console bound straight to real stdout: both the prompts and the live checklist need to
+        // drive the cursor, which throws on a redirected handle. (The shared console is late-bound for
+        // tests, so never reads as interactive.) `ws create` is never driven by the in-process tests.
+        var console = CreateConsole();
 
-        // Resolve + plan up front so pre-flight problems (bad name, duplicate, unknown repo) surface
-        // before any output — and so the checklist can list every step, pending, before work starts.
-        var resolved = s.Stack is not null
-                ? cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without))
-            : s.Repo is not null ? cli.Workspaces.ResolveSingleRepo(s.Repo)
-            : throw new ArgumentException("create requires --stack <name> or --repo <path>");
-        var plan = cli.Workspaces.PlanCreate(resolved, s.Name);
+        // Gather the target either by asking (‑i) or from the flags/positional as before.
+        ResolvedStack resolved;
+        string name;
+        if (s.Interactive)
+        {
+            if (Console.IsInputRedirected)
+                throw new ArgumentException("-i needs an interactive terminal (stdin is redirected)");
+            (resolved, name) = Prompt(console, s);
+        }
+        else
+        {
+            var only = CliFormat.SplitList(s.Only);
+            var without = CliFormat.SplitList(s.Without);
+            if ((only.Count > 0 || without.Count > 0) && s.Stack is null)
+                throw new ArgumentException("--only/--without narrow a stack — they need --stack <name>");
+            name = s.Name ?? throw new ArgumentException("create requires a workspace name (or use -i)");
+            resolved = s.Stack is not null
+                    ? cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without))
+                : s.Repo is not null ? cli.Workspaces.ResolveSingleRepo(s.Repo)
+                : throw new ArgumentException("create requires --stack <name> or --repo <path> (or use -i)");
+        }
+
+        // Plan up front so pre-flight problems (bad name, duplicate) surface before any output, and so
+        // the checklist can list every step, pending, before work starts.
+        var plan = cli.Workspaces.PlanCreate(resolved, name);
 
         // The machine path stays quiet and structured: no checklist, just the record as JSON.
-        if (s.Json) { CliOutput.Json(cli.Workspaces.Create(resolved, s.Name)); return 0; }
+        if (s.Json) { CliOutput.Json(cli.Workspaces.Create(resolved, name)); return 0; }
 
-        // The live checklist needs a console bound straight to real stdout: it moves the cursor, which
-        // throws on a redirected/piped handle. The shared console can't (it's late-bound for tests, so
-        // never reads as interactive) — so build a direct one and let it decide whether the terminal
-        // can animate. Only `ws create` needs this, and it's never driven by the in-process tests.
+        console.MarkupLine($"[bold]Creating workspace[/] [green]{Markup.Escape(name)}[/]" +
+            (resolved.StackName is { } st ? $" [dim]from stack {Markup.Escape(st)}[/]" : ""));
+
+        var rows = plan.Select(p => new StepRow(p.Id, p.Label, p.SubStep)).ToList();
+        var record = console.Profile.Capabilities.Interactive
+            ? RunLive(console, resolved, name, rows)
+            : RunPlain(console, resolved, name, rows);
+
+        RenderSummary(console, record);
+        return 0;
+    }
+
+    static IAnsiConsole CreateConsole()
+    {
         var console = AnsiConsole.Create(new AnsiConsoleSettings
         {
             Ansi = AnsiSupport.Detect,
@@ -74,19 +108,83 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
             Out = new AnsiConsoleOutput(Console.Out),
         });
         // Redirected: detection assumes 80 cols and wraps long worktree paths; widen it. Interactive:
-        // keep the real terminal width so the live checklist lays out correctly.
+        // keep the real terminal width so the live checklist and prompts lay out correctly.
         if (Console.IsOutputRedirected) console.Profile.Width = 200;
+        return console;
+    }
 
-        console.MarkupLine($"[bold]Creating workspace[/] [green]{Markup.Escape(s.Name)}[/]" +
-            (resolved.StackName is { } st ? $" [dim]from stack {Markup.Escape(st)}[/]" : ""));
+    // The `-i` flow: pick a stack, choose its repos and each repo's modules (all selected by default),
+    // then name the workspace. Repos are narrowed via the resolver; modules are narrowed by rewriting
+    // each repo's config so only the chosen ones remain in EffectiveModules.
+    (ResolvedStack resolved, string name) Prompt(IAnsiConsole console, Settings s)
+    {
+        var allStacks = cli.Stacks.List();
+        if (allStacks.Count == 0)
+            throw new ArgumentException("no stacks defined — create one with 'sprig stack create' first");
 
-        var rows = plan.Select(p => new StepRow(p.Id, p.Label, p.SubStep)).ToList();
-        var record = console.Profile.Capabilities.Interactive
-            ? RunLive(console, resolved, s.Name, rows)
-            : RunPlain(console, resolved, s.Name, rows);
+        var stackName = s.Stack is { } preset
+            ? (cli.Stacks.Get(preset) is not null ? preset : throw new ArgumentException($"unknown stack '{preset}'"))
+            : allStacks.Count == 1
+                ? allStacks[0].Name
+                : console.Prompt(new SelectionPrompt<string>()
+                    .Title("Select a [green]stack[/]:")
+                    .PageSize(12)
+                    .AddChoices(allStacks.Select(x => x.Name)));
 
-        RenderSummary(console, record);
-        return 0;
+        var stack = cli.Stacks.Get(stackName)!;
+
+        // Repos — all pre-selected; Required() blocks submitting an empty set.
+        var repos = stack.Repos.Count <= 1
+            ? stack.Repos.ToList()
+            : console.Prompt(PreselectAll(new MultiSelectionPrompt<string>()
+                    .Title($"Which [green]repos[/] from [bold]{Markup.Escape(stackName)}[/]?")
+                    .Required()
+                    .PageSize(12)
+                    .InstructionsText("[grey](space toggles, enter accepts — all selected by default)[/]")
+                    .AddChoices(stack.Repos), stack.Repos));
+
+        var resolved = cli.Resolver.Resolve(stackName, repos.Count == stack.Repos.Count ? null : repos);
+
+        // Modules per repo — only worth asking when a repo has more than one.
+        var narrowed = new List<ResolvedRepo>();
+        foreach (var repo in resolved.Repos)
+        {
+            var modules = repo.Config.EffectiveModules;
+            if (modules.Count <= 1) { narrowed.Add(repo); continue; }
+
+            var names = modules.Select(m => m.Name).ToList();
+            var chosen = console.Prompt(PreselectAll(new MultiSelectionPrompt<string>()
+                .Title($"Which [green]modules[/] of [bold]{Markup.Escape(repo.Name)}[/]?")
+                .Required()
+                .PageSize(12)
+                .InstructionsText("[grey](space toggles, enter accepts)[/]")
+                .AddChoices(names), names));
+
+            if (chosen.Count == modules.Count) { narrowed.Add(repo); continue; }
+            var keep = new HashSet<string>(chosen, StringComparer.Ordinal);
+            var kept = modules.Where(m => keep.Contains(m.Name)).ToList();
+            // Rewrite the config so EffectiveModules is exactly the chosen set: put them in Modules and
+            // clear the legacy flat fields (which would otherwise synthesise a root module back in).
+            narrowed.Add(repo with { Config = repo.Config with { Modules = kept, Env = null, Compose = null, Setup = null } });
+        }
+        resolved = resolved with { Repos = narrowed };
+
+        var namePrompt = new TextPrompt<string>("Workspace [green]name[/]:")
+            .Validate(n =>
+                string.IsNullOrWhiteSpace(n) ? ValidationResult.Error("a name is required")
+                : cli.Workspaces.Get(n.Trim()) is not null ? ValidationResult.Error($"workspace '{n.Trim()}' already exists")
+                : ValidationResult.Success());
+        if (!string.IsNullOrWhiteSpace(s.Name)) namePrompt.DefaultValue(s.Name!);
+        var name = console.Prompt(namePrompt).Trim();
+
+        return (resolved, name);
+    }
+
+    // Pre-select every choice so the default is "use everything" — the common case.
+    static MultiSelectionPrompt<string> PreselectAll(MultiSelectionPrompt<string> prompt, IEnumerable<string> items)
+    {
+        foreach (var item in items) prompt.Select(item);
+        return prompt;
     }
 
     // A live checklist: every step shows up front (pending), then ticks over to running → done/warning

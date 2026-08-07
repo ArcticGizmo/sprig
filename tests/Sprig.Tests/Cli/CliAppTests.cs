@@ -113,8 +113,26 @@ public sealed class CliAppTests : IDisposable
     [Fact]
     public void Ws_create_without_a_name_fails()
     {
-        // A required argument is enforced by the framework — no name, no run.
-        var (exit, _, _) = Run("ws", "create");
+        // The name argument is optional (so -i can omit it), but a non-interactive create still needs one.
+        var (exit, _, err) = Run("ws", "create");
+        Assert.Equal(1, exit);
+        Assert.Contains("requires a workspace name", err);
+    }
+
+    [Fact]
+    public void Interactive_create_rejects_json()
+    {
+        // -i drives prompts; pairing it with the machine-output flag is nonsense, so it's refused up front.
+        var (exit, o, _) = Run("ws", "create", "-i", "--json");
+        Assert.Equal(1, exit);
+        Assert.Contains("\"ok\": false", o);
+    }
+
+    [Fact]
+    public void Interactive_create_refuses_without_a_terminal()
+    {
+        // Under the test host stdin isn't a terminal, so -i must bail (never block waiting on a prompt).
+        var (exit, _, _) = Run("ws", "create", "-i");
         Assert.Equal(1, exit);
     }
 

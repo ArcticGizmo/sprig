@@ -72,7 +72,7 @@ Ordered by value-for-effort. Checked off as landed on the `cli` branch.
 - [x] **3. Parity commands** — add `sprig settings` (view/set port range +
   restricted ports) and `stack edit` (re-save an existing stack, subject to the
   same dependent-workspace guard).
-- [ ] **4. Retire `templates`** — drop the redundant command (fold into
+- [x] **4. Retire `templates`** — drop the redundant command (fold into
   `stack ls`).
 - [ ] **5. Harden arg parsing + tests** — support `--flag=value` and `--`,
   detect unknown flags, fix the subcommand-filtering edge; add CLI

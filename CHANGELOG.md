@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [v0.4.11] - 2026-08-07
+## [v0.5.0] - 2026-08-07
 
 ### Added
 - **`sprig settings`** — view and set the port range and restricted ports from the terminal.

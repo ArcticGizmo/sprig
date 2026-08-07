@@ -17,7 +17,8 @@ using Sprig.Core.Workspaces;
 
 namespace Sprig.Cli;
 
-/// <summary>The dev-harness command dispatcher over Sprig.Core (M2 surface: create/ls/info/rm/reconcile).</summary>
+/// <summary>The command dispatcher over Sprig.Core — the CLI's whole surface. A supported,
+/// shipped front-end (not a dev-only harness); <c>--json</c> output is a stability contract.</summary>
 public static class CliApp
 {
     public static int Run(string[] args)
@@ -493,7 +494,7 @@ public static class CliApp
     static int Help()
     {
         Console.WriteLine($"""
-            sprig {Version()} — worktree + infrastructure isolation (dev harness)
+            sprig {Version()} — worktree + infrastructure isolation
 
             USAGE:
                 sprig <command> [options] [--json]

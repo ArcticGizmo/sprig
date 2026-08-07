@@ -23,6 +23,14 @@ public static class CliApp
 {
     public static int Run(string[] args)
     {
+        // SPRIG_STORE points the central store somewhere other than %LOCALAPPDATA%\sprig — useful for
+        // running against a throwaway store and the seam the CLI tests drive the dispatcher through.
+        var root = Environment.GetEnvironmentVariable("SPRIG_STORE");
+        return Run(args, new SprigPaths(string.IsNullOrWhiteSpace(root) ? null : root));
+    }
+
+    internal static int Run(string[] args, ISprigPaths paths)
+    {
         var json = Args.TakeFlag(ref args, "--json");
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
             return Help();
@@ -32,7 +40,6 @@ public static class CliApp
             return 0;
         }
 
-        var paths = new SprigPaths();
         var runner = new ProcessRunner();
         var git = new GitService(runner);
         var ports = new FilePortStore(paths, new FileSettingsStore(paths));
@@ -63,6 +70,7 @@ public static class CliApp
                 "reconcile" or "doctor" => Reconcile(reconciler, rest, json),
                 "repo" => Repo(registry, rest, json),
                 "stack" => Stack(stacks, rest, json),
+                "settings" or "config" => Settings(new FileSettingsStore(paths), rest, json),
                 "templates" => Templates(stacks, json),
                 "init" => Init(git, registry, rest, json),
                 _ => Unknown(command),
@@ -235,14 +243,38 @@ public static class CliApp
                 var portList = Args.TakeAll(ref tail, "--port");
                 var bindings = ParseBindings(Args.TakeAll(ref tail, "--bind"));
                 var name = Args.FirstPositional(tail) ?? throw new ArgumentException("stack create requires a name");
-                stacks.Save(new StackDefinition
+                if (stacks.Get(name) is not null)
+                    throw new ArgumentException($"stack '{name}' already exists — use 'stack edit {name}' to change it");
+                var created = new StackDefinition
                 {
                     Name = name,
                     Repos = reposCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
                     Ports = portList,
                     Bindings = bindings,
-                });
+                };
+                // Populate the shared-port overlay from the bindings so a CLI-built stack shows its
+                // shares in the app (and passes the store's share/binding consistency check).
+                stacks.Save(created with { Shares = StackMigration.DeriveShares(created) });
                 return Ok(json, $"created stack '{name}'", new { ok = true, name, action = "create" });
+            case "edit":
+                var editName = Args.FirstPositional(tail) ?? throw new ArgumentException("stack edit requires a name");
+                var current = stacks.Get(editName)
+                    ?? throw new ArgumentException($"unknown stack '{editName}' — use 'stack create' to make one");
+                var reposOpt = Args.TakeOption(ref tail, "--repos");
+                var portsOpt = Args.TakeAll(ref tail, "--port");
+                var bindOpt = ParseBindings(Args.TakeAll(ref tail, "--bind"));
+                // Each facet is replaced only if its flag was supplied; bindings merge onto the
+                // existing set (a repeated input overrides, others are kept). Shares are re-derived.
+                var edited = current with
+                {
+                    Repos = reposOpt is not null
+                        ? reposOpt.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        : current.Repos,
+                    Ports = portsOpt.Count > 0 ? portsOpt : current.Ports,
+                    Bindings = MergeBindings(current.Bindings, bindOpt),
+                };
+                stacks.Save(edited with { Shares = StackMigration.DeriveShares(edited) });
+                return Ok(json, $"updated stack '{editName}'", new { ok = true, name = editName, action = "edit" });
             case "ls":
                 var all = stacks.List();
                 if (json) { WriteJson(all); return 0; }
@@ -269,7 +301,7 @@ public static class CliApp
                 var imported = stacks.Import(importPath);
                 return Ok(json, $"imported stack '{imported.Name}'", new { ok = true, name = imported.Name, action = "import" });
             default:
-                Console.Error.WriteLine($"unknown stack subcommand '{sub}' (create|ls|show|rm|export|import)");
+                Console.Error.WriteLine($"unknown stack subcommand '{sub}' (create|edit|ls|show|rm|export|import)");
                 return 1;
         }
     }
@@ -355,6 +387,78 @@ public static class CliApp
         }
         return raw.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value);
     }
+
+    // Overlay override bindings onto the existing set: a repo/input present in both takes the new
+    // expression; everything else is kept. Removal isn't expressed here — redefine with create instead.
+    static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> MergeBindings(
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> existing,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> overrides)
+    {
+        var merged = existing.ToDictionary(
+            kv => kv.Key,
+            kv => new Dictionary<string, string>(kv.Value.ToDictionary(x => x.Key, x => x.Value)));
+        foreach (var repo in overrides)
+        {
+            if (!merged.TryGetValue(repo.Key, out var inputs))
+                merged[repo.Key] = inputs = new Dictionary<string, string>();
+            foreach (var input in repo.Value) inputs[input.Key] = input.Value;
+        }
+        return merged.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value);
+    }
+
+    static int Settings(ISettingsStore store, string[] args, bool json)
+    {
+        var sub = Args.FirstPositional(args) ?? "show";
+        var tail = args.Where(a => a != sub).ToArray();
+        var current = store.Get();
+        switch (sub)
+        {
+            case "show":
+                // Project just the port-allocation policy — the app-internal fields (changelog
+                // flags, completed guides, …) aren't the CLI's contract and would only leak.
+                if (json)
+                {
+                    WriteJson(new
+                    {
+                        portRangeStart = current.PortRangeStart,
+                        portRangeEndExclusive = current.PortRangeEndExclusive,
+                        restrictedPorts = current.RestrictedPorts,
+                    });
+                    return 0;
+                }
+                Console.WriteLine($"port range:       {current.PortRangeStart}..{current.PortRangeEndExclusive} (end exclusive)");
+                Console.WriteLine($"restricted ports: {(current.RestrictedPorts.Count == 0 ? "-" : string.Join(", ", current.RestrictedPorts))}");
+                return 0;
+            case "set":
+                var start = Args.TakeOption(ref tail, "--start");
+                var end = Args.TakeOption(ref tail, "--end");
+                var restrict = Args.TakeList(ref tail, "--restrict");
+                var unrestrict = Args.TakeList(ref tail, "--unrestrict");
+
+                var updated = current.Clone();
+                if (start is not null) updated.PortRangeStart = ParsePort(start, "--start");
+                if (end is not null) updated.PortRangeEndExclusive = ParsePort(end, "--end");
+                var ports = new SortedSet<int>(updated.RestrictedPorts);
+                foreach (var p in restrict) ports.Add(ParsePort(p, "--restrict"));
+                foreach (var p in unrestrict) ports.Remove(ParsePort(p, "--unrestrict"));
+                updated.RestrictedPorts = ports.ToList();
+
+                store.Save(updated); // validates the range and restricted ports
+                return Ok(json, "settings updated", new
+                {
+                    ok = true,
+                    portRangeStart = updated.PortRangeStart,
+                    portRangeEndExclusive = updated.PortRangeEndExclusive,
+                    restrictedPorts = updated.RestrictedPorts,
+                });
+            default:
+                Console.Error.WriteLine($"unknown settings subcommand '{sub}' (show|set)");
+                return 1;
+        }
+    }
+
+    static int ParsePort(string value, string flag)
+        => int.TryParse(value, out var n) ? n : throw new ArgumentException($"{flag} must be a number, got '{value}'");
 
     static int Templates(StackStore stacks, bool json)
     {
@@ -567,7 +671,10 @@ public static class CliApp
                 init [--repo <path>] [--print] [--force] [--register]   Detect & propose .sprig.json
                 repo add <path> [--name x]    Register a repo (also: repo ls, repo rm <name>)
                 stack create <name> --repos a,b [--port p] [--bind repo:input=expr]   Define a stack
+                stack edit <name> [--repos a,b] [--port p] [--bind repo:input=expr]   Amend a stack
                 stack ls | show <name> | rm <name> | export <name> <path> | import <path>
+                settings [show]               Show port range and restricted ports
+                settings set [--start N] [--end N] [--restrict a,b] [--unrestrict a,b]
                 templates                     List stacks and their repos
 
             OPTIONS:

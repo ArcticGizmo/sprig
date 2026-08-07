@@ -139,13 +139,17 @@ sprig stack create web+api --repos my-frontend,my-api \
   --bind my-api:port=${sprig.ports.api_port} \
   --bind my-api:dbPort=${sprig.ports.postgres_port}
 
-sprig stack ls                # list stacks
-sprig stack show web+api      # dump one stack's JSON
+sprig stack ls                # list stacks and their repos
+sprig stack show web+api      # dump one stack (add --json for the raw record)
+sprig stack edit web+api --port cache_port --bind my-api:cachePort=${sprig.ports.cache_port}
 sprig stack rm web+api
 sprig stack export web+api C:\tmp\web+api.json   # share via file
 sprig stack import C:\tmp\web+api.json
-sprig templates               # stacks + their repos
 ```
+
+`stack edit` amends an existing stack in place — each of `--repos`/`--port`/`--bind`
+replaces or merges its part, leaving the rest untouched (the store still refuses to
+change a stack that live workspaces were built from).
 
 ### 3. Create a workspace
 
@@ -195,6 +199,17 @@ sprig rm feature-x --yes --force    # also deletes the sprig--feature-x branch (
 ```
 
 Teardown walks each layer independently and idempotently, so an interrupted teardown is resumable.
+
+### 6. Settings
+
+```sh
+sprig settings                                   # show the port range and restricted ports
+sprig settings set --start 8000 --end 9000       # the range sprig allocates from (end exclusive)
+sprig settings set --restrict 8500 --unrestrict 8600   # never/again allocate specific ports
+```
+
+The same port-allocation policy the app's **Settings** screen edits; `--start`/`--end` set the
+range, `--restrict`/`--unrestrict` add and remove individual ports.
 
 ---
 

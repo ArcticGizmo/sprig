@@ -71,7 +71,6 @@ public static class CliApp
                 "repo" => Repo(registry, rest, json),
                 "stack" => Stack(stacks, rest, json),
                 "settings" or "config" => Settings(new FileSettingsStore(paths), rest, json),
-                "templates" => Templates(stacks, json),
                 "init" => Init(git, registry, rest, json),
                 _ => Unknown(command),
             };
@@ -460,16 +459,6 @@ public static class CliApp
     static int ParsePort(string value, string flag)
         => int.TryParse(value, out var n) ? n : throw new ArgumentException($"{flag} must be a number, got '{value}'");
 
-    static int Templates(StackStore stacks, bool json)
-    {
-        var all = stacks.List();
-        if (json) { WriteJson(all); return 0; }
-        if (all.Count == 0) { Console.WriteLine("no templates (stacks) defined"); return 0; }
-        Console.WriteLine($"{"TEMPLATE",-20} REPOS");
-        foreach (var s in all) Console.WriteLine($"{s.Name,-20} {string.Join(", ", s.Repos)}");
-        return 0;
-    }
-
     static int Ls(WorkspaceService svc, bool json)
     {
         var all = svc.List();
@@ -675,7 +664,6 @@ public static class CliApp
                 stack ls | show <name> | rm <name> | export <name> <path> | import <path>
                 settings [show]               Show port range and restricted ports
                 settings set [--start N] [--end N] [--restrict a,b] [--unrestrict a,b]
-                templates                     List stacks and their repos
 
             OPTIONS:
                 --json           Machine-readable output

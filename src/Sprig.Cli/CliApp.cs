@@ -55,10 +55,10 @@ public static class CliApp
                 "create" => Create(svc, resolver, stacks, rest, json),
                 "ls" => Ls(svc, json),
                 "info" => Info(svc, reconciler, rest, json),
-                "rm" or "remove" => Rm(svc, rest),
-                "up" => Up(svc, rest),
-                "down" => Down(svc, rest),
-                "reset" => Reset(svc, rest),
+                "rm" or "remove" => Rm(svc, rest, json),
+                "up" => Up(svc, rest, json),
+                "down" => Down(svc, rest, json),
+                "reset" => Reset(svc, rest, json),
                 "status" => Status(svc, rest, json),
                 "reconcile" or "doctor" => Reconcile(reconciler, rest, json),
                 "repo" => Repo(registry, rest, json),
@@ -70,7 +70,10 @@ public static class CliApp
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"error: {ex.Message}");
+            // Machine callers get a parseable failure ({ ok: false, error }); humans get the same
+            // message on stderr. Either way the exit code is 1 — the primary signal for scripts.
+            if (json) WriteJson(new { ok = false, error = ex.Message });
+            else Console.Error.WriteLine($"error: {ex.Message}");
             return 1;
         }
     }
@@ -202,8 +205,8 @@ public static class CliApp
                 var name = Args.TakeOption(ref tail, "--name");
                 var path = Args.FirstPositional(tail) ?? throw new ArgumentException("repo add requires a path");
                 var added = registry.Add(path, name);
-                Console.WriteLine($"registered '{added.Name}' -> {added.Path}");
-                return 0;
+                return Ok(json, $"registered '{added.Name}' -> {added.Path}",
+                    new { ok = true, name = added.Name, path = added.Path });
             case "ls":
                 var repos = registry.List();
                 if (json) { WriteJson(repos); return 0; }
@@ -213,8 +216,7 @@ public static class CliApp
             case "rm":
                 var target = Args.FirstPositional(tail) ?? throw new ArgumentException("repo rm requires a name");
                 registry.Remove(target);
-                Console.WriteLine($"unregistered '{target}'");
-                return 0;
+                return Ok(json, $"unregistered '{target}'", new { ok = true, name = target, action = "remove" });
             default:
                 Console.Error.WriteLine($"unknown repo subcommand '{sub}' (add|ls|rm)");
                 return 1;
@@ -240,8 +242,7 @@ public static class CliApp
                     Ports = portList,
                     Bindings = bindings,
                 });
-                Console.WriteLine($"created stack '{name}'");
-                return 0;
+                return Ok(json, $"created stack '{name}'", new { ok = true, name, action = "create" });
             case "ls":
                 var all = stacks.List();
                 if (json) { WriteJson(all); return 0; }
@@ -251,23 +252,22 @@ public static class CliApp
             case "show":
                 var showName = Args.FirstPositional(tail) ?? throw new ArgumentException("stack show requires a name");
                 var stack = stacks.Get(showName) ?? throw new ArgumentException($"unknown stack '{showName}'");
-                WriteJson(stack);
+                if (json) { WriteJson(stack); return 0; }
+                PrintStack(stack);
                 return 0;
             case "rm":
                 var rmName = Args.FirstPositional(tail) ?? throw new ArgumentException("stack rm requires a name");
                 stacks.Remove(rmName);
-                Console.WriteLine($"removed stack '{rmName}'");
-                return 0;
+                return Ok(json, $"removed stack '{rmName}'", new { ok = true, name = rmName, action = "remove" });
             case "export":
                 var exp = tail.Where(a => !a.StartsWith('-')).ToArray();
                 if (exp.Length < 2) throw new ArgumentException("stack export requires <name> <path>");
-                Console.WriteLine($"exported to {stacks.Export(exp[0], exp[1])}");
-                return 0;
+                var dest = stacks.Export(exp[0], exp[1]);
+                return Ok(json, $"exported to {dest}", new { ok = true, name = exp[0], path = dest });
             case "import":
                 var importPath = Args.FirstPositional(tail) ?? throw new ArgumentException("stack import requires a path");
                 var imported = stacks.Import(importPath);
-                Console.WriteLine($"imported stack '{imported.Name}'");
-                return 0;
+                return Ok(json, $"imported stack '{imported.Name}'", new { ok = true, name = imported.Name, action = "import" });
             default:
                 Console.Error.WriteLine($"unknown stack subcommand '{sub}' (create|ls|show|rm|export|import)");
                 return 1;
@@ -295,36 +295,45 @@ public static class CliApp
         var proposal = new InitInspector(git).Inspect(root);
         var text = JsonSerializer.Serialize(proposal.Config, ConfigJsonOptions);
 
-        if (json) { WriteJson(proposal); return 0; }
-
-        foreach (var note in proposal.Notes)
-            Console.WriteLine($"note: {note}");
-
+        // --print previews without touching disk — the one read-only path. --json pairs with it to
+        // get the proposal as a machine object; without --print, --json reports the write instead.
         if (print)
         {
-            Console.WriteLine(text);
+            if (json) WriteJson(proposal);
+            else
+            {
+                foreach (var note in proposal.Notes)
+                    Console.WriteLine($"note: {note}");
+                Console.WriteLine(text);
+            }
             return 0;
         }
 
         var target = Path.Combine(root, ".sprig.json");
         if (File.Exists(target) && !force)
         {
-            Console.Error.WriteLine($".sprig.json already exists at {target} — pass --force to overwrite, or --print to preview");
+            var msg = $".sprig.json already exists at {target} — pass --force to overwrite, or --print to preview";
+            if (json) WriteJson(new { ok = false, error = msg });
+            else Console.Error.WriteLine(msg);
             return 1;
         }
 
         File.WriteAllText(target, text + "\n");
-        Console.WriteLine($"wrote {target}");
+        var registered = register ? registry.Add(root).Name : null;
 
-        if (register)
+        if (json)
         {
-            var added = registry.Add(root);
-            Console.WriteLine($"registered '{added.Name}'");
+            WriteJson(new { ok = true, path = target, registered, notes = proposal.Notes });
+            return 0;
         }
+
+        foreach (var note in proposal.Notes)
+            Console.WriteLine($"note: {note}");
+        Console.WriteLine($"wrote {target}");
+        if (registered is not null)
+            Console.WriteLine($"registered '{registered}'");
         else
-        {
             Console.WriteLine($"next: sprig repo add \"{root}\"   (then add it to a stack, or: sprig create <name> --repo \"{root}\")");
-        }
         return 0;
     }
 
@@ -395,44 +404,44 @@ public static class CliApp
         return 0;
     }
 
-    static int Rm(WorkspaceService svc, string[] args)
+    static int Rm(WorkspaceService svc, string[] args, bool json)
     {
         var force = Args.TakeFlag(ref args, "--force");
         var yes = Args.TakeFlag(ref args, "--yes");
         var workspace = Args.FirstPositional(args) ?? throw new ArgumentException("rm requires a workspace name");
         if (!yes)
         {
-            Console.Error.WriteLine($"refusing to remove '{workspace}' without --yes");
+            var msg = $"refusing to remove '{workspace}' without --yes";
+            if (json) WriteJson(new { ok = false, error = msg });
+            else Console.Error.WriteLine(msg);
             return 1;
         }
         svc.Remove(workspace, force);
-        Console.WriteLine($"removed '{workspace}'{(force ? " (including branch)" : "")}");
-        return 0;
+        return Ok(json, $"removed '{workspace}'{(force ? " (including branch)" : "")}",
+            new { ok = true, workspace, action = "remove", branchDeleted = force });
     }
 
-    static int Up(WorkspaceService svc, string[] args)
+    static int Up(WorkspaceService svc, string[] args, bool json)
     {
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("up requires a workspace name");
         svc.Up(ws);
-        Console.WriteLine($"infra up for '{ws}'");
-        return 0;
+        return Ok(json, $"infra up for '{ws}'", new { ok = true, workspace = ws, action = "up" });
     }
 
-    static int Down(WorkspaceService svc, string[] args)
+    static int Down(WorkspaceService svc, string[] args, bool json)
     {
         var volumes = Args.TakeFlag(ref args, "--volumes");
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("down requires a workspace name");
         svc.Down(ws, volumes);
-        Console.WriteLine($"infra down for '{ws}'{(volumes ? " (volumes removed)" : "")}");
-        return 0;
+        return Ok(json, $"infra down for '{ws}'{(volumes ? " (volumes removed)" : "")}",
+            new { ok = true, workspace = ws, action = "down", volumesRemoved = volumes });
     }
 
-    static int Reset(WorkspaceService svc, string[] args)
+    static int Reset(WorkspaceService svc, string[] args, bool json)
     {
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("reset requires a workspace name");
         svc.Reset(ws);
-        Console.WriteLine($"infra reset for '{ws}'");
-        return 0;
+        return Ok(json, $"infra reset for '{ws}'", new { ok = true, workspace = ws, action = "reset" });
     }
 
     static int Status(WorkspaceService svc, string[] args, bool json)
@@ -455,8 +464,22 @@ public static class CliApp
             ? reconciler.InspectAll()
             : reconciler.Inspect(one) is { } r ? [r] : throw new ArgumentException($"unknown workspace '{one}'");
 
-        if (json) { WriteJson(reports); }
-        else if (reports.Count == 0) Console.WriteLine("no workspaces to check");
+        // Run repairs first (when asked) so both output paths can report what was done — the JSON
+        // path folds them into one object rather than trailing plain text after the blob.
+        var repairs = repair
+            ? reports.Where(r => r.HasDrift)
+                .Select(r => new { workspace = r.Workspace, actions = reconciler.Repair(r.Workspace) })
+                .ToList()
+            : null;
+
+        if (json)
+        {
+            if (repairs is null) WriteJson(reports);
+            else WriteJson(new { reports, repairs });
+            return 0;
+        }
+
+        if (reports.Count == 0) Console.WriteLine("no workspaces to check");
         else
             foreach (var report in reports)
             {
@@ -466,9 +489,9 @@ public static class CliApp
                     Console.WriteLine($"    {repo.RepoName}: {repo.State}  ({repo.WorktreePath})");
             }
 
-        if (repair)
-            foreach (var report in reports.Where(r => r.HasDrift))
-                foreach (var action in reconciler.Repair(report.Workspace))
+        if (repairs is not null)
+            foreach (var fix in repairs)
+                foreach (var action in fix.actions)
                     Console.WriteLine($"repaired: {action}");
         return 0;
     }
@@ -485,8 +508,34 @@ public static class CliApp
     static string FormatKv(IReadOnlyDictionary<string, string> kv)
         => kv.Count == 0 ? "-" : string.Join("  ", kv.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
 
+    // Human-readable stack dump for `stack show` (the --json path serialises the record instead).
+    static void PrintStack(StackDefinition stack)
+    {
+        Console.WriteLine($"stack: {stack.Name}");
+        Console.WriteLine($"  repos: {string.Join(", ", stack.Repos)}");
+        Console.WriteLine($"  ports: {(stack.Ports.Count == 0 ? "-" : string.Join(", ", stack.Ports))}");
+        foreach (var repo in stack.Bindings.OrderBy(b => b.Key))
+        {
+            Console.WriteLine($"  {repo.Key}:");
+            foreach (var input in repo.Value.OrderBy(i => i.Key))
+                Console.WriteLine($"    {input.Key} = {input.Value}");
+        }
+        foreach (var share in stack.Shares)
+            Console.WriteLine($"  shared port {share.Port}: {string.Join(", ", share.Consumers.Select(c => $"{c.Repo}.{c.Input}"))}");
+    }
+
     static void WriteJson<T>(T value)
         => Console.WriteLine(JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
+
+    /// <summary>Emit a success result honouring <c>--json</c>: the machine payload when asked for,
+    /// the human line otherwise. Mutating commands route through here so <c>--json</c> is a promise
+    /// scripts can rely on everywhere, not just on the read commands.</summary>
+    static int Ok(bool json, string human, object payload)
+    {
+        if (json) WriteJson(payload);
+        else Console.WriteLine(human);
+        return 0;
+    }
 
     static string Version()
         => typeof(CliApp).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";

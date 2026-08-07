@@ -31,6 +31,7 @@ public static class CliApp
 
     internal static int Run(string[] args, ISprigPaths paths)
     {
+        args = Args.ExpandEquals(args); // normalise --flag=value before anything reads the args
         var json = Args.TakeFlag(ref args, "--json");
         if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
             return Help();
@@ -130,6 +131,7 @@ public static class CliApp
         var repo = Args.TakeOption(ref args, "--repo");
         var only = Args.TakeList(ref args, "--only");
         var without = Args.TakeList(ref args, "--without");
+        Args.RejectUnknown(args, "create");
         var workspace = Args.FirstPositional(args)
             ?? throw new ArgumentException("create requires a workspace name");
 
@@ -204,12 +206,13 @@ public static class CliApp
 
     static int Repo(RepoRegistryStore registry, string[] args, bool json)
     {
-        var sub = Args.FirstPositional(args) ?? "ls";
-        var tail = args.Where(a => a != sub).ToArray();
+        var (subOrNull, tail) = Args.TakeFirstPositional(args);
+        var sub = subOrNull ?? "ls";
         switch (sub)
         {
             case "add":
                 var name = Args.TakeOption(ref tail, "--name");
+                Args.RejectUnknown(tail, "repo add");
                 var path = Args.FirstPositional(tail) ?? throw new ArgumentException("repo add requires a path");
                 var added = registry.Add(path, name);
                 return Ok(json, $"registered '{added.Name}' -> {added.Path}",
@@ -232,8 +235,8 @@ public static class CliApp
 
     static int Stack(StackStore stacks, string[] args, bool json)
     {
-        var sub = Args.FirstPositional(args) ?? "ls";
-        var tail = args.Where(a => a != sub).ToArray();
+        var (subOrNull, tail) = Args.TakeFirstPositional(args);
+        var sub = subOrNull ?? "ls";
         switch (sub)
         {
             case "create":
@@ -241,6 +244,7 @@ public static class CliApp
                     ?? throw new ArgumentException("stack create requires --repos a,b");
                 var portList = Args.TakeAll(ref tail, "--port");
                 var bindings = ParseBindings(Args.TakeAll(ref tail, "--bind"));
+                Args.RejectUnknown(tail, "stack create");
                 var name = Args.FirstPositional(tail) ?? throw new ArgumentException("stack create requires a name");
                 if (stacks.Get(name) is not null)
                     throw new ArgumentException($"stack '{name}' already exists — use 'stack edit {name}' to change it");
@@ -262,6 +266,7 @@ public static class CliApp
                 var reposOpt = Args.TakeOption(ref tail, "--repos");
                 var portsOpt = Args.TakeAll(ref tail, "--port");
                 var bindOpt = ParseBindings(Args.TakeAll(ref tail, "--bind"));
+                Args.RejectUnknown(tail, "stack edit");
                 // Each facet is replaced only if its flag was supplied; bindings merge onto the
                 // existing set (a repeated input overrides, others are kept). Shares are re-derived.
                 var edited = current with
@@ -317,7 +322,9 @@ public static class CliApp
         var print = Args.TakeFlag(ref args, "--print");
         var force = Args.TakeFlag(ref args, "--force");
         var register = Args.TakeFlag(ref args, "--register");
-        var repo = Args.TakeOption(ref args, "--repo") ?? Args.FirstPositional(args) ?? Environment.CurrentDirectory;
+        var repoOpt = Args.TakeOption(ref args, "--repo");
+        Args.RejectUnknown(args, "init");
+        var repo = repoOpt ?? Args.FirstPositional(args) ?? Environment.CurrentDirectory;
         var root = Path.GetFullPath(repo);
 
         if (!Directory.Exists(root))
@@ -407,8 +414,8 @@ public static class CliApp
 
     static int Settings(ISettingsStore store, string[] args, bool json)
     {
-        var sub = Args.FirstPositional(args) ?? "show";
-        var tail = args.Where(a => a != sub).ToArray();
+        var (subOrNull, tail) = Args.TakeFirstPositional(args);
+        var sub = subOrNull ?? "show";
         var current = store.Get();
         switch (sub)
         {
@@ -433,6 +440,7 @@ public static class CliApp
                 var end = Args.TakeOption(ref tail, "--end");
                 var restrict = Args.TakeList(ref tail, "--restrict");
                 var unrestrict = Args.TakeList(ref tail, "--unrestrict");
+                Args.RejectUnknown(tail, "settings set");
 
                 var updated = current.Clone();
                 if (start is not null) updated.PortRangeStart = ParsePort(start, "--start");
@@ -473,6 +481,7 @@ public static class CliApp
 
     static int Info(WorkspaceService svc, WorkspaceReconciler reconciler, string[] args, bool json)
     {
+        Args.RejectUnknown(args, "info");
         var workspace = Args.FirstPositional(args) ?? throw new ArgumentException("info requires a workspace name");
         var record = svc.Get(workspace) ?? throw new ArgumentException($"unknown workspace '{workspace}'");
         var report = reconciler.Inspect(workspace);
@@ -501,6 +510,7 @@ public static class CliApp
     {
         var force = Args.TakeFlag(ref args, "--force");
         var yes = Args.TakeFlag(ref args, "--yes");
+        Args.RejectUnknown(args, "rm");
         var workspace = Args.FirstPositional(args) ?? throw new ArgumentException("rm requires a workspace name");
         if (!yes)
         {
@@ -516,6 +526,7 @@ public static class CliApp
 
     static int Up(WorkspaceService svc, string[] args, bool json)
     {
+        Args.RejectUnknown(args, "up");
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("up requires a workspace name");
         svc.Up(ws);
         return Ok(json, $"infra up for '{ws}'", new { ok = true, workspace = ws, action = "up" });
@@ -524,6 +535,7 @@ public static class CliApp
     static int Down(WorkspaceService svc, string[] args, bool json)
     {
         var volumes = Args.TakeFlag(ref args, "--volumes");
+        Args.RejectUnknown(args, "down");
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("down requires a workspace name");
         svc.Down(ws, volumes);
         return Ok(json, $"infra down for '{ws}'{(volumes ? " (volumes removed)" : "")}",
@@ -532,6 +544,7 @@ public static class CliApp
 
     static int Reset(WorkspaceService svc, string[] args, bool json)
     {
+        Args.RejectUnknown(args, "reset");
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("reset requires a workspace name");
         svc.Reset(ws);
         return Ok(json, $"infra reset for '{ws}'", new { ok = true, workspace = ws, action = "reset" });
@@ -539,6 +552,7 @@ public static class CliApp
 
     static int Status(WorkspaceService svc, string[] args, bool json)
     {
+        Args.RejectUnknown(args, "status");
         var ws = Args.FirstPositional(args) ?? throw new ArgumentException("status requires a workspace name");
         var containers = svc.Status(ws);
         if (json) { WriteJson(containers); return 0; }
@@ -551,6 +565,7 @@ public static class CliApp
     static int Reconcile(WorkspaceReconciler reconciler, string[] args, bool json)
     {
         var repair = Args.TakeFlag(ref args, "--repair");
+        Args.RejectUnknown(args, "reconcile");
         var one = Args.FirstPositional(args);
 
         var reports = one is null
@@ -677,10 +692,30 @@ public static class CliApp
 /// <summary>Minimal arg helpers for the harness (not a full parser).</summary>
 static class Args
 {
+    /// <summary>Split <c>--flag=value</c> tokens into <c>--flag</c> <c>value</c> so the pull-based
+    /// helpers below see one uniform shape. Run once, up front. Only touches <c>--</c>-prefixed
+    /// tokens, and only up to the first <c>=</c>, so a value that itself contains <c>=</c> (an
+    /// expression like <c>--bind=repo:input=expr</c>) survives intact.</summary>
+    public static string[] ExpandEquals(string[] args)
+    {
+        var outp = new List<string>(args.Length);
+        foreach (var a in args)
+        {
+            var eq = a.StartsWith("--") ? a.IndexOf('=') : -1;
+            if (eq > 2) { outp.Add(a[..eq]); outp.Add(a[(eq + 1)..]); }
+            else outp.Add(a);
+        }
+        return outp.ToArray();
+    }
+
+    // A bare "--" ends option parsing: tokens after it are positional even if they look like flags.
+    // Everything below only scans the region before it.
+    static int Cut(string[] args) { var i = Array.IndexOf(args, "--"); return i < 0 ? args.Length : i; }
+
     public static bool TakeFlag(ref string[] args, string flag)
     {
         var idx = Array.IndexOf(args, flag);
-        if (idx < 0) return false;
+        if (idx < 0 || idx >= Cut(args)) return false;
         args = args.Where((_, i) => i != idx).ToArray();
         return true;
     }
@@ -688,7 +723,7 @@ static class Args
     public static string? TakeOption(ref string[] args, string name)
     {
         var idx = Array.IndexOf(args, name);
-        if (idx < 0 || idx + 1 >= args.Length) return null;
+        if (idx < 0 || idx >= Cut(args) || idx + 1 >= args.Length) return null;
         var value = args[idx + 1];
         args = args.Where((_, i) => i != idx && i != idx + 1).ToArray();
         return value;
@@ -709,6 +744,34 @@ static class Args
             .SelectMany(v => v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .ToList();
 
+    /// <summary>The first positional (a non-flag before <c>--</c>, or anything after it).</summary>
     public static string? FirstPositional(string[] args)
-        => args.FirstOrDefault(a => !a.StartsWith('-'));
+    {
+        var (value, _) = TakeFirstPositional(args);
+        return value;
+    }
+
+    /// <summary>Like <see cref="FirstPositional"/> but also returns the args with exactly that one
+    /// token removed (by index). Replaces the old <c>args.Where(a =&gt; a != sub)</c>, which stripped
+    /// <em>every</em> copy of the value — so a repo/stack named the same as its subcommand vanished.</summary>
+    public static (string? value, string[] rest) TakeFirstPositional(string[] args)
+    {
+        var cut = Cut(args);
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (i == cut) continue;                              // the "--" terminator itself
+            if (i < cut && args[i].StartsWith('-')) continue;    // an unconsumed flag before it
+            return (args[i], args.Where((_, j) => j != i).ToArray());
+        }
+        return (null, args);
+    }
+
+    /// <summary>After a handler has consumed its known flags, any flag-shaped token still left (before
+    /// <c>--</c>) is a typo or an unsupported option — fail loudly rather than silently ignore it.</summary>
+    public static void RejectUnknown(string[] args, string context)
+    {
+        var stray = args.Take(Cut(args)).FirstOrDefault(a => a.StartsWith('-') && a != "-");
+        if (stray is not null)
+            throw new ArgumentException($"unknown option '{stray}' for {context}");
+    }
 }

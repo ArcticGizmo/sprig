@@ -5,6 +5,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The test suite drives the dispatcher through the internal Run(args, ISprigPaths) seam. -->
+    <InternalsVisibleTo Include="Sprig.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- `sprig update` drives Velopack directly (check/download/apply). Keep the version in step
          with Sprig.App's reference — both must resolve the same feed/package format. -->
     <PackageReference Include="Velopack" Version="1.2.0" />

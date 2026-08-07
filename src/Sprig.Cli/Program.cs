@@ -1,6 +1,7 @@
 using Sprig.Cli;
 
-// Sprig CLI — internal harness that drives Sprig.Core during development.
-// Not the shipped product (the Avalonia app is); this exists so every milestone
-// is runnable and testable end-to-end before the UI exists.
+// Sprig CLI — the terminal front-end onto Sprig.Core, shipped on PATH alongside
+// the desktop app and covering the same surface. Both drive one engine; neither
+// is the "real" one. Its --json output is a supported contract (scripts depend
+// on it), so treat shape changes there as breaking.
 return CliApp.Run(args);

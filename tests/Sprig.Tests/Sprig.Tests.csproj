@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sprig.Core\Sprig.Core.csproj" />
     <ProjectReference Include="..\..\src\Sprig.App\Sprig.App.csproj" />
+    <ProjectReference Include="..\..\src\Sprig.Cli\Sprig.Cli.csproj" />
   </ItemGroup>
 
 </Project>

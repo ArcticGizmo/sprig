@@ -119,7 +119,7 @@
                             <Button Content="Repair" Command="{Binding RepairCommand}"
                                     AutomationProperties.AutomationId="workspace.repair"
                                     ToolTip.Tip="Fix drift: prune stale registrations and remove orphaned folders. Healthy worktrees are never touched." />
-                            <Button Content="Remove" Command="{Binding RemoveCommand}"
+                            <Button Content="Destroy" Command="{Binding RemoveCommand}"
                                     Foreground="{StaticResource DangerBrush}" />
                         </WrapPanel>
 

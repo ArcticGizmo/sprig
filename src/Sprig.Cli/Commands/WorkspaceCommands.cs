@@ -4,7 +4,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sprig.Core.Docker;
 using Sprig.Core.Init;
+using Sprig.Core.Setup;
 using Sprig.Core.Stacks;
+using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -49,45 +52,117 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         if ((only.Count > 0 || without.Count > 0) && s.Stack is null)
             throw new ArgumentException("--only/--without narrow a stack — they need --stack <name>");
 
-        var record = s.Stack is not null
-                ? cli.Workspaces.Create(cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without)), s.Name)
-            : s.Repo is not null ? cli.Workspaces.Create(s.Repo, s.Name)
-            : throw new ArgumentException("create requires --stack <name> or --repo <path>");
+        // The machine path stays quiet and structured: no spinner, just the record as JSON.
+        if (s.Json) { CliOutput.Json(Create(s, only, without, progress: null)); return 0; }
 
-        if (s.Json) { CliOutput.Json(record); return 0; }
-        Console.WriteLine($"created workspace '{record.Workspace}'{(record.Stack is { } st ? $" from stack '{st}'" : "")}");
-        if (record.IsPartial)
-            Console.WriteLine($"  partial: without {string.Join(", ", record.ExcludedRepos)}" +
-                (record.SkippedPorts.Count > 0 ? $"; ports not provisioned: {string.Join(", ", record.SkippedPorts)}" : ""));
-        if (record.Ports.Count > 0)
-            Console.WriteLine($"  ports: {CliFormat.Ports(record.Ports)}");
-        foreach (var r in record.Repos)
-        {
-            Console.WriteLine($"  {r.Name}: {r.WorktreePath}  [{r.Branch}]");
-            if (r.Inputs.Count > 0)
-                Console.WriteLine($"    inputs: {CliFormat.Kv(r.Inputs)}");
-            // Group setup by module; only show module headers when a repo has more than one, so a
-            // single-module (or legacy) repo prints exactly as before.
-            var setupByModule = r.Setup.GroupBy(x => x.Module).ToList();
-            var showModuleHeaders = setupByModule.Count > 1;
-            foreach (var group in setupByModule)
+        // A live spinner keeps the terminal honest while the (potentially slow) worktree + docker +
+        // dependency-install work runs. The Core reports a step per stage, so the message tracks the
+        // real work instead of the command looking frozen.
+        InstanceRecord record = null!;
+        cli.Ansi.Status()
+            .Spinner(Spinner.Known.Dots)
+            .Start("preparing…", ctx =>
             {
-                if (showModuleHeaders && group.Key is { } module)
-                    Console.WriteLine($"    module {module}:");
-                var indent = showModuleHeaders ? "      " : "    ";
-                foreach (var step in group)
+                var progress = new SyncProgress<WorkspaceStepProgress>(p =>
                 {
-                    Console.WriteLine($"{indent}setup {(step.Success ? "✓" : "✗")} {step.Command}{(step.Success ? "" : $" (exit {step.ExitCode})")}");
-                    if (!step.Success && !string.IsNullOrWhiteSpace(step.Output))
-                        foreach (var line in step.Output.TrimEnd().Split('\n'))
-                            Console.WriteLine($"{indent}  {line.TrimEnd()}");
-                }
-            }
-        }
-        if (record.Repos.Any(r => r.Setup.Any(step => !step.Success)))
-            Console.WriteLine("  note: a setup command failed — the workspace was kept; finish setup manually in the worktree.");
+                    var text = string.IsNullOrWhiteSpace(p.Output) ? DescribeStep(p.StepId) : p.Output!.Trim();
+                    ctx.Status(Markup.Escape(Truncate(text)));
+                });
+                record = Create(s, only, without, progress);
+            });
+
+        RenderResult(record);
         return 0;
     }
+
+    InstanceRecord Create(Settings s, List<string> only, List<string> without, IProgress<WorkspaceStepProgress>? progress)
+        => s.Stack is not null
+                ? cli.Workspaces.Create(cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without)), s.Name, progress)
+            : s.Repo is not null ? cli.Workspaces.Create(s.Repo, s.Name, progress)
+            : throw new ArgumentException("create requires --stack <name> or --repo <path>");
+
+    // Render the finished workspace as a tree (repos → worktree/branch/inputs/setup) with a small ports
+    // grid above it — the same facts the old flat print carried, but structured and coloured.
+    void RenderResult(InstanceRecord record)
+    {
+        var console = cli.Ansi;
+        console.MarkupLine($"[green]✔[/] created workspace [bold]{Markup.Escape(record.Workspace)}[/]" +
+            (record.Stack is { } st ? $" from stack [bold]{Markup.Escape(st)}[/]" : ""));
+        if (record.IsPartial)
+            console.MarkupLine($"  [yellow]partial[/]: without {Markup.Escape(string.Join(", ", record.ExcludedRepos))}" +
+                (record.SkippedPorts.Count > 0
+                    ? $"; ports not provisioned: {Markup.Escape(string.Join(", ", record.SkippedPorts))}"
+                    : ""));
+
+        if (record.Ports.Count > 0)
+        {
+            var ports = CliFormat.Table("PORT", "VALUE");
+            foreach (var p in record.Ports.OrderBy(p => p.Key))
+                ports.AddRow(Markup.Escape(p.Key), Markup.Escape(p.Value.ToString()));
+            console.Write(ports);
+        }
+
+        var tree = new Tree($"[bold]{Markup.Escape(record.Workspace)}[/]");
+        foreach (var r in record.Repos)
+        {
+            var repo = tree.AddNode($"[bold]{Markup.Escape(r.Name)}[/]  [dim]{Markup.Escape(r.Branch ?? "")}[/]");
+            repo.AddNode($"[dim]worktree[/]  {Markup.Escape(r.WorktreePath)}");
+            if (r.Inputs.Count > 0)
+                repo.AddNode($"[dim]inputs[/]  {Markup.Escape(CliFormat.Kv(r.Inputs))}");
+            AddSetup(repo, r.Setup);
+        }
+        console.Write(tree);
+
+        if (record.Repos.Any(r => r.Setup.Any(step => !step.Success)))
+            console.MarkupLine("[yellow]note:[/] a setup command failed — the workspace was kept; finish setup manually in the worktree.");
+    }
+
+    // Hang the repo's setup commands off its tree node: green tick / red cross per command, grouped by
+    // module when there's more than one, with a failed command's captured output nested beneath it.
+    static void AddSetup(TreeNode repo, IReadOnlyList<SetupOutcome> setup)
+    {
+        if (setup.Count == 0) return;
+        var byModule = setup.GroupBy(x => x.Module).ToList();
+        var showModules = byModule.Count > 1;
+        foreach (var group in byModule)
+        {
+            var host = showModules && group.Key is { } module
+                ? repo.AddNode($"[dim]module[/] {Markup.Escape(module)}")
+                : repo;
+            foreach (var step in group)
+            {
+                var mark = step.Success ? "[green]✓[/]" : "[red]✗[/]";
+                var suffix = step.Success ? "" : $" [red](exit {step.ExitCode})[/]";
+                var node = host.AddNode($"{mark} {Markup.Escape(step.Command)}{suffix}");
+                if (!step.Success && !string.IsNullOrWhiteSpace(step.Output))
+                    foreach (var line in step.Output.TrimEnd().Split('\n'))
+                        node.AddNode($"[dim]{Markup.Escape(line.TrimEnd())}[/]");
+            }
+        }
+    }
+
+    // A readable label for the spinner from a Core step id (e.g. "api:worktree" → "api: creating
+    // worktree"). Works for both the stack and single-repo paths without needing the plan.
+    static string DescribeStep(string id)
+    {
+        if (id == "ports") return "allocating ports";
+        if (id == "record") return "saving workspace record";
+        var colon = id.IndexOf(':');
+        if (colon < 0) return id;
+        var repo = id[..colon];
+        var rest = id[(colon + 1)..];
+        return rest switch
+        {
+            "worktree" => $"{repo}: creating worktree",
+            "env" => $"{repo}: applying environment",
+            "compose" => $"{repo}: generating compose",
+            _ when rest.StartsWith("setup") => $"{repo}: installing dependencies",
+            _ => $"{repo}: {rest}",
+        };
+    }
+
+    static string Truncate(string s, int max = 100)
+        => s.Length <= max ? s : s[..(max - 1)] + "...";
 
     /// <summary>Turn <c>--only</c>/<c>--without</c> into the repo subset to create (null = the whole
     /// stack). <c>--without</c> is resolved against the stack's repo list so the two flags are

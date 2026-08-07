@@ -75,6 +75,14 @@ sealed class TypeResolver(IDictionary<Type, object> instances) : ITypeResolver, 
     public void Dispose() { }
 }
 
+/// <summary>An <see cref="IProgress{T}"/> that invokes its handler synchronously on the reporting
+/// thread — unlike <see cref="Progress{T}"/>, which marshals to a captured context and would arrive
+/// out of order (or after the work finished) inside a Spectre status/live display.</summary>
+sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
+{
+    public void Report(T value) => handler(value);
+}
+
 /// <summary>Output primitives shared by the command classes. <see cref="Json"/>/<see cref="Ok"/> write
 /// straight to stdout so the JSON contract is never routed through the markup parser (a payload full of
 /// <c>[</c>/<c>]</c> would otherwise be mangled), while tables render through the per-run console.</summary>

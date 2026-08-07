@@ -127,12 +127,22 @@ static class Checklist
     static void RunPlain(IAnsiConsole console, List<StepRow> rows, Action<IProgress<WorkspaceStepProgress>> work)
     {
         var byId = rows.ToDictionary(r => r.Id);
+        string? lastRepo = null;
         var progress = new SyncProgress<WorkspaceStepProgress>(p =>
         {
             if (!byId.TryGetValue(p.StepId, out var row) || !string.IsNullOrEmpty(p.Output)) return;
             row.State = p.State;
             if (p.State == WorkspaceStepState.Running)
-                console.MarkupLine($"[grey]>[/] {Markup.Escape(row.Label)}");
+            {
+                // Print the repo heading once, when its first step starts, then indent its steps.
+                if (row.Repo != lastRepo)
+                {
+                    lastRepo = row.Repo;
+                    if (row.Repo is { } repo) console.MarkupLine($"[bold]{Markup.Escape(repo)}[/]");
+                }
+                var indent = row.Repo is null ? "" : row.SubStep ? "      " : "   ";
+                console.MarkupLine($"{indent}[grey]>[/] {Markup.Escape(row.Label)}");
+            }
             else if (p.State is WorkspaceStepState.Warning or WorkspaceStepState.Error && p.Detail is { } d)
                 console.MarkupLine($"  [yellow]{Markup.Escape(Clean(d))}[/]");
         });
@@ -142,26 +152,63 @@ static class Checklist
     static IRenderable Render(IReadOnlyList<StepRow> rows, Glyphs glyphs, string spinner)
     {
         var lines = new List<IRenderable>();
+        string? currentRepo = null;
         foreach (var r in rows)
         {
-            var indent = r.SubStep ? "    " : "";
-            var marker = r.State switch
+            if (r.Repo is { } repo)
             {
-                WorkspaceStepState.Done => glyphs.Done,
-                WorkspaceStepState.Warning => glyphs.Warn,
-                WorkspaceStepState.Error => glyphs.Error,
-                WorkspaceStepState.Running => $"[blue]{spinner}[/]",
-                _ => glyphs.Pending,
-            };
-            var label = Markup.Escape(r.Label);
-            var body = r.State == WorkspaceStepState.Pending ? $"[grey]{label}[/]" : label;
-            var detail = string.IsNullOrWhiteSpace(r.Detail) ? "" : $" [dim]{Markup.Escape(r.Detail!)}[/]";
-            lines.Add(new Markup($"{indent}{marker} {body}{detail}"));
-            if (!string.IsNullOrEmpty(r.Output) &&
-                r.State is WorkspaceStepState.Running or WorkspaceStepState.Warning or WorkspaceStepState.Error)
-                lines.Add(new Markup($"{indent}    [dim]{Markup.Escape(Truncate(r.Output!))}[/]"));
+                // Head each repo's steps with the repo name, marked by the group's aggregate state, and
+                // indent the steps beneath it (setup sub-steps one level deeper).
+                if (repo != currentRepo)
+                {
+                    currentRepo = repo;
+                    var groupMarker = Marker(Aggregate(rows.Where(x => x.Repo == repo)), glyphs, spinner);
+                    lines.Add(new Markup($"{groupMarker} [bold]{Markup.Escape(repo)}[/]"));
+                }
+                AddStep(lines, r, glyphs, spinner, r.SubStep ? "      " : "   ");
+            }
+            else
+            {
+                currentRepo = null;
+                AddStep(lines, r, glyphs, spinner, "");
+            }
         }
         return new Rows(lines);
+    }
+
+    static void AddStep(List<IRenderable> lines, StepRow r, Glyphs glyphs, string spinner, string indent)
+    {
+        var marker = Marker(r.State, glyphs, spinner);
+        var label = Markup.Escape(r.Label);
+        var body = r.State == WorkspaceStepState.Pending ? $"[grey]{label}[/]" : label;
+        var detail = string.IsNullOrWhiteSpace(r.Detail) ? "" : $" [dim]{Markup.Escape(r.Detail!)}[/]";
+        lines.Add(new Markup($"{indent}{marker} {body}{detail}"));
+        if (!string.IsNullOrEmpty(r.Output) &&
+            r.State is WorkspaceStepState.Running or WorkspaceStepState.Warning or WorkspaceStepState.Error)
+            lines.Add(new Markup($"{indent}    [dim]{Markup.Escape(Truncate(r.Output!))}[/]"));
+    }
+
+    static string Marker(WorkspaceStepState state, Glyphs glyphs, string spinner) => state switch
+    {
+        WorkspaceStepState.Done => glyphs.Done,
+        WorkspaceStepState.Warning => glyphs.Warn,
+        WorkspaceStepState.Error => glyphs.Error,
+        WorkspaceStepState.Running => $"[blue]{spinner}[/]",
+        _ => glyphs.Pending,
+    };
+
+    // The state to show on a repo heading, rolled up from its steps: a failure or an in-flight step
+    // dominates; otherwise done once every step is, else still pending.
+    static WorkspaceStepState Aggregate(IEnumerable<StepRow> group)
+    {
+        var states = group.Select(x => x.State).ToList();
+        if (states.Contains(WorkspaceStepState.Error)) return WorkspaceStepState.Error;
+        if (states.Contains(WorkspaceStepState.Running)) return WorkspaceStepState.Running;
+        // Some done and some not-yet-done → the group is mid-flight.
+        if (states.Contains(WorkspaceStepState.Done) && states.Contains(WorkspaceStepState.Pending))
+            return WorkspaceStepState.Running;
+        if (states.Contains(WorkspaceStepState.Warning)) return WorkspaceStepState.Warning;
+        return states.All(x => x == WorkspaceStepState.Done) ? WorkspaceStepState.Done : WorkspaceStepState.Pending;
     }
 
     // Strip ANSI escape sequences and control characters from streamed command output before it reaches
@@ -183,14 +230,44 @@ static class Checklist
             : new Glyphs("[green]+[/]", "[yellow]![/]", "[red]x[/]", "[grey].[/]",
                 ["|", "/", "-", "\\"]);
 
-    sealed class StepRow(string id, string label, bool subStep)
+    sealed class StepRow
     {
-        public string Id { get; } = id;
-        public string Label { get; } = label;
-        public bool SubStep { get; } = subStep;
+        public StepRow(string id, string label, bool subStep)
+        {
+            Id = id;
+            SubStep = subStep;
+            Repo = RepoOf(id);
+            // The Core labels repo-scoped steps "<action> — <repo>". The repo now heads the group, so
+            // drop that suffix from the child's label; setup sub-steps are raw commands, left as-is.
+            Label = !subStep && Repo is { } r ? StripRepoSuffix(label, r) : label;
+        }
+
+        public string Id { get; }
+        public string Label { get; }
+        public bool SubStep { get; }
+
+        /// <summary>The repo this step belongs to (from the step id's prefix), or null for the
+        /// workspace-level steps (allocate/release ports, save/delete record).</summary>
+        public string? Repo { get; }
+
         public WorkspaceStepState State { get; set; } = WorkspaceStepState.Pending;
         public string? Detail { get; set; }
         public string? Output { get; set; }
+
+        // Step ids are "ports"/"record" (no repo) or "<repo>:<verb>[:<n>]" — the repo is the prefix.
+        static string? RepoOf(string id)
+        {
+            var colon = id.IndexOf(':');
+            return colon > 0 ? id[..colon] : null;
+        }
+
+        static string StripRepoSuffix(string label, string repo)
+        {
+            var idx = label.LastIndexOf(repo, StringComparison.Ordinal);
+            if (idx <= 0) return label;
+            var head = label[..idx].TrimEnd().TrimEnd('—', '-').TrimEnd();
+            return head.Length > 0 ? head : label;
+        }
     }
 }
 

@@ -63,13 +63,13 @@ public sealed class CliAppTests : IDisposable
     {
         var (exit, _, err) = Run("wibble");
         Assert.Equal(1, exit);
-        Assert.Contains("unknown command", err);
+        Assert.Contains("Unknown command", err);
     }
 
     [Fact]
     public void Ls_on_empty_store_is_friendly()
     {
-        var (exit, o, _) = Run("ls");
+        var (exit, o, _) = Run("ws", "ls");
         Assert.Equal(0, exit);
         Assert.Contains("no workspaces", o);
     }
@@ -77,7 +77,7 @@ public sealed class CliAppTests : IDisposable
     [Fact]
     public void Ls_json_on_empty_store_is_an_empty_array()
     {
-        var (exit, o, _) = Run("ls", "--json");
+        var (exit, o, _) = Run("ws", "ls", "--json");
         Assert.Equal(0, exit);
         Assert.Equal("[]", o.Trim());
     }
@@ -85,47 +85,75 @@ public sealed class CliAppTests : IDisposable
     [Fact]
     public void Unknown_flag_is_rejected()
     {
-        var (exit, _, err) = Run("create", "foo", "--stack", "s", "--bogus");
+        // Strict parsing: a typo'd flag fails loudly rather than being silently ignored.
+        var (exit, _, err) = Run("ws", "ls", "--bogus");
         Assert.Equal(1, exit);
-        Assert.Contains("unknown option", err);
+        Assert.Contains("Unknown option", err);
     }
 
     [Fact]
-    public void Ws_prefix_is_a_synonym_for_the_flat_workspace_verb()
+    public void Workspace_verbs_are_only_under_ws()
     {
-        var flat = Run("ls");
-        var namespaced = Run("ws", "ls");
-        Assert.Equal(flat.exit, namespaced.exit);
-        Assert.Equal(flat.@out, namespaced.@out);
+        // The verbs were removed from the top level to keep it uncluttered — a bare `ls` is now unknown,
+        // while `ws ls` is the one true home.
+        Assert.Equal(1, Run("ls").exit);
+        Assert.Equal(0, Run("ws", "ls").exit);
     }
 
     [Fact]
-    public void Ws_with_no_verb_lists()
+    public void Ws_with_no_verb_shows_its_workspace_verbs()
     {
-        var (exit, o, _) = Run("ws");
-        Assert.Equal(0, exit);
-        Assert.Contains("no workspaces", o);
+        // The `ws` branch on its own prints its command list (Spectre help) rather than running a verb.
+        var (_, o, _) = Run("ws");
+        Assert.Contains("COMMANDS", o);
+        Assert.Contains("create", o);
+        Assert.Contains("reconcile", o);
     }
 
     [Fact]
-    public void Ws_forwards_argument_errors_like_the_flat_verb()
+    public void Ws_create_without_a_name_fails()
     {
-        // `ws create` with no name fails exactly as `create` does — the alias only rewrites the verb.
-        Assert.Equal(Run("create").exit, Run("ws", "create").exit);
+        // A required argument is enforced by the framework — no name, no run.
+        var (exit, _, _) = Run("ws", "create");
+        Assert.Equal(1, exit);
     }
 
     [Fact]
-    public void Ws_rejects_a_namespaced_object_with_a_pointer()
+    public void Ws_rejects_a_non_workspace_verb()
     {
+        // `stack` is a top-level namespace, not a workspace verb, so it's unknown under `ws`.
         var (exit, _, err) = Run("ws", "stack");
         Assert.Equal(1, exit);
-        Assert.Contains("isn't a workspace command", err);
+        Assert.Contains("Unknown command", err);
+    }
+
+    [Theory]
+    [InlineData("stack", "import")]
+    [InlineData("repo", "add")]
+    [InlineData("settings", "set")]
+    public void Namespace_help_lists_its_own_subcommands(string ns, string marker)
+    {
+        var (exit, o, _) = Run(ns, "--help");
+        Assert.Equal(0, exit);
+        Assert.Contains("COMMANDS", o);    // Spectre's hierarchical help for the branch
+        Assert.Contains(marker, o);        // one of the branch's own subcommands
+        Assert.Contains($"sprig {ns}", o); // the USAGE line names the namespace (plain when redirected)
+    }
+
+    [Fact]
+    public void Namespace_help_does_not_run_the_default_subcommand()
+    {
+        // `stack --help` prints the branch help; it must not fall through to a subcommand.
+        var (exit, o, _) = Run("stack", "--help");
+        Assert.Equal(0, exit);
+        Assert.Contains("COMMANDS", o);
+        Assert.DoesNotContain("no stacks defined", o);
     }
 
     [Fact]
     public void Rm_refuses_without_yes()
     {
-        var (exit, _, err) = Run("rm", "nope");
+        var (exit, _, err) = Run("ws", "rm", "nope");
         Assert.Equal(1, exit);
         Assert.Contains("--yes", err);
     }
@@ -134,7 +162,7 @@ public sealed class CliAppTests : IDisposable
     public void Settings_roundtrip_through_show_json()
     {
         Assert.Equal(0, Run("settings", "set", "--start", "7000", "--end", "7500", "--restrict", "7100,7200").exit);
-        var (exit, o, _) = Run("settings", "--json");
+        var (exit, o, _) = Run("settings", "show", "--json");
         Assert.Equal(0, exit);
         Assert.Contains("\"portRangeStart\": 7000", o);
         Assert.Contains("7100", o);

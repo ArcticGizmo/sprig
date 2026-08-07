@@ -177,6 +177,22 @@ public sealed class CliAppTests : IDisposable
     }
 
     [Fact]
+    public void Interactive_rm_rejects_json()
+    {
+        var (exit, o, _) = Run("ws", "rm", "-i", "--json");
+        Assert.Equal(1, exit);
+        Assert.Contains("\"ok\": false", o);
+    }
+
+    [Fact]
+    public void Interactive_rm_refuses_without_a_terminal()
+    {
+        // stdin isn't a terminal under the test host, so -i must bail rather than block on a prompt.
+        var (exit, _, _) = Run("ws", "rm", "-i");
+        Assert.Equal(1, exit);
+    }
+
+    [Fact]
     public void Settings_roundtrip_through_show_json()
     {
         Assert.Equal(0, Run("settings", "set", "--start", "7000", "--end", "7500", "--restrict", "7100,7200").exit);

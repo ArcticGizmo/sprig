@@ -4,12 +4,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sprig.Core.Docker;
 using Sprig.Core.Init;
-using Sprig.Core.Setup;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using Spectre.Console.Rendering;
 
 namespace Sprig.Cli.Commands;
 
@@ -52,42 +52,116 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         if ((only.Count > 0 || without.Count > 0) && s.Stack is null)
             throw new ArgumentException("--only/--without narrow a stack — they need --stack <name>");
 
-        // The machine path stays quiet and structured: no spinner, just the record as JSON.
-        if (s.Json) { CliOutput.Json(Create(s, only, without, progress: null)); return 0; }
+        // Resolve + plan up front so pre-flight problems (bad name, duplicate, unknown repo) surface
+        // before any output — and so the checklist can list every step, pending, before work starts.
+        var resolved = s.Stack is not null
+                ? cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without))
+            : s.Repo is not null ? cli.Workspaces.ResolveSingleRepo(s.Repo)
+            : throw new ArgumentException("create requires --stack <name> or --repo <path>");
+        var plan = cli.Workspaces.PlanCreate(resolved, s.Name);
 
-        // A live spinner keeps the terminal honest while the (potentially slow) worktree + docker +
-        // dependency-install work runs. The Core reports a step per stage, so the message tracks the
-        // real work instead of the command looking frozen.
-        InstanceRecord record = null!;
-        cli.Ansi.Status()
-            .Spinner(Spinner.Known.Dots)
-            .Start("preparing…", ctx =>
-            {
-                var progress = new SyncProgress<WorkspaceStepProgress>(p =>
-                {
-                    var text = string.IsNullOrWhiteSpace(p.Output) ? DescribeStep(p.StepId) : p.Output!.Trim();
-                    ctx.Status(Markup.Escape(Truncate(text)));
-                });
-                record = Create(s, only, without, progress);
-            });
+        // The machine path stays quiet and structured: no checklist, just the record as JSON.
+        if (s.Json) { CliOutput.Json(cli.Workspaces.Create(resolved, s.Name)); return 0; }
 
-        RenderResult(record);
+        // The live checklist needs a console bound straight to real stdout: it moves the cursor, which
+        // throws on a redirected/piped handle. The shared console can't (it's late-bound for tests, so
+        // never reads as interactive) — so build a direct one and let it decide whether the terminal
+        // can animate. Only `ws create` needs this, and it's never driven by the in-process tests.
+        var console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Ansi = AnsiSupport.Detect,
+            ColorSystem = ColorSystemSupport.Detect,
+            Out = new AnsiConsoleOutput(Console.Out),
+        });
+        // Redirected: detection assumes 80 cols and wraps long worktree paths; widen it. Interactive:
+        // keep the real terminal width so the live checklist lays out correctly.
+        if (Console.IsOutputRedirected) console.Profile.Width = 200;
+
+        console.MarkupLine($"[bold]Creating workspace[/] [green]{Markup.Escape(s.Name)}[/]" +
+            (resolved.StackName is { } st ? $" [dim]from stack {Markup.Escape(st)}[/]" : ""));
+
+        var rows = plan.Select(p => new StepRow(p.Id, p.Label, p.SubStep)).ToList();
+        var record = console.Profile.Capabilities.Interactive
+            ? RunLive(console, resolved, s.Name, rows)
+            : RunPlain(console, resolved, s.Name, rows);
+
+        RenderSummary(console, record);
         return 0;
     }
 
-    InstanceRecord Create(Settings s, List<string> only, List<string> without, IProgress<WorkspaceStepProgress>? progress)
-        => s.Stack is not null
-                ? cli.Workspaces.Create(cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without)), s.Name, progress)
-            : s.Repo is not null ? cli.Workspaces.Create(s.Repo, s.Name, progress)
-            : throw new ArgumentException("create requires --stack <name> or --repo <path>");
-
-    // Render the finished workspace as a tree (repos → worktree/branch/inputs/setup) with a small ports
-    // grid above it — the same facts the old flat print carried, but structured and coloured.
-    void RenderResult(InstanceRecord record)
+    // A live checklist: every step shows up front (pending), then ticks over to running → done/warning
+    // as the Core reports it, streaming the running step's latest output line beneath it — the same
+    // shape as the GUI's progress window. Interactive terminals only (it redraws in place).
+    InstanceRecord RunLive(IAnsiConsole console, ResolvedStack resolved, string name, List<StepRow> rows)
     {
-        var console = cli.Ansi;
-        console.MarkupLine($"[green]✔[/] created workspace [bold]{Markup.Escape(record.Workspace)}[/]" +
-            (record.Stack is { } st ? $" from stack [bold]{Markup.Escape(st)}[/]" : ""));
+        var byId = rows.ToDictionary(r => r.Id);
+        InstanceRecord record = null!;
+        console.Live(Checklist(rows))
+            .AutoClear(false)
+            .Start(ctx =>
+            {
+                var progress = new SyncProgress<WorkspaceStepProgress>(p =>
+                {
+                    if (!byId.TryGetValue(p.StepId, out var row)) return;
+                    if (!string.IsNullOrEmpty(p.Output)) row.Output = p.Output!.Trim();
+                    else { row.State = p.State; if (p.Detail is { } d) row.Detail = d; }
+                    ctx.UpdateTarget(Checklist(rows));
+                });
+                record = cli.Workspaces.Create(resolved, name, progress);
+                ctx.UpdateTarget(Checklist(rows));
+            });
+        return record;
+    }
+
+    // Redirected/piped fallback (no cursor control): emit one line as each step starts, so the output
+    // is still a readable running log rather than a frozen pause.
+    InstanceRecord RunPlain(IAnsiConsole console, ResolvedStack resolved, string name, List<StepRow> rows)
+    {
+        var byId = rows.ToDictionary(r => r.Id);
+        var progress = new SyncProgress<WorkspaceStepProgress>(p =>
+        {
+            if (!byId.TryGetValue(p.StepId, out var row) || !string.IsNullOrEmpty(p.Output)) return;
+            row.State = p.State;
+            if (p.State == WorkspaceStepState.Running)
+                console.MarkupLine($"[grey]»[/] {Markup.Escape(row.Label)}");
+            else if (p.State is WorkspaceStepState.Warning or WorkspaceStepState.Error && p.Detail is { } d)
+                console.MarkupLine($"  [yellow]{Markup.Escape(d)}[/]");
+        });
+        return cli.Workspaces.Create(resolved, name, progress);
+    }
+
+    // The checklist as it stands right now: one line per planned step (sub-steps indented), a state
+    // glyph, plus the running/failed step's latest output line dimmed beneath it.
+    static IRenderable Checklist(IReadOnlyList<StepRow> rows)
+    {
+        var lines = new List<IRenderable>();
+        foreach (var r in rows)
+        {
+            var indent = r.SubStep ? "    " : "";
+            var marker = r.State switch
+            {
+                WorkspaceStepState.Done => "[green]✓[/]",
+                WorkspaceStepState.Warning => "[yellow]![/]",
+                WorkspaceStepState.Error => "[red]✗[/]",
+                WorkspaceStepState.Running => "[blue]»[/]",
+                _ => "[grey]○[/]",
+            };
+            var label = Markup.Escape(r.Label);
+            var body = r.State == WorkspaceStepState.Pending ? $"[grey]{label}[/]" : label;
+            var detail = string.IsNullOrWhiteSpace(r.Detail) ? "" : $" [dim]{Markup.Escape(r.Detail!)}[/]";
+            lines.Add(new Markup($"{indent}{marker} {body}{detail}"));
+            if (!string.IsNullOrEmpty(r.Output) &&
+                r.State is WorkspaceStepState.Running or WorkspaceStepState.Warning or WorkspaceStepState.Error)
+                lines.Add(new Markup($"{indent}    [dim]{Markup.Escape(Truncate(r.Output!))}[/]"));
+        }
+        return new Rows(lines);
+    }
+
+    // After the checklist: the actionable facts it doesn't carry — the allocated ports and where each
+    // repo's worktree landed. Setup outcomes already showed as ticks in the checklist above.
+    static void RenderSummary(IAnsiConsole console, InstanceRecord record)
+    {
+        console.MarkupLine($"[green]✔[/] created workspace [bold]{Markup.Escape(record.Workspace)}[/]");
         if (record.IsPartial)
             console.MarkupLine($"  [yellow]partial[/]: without {Markup.Escape(string.Join(", ", record.ExcludedRepos))}" +
                 (record.SkippedPorts.Count > 0
@@ -102,67 +176,27 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
             console.Write(ports);
         }
 
-        var tree = new Tree($"[bold]{Markup.Escape(record.Workspace)}[/]");
         foreach (var r in record.Repos)
-        {
-            var repo = tree.AddNode($"[bold]{Markup.Escape(r.Name)}[/]  [dim]{Markup.Escape(r.Branch ?? "")}[/]");
-            repo.AddNode($"[dim]worktree[/]  {Markup.Escape(r.WorktreePath)}");
-            if (r.Inputs.Count > 0)
-                repo.AddNode($"[dim]inputs[/]  {Markup.Escape(CliFormat.Kv(r.Inputs))}");
-            AddSetup(repo, r.Setup);
-        }
-        console.Write(tree);
+            console.MarkupLine($"  [dim]{Markup.Escape(r.Name)}[/]  {Markup.Escape(r.WorktreePath)}");
 
         if (record.Repos.Any(r => r.Setup.Any(step => !step.Success)))
             console.MarkupLine("[yellow]note:[/] a setup command failed — the workspace was kept; finish setup manually in the worktree.");
     }
 
-    // Hang the repo's setup commands off its tree node: green tick / red cross per command, grouped by
-    // module when there's more than one, with a failed command's captured output nested beneath it.
-    static void AddSetup(TreeNode repo, IReadOnlyList<SetupOutcome> setup)
-    {
-        if (setup.Count == 0) return;
-        var byModule = setup.GroupBy(x => x.Module).ToList();
-        var showModules = byModule.Count > 1;
-        foreach (var group in byModule)
-        {
-            var host = showModules && group.Key is { } module
-                ? repo.AddNode($"[dim]module[/] {Markup.Escape(module)}")
-                : repo;
-            foreach (var step in group)
-            {
-                var mark = step.Success ? "[green]✓[/]" : "[red]✗[/]";
-                var suffix = step.Success ? "" : $" [red](exit {step.ExitCode})[/]";
-                var node = host.AddNode($"{mark} {Markup.Escape(step.Command)}{suffix}");
-                if (!step.Success && !string.IsNullOrWhiteSpace(step.Output))
-                    foreach (var line in step.Output.TrimEnd().Split('\n'))
-                        node.AddNode($"[dim]{Markup.Escape(line.TrimEnd())}[/]");
-            }
-        }
-    }
-
-    // A readable label for the spinner from a Core step id (e.g. "api:worktree" → "api: creating
-    // worktree"). Works for both the stack and single-repo paths without needing the plan.
-    static string DescribeStep(string id)
-    {
-        if (id == "ports") return "allocating ports";
-        if (id == "record") return "saving workspace record";
-        var colon = id.IndexOf(':');
-        if (colon < 0) return id;
-        var repo = id[..colon];
-        var rest = id[(colon + 1)..];
-        return rest switch
-        {
-            "worktree" => $"{repo}: creating worktree",
-            "env" => $"{repo}: applying environment",
-            "compose" => $"{repo}: generating compose",
-            _ when rest.StartsWith("setup") => $"{repo}: installing dependencies",
-            _ => $"{repo}: {rest}",
-        };
-    }
-
     static string Truncate(string s, int max = 100)
         => s.Length <= max ? s : s[..(max - 1)] + "...";
+
+    /// <summary>Mutable checklist row backing the live display: the current state, detail note and
+    /// latest streamed output line for one planned step.</summary>
+    sealed class StepRow(string id, string label, bool subStep)
+    {
+        public string Id { get; } = id;
+        public string Label { get; } = label;
+        public bool SubStep { get; } = subStep;
+        public WorkspaceStepState State { get; set; } = WorkspaceStepState.Pending;
+        public string? Detail { get; set; }
+        public string? Output { get; set; }
+    }
 
     /// <summary>Turn <c>--only</c>/<c>--without</c> into the repo subset to create (null = the whole
     /// stack). <c>--without</c> is resolved against the stack's repo list so the two flags are

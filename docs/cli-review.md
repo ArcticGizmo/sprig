@@ -74,6 +74,6 @@ Ordered by value-for-effort. Checked off as landed on the `cli` branch.
   same dependent-workspace guard).
 - [x] **4. Retire `templates`** — drop the redundant command (fold into
   `stack ls`).
-- [ ] **5. Harden arg parsing + tests** — support `--flag=value` and `--`,
+- [x] **5. Harden arg parsing + tests** — support `--flag=value` and `--`,
   detect unknown flags, fix the subcommand-filtering edge; add CLI
   dispatch/exit-code tests.

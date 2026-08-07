@@ -66,7 +66,7 @@ Ordered by value-for-effort. Checked off as landed on the `cli` branch.
 - [x] **1. Identity story** — update the stale "internal harness" comments in
   `Program.cs`/`CliApp.cs`; state the CLI is a supported surface and that
   `--json` is a stability contract.
-- [ ] **2. `--json` consistency** — honour `--json` across every command
+- [x] **2. `--json` consistency** — honour `--json` across every command
   (mutating ones emit a small `{ ok: true, … }` payload); fix `stack show`
   emitting JSON regardless of the flag.
 - [ ] **3. Parity commands** — add `sprig settings` (view/set port range +

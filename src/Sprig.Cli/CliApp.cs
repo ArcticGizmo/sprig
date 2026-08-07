@@ -54,8 +54,16 @@ public static class CliApp
 
         var command = args[0];
         var rest = args[1..];
+
         try
         {
+            // Dispatch convention: the workspace is the primary object, so its verbs are top-level and
+            // unqualified (create/ls/info/up/…). Every other object is namespaced (repo/stack/settings
+            // <sub>). `ws`/`workspace` is an optional synonym namespace over the workspace verbs —
+            // `sprig ws ls` == `sprig ls` — so the noun-verb form works too without being the only way.
+            if (command is "ws" or "workspace")
+                (command, rest) = UnwrapWorkspaceAlias(rest);
+
             return command switch
             {
                 "open" => Open(rest),
@@ -485,8 +493,12 @@ public static class CliApp
         var workspace = Args.FirstPositional(args) ?? throw new ArgumentException("info requires a workspace name");
         var record = svc.Get(workspace) ?? throw new ArgumentException($"unknown workspace '{workspace}'");
         var report = reconciler.Inspect(workspace);
+        // The one-stop view also folds in the live container state that `status` shows. Best-effort:
+        // a workspace's record and drift must remain inspectable even when docker isn't running, so a
+        // failure here degrades to null rather than taking the whole command down.
+        var containers = TryContainers(svc, workspace);
 
-        if (json) { WriteJson(new { record, drift = report }); return 0; }
+        if (json) { WriteJson(new { record, drift = report, containers }); return 0; }
 
         Console.WriteLine($"workspace: {record.Workspace}   status: {record.LastStatus}   created: {record.CreatedAt:u}");
         if (record.IsPartial)
@@ -503,7 +515,23 @@ public static class CliApp
             Console.WriteLine($"    worktree: {r.WorktreePath}  [{state}]");
             Console.WriteLine($"    branch:   {r.Branch}");
         }
+        Console.WriteLine(containers switch
+        {
+            null => "containers: (docker unavailable)",
+            { Count: 0 } => "containers: none running",
+            _ => "containers:",
+        });
+        if (containers is { Count: > 0 })
+            foreach (var c in containers)
+                Console.WriteLine($"  {c.Name}  {c.State}");
         return 0;
+    }
+
+    // The live container list for a workspace, or null if docker can't be reached — see Info().
+    static IReadOnlyList<ContainerStatus>? TryContainers(WorkspaceService svc, string workspace)
+    {
+        try { return svc.Status(workspace); }
+        catch { return null; }
     }
 
     static int Rm(WorkspaceService svc, string[] args, bool json)
@@ -610,6 +638,18 @@ public static class CliApp
         return 1;
     }
 
+    // `ws`/`workspace <verb> …` → the underlying workspace verb. Bare `ws` lists. The namespaced
+    // objects (repo/stack/settings) and meta commands aren't workspace verbs, so reject them here
+    // with a pointer rather than let them fall through to a misleading "unknown command".
+    static (string command, string[] rest) UnwrapWorkspaceAlias(string[] rest)
+    {
+        if (rest.Length == 0) return ("ls", rest);
+        var verb = rest[0];
+        if (verb is "repo" or "stack" or "settings" or "config" or "open" or "update" or "init" or "ws" or "workspace")
+            throw new ArgumentException($"'{verb}' isn't a workspace command — run 'sprig {verb}' directly");
+        return (verb, rest[1..]);
+    }
+
     static string FormatPorts(IReadOnlyDictionary<string, int> ports)
         => ports.Count == 0 ? "-" : string.Join(",", ports.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
 
@@ -664,14 +704,17 @@ public static class CliApp
                                                            stack's repos (ports left with no
                                                            consumer aren't provisioned)
                 ls                            List workspaces
-                info <name>                   Show a workspace's repos, ports, drift
+                info <name>                   Everything about one workspace: repos, ports, drift,
+                                              live containers
                 up <name>                     Bring the workspace's docker infra up
                 down <name> [--volumes]       Stop infra (--volumes also wipes data)
                 reset <name>                  Restart infra (down then up)
-                status <name>                 Live container status
+                status <name>                 Live container status only (a subset of info)
                 rm <name> [--force] [--yes]   Tear down a workspace (--force also deletes the branch)
-                reconcile [<name>] [--repair] Detect (and optionally repair) drift
+                reconcile [<name>] [--repair] Detect (and optionally repair) drift, one or all
                 doctor                        Alias for reconcile over all workspaces
+
+                (the workspace verbs above also take a ws/workspace prefix: `sprig ws ls`)
                 init [--repo <path>] [--print] [--force] [--register]   Detect & propose .sprig.json
                 repo add <path> [--name x]    Register a repo (also: repo ls, repo rm <name>)
                 stack create <name> --repos a,b [--port p] [--bind repo:input=expr]   Define a stack
@@ -689,7 +732,7 @@ public static class CliApp
     }
 }
 
-/// <summary>Minimal arg helpers for the harness (not a full parser).</summary>
+/// <summary>Minimal arg helpers for the CLI (not a full parser).</summary>
 static class Args
 {
     /// <summary>Split <c>--flag=value</c> tokens into <c>--flag</c> <c>value</c> so the pull-based

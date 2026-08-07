@@ -91,6 +91,38 @@ public sealed class CliAppTests : IDisposable
     }
 
     [Fact]
+    public void Ws_prefix_is_a_synonym_for_the_flat_workspace_verb()
+    {
+        var flat = Run("ls");
+        var namespaced = Run("ws", "ls");
+        Assert.Equal(flat.exit, namespaced.exit);
+        Assert.Equal(flat.@out, namespaced.@out);
+    }
+
+    [Fact]
+    public void Ws_with_no_verb_lists()
+    {
+        var (exit, o, _) = Run("ws");
+        Assert.Equal(0, exit);
+        Assert.Contains("no workspaces", o);
+    }
+
+    [Fact]
+    public void Ws_forwards_argument_errors_like_the_flat_verb()
+    {
+        // `ws create` with no name fails exactly as `create` does — the alias only rewrites the verb.
+        Assert.Equal(Run("create").exit, Run("ws", "create").exit);
+    }
+
+    [Fact]
+    public void Ws_rejects_a_namespaced_object_with_a_pointer()
+    {
+        var (exit, _, err) = Run("ws", "stack");
+        Assert.Equal(1, exit);
+        Assert.Contains("isn't a workspace command", err);
+    }
+
+    [Fact]
     public void Rm_refuses_without_yes()
     {
         var (exit, _, err) = Run("rm", "nope");

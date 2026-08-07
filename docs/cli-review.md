@@ -77,3 +77,16 @@ Ordered by value-for-effort. Checked off as landed on the `cli` branch.
 - [x] **5. Harden arg parsing + tests** — support `--flag=value` and `--`,
   detect unknown flags, fix the subcommand-filtering edge; add CLI
   dispatch/exit-code tests.
+
+## Follow-ups (the noted-but-accepted items, decided with the user)
+
+- [x] **6. Consolidate inspection into `info`** — `info <name>` is now the
+  one-stop single-workspace view (record + drift + live containers, the last
+  best-effort so docker being down never breaks it). `reconcile`/`doctor` stays
+  the fleet check+repair operation; `status` stays a thin containers-only subset
+  for scripts.
+- [x] **7. `ws`/`workspace` alias namespace** — the flat workspace verbs also
+  accept a `ws`/`workspace` prefix (`sprig ws ls` == `sprig ls`), so the
+  noun-verb form works alongside the short forms without becoming mandatory. The
+  dispatch convention (workspace verbs are top-level; every other object is
+  namespaced) is now written down in `CliApp.Run`.

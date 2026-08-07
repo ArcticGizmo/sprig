@@ -176,8 +176,11 @@ they stay free for other workspaces. A port a kept repo still references is prov
 
 ```sh
 sprig ls                      # all workspaces (repos, ports, status)
-sprig info feature-x          # one workspace's repos, ports, and drift state
+sprig info feature-x          # one workspace, in full: repos, ports, drift, live containers
 ```
+
+Every workspace verb also accepts a `ws`/`workspace` prefix, so `sprig ws ls` and `sprig ws info
+feature-x` are the same commands — handy if you prefer the noun-verb form used by `repo`/`stack`.
 
 ### 4. Run the infrastructure
 
@@ -185,7 +188,7 @@ Only for workspaces whose repos declare docker infra:
 
 ```sh
 sprig up feature-x            # docker compose up (isolated project sprig-feature-x)
-sprig status feature-x        # live container status
+sprig status feature-x        # live container status only (info shows this too, plus everything else)
 sprig down feature-x          # stop; keeps volumes
 sprig down feature-x --volumes  # stop and wipe data
 sprig reset feature-x         # down then up

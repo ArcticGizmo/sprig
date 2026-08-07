@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.4.11] - 2026-08-07
+
+### Added
+- **`sprig settings`** — view and set the port range and restricted ports from the terminal.
+- **`sprig stack edit`** — amend a stack in place, instead of deleting and recreating it.
+- **`ws`/`workspace` prefix on workspace verbs** — `sprig ws ls`, for anyone who likes their nouns first.
+
+### Changed
+- **`--json` works on every command now**, not just the ones that felt like it.
+- **`sprig info` shows the whole workspace in one place** — repos, ports, drift, and live containers.
+- **Stricter arg parsing** — `--flag=value` works, `--` ends options, and a typo'd flag errors instead of being quietly ignored.
+- **Retired `sprig templates`** — it was `stack ls` in a hat.
+
+---
+
 ## [v0.4.10] - 2026-08-06
 
 ### Changed

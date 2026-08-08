@@ -13,6 +13,9 @@
     <!-- `sprig update` drives Velopack directly (check/download/apply). Keep the version in step
          with Sprig.App's reference — both must resolve the same feed/package format. -->
     <PackageReference Include="Velopack" Version="1.2.0" />
+    <!-- The command framework: routing, parsing and hierarchical help. Flows transitively to
+         Sprig.Tests, which drives the CommandApp through CliApp's Run(args, ISprigPaths) seam. -->
+    <PackageReference Include="Spectre.Console.Cli" Version="0.55.0" />
   </ItemGroup>
 
   <PropertyGroup>

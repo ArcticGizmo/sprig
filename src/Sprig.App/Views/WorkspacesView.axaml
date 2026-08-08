@@ -39,6 +39,10 @@
                                        Foreground="{StaticResource WarnBrush}">
                                 <Run Text="partial · " /><Run Text="{Binding PartialSummary}" />
                             </TextBlock>
+                            <TextBlock IsVisible="{Binding TeardownFailed}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                       Foreground="{StaticResource WarnBrush}">
+                                <Run Text="teardown failed — retry to finish" />
+                            </TextBlock>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -104,6 +108,13 @@
                             <TextBlock IsVisible="{Binding Selected.IsPartial}" FontSize="12" TextWrapping="Wrap"
                                        Foreground="{StaticResource WarnBrush}">
                                 <Run Text="partial workspace — " /><Run Text="{Binding Selected.PartialSummary}" />
+                            </TextBlock>
+                            <!-- A kept record from a teardown that couldn't finish; list what's left and
+                                 how to fix it. Removing again (once the blocker's gone) resumes the sweep. -->
+                            <TextBlock IsVisible="{Binding Selected.TeardownFailed}" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{StaticResource WarnBrush}">
+                                <Run Text="teardown incomplete — record kept so you can retry. Remaining:" />
+                                <LineBreak /><Run Text="{Binding Selected.TeardownSummary}" />
                             </TextBlock>
                         </StackPanel>
 

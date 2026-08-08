@@ -9,6 +9,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.5.4] - 2026-08-08
+
+### Changed
+- **A teardown that can't finish is now kept, not lost** — flagged in the list instead of vanishing half-dismantled.
+- **`sprig ws rm` is idempotent** — re-run after fixing the blocker and it finishes the sweep (deleting the already-deleted is fine).
+- **A stopped Docker no longer eats the workspace mid-teardown** — containers weren't stopped, so the record stays for a retry.
+- **`ws ls`/`ws info` call out a failed teardown**, and the app badges it — so you know what still needs a retry.
+
+---
+
 ## [v0.5.3] - 2026-08-08
 
 ### Changed

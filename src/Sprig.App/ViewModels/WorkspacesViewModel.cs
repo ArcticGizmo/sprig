@@ -524,13 +524,22 @@ public partial class WorkspacesViewModel : PageViewModel
             await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force, progress));
             await RefreshCore();
             Services.NotifyStoreChanged();
-            StatusMessage = $"removed '{item.Name}'";
 
-            // Teardown never hard-fails; a yellow row means a best-effort layer needed attention.
-            var warned = modal.Steps.Any(s => s.State == WorkspaceStepState.Warning);
-            modal.Finish(
-                warned ? $"Removed '{item.Name}' — some steps needed attention." : $"Removed '{item.Name}'.",
-                warned ? WorkspaceStepState.Warning : WorkspaceStepState.Done);
+            // Teardown never hard-fails; when a layer couldn't be dismantled the record is kept and
+            // flagged, so it's still in the list after the refresh. Distinguish that (retry needed)
+            // from a clean sweep (record gone), rather than a bare "some steps needed attention".
+            if (await AppServices.RunAsync(() => Services.Workspaces.Get(item.Name)) is { TeardownFailed: true })
+            {
+                StatusMessage = $"'{item.Name}' teardown incomplete — record kept; retry once fixed";
+                modal.Finish(
+                    $"Teardown of '{item.Name}' couldn't finish — record kept so you can retry once the flagged steps are fixed.",
+                    WorkspaceStepState.Warning);
+            }
+            else
+            {
+                StatusMessage = $"removed '{item.Name}'";
+                modal.Finish($"Removed '{item.Name}'.", WorkspaceStepState.Done);
+            }
         }
         catch (Exception ex)
         {

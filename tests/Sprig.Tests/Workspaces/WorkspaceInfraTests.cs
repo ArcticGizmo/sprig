@@ -126,4 +126,80 @@ public class WorkspaceInfraTests
 
         Assert.Contains(("sprig-feat-a", true), docker.Downs);
     }
+
+    [Fact]
+    public void Clean_teardown_deletes_the_record()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances, _) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+
+        svc.Remove("feat-a");
+
+        Assert.Null(instances.TryLoad("feat-a"));
+    }
+
+    [Fact]
+    public void Partial_teardown_keeps_a_flagged_record_but_still_sweeps_other_layers()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances, docker) = Build(store);
+        var record = svc.Create(Stack(repo), "feat-a");
+        var worktree = record.Repos[0].WorktreePath;
+
+        // Infra down blows up, but the rest of the sweep must still run to completion.
+        docker.DownFailure = new InvalidOperationException("compose down exploded");
+        svc.Remove("feat-a");
+
+        var kept = instances.TryLoad("feat-a");
+        Assert.NotNull(kept);
+        Assert.True(kept!.TeardownFailed);
+        Assert.Contains(kept.TeardownIssues, i => i.Contains("stop containers"));
+        // Later layers weren't skipped: the worktree folder is gone despite the infra failure.
+        Assert.False(Directory.Exists(worktree));
+    }
+
+    [Fact]
+    public void Docker_unavailable_keeps_a_flagged_record_without_calling_down()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances, docker) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+        docker.Available = false;
+
+        svc.Remove("feat-a");
+
+        var kept = instances.TryLoad("feat-a");
+        Assert.NotNull(kept);
+        Assert.True(kept!.TeardownFailed);
+        Assert.Contains(kept.TeardownIssues, i => i.Contains("Docker unavailable"));
+        Assert.Empty(docker.Downs);
+    }
+
+    [Fact]
+    public void Retrying_teardown_after_the_blocker_clears_finishes_and_deletes_the_record()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances, docker) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+
+        docker.DownFailure = new InvalidOperationException("compose down exploded");
+        svc.Remove("feat-a");
+        Assert.True(instances.TryLoad("feat-a")!.TeardownFailed);
+
+        // Fix the blocker and run rm again — teardown is idempotent, so the second sweep completes
+        // (already-gone worktree/ports are no-ops) and the record is finally deleted.
+        docker.DownFailure = null;
+        svc.Remove("feat-a");
+
+        Assert.Null(instances.TryLoad("feat-a"));
+    }
 }

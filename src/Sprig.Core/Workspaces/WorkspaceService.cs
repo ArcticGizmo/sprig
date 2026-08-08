@@ -333,11 +333,13 @@ public sealed partial class WorkspaceService(
 
     /// <summary>
     /// Tear down a workspace. Layered and idempotent: each step tolerates its target already
-    /// being gone. The branch is deleted only when <paramref name="force"/> is set; the record
-    /// is removed last so an interrupted teardown is resumable. Reports checklist progress to
-    /// <paramref name="progress"/> if supplied (steps match <see cref="PlanRemove"/>); because
-    /// teardown is best-effort, a step whose action throws is reported as a Warning, not an Error —
-    /// the sweep always runs to completion.
+    /// being gone, so re-running a teardown is always safe. The branch is deleted only when
+    /// <paramref name="force"/> is set. Reports checklist progress to <paramref name="progress"/>
+    /// if supplied (steps match <see cref="PlanRemove"/>); because teardown is best-effort, a step
+    /// whose action throws is reported as a Warning, not an Error — the sweep always runs to
+    /// completion. The record is removed last, and <b>only when every step succeeded</b>: if any
+    /// step warned, the record is kept and flagged <see cref="InstanceRecord.TeardownFailed"/> so
+    /// the workspace stays visible and the teardown can be retried once the blocker is fixed.
     /// </summary>
     public void Remove(string workspace, bool force = false, IProgress<WorkspaceStepProgress>? progress = null)
     {
@@ -349,6 +351,10 @@ public sealed partial class WorkspaceService(
             return;
         }
 
+        // What each best-effort step couldn't finish. Empty at the end means a clean sweep (delete
+        // the record); anything here means we keep the record flagged for a later retry.
+        var issues = new List<string>();
+
         // Step 1 of the S3 matrix: infra down (and wipe volumes) before touching worktrees.
         var dockerUp = docker.IsAvailable();
         foreach (var repo in record.Repos.Where(r => r.ComposePaths.Count > 0))
@@ -356,18 +362,26 @@ public sealed partial class WorkspaceService(
             var id = RemoveStepIds.Infra(repo.Name);
             if (!dockerUp)
             {
+                // Containers left running is a real reason not to finish teardown — flag it so the
+                // record is kept and the user can retry once Docker is back.
+                var note = $"stop containers ({repo.Name}): Docker unavailable — containers not stopped";
                 progress?.Report(new(id, WorkspaceStepState.Warning, "Docker unavailable — containers not stopped"));
+                issues.Add(note);
                 continue;
             }
-            Step(progress, id, () =>
-                docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes: true));
+            // A prior partial sweep may already have removed the worktree, so the project directory
+            // can be gone on retry. Containers are found by project name regardless, so fall back to
+            // the (still-present) instance dir to give compose a real directory to run in.
+            var projectDir = Directory.Exists(repo.WorktreePath) ? repo.WorktreePath : paths.InstanceDir(workspace);
+            Step(progress, id, issues, $"stop containers ({repo.Name})", () =>
+                docker.Down(repo.ComposePaths, projectDir, ProjectName(workspace), removeVolumes: true));
         }
 
         foreach (var repo in record.Repos)
         {
             var isRepo = git.IsGitRepo(repo.SourcePath);
 
-            Step(progress, RemoveStepIds.Worktree(repo.Name), () =>
+            Step(progress, RemoveStepIds.Worktree(repo.Name), issues, $"remove worktree ({repo.Name})", () =>
             {
                 var state = WorktreeInspector.Classify(git, repo.SourcePath, repo.WorktreePath);
                 switch (state)
@@ -395,20 +409,35 @@ public sealed partial class WorkspaceService(
             });
 
             if (force && repo.Branch is not null)
-                Step(progress, RemoveStepIds.Branch(repo.Name), () =>
+                Step(progress, RemoveStepIds.Branch(repo.Name), issues, $"delete branch ({repo.Name})", () =>
                 {
                     if (isRepo && git.BranchExists(repo.SourcePath, repo.Branch))
                         git.DeleteBranch(repo.SourcePath, repo.Branch);
                 });
         }
 
-        Step(progress, RemoveStepIds.Ports, () => ports.Release(workspace));
-        Step(progress, RemoveStepIds.Record, () => instances.Delete(workspace));
+        Step(progress, RemoveStepIds.Ports, issues, "release ports", () => ports.Release(workspace));
+
+        // Last step: delete the record only if everything above succeeded. If any layer warned,
+        // keep the record — flagged, with the reasons — so the workspace still shows in the list and
+        // a later `rm` resumes the sweep. Saving the flag is itself best-effort.
+        if (issues.Count == 0)
+        {
+            Step(progress, RemoveStepIds.Record, issues, "delete workspace record", () => instances.Delete(workspace));
+        }
+        else
+        {
+            progress?.Report(new(RemoveStepIds.Record, WorkspaceStepState.Warning,
+                "kept — teardown incomplete; fix the above and run rm again"));
+            TryQuiet(() => instances.Save(record with { TeardownFailed = true, TeardownIssues = issues }));
+        }
     }
 
     /// <summary>Run one best-effort teardown step, reporting Running → Done, or Warning if it throws
-    /// (teardown never aborts on a single failed layer — the exception is surfaced, not propagated).</summary>
-    static void Step(IProgress<WorkspaceStepProgress>? progress, string id, Action action)
+    /// (teardown never aborts on a single failed layer — the exception is surfaced, not propagated).
+    /// A throw also appends a note to <paramref name="issues"/> under the label <paramref name="what"/>,
+    /// which is what decides whether the record is kept and flagged at the end.</summary>
+    static void Step(IProgress<WorkspaceStepProgress>? progress, string id, List<string> issues, string what, Action action)
     {
         progress?.Report(new(id, WorkspaceStepState.Running));
         try
@@ -419,6 +448,7 @@ public sealed partial class WorkspaceService(
         catch (Exception ex)
         {
             progress?.Report(new(id, WorkspaceStepState.Warning, ex.Message));
+            issues.Add($"{what}: {ex.Message}");
         }
     }
 

@@ -28,6 +28,16 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     /// <summary>True when this workspace holds a subset of its stack's repos — drives the list badge.</summary>
     public bool IsPartial => Record.IsPartial;
 
+    /// <summary>True when a teardown couldn't finish and left this record behind — drives the list
+    /// badge and detail warning so the workspace reads as "needs a retry", not a live workspace.</summary>
+    public bool TeardownFailed => Record.TeardownFailed;
+
+    /// <summary>What the last teardown couldn't finish, one issue per line (empty when it didn't fail),
+    /// so the detail pane can explain what to fix before retrying.</summary>
+    public string TeardownSummary => Record.TeardownFailed
+        ? string.Join("\n", Record.TeardownIssues)
+        : "";
+
     /// <summary>What a partial workspace left out, and which stack ports that meant skipping (empty
     /// string for a full workspace, so the label can be bound unconditionally).</summary>
     public string PartialSummary => !Record.IsPartial ? "" :

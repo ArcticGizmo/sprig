@@ -311,7 +311,11 @@ public sealed class LsCommand(CliContext cli) : Command<GlobalSettings>
                 Markup.Escape(r.Workspace),
                 Markup.Escape(string.Join(",", r.Repos.Select(x => x.Name))),
                 Markup.Escape(CliFormat.Ports(r.Ports)),
-                Markup.Escape($"{r.LastStatus}"));
+                // A flagged workspace is one a teardown couldn't finish — call it out here rather than
+                // the stale lifecycle status, so it stands out in the list as needing a retry.
+                r.TeardownFailed
+                    ? $"[yellow]teardown failed[/]"
+                    : Markup.Escape($"{r.LastStatus}"));
         cli.Ansi.Write(table);
         return 0;
     }
@@ -332,6 +336,12 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
         if (s.Json) { CliOutput.Json(new { record, drift = report, containers }); return 0; }
 
         Console.WriteLine($"workspace: {record.Workspace}   status: {record.LastStatus}   created: {record.CreatedAt:u}");
+        if (record.TeardownFailed)
+        {
+            Console.WriteLine("teardown failed — record kept; fix the below and run 'sprig ws rm' again:");
+            foreach (var issue in record.TeardownIssues)
+                Console.WriteLine($"  - {issue}");
+        }
         if (record.IsPartial)
         {
             Console.WriteLine($"partial: stack '{record.Stack}' without {string.Join(", ", record.ExcludedRepos)}");
@@ -434,6 +444,13 @@ public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
         if (s.Json)
         {
             cli.Workspaces.Remove(workspace, force);
+            // Teardown keeps a flagged record when it couldn't finish; a leftover record means it
+            // was only partial, so report that rather than a clean removal (and exit non-zero).
+            if (cli.Workspaces.Get(workspace) is { TeardownFailed: true } leftover)
+            {
+                CliOutput.Json(new { ok = false, workspace, action = "remove", teardownFailed = true, issues = leftover.TeardownIssues });
+                return 1;
+            }
             return CliOutput.Ok(true, "", new { ok = true, workspace, action = "remove", branchDeleted = force });
         }
 
@@ -441,6 +458,18 @@ public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
         var plan = cli.Workspaces.PlanRemove(record, force);
         console.MarkupLine($"[bold]Destroying workspace[/] [red]{Markup.Escape(workspace)}[/]");
         Checklist.Run(console, plan, progress => cli.Workspaces.Remove(workspace, force, progress));
+
+        // A kept, flagged record means some layer couldn't be torn down. Say what, and point at the
+        // retry — teardown is idempotent, so re-running once the blocker is fixed finishes the job.
+        if (cli.Workspaces.Get(workspace) is { TeardownFailed: true } kept)
+        {
+            console.MarkupLine($"[yellow]teardown incomplete[/] for [bold]{Markup.Escape(workspace)}[/] — record kept so you can retry:");
+            foreach (var issue in kept.TeardownIssues)
+                console.MarkupLine($"  [yellow]•[/] {Markup.Escape(issue)}");
+            console.MarkupLine($"  fix the above, then run [bold]sprig ws rm {Markup.Escape(workspace)}[/] again");
+            return 1;
+        }
+
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] destroyed workspace [bold]{Markup.Escape(workspace)}[/]" +
             (force ? " [dim](branch deleted)[/]" : ""));
         return 0;

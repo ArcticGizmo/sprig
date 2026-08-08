@@ -17,6 +17,16 @@ public sealed record InstanceRecord
     public string? LastStatus { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
 
+    /// <summary>True when a teardown ran but couldn't dismantle everything, so this record was kept
+    /// (rather than deleted) to keep the workspace visible and the sweep resumable. Teardown is
+    /// idempotent, so re-running it once the blocker is fixed picks up where it left off. Cleared on
+    /// the next fully-successful teardown (which then deletes the record).</summary>
+    public bool TeardownFailed { get; init; }
+
+    /// <summary>Human notes on what a partial teardown couldn't finish (one per warned step), so the
+    /// UI/CLI can explain what to fix before retrying. Empty unless <see cref="TeardownFailed"/>.</summary>
+    public IReadOnlyList<string> TeardownIssues { get; init; } = [];
+
     /// <summary>Stack repos deliberately left out when this workspace was created (a <i>partial</i>
     /// workspace). Recorded, not acted on: teardown only ever walks <see cref="Repos"/>. Empty for a
     /// full workspace, and for one created from an ad-hoc repo.</summary>

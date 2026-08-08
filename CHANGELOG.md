@@ -7,8 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [v0.5.2] - 2026-08-08
+
 ### Added
-- **`sprig cd`** — open a new terminal window in a workspace's repo (and optionally a module within it), matching the shell you came from (powershell → powershell, cmd → cmd) and a fresh Windows Terminal window when you're in one. Pass `-i` to pick workspace → repo → module interactively, or `--print`/`--json` to just resolve the path.
+- **`sprig cd`** — open a new terminal in a workspace's repo or module, in the shell you came from. `-i` picks interactively; `--print` if you only want the path.
 
 ---
 

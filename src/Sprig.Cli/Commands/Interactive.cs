@@ -12,17 +12,24 @@ namespace Sprig.Cli.Commands;
 /// interactive.</summary>
 static class Term
 {
-    public static IAnsiConsole Create()
+    public static IAnsiConsole Create() => Create(Console.Out, Console.IsOutputRedirected);
+
+    /// <summary>A prompt console bound to <b>stderr</b>. Used by <c>cd</c>, whose stdout carries only the
+    /// resolved path (captured by the shell wrapper): the menus must render somewhere the wrapper doesn't
+    /// swallow, and stderr is still the real terminal even when stdout is piped into <c>$p = sprig cd …</c>.</summary>
+    public static IAnsiConsole CreateError() => Create(Console.Error, Console.IsErrorRedirected);
+
+    static IAnsiConsole Create(TextWriter output, bool redirected)
     {
         var console = AnsiConsole.Create(new AnsiConsoleSettings
         {
             Ansi = AnsiSupport.Detect,
             ColorSystem = ColorSystemSupport.Detect,
-            Out = new AnsiConsoleOutput(Console.Out),
+            Out = new AnsiConsoleOutput(output),
         });
         // Redirected: detection assumes 80 cols and wraps long paths; widen it. Interactive: keep the
         // real terminal width so the live checklist and prompts lay out correctly.
-        if (Console.IsOutputRedirected) console.Profile.Width = 200;
+        if (redirected) console.Profile.Width = 200;
         return console;
     }
 

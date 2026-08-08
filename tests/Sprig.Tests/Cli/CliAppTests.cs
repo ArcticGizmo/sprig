@@ -50,6 +50,31 @@ public sealed class CliAppTests : IDisposable
         new RepoRegistryStore(_paths).Add(dir, name);
     }
 
+    // Write a workspace record whose repos have real on-disk worktrees (so `cd` finds them), each with an
+    // optional .sprig.json declaring modules. `modules` maps repo name → module (name, path) pairs.
+    void SeedWorkspace(string workspace, params string[] repos)
+        => SeedWorkspace(workspace, repos, modules: null);
+
+    void SeedWorkspace(string workspace, string[] repos,
+        IReadOnlyDictionary<string, (string Name, string Path)[]>? modules)
+    {
+        var instanceRepos = new List<InstanceRepo>();
+        foreach (var name in repos)
+        {
+            var worktree = Path.Combine(_root, "worktrees", $"{name}--{workspace}");
+            Directory.CreateDirectory(worktree);
+            var mods = modules is not null && modules.TryGetValue(name, out var m) ? m : [];
+            var modJson = string.Join(",", mods.Select(x =>
+                $$"""{ "name": "{{x.Name}}", "path": "{{x.Path}}" }"""));
+            File.WriteAllText(Path.Combine(worktree, ".sprig.json"),
+                $$"""{ "schema": 3, "name": "{{name}}", "inputs": [], "modules": [{{modJson}}] }""");
+            foreach (var mod in mods.Where(x => x.Path.Length > 0))
+                Directory.CreateDirectory(Path.Combine(worktree, mod.Path.Replace('/', Path.DirectorySeparatorChar)));
+            instanceRepos.Add(new InstanceRepo { Name = name, SourcePath = worktree, WorktreePath = worktree });
+        }
+        new InstanceStore(_paths).Save(new InstanceRecord { Workspace = workspace, Repos = instanceRepos });
+    }
+
     [Fact]
     public void Version_prints_and_exits_zero()
     {
@@ -246,5 +271,140 @@ public sealed class CliAppTests : IDisposable
         var ghost = Run("stack", "edit", "ghost");
         Assert.Equal(1, ghost.exit);
         Assert.Contains("unknown stack", ghost.err);
+    }
+
+    [Fact]
+    public void Cd_single_repo_resolves_the_worktree_path()
+    {
+        SeedWorkspace("feat", "api");
+        var (exit, o, _) = Run("cd", "feat", "--print");
+        Assert.Equal(0, exit);
+        Assert.EndsWith($"api--feat", o.Trim()); // one repo → implied, root module → worktree root
+    }
+
+    [Fact]
+    public void Cd_unknown_workspace_fails()
+    {
+        var (exit, _, err) = Run("cd", "nope");
+        Assert.Equal(1, exit);
+        Assert.Contains("unknown workspace", err);
+    }
+
+    [Fact]
+    public void Cd_without_a_workspace_and_no_i_fails()
+    {
+        var (exit, _, err) = Run("cd");
+        Assert.Equal(1, exit);
+        Assert.Contains("requires a workspace", err);
+    }
+
+    [Fact]
+    public void Cd_multi_repo_needs_a_repo_named()
+    {
+        SeedWorkspace("feat", "api", "web");
+        var (exit, _, err) = Run("cd", "feat");
+        Assert.Equal(1, exit);
+        Assert.Contains("name one", err);
+        Assert.Contains("api", err);
+        Assert.Contains("web", err);
+    }
+
+    [Fact]
+    public void Cd_selects_a_named_repo()
+    {
+        SeedWorkspace("feat", "api", "web");
+        var (exit, o, _) = Run("cd", "feat", "web", "--print");
+        Assert.Equal(0, exit);
+        Assert.EndsWith("web--feat", o.Trim());
+    }
+
+    [Fact]
+    public void Cd_unknown_repo_lists_the_options()
+    {
+        SeedWorkspace("feat", "api", "web");
+        var (exit, _, err) = Run("cd", "feat", "ghost");
+        Assert.Equal(1, exit);
+        Assert.Contains("no repo 'ghost'", err);
+    }
+
+    [Fact]
+    public void Cd_resolves_a_module_subdirectory()
+    {
+        SeedWorkspace("feat", ["mono"],
+            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web"), ("api", "apps/api")] });
+        var (exit, o, _) = Run("cd", "feat", "mono", "web", "--print");
+        Assert.Equal(0, exit);
+        var expected = Path.Combine("apps", "web");
+        Assert.EndsWith(expected, o.Trim());
+    }
+
+    [Fact]
+    public void Cd_module_defaults_to_the_root()
+    {
+        SeedWorkspace("feat", ["mono"],
+            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
+        var (exit, o, _) = Run("cd", "feat", "mono", "--print");
+        Assert.Equal(0, exit);
+        Assert.EndsWith("mono--feat", o.Trim()); // no module arg → worktree root, not apps/web
+    }
+
+    [Fact]
+    public void Cd_root_keyword_selects_the_worktree_root()
+    {
+        SeedWorkspace("feat", ["mono"],
+            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
+        var (exit, o, _) = Run("cd", "feat", "mono", "root", "--print");
+        Assert.Equal(0, exit);
+        Assert.EndsWith("mono--feat", o.Trim());
+    }
+
+    [Fact]
+    public void Cd_print_emits_only_the_path()
+    {
+        SeedWorkspace("feat", "api");
+        var (exit, o, _) = Run("cd", "feat", "--print");
+        Assert.Equal(0, exit);
+        // A single clean line — no "opened … in a new window" chatter, nothing a script would trip on.
+        Assert.Single(o.Trim().Split('\n', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    [Fact]
+    public void Cd_unknown_module_lists_root_and_the_modules()
+    {
+        SeedWorkspace("feat", ["mono"],
+            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
+        var (exit, _, err) = Run("cd", "feat", "mono", "ghost");
+        Assert.Equal(1, exit);
+        Assert.Contains("no module 'ghost'", err);
+        Assert.Contains("(root)", err);
+        Assert.Contains("web", err);
+    }
+
+    [Fact]
+    public void Cd_json_reports_the_resolved_target()
+    {
+        SeedWorkspace("feat", ["mono"],
+            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
+        var (exit, o, _) = Run("cd", "feat", "mono", "web", "--json");
+        Assert.Equal(0, exit);
+        Assert.Contains("\"ok\": true", o);
+        Assert.Contains("\"repo\": \"mono\"", o);
+        Assert.Contains("\"module\": \"web\"", o);
+    }
+
+    [Fact]
+    public void Interactive_cd_rejects_json()
+    {
+        var (exit, o, _) = Run("cd", "-i", "--json");
+        Assert.Equal(1, exit);
+        Assert.Contains("\"ok\": false", o);
+    }
+
+    [Fact]
+    public void Interactive_cd_refuses_without_a_terminal()
+    {
+        SeedWorkspace("feat", "api");
+        var (exit, _, _) = Run("cd", "-i");
+        Assert.Equal(1, exit);
     }
 }

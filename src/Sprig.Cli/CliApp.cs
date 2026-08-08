@@ -95,6 +95,7 @@ public static class CliApp
         // typo'd flag should fail loudly instead of quietly running a command it didn't mean.
         config.UseStrictParsing();
 
+        config.AddCommand<CdCommand>("cd");
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
         config.AddCommand<InitCommand>("init");

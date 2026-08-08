@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.5.2] - 2026-08-08
+
+### Added
+- **`sprig cd`** — open a new terminal in a workspace's repo or module, in the shell you came from. `-i` picks interactively; `--print` if you only want the path.
+
+---
+
 ## [v0.5.1] - 2026-08-08
 
 ### Added

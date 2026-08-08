@@ -9,6 +9,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.5.3] - 2026-08-08
+
+### Changed
+- **`sprig create` now starts the workspace's infra** — matching the app. `--skip-infra` leaves it created-only.
+- **A stalled Docker no longer fails a create** — the workspace is kept, with a nudge toward `sprig ws up`.
+
+---
+
 ## [v0.5.2] - 2026-08-08
 
 ### Added

@@ -10,7 +10,7 @@
     <Product>Sprig</Product>
     <Company>Sprig</Company>
     <Description>Worktree + infrastructure isolation for any git repo.</Description>
-    <Version>0.5.2</Version>
+    <Version>0.5.3</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\sprig.ico</ApplicationIcon>

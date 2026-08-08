@@ -44,6 +44,10 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         [CommandOption("--without <repos>")]
         [Description("Partial: every stack repo except these")]
         public string[] Without { get; set; } = [];
+
+        [CommandOption("--skip-infra")]
+        [Description("Create only — don't start the workspace's docker infra (it starts by default)")]
+        public bool SkipInfra { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -94,7 +98,32 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         Checklist.Run(console, plan, progress => record = cli.Workspaces.Create(resolved, name, progress));
 
         RenderSummary(console, record);
+
+        // Infra starts by default (both interactive and non-interactive); --skip-infra leaves it created-only.
+        if (!s.SkipInfra)
+            StartInfra(console, record);
         return 0;
+    }
+
+    // Bring the freshly-created workspace's infra up. A stack with no compose files is a silent no-op; a
+    // start failure (e.g. Docker not running) is a soft warning — the workspace itself was created, so we
+    // keep it and point at `sprig ws up` rather than failing the whole create. Mirrors the GUI create flow.
+    void StartInfra(IAnsiConsole console, InstanceRecord record)
+    {
+        if (!record.Repos.Any(r => r.ComposePaths.Count > 0))
+            return;
+
+        console.MarkupLine("[bold]Starting infrastructure[/]…");
+        try
+        {
+            cli.Workspaces.Up(record.Workspace);
+            console.MarkupLine($"[green]{Glyph.Check(console)}[/] infra up");
+        }
+        catch (Exception ex)
+        {
+            console.MarkupLine($"[yellow]note:[/] infra didn't start — {Markup.Escape(ex.Message)}");
+            console.MarkupLine($"  start it later with [bold]sprig ws up {Markup.Escape(record.Workspace)}[/]");
+        }
     }
 
     // The `-i` flow: pick a stack, choose its repos and each repo's modules (all selected by default),

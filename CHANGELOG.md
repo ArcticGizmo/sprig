@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.5.1] - 2026-08-08
+
+### Added
+- **`sprig ws create -i`** — pick the stack, repos, modules and name interactively (esc steps back).
+- **`sprig ws rm -i`** — pick a workspace to destroy, with confirmation.
+- **Per-command help** — `sprig stack --help` lists that group's own commands.
+
+### Changed
+- **Workspace verbs now live under `ws`** — `sprig ls` becomes `sprig ws ls`.
+- **Create and destroy show a live checklist**, grouped per repo — no longer just a frozen pause.
+- **List commands render as tables** — coloured in a terminal, plain when piped.
+- **The app's workspace "Remove" button is now "Destroy"** — same button, more terminal.
+
+---
+
 ## [v0.5.0] - 2026-08-07
 
 ### Added

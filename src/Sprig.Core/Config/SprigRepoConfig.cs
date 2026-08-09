@@ -144,11 +144,12 @@ public sealed record EnvOverride
     public string File { get; init; } = "";
 
     /// <summary>
-    /// Optional source file(s), relative to the repo root, to seed the worktree's copy of
-    /// <see cref="File"/> from before sprig's override block is injected — e.g. a committed
-    /// <c>.env.template</c>. When set, these replace the default seed (the target file's own
-    /// content); multiple are concatenated in order. Missing files are skipped. Null/empty means
-    /// the old behaviour: seed from the target file itself if it exists.
+    /// Optional <b>fallback</b> source file(s), relative to the module path (as with <see cref="File"/>),
+    /// used to seed the worktree's copy of <see cref="File"/> only when the target file itself is absent
+    /// or empty in the source repo — e.g. a committed <c>.env.template</c> standing in for a gitignored
+    /// <c>.env.local</c> that lives only on a developer's machine. The target file's own <b>real values
+    /// always win when present</b>; the templates apply only in their absence, concatenated in order
+    /// (missing/empty skipped). Null/empty: seed from the target file alone.
     /// </summary>
     public IReadOnlyList<string>? Templates { get; init; }
 

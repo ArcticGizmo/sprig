@@ -37,9 +37,9 @@ public class EnvTemplateSeedTests : IDisposable
     string WorktreeText(string file) => File.ReadAllText(Path.Combine(_worktree, file)).Replace("\r\n", "\n");
 
     [Fact]
-    public void Seeds_the_target_from_a_template_file()
+    public void Seeds_the_target_from_a_template_file_when_the_real_file_is_absent()
     {
-        // The real .env.local isn't committed; .env.template is.
+        // The real .env.local isn't on this machine; the committed .env.template stands in for it.
         File.WriteAllText(Path.Combine(_source, ".env.template"), "API_KEY=changeme\nOTHER=keep\n");
         var config = Config(".env.local", [".env.template"], ("PORT", "${sprig.ports.frontend}"));
 
@@ -80,9 +80,10 @@ public class EnvTemplateSeedTests : IDisposable
     }
 
     [Fact]
-    public void Templates_replace_the_target_files_own_seed()
+    public void The_real_target_files_values_win_over_a_template()
     {
-        // Both a target file AND a template exist — the template wins as the seed source.
+        // Both the real (gitignored) target file AND a committed template exist — the developer's
+        // real values are what the worktree wants, so they win; the template is only a fallback.
         File.WriteAllText(Path.Combine(_source, ".env.local"), "FROM_TARGET=1\n");
         File.WriteAllText(Path.Combine(_source, ".env.template"), "FROM_TEMPLATE=1\n");
         var config = Config(".env.local", [".env.template"], ("PORT", "${sprig.ports.frontend}"));
@@ -90,8 +91,21 @@ public class EnvTemplateSeedTests : IDisposable
         _svc.Apply(config, _source, _worktree, Scope());
 
         var lines = WorktreeText(".env.local").Split('\n');
-        Assert.Contains("FROM_TEMPLATE=1", lines);
-        Assert.DoesNotContain("FROM_TARGET=1", lines);
+        Assert.Contains("FROM_TARGET=1", lines);
+        Assert.DoesNotContain("FROM_TEMPLATE=1", lines);
+    }
+
+    [Fact]
+    public void Falls_back_to_the_template_when_the_target_file_is_present_but_empty()
+    {
+        // A stub file with no real values (just whitespace) is as good as absent — use the template.
+        File.WriteAllText(Path.Combine(_source, ".env.local"), "   \n");
+        File.WriteAllText(Path.Combine(_source, ".env.template"), "FROM_TEMPLATE=1\n");
+        var config = Config(".env.local", [".env.template"], ("PORT", "${sprig.ports.frontend}"));
+
+        _svc.Apply(config, _source, _worktree, Scope());
+
+        Assert.Contains("FROM_TEMPLATE=1", WorktreeText(".env.local").Split('\n'));
     }
 
     [Fact]

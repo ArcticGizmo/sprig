@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.5.5] - 2026-08-09
+
+### Fixed
+- **Real `.env` values now win over the template** — a worktree seeds from your actual gitignored file, not the placeholder. The template only stands in when the file's genuinely absent.
+
+---
+
 ## [v0.5.4] - 2026-08-08
 
 ### Changed

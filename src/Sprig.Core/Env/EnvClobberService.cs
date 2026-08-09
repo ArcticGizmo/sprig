@@ -50,12 +50,24 @@ public sealed class EnvClobberService
     }
 
     /// <summary>
-    /// The seed content for an override's target file. When the override names template files, their
-    /// (block-stripped) contents are concatenated in order — missing ones skipped. Otherwise the
-    /// target file's own content in the source repo is used, if it exists.
+    /// The seed content for an override's target file, preferring the developer's real values. The
+    /// target file's own content in the source repo wins whenever it exists and isn't empty — on a
+    /// working machine the (gitignored) <c>.env</c> holds the actual values you want carried into the
+    /// worktree. Only when that file is absent or empty do the declared <see cref="EnvOverride.Templates"/>
+    /// apply, their (block-stripped) contents concatenated in order (missing/empty ones skipped). Empty
+    /// when nothing is available.
     /// </summary>
     static string SeedFor(EnvOverride over, string sourceRepo, string basePath)
     {
+        // The real target file's own values take priority — a committed template is only a stand-in
+        // for when that gitignored file isn't on this machine, never a replacement for it.
+        var sourceFile = Path.Combine(sourceRepo, basePath, over.File);
+        if (File.Exists(sourceFile))
+        {
+            var own = StripBlocks(File.ReadAllText(sourceFile));
+            if (own.Trim().Length > 0) return own;
+        }
+
         if (over.Templates is { Count: > 0 } templates)
         {
             var sb = new StringBuilder();
@@ -72,8 +84,7 @@ public sealed class EnvClobberService
             return sb.ToString();
         }
 
-        var sourceFile = Path.Combine(sourceRepo, basePath, over.File);
-        return File.Exists(sourceFile) ? StripBlocks(File.ReadAllText(sourceFile)) : "";
+        return "";
     }
 
     static SortedDictionary<string, string> Resolve(EnvOverride over, IVariableSource scope)

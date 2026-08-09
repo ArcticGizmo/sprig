@@ -8,6 +8,15 @@ namespace Sprig.Core.Init;
 /// <summary>A proposed <c>.sprig.json</c> plus advisory notes for the user to review.</summary>
 public sealed record InitProposal(SprigRepoConfig Config, IReadOnlyList<string> Notes);
 
+/// <summary>What detection found in a single compose file: the value <see cref="Overrides"/> to apply,
+/// the port <see cref="Inputs"/> those overrides reference (to declare), and any advisory
+/// <see cref="Notes"/>. Returned by <see cref="InitInspector.DetectComposeInText"/> so the editor's
+/// manual "add compose file" flow can propose the same isolation the initial add does.</summary>
+public sealed record ComposeDetection(
+    IReadOnlyList<ComposeOverride> Overrides,
+    IReadOnlyList<InputDeclaration> Inputs,
+    IReadOnlyList<string> Notes);
+
 /// <summary>A module to scaffold: its <see cref="Name"/> (tab label) and the repo-relative
 /// <see cref="Path"/> (subdirectory) its detection is scoped to. Empty path = the repo root.</summary>
 public sealed record ModuleSpec(string Name, string Path);
@@ -266,11 +275,40 @@ public sealed class InitInspector
     List<ComposeOverride> DetectComposeOverrides(string repoRoot, string file,
         List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
     {
+        string text;
+        try { text = File.ReadAllText(Path.Combine(repoRoot, file)); }
+        catch { notes.Add($"could not parse {file} — skipping compose detection"); return []; }
+        return ParseComposeOverrides(text, file, inputs, used, notes);
+    }
+
+    /// <summary>
+    /// Run add-time compose detection over one compose file's <paramref name="composeText"/> — for the
+    /// editor's manual "add compose file" flow, so a hand-added file gets the same proposed container-name
+    /// and port rewrites (plus their declared inputs) as one found during the initial scan.
+    /// <paramref name="existingInputNames"/> are the inputs already declared, so any new port input is
+    /// named uniquely against them. Pure; git isn't consulted (compose files are always safe targets).
+    /// </summary>
+    public static ComposeDetection DetectComposeInText(string composeText, string fileLabel,
+        IEnumerable<string> existingInputNames)
+    {
+        var inputs = new List<InputDeclaration>();
+        var notes = new List<string>();
+        var used = new HashSet<string>(existingInputNames, StringComparer.OrdinalIgnoreCase);
+        var overrides = ParseComposeOverrides(composeText, fileLabel, inputs, used, notes);
+        return new ComposeDetection(overrides, inputs, notes);
+    }
+
+    /// <summary>The shared core: parse a compose file's text and build its container-name/port overrides,
+    /// appending any port inputs to <paramref name="inputs"/> (unique against <paramref name="used"/>) and
+    /// advisory <paramref name="notes"/>. Used by both the initial scan and the editor's manual add.</summary>
+    static List<ComposeOverride> ParseComposeOverrides(string composeText, string file,
+        List<InputDeclaration> inputs, HashSet<string> used, List<string> notes)
+    {
         YamlMappingNode root;
         try
         {
             var stream = new YamlStream();
-            using var reader = new StringReader(File.ReadAllText(Path.Combine(repoRoot, file)));
+            using var reader = new StringReader(composeText);
             stream.Load(reader);
             root = (YamlMappingNode)stream.Documents[0].RootNode;
         }

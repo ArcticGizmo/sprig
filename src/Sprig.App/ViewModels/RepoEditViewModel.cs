@@ -12,6 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Config;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
+using Sprig.Core.Init;
 
 namespace Sprig.App.ViewModels;
 
@@ -320,21 +321,29 @@ public partial class ComposeFileEditRow : ObservableObject
     readonly Action<ComposeFileEditRow> _remove;
     readonly Func<string, bool> _exists;
     readonly Func<string, string> _readText;
+    readonly Func<string, string, IReadOnlyList<ComposeOverride>> _detect;
     readonly IEnumerable<string> _variables;
 
     /// <summary>Overrides loaded from disk — seeds the overlay's first build so a missing/blank path
-    /// doesn't drop them before the file is (re)supplied.</summary>
+    /// doesn't drop them before the file is (re)supplied. Null <em>only</em> for a hand-added row (never
+    /// hydrated from a config), which is exactly the row that gets add-time auto-detection.</summary>
     IReadOnlyList<ComposeOverride>? _seed;
+
+    /// <summary>Compose file paths we've already auto-detected, so re-running <see cref="Rebuild"/> (e.g.
+    /// when the module path changes) never re-proposes overrides — least of all over ones since edited.</summary>
+    readonly HashSet<string> _autoDetected = new(StringComparer.OrdinalIgnoreCase);
 
     public ComposeFileEditRow(
         Action<ComposeFileEditRow> remove,
         Func<string, bool> exists,
         Func<string, string> readText,
+        Func<string, string, IReadOnlyList<ComposeOverride>> detect,
         IEnumerable<string> variables)
     {
         _remove = remove;
         _exists = exists;
         _readText = readText;
+        _detect = detect;
         _variables = variables;
     }
 
@@ -405,6 +414,17 @@ public partial class ComposeFileEditRow : ObservableObject
         var text = "";
         try { text = _readText(rel); }
         catch { /* unreadable → empty overlay; the ✓/⚠ subtext already flags a missing file */ }
+
+        // A hand-added row (never seeded from a config) gets the same auto-detection the initial add runs,
+        // the first time it points at a real compose file with nothing overridden yet: propose the
+        // container-name/port rewrites and declare their inputs. Only once per path, and never when there
+        // are already overrides — so it seeds a blank slate but doesn't clobber the user's edits.
+        if (_seed is null && Found && (seed is null || seed.Count == 0) && _autoDetected.Add(rel))
+        {
+            var detected = _detect(text, rel);
+            if (detected.Count > 0) seed = detected;
+        }
+
         Overlay = new ComposeOverlayViewModel(text, seed, _variables);
     }
 
@@ -470,11 +490,13 @@ public partial class ModuleEditTab : ObservableObject
         f => _owner.RepoFileExists(RepoEditViewModel.JoinPath(Path, f)),
         _owner.SprigVariableNames);
 
-    /// <summary>A fresh compose row wired to this module (removal, and path-aware exists/read callbacks).</summary>
+    /// <summary>A fresh compose row wired to this module (removal, path-aware exists/read callbacks, and
+    /// the add-time auto-detection that pre-fills a hand-added file's overrides).</summary>
     public ComposeFileEditRow NewComposeRow() => new(
         r => Compose.Remove(r),
         f => _owner.RepoFileExists(RepoEditViewModel.JoinPath(Path, f)),
         f => _owner.ReadRepoFile(RepoEditViewModel.JoinPath(Path, f)),
+        _owner.DetectComposeOverrides,
         _owner.SprigVariableNames);
 
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
@@ -747,6 +769,31 @@ public partial class RepoEditViewModel : ObservableObject
         if (rel.Length == 0) return false;
         try { return Directory.Exists(Path.Combine(RepoPath, rel)); }
         catch { return false; }
+    }
+
+    /// <summary>
+    /// Run add-time compose detection over a hand-added compose file (the same detection the initial add
+    /// runs), so manually adding another compose file isn't a blank slate. Declares any port inputs it
+    /// proposes — skipping names already declared — and returns the value overrides for the row to seed
+    /// its overlay with. New inputs land in the shared <see cref="Inputs"/> list, immediately becoming
+    /// known <c>${sprig.*}</c> variables so the seeded overrides don't render as undeclared.
+    /// </summary>
+    public IReadOnlyList<ComposeOverride> DetectComposeOverrides(string composeText, string fileLabel)
+    {
+        var detection = InitInspector.DetectComposeInText(composeText, fileLabel, SprigVariableNames);
+        foreach (var input in detection.Inputs)
+        {
+            if (Inputs.Any(i => string.Equals(i.Name.Trim(), input.Name, StringComparison.Ordinal)))
+                continue;
+            Inputs.Add(new InputEditRow(RemoveInputRow)
+            {
+                Name = input.Name,
+                Example = input.Example ?? "",
+                Description = input.Description ?? "",
+                AllowedPorts = input.AllowedPorts ?? "",
+            });
+        }
+        return detection.Overrides;
     }
 
     /// <summary>Read a repo-relative file's text, or <c>""</c> if it's missing/unreadable (best-effort).</summary>

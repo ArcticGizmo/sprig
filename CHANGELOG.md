@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.5.6] - 2026-08-09
+
+### Changed
+- **Hand-added compose files get auto-detected too** — point a new compose row at a real file and sprig proposes the same container-name/port rewrites, and declares their inputs, as on first add. Files you loaded or overrides you've edited are left alone.
+
+---
+
 ## [v0.5.5] - 2026-08-09
 
 ### Fixed

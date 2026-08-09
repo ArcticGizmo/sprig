@@ -344,6 +344,78 @@ public class ManagementViewModelTests
     }
 
     [Fact]
+    public void Manually_added_compose_file_gets_the_same_auto_detection_as_the_initial_add()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), """
+            services:
+              postgres:
+                image: postgres:17
+                container_name: librarydb_postgres
+                ports:
+                  - "6050:5432"
+            """);
+
+        var editor = RepoEditViewModel.Load(dir);
+        var mod = Mod(editor);
+        mod.AddComposeFileCommand.Execute(null);
+        var row = mod.Compose.Single();
+
+        // Pointing a hand-added row at a real compose file runs add-time detection: it declares the
+        // port input and seeds the container-name + port rewrites, just like scaffolding on first add.
+        row.File = "docker-compose.yml";
+
+        Assert.Contains(editor.Inputs, i => i.Name == "postgres_port" && i.Example == "6050");
+        var overrides = row.CurrentOverrides;
+        Assert.Contains(overrides, o => o.Path.SequenceEqual(["services", "postgres", "container_name"])
+                                        && o.Template == "librarydb_postgres--${sprig.workspace}");
+        Assert.Contains(overrides, o => o.Path.SequenceEqual(["services", "postgres", "ports", "0"])
+                                        && o.Template == "${sprig.postgres_port}:5432");
+
+        // The declared input means the seeded overrides reference a known variable — nothing flagged.
+        Assert.DoesNotContain(editor.MissingInputRefs, r => r == "postgres_port");
+        Assert.True(editor.Save());
+
+        var reloaded = RepoEditViewModel.Load(dir);
+        Assert.Equal(2, reloaded.Modules[0].Compose.Single().CurrentOverrides.Count);
+    }
+
+    [Fact]
+    public void Auto_detection_does_not_clobber_overrides_the_user_has_edited()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "api");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), """
+            services:
+              postgres:
+                container_name: librarydb_postgres
+                ports:
+                  - "6050:5432"
+            """);
+
+        var editor = RepoEditViewModel.Load(dir);
+        var mod = Mod(editor);
+        mod.AddComposeFileCommand.Execute(null);
+        var row = mod.Compose.Single();
+        row.File = "docker-compose.yml";
+
+        // Drop one of the auto-detected overrides, then re-point at the same file (as a module-path
+        // change would): detection must not re-propose the removed override.
+        var cname = row.Overlay!.Lines.SelectMany(l => l.Runs)
+            .Single(r => r.IsToken && r.Path.SequenceEqual(["services", "postgres", "container_name"]));
+        row.Overlay.RemoveCommand.Execute(cname);
+        row.Refresh();
+
+        Assert.DoesNotContain(row.CurrentOverrides,
+            o => o.Path.SequenceEqual(["services", "postgres", "container_name"]));
+    }
+
+    [Fact]
     public void Setup_commands_round_trip_through_load_and_save()
     {
         using var s = new TempStore();

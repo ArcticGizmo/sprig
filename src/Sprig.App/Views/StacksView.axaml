@@ -39,7 +39,15 @@
                      ItemsSource="{Binding Stacks}" SelectedItem="{Binding Selected, Mode=TwoWay}">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="core:StackDefinition">
-                        <StackPanel Spacing="3" Margin="2,6">
+                        <!-- Background=Transparent so the whole row is hit-testable for the right-click menu. -->
+                        <StackPanel Spacing="3" Margin="2,6" Background="Transparent">
+                            <StackPanel.ContextFlyout>
+                                <MenuFlyout>
+                                    <MenuItem Header="Clone…"
+                                              Command="{Binding $parent[UserControl].((vm:StacksViewModel)DataContext).StartCloneCommand}"
+                                              CommandParameter="{Binding}" />
+                                </MenuFlyout>
+                            </StackPanel.ContextFlyout>
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                             <ItemsControl ItemsSource="{Binding Repos}">
                                 <ItemsControl.ItemsPanel>
@@ -126,6 +134,28 @@
                                     <Button Content="Remove stack" Command="{Binding ConfirmRemoveCommand}"
                                             Foreground="{StaticResource DangerBrush}" />
                                     <Button Content="Cancel" Command="{Binding CancelRemoveCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- clone prompt: name the copy; its repos, ports and wiring come across as-is -->
+                        <Border IsVisible="{Binding CloningStack}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
+                            <StackPanel Spacing="10">
+                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
+                                           Text="Clone this stack — name the copy. Its repos, ports and wiring come across; adjust them afterwards with Edit." />
+                                <TextBox Text="{Binding CloneName, Mode=TwoWay}" PlaceholderText="new stack name"
+                                         AutomationProperties.AutomationId="stack.cloneName" />
+                                <TextBlock IsVisible="{Binding HasCloneNameError}" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{StaticResource DangerBrush}" Text="{Binding CloneNameError}" />
+                                <TextBlock IsVisible="{Binding CloneError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                           FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{StaticResource DangerBrush}" Text="{Binding CloneError}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Clone stack" Command="{Binding ConfirmCloneCommand}"
+                                            Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                            AutomationProperties.AutomationId="stack.cloneConfirm" />
+                                    <Button Content="Cancel" Command="{Binding CancelCloneCommand}" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>

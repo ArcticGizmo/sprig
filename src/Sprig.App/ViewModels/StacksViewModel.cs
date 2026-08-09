@@ -124,6 +124,47 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>True while the remove-stack confirm bar is showing.</summary>
     [ObservableProperty] private bool _confirmingRemove;
 
+    /// <summary>True while the clone-stack name prompt is showing.</summary>
+    [ObservableProperty] private bool _cloningStack;
+
+    /// <summary>The name typed into the clone prompt (pre-filled with a unique suggestion).</summary>
+    [ObservableProperty] private string _cloneName = "";
+
+    /// <summary>The stack being cloned — its full definition is copied under the new name.</summary>
+    StackDefinition? _cloneSource;
+
+    /// <summary>A clone that failed to save (rare — the name is pre-validated); surfaced in the prompt.</summary>
+    [ObservableProperty] private string? _cloneError;
+
+    /// <summary>Live validation of the clone name — names a bad character or a name already in use.</summary>
+    public string? CloneNameError { get; private set; }
+    public bool HasCloneNameError => CloneNameError is not null;
+
+    partial void OnCloneNameChanged(string value)
+    {
+        CloneError = null;
+        CloneNameError = ValidateCloneName(value);
+        OnPropertyChanged(nameof(CloneNameError));
+        OnPropertyChanged(nameof(HasCloneNameError));
+        ConfirmCloneCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Null when the trimmed name is a valid, unused stack name; otherwise the reason. Empty reads as
+    /// "not yet" (no error shown) but still blocks Clone. Layered on <see cref="ValidateName"/> so the
+    /// character rule matches everywhere, plus a collision check — a clone must never overwrite a stack.
+    /// </summary>
+    string? ValidateCloneName(string name)
+    {
+        var trimmed = name.Trim();
+        if (trimmed.Length == 0) return null;
+        if (ValidateName(trimmed) is { } charError) return charError;
+        // Stack names are filenames (case-insensitive on Windows), so collide case-insensitively.
+        if (Stacks.Any(s => string.Equals(s.Name, trimmed, StringComparison.OrdinalIgnoreCase)))
+            return $"a stack named '{trimmed}' already exists";
+        return null;
+    }
+
     /// <summary>The selected stack's per-repo bindings, flattened for the detail panel.</summary>
     public ObservableCollection<StackBindingView> DetailBindings { get; } = [];
 
@@ -273,6 +314,9 @@ public partial class StacksViewModel : PageViewModel
     partial void OnSelectedChanged(StackDefinition? value)
     {
         ConfirmingRemove = false;
+        // A clone prompt belongs to the stack it was opened on — moving off that stack dismisses it.
+        CloningStack = false;
+        CloneError = null;
         DetailBindings.Clear();
         if (value is not null)
             foreach (var repo in value.Repos)
@@ -305,6 +349,7 @@ public partial class StacksViewModel : PageViewModel
         var stack = Selected;
         if (stack is null || !CanEditSelected) return;
 
+        CloningStack = false;
         Error = null; Status = null;
         EditingOriginalName = stack.Name;
         NewName = stack.Name;
@@ -342,6 +387,7 @@ public partial class StacksViewModel : PageViewModel
     [RelayCommand]
     private void NewStack()
     {
+        CloningStack = false;
         EditingOriginalName = null;
         NewName = "";
         foreach (var c in RepoChoices) c.IsSelected = false;
@@ -533,6 +579,69 @@ public partial class StacksViewModel : PageViewModel
         Status = $"removed stack '{name}'";
         Reload();
         Services.NotifyStoreChanged();
+    }
+
+    /// <summary>
+    /// Begin cloning a stack (right-click → Clone): select it, pre-fill a unique suggested name, and show
+    /// the prompt. Unlike Edit, cloning is never gated on attached workspaces — a clone is a brand-new
+    /// stack, so copying one that already has workspaces built from it is perfectly fine.
+    /// </summary>
+    [RelayCommand]
+    private void StartClone(StackDefinition? stack)
+    {
+        if (stack is null) return;
+        _cloneSource = stack;
+        Selected = stack;             // OnSelectedChanged clears CloningStack, so raise the prompt after
+        CloneError = null;
+        CloneName = SuggestCloneName(stack.Name);
+        CloningStack = true;
+    }
+
+    [RelayCommand]
+    private void CancelClone()
+    {
+        CloningStack = false;
+        CloneError = null;
+        _cloneSource = null;
+    }
+
+    /// <summary>Save a copy of the source stack under the new name, then select the copy.</summary>
+    [RelayCommand(CanExecute = nameof(CanConfirmClone))]
+    private void ConfirmClone()
+    {
+        if (_cloneSource is null) return;
+        var name = CloneName.Trim();
+
+        // Re-read the full definition from the store rather than trust the list item, so a clone reflects
+        // whatever is actually on disk at the moment it's taken.
+        var source = Services.Stacks.Get(_cloneSource.Name);
+        if (source is null) { CloneError = $"stack '{_cloneSource.Name}' no longer exists"; return; }
+
+        CloneError = null; Error = null; Status = null;
+        try
+        {
+            Services.Stacks.Save(source with { Name = name });
+            CloningStack = false;
+            _cloneSource = null;
+            Status = $"cloned to stack '{name}'";
+            Reload();
+            Selected = Stacks.FirstOrDefault(s => s.Name == name);
+            Services.NotifyStoreChanged();
+        }
+        catch (Exception ex) { CloneError = ex.Message; }
+    }
+
+    bool CanConfirmClone() =>
+        _cloneSource is not null && CloneName.Trim().Length > 0 && ValidateCloneName(CloneName) is null;
+
+    /// <summary>Suggest a name nothing else uses: "<c>{base}-copy</c>", then "-copy-2", "-copy-3", …</summary>
+    string SuggestCloneName(string baseName)
+    {
+        bool Taken(string n) => Stacks.Any(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase));
+        var candidate = $"{baseName}-copy";
+        if (!Taken(candidate)) return candidate;
+        for (var i = 2; ; i++)
+            if (!Taken($"{baseName}-copy-{i}")) return $"{baseName}-copy-{i}";
     }
 
     /// <summary>True once there's a graph with more than one port or repo to tidy — gates the button.</summary>

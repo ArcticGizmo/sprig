@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.6.1] - 2026-08-09
+
+### Added
+- **Clone a stack** — right-click a stack, pick "Clone…", name the copy. A slight variation no longer means wiring one from scratch.
+
+---
+
 ## [v0.6.0] - 2026-08-09
 
 ### Added

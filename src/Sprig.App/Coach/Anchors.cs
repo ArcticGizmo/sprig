@@ -28,6 +28,8 @@ public static class Anchors
     public const string WorkspaceDocker = "workspace.docker";
     public const string StackNew = "stack.new";
     public const string StackCreate = "stack.create";
+    public const string StackCloneName = "stack.cloneName";
+    public const string StackCloneConfirm = "stack.cloneConfirm";
     public const string SettingsPortsInUse = "settings.portsInUse";
     public const string StackCanvas = "stack.canvas";
 
@@ -48,6 +50,8 @@ public static class Anchors
         RepoDetail,
         StackNew,
         StackCreate,
+        StackCloneName,
+        StackCloneConfirm,
         StackDetail,
         WorkspaceNew,
         WorkspaceCreate,

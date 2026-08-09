@@ -14,9 +14,9 @@ static class Term
 {
     public static IAnsiConsole Create() => Create(Console.Out, Console.IsOutputRedirected);
 
-    /// <summary>A prompt console bound to <b>stderr</b>. Used by <c>cd</c>, whose stdout carries only the
-    /// resolved path (captured by the shell wrapper): the menus must render somewhere the wrapper doesn't
-    /// swallow, and stderr is still the real terminal even when stdout is piped into <c>$p = sprig cd …</c>.</summary>
+    /// <summary>A prompt console bound to <b>stderr</b>. Used by <c>path</c>, whose stdout carries only the
+    /// resolved path (captured by a shell wrapper): the menus must render somewhere the wrapper doesn't
+    /// swallow, and stderr is still the real terminal even when stdout is piped into <c>$p = sprig path …</c>.</summary>
     public static IAnsiConsole CreateError() => Create(Console.Error, Console.IsErrorRedirected);
 
     static IAnsiConsole Create(TextWriter output, bool redirected)

@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`sprig path`** — prints a workspace's repo/module directory (bare path, or `--json`). The scripting primitive, and the seam a future `cd`-in-place shell wrapper builds on: `Set-Location (sprig path feat api)`.
+
+### Changed
+- **`sprig cd` is now navigate-only** — it opens a window and nothing else; the machine-output flags (`--print`, `--json`) moved to `sprig path`, which owns the same workspace→repo→module resolution. Scripts that read a path should call `sprig path`.
+
 ---
 
 ## [v0.5.6] - 2026-08-09

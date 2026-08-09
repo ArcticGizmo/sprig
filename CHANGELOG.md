@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.6.0] - 2026-08-09
+
+### Added
+- **`sprig path`** — prints a workspace's repo/module directory, for scripts and shell wrappers.
+- **`--no-interactive` / `--ni`** — the "never prompt, just fail" opt-out to `-i`.
+
+### Changed
+- **Interactive by default at a terminal** — run a command bare and it walks you through the choices; scripts, pipes and CI stay non-interactive and fail fast instead of hanging.
+- **`cd`/`path` fill in the blanks** — name what you know, get asked for the rest.
+- **`sprig cd` is navigate-only** — it opens a window; `--print`/`--json` moved to `sprig path`.
+- **`sprig ws rm <name>` confirms at a terminal** — `--yes` is now only for skipping the prompt (and still required in scripts).
+- **Consistent, coloured output** — green success ticks, colour-coded drift state, aligned tables. `--json` stays plain.
+
+---
+
 ## [v0.5.6] - 2026-08-09
 
 ### Changed

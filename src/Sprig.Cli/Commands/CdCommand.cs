@@ -8,87 +8,44 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-// `sprig cd` — resolve the directory of a workspace's repo (and optionally a module within it) and open a
-// new terminal window sitting in it. A process can't change its parent shell's cwd, so rather than move
-// the shell you're in, we spawn a fresh one in the target directory — matching the shell you came from
-// (powershell → powershell, cmd → cmd, …) and, under Windows Terminal, a fresh WT window too.
-//
-// --print / --json resolve without launching (for scripting); a redirected stdout falls back to printing
-// too, so `x = $(sprig cd feat api)` still yields a path instead of popping a window at a pipe.
-[Description("Open a new terminal window in a workspace repo/module directory")]
-public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
+// Two front-ends over one resolution: `sprig path` prints a workspace repo/module directory (the scripting
+// primitive — and the backbone of a future cd-in-place shell wrapper), and `sprig cd` opens a new terminal
+// window sitting in that directory. Both share TargetResolver; neither duplicates the workspace→repo→module
+// walk. `cd` spawns a window because a process can't change its parent shell's cwd — so rather than move the
+// shell you're in, we open a fresh one in the target (matching the shell you came from, and a fresh WT window
+// under Windows Terminal).
+
+/// <summary>Shared workspace → repo → module resolution behind <c>sprig path</c> and <c>sprig cd</c>.
+/// Positional resolution is non-interactive; the pickers render on <b>stderr</b> so a captured stdout
+/// (a shell wrapper doing <c>Set-Location (sprig path …)</c>, or <c>$p = sprig path …</c>) stays a clean
+/// path. A resolved-but-missing worktree throws — navigation never silently points at a drifted tree.</summary>
+sealed class TargetResolver(CliContext cli)
 {
-    public sealed class Settings : GlobalSettings
+    public readonly record struct Target(string Path, string Workspace, string Repo, string Module);
+
+    /// <summary>Resolve to a target, or null when an interactive pick is cancelled (ESC). Throws on a bad
+    /// argument (unknown workspace/repo/module, missing terminal for <c>-i</c>) or a missing worktree. When
+    /// interactive, any args passed are honoured as presets and only the gaps are prompted for — so
+    /// <c>cd feat</c> at a terminal still asks which repo/module, while <c>cd feat api web</c> goes straight
+    /// in.</summary>
+    public Target? Resolve(bool interactive, string? workspace, string? repo, string? module)
     {
-        [CommandArgument(0, "[workspace]")]
-        [Description("Workspace (omit with -i)")]
-        public string? Workspace { get; set; }
-
-        [CommandArgument(1, "[repo]")]
-        [Description("Repo within the workspace (optional; implied when the workspace has one repo)")]
-        public string? Repo { get; set; }
-
-        [CommandArgument(2, "[module]")]
-        [Description("Module within the repo (optional; defaults to the repo root)")]
-        public string? Module { get; set; }
-
-        [CommandOption("-i|--interactive")]
-        [Description("Pick workspace, repo and module interactively")]
-        public bool Interactive { get; set; }
-
-        [CommandOption("--print")]
-        [Description("Print the resolved path instead of opening a window")]
-        public bool Print { get; set; }
-
-        [CommandOption("--shell <name>")]
-        [Description("Shell to open (powershell|pwsh|cmd|bash|…); default: match the one you came from")]
-        public string? Shell { get; set; }
-    }
-
-    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
-    {
-        if (s.Interactive && s.Json)
-            throw new ArgumentException("-i is interactive — it can't be combined with --json");
-
-        var target = s.Interactive ? ResolveInteractive(s) : ResolveFromArgs(s);
-        if (target is not { } t)
-            return 0; // interactive cancel (ESC): nothing to open
-
-        if (!Directory.Exists(t.Path))
+        var target = interactive ? ResolveInteractive(workspace, repo, module) : ResolveFromArgs(workspace, repo, module);
+        if (target is { } t && !Directory.Exists(t.Path))
             throw new DirectoryNotFoundException(
                 $"worktree missing at {t.Path} — the workspace may have drifted; try 'sprig ws reconcile {t.Workspace}'");
-
-        if (s.Json)
-        {
-            CliOutput.Json(new { ok = true, path = t.Path, workspace = t.Workspace, repo = t.Repo, module = t.Module });
-            return 0;
-        }
-
-        // --print, non-Windows (no reliable new-window story), or a redirected stdout → just emit the path.
-        if (s.Print || !OperatingSystem.IsWindows() || Console.IsOutputRedirected)
-        {
-            if (!s.Print && !OperatingSystem.IsWindows())
-                Console.Error.WriteLine("note: opening a window is Windows-only — printing the path");
-            Console.WriteLine(t.Path);
-            return 0;
-        }
-
-        var shell = LaunchWindow(t.Path, s.Shell);
-        Console.WriteLine($"opened {shell} in a new window — {t.Path}");
-        return 0;
+        return target;
     }
-
-    readonly record struct Target(string Path, string Workspace, string Repo, string Module);
 
     // Non-interactive resolution from the positionals. Missing repo is inferred only when the workspace
     // has a single repo; a missing module always means the repo root.
-    Target ResolveFromArgs(Settings s)
+    Target ResolveFromArgs(string? workspace, string? repoName, string? moduleName)
     {
-        var workspace = s.Workspace ?? throw new ArgumentException("cd requires a workspace (or use -i)");
-        var record = cli.Workspaces.Get(workspace) ?? throw new ArgumentException($"unknown workspace '{workspace}'");
+        var name = workspace ?? throw new ArgumentException("a workspace is required (or run it at a terminal to be prompted)");
+        var record = cli.Workspaces.Get(name) ?? throw new ArgumentException($"unknown workspace '{name}'");
 
-        var repo = PickRepo(record, s.Repo);
-        var (path, module) = PickModule(repo, s.Module);
+        var repo = PickRepo(record, repoName);
+        var (path, module) = PickModule(repo, moduleName);
         return new Target(path, record.Workspace, repo.Name, module);
     }
 
@@ -128,14 +85,13 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         return (ModulePath(repo.WorktreePath, match), match.Name);
     }
 
-    // The interactive picker: workspace → repo (skipped when there's one) → module (skipped when the repo
-    // has no sub-module directories, landing at the root). ESC at any step cancels the whole thing. All UI
-    // goes to stderr so `-i --print` still yields a clean path on stdout.
-    Target? ResolveInteractive(Settings s)
+    // The interactive picker, gap-filling from whatever presets were passed: workspace (skipped when named
+    // or lone) → repo (skipped when named or the workspace has one) → module (honoured when named, else
+    // picked, else the root when the repo has no sub-modules). ESC at any step cancels the whole thing. All
+    // UI goes to stderr so `sprig path` still yields a clean path on stdout. Only reached once Interactivity
+    // has confirmed a terminal is attached, so it never blocks on a redirected stdin.
+    Target? ResolveInteractive(string? workspacePreset, string? repoPreset, string? modulePreset)
     {
-        if (Console.IsInputRedirected)
-            throw new ArgumentException("-i needs an interactive terminal (stdin is redirected)");
-
         var console = Term.CreateError();
 
         var records = cli.Workspaces.List();
@@ -146,7 +102,7 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         }
 
         InstanceRecord workspace;
-        if (s.Workspace is { } preset)
+        if (workspacePreset is { } preset)
             workspace = cli.Workspaces.Get(preset) ?? throw new ArgumentException($"unknown workspace '{preset}'");
         else if (records.Count == 1)
             workspace = records[0];
@@ -156,10 +112,14 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         else
             return Cancelled(console);
 
-        var repo = PickRepoInteractive(console, workspace, s.Repo);
+        var repo = PickRepoInteractive(console, workspace, repoPreset);
         if (repo is null) return Cancelled(console);
 
-        var module = PickModuleInteractive(console, repo);
+        // A named module is honoured (and validated) rather than re-asked, so a fully-specified navigation
+        // never stops to prompt; otherwise offer the picker (which defaults to the root).
+        (string Path, string Module)? module = modulePreset is not null
+            ? PickModule(repo, modulePreset)
+            : PickModuleInteractive(console, repo);
         if (module is null) return Cancelled(console);
 
         return new Target(module.Value.Path, workspace.Workspace, repo.Name, module.Value.Module);
@@ -198,7 +158,7 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
     }
 
     // A repo's declared modules, loaded from the worktree's committed .sprig.json. Best-effort: a repo
-    // whose config can't be read still cds to its root, so navigation never depends on a parseable config.
+    // whose config can't be read still resolves to its root, so navigation never depends on a parseable config.
     static IReadOnlyList<ModuleDeclaration> ModulesOf(InstanceRepo repo)
     {
         try { return SprigConfigLoader.LoadFromFile(Path.Combine(repo.WorktreePath, ".sprig.json")).EffectiveModules; }
@@ -219,6 +179,120 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
     {
         console.MarkupLine("[yellow]cancelled[/]");
         return null;
+    }
+}
+
+// `sprig path` — resolve and print a workspace repo/module directory. The scripting primitive: a bare path
+// on stdout (or --json for the structured target), all pickers on stderr, so `Set-Location (sprig path feat
+// api)` and `$p = sprig path -i` both yield a clean path. `sprig cd` is the human front-end over the same
+// resolution; machine callers that want a directory come here, not to `cd`.
+[Description("Print a workspace repo/module directory (for scripting and shell wrappers)")]
+public sealed class PathCommand(CliContext cli) : Command<PathCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "[workspace]")]
+        [Description("Workspace (omit at a terminal to pick interactively)")]
+        public string? Workspace { get; set; }
+
+        [CommandArgument(1, "[repo]")]
+        [Description("Repo within the workspace (optional; implied when the workspace has one repo)")]
+        public string? Repo { get; set; }
+
+        [CommandArgument(2, "[module]")]
+        [Description("Module within the repo (optional; defaults to the repo root)")]
+        public string? Module { get; set; }
+
+        [CommandOption("-i|--interactive")]
+        [Description("Force the interactive picker (workspace, repo, module)")]
+        public bool Interactive { get; set; }
+
+        [CommandOption("--no-interactive|--ni")]
+        [Description("Never prompt — fail instead of asking (implied by --json, a pipe, or CI)")]
+        public bool NoInteractive { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        // At a terminal, gap-fill: any args passed are honoured, the rest is picked. In a script, a pipe, or
+        // CI (or under --ni/--json) it resolves straight from the args instead. hasPrimaryInput stays false
+        // so naming the workspace still lets the terminal prompt for an ambiguous repo/module.
+        var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, s.Json, hasPrimaryInput: false);
+
+        var target = new TargetResolver(cli).Resolve(interactive, s.Workspace, s.Repo, s.Module);
+        if (target is not { } t)
+            return 0; // interactive cancel (ESC): nothing to print
+
+        if (s.Json)
+        {
+            CliOutput.Json(new { ok = true, path = t.Path, workspace = t.Workspace, repo = t.Repo, module = t.Module });
+            return 0;
+        }
+
+        Console.WriteLine(t.Path);
+        return 0;
+    }
+}
+
+// `sprig cd` — open a new terminal window sitting in a workspace's repo/module directory, in the shell you
+// came from (powershell → powershell, cmd → cmd, …) and, under Windows Terminal, a fresh WT window. Resolves
+// via the same TargetResolver as `sprig path`; it has no machine-output flags — scripts use `sprig path`.
+[Description("Open a new terminal window in a workspace repo/module directory")]
+public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
+{
+    // Deliberately not GlobalSettings: `cd`'s job is to open a window, so it carries no --json (there is no
+    // machine output to promise) — a `--json` here fails strict parsing rather than silently doing nothing.
+    public sealed class Settings : CommandSettings
+    {
+        [CommandArgument(0, "[workspace]")]
+        [Description("Workspace (omit at a terminal to pick interactively)")]
+        public string? Workspace { get; set; }
+
+        [CommandArgument(1, "[repo]")]
+        [Description("Repo within the workspace (optional; implied when the workspace has one repo)")]
+        public string? Repo { get; set; }
+
+        [CommandArgument(2, "[module]")]
+        [Description("Module within the repo (optional; defaults to the repo root)")]
+        public string? Module { get; set; }
+
+        [CommandOption("-i|--interactive")]
+        [Description("Force the interactive picker (workspace, repo, module)")]
+        public bool Interactive { get; set; }
+
+        [CommandOption("--no-interactive|--ni")]
+        [Description("Never prompt — fail instead of asking (implied by a pipe or CI)")]
+        public bool NoInteractive { get; set; }
+
+        [CommandOption("--shell <name>")]
+        [Description("Shell to open (powershell|pwsh|cmd|bash|…); default: match the one you came from")]
+        public string? Shell { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        // At a terminal, gap-fill: honour any args, pick the rest (so `cd feat` still asks which repo/module,
+        // `cd feat api web` goes straight in). Without a terminal it resolves from the args. `cd` has no
+        // --json, so interactivity is simply terminal-and-not-`--ni`.
+        var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, json: false, hasPrimaryInput: false);
+
+        var target = new TargetResolver(cli).Resolve(interactive, s.Workspace, s.Repo, s.Module);
+        if (target is not { } t)
+            return 0; // interactive cancel (ESC): nothing to open
+
+        // Opening a window is Windows-only for now; elsewhere we can't spawn a matching terminal reliably yet
+        // (that's coming), so degrade to printing the path and point at `sprig path` for scripting.
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("note: opening a window is Windows-only for now — printing the path (use 'sprig path' for scripting)");
+            Console.WriteLine(t.Path);
+            return 0;
+        }
+
+        var shell = LaunchWindow(t.Path, s.Shell);
+        cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] opened [bold]{Markup.Escape(shell)}[/] " +
+            $"in a new window — [dim]{Markup.Escape(t.Path)}[/]");
+        return 0;
     }
 
     // Open a new terminal window running a shell in `dir`. Tries the best-matching shell first (the one we

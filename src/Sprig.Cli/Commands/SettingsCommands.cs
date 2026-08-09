@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
@@ -23,8 +24,8 @@ public sealed class SettingsShowCommand(CliContext cli) : Command<GlobalSettings
             });
             return 0;
         }
-        Console.WriteLine($"port range:       {current.PortRangeStart}..{current.PortRangeEndExclusive} (end exclusive)");
-        Console.WriteLine($"restricted ports: {(current.RestrictedPorts.Count == 0 ? "-" : string.Join(", ", current.RestrictedPorts))}");
+        cli.Ansi.MarkupLine($"[dim]port range[/]        {current.PortRangeStart}..{current.PortRangeEndExclusive} [dim](end exclusive)[/]");
+        cli.Ansi.MarkupLine($"[dim]restricted ports[/]  {(current.RestrictedPorts.Count == 0 ? "[dim]-[/]" : Markup.Escape(string.Join(", ", current.RestrictedPorts)))}");
         return 0;
     }
 }

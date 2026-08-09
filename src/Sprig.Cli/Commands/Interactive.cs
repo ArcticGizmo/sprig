@@ -14,9 +14,9 @@ static class Term
 {
     public static IAnsiConsole Create() => Create(Console.Out, Console.IsOutputRedirected);
 
-    /// <summary>A prompt console bound to <b>stderr</b>. Used by <c>cd</c>, whose stdout carries only the
-    /// resolved path (captured by the shell wrapper): the menus must render somewhere the wrapper doesn't
-    /// swallow, and stderr is still the real terminal even when stdout is piped into <c>$p = sprig cd …</c>.</summary>
+    /// <summary>A prompt console bound to <b>stderr</b>. Used by <c>path</c>, whose stdout carries only the
+    /// resolved path (captured by a shell wrapper): the menus must render somewhere the wrapper doesn't
+    /// swallow, and stderr is still the real terminal even when stdout is piped into <c>$p = sprig path …</c>.</summary>
     public static IAnsiConsole CreateError() => Create(Console.Error, Console.IsErrorRedirected);
 
     static IAnsiConsole Create(TextWriter output, bool redirected)
@@ -62,6 +62,68 @@ static class Term
         foreach (var item in preselect) prompt.Select(item);
         var result = console.Prompt(prompt);
         return ReferenceEquals(result, CancelList) ? null : result;
+    }
+}
+
+/// <summary>Decides whether a command runs its interactive pickers, from the <c>-i</c>/<c>--ni</c> flags
+/// and whether a terminal is actually attached. The default is smart: a bare command at a real terminal
+/// opens the wizard, while the same command in a script, a pipe, or CI stays non-interactive (and errors if
+/// it's missing required input). The flags force it either way — <c>-i</c> for a picker even when detection
+/// is unsure, <c>--ni</c> (like <c>--json</c>) to stay non-interactive even at a terminal. One rule, shared
+/// by every command that has an interactive mode, so the behaviour never drifts between them.</summary>
+static class Interactivity
+{
+    // stdin is the channel every picker reads from, so a redirected stdin (a pipe, a file, the test harness,
+    // CI) means there's no human to prompt — whatever stdout happens to look like.
+    public static bool TerminalAttached => !Console.IsInputRedirected;
+
+    /// <summary>Resolve interactive vs not. <paramref name="hasPrimaryInput"/> is whether the caller already
+    /// named what to act on (a workspace, a stack/repo) — a fully-specified command runs straight through
+    /// even at a terminal. Throws on contradictory flags, or on a forced <c>-i</c> with no terminal to
+    /// prompt on.</summary>
+    public static bool Resolve(bool interactive, bool noInteractive, bool json, bool hasPrimaryInput)
+    {
+        if (interactive && noInteractive)
+            throw new ArgumentException("-i and --ni are opposites — pass only one");
+        if (interactive && json)
+            throw new ArgumentException("-i is interactive — it can't be combined with --json");
+
+        if (interactive)
+        {
+            if (!TerminalAttached)
+                throw new ArgumentException("-i needs an interactive terminal (stdin is redirected)");
+            return true;
+        }
+        if (noInteractive || json)
+            return false;
+
+        // Auto: a bare command at a real terminal opens the wizard; give it a target, or run it without a
+        // terminal (a script, a pipe, CI), and it stays non-interactive so it never blocks on a prompt.
+        return TerminalAttached && !hasPrimaryInput;
+    }
+}
+
+/// <summary>Resolves the single workspace a target verb (up/down/reset/status/info) acts on. Naming it on
+/// the command line always wins; omit it and — at a terminal, when not producing <c>--json</c> — you pick
+/// from a list, matching the bare-command-opens-a-picker behaviour of create/rm/cd. The picker is the verbs'
+/// only interactive step, so omitting the argument is itself the opt-in; there's no separate <c>-i</c>.</summary>
+static class WorkspacePrompt
+{
+    /// <summary>The positional when given; otherwise an interactive pick. Returns null only when the pick is
+    /// cancelled (ESC) — callers treat that as "nothing to do" and exit cleanly. Throws when there's no name
+    /// and no terminal to ask on (a script/pipe/CI or <c>--json</c>), or when there are no workspaces.</summary>
+    public static string? Resolve(CliContext cli, string? workspace, bool json)
+    {
+        if (workspace is not null) return workspace;
+        if (json || !Interactivity.TerminalAttached)
+            throw new ArgumentException("a workspace is required (or run it at a terminal to pick one)");
+
+        var all = cli.Workspaces.List();
+        if (all.Count == 0)
+            throw new ArgumentException("no workspaces yet — create one with 'sprig create'");
+
+        return Term.SelectOne(Term.Create(), "Select a [green]workspace[/]: [grey](esc cancels)[/]",
+            all.Select(w => w.Workspace).OrderBy(x => x, StringComparer.Ordinal));
     }
 }
 

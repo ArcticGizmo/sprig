@@ -96,6 +96,7 @@ public static class CliApp
         config.UseStrictParsing();
 
         config.AddCommand<CdCommand>("cd");
+        config.AddCommand<PathCommand>("path");
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
         config.AddCommand<InitCommand>("init");

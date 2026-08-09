@@ -98,7 +98,7 @@ public sealed class StackLsCommand(CliContext cli) : Command<GlobalSettings>
     {
         var all = cli.Stacks.List();
         if (s.Json) { CliOutput.Json(all); return 0; }
-        if (all.Count == 0) { Console.WriteLine("no stacks defined"); return 0; }
+        if (all.Count == 0) { cli.Ansi.MarkupLine("[dim]no stacks defined[/]"); return 0; }
 
         var table = CliFormat.Table("STACK", "REPOS");
         foreach (var stack in all)
@@ -122,7 +122,7 @@ public sealed class StackShowCommand(CliContext cli) : Command<StackShowCommand.
     {
         var stack = cli.Stacks.Get(s.Name) ?? throw new ArgumentException($"unknown stack '{s.Name}'");
         if (s.Json) { CliOutput.Json(stack); return 0; }
-        CliFormat.PrintStack(stack);
+        CliFormat.PrintStack(cli.Ansi, stack);
         return 0;
     }
 }

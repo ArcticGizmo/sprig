@@ -1,0 +1,16 @@
+{
+  "name": "sprig",
+  "description": "Claude Code plugins for sprig — configure, create and tear down isolated workspaces.",
+  "owner": {
+    "name": "ArcticGizmo",
+    "url": "https://github.com/ArcticGizmo/sprig"
+  },
+  "plugins": [
+    {
+      "name": "sprig",
+      "source": "./plugins/sprig",
+      "description": "Configure, create and tear down sprig workspaces (isolated git worktrees + docker infra) from Claude Code.",
+      "keywords": ["sprig", "worktree", "workspace", "docker", "git"]
+    }
+  ]
+}

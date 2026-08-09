@@ -1,0 +1,12 @@
+{
+  "name": "sprig",
+  "displayName": "Sprig",
+  "description": "Configure, create and tear down sprig workspaces (isolated git worktrees + docker infra) from Claude Code. Drives the `sprig` CLI over its --json contract.",
+  "version": "0.1.0",
+  "author": {
+    "name": "ArcticGizmo",
+    "url": "https://github.com/ArcticGizmo/sprig"
+  },
+  "homepage": "https://github.com/ArcticGizmo/sprig",
+  "keywords": ["sprig", "worktree", "workspace", "docker", "git"]
+}

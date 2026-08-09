@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.6.2] - 2026-08-09
+
+### Added
+- **Claude Code plugin** — configure, create and tear down workspaces without leaving the editor. Lives in `plugins/sprig`; the app and CLI are untouched.
+
+---
+
 ## [v0.6.1] - 2026-08-09
 
 ### Added

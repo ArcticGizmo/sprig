@@ -127,6 +127,16 @@ sprig down feature-x                          # keeps volumes; add --volumes to 
 sprig rm feature-x --yes                      # tears down; add --force to also delete the branch
 ```
 
+Those commands spell everything out, but you rarely have to. Run a command bare at a terminal —
+`sprig create`, `sprig rm`, `sprig up`, `sprig info`, … — and it walks you through the choices;
+give it the arguments (or run it in a script, a pipe, or CI) and it goes straight through without
+prompting. `--ni` forces the non-interactive path, `--json` (on any read command) gives machine
+output, and `sprig rm feature-x` at a terminal just asks to confirm rather than needing `--yes`.
+
+Jump into a workspace: `sprig cd feature-x` opens a new terminal already sitting in the repo (pick the
+repo/module interactively, or name them), while `sprig path feature-x` just prints the directory — the
+one to use in scripts, e.g. `Set-Location (sprig path feature-x)`.
+
 Don't have a `.sprig.json` yet? `sprig init --repo C:\code\my-api --print` inspects the repo and
 proposes one (a single default module; the app's *Add repo* flow is the way to split a monorepo into
 several).

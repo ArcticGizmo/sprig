@@ -1,4 +1,5 @@
 using Sprig.Core.Stacks;
+using Sprig.Core.Workspaces;
 using Spectre.Console;
 
 namespace Sprig.Cli;
@@ -61,20 +62,34 @@ static class CliFormat
         return merged.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value);
     }
 
-    // Human-readable stack dump for `stack show` (the --json path serialises the record instead).
-    public static void PrintStack(StackDefinition stack)
+    /// <summary>A coloured badge for a worktree's reconciliation state — green when healthy, amber for the
+    /// repairable drifts, red when the folder's missing, dim once it's gone. Shared by <c>info</c> and
+    /// <c>reconcile</c> so a state reads the same wherever it appears.</summary>
+    public static string StateBadge(WorktreeState state) => state switch
     {
-        Console.WriteLine($"stack: {stack.Name}");
-        Console.WriteLine($"  repos: {string.Join(", ", stack.Repos)}");
-        Console.WriteLine($"  ports: {(stack.Ports.Count == 0 ? "-" : string.Join(", ", stack.Ports))}");
+        WorktreeState.Healthy => "[green]healthy[/]",
+        WorktreeState.MissingFolder => "[red]missing folder[/]",
+        WorktreeState.Orphaned => "[yellow]orphaned[/]",
+        WorktreeState.Gone => "[dim]gone[/]",
+        _ => $"[dim]{state}[/]",
+    };
+
+    // Human-readable stack dump for `stack show` (the --json path serialises the record instead). Renders
+    // through the shared console so it colours at a terminal and stays plain when redirected.
+    public static void PrintStack(IAnsiConsole console, StackDefinition stack)
+    {
+        console.MarkupLine($"[bold]{Markup.Escape(stack.Name)}[/]");
+        console.MarkupLine($"  [dim]repos[/]  {Markup.Escape(string.Join(", ", stack.Repos))}");
+        console.MarkupLine($"  [dim]ports[/]  {(stack.Ports.Count == 0 ? "[dim]-[/]" : Markup.Escape(string.Join(", ", stack.Ports)))}");
         foreach (var repo in stack.Bindings.OrderBy(b => b.Key))
         {
-            Console.WriteLine($"  {repo.Key}:");
+            console.MarkupLine($"  [green]{Markup.Escape(repo.Key)}[/]");
             foreach (var input in repo.Value.OrderBy(i => i.Key))
-                Console.WriteLine($"    {input.Key} = {input.Value}");
+                console.MarkupLine($"    [dim]{Markup.Escape(input.Key)}[/] = {Markup.Escape(input.Value)}");
         }
         foreach (var share in stack.Shares)
-            Console.WriteLine($"  shared port {share.Port}: {string.Join(", ", share.Consumers.Select(c => $"{c.Repo}.{c.Input}"))}");
+            console.MarkupLine($"  [yellow]shared port {Markup.Escape(share.Port)}[/]: " +
+                Markup.Escape(string.Join(", ", share.Consumers.Select(c => $"{c.Repo}.{c.Input}"))));
     }
 
     public static int ParsePort(string value, string flag)

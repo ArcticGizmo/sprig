@@ -33,12 +33,14 @@ public class GlobalSettings : CommandSettings
     public bool Json { get; set; }
 }
 
-/// <summary>Command settings that name a single workspace — the shape shared by up/down/reset/status/info/rm.</summary>
+/// <summary>Command settings that name a single workspace — the shape shared by up/down/reset/status/info.
+/// The name is optional: omit it at a terminal and the verb picks from a list (see
+/// <see cref="Commands.WorkspacePrompt"/>); in a script or under <c>--json</c> it's required.</summary>
 public class WorkspaceSettings : GlobalSettings
 {
-    [CommandArgument(0, "<workspace>")]
-    [Description("Workspace name")]
-    public string Workspace { get; set; } = "";
+    [CommandArgument(0, "[workspace]")]
+    [Description("Workspace name (omit at a terminal to pick interactively)")]
+    public string? Workspace { get; set; }
 }
 
 /// <summary>A minimal container over the handful of instances the CLI constructs up front. Spectre asks
@@ -83,9 +85,10 @@ sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
     public void Report(T value) => handler(value);
 }
 
-/// <summary>Output primitives shared by the command classes. <see cref="Json"/>/<see cref="Ok"/> write
-/// straight to stdout so the JSON contract is never routed through the markup parser (a payload full of
-/// <c>[</c>/<c>]</c> would otherwise be mangled), while tables render through the per-run console.</summary>
+/// <summary>Output primitives shared by the command classes. <see cref="Json"/> writes straight to stdout
+/// so the JSON contract is never routed through the markup parser (a payload full of <c>[</c>/<c>]</c> would
+/// otherwise be mangled); the human helpers render through the shared console so colour, glyphs and the
+/// plain-when-redirected behaviour stay consistent with the tables the list commands print.</summary>
 static class CliOutput
 {
     static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
@@ -93,13 +96,26 @@ static class CliOutput
     public static void Json<T>(T value)
         => Console.WriteLine(JsonSerializer.Serialize(value, Indented));
 
-    /// <summary>Emit a success result honouring <c>--json</c>: the machine payload when asked for, the
-    /// human line otherwise. Mutating commands route through here so <c>--json</c> is a promise scripts
-    /// can rely on everywhere, not just on the read commands.</summary>
+    /// <summary>The shared, late-bound console (set in <see cref="CliApp.Run(string[], ISprigPaths)"/>):
+    /// coloured at a real terminal, plain when redirected. Everything human-facing renders through it.</summary>
+    static IAnsiConsole Console_ => AnsiConsole.Console;
+
+    /// <summary>A green-ticked success line — the shared "it worked" look every mutating command shares.
+    /// The message is escaped, so paths and names with <c>[</c>/<c>]</c> render literally.</summary>
+    public static void Success(string message)
+        => Console_.MarkupLine($"[green]{Commands.Glyph.Check(Console_)}[/] {Markup.Escape(message)}");
+
+    /// <summary>A dim, secondary line — empty-state notes ("no repos registered") and the like.</summary>
+    public static void Muted(string message)
+        => Console_.MarkupLine($"[dim]{Markup.Escape(message)}[/]");
+
+    /// <summary>Emit a success result honouring <c>--json</c>: the machine payload when asked for, a
+    /// green-ticked human line otherwise. Mutating commands route through here so <c>--json</c> is a promise
+    /// scripts can rely on everywhere, not just on the read commands.</summary>
     public static int Ok(bool json, string human, object payload)
     {
         if (json) Json(payload);
-        else Console.WriteLine(human);
+        else if (!string.IsNullOrEmpty(human)) Success(human);
         return 0;
     }
 }

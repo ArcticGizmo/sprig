@@ -111,6 +111,14 @@ applies it and restarts sprig.
 The CLI (`sprig`) drives the same engine. Run `sprig --help` for the full surface; add `--json` to
 any read command for machine-readable output.
 
+**Interactive by default.** Any command that needs a target — a workspace, a stack, a repo — will ask
+for it when you run the command bare at a terminal, and otherwise take it from the arguments. So
+`sprig create` walks you through stack → repos → modules → name, while `sprig create feature-x --stack
+web+api` just runs. The same is true of `sprig rm`, `sprig cd`/`sprig path`, and the single-workspace
+verbs (`up`/`down`/`reset`/`status`/`info`), which pick from a list when you omit the name. In a script,
+a pipe, or CI (no terminal), these stay non-interactive and fail fast instead of blocking on a prompt;
+`--ni` forces that same non-interactive behaviour even at a terminal, and `--json` implies it.
+
 ### 1. Register repos
 
 ```sh
@@ -154,6 +162,7 @@ change a stack that live workspaces were built from).
 ### 3. Create a workspace
 
 ```sh
+sprig create                                  # at a terminal: pick stack → repos → modules → name
 sprig create feature-x --stack web+api        # from a stack (multi-repo)
 sprig create quick --repo C:\code\my-api      # ad-hoc, single repo, no stack
 ```
@@ -177,10 +186,25 @@ they stay free for other workspaces. A port a kept repo still references is prov
 ```sh
 sprig ls                      # all workspaces (repos, ports, status)
 sprig info feature-x          # one workspace, in full: repos, ports, drift, live containers
+sprig info                    # at a terminal: pick which workspace to inspect
 ```
 
 Every workspace verb also accepts a `ws`/`workspace` prefix, so `sprig ws ls` and `sprig ws info
 feature-x` are the same commands — handy if you prefer the noun-verb form used by `repo`/`stack`.
+
+**Jump into a workspace.** `sprig cd` opens a new terminal window already sitting in a workspace's repo
+(or a module within it), in the same shell you ran it from:
+
+```sh
+sprig cd feature-x            # picks any repo/module the name leaves ambiguous, then drops you in
+sprig cd feature-x api web    # fully specified — straight in, no prompts
+sprig cd                      # pick workspace → repo → module from scratch
+sprig path feature-x api      # just print the directory — the one for scripts and shell wrappers
+```
+
+`sprig path` is the scripting counterpart: it resolves the same workspace/repo/module but prints the
+directory instead of opening a window, so `Set-Location (sprig path feature-x)` (or `cd "$(sprig path
+feature-x)"`) drops your *current* shell into it. Add `--json` for the structured target.
 
 ### 4. Run the infrastructure
 
@@ -194,13 +218,20 @@ sprig down feature-x --volumes  # stop and wipe data
 sprig reset feature-x         # down then up
 ```
 
+Omit the workspace on any of these at a terminal (`sprig up`, `sprig status`, …) and you pick it from
+a list.
+
 ### 5. Tear down
 
 ```sh
+sprig rm                            # at a terminal: pick the workspace, then confirm
+sprig rm feature-x                  # at a terminal: asks to confirm before tearing down
 sprig rm feature-x --yes            # tears down infra + worktrees; keeps the sprig branch
 sprig rm feature-x --yes --force    # also deletes the sprig--feature-x branch (loses its commits)
 ```
 
+At a terminal `rm` confirms before it destroys anything (and offers to delete the branch), so `--yes`
+is only needed to skip that prompt — which is exactly what a script, a pipe, CI, or `--json` requires.
 Teardown walks each layer independently and idempotently, so an interrupted teardown is resumable.
 
 ### 6. Settings

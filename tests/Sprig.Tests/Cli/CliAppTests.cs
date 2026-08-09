@@ -217,6 +217,18 @@ public sealed class CliAppTests : IDisposable
         Assert.Equal(1, exit);
     }
 
+    // -i and --ni are opposites. Asserting on "opposites" (not "Unknown option") also proves --ni is a
+    // registered flag on each command — the shared Interactivity rule is wired in everywhere.
+    [Theory]
+    [InlineData("create")]
+    [InlineData("rm")]
+    public void Ws_verb_rejects_i_and_ni_together(string verb)
+    {
+        var (exit, _, err) = Run("ws", verb, "-i", "--ni");
+        Assert.Equal(1, exit);
+        Assert.Contains("opposites", err);
+    }
+
     [Fact]
     public void Settings_roundtrip_through_show_json()
     {
@@ -435,5 +447,49 @@ public sealed class CliAppTests : IDisposable
         SeedWorkspace("feat", "api");
         var (exit, _, _) = Run("cd", "-i");
         Assert.Equal(1, exit);
+    }
+
+    [Theory]
+    [InlineData("cd")]
+    [InlineData("path")]
+    public void Navigate_rejects_i_and_ni_together(string cmd)
+    {
+        var (exit, _, err) = Run(cmd, "-i", "--ni");
+        Assert.Equal(1, exit);
+        Assert.Contains("opposites", err);
+    }
+
+    [Fact]
+    public void Path_ni_forces_non_interactive() // --ni parses and keeps it non-interactive: it errors, never prompts
+    {
+        SeedWorkspace("feat", "api", "web");
+        var (exit, _, err) = Run("path", "feat", "--ni");
+        Assert.Equal(1, exit);
+        Assert.Contains("name one", err); // resolved from args, not asked — a multi-repo workspace can't be inferred
+    }
+
+    // The single-target verbs take an optional workspace: named runs straight through, omitted picks at a
+    // terminal. Under the test host stdin isn't a terminal, so an omitted name must fail rather than block.
+    [Theory]
+    [InlineData("up")]
+    [InlineData("down")]
+    [InlineData("reset")]
+    [InlineData("status")]
+    [InlineData("info")]
+    public void Single_workspace_verb_without_a_name_and_no_terminal_fails(string verb)
+    {
+        var (exit, _, err) = Run("ws", verb);
+        Assert.Equal(1, exit);
+        Assert.Contains("workspace is required", err);
+    }
+
+    [Fact]
+    public void Named_single_workspace_verb_bypasses_the_picker()
+    {
+        // A named verb resolves the positional directly (no pick), so an unknown name reports as such
+        // rather than falling into the "requires a workspace" prompt path.
+        var (exit, _, err) = Run("ws", "info", "nope");
+        Assert.Equal(1, exit);
+        Assert.Contains("unknown workspace", err);
     }
 }

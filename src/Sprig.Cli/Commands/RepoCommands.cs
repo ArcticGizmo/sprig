@@ -35,7 +35,7 @@ public sealed class RepoLsCommand(CliContext cli) : Command<GlobalSettings>
     {
         var repos = cli.Repos.List();
         if (s.Json) { CliOutput.Json(repos); return 0; }
-        if (repos.Count == 0) { Console.WriteLine("no repos registered"); return 0; }
+        if (repos.Count == 0) { cli.Ansi.MarkupLine("[dim]no repos registered[/]"); return 0; }
 
         var table = CliFormat.Table("NAME", "PATH");
         foreach (var r in repos)

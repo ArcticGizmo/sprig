@@ -1,6 +1,12 @@
 # Sprig → Pool Model: Phased Implementation Plan
 
-**Status:** Draft for review · **Date:** 2026-08-11
+**Status:** M1–M5 implemented on the `pools` branch · **Date:** 2026-08-11
+
+> **Implementation status:** M1 (refresh-to-master), M2 (stack capacity / implicit pool),
+> M3 (checkout / release), M4 (stack-carried setup + degraded surfacing) and M5 (everything
+> pooled; `ws create` deprecated) are all built and tested. The user-facing guide is
+> `docs/pooled-workflow.md`. Deferred: shared-running dependency resolution (only if the
+> "bleed" actually bites).
 
 Reframes sprig from a *pure worktree handler* (each workspace created ad-hoc, tied to
 whatever you're building) into a **bounded pool of reusable, isolated workspaces**. You

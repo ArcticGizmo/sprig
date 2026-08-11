@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Pooled workspaces** — a stack now backs a bounded pool of reusable, isolated workspaces. `sprig pool checkout <stack>` takes one (labels it, and for a reused one lets you pick **as-is** / **fresh** / **refresh some repos**); `sprig pool release` hands it back; `sprig pool status <stack>` shows the pool. The cap means no floating instances forever, and release keeps everything on disk so a re-checkout is instant. See `docs/pooled-workflow.md`.
+- **Stack pool ceiling** — `--max-slots` on `stack create`/`edit` sets how many workspaces a stack may run at once (rejected at save time if the port range can't fit it).
+- **Stack-carried setup** — `--setup <repo>:<command>` (repeatable) lets a stack stand up a repo whose `.sprig.json` is name-only. The stack becomes a complete, self-contained block.
+- **`sprig ws refresh`** — resync a workspace's repos to their base branch, keeping installed deps (a git reset, not a disk wipe). Refuses to discard un-pushed commits unless `--force`.
+- **Degraded workspaces** — a workspace whose setup failed is flagged in `pool status` and at checkout, rather than being handed over as if healthy.
+
+### Changed
+- **`sprig ws reset` → `sprig ws restart`** — the docker-infra bounce was renamed; `ws reset` stays as a deprecated alias for one release.
+
+### Deprecated
+- **`sprig ws create`** — favour `sprig pool checkout`. It still works and nudges toward the pooled flow.
+
 ---
 
 ## [v0.6.2] - 2026-08-09

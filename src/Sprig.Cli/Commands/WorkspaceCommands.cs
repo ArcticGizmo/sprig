@@ -56,6 +56,12 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
+        // sprig now favours pooled workspaces (bounded, reusable). `ws create` still works — the nudge
+        // goes to stderr so it never touches the stdout/--json contract scripts rely on.
+        if (!s.Json)
+            Console.Error.WriteLine(
+                "note: sprig now favours pooled workspaces — see 'sprig pool checkout'. 'ws create' still works for now.");
+
         // A bare `create` at a terminal opens the wizard; a named/`--stack`/`--repo` create, or any
         // non-terminal run, goes straight through non-interactively. -i/--ni force the choice.
         var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, s.Json,

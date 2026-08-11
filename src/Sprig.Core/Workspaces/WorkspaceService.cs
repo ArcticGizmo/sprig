@@ -487,6 +487,34 @@ public sealed partial class WorkspaceService(
         Up(workspace);
     }
 
+    /// <summary>Bring infra up if there's any to run and Docker is reachable; otherwise a no-op.
+    /// Unlike <see cref="Up"/>, this never throws on a repo-only workspace or a stopped Docker — the
+    /// pool/refresh flows want "make it running if possible", not a hard requirement. Returns whether
+    /// containers were actually started.</summary>
+    public bool TryStartInfra(string workspace)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
+        if (infraRepos.Count == 0 || !docker.IsAvailable()) return false;
+        foreach (var repo in infraRepos)
+            docker.Up(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
+        instances.Save(record with { LastStatus = "running" });
+        return true;
+    }
+
+    /// <summary>Stop infra if there's any and Docker is reachable; otherwise a no-op. <paramref name="removeVolumes"/>
+    /// wipes data. The tolerant counterpart to <see cref="Down"/>, for the pool/refresh flows.</summary>
+    public bool TryStopInfra(string workspace, bool removeVolumes = false)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
+        if (infraRepos.Count == 0 || !docker.IsAvailable()) return false;
+        foreach (var repo in infraRepos)
+            docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes);
+        instances.Save(record with { LastStatus = "stopped" });
+        return true;
+    }
+
     /// <summary>Deprecated alias for <see cref="RestartInfra"/> — the CLI verb was renamed
     /// <c>ws reset</c> → <c>ws restart</c> when <c>reset</c> came to mean the git resync. Kept so
     /// existing callers/scripts keep working for one release.</summary>
@@ -505,7 +533,7 @@ public sealed partial class WorkspaceService(
     /// </para>
     /// </summary>
     public InstanceRecord RefreshToBase(string workspace, IReadOnlyList<string>? onlyRepos = null,
-        bool force = false, IProgress<WorkspaceStepProgress>? progress = null)
+        bool force = false, bool removeVolumes = false, IProgress<WorkspaceStepProgress>? progress = null)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
@@ -558,11 +586,11 @@ public sealed partial class WorkspaceService(
         var refreshed = record with { Repos = updatedRepos, LastStatus = "refreshed" };
         instances.Save(refreshed);
 
-        // Bring infra back to a clean-running state. Best-effort and only when there's infra to run and
-        // Docker is reachable — a refresh of a repo-only workspace, or one done with Docker down, still
-        // succeeds (mirrors how create treats a start failure as a soft note, not a rollback).
-        if (updatedRepos.Any(r => r.ComposePaths.Count > 0) && docker.IsAvailable())
-            TryQuiet(() => RestartInfra(workspace));
+        // Restart infra so the regenerated compose takes effect; a fresh checkout wipes volumes first
+        // (clean runtime data), the others keep them. Both helpers are tolerant — a repo-only workspace
+        // or a stopped Docker just skips, so the refresh itself still succeeds.
+        TryStopInfra(workspace, removeVolumes);
+        TryStartInfra(workspace);
 
         return instances.TryLoad(workspace) ?? refreshed;
     }

@@ -54,7 +54,7 @@ public static class CliApp
         var registry = new RepoRegistryStore(paths);
         var stacks = new StackStore(paths, registry, instances, settings);
         var resolver = new StackResolver(registry, stacks, git);
-        var pools = new PoolService(stacks, instances);
+        var pools = new PoolService(stacks, instances, resolver, workspaces, paths);
 
         var context = new CliContext(paths, workspaces, reconciler, registry, stacks, resolver,
             pools, settings, git, ansi);
@@ -127,6 +127,8 @@ public static class CliApp
         config.AddBranch("pool", pool =>
         {
             pool.SetDescription("Check out and manage the pooled workspaces built from a stack");
+            pool.AddCommand<PoolCheckoutCommand>("checkout");
+            pool.AddCommand<PoolReleaseCommand>("release");
             pool.AddCommand<PoolStatusCommand>("status");
         });
 

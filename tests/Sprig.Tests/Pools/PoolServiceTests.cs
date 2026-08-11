@@ -1,11 +1,19 @@
+using Sprig.Core.Compose;
+using Sprig.Core.Env;
+using Sprig.Core.Git;
 using Sprig.Core.Pools;
+using Sprig.Core.Ports;
+using Sprig.Core.Processes;
+using Sprig.Core.Setup;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 
 namespace Sprig.Tests.Pools;
 
 /// <summary>M2: the pool is derived from the instance store, not persisted — <see cref="PoolService"/>
-/// reports a stack's workspaces and its <c>maxSlots</c> ceiling. No git or docker involved.</summary>
+/// reports a stack's workspaces and its <c>maxSlots</c> ceiling. These Status tests need no git or
+/// docker, but the service is constructed with the full dependency set it uses for checkout/release.</summary>
 public class PoolServiceTests
 {
     static (PoolService pools, InstanceStore instances) Build(TempStore s, int maxSlots = 4)
@@ -19,7 +27,13 @@ public class PoolServiceTests
         var instances = new InstanceStore(s.Paths);
         var stacks = new StackStore(s.Paths, registry, instances);
         stacks.Save(new StackDefinition { Name = "app", Repos = ["app"], MaxSlots = maxSlots });
-        return (new PoolService(stacks, instances), instances);
+
+        var git = new GitService(new ProcessRunner());
+        var workspaces = new WorkspaceService(git, new FilePortStore(s.Paths), instances,
+            new EnvClobberService(), new ComposeGenerator(), new FakeDockerService { Available = false }, s.Paths,
+            new SetupRunner(new ProcessRunner()));
+        var resolver = new StackResolver(registry, stacks, git);
+        return (new PoolService(stacks, instances, resolver, workspaces, s.Paths), instances);
     }
 
     static InstanceRecord Workspace(string name, int index, bool claimed, string? label = null) => new()

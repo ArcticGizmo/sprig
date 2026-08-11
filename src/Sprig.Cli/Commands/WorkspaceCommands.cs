@@ -545,15 +545,66 @@ public sealed class DownCommand(CliContext cli) : Command<DownCommand.Settings>
     }
 }
 
-[Description("Restart infra (down then up)")]
+[Description("Restart infra (down then up, keeping volumes)")]
+public sealed class RestartCommand(CliContext cli) : Command<WorkspaceSettings>
+{
+    protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
+    {
+        var workspace = WorkspacePrompt.Resolve(cli, s.Workspace, s.Json);
+        if (workspace is null) return 0; // interactive cancel (ESC)
+        cli.Workspaces.RestartInfra(workspace);
+        return CliOutput.Ok(s.Json, $"infra restarted for '{workspace}'", new { ok = true, workspace, action = "restart" });
+    }
+}
+
+[Description("Deprecated alias of 'restart' — restart infra (down then up)")]
 public sealed class ResetCommand(CliContext cli) : Command<WorkspaceSettings>
 {
     protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
     {
         var workspace = WorkspacePrompt.Resolve(cli, s.Workspace, s.Json);
         if (workspace is null) return 0; // interactive cancel (ESC)
-        cli.Workspaces.Reset(workspace);
-        return CliOutput.Ok(s.Json, $"infra reset for '{workspace}'", new { ok = true, workspace, action = "reset" });
+        // 'reset' now means the git resync (see 'ws refresh'); infra restart moved to 'ws restart'. This
+        // stays as an alias for one release — nudge, but don't disrupt the --json contract.
+        if (!s.Json)
+            cli.Ansi.MarkupLine("[dim]note: 'ws reset' restarts infra and is now called [bold]ws restart[/]; " +
+                "for the git resync see [bold]ws refresh[/].[/]");
+        cli.Workspaces.RestartInfra(workspace);
+        return CliOutput.Ok(s.Json, $"infra restarted for '{workspace}'", new { ok = true, workspace, action = "restart" });
+    }
+}
+
+[Description("Resync a workspace's repos to their base branch (keeps installed deps)")]
+public sealed class RefreshCommand(CliContext cli) : Command<RefreshCommand.Settings>
+{
+    public sealed class Settings : WorkspaceSettings
+    {
+        [CommandOption("--only <repos>")]
+        [Description("Only refresh these repos (comma-separated or repeated)")]
+        public string[] Only { get; set; } = [];
+
+        [CommandOption("--force")]
+        [Description("Discard commits not in the base branch (a refresh resets to base)")]
+        public bool Force { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var workspace = WorkspacePrompt.Resolve(cli, s.Workspace, s.Json);
+        if (workspace is null) return 0; // interactive cancel (ESC)
+        var only = CliFormat.SplitList(s.Only);
+
+        var record = cli.Workspaces.RefreshToBase(workspace, only, s.Force);
+        if (s.Json) { CliOutput.Json(record); return 0; }
+
+        var console = cli.Ansi;
+        console.MarkupLine($"[green]{Glyph.Check(console)}[/] refreshed workspace [bold]{Markup.Escape(workspace)}[/]" +
+            (only.Count > 0 ? $" [dim]({Markup.Escape(string.Join(", ", only))})[/]" : ""));
+        foreach (var r in record.Repos)
+            console.MarkupLine($"  [dim]{Markup.Escape(r.Name)}[/]  {Markup.Escape(r.WorktreePath)}");
+        if (record.Repos.Any(r => r.Setup.Any(step => !step.Success)))
+            console.MarkupLine("[yellow]note:[/] a setup command failed — finish setup manually in the worktree.");
+        return 0;
     }
 }
 

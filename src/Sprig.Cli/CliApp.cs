@@ -138,6 +138,8 @@ public static class CliApp
             ws.AddCommand<InfoCommand>("info");
             ws.AddCommand<UpCommand>("up");
             ws.AddCommand<DownCommand>("down");
+            ws.AddCommand<RefreshCommand>("refresh");
+            ws.AddCommand<RestartCommand>("restart");
             ws.AddCommand<ResetCommand>("reset");
             ws.AddCommand<StatusCommand>("status");
             ws.AddCommand<RmCommand>("rm").WithAlias("remove");

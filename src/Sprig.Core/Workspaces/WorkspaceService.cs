@@ -7,6 +7,7 @@ using Sprig.Core.Git;
 using Sprig.Core.Ports;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
+using Sprig.Core.Substitution;
 
 namespace Sprig.Core.Workspaces;
 
@@ -46,6 +47,24 @@ public sealed partial class WorkspaceService(
 
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
+
+    /// <summary>Generate one isolated compose copy per overridden compose file across the repo's modules,
+    /// into the workspace's instance dir. The dest name folds in the repo, module and a slug of the source
+    /// path so two files never collide. Shared by create and refresh so the naming stays identical.</summary>
+    IReadOnlyList<string> GenerateComposeFiles(ResolvedRepo repo, string workspace, IVariableSource scope)
+    {
+        var composePaths = new List<string>();
+        foreach (var module in repo.Config.EffectiveModules)
+            foreach (var composeCfg in module.Compose)
+            {
+                var dest = Path.Combine(paths.InstanceDir(workspace),
+                    $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
+                compose.GenerateToFile(
+                    Path.Combine(repo.Root, module.Path, composeCfg.File), composeCfg, scope, dest);
+                composePaths.Add(dest);
+            }
+        return composePaths;
+    }
 
     /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
     public InstanceRecord Create(string repoPath, string workspace,
@@ -194,21 +213,12 @@ public sealed partial class WorkspaceService(
                 // per file, named with the module + a slug of the source path so two files never collide in
                 // the instance dir (the same filename in two modules stays distinct). Each source path is
                 // resolved under its module's directory.
-                var composePaths = new List<string>();
-                var modules = repo.Config.EffectiveModules;
-                if (modules.Any(m => m.Compose.Count > 0))
+                IReadOnlyList<string> composePaths = [];
+                if (repo.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
                 {
                     current = CreateStepIds.Compose(repo.Name);
                     progress?.Report(new(current, WorkspaceStepState.Running));
-                    foreach (var module in modules)
-                        foreach (var composeCfg in module.Compose)
-                        {
-                            var dest = Path.Combine(paths.InstanceDir(workspace),
-                                $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
-                            compose.GenerateToFile(
-                                Path.Combine(repo.Root, module.Path, composeCfg.File), composeCfg, repoScope, dest);
-                            composePaths.Add(dest);
-                        }
+                    composePaths = GenerateComposeFiles(repo, workspace, repoScope);
                     progress?.Report(new(current, WorkspaceStepState.Done));
                 }
 
@@ -471,10 +481,116 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>Restart the workspace's infra (down then up, keeping volumes).</summary>
-    public void Reset(string workspace)
+    public void RestartInfra(string workspace)
     {
         Down(workspace);
         Up(workspace);
+    }
+
+    /// <summary>Deprecated alias for <see cref="RestartInfra"/> — the CLI verb was renamed
+    /// <c>ws reset</c> → <c>ws restart</c> when <c>reset</c> came to mean the git resync. Kept so
+    /// existing callers/scripts keep working for one release.</summary>
+    public void Reset(string workspace) => RestartInfra(workspace);
+
+    /// <summary>
+    /// Resync a workspace's repos to their base branch and rebuild its sprig-managed state, without
+    /// throwing away the expensive on-disk artifacts. Per repo: fetch, hard-reset the worktree branch
+    /// to base (tracked files only — gitignored node_modules/build output/real .env values survive),
+    /// re-clobber env, regenerate compose, and re-run setup; then infra is restarted (volumes kept).
+    /// <para>
+    /// Works purely from the stored <see cref="InstanceRecord"/> (like teardown does), so it needs no
+    /// stack resolver. <paramref name="onlyRepos"/> narrows the refresh to a subset; the rest are left
+    /// exactly as they are. A refresh discards commits the base doesn't contain, so it refuses (listing
+    /// the offenders) unless <paramref name="force"/> is set — work is never lost silently.
+    /// </para>
+    /// </summary>
+    public InstanceRecord RefreshToBase(string workspace, IReadOnlyList<string>? onlyRepos = null,
+        bool force = false, IProgress<WorkspaceStepProgress>? progress = null)
+    {
+        var record = instances.TryLoad(workspace)
+            ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+
+        var targets = SelectRefreshRepos(record, onlyRepos);
+        var targetNames = new HashSet<string>(targets.Select(r => r.Name), StringComparer.Ordinal);
+
+        // Pre-flight across every target: fetch, resolve its base, and collect any that carry commits the
+        // base doesn't — a hard-reset would discard those. Fail once, before touching anything, so a
+        // guarded refresh never leaves a half-reset workspace.
+        var bases = new Dictionary<string, string>(StringComparer.Ordinal);
+        var unmerged = new List<string>();
+        foreach (var repo in targets)
+        {
+            TryQuiet(() => git.Fetch(repo.WorktreePath));
+            var baseRef = git.ResolveDefaultBase(repo.WorktreePath);
+            bases[repo.Name] = baseRef;
+            if (git.CountCommitsAhead(repo.WorktreePath, baseRef) > 0)
+                unmerged.Add($"{repo.Name} (has commits not in {baseRef})");
+        }
+        if (unmerged.Count > 0 && !force)
+            throw new WorkspaceException(
+                "refusing to refresh — a refresh resets each repo to its base branch, which would " +
+                "discard commits in:\n  " + string.Join("\n  ", unmerged) +
+                "\nmerge or push them first, or pass --force to discard them.");
+
+        var updatedRepos = new List<InstanceRepo>();
+        foreach (var repo in record.Repos)
+        {
+            if (!targetNames.Contains(repo.Name)) { updatedRepos.Add(repo); continue; }
+
+            // Reload the committed config from source (it may have moved on with the base), and rebuild
+            // the input scope from the values the record already stores.
+            var config = LoadValidConfig(repo.SourcePath);
+            var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, config);
+            var scope = ScopeFromInputs(workspace, repo.Inputs);
+
+            git.ResetHard(repo.WorktreePath, bases[repo.Name]);
+            env.Apply(config, repo.SourcePath, repo.WorktreePath, scope);
+
+            var composePaths = config.EffectiveModules.Any(m => m.Compose.Count > 0)
+                ? GenerateComposeFiles(resolved, workspace, scope)
+                : repo.ComposePaths;
+
+            var setupOutcomes = HasSetup(resolved) ? RunSetup(resolved, repo.WorktreePath, progress) : [];
+
+            updatedRepos.Add(repo with { GeneratedComposePaths = composePaths, Setup = setupOutcomes });
+        }
+
+        var refreshed = record with { Repos = updatedRepos, LastStatus = "refreshed" };
+        instances.Save(refreshed);
+
+        // Bring infra back to a clean-running state. Best-effort and only when there's infra to run and
+        // Docker is reachable — a refresh of a repo-only workspace, or one done with Docker down, still
+        // succeeds (mirrors how create treats a start failure as a soft note, not a rollback).
+        if (updatedRepos.Any(r => r.ComposePaths.Count > 0) && docker.IsAvailable())
+            TryQuiet(() => RestartInfra(workspace));
+
+        return instances.TryLoad(workspace) ?? refreshed;
+    }
+
+    /// <summary>The repos a refresh will touch: all of them, or the named subset. An unknown name is an
+    /// error (a typo shouldn't silently refresh nothing).</summary>
+    static IReadOnlyList<InstanceRepo> SelectRefreshRepos(InstanceRecord record, IReadOnlyList<string>? onlyRepos)
+    {
+        if (onlyRepos is null || onlyRepos.Count == 0) return record.Repos;
+        var known = new HashSet<string>(record.Repos.Select(r => r.Name), StringComparer.Ordinal);
+        var unknown = onlyRepos.Where(n => !known.Contains(n)).ToList();
+        if (unknown.Count > 0)
+            throw new WorkspaceException(
+                $"workspace '{record.Workspace}' has no repo{(unknown.Count == 1 ? "" : "s")} " +
+                string.Join(", ", unknown.Select(n => $"'{n}'")) +
+                $" (it has: {string.Join(", ", record.Repos.Select(r => r.Name))})");
+        var wanted = new HashSet<string>(onlyRepos, StringComparer.Ordinal);
+        return record.Repos.Where(r => wanted.Contains(r.Name)).ToList();
+    }
+
+    /// <summary>Rebuild the env/compose substitution scope for a repo from the input values the record
+    /// stores. Mirrors <see cref="StackWiring"/>'s per-repo scope: the declared inputs plus
+    /// <c>workspace</c>, which templates reference as <c>${sprig.workspace}</c>.</summary>
+    static IVariableSource ScopeFromInputs(string workspace, IReadOnlyDictionary<string, string> inputs)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["workspace"] = workspace };
+        foreach (var (key, value) in inputs) values[key] = value;
+        return new DictionaryVariableSource(values);
     }
 
     /// <summary>Live container status across the workspace's infra repos.</summary>

@@ -28,6 +28,25 @@ public interface IGitService
     /// <summary>Add a worktree at <paramref name="worktreePath"/> on a new branch off current HEAD.</summary>
     void AddWorktree(string repo, string worktreePath, string branch);
 
+    /// <summary>Fetch from all remotes (with prune). Best-effort: does nothing useful, and does not
+    /// throw, when the repo has no remote — a refresh of a purely-local repo still resyncs to its
+    /// local base branch.</summary>
+    void Fetch(string repo);
+
+    /// <summary>The ref a workspace's repos resync to on a refresh — the remote's default branch when
+    /// there is one (<c>origin/HEAD</c> → e.g. <c>origin/main</c>), else the local <c>main</c>/<c>master</c>.
+    /// Throws when none can be found.</summary>
+    string ResolveDefaultBase(string repo);
+
+    /// <summary>Hard-reset the checked-out branch (and working tree) to <paramref name="reference"/>.
+    /// Touches <b>tracked</b> files only — gitignored artifacts (node_modules, build output, real
+    /// <c>.env</c> values) are left in place, which is what makes a refresh cheap.</summary>
+    void ResetHard(string repo, string reference);
+
+    /// <summary>Number of commits on HEAD that <paramref name="baseRef"/> does not contain — i.e. work a
+    /// hard-reset to base would discard. 0 when HEAD is at or behind base. Best-effort: 0 on any error.</summary>
+    int CountCommitsAhead(string repo, string baseRef);
+
     /// <summary>Parse <c>worktree list --porcelain</c> (includes the <c>prunable</c> flag).</summary>
     IReadOnlyList<WorktreeInfo> ListWorktrees(string repo);
 

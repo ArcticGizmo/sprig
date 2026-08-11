@@ -46,6 +46,41 @@ public sealed class GitService(IProcessRunner runner) : IGitService
     public void AddWorktree(string repo, string worktreePath, string branch)
         => runner.Run("git", ["-C", repo, "worktree", "add", worktreePath, "-b", branch], repo).EnsureSuccess();
 
+    // Best-effort: swallow the result so a repo with no remote (fetch exits non-zero) still refreshes
+    // against its local base branch instead of the whole operation failing here.
+    public void Fetch(string repo)
+        => runner.Run("git", ["-C", repo, "fetch", "--all", "--prune"], repo);
+
+    public string ResolveDefaultBase(string repo)
+    {
+        // Prefer the remote's default branch (origin/HEAD → "origin/main"); the abbrev-ref form gives
+        // the branch name directly when origin/HEAD is set.
+        var head = runner.Run("git", ["-C", repo, "rev-parse", "--abbrev-ref", "origin/HEAD"], repo);
+        if (head.Success)
+        {
+            var name = head.StdOut.Trim();
+            if (name.Length > 0 && name != "origin/HEAD") return name;
+        }
+        // Fall back through the usual suspects — a remote branch first (real dev), then a local one
+        // (a purely-local repo, and the shape most tests use).
+        foreach (var candidate in new[] { "origin/main", "origin/master", "main", "master" })
+            if (RefExists(repo, candidate)) return candidate;
+        throw new InvalidOperationException(
+            $"could not determine a base branch for '{repo}' (looked for origin/HEAD, main, master)");
+    }
+
+    public void ResetHard(string repo, string reference)
+        => runner.Run("git", ["-C", repo, "reset", "--hard", reference], repo).EnsureSuccess();
+
+    public int CountCommitsAhead(string repo, string baseRef)
+    {
+        var r = runner.Run("git", ["-C", repo, "rev-list", "--count", $"{baseRef}..HEAD"], repo);
+        return r.Success && int.TryParse(r.StdOut.Trim(), out var n) ? n : 0;
+    }
+
+    bool RefExists(string repo, string reference)
+        => runner.Run("git", ["-C", repo, "rev-parse", "--verify", "--quiet", $"{reference}^{{commit}}"], repo).Success;
+
     public IReadOnlyList<WorktreeInfo> ListWorktrees(string repo)
     {
         var r = runner.Run("git", ["-C", repo, "worktree", "list", "--porcelain"], repo).EnsureSuccess();

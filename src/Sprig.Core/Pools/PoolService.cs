@@ -50,6 +50,33 @@ public sealed class PoolService(
             .OrderBy(i => i.Workspace, StringComparer.Ordinal)
             .ToList();
 
+    /// <summary>The ordered checklist a <see cref="Checkout"/> will work through for a given decision,
+    /// so the CLI can render every row before work starts. Step ids match what <see cref="Checkout"/>
+    /// reports: a new checkout mirrors <see cref="WorkspaceService.PlanCreate"/> plus an infra row; a
+    /// reused fresh/refresh mirrors <see cref="WorkspaceService.PlanRefresh"/>; an as-is is just infra.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanCheckout(string stackName, string? existingWorkspace,
+        CheckoutMode mode, IReadOnlyList<string>? refreshRepos)
+    {
+        if (existingWorkspace is null)
+        {
+            var stack = stacks.Get(stackName) ?? throw new StackException($"unknown stack '{stackName}'");
+            var resolved = resolver.Resolve(stackName, null);
+            var placeholder = $"{stackName}-{NextIndex(stackName, Members(stackName), stack.MaxSlots)}";
+            var steps = workspaces.PlanCreate(resolved, placeholder).ToList();
+            steps.Add(new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure"));
+            return steps;
+        }
+
+        var record = instances.TryLoad(existingWorkspace)
+            ?? throw new PoolException($"'{existingWorkspace}' is not a workspace in the '{stackName}' pool");
+        return mode switch
+        {
+            CheckoutMode.Fresh => workspaces.PlanRefresh(record, null, resolver.Resolve(stackName, null).Repos),
+            CheckoutMode.Refresh => workspaces.PlanRefresh(record, refreshRepos, resolver.Resolve(stackName, null).Repos),
+            _ => [new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure")],
+        };
+    }
+
     /// <summary>
     /// Check out a workspace from the stack's pool and mark it claimed with <paramref name="label"/>.
     /// When <paramref name="existingWorkspace"/> is named, that unclaimed workspace is reused and handled
@@ -76,7 +103,10 @@ public sealed class PoolService(
             if (target.Claimed)
                 throw new PoolException($"workspace '{existingWorkspace}' is already claimed");
 
-            ApplyHandling(target.Workspace, mode, refreshRepos, force, progress);
+            // A fresh/refresh reuse resolves the stack so the refresh honours the stack's overlay (e.g.
+            // stack-carried setup); as-is touches no config, so it needs no resolve.
+            var resolvedRepos = mode == CheckoutMode.AsIs ? null : resolver.Resolve(stackName, null).Repos;
+            ApplyHandling(target.Workspace, mode, refreshRepos, force, progress, resolvedRepos);
             return MarkClaimed(target.Workspace, label, target.WorkspaceIndex);
         }
 
@@ -89,7 +119,9 @@ public sealed class PoolService(
         var name = $"{stackName}-{index}";
         var resolved = resolver.Resolve(stackName, null);
         workspaces.Create(resolved, name, progress); // fresh worktrees + env + compose + setup
+        progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Running));
         workspaces.TryStartInfra(name);
+        progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Done));
         return MarkClaimed(name, label, index);
     }
 
@@ -124,18 +156,20 @@ public sealed class PoolService(
             .ToList();
 
     void ApplyHandling(string workspace, CheckoutMode mode, IReadOnlyList<string>? refreshRepos, bool force,
-        IProgress<WorkspaceStepProgress>? progress)
+        IProgress<WorkspaceStepProgress>? progress, IReadOnlyList<ResolvedRepo>? resolvedRepos)
     {
         switch (mode)
         {
             case CheckoutMode.AsIs:
+                progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Running));
                 workspaces.TryStartInfra(workspace);
+                progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Done));
                 break;
             case CheckoutMode.Fresh:
-                workspaces.RefreshToBase(workspace, onlyRepos: null, force, removeVolumes: true, progress);
+                workspaces.RefreshToBase(workspace, onlyRepos: null, force, removeVolumes: true, progress, resolvedRepos);
                 break;
             case CheckoutMode.Refresh:
-                workspaces.RefreshToBase(workspace, refreshRepos, force, removeVolumes: false, progress);
+                workspaces.RefreshToBase(workspace, refreshRepos, force, removeVolumes: false, progress, resolvedRepos);
                 break;
         }
     }

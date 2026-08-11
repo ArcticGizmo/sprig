@@ -600,10 +600,22 @@ public sealed class RefreshCommand(CliContext cli) : Command<RefreshCommand.Sett
         if (workspace is null) return 0; // interactive cancel (ESC)
         var only = CliFormat.SplitList(s.Only);
 
-        var record = cli.Workspaces.RefreshToBase(workspace, only, s.Force);
-        if (s.Json) { CliOutput.Json(record); return 0; }
+        // Machine path stays quiet; human path drives the live checklist (resync → env → setup → infra).
+        if (s.Json) { CliOutput.Json(cli.Workspaces.RefreshToBase(workspace, only, s.Force)); return 0; }
 
-        var console = cli.Ansi;
+        var current = cli.Workspaces.Get(workspace)
+            ?? throw new ArgumentException($"unknown workspace '{workspace}'");
+        // For a pooled workspace, resolve its stack so the refresh honours the stack overlay (e.g.
+        // stack-carried setup); an ad-hoc workspace has no stack and refreshes from its .sprig.json.
+        var resolvedRepos = current.Stack is { } st ? cli.Resolver.Resolve(st, null).Repos : null;
+
+        var console = Term.Create();
+        console.MarkupLine($"[bold]Refreshing[/] [green]{Markup.Escape(workspace)}[/]…");
+        var plan = cli.Workspaces.PlanRefresh(current, only.Count > 0 ? only : null, resolvedRepos);
+        InstanceRecord record = null!;
+        Checklist.Run(console, plan, progress =>
+            record = cli.Workspaces.RefreshToBase(workspace, only, s.Force, removeVolumes: false, progress, resolvedRepos));
+
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] refreshed workspace [bold]{Markup.Escape(workspace)}[/]" +
             (only.Count > 0 ? $" [dim]({Markup.Escape(string.Join(", ", only))})[/]" : ""));
         foreach (var r in record.Repos)

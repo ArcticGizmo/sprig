@@ -532,8 +532,33 @@ public sealed partial class WorkspaceService(
     /// the offenders) unless <paramref name="force"/> is set — work is never lost silently.
     /// </para>
     /// </summary>
+    /// <summary>The ordered checklist a <see cref="RefreshToBase"/> will work through, computed up front so
+    /// a UI can show every row before work starts. Step ids match what <see cref="RefreshToBase"/> reports.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanRefresh(InstanceRecord record, IReadOnlyList<string>? onlyRepos,
+        IReadOnlyList<ResolvedRepo>? resolvedRepos = null)
+    {
+        var steps = new List<WorkspaceStep>();
+        foreach (var repo in SelectRefreshRepos(record, onlyRepos))
+        {
+            var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, ConfigFor(repo, resolvedRepos));
+            steps.Add(new(RefreshStepIds.Resync(repo.Name), $"Resync to base — {repo.Name}"));
+            steps.Add(new(RefreshStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
+            if (resolved.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
+                steps.Add(new(RefreshStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
+            if (HasSetup(resolved))
+            {
+                steps.Add(new(RefreshStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
+                foreach (var cmd in SetupCommands(resolved))
+                    steps.Add(new(RefreshStepIds.SetupCommand(repo.Name, cmd.Index), cmd.Command) { SubStep = true });
+            }
+        }
+        steps.Add(new(RefreshStepIds.Infra, "Restart infrastructure"));
+        return steps;
+    }
+
     public InstanceRecord RefreshToBase(string workspace, IReadOnlyList<string>? onlyRepos = null,
-        bool force = false, bool removeVolumes = false, IProgress<WorkspaceStepProgress>? progress = null)
+        bool force = false, bool removeVolumes = false, IProgress<WorkspaceStepProgress>? progress = null,
+        IReadOnlyList<ResolvedRepo>? resolvedRepos = null)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
@@ -565,20 +590,39 @@ public sealed partial class WorkspaceService(
         {
             if (!targetNames.Contains(repo.Name)) { updatedRepos.Add(repo); continue; }
 
-            // Reload the committed config from source (it may have moved on with the base), and rebuild
-            // the input scope from the values the record already stores.
-            var config = LoadValidConfig(repo.SourcePath);
+            // Use the caller's resolved config when supplied (a pooled refresh passes it, so the stack's
+            // overlay — e.g. stack-carried setup — is honoured), else reload the committed config from
+            // source. Either way it's fresh, so it picks up anything that moved on with the base.
+            var config = ConfigFor(repo, resolvedRepos);
             var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, config);
             var scope = ScopeFromInputs(workspace, repo.Inputs);
 
+            progress?.Report(new(RefreshStepIds.Resync(repo.Name), WorkspaceStepState.Running));
             git.ResetHard(repo.WorktreePath, bases[repo.Name]);
+            progress?.Report(new(RefreshStepIds.Resync(repo.Name), WorkspaceStepState.Done));
+
+            progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Running));
             env.Apply(config, repo.SourcePath, repo.WorktreePath, scope);
+            progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Done));
 
-            var composePaths = config.EffectiveModules.Any(m => m.Compose.Count > 0)
-                ? GenerateComposeFiles(resolved, workspace, scope)
-                : repo.ComposePaths;
+            var composePaths = repo.ComposePaths;
+            if (config.EffectiveModules.Any(m => m.Compose.Count > 0))
+            {
+                progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Running));
+                composePaths = GenerateComposeFiles(resolved, workspace, scope);
+                progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Done));
+            }
 
-            var setupOutcomes = HasSetup(resolved) ? RunSetup(resolved, repo.WorktreePath, progress) : [];
+            IReadOnlyList<Setup.SetupOutcome> setupOutcomes = [];
+            if (HasSetup(resolved))
+            {
+                progress?.Report(new(RefreshStepIds.Setup(repo.Name), WorkspaceStepState.Running));
+                setupOutcomes = RunSetup(resolved, repo.WorktreePath, progress);
+                var failed = setupOutcomes.FirstOrDefault(o => !o.Success);
+                progress?.Report(failed is null
+                    ? new(RefreshStepIds.Setup(repo.Name), WorkspaceStepState.Done)
+                    : new(RefreshStepIds.Setup(repo.Name), WorkspaceStepState.Warning, $"'{failed.Command}' exited {failed.ExitCode}"));
+            }
 
             updatedRepos.Add(repo with { GeneratedComposePaths = composePaths, Setup = setupOutcomes });
         }
@@ -589,8 +633,10 @@ public sealed partial class WorkspaceService(
         // Restart infra so the regenerated compose takes effect; a fresh checkout wipes volumes first
         // (clean runtime data), the others keep them. Both helpers are tolerant — a repo-only workspace
         // or a stopped Docker just skips, so the refresh itself still succeeds.
+        progress?.Report(new(RefreshStepIds.Infra, WorkspaceStepState.Running));
         TryStopInfra(workspace, removeVolumes);
         TryStartInfra(workspace);
+        progress?.Report(new(RefreshStepIds.Infra, WorkspaceStepState.Done));
 
         return instances.TryLoad(workspace) ?? refreshed;
     }
@@ -610,6 +656,13 @@ public sealed partial class WorkspaceService(
         var wanted = new HashSet<string>(onlyRepos, StringComparer.Ordinal);
         return record.Repos.Where(r => wanted.Contains(r.Name)).ToList();
     }
+
+    /// <summary>The effective config for a repo during refresh: the caller's resolved config (which carries
+    /// the stack overlay) when it lists this repo, else the committed <c>.sprig.json</c> reloaded from
+    /// source.</summary>
+    SprigRepoConfig ConfigFor(InstanceRepo repo, IReadOnlyList<ResolvedRepo>? resolvedRepos)
+        => resolvedRepos?.FirstOrDefault(r => string.Equals(r.Name, repo.Name, StringComparison.Ordinal))?.Config
+            ?? LoadValidConfig(repo.SourcePath);
 
     /// <summary>Rebuild the env/compose substitution scope for a repo from the input values the record
     /// stores. Mirrors <see cref="StackWiring"/>'s per-repo scope: the declared inputs plus

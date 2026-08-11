@@ -134,11 +134,23 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         }
 
         var label = ResolveLabel(console, s, interactive);
+        var existing = target.IsNew ? null : target.Workspace;
 
-        if (!s.Json) console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(stackName)}[/]…");
-        var record = cli.Pools.Checkout(stackName, target.IsNew ? null : target.Workspace, label, mode, refreshRepos, s.Force);
+        // Machine path stays quiet and structured: no checklist, just the record.
+        if (s.Json)
+        {
+            CliOutput.Json(cli.Pools.Checkout(stackName, existing, label, mode, refreshRepos, s.Force));
+            return 0;
+        }
 
-        if (s.Json) { CliOutput.Json(record); return 0; }
+        // Human path: plan up front, then drive the live checklist while the checkout runs — the same
+        // feedback create gives (worktrees, dependency install, infra), for every mode.
+        console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(stackName)}[/]…");
+        var plan = cli.Pools.PlanCheckout(stackName, existing, mode, refreshRepos);
+        InstanceRecord record = null!;
+        Checklist.Run(console, plan, progress =>
+            record = cli.Pools.Checkout(stackName, existing, label, mode, refreshRepos, s.Force, progress));
+
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] checked out [bold]{Markup.Escape(record.Workspace)}[/] " +
             $"[dim]({Markup.Escape(label)})[/]");
         foreach (var r in record.Repos)

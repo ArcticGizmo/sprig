@@ -46,6 +46,19 @@ internal static class CreateStepIds
     public static string SetupCommand(string repo, int index) => $"{repo}:setup:{index}";
 }
 
+/// <summary>Stable step ids for the refresh/checkout checklist. Reuses the create ids for the
+/// env/compose/setup rows (same strings, so <see cref="WorkspaceService.RunSetup"/>'s reports line up),
+/// and adds the resync + infra rows a refresh has.</summary>
+internal static class RefreshStepIds
+{
+    public const string Infra = "infra";
+    public static string Resync(string repo) => $"{repo}:resync";
+    public static string Env(string repo) => CreateStepIds.Env(repo);
+    public static string Compose(string repo) => CreateStepIds.Compose(repo);
+    public static string Setup(string repo) => CreateStepIds.Setup(repo);
+    public static string SetupCommand(string repo, int index) => CreateStepIds.SetupCommand(repo, index);
+}
+
 /// <summary>Stable step ids for the teardown checklist.</summary>
 internal static class RemoveStepIds
 {

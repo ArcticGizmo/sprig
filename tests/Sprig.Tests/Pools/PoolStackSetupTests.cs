@@ -81,6 +81,52 @@ public class PoolStackSetupTests
     }
 
     [Fact]
+    public void PlanCheckout_for_a_new_workspace_lists_the_stand_up_steps()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var (pools, _) = Build(repo, store, NameOnly, ["npm ci"]);
+
+        var ids = pools.PlanCheckout("app", null, CheckoutMode.AsIs, null).Select(p => p.Id).ToList();
+
+        Assert.Contains("ports", ids);
+        Assert.Contains("app:setup", ids); // the stack setup shows as a step
+        Assert.Contains("infra", ids);
+    }
+
+    [Fact]
+    public void PlanCheckout_as_is_reuse_is_just_infra_but_fresh_lists_the_refresh_steps()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var (pools, _) = Build(repo, store, NameOnly, ["npm ci"]);
+        pools.Checkout("app", null, "first"); // materialise app-1
+
+        Assert.Equal(["infra"], pools.PlanCheckout("app", "app-1", CheckoutMode.AsIs, null).Select(p => p.Id));
+
+        var fresh = pools.PlanCheckout("app", "app-1", CheckoutMode.Fresh, null).Select(p => p.Id).ToList();
+        Assert.Contains("app:resync", fresh);
+        Assert.Contains("app:setup", fresh);
+        Assert.Contains("infra", fresh);
+    }
+
+    [Fact]
+    public void A_fresh_reuse_reruns_the_stack_setup()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var (pools, setup) = Build(repo, store, NameOnly, ["npm ci"]);
+        pools.Checkout("app", null, "first"); // stack setup ran once
+        pools.Release("app-1");
+        setup.Calls.Clear();
+
+        pools.Checkout("app", "app-1", "again", CheckoutMode.Fresh);
+
+        // The stack overlay is honoured on refresh, not just at first create.
+        Assert.Contains(setup.Calls, c => c.Arguments[^1] == "npm ci");
+    }
+
+    [Fact]
     public void A_failed_setup_marks_the_workspace_degraded()
     {
         using var store = new TempStore();

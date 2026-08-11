@@ -95,6 +95,14 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
                 $"stack '{stack.Name}' references unregistered repo{(unknown.Count == 1 ? "" : "s")} " +
                 $"{string.Join(", ", unknown.Select(r => $"'{r}'"))} — register {(unknown.Count == 1 ? "it" : "them")} first");
 
+        // Stack-supplied setup can only target repos the stack actually includes.
+        var stackRepos = new HashSet<string>(stack.Repos, StringComparer.Ordinal);
+        var setupUnknown = stack.Setup.Keys.Where(r => !stackRepos.Contains(r)).ToList();
+        if (setupUnknown.Count > 0)
+            throw new StackException(
+                $"stack '{stack.Name}' has setup for repo{(setupUnknown.Count == 1 ? "" : "s")} " +
+                $"{string.Join(", ", setupUnknown.Select(r => $"'{r}'"))} that the stack doesn't include");
+
         ValidateShares(stack);
         ValidateCapacity(stack);
     }

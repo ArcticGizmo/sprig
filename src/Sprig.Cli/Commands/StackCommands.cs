@@ -31,6 +31,10 @@ public sealed class StackCreateCommand(CliContext cli) : Command<StackCreateComm
         [CommandOption("--max-slots <n>")]
         [Description("Pool size ceiling — the most workspaces this stack may run at once")]
         public int? MaxSlots { get; set; }
+
+        [CommandOption("--setup <repo:cmd>")]
+        [Description("Stack-supplied setup command for a repo (repeatable)")]
+        public string[] Setup { get; set; } = [];
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -46,6 +50,7 @@ public sealed class StackCreateCommand(CliContext cli) : Command<StackCreateComm
             Ports = s.Port,
             Bindings = bindings,
             MaxSlots = s.MaxSlots ?? StackDefinition.DefaultMaxSlots,
+            Setup = CliFormat.ParseRepoCommands(s.Setup),
         };
         // Populate the shared-port overlay from the bindings so a CLI-built stack shows its shares in
         // the app (and passes the store's share/binding consistency check).
@@ -78,6 +83,10 @@ public sealed class StackEditCommand(CliContext cli) : Command<StackEditCommand.
         [CommandOption("--max-slots <n>")]
         [Description("Replace the pool size ceiling")]
         public int? MaxSlots { get; set; }
+
+        [CommandOption("--setup <repo:cmd>")]
+        [Description("Set a repo's stack setup (repeated per repo replaces that repo's commands)")]
+        public string[] Setup { get; set; } = [];
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -85,8 +94,8 @@ public sealed class StackEditCommand(CliContext cli) : Command<StackEditCommand.
         var current = cli.Stacks.Get(s.Name)
             ?? throw new ArgumentException($"unknown stack '{s.Name}' — use 'stack create' to make one");
         var bindOpt = CliFormat.ParseBindings(s.Bind);
-        // Each facet is replaced only if its flag was supplied; bindings merge onto the existing set
-        // (a repeated input overrides, others are kept). Shares are re-derived.
+        // Each facet is replaced only if its flag was supplied; bindings and setup merge onto the existing
+        // set (a repeated key overrides, others are kept). Shares are re-derived.
         var edited = current with
         {
             Repos = s.Repos is not null
@@ -95,6 +104,7 @@ public sealed class StackEditCommand(CliContext cli) : Command<StackEditCommand.
             Ports = s.Port.Length > 0 ? s.Port : current.Ports,
             Bindings = CliFormat.MergeBindings(current.Bindings, bindOpt),
             MaxSlots = s.MaxSlots ?? current.MaxSlots,
+            Setup = CliFormat.MergeRepoCommands(current.Setup, CliFormat.ParseRepoCommands(s.Setup)),
         };
         cli.Stacks.Save(edited with { Shares = StackMigration.DeriveShares(edited) });
         return CliOutput.Ok(s.Json, $"updated stack '{s.Name}'", new { ok = true, name = s.Name, action = "edit" });

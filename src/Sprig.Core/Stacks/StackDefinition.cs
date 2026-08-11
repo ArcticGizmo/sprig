@@ -31,6 +31,15 @@ public sealed record StackDefinition
     public IReadOnlyList<string> Ports { get; init; } = [];
 
     /// <summary>
+    /// Optional per-repo setup commands the <b>stack</b> supplies, keyed by repo name. Folded in at
+    /// resolution as an extra setup module that runs after the repo's own, so a repo with a thin (or
+    /// name-only) <c>.sprig.json</c> can still be stood up entirely from the stack — the stack as a
+    /// complete, self-contained block. Literal commands (no <c>${sprig.*}</c>), same as repo setup.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> Setup { get; init; }
+        = new Dictionary<string, IReadOnlyList<string>>();
+
+    /// <summary>
     /// Per-repo input bindings: <c>Bindings[repo][input]</c> is an expression (a literal or a
     /// template over <c>${sprig.ports.&lt;name&gt;}</c> / <c>${sprig.workspace}</c>) that supplies
     /// that repo's input. Same-named inputs in different repos are bound independently. This stays

@@ -206,6 +206,9 @@ public sealed record PoolStatus(string Stack, int MaxSlots, IReadOnlyList<Instan
     /// <summary>Unclaimed workspaces already materialised — free to take (reset per the checkout choice).</summary>
     public int FreeCount => Workspaces.Count(w => !w.Claimed);
 
+    /// <summary>Workspaces whose last setup run failed — degraded, may not actually work.</summary>
+    public int DegradedCount => Workspaces.Count(w => w.SetupFailed);
+
     /// <summary>Room to materialise a brand-new workspace under the ceiling.</summary>
     public int Headroom => Math.Max(0, MaxSlots - Workspaces.Count);
 

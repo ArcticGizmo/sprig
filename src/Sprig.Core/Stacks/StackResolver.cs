@@ -40,7 +40,7 @@ public sealed class StackResolver(RepoRegistryStore registry, StackStore stacks,
                 throw new StackException(
                     $"invalid .sprig.json for '{name}':\n  " + string.Join("\n  ", validation.Issues));
 
-            repos.Add(new ResolvedRepo(config.Name, root, config));
+            repos.Add(new ResolvedRepo(config.Name, root, FoldStackSetup(config, stack, name)));
         }
 
         // Hand create only what it should materialise: the kept repos, their bindings, and the ports
@@ -57,5 +57,23 @@ public sealed class StackResolver(RepoRegistryStore registry, StackStore stacks,
             ExcludedRepos = excluded,
             SkippedPorts = skippedPorts,
         };
+    }
+
+    /// <summary>
+    /// Fold any stack-supplied setup for this repo into its config as an extra module (named
+    /// <c>stack</c>) that runs after the repo's own. Makes the stack a complete block: a repo with a
+    /// name-only <c>.sprig.json</c> gets its whole stand-up from the stack. Returns the config unchanged
+    /// when the stack supplies no setup for it.
+    /// </summary>
+    static SprigRepoConfig FoldStackSetup(SprigRepoConfig config, StackDefinition stack, string repoName)
+    {
+        if (!stack.Setup.TryGetValue(repoName, out var stackSetup) || stackSetup.Count == 0)
+            return config;
+
+        // Materialise the repo's own modules, append the stack's, and clear the legacy flat fields so
+        // EffectiveModules returns exactly this list (mirrors how module-narrowing rebuilds a config).
+        var modules = config.EffectiveModules.ToList();
+        modules.Add(new ModuleDeclaration { Name = "stack", Setup = stackSetup });
+        return config with { Modules = modules, Env = null, Compose = null, Setup = null };
     }
 }

@@ -29,7 +29,8 @@ public sealed class PoolStatusCommand(CliContext cli) : Command<PoolStatusComman
             $"[dim]{status.ClaimedCount}/{status.MaxSlots} claimed[/]" +
             (status.Workspaces.Count > 0
                 ? $" [dim]({status.FreeCount} free, {status.Headroom} unbuilt)[/]"
-                : ""));
+                : "") +
+            (status.DegradedCount > 0 ? $" [yellow]· {status.DegradedCount} degraded[/]" : ""));
 
         if (status.Workspaces.Count == 0)
         {
@@ -42,12 +43,19 @@ public sealed class PoolStatusCommand(CliContext cli) : Command<PoolStatusComman
         foreach (var w in status.Workspaces)
             table.AddRow(
                 Markup.Escape(w.Workspace),
-                w.Claimed ? "[green]claimed[/]" : "[dim]free[/]",
+                StateCell(w),
                 Markup.Escape(w.Label ?? "-"),
                 Markup.Escape(w.LastUsedAt?.ToString("u") ?? "-"),
                 Markup.Escape(CliFormat.Ports(w.Ports)));
         console.Write(table);
         return 0;
+    }
+
+    // claimed / free, flagged degraded when the last setup run failed.
+    static string StateCell(InstanceRecord w)
+    {
+        var state = w.Claimed ? "[green]claimed[/]" : "[dim]free[/]";
+        return w.SetupFailed ? $"{state} [yellow](setup failed)[/]" : state;
     }
 }
 
@@ -135,8 +143,9 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
             $"[dim]({Markup.Escape(label)})[/]");
         foreach (var r in record.Repos)
             console.MarkupLine($"  [dim]{Markup.Escape(r.Name)}[/]  {Markup.Escape(r.WorktreePath)}");
-        if (record.Repos.Any(r => r.Setup.Any(step => !step.Success)))
-            console.MarkupLine("[yellow]note:[/] a setup command failed — finish setup manually in the worktree.");
+        if (record.SetupFailed)
+            console.MarkupLine("[yellow]note:[/] setup failed — this workspace is [yellow]degraded[/]; " +
+                "finish setup in the worktree before relying on it.");
         console.MarkupLine($"  [dim]enter it with[/] [bold]sprig cd {Markup.Escape(record.Workspace)}[/]");
         return 0;
     }

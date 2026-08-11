@@ -63,6 +63,33 @@ public class StackStoreTests
     }
 
     [Fact]
+    public void Save_rejects_stack_setup_for_a_repo_not_in_the_stack()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var stack = Stack() with
+        {
+            Setup = new Dictionary<string, IReadOnlyList<string>> { ["ghost"] = ["npm ci"] },
+        };
+
+        var ex = Assert.Throws<StackException>(() => stacks.Save(stack));
+        Assert.Contains("ghost", ex.Message);
+    }
+
+    [Fact]
+    public void Stack_setup_roundtrips()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        stacks.Save(Stack() with
+        {
+            Setup = new Dictionary<string, IReadOnlyList<string>> { ["vue"] = ["npm ci", "npm run build"] },
+        });
+
+        Assert.Equal(["npm ci", "npm run build"], stacks.Get("web+api")!.Setup["vue"]);
+    }
+
+    [Fact]
     public void Save_rejects_a_pool_that_cannot_fit_the_port_range()
     {
         using var s = new TempStore();

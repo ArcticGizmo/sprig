@@ -61,6 +61,12 @@ public sealed record InstanceRecord
     /// <summary>True when this workspace holds a subset of its stack's repos.</summary>
     [JsonIgnore]
     public bool IsPartial => ExcludedRepos.Count > 0;
+
+    /// <summary>True when any repo's last setup run had a failed command — a <b>degraded</b> workspace
+    /// that stood up but may not actually work. Derived from the recorded outcomes, which create and
+    /// every checkout/refresh rewrite, so it always reflects the latest run.</summary>
+    [JsonIgnore]
+    public bool SetupFailed => Repos.Any(r => r.Setup.Any(o => !o.Success));
 }
 
 /// <summary>One repo's materialised state within an instance.</summary>

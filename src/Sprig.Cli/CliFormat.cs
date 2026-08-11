@@ -62,6 +62,34 @@ static class CliFormat
         return merged.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value);
     }
 
+    // Parse "--setup repo:command" args into Setup[repo] = [commands...] in order. Splits on the FIRST
+    // colon only, so a command may itself contain colons (e.g. "npm run build:prod").
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> ParseRepoCommands(IEnumerable<string> specs)
+    {
+        var raw = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var spec in specs)
+        {
+            var colon = spec.IndexOf(':');
+            var repo = colon > 0 ? spec[..colon].Trim() : "";
+            var cmd = colon > 0 ? spec[(colon + 1)..].Trim() : "";
+            if (repo.Length == 0 || cmd.Length == 0)
+                throw new ArgumentException($"--setup must be repo:command, got '{spec}'");
+            if (!raw.TryGetValue(repo, out var list)) raw[repo] = list = new();
+            list.Add(cmd);
+        }
+        return raw.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value, StringComparer.Ordinal);
+    }
+
+    // Merge stack setup: a repo present in overrides replaces its whole command list; others are kept.
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> MergeRepoCommands(
+        IReadOnlyDictionary<string, IReadOnlyList<string>> existing,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> overrides)
+    {
+        var merged = new Dictionary<string, IReadOnlyList<string>>(existing, StringComparer.Ordinal);
+        foreach (var kv in overrides) merged[kv.Key] = kv.Value;
+        return merged;
+    }
+
     /// <summary>A coloured badge for a worktree's reconciliation state — green when healthy, amber for the
     /// repairable drifts, red when the folder's missing, dim once it's gone. Shared by <c>info</c> and
     /// <c>reconcile</c> so a state reads the same wherever it appears.</summary>
@@ -79,8 +107,9 @@ static class CliFormat
     public static void PrintStack(IAnsiConsole console, StackDefinition stack)
     {
         console.MarkupLine($"[bold]{Markup.Escape(stack.Name)}[/]");
-        console.MarkupLine($"  [dim]repos[/]  {Markup.Escape(string.Join(", ", stack.Repos))}");
-        console.MarkupLine($"  [dim]ports[/]  {(stack.Ports.Count == 0 ? "[dim]-[/]" : Markup.Escape(string.Join(", ", stack.Ports)))}");
+        console.MarkupLine($"  [dim]repos[/]     {Markup.Escape(string.Join(", ", stack.Repos))}");
+        console.MarkupLine($"  [dim]ports[/]     {(stack.Ports.Count == 0 ? "[dim]-[/]" : Markup.Escape(string.Join(", ", stack.Ports)))}");
+        console.MarkupLine($"  [dim]maxSlots[/]  {stack.MaxSlots}");
         foreach (var repo in stack.Bindings.OrderBy(b => b.Key))
         {
             console.MarkupLine($"  [green]{Markup.Escape(repo.Key)}[/]");
@@ -90,6 +119,12 @@ static class CliFormat
         foreach (var share in stack.Shares)
             console.MarkupLine($"  [yellow]shared port {Markup.Escape(share.Port)}[/]: " +
                 Markup.Escape(string.Join(", ", share.Consumers.Select(c => $"{c.Repo}.{c.Input}"))));
+        foreach (var repo in stack.Setup.OrderBy(x => x.Key))
+        {
+            console.MarkupLine($"  [green]{Markup.Escape(repo.Key)}[/] [dim](stack setup)[/]");
+            foreach (var cmd in repo.Value)
+                console.MarkupLine($"    [dim]$[/] {Markup.Escape(cmd)}");
+        }
     }
 
     public static int ParsePort(string value, string flag)

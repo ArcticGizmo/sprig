@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Sprig.Core.Git;
+using Sprig.Core.Pools;
 using Sprig.Core.Settings;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
@@ -20,6 +21,7 @@ public sealed record CliContext(
     RepoRegistryStore Repos,
     StackStore Stacks,
     StackResolver Resolver,
+    PoolService Pools,
     ISettingsStore Settings,
     IGitService Git,
     IAnsiConsole Ansi);

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Sprig.Core.Settings;
 using Sprig.Core.Store;
 
 namespace Sprig.Core.Stacks;
@@ -7,7 +8,11 @@ namespace Sprig.Core.Stacks;
 public sealed class StackException(string message) : Exception(message);
 
 /// <summary>Persists <see cref="StackDefinition"/>s in the central store and handles export/import.</summary>
-public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore registry, InstanceStore instances)
+/// <remarks><paramref name="settings"/> is optional: when supplied, save-time validation also checks a
+/// stack's pool ceiling against the configured port range (so an impossible <c>maxSlots</c> is rejected
+/// at definition time); when null, that check is skipped.</remarks>
+public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore registry, InstanceStore instances,
+    ISettingsStore? settings = null)
 {
     public void Save(StackDefinition stack)
     {
@@ -79,6 +84,8 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
             throw new StackException($"invalid stack name '{stack.Name}' (use letters, digits, '.', '-', '_')");
         if (stack.Repos.Count == 0)
             throw new StackException("a stack must reference at least one repo");
+        if (stack.MaxSlots < 1)
+            throw new StackException($"stack '{stack.Name}' needs a pool size of at least 1 (maxSlots was {stack.MaxSlots})");
 
         // Stacks reference repos by name, so an imported stack only saves once every repo it names is
         // registered on this machine. Report all the missing ones at once, so the fix is a single pass.
@@ -89,6 +96,30 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
                 $"{string.Join(", ", unknown.Select(r => $"'{r}'"))} — register {(unknown.Count == 1 ? "it" : "them")} first");
 
         ValidateShares(stack);
+        ValidateCapacity(stack);
+    }
+
+    /// <summary>
+    /// Reject a pool ceiling the machine can't physically honour: a full pool needs
+    /// <c>maxSlots × (ports per workspace)</c> distinct host ports, so if that exceeds the whole
+    /// configured range there's no size at which the pool could run. A sanity gate at definition time
+    /// (the range is shared across stacks, so this isn't a reservation) — skipped when no settings
+    /// source was supplied, or when the stack owns no ports.
+    /// </summary>
+    void ValidateCapacity(StackDefinition stack)
+    {
+        if (settings is null || stack.Ports.Count == 0) return;
+
+        var s = settings.Get();
+        var restrictedInRange = s.RestrictedPorts.Count(p => p >= s.PortRangeStart && p < s.PortRangeEndExclusive);
+        var capacity = s.PortRangeEndExclusive - s.PortRangeStart - restrictedInRange;
+        var need = stack.MaxSlots * stack.Ports.Count;
+        if (need > capacity)
+            throw new StackException(
+                $"stack '{stack.Name}' can't fit: a full pool of {stack.MaxSlots} needs " +
+                $"{stack.MaxSlots} × {stack.Ports.Count} = {need} ports, but the configured range " +
+                $"{s.PortRangeStart}-{s.PortRangeEndExclusive - 1} only offers {capacity}. " +
+                "Lower maxSlots, reduce the stack's ports, or widen the range in settings.");
     }
 
     /// <summary>

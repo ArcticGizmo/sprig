@@ -17,6 +17,28 @@ public sealed record InstanceRecord
     public string? LastStatus { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
 
+    // --- Pool state (M2). A pooled workspace is one of a stack's bounded set; these describe where it
+    // sits in that pool and whether it's currently in use. Absent/default on a pre-pool workspace. ---
+
+    /// <summary>This workspace's index within its stack's pool (the <c>n</c> in <c>&lt;stack&gt;-&lt;n&gt;</c>).
+    /// Null for a workspace not created through the pool flow.</summary>
+    public int? WorkspaceIndex { get; init; }
+
+    /// <summary>True while this workspace is checked out (in use). An <b>unclaimed</b> workspace is free
+    /// to take — but not necessarily clean; how it's handled is decided at the next checkout.</summary>
+    public bool Claimed { get; init; }
+
+    /// <summary>The free-text label the user gave this workspace at checkout — metadata to recognise it
+    /// by ("auth refactor"), never load-bearing. Null when unclaimed or never labelled.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>When this workspace was last checked out; null if never claimed.</summary>
+    public DateTimeOffset? ClaimedAt { get; init; }
+
+    /// <summary>When this workspace was last released; lets checkout show "least recently used" hints so
+    /// you can pick the leftover state you want. Null if never released.</summary>
+    public DateTimeOffset? LastUsedAt { get; init; }
+
     /// <summary>True when a teardown ran but couldn't dismantle everything, so this record was kept
     /// (rather than deleted) to keep the workspace visible and the sweep resumable. Teardown is
     /// idempotent, so re-running it once the blocker is fixed picks up where it left off. Cleared on

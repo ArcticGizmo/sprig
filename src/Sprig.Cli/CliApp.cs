@@ -3,6 +3,7 @@ using Sprig.Core.Compose;
 using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
+using Sprig.Core.Pools;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
@@ -44,17 +45,19 @@ public static class CliApp
 
         var runner = new ProcessRunner();
         var git = new GitService(runner);
-        var ports = new FilePortStore(paths, new FileSettingsStore(paths));
+        var settings = new FileSettingsStore(paths);
+        var ports = new FilePortStore(paths, settings);
         var instances = new InstanceStore(paths);
         var workspaces = new WorkspaceService(git, ports, instances, new EnvClobberService(),
             new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner));
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
-        var stacks = new StackStore(paths, registry, instances);
+        var stacks = new StackStore(paths, registry, instances, settings);
         var resolver = new StackResolver(registry, stacks, git);
+        var pools = new PoolService(stacks, instances);
 
         var context = new CliContext(paths, workspaces, reconciler, registry, stacks, resolver,
-            new FileSettingsStore(paths), git, ansi);
+            pools, settings, git, ansi);
 
         // The registrar hands the one CliContext (and the console) to every command; commands are
         // constructed by reflection from there.
@@ -119,6 +122,12 @@ public static class CliApp
             stack.AddCommand<StackRmCommand>("rm");
             stack.AddCommand<StackExportCommand>("export");
             stack.AddCommand<StackImportCommand>("import");
+        });
+
+        config.AddBranch("pool", pool =>
+        {
+            pool.SetDescription("Check out and manage the pooled workspaces built from a stack");
+            pool.AddCommand<PoolStatusCommand>("status");
         });
 
         config.AddBranch("settings", settings =>

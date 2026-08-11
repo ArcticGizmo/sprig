@@ -14,6 +14,16 @@ public sealed record StackDefinition
     public int Schema { get; init; } = 2;
     public required string Name { get; init; }
 
+    /// <summary>
+    /// The most workspaces the stack's pool may hold at once — the ceiling that keeps a pool bounded
+    /// ("no floating instances forever"). Concurrent-environment capacity is really a machine limit
+    /// (RAM/ports/disk), so this is a sensible default the user can raise, not an intrinsic property of
+    /// the repos. A file with no value keeps <see cref="DefaultMaxSlots"/>.
+    /// </summary>
+    public int MaxSlots { get; init; } = DefaultMaxSlots;
+
+    public const int DefaultMaxSlots = 3;
+
     /// <summary>Repos in the stack, by registry name.</summary>
     public IReadOnlyList<string> Repos { get; init; } = [];
 

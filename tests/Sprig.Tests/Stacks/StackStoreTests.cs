@@ -1,3 +1,4 @@
+using Sprig.Core.Settings;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 
@@ -48,6 +49,45 @@ public class StackStoreTests
         stacks.Remove("web+api");
         Assert.Null(stacks.Get("web+api"));
         Assert.Empty(stacks.List());
+    }
+
+    [Fact]
+    public void Default_maxSlots_is_applied_and_roundtrips()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+
+        stacks.Save(Stack());
+
+        Assert.Equal(StackDefinition.DefaultMaxSlots, stacks.Get("web+api")!.MaxSlots);
+    }
+
+    [Fact]
+    public void Save_rejects_a_pool_that_cannot_fit_the_port_range()
+    {
+        using var s = new TempStore();
+        var (_, registry, instances) = Build(s);
+        var settings = new FileSettingsStore(s.Paths);
+        settings.Save(new SprigSettings { PortRangeStart = 8000, PortRangeEndExclusive = 8002 }); // capacity 2
+        var stacks = new StackStore(s.Paths, registry, instances, settings);
+
+        // 1 port × maxSlots 3 = 3 needed > 2 available.
+        var ex = Assert.Throws<StackException>(() => stacks.Save(Stack() with { MaxSlots = 3 }));
+        Assert.Contains("can't fit", ex.Message);
+    }
+
+    [Fact]
+    public void Save_accepts_a_pool_that_fits_the_port_range()
+    {
+        using var s = new TempStore();
+        var (_, registry, instances) = Build(s);
+        var settings = new FileSettingsStore(s.Paths);
+        settings.Save(new SprigSettings { PortRangeStart = 8000, PortRangeEndExclusive = 8010 }); // capacity 10
+        var stacks = new StackStore(s.Paths, registry, instances, settings);
+
+        stacks.Save(Stack() with { MaxSlots = 5 }); // 1 × 5 = 5 ≤ 10
+
+        Assert.Equal(5, stacks.Get("web+api")!.MaxSlots);
     }
 
     [Fact]

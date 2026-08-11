@@ -27,6 +27,10 @@ public sealed class StackCreateCommand(CliContext cli) : Command<StackCreateComm
         [CommandOption("--bind <repo:input=expr>")]
         [Description("Wire a repo input to an expression (repeatable)")]
         public string[] Bind { get; set; } = [];
+
+        [CommandOption("--max-slots <n>")]
+        [Description("Pool size ceiling — the most workspaces this stack may run at once")]
+        public int? MaxSlots { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -41,6 +45,7 @@ public sealed class StackCreateCommand(CliContext cli) : Command<StackCreateComm
             Repos = reposCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             Ports = s.Port,
             Bindings = bindings,
+            MaxSlots = s.MaxSlots ?? StackDefinition.DefaultMaxSlots,
         };
         // Populate the shared-port overlay from the bindings so a CLI-built stack shows its shares in
         // the app (and passes the store's share/binding consistency check).
@@ -69,6 +74,10 @@ public sealed class StackEditCommand(CliContext cli) : Command<StackEditCommand.
         [CommandOption("--bind <repo:input=expr>")]
         [Description("Merge a binding (repeatable)")]
         public string[] Bind { get; set; } = [];
+
+        [CommandOption("--max-slots <n>")]
+        [Description("Replace the pool size ceiling")]
+        public int? MaxSlots { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -85,6 +94,7 @@ public sealed class StackEditCommand(CliContext cli) : Command<StackEditCommand.
                 : current.Repos,
             Ports = s.Port.Length > 0 ? s.Port : current.Ports,
             Bindings = CliFormat.MergeBindings(current.Bindings, bindOpt),
+            MaxSlots = s.MaxSlots ?? current.MaxSlots,
         };
         cli.Stacks.Save(edited with { Shares = StackMigration.DeriveShares(edited) });
         return CliOutput.Ok(s.Json, $"updated stack '{s.Name}'", new { ok = true, name = s.Name, action = "edit" });

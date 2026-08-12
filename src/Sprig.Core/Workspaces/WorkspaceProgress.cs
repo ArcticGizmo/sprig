@@ -68,6 +68,9 @@ internal static class RefreshStepIds
 {
     public const string Infra = "infra";
     public static string Resync(string repo) => $"{repo}:resync";
+    /// <summary>The "cut the claim branch" row on the checkout checklist (distinct from the teardown's
+    /// branch-delete row).</summary>
+    public static string Claim(string repo) => $"{repo}:claim";
     public static string Env(string repo) => CreateStepIds.Env(repo);
     public static string Compose(string repo) => CreateStepIds.Compose(repo);
     public static string Setup(string repo) => CreateStepIds.Setup(repo);

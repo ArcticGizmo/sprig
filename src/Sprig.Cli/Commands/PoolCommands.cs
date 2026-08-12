@@ -68,8 +68,12 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         [Description("Stack to check out from (omit at a terminal to pick)")]
         public string? Stack { get; set; }
 
+        [CommandOption("--branch <name>")]
+        [Description("The branch to cut across the stack's repos (required; the workspace's identity)")]
+        public string? Branch { get; set; }
+
         [CommandOption("--label <label>")]
-        [Description("A label to recognise this checkout by (metadata only)")]
+        [Description("An optional label to recognise this checkout by (metadata only)")]
         public string? Label { get; set; }
 
         [CommandOption("--workspace <name>")]
@@ -81,19 +85,15 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         public bool New { get; set; }
 
         [CommandOption("--fresh")]
-        [Description("Reuse handling: reset all repos to base and wipe volumes (keeps installed deps)")]
+        [Description("Fresh: reinstall deps and wipe volumes (clean environment)")]
         public bool Fresh { get; set; }
 
-        [CommandOption("--as-is")]
-        [Description("Reuse handling: resume exactly as left (default)")]
-        public bool AsIs { get; set; }
-
-        [CommandOption("--refresh <repos>")]
-        [Description("Reuse handling: reset only these repos to base (comma-separated or repeated)")]
-        public string[] Refresh { get; set; } = [];
+        [CommandOption("--keep")]
+        [Description("Keep the warm environment (deps + volumes); clean branch from base (default)")]
+        public bool Keep { get; set; }
 
         [CommandOption("--force")]
-        [Description("For fresh/refresh: discard commits not in the base branch")]
+        [Description("Reserved; the previous branch is always retained, so no claim discards commits")]
         public bool Force { get; set; }
 
         [CommandOption("-i|--interactive")]
@@ -121,8 +121,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
             return 0;
         }
 
-        var mode = CheckoutMode.AsIs;
-        IReadOnlyList<string> refreshRepos = [];
+        var mode = CheckoutMode.Keep;
         if (!target.IsNew)
         {
             if (ResolveMode(console, s, interactive, target.Workspace!) is not { } m)
@@ -130,29 +129,41 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
                 console.MarkupLine("[yellow]cancelled[/]");
                 return 0;
             }
-            (mode, refreshRepos) = (m.Mode, m.Repos);
+            mode = m;
         }
 
-        var label = ResolveLabel(console, s, interactive);
+        var branch = ResolveBranch(console, s, interactive);
+        var label = ResolveLabel(console, s);
         var existing = target.IsNew ? null : target.Workspace;
+
+        // Surface (do not resolve) a branch already taken on a remote — a heads-up before we cut it. A local
+        // conflict is a hard block enforced by the service; this is only the softer remote case.
+        if (existing is not null)
+        {
+            var conflicts = cli.Pools.CheckCheckout(existing, branch);
+            if (conflicts.RemoteWarnings.Count > 0)
+                console.MarkupLine($"[yellow]note:[/] '{Markup.Escape(branch)}' already exists on a remote in " +
+                    $"[bold]{Markup.Escape(string.Join(", ", conflicts.RemoteWarnings))}[/] — cutting a local branch of the same name.");
+        }
 
         // Machine path stays quiet and structured: no checklist, just the record.
         if (s.Json)
         {
-            CliOutput.Json(cli.Pools.Checkout(stackName, existing, label, mode, refreshRepos, s.Force));
+            CliOutput.Json(cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force));
             return 0;
         }
 
         // Human path: plan up front, then drive the live checklist while the checkout runs — the same
         // feedback create gives (worktrees, dependency install, infra), for every mode.
         console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(stackName)}[/]…");
-        var plan = cli.Pools.PlanCheckout(stackName, existing, mode, refreshRepos);
+        var plan = cli.Pools.PlanCheckout(stackName, existing, mode);
         InstanceRecord record = null!;
         Checklist.Run(console, plan, progress =>
-            record = cli.Pools.Checkout(stackName, existing, label, mode, refreshRepos, s.Force, progress));
+            record = cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force, progress));
 
+        var labelSuffix = string.IsNullOrEmpty(label) ? "" : $" [dim]({Markup.Escape(label!)})[/]";
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] checked out [bold]{Markup.Escape(record.Workspace)}[/] " +
-            $"[dim]({Markup.Escape(label)})[/]");
+            $"on branch [green]{Markup.Escape(branch)}[/]{labelSuffix}");
         foreach (var r in record.Repos)
             console.MarkupLine($"  [dim]{Markup.Escape(r.Name)}[/]  {Markup.Escape(r.WorktreePath)}");
         if (record.SetupFailed)
@@ -216,38 +227,38 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         throw new PoolException($"pool '{status.Stack}' is full — release one first");
     }
 
-    (CheckoutMode Mode, IReadOnlyList<string> Repos)? ResolveMode(IAnsiConsole console, Settings s, bool interactive, string workspace)
+    CheckoutMode? ResolveMode(IAnsiConsole console, Settings s, bool interactive, string workspace)
     {
-        var explicitCount = (s.Fresh ? 1 : 0) + (s.AsIs ? 1 : 0) + (s.Refresh.Length > 0 ? 1 : 0);
-        if (explicitCount > 1)
-            throw new ArgumentException("choose only one of --fresh / --as-is / --refresh");
-        if (s.Fresh) return (CheckoutMode.Fresh, []);
-        if (s.AsIs) return (CheckoutMode.AsIs, []);
-        if (s.Refresh.Length > 0) return (CheckoutMode.Refresh, CliFormat.SplitList(s.Refresh));
-        if (!interactive) return (CheckoutMode.AsIs, []); // safe default: resume, discard nothing
+        if (s.Fresh && s.Keep)
+            throw new ArgumentException("choose only one of --fresh / --keep");
+        if (s.Fresh) return CheckoutMode.Fresh;
+        if (s.Keep) return CheckoutMode.Keep;
+        if (!interactive) return CheckoutMode.Keep; // safe default: keep the warm environment
 
-        const string asIs = "as-is — resume where you left off";
-        const string fresh = "fresh — reset all repos to base, clean DB";
-        const string refresh = "refresh some repos";
+        const string keep = "keep — clean branch from base, keep deps + volumes (fast)";
+        const string fresh = "fresh — reinstall deps and wipe volumes (clean slate)";
         var pick = Term.SelectOne(console, $"How should [bold]{Markup.Escape(workspace)}[/] be handled? [grey](esc cancels)[/]",
-            [asIs, fresh, refresh]);
+            [keep, fresh]);
         if (pick is null) return null;
-        if (pick == asIs) return (CheckoutMode.AsIs, []);
-        if (pick == fresh) return (CheckoutMode.Fresh, []);
-
-        var repoNames = (cli.Workspaces.Get(workspace)?.Repos ?? []).Select(r => r.Name).ToList();
-        var chosen = Term.SelectMany(console, $"Which [green]repos[/] to reset to base?", repoNames, repoNames);
-        return chosen is null ? null : (CheckoutMode.Refresh, chosen);
+        return pick == fresh ? CheckoutMode.Fresh : CheckoutMode.Keep;
     }
 
-    string ResolveLabel(IAnsiConsole console, Settings s, bool interactive)
+    // The branch is the workspace's identity — required. A terminal prompts for it; a script must pass --branch.
+    string ResolveBranch(IAnsiConsole console, Settings s, bool interactive)
     {
-        if (!string.IsNullOrWhiteSpace(s.Label)) return s.Label!.Trim();
-        if (!interactive) throw new ArgumentException("checkout requires --label <label>");
-        return console.Prompt(new TextPrompt<string>("Label this workspace:")
+        if (!string.IsNullOrWhiteSpace(s.Branch)) return s.Branch!.Trim();
+        if (!interactive) throw new ArgumentException("checkout requires --branch <name>");
+        return console.Prompt(new TextPrompt<string>("Branch name for this workspace:")
             .Validate(n => string.IsNullOrWhiteSpace(n)
-                ? ValidationResult.Error("a label is required")
+                ? ValidationResult.Error("a branch name is required")
                 : ValidationResult.Success())).Trim();
+    }
+
+    // The label is optional — just a note to recognise the checkout by. No prompt; supply --label or skip it.
+    static string? ResolveLabel(IAnsiConsole console, Settings s)
+    {
+        _ = console;
+        return string.IsNullOrWhiteSpace(s.Label) ? null : s.Label!.Trim();
     }
 
     // A free workspace's picker line: name, its last label, and roughly how long ago it was released — so
@@ -319,9 +330,37 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
             workspace = byLabel[pick];
         }
 
-        var record = cli.Pools.Release(workspace);
-        return CliOutput.Ok(s.Json,
-            $"released '{record.Workspace}' (docker stop; nothing removed from disk)",
-            new { ok = true, workspace = record.Workspace, action = "release" });
+        var (record, pending) = cli.Pools.Release(workspace);
+
+        if (s.Json)
+            return CliOutput.Ok(s.Json,
+                $"released '{record.Workspace}' (docker stop; nothing removed from disk)",
+                new
+                {
+                    ok = true,
+                    workspace = record.Workspace,
+                    action = "release",
+                    pending = pending.Repos
+                        .Where(r => r.HasAny)
+                        .Select(r => new { repo = r.Repo, dirty = r.Dirty, unpushed = r.UnpushedCommits }),
+                });
+
+        // Report pending work — surfaced, never acted on — so nothing is silently stranded before a later
+        // fresh checkout resets the slot.
+        if (pending.HasPending)
+        {
+            console.MarkupLine($"[yellow]heads-up:[/] pending work stays on branch [green]{Markup.Escape(record.Branch ?? "-")}[/] " +
+                "(kept, not touched):");
+            foreach (var r in pending.Repos.Where(r => r.HasAny))
+            {
+                var bits = new List<string>();
+                if (r.Dirty) bits.Add("uncommitted changes");
+                if (r.UnpushedCommits > 0) bits.Add($"{r.UnpushedCommits} unpushed commit{(r.UnpushedCommits == 1 ? "" : "s")}");
+                console.MarkupLine($"  [dim]{Markup.Escape(r.Repo)}[/]  {Markup.Escape(string.Join(", ", bits))}");
+            }
+        }
+        console.MarkupLine($"[green]{Glyph.Check(console)}[/] released [bold]{Markup.Escape(record.Workspace)}[/] " +
+            "[dim](docker stop; nothing removed from disk)[/]");
+        return 0;
     }
 }

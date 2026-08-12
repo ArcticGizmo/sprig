@@ -43,8 +43,52 @@ public sealed class GitService(IProcessRunner runner) : IGitService
         return r.Success;
     }
 
+    public bool RemoteBranchExists(string repo, string branch)
+    {
+        // Any remote-tracking ref named <remote>/<branch>. for-each-ref with a wildcard matches across all
+        // remotes (origin, upstream, …); non-empty stdout means at least one exists.
+        var r = runner.Run("git", ["-C", repo, "for-each-ref", "--format=%(refname)", $"refs/remotes/*/{branch}"], repo);
+        return r.Success && r.StdOut.Trim().Length > 0;
+    }
+
+    public bool IsValidBranchName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        // check-ref-format --branch validates the name as a branch (exit 0) without touching the repo.
+        var r = runner.Run("git", ["check-ref-format", "--branch", name], null);
+        return r.Success;
+    }
+
     public void AddWorktree(string repo, string worktreePath, string branch)
         => runner.Run("git", ["-C", repo, "worktree", "add", worktreePath, "-b", branch], repo).EnsureSuccess();
+
+    public void AddWorktreeDetached(string repo, string worktreePath, string reference)
+        => runner.Run("git", ["-C", repo, "worktree", "add", "--detach", worktreePath, reference], repo).EnsureSuccess();
+
+    public void SwitchNewBranch(string worktreePath, string branch, string? startPoint = null)
+    {
+        string[] args = startPoint is null
+            ? ["-C", worktreePath, "switch", "-c", branch]
+            : ["-C", worktreePath, "switch", "-c", branch, startPoint];
+        runner.Run("git", args, worktreePath).EnsureSuccess();
+    }
+
+    public void DetachTo(string worktreePath, string reference)
+        => runner.Run("git", ["-C", worktreePath, "switch", "--detach", reference], worktreePath).EnsureSuccess();
+
+    public bool HasUncommittedChanges(string worktreePath)
+    {
+        var r = runner.Run("git", ["-C", worktreePath, "status", "--porcelain"], worktreePath);
+        return r.Success && r.StdOut.Trim().Length > 0;
+    }
+
+    public int CountUnpushedCommits(string worktreePath)
+    {
+        // Commits on HEAD that no remote-tracking branch contains. --remotes expands to every refs/remotes/*
+        // ref; with no remote at all it expands to nothing, so the whole of HEAD counts as unpushed.
+        var r = runner.Run("git", ["-C", worktreePath, "rev-list", "--count", "HEAD", "--not", "--remotes"], worktreePath);
+        return r.Success && int.TryParse(r.StdOut.Trim(), out var n) ? n : 0;
+    }
 
     // Best-effort: swallow the result so a repo with no remote (fetch exits non-zero) still refreshes
     // against its local base branch instead of the whole operation failing here.

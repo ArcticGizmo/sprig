@@ -25,8 +25,39 @@ public interface IGitService
     /// <summary>True if a local branch of that name exists.</summary>
     bool BranchExists(string repo, string branch);
 
+    /// <summary>True if a remote-tracking branch <c>&lt;remote&gt;/&lt;branch&gt;</c> exists locally (any remote).
+    /// A heads-up on claim (the name is taken upstream), never a hard block.</summary>
+    bool RemoteBranchExists(string repo, string branch);
+
+    /// <summary>True if <paramref name="name"/> is a valid git branch name
+    /// (<c>git check-ref-format --branch</c>) — stricter than a charset regex: rejects leading <c>-</c>,
+    /// trailing <c>.lock</c>, <c>..</c>, and the rest of git's ref rules.</summary>
+    bool IsValidBranchName(string name);
+
     /// <summary>Add a worktree at <paramref name="worktreePath"/> on a new branch off current HEAD.</summary>
     void AddWorktree(string repo, string worktreePath, string branch);
+
+    /// <summary>Add a worktree at <paramref name="worktreePath"/> in <b>detached HEAD</b> at
+    /// <paramref name="reference"/> — a parked slot with no branch of its own, so any number of slots can
+    /// share the same base commit (git forbids the same branch in two worktrees; detached sidesteps it).</summary>
+    void AddWorktreeDetached(string repo, string worktreePath, string reference);
+
+    /// <summary>In the worktree, create and switch to a new branch. When <paramref name="startPoint"/> is
+    /// given the branch starts there; otherwise it starts at the worktree's current (detached) HEAD.</summary>
+    void SwitchNewBranch(string worktreePath, string branch, string? startPoint = null);
+
+    /// <summary>Detach the worktree's HEAD to <paramref name="reference"/> — park it, leaving no branch
+    /// checked out. The branch it was on (if any) is left as a ref, not deleted.</summary>
+    void DetachTo(string worktreePath, string reference);
+
+    /// <summary>True if the worktree has uncommitted changes — staged, unstaged, or untracked
+    /// (<c>git status --porcelain</c> non-empty).</summary>
+    bool HasUncommittedChanges(string worktreePath);
+
+    /// <summary>Commits reachable from the worktree's HEAD that no remote-tracking branch contains — work
+    /// that would be stranded if the branch ref were later reset. 0 when HEAD is already on a remote. A repo
+    /// with no remote reports its whole history as unpushed (nothing to compare against), which is honest.</summary>
+    int CountUnpushedCommits(string worktreePath);
 
     /// <summary>Fetch from all remotes (with prune). Best-effort: does nothing useful, and does not
     /// throw, when the repo has no remote — a refresh of a purely-local repo still resyncs to its

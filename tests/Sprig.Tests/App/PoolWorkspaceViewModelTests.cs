@@ -123,12 +123,11 @@ public class PoolWorkspaceViewModelTests
         Assert.True(vm.CheckoutReuse);
         Assert.Equal("app-1", vm.CheckoutTarget?.Name);   // freed longest ago
         Assert.True(vm.ShowHandling);
-        Assert.True(vm.ModeAsIs);
-        Assert.False(vm.ShowRefreshRepos);
+        Assert.True(vm.ModeKeep);
     }
 
     [Fact]
-    public async Task Picking_refresh_reveals_the_targets_repos_to_choose_from()
+    public async Task Reuse_offers_only_keep_and_fresh_handling()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
@@ -138,11 +137,11 @@ public class PoolWorkspaceViewModelTests
         var vm = await LoadedVm(services);
         vm.CheckoutCommand.Execute(Assert.Single(vm.Pools));
 
-        vm.ModeAsIs = false;
-        vm.ModeRefresh = true;
-
-        Assert.True(vm.ShowRefreshRepos);
-        Assert.Equal(["api"], vm.CheckoutRefreshRepos.Select(r => r.Name));
+        Assert.True(vm.ShowHandling);
+        Assert.True(vm.ModeKeep);   // default
+        vm.ModeKeep = false;
+        vm.ModeFresh = true;
+        Assert.True(vm.ModeFresh);
     }
 
     [Fact]
@@ -161,7 +160,7 @@ public class PoolWorkspaceViewModelTests
     }
 
     [Fact]
-    public async Task Checkout_needs_a_label_and_keeps_the_overlay_open_without_one()
+    public async Task Checkout_needs_a_branch_and_keeps_the_overlay_open_without_one()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
@@ -169,11 +168,11 @@ public class PoolWorkspaceViewModelTests
 
         var vm = await LoadedVm(services);
         vm.CheckoutCommand.Execute(Assert.Single(vm.Pools));
-        vm.CheckoutLabel = "   ";
+        vm.CheckoutBranch = "   "; // whitespace-only is not a branch name
 
         await vm.ConfirmCheckoutCommand.ExecuteAsync(null);
 
-        Assert.Equal("give this checkout a label", vm.CheckoutError);
+        Assert.Equal("give this workspace a branch name", vm.CheckoutError);
         Assert.True(vm.IsCheckingOut);
     }
 
@@ -232,6 +231,6 @@ public class PoolWorkspaceViewModelTests
         Assert.False(vm.CheckoutNew);
         Assert.True(vm.CheckoutReuse);
         Assert.Equal("app-2", vm.CheckoutTarget?.Name);   // the selected one, not the LRU default
-        Assert.True(vm.ModeAsIs);
+        Assert.True(vm.ModeKeep);
     }
 }

@@ -17,13 +17,31 @@ public sealed class FakeGitService : IGitService
     public string DefaultBase { get; set; } = "main";
     public int CommitsAhead { get; set; }
 
+    // New-model (detached-slot / branch-on-claim) knobs and capture lists.
+    public HashSet<string> LocalBranches { get; } = [];
+    public HashSet<string> RemoteBranches { get; } = [];
+    public List<(string Worktree, string Branch, string? StartPoint)> SwitchedNewBranches { get; } = [];
+    public List<(string Worktree, string Reference)> Detached { get; } = [];
+    public int UnpushedCommits { get; set; }
+    public bool Dirty { get; set; }
+
     public bool IsGitRepo(string path) => RepoExists;
     public IReadOnlyCollection<string> ListTrackedFiles(string repo) => TrackedFiles;
     public bool IsIgnored(string repo, string relativePath) => IgnoredFiles.Contains(relativePath);
     public string ResolveRepoRoot(string path) => path;
-    public bool BranchExists(string repo, string branch) => true;
+    public bool BranchExists(string repo, string branch) => LocalBranches.Contains(branch);
+    public bool RemoteBranchExists(string repo, string branch) => RemoteBranches.Contains(branch);
+    public bool IsValidBranchName(string name) =>
+        !string.IsNullOrWhiteSpace(name) && !name.StartsWith('-') && !name.Contains("..") && !name.EndsWith(".lock");
     public void AddWorktree(string repo, string worktreePath, string branch)
         => Worktrees.Add(new WorktreeInfo(worktreePath, "head", branch, false));
+    public void AddWorktreeDetached(string repo, string worktreePath, string reference)
+        => Worktrees.Add(new WorktreeInfo(worktreePath, "head", null, false, false, true));
+    public void SwitchNewBranch(string worktreePath, string branch, string? startPoint = null)
+        => SwitchedNewBranches.Add((worktreePath, branch, startPoint));
+    public void DetachTo(string worktreePath, string reference) => Detached.Add((worktreePath, reference));
+    public bool HasUncommittedChanges(string worktreePath) => Dirty;
+    public int CountUnpushedCommits(string worktreePath) => UnpushedCommits;
     public IReadOnlyList<WorktreeInfo> ListWorktrees(string repo) => Worktrees;
     public void RemoveWorktree(string repo, string worktreePath) => RemovedWorktrees.Add(worktreePath);
     public void Prune(string repo) => Pruned.Add(repo);

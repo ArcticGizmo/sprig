@@ -7,17 +7,17 @@ namespace Sprig.Core.Pools;
 /// <summary>Thrown when a pool operation can't proceed (pool full, workspace not in the pool, etc.).</summary>
 public sealed class PoolException(string message) : Exception(message);
 
-/// <summary>How an existing (unclaimed) workspace is handled when it's checked out again. New workspaces
-/// are always materialised clean, so the mode only applies to reuse.</summary>
+/// <summary>How a workspace's warm state is handled when its claim branch is cut. Both modes cut the branch
+/// at the same start point (default: base) and reset tracked files to it — they differ only in what happens
+/// to the expensive local artifacts.</summary>
 public enum CheckoutMode
 {
-    /// <summary>Resume exactly as it was left — no git change, deps and volumes kept. Just start infra.</summary>
-    AsIs,
-    /// <summary>Resync every repo to its base branch and wipe docker volumes (clean runtime data). Keeps
-    /// installed deps.</summary>
+    /// <summary>Keep the warm environment: installed deps (node_modules) and docker volumes stay as they are,
+    /// no reinstall — the fast path. "Give me a clean main-based branch on top of what I already have."</summary>
+    Keep,
+    /// <summary>Fresh start: reinstall deps (setup) and wipe docker volumes for clean runtime data — a clean
+    /// slate down to the environment.</summary>
     Fresh,
-    /// <summary>Resync only the named repos to base; the rest (and the volumes) stay as they are.</summary>
-    Refresh,
 }
 
 /// <summary>
@@ -50,12 +50,11 @@ public sealed class PoolService(
             .OrderBy(i => i.Workspace, StringComparer.Ordinal)
             .ToList();
 
-    /// <summary>The ordered checklist a <see cref="Checkout"/> will work through for a given decision,
-    /// so the CLI can render every row before work starts. Step ids match what <see cref="Checkout"/>
-    /// reports: a new checkout mirrors <see cref="WorkspaceService.PlanCreate"/> plus an infra row; a
-    /// reused fresh/refresh mirrors <see cref="WorkspaceService.PlanRefresh"/>; an as-is is just infra.</summary>
-    public IReadOnlyList<WorkspaceStep> PlanCheckout(string stackName, string? existingWorkspace,
-        CheckoutMode mode, IReadOnlyList<string>? refreshRepos)
+    /// <summary>The ordered checklist a <see cref="Checkout"/> will work through, so the CLI can render every
+    /// row before work starts. Step ids match what <see cref="Checkout"/> reports: a new checkout mirrors
+    /// <see cref="WorkspaceService.PlanCreate"/> plus the per-repo "cut branch" rows and an infra row; a
+    /// reused checkout mirrors <see cref="WorkspaceService.PlanClaim"/>.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanCheckout(string stackName, string? existingWorkspace, CheckoutMode mode)
     {
         if (existingWorkspace is null)
         {
@@ -63,38 +62,51 @@ public sealed class PoolService(
             var resolved = resolver.Resolve(stackName, null);
             var placeholder = $"{stackName}-{NextIndex(stackName, Members(stackName), stack.MaxSlots)}";
             var steps = workspaces.PlanCreate(resolved, placeholder).ToList();
+            // A new slot is created fresh at base, so its claim is minimal: just cut the branch per repo.
+            foreach (var repo in resolved.Repos)
+                steps.Add(new WorkspaceStep(RefreshStepIds.Claim(repo.Name), $"Create branch — {repo.Name}"));
             steps.Add(new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure"));
             return steps;
         }
 
         var record = instances.TryLoad(existingWorkspace)
             ?? throw new PoolException($"'{existingWorkspace}' is not a workspace in the '{stackName}' pool");
-        return mode switch
-        {
-            CheckoutMode.Fresh => workspaces.PlanRefresh(record, null, resolver.Resolve(stackName, null).Repos),
-            CheckoutMode.Refresh => workspaces.PlanRefresh(record, refreshRepos, resolver.Resolve(stackName, null).Repos),
-            _ => [new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure")],
-        };
+        return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(stackName, null).Repos);
+    }
+
+    /// <summary>Check a proposed claim <paramref name="branch"/> against an existing pool workspace's repos
+    /// without touching anything, so a UI/CLI can warn before committing to the checkout. For a brand-new
+    /// workspace (<paramref name="existingWorkspace"/> null) there's nothing to conflict with yet — returns
+    /// no conflicts.</summary>
+    public ClaimConflicts CheckCheckout(string existingWorkspace, string branch)
+    {
+        var record = instances.TryLoad(existingWorkspace)
+            ?? throw new PoolException($"unknown workspace '{existingWorkspace}'");
+        return workspaces.CheckClaim(record, branch);
     }
 
     /// <summary>
-    /// Check out a workspace from the stack's pool and mark it claimed with <paramref name="label"/>.
-    /// When <paramref name="existingWorkspace"/> is named, that unclaimed workspace is reused and handled
-    /// per <paramref name="mode"/> (<paramref name="refreshRepos"/> scopes <see cref="CheckoutMode.Refresh"/>);
-    /// when null, a brand-new <c>&lt;stack&gt;-&lt;n&gt;</c> is materialised clean — but only if the pool has
-    /// room under its <c>maxSlots</c> ceiling, else it fails (the cap doing its job). Runs under a
-    /// per-stack lock so the pick/allocate is atomic.
+    /// Check out a workspace from the stack's pool: cut the claim <paramref name="branch"/> across its repos
+    /// and mark it claimed (with an optional recognition <paramref name="label"/>). When
+    /// <paramref name="existingWorkspace"/> is named, that unclaimed slot is reused and its branch cut per
+    /// <paramref name="mode"/> (keep / fresh); when null, a brand-new parked <c>&lt;stack&gt;-&lt;n&gt;</c>
+    /// slot is materialised (only if the pool has room under <c>maxSlots</c>) and claimed minimally — it's
+    /// already fresh at base. The branch pre-flight is atomic across every repo (see
+    /// <see cref="WorkspaceService.Claim"/>); a name that already exists aborts before anything is cut. Runs
+    /// under a per-stack lock so the pick/allocate is atomic.
     /// </summary>
-    public InstanceRecord Checkout(string stackName, string? existingWorkspace, string label,
-        CheckoutMode mode = CheckoutMode.AsIs, IReadOnlyList<string>? refreshRepos = null, bool force = false,
+    public InstanceRecord Checkout(string stackName, string? existingWorkspace, string branch, string? label = null,
+        CheckoutMode mode = CheckoutMode.Keep, bool force = false,
         IProgress<WorkspaceStepProgress>? progress = null)
     {
-        if (string.IsNullOrWhiteSpace(label))
-            throw new PoolException("a checkout needs a label");
+        if (string.IsNullOrWhiteSpace(branch))
+            throw new PoolException("a checkout needs a branch name");
+        workspaces.EnsureValidBranchName(branch); // reject a bad name before materialising anything
         var stack = stacks.Get(stackName) ?? throw new StackException($"unknown stack '{stackName}'");
 
         using var _ = Lock(stackName);
         var members = Members(stackName);
+        var resolved = resolver.Resolve(stackName, null);
 
         if (existingWorkspace is not null)
         {
@@ -103,10 +115,7 @@ public sealed class PoolService(
             if (target.Claimed)
                 throw new PoolException($"workspace '{existingWorkspace}' is already claimed");
 
-            // A fresh/refresh reuse resolves the stack so the refresh honours the stack's overlay (e.g.
-            // stack-carried setup); as-is touches no config, so it needs no resolve.
-            var resolvedRepos = mode == CheckoutMode.AsIs ? null : resolver.Resolve(stackName, null).Repos;
-            ApplyHandling(target.Workspace, mode, refreshRepos, force, progress, resolvedRepos);
+            workspaces.Claim(target.Workspace, branch, mode == CheckoutMode.Fresh, force, progress, resolved.Repos);
             return MarkClaimed(target.Workspace, label, target.WorkspaceIndex);
         }
 
@@ -115,25 +124,29 @@ public sealed class PoolService(
             throw new PoolException(
                 $"pool '{stackName}' is full ({members.Count}/{stack.MaxSlots} in use) — release one first");
 
+        // Pre-flight the branch against the source repos BEFORE materialising anything, so a name conflict
+        // never leaves a half-created slot behind.
+        WorkspaceService.ThrowIfBlocked(
+            workspaces.CheckClaimAcross(resolved.Repos.Select(r => (r.Name, r.Root)), branch), branch);
+
         var index = NextIndex(stackName, members, stack.MaxSlots);
         var name = $"{stackName}-{index}";
-        var resolved = resolver.Resolve(stackName, null);
-        workspaces.Create(resolved, name, progress); // fresh worktrees + env + compose + setup
-        progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Running));
-        // A stopped Docker doesn't fail the checkout — the workspace is still claimed; the infra row just
-        // reports the skip so the user knows to start Docker and bring it up.
-        progress?.Report(WorkspaceService.InfraStartReport(workspaces.TryStartInfra(name)));
+        workspaces.Create(resolved, name, progress);        // parked slot: detached at base, warm (env/compose/setup done)
+        workspaces.CutBranchAndStart(name, branch, progress); // minimal claim: cut branch at base + start infra
         return MarkClaimed(name, label, index);
     }
 
     /// <summary>
-    /// Release a claimed workspace back to the pool: stop its containers (<c>docker stop</c>) so it
-    /// stops burning CPU/RAM, and flag it unclaimed. Release is not a teardown — <b>nothing is removed</b>:
-    /// the containers, networks and volumes stay (halted, not deleted), as do worktrees, branches and
-    /// node_modules, so a later <c>as-is</c> checkout just restarts them. The label is kept as a
-    /// "last used" hint. Idempotent-ish: releasing an already-free workspace just re-stamps it.
+    /// Release a claimed workspace back to the pool: stop its containers (<c>docker stop</c>) so it stops
+    /// burning CPU/RAM, and flag it unclaimed. Release is not a teardown and <b>touches no git</b> — nothing
+    /// is removed, detached, or reset: the worktree stays on its claim branch, and the containers, networks,
+    /// volumes and node_modules stay (halted, not deleted), so a later checkout is fast. The branch/label are
+    /// kept as "last used" hints. Returns the released record plus a <see cref="ReleaseReport"/> of any
+    /// pending work (uncommitted changes / unpushed commits) — <b>surfaced, never acted on</b> — so the user
+    /// knows what's at stake before a later fresh checkout resets the slot. Idempotent-ish: releasing an
+    /// already-free workspace just re-stamps it.
     /// </summary>
-    public InstanceRecord Release(string workspace)
+    public (InstanceRecord Record, ReleaseReport Pending) Release(string workspace)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
@@ -141,11 +154,12 @@ public sealed class PoolService(
             throw new PoolException($"workspace '{workspace}' isn't part of a pool");
 
         using var _ = Lock(stackName);
-        workspaces.TryStopContainers(workspace); // free CPU/RAM; keep containers, volumes + disk intact
+        var pending = workspaces.CollectPending(record); // report only — release never touches the working tree
+        workspaces.TryStopContainers(workspace);         // free CPU/RAM; keep containers, volumes + disk intact
         var latest = instances.TryLoad(workspace) ?? record;
         var released = latest with { Claimed = false, LastUsedAt = DateTimeOffset.UtcNow };
         instances.Save(released);
-        return released;
+        return (released, pending);
     }
 
     // The workspaces that make up a stack's pool: every instance tagged with the stack, ordered by index.
@@ -156,25 +170,7 @@ public sealed class PoolService(
             .ThenBy(i => i.Workspace, StringComparer.Ordinal)
             .ToList();
 
-    void ApplyHandling(string workspace, CheckoutMode mode, IReadOnlyList<string>? refreshRepos, bool force,
-        IProgress<WorkspaceStepProgress>? progress, IReadOnlyList<ResolvedRepo>? resolvedRepos)
-    {
-        switch (mode)
-        {
-            case CheckoutMode.AsIs:
-                progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Running));
-                progress?.Report(WorkspaceService.InfraStartReport(workspaces.TryStartInfra(workspace)));
-                break;
-            case CheckoutMode.Fresh:
-                workspaces.RefreshToBase(workspace, onlyRepos: null, force, removeVolumes: true, progress, resolvedRepos);
-                break;
-            case CheckoutMode.Refresh:
-                workspaces.RefreshToBase(workspace, refreshRepos, force, removeVolumes: false, progress, resolvedRepos);
-                break;
-        }
-    }
-
-    InstanceRecord MarkClaimed(string workspace, string label, int? index)
+    InstanceRecord MarkClaimed(string workspace, string? label, int? index)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");

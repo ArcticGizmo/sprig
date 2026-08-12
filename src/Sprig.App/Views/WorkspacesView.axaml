@@ -428,32 +428,27 @@
                                      IsChecked="{Binding CheckoutNew, Mode=TwoWay}" />
                     </StackPanel>
 
-                    <!-- Handling: only when reusing. as-is resumes; fresh resyncs everything to base (wipes
-                         volumes); refresh resyncs a chosen subset. -->
+                    <!-- Handling: only when reusing. Both cut a clean branch from base; keep leaves the warm
+                         environment, fresh reinstalls deps and wipes volumes. -->
                     <StackPanel Spacing="6" IsVisible="{Binding ShowHandling}">
                         <TextBlock Text="Handling" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                        <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeAsIs, Mode=TwoWay}"
-                                     Content="As-is — resume exactly as it was left"
-                                     ToolTip.Tip="Fastest: no git changes, volumes and installed deps kept." />
+                        <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeKeep, Mode=TwoWay}"
+                                     Content="Keep — clean branch from base, keep deps + volumes"
+                                     ToolTip.Tip="Fastest: tracked code reset to base, but node_modules and DB volumes kept as they are." />
                         <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeFresh, Mode=TwoWay}"
-                                     Content="Fresh — resync every repo to base, wipe volumes"
-                                     ToolTip.Tip="Clean base and clean DB; installed deps kept (setup reconciles them)." />
-                        <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeRefresh, Mode=TwoWay}"
-                                     Content="Refresh some repos — resync only the ones you pick"
-                                     ToolTip.Tip="Move chosen repos to base; the rest stay as they are, volumes kept." />
-                        <ItemsControl ItemsSource="{Binding CheckoutRefreshRepos}" Margin="24,2,0,0"
-                                      IsVisible="{Binding ShowRefreshRepos}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:WorkspaceRepoChoiceViewModel">
-                                    <CheckBox IsChecked="{Binding Included, Mode=TwoWay}" Content="{Binding Name}" Margin="0,1" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                     Content="Fresh — reinstall deps and wipe volumes"
+                                     ToolTip.Tip="Clean environment: setup re-runs and docker volumes are wiped for clean runtime data." />
                     </StackPanel>
 
-                    <!-- Label: required, describes what this checkout is for. -->
+                    <!-- Branch: required, the workspace's identity — cut across every repo in the stack. -->
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Label" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBlock Text="Branch" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBox Text="{Binding CheckoutBranch, Mode=TwoWay}" PlaceholderText="e.g. billing-bug-fix" />
+                    </StackPanel>
+
+                    <!-- Label: optional, a note to recognise this checkout by. -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Label (optional)" Foreground="{StaticResource MutedBrush}" FontSize="12" />
                         <TextBox Text="{Binding CheckoutLabel, Mode=TwoWay}" PlaceholderText="e.g. billing-bug repro" />
                     </StackPanel>
 

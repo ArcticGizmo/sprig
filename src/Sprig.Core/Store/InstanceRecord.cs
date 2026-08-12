@@ -28,8 +28,14 @@ public sealed record InstanceRecord
     /// to take — but not necessarily clean; how it's handled is decided at the next checkout.</summary>
     public bool Claimed { get; init; }
 
-    /// <summary>The free-text label the user gave this workspace at checkout — metadata to recognise it
-    /// by ("auth refactor"), never load-bearing. Null when unclaimed or never labelled.</summary>
+    /// <summary>The <b>claim branch</b> — the single git branch name the user chose at claim, cut across
+    /// every repo in the stack. This is the load-bearing identity of a claimed workspace (mirrored per repo
+    /// on <see cref="InstanceRepo.Branch"/>). Null while the workspace is parked (idle slot, worktrees in
+    /// detached HEAD with no branch of their own).</summary>
+    public string? Branch { get; init; }
+
+    /// <summary>The free-text label the user gave this workspace at claim — <b>optional</b> metadata to
+    /// recognise it by ("auth refactor"), never load-bearing (the branch is). Null when unlabelled.</summary>
     public string? Label { get; init; }
 
     /// <summary>When this workspace was last checked out; null if never claimed.</summary>
@@ -75,9 +81,11 @@ public sealed record InstanceRepo
     public required string Name { get; init; }
     /// <summary>The source repo whose worktree this is.</summary>
     public required string SourcePath { get; init; }
-    /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>).</summary>
+    /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>). Stable for the life of the
+    /// slot — machine-named, never renamed when a branch is claimed.</summary>
     public required string WorktreePath { get; init; }
-    /// <summary>The sprig-created branch (<c>sprig--&lt;workspace&gt;</c>), if any.</summary>
+    /// <summary>The branch checked out in this repo's worktree: the workspace's claim branch when claimed,
+    /// <c>null</c> while parked (the worktree sits in detached HEAD with no branch of its own).</summary>
     public string? Branch { get; init; }
 
     /// <summary>The generated compose files in the central store (one per overridden compose file in

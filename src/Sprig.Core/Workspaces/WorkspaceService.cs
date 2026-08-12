@@ -156,8 +156,6 @@ public sealed partial class WorkspaceService(
     {
         ValidateCreate(stack, workspace);
 
-        var branch = BranchFor(workspace);
-
         // Pre-compute each repo's sibling worktree path and guard against collisions.
         var plans = new List<RepoPlan>();
         foreach (var repo in stack.Repos)
@@ -198,9 +196,13 @@ public sealed partial class WorkspaceService(
                 var repo = plan.Repo;
                 var repoScope = wired.ScopeFor(repo.Name);
 
+                // Park the slot: add the worktree in detached HEAD at the repo's base. A fresh slot carries
+                // no branch of its own — identity is attached later at claim (git also forbids the same
+                // branch in two worktrees, so N slots could never all sit on main). The expensive warm
+                // state (env, compose, node_modules) is built below regardless of git state.
                 current = CreateStepIds.Worktree(repo.Name);
                 progress?.Report(new(current, WorkspaceStepState.Running));
-                git.AddWorktree(repo.Root, plan.Worktree, branch);
+                git.AddWorktreeDetached(repo.Root, plan.Worktree, git.ResolveDefaultBase(repo.Root));
                 addedWorktrees.Add((repo.Root, plan.Worktree));
                 progress?.Report(new(current, WorkspaceStepState.Done));
 
@@ -243,7 +245,7 @@ public sealed partial class WorkspaceService(
                     Name = repo.Name,
                     SourcePath = repo.Root,
                     WorktreePath = plan.Worktree,
-                    Branch = branch,
+                    Branch = null, // parked: detached HEAD, no branch until claimed
                     GeneratedComposePaths = composePaths,
                     Inputs = wired.Inputs[repo.Name],
                     Setup = setupOutcomes,
@@ -270,11 +272,11 @@ public sealed partial class WorkspaceService(
         catch (Exception ex)
         {
             progress?.Report(new(current, WorkspaceStepState.Error, ex.Message));
-            // Best-effort rollback across every repo materialised so far.
+            // Best-effort rollback across every repo materialised so far. A parked slot carries no branch,
+            // so there's nothing to delete — just remove the worktree and its folder.
             foreach (var (root, worktree) in addedWorktrees)
             {
                 TryQuiet(() => git.RemoveWorktree(root, worktree));
-                TryQuiet(() => git.DeleteBranch(root, branch));
                 WorktreeInspector.TryDeleteDirectory(worktree);
             }
             if (portsAcquired) TryQuiet(() => ports.Release(workspace));
@@ -283,7 +285,9 @@ public sealed partial class WorkspaceService(
         }
     }
 
-    /// <summary>Shared cheap pre-flight validation for create (used by both create and its planner).</summary>
+    /// <summary>Shared cheap pre-flight validation for create (used by both create and its planner). A
+    /// freshly-created slot carries no branch (it's parked detached), so there's no branch-name conflict to
+    /// guard here — that check moves to <see cref="CheckClaim"/>, run when a branch is actually cut.</summary>
     void ValidateCreate(ResolvedStack stack, string workspace)
     {
         ValidateName(workspace);
@@ -291,22 +295,7 @@ public sealed partial class WorkspaceService(
             throw new WorkspaceException("nothing to create: the stack has no repos");
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
-
-        // The branch sprig will cut for each repo. A flat 'sprig--<ws>' name (no '/') can't hit git's
-        // directory/file ref conflict, so the only way create fails on it is if that exact branch already
-        // exists — catch it here with a clear message rather than letting `git worktree add` throw a raw fatal.
-        var branch = BranchFor(workspace);
-        foreach (var repo in stack.Repos)
-            if (git.BranchExists(repo.Root, branch))
-                throw new WorkspaceException(
-                    $"branch '{branch}' already exists in repo '{repo.Name}' — delete or rename it, " +
-                    "or choose a different workspace name");
     }
-
-    /// <summary>The branch sprig cuts for a workspace. Flat <c>sprig--&lt;ws&gt;</c> (no <c>/</c>) so it can
-    /// never hit git's directory/file ref conflict the way a <c>sprig/&lt;ws&gt;</c> name would against a
-    /// plain <c>sprig</c> branch. Mirrors the sibling worktree folder convention (<c>&lt;dir&gt;--&lt;ws&gt;</c>).</summary>
-    internal static string BranchFor(string workspace) => $"sprig--{workspace}";
 
     /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>
     public ResolvedStack ResolveSingleRepo(string repoPath)

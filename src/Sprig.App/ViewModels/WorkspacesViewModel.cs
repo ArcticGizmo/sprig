@@ -457,14 +457,17 @@ public partial class WorkspacesViewModel : PageViewModel
 
     /// <summary>True while the checkout overlay is open.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHandling), nameof(ShowRefreshRepos))]
+    [NotifyPropertyChangedFor(nameof(ShowHandling))]
     private bool _isCheckingOut;
 
     /// <summary>The stack whose pool is being checked out of (fixed for the life of the overlay).</summary>
     [ObservableProperty] private string? _checkoutStack;
     [ObservableProperty] private string? _checkoutError;
 
-    /// <summary>The required checkout label — free text describing what this workspace is for.</summary>
+    /// <summary>The required branch name — the workspace's identity, cut across every repo in the stack.</summary>
+    [ObservableProperty] private string _checkoutBranch = "";
+
+    /// <summary>The optional checkout label — a note to recognise this workspace by.</summary>
     [ObservableProperty] private string _checkoutLabel = "";
 
     /// <summary>The free (unclaimed) workspaces available to reuse for this checkout.</summary>
@@ -474,7 +477,7 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <see cref="CheckoutReuse"/> as the two options of the target radio group (kept mutually exclusive
     /// by the group + their initial values in <c>Checkout</c>).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHandling), nameof(ShowRefreshRepos))]
+    [NotifyPropertyChangedFor(nameof(ShowHandling))]
     private bool _checkoutNew;
 
     /// <summary>The inverse of <see cref="CheckoutNew"/> — bound to the "reuse a free workspace" radio.</summary>
@@ -482,7 +485,7 @@ public partial class WorkspacesViewModel : PageViewModel
 
     /// <summary>The free workspace to reuse (when not building new). Drives the handling choices below.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHandling), nameof(ShowRefreshRepos))]
+    [NotifyPropertyChangedFor(nameof(ShowHandling))]
     private WorkspaceItemViewModel? _checkoutTarget;
 
     /// <summary>True when the pool has room to build a new workspace (enables the "New workspace" choice).</summary>
@@ -491,39 +494,16 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>True when the pool has at least one free workspace to reuse (enables the "Reuse" choice).</summary>
     [ObservableProperty] private bool _canReuseWorkspace;
 
-    // Handling mode (only when reusing a free workspace). Three radio bools sharing a group in XAML;
-    // exactly one is true. Fresh resyncs every repo to base (and wipes volumes); refresh resyncs a chosen
-    // subset; as-is resumes the workspace exactly as it was left.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowRefreshRepos))]
-    private bool _modeAsIs = true;
+    // Handling mode (only when reusing a free workspace). Two radio bools sharing a group in XAML; exactly
+    // one is true. Both cut a clean branch from base; keep leaves deps + volumes, fresh reinstalls and wipes.
+    [ObservableProperty] private bool _modeKeep = true;
     [ObservableProperty] private bool _modeFresh;
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowRefreshRepos))]
-    private bool _modeRefresh;
-
-    /// <summary>The reused workspace's repos, tickable — which to resync to base under "refresh some repos".</summary>
-    public ObservableCollection<WorkspaceRepoChoiceViewModel> CheckoutRefreshRepos { get; } = [];
 
     /// <summary>The handling choices only make sense when reusing an existing workspace.</summary>
     public bool ShowHandling => IsCheckingOut && !CheckoutNew && CheckoutTarget is not null;
 
-    /// <summary>The per-repo refresh checklist only shows under the "refresh some repos" handling.</summary>
-    public bool ShowRefreshRepos => ShowHandling && ModeRefresh;
-
-    partial void OnCheckoutTargetChanged(WorkspaceItemViewModel? value) => RebuildCheckoutRefreshRepos();
-
-    /// <summary>Fill the refresh checklist from the reused workspace's repos (all ticked by default).</summary>
-    void RebuildCheckoutRefreshRepos()
-    {
-        CheckoutRefreshRepos.Clear();
-        if (CheckoutTarget is null) return;
-        foreach (var repo in CheckoutTarget.Record.Repos)
-            CheckoutRefreshRepos.Add(new WorkspaceRepoChoiceViewModel(repo.Name, () => { }));
-    }
-
     /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used
-    /// free workspace (as-is), or building a new one when the pool has none free — mirroring the CLI.</summary>
+    /// free workspace (keep), or building a new one when the pool has none free — mirroring the CLI.</summary>
     [RelayCommand]
     private void Checkout(PoolGroupViewModel? group)
     {
@@ -531,6 +511,7 @@ public partial class WorkspacesViewModel : PageViewModel
 
         CheckoutStack = group.Stack;
         CheckoutError = null;
+        CheckoutBranch = "";
         CheckoutLabel = "";
 
         CheckoutFreeWorkspaces.Clear();
@@ -553,21 +534,15 @@ public partial class WorkspacesViewModel : PageViewModel
         }
         CheckoutReuse = !CheckoutNew;
 
-        ModeAsIs = true;
+        ModeKeep = true;
         ModeFresh = false;
-        ModeRefresh = false;
         IsCheckingOut = true;
     }
 
     [RelayCommand]
     private void CancelCheckout() => IsCheckingOut = false;
 
-    static string ModeLabel(CheckoutMode mode) => mode switch
-    {
-        CheckoutMode.Fresh => "fresh",
-        CheckoutMode.Refresh => "refresh",
-        _ => "as-is",
-    };
+    static string ModeLabel(CheckoutMode mode) => mode == CheckoutMode.Fresh ? "fresh" : "keep";
 
     [RelayCommand]
     private async Task ConfirmCheckout()
@@ -575,27 +550,35 @@ public partial class WorkspacesViewModel : PageViewModel
         var stack = CheckoutStack;
         if (stack is null) return;
 
+        var branch = CheckoutBranch.Trim();
+        if (branch.Length == 0) { CheckoutError = "give this workspace a branch name"; return; }
         var label = CheckoutLabel.Trim();
-        if (label.Length == 0) { CheckoutError = "give this checkout a label"; return; }
 
         string? existing = CheckoutNew ? null : CheckoutTarget?.Name;
         if (!CheckoutNew && existing is null) { CheckoutError = "pick a workspace to reuse, or choose a new one"; return; }
 
-        var mode = CheckoutNew ? CheckoutMode.AsIs
-            : ModeFresh ? CheckoutMode.Fresh
-            : ModeRefresh ? CheckoutMode.Refresh
-            : CheckoutMode.AsIs;
+        var mode = !CheckoutNew && ModeFresh ? CheckoutMode.Fresh : CheckoutMode.Keep;
 
-        IReadOnlyList<string>? refreshRepos = null;
-        if (mode == CheckoutMode.Refresh)
+        // Surface (do not resolve) a branch conflict up front, keeping the message in the overlay: a local
+        // branch of this name is a hard block; one only on a remote is a soft heads-up.
+        if (existing is not null)
         {
-            refreshRepos = CheckoutRefreshRepos.Where(r => r.Included).Select(r => r.Name).ToList();
-            if (refreshRepos.Count == 0) { CheckoutError = "pick at least one repo to refresh (or choose different handling)"; return; }
+            try
+            {
+                var conflicts = await AppServices.RunAsync(() => Services.Pools.CheckCheckout(existing, branch));
+                if (conflicts.IsBlocked)
+                {
+                    CheckoutError = $"branch '{branch}' already exists in {string.Join(", ", conflicts.Blocked)} — " +
+                        "delete/rename it there or pick another name.";
+                    return;
+                }
+            }
+            catch (Exception ex) { CheckoutError = ex.Message; return; }
         }
 
         // Plan up front so pre-flight problems stay in the overlay; only a real plan opens the progress window.
         IReadOnlyList<WorkspaceStep> plan;
-        try { plan = await AppServices.RunAsync(() => Services.Pools.PlanCheckout(stack, existing, mode, refreshRepos)); }
+        try { plan = await AppServices.RunAsync(() => Services.Pools.PlanCheckout(stack, existing, mode)); }
         catch (Exception ex) { CheckoutError = ex.Message; return; }
 
         var heading = existing is null
@@ -612,8 +595,9 @@ public partial class WorkspacesViewModel : PageViewModel
         try
         {
             var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
+            var labelArg = label.Length == 0 ? null : label;
             var record = await AppServices.RunAsync(() =>
-                Services.Pools.Checkout(stack, existing, label, mode, refreshRepos, force: false, progress));
+                Services.Pools.Checkout(stack, existing, branch, labelArg, mode, force: false, progress));
 
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == record.Workspace) ?? Selected;
@@ -629,8 +613,8 @@ public partial class WorkspacesViewModel : PageViewModel
             }
             else
             {
-                StatusMessage = $"checked out '{record.Workspace}' — “{label}”";
-                modal.Finish($"Checked out '{record.Workspace}'.", WorkspaceStepState.Done);
+                StatusMessage = $"checked out '{record.Workspace}' on branch “{branch}”";
+                modal.Finish($"Checked out '{record.Workspace}' on '{branch}'.", WorkspaceStepState.Done);
             }
         }
         catch (Exception ex)
@@ -651,7 +635,7 @@ public partial class WorkspacesViewModel : PageViewModel
     bool CanClaim => Selected is { Free: true } && Selected.Record.Stack is not null && !Busy;
 
     /// <summary>Claim the selected free workspace straight from the detail pane: open the checkout overlay
-    /// pre-targeted at this workspace (reuse, as-is), so a click gives it a label and handling without
+    /// pre-targeted at this workspace (reuse, keep), so a click gives it a label and handling without
     /// hunting for it in the pool's Checkout list.</summary>
     [RelayCommand(CanExecute = nameof(CanClaim))]
     private void Claim()
@@ -671,7 +655,7 @@ public partial class WorkspacesViewModel : PageViewModel
     bool CanRelease => Selected is { Claimed: true } && !Busy;
 
     /// <summary>Release the selected workspace back to its pool: stop its infra (keeping all disk state) and
-    /// mark it free. Cheap and safe — nothing is removed, so a mistaken release is recovered by an as-is
+    /// mark it free. Cheap and safe — nothing is removed, so a mistaken release is recovered by a keep
     /// re-checkout.</summary>
     [RelayCommand(CanExecute = nameof(CanRelease))]
     private async Task Release()
@@ -680,10 +664,14 @@ public partial class WorkspacesViewModel : PageViewModel
         if (item is null || !item.Claimed) return;
         await Guard(async () =>
         {
-            await AppServices.RunAsync(() => Services.Pools.Release(item.Name));
+            var (_, pending) = await AppServices.RunAsync(() => Services.Pools.Release(item.Name));
             await RefreshCore();
             Services.NotifyStoreChanged();
-        }, status: $"released '{item.Name}' — its infra is stopped; disk state kept");
+            // Surface (never act on) any pending work so it isn't silently forgotten before a later fresh checkout.
+            StatusMessage = pending.HasPending
+                ? $"released '{item.Name}' — infra stopped, disk kept. Pending: {pending.Summary()}"
+                : $"released '{item.Name}' — its infra is stopped; disk state kept";
+        }, status: null);
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]

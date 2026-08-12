@@ -87,26 +87,29 @@ public class PoolStackSetupTests
         using var repo = new TempGitRepo();
         var (pools, _) = Build(repo, store, NameOnly, ["npm ci"]);
 
-        var ids = pools.PlanCheckout("app", null, CheckoutMode.AsIs, null).Select(p => p.Id).ToList();
+        var ids = pools.PlanCheckout("app", null, CheckoutMode.Keep).Select(p => p.Id).ToList();
 
         Assert.Contains("ports", ids);
         Assert.Contains("app:setup", ids); // the stack setup shows as a step
+        Assert.Contains("app:claim", ids); // the branch is cut for the new slot
         Assert.Contains("infra", ids);
     }
 
     [Fact]
-    public void PlanCheckout_as_is_reuse_is_just_infra_but_fresh_lists_the_refresh_steps()
+    public void PlanCheckout_keep_reuse_cuts_the_branch_and_env_but_fresh_adds_the_setup_steps()
     {
         using var store = new TempStore();
         using var repo = new TempGitRepo();
         var (pools, _) = Build(repo, store, NameOnly, ["npm ci"]);
         pools.Checkout("app", null, "first"); // materialise app-1
 
-        Assert.Equal(["infra"], pools.PlanCheckout("app", "app-1", CheckoutMode.AsIs, null).Select(p => p.Id));
+        // Keep reuse cuts the branch and reapplies env, but does NOT reinstall deps (no setup step).
+        var keep = pools.PlanCheckout("app", "app-1", CheckoutMode.Keep).Select(p => p.Id).ToList();
+        Assert.Equal(["app:claim", "app:env", "infra"], keep);
 
-        var fresh = pools.PlanCheckout("app", "app-1", CheckoutMode.Fresh, null).Select(p => p.Id).ToList();
-        Assert.Contains("app:resync", fresh);
-        Assert.Contains("app:setup", fresh);
+        var fresh = pools.PlanCheckout("app", "app-1", CheckoutMode.Fresh).Select(p => p.Id).ToList();
+        Assert.Contains("app:claim", fresh);
+        Assert.Contains("app:setup", fresh); // fresh reinstalls deps
         Assert.Contains("infra", fresh);
     }
 
@@ -120,7 +123,7 @@ public class PoolStackSetupTests
         pools.Release("app-1");
         setup.Calls.Clear();
 
-        pools.Checkout("app", "app-1", "again", CheckoutMode.Fresh);
+        pools.Checkout("app", "app-1", "again", mode: CheckoutMode.Fresh);
 
         // The stack overlay is honoured on refresh, not just at first create.
         Assert.Contains(setup.Calls, c => c.Arguments[^1] == "npm ci");

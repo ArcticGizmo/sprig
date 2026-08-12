@@ -42,20 +42,48 @@ public class PoolCheckoutTests
     }
 
     [Fact]
-    public void Checkout_materialises_a_new_indexed_workspace_and_marks_it_claimed()
+    public void Checkout_materialises_a_new_indexed_workspace_and_cuts_the_claim_branch()
     {
         using var store = new TempStore();
         using var repo = new TempGitRepo();
         var pools = Build(repo, store, maxSlots: 2);
 
-        var ws = pools.Checkout("app", existingWorkspace: null, "auth refactor");
+        var ws = pools.Checkout("app", existingWorkspace: null, "auth-refactor", label: "auth work");
 
         Assert.Equal("app-1", ws.Workspace);
         Assert.Equal("app", ws.Stack);
         Assert.Equal(1, ws.WorkspaceIndex);
         Assert.True(ws.Claimed);
-        Assert.Equal("auth refactor", ws.Label);
+        Assert.Equal("auth-refactor", ws.Branch);          // the claim branch is the identity
+        Assert.Equal("auth-refactor", ws.Repos[0].Branch);  // cut per repo
+        Assert.Equal("auth work", ws.Label);                // optional label kept alongside
         Assert.True(Directory.Exists(ws.Repos[0].WorktreePath));
+    }
+
+    [Fact]
+    public void Checkout_with_no_label_still_claims_on_the_branch()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 1);
+
+        var ws = pools.Checkout("app", null, "spike");
+
+        Assert.True(ws.Claimed);
+        Assert.Equal("spike", ws.Branch);
+        Assert.Null(ws.Label); // label is optional
+    }
+
+    [Fact]
+    public void Checkout_rejects_an_invalid_branch_name()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 1);
+
+        // A space is not a legal git branch name — the pre-flight refuses before materialising a slot.
+        Assert.ThrowsAny<Exception>(() => pools.Checkout("app", null, "auth refactor"));
+        Assert.Empty(pools.Status("app").Workspaces); // nothing half-created
     }
 
     [Fact]
@@ -74,18 +102,19 @@ public class PoolCheckoutTests
     }
 
     [Fact]
-    public void Release_marks_unclaimed_keeps_the_label_and_leaves_the_worktree_on_disk()
+    public void Release_marks_unclaimed_keeps_the_branch_and_leaves_the_worktree_on_disk()
     {
         using var store = new TempStore();
         using var repo = new TempGitRepo();
         var pools = Build(repo, store, maxSlots: 2);
-        var ws = pools.Checkout("app", null, "wip");
+        var ws = pools.Checkout("app", null, "wip", label: "in progress");
         var worktree = ws.Repos[0].WorktreePath;
 
-        var released = pools.Release("app-1");
+        var (released, _) = pools.Release("app-1");
 
         Assert.False(released.Claimed);
-        Assert.Equal("wip", released.Label);            // kept as a "last used" hint
+        Assert.Equal("wip", released.Branch);            // branch/label kept as "last used" hints
+        Assert.Equal("in progress", released.Label);
         Assert.NotNull(released.LastUsedAt);
         Assert.True(Directory.Exists(worktree));         // nothing removed from disk
     }
@@ -99,11 +128,11 @@ public class PoolCheckoutTests
         pools.Checkout("app", null, "first");
         pools.Release("app-1");
 
-        var reused = pools.Checkout("app", existingWorkspace: "app-1", "second", CheckoutMode.AsIs);
+        var reused = pools.Checkout("app", existingWorkspace: "app-1", "second", mode: CheckoutMode.Keep);
 
         Assert.Equal("app-1", reused.Workspace);
         Assert.True(reused.Claimed);
-        Assert.Equal("second", reused.Label);
+        Assert.Equal("second", reused.Branch);
         Assert.Single(pools.Status("app").Workspaces); // still just one — no new allocation
     }
 
@@ -130,9 +159,22 @@ public class PoolCheckoutTests
         File.WriteAllText(readme, "local edit");
         pools.Release("app-1");
 
-        pools.Checkout("app", "app-1", "clean start", CheckoutMode.Fresh);
+        pools.Checkout("app", "app-1", "clean-start", mode: CheckoutMode.Fresh);
 
         Assert.Equal("seed", File.ReadAllText(readme).Trim()); // reset to the committed base
+    }
+
+    [Fact]
+    public void A_branch_name_already_used_in_the_repo_blocks_the_claim()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 2);
+        pools.Checkout("app", null, "dup"); // app-1 now holds branch "dup"
+
+        // A second workspace can't cut the same branch name — the pre-flight blocks it, naming the repo.
+        var ex = Assert.ThrowsAny<Exception>(() => pools.Checkout("app", null, "dup"));
+        Assert.Contains("already exists", ex.Message);
     }
 
     [Fact]

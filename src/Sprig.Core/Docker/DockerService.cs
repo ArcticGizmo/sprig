@@ -33,6 +33,10 @@ public sealed class DockerService(IProcessRunner runner) : IDockerService
               .EnsureSuccess();
     }
 
+    public void Stop(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
+        => runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), "stop"], projectDirectory)
+                 .EnsureSuccess();
+
     public IReadOnlyList<ContainerStatus> Ps(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName)
     {
         var r = runner.Run("docker", [.. Base(composeFiles, projectDirectory, projectName), "ps", "--format", "json"], projectDirectory);

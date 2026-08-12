@@ -127,11 +127,11 @@ public sealed class PoolService(
     }
 
     /// <summary>
-    /// Release a claimed workspace back to the pool: stop its infra (<c>docker down</c>, volumes kept) so
-    /// it stops burning CPU/RAM, and flag it unclaimed. <b>Nothing is removed from disk</b> — worktrees,
-    /// branches, node_modules and volumes stay, so a later <c>as-is</c> checkout resumes instantly. The
-    /// label is kept as a "last used" hint. Idempotent-ish: releasing an already-free workspace just
-    /// re-stamps it.
+    /// Release a claimed workspace back to the pool: stop its containers (<c>docker stop</c>) so it
+    /// stops burning CPU/RAM, and flag it unclaimed. Release is not a teardown — <b>nothing is removed</b>:
+    /// the containers, networks and volumes stay (halted, not deleted), as do worktrees, branches and
+    /// node_modules, so a later <c>as-is</c> checkout just restarts them. The label is kept as a
+    /// "last used" hint. Idempotent-ish: releasing an already-free workspace just re-stamps it.
     /// </summary>
     public InstanceRecord Release(string workspace)
     {
@@ -141,7 +141,7 @@ public sealed class PoolService(
             throw new PoolException($"workspace '{workspace}' isn't part of a pool");
 
         using var _ = Lock(stackName);
-        workspaces.TryStopInfra(workspace, removeVolumes: false); // free CPU/RAM; keep volumes + disk
+        workspaces.TryStopContainers(workspace); // free CPU/RAM; keep containers, volumes + disk intact
         var latest = instances.TryLoad(workspace) ?? record;
         var released = latest with { Claimed = false, LastUsedAt = DateTimeOffset.UtcNow };
         instances.Save(released);

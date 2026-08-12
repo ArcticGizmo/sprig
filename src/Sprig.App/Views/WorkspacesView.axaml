@@ -177,10 +177,14 @@
                                     <Setter Property="Margin" Value="0,0,8,8" />
                                 </Style>
                             </WrapPanel.Styles>
+                            <Button Content="Claim" Command="{Binding ClaimCommand}"
+                                    IsVisible="{Binding Selected.Free}"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                    ToolTip.Tip="Check out this free workspace from its pool — give the checkout a label and choose how to handle its leftover state." />
                             <Button Content="Release" Command="{Binding ReleaseCommand}"
                                     IsVisible="{Binding Selected.Claimed}"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220"
-                                    ToolTip.Tip="Hand this workspace back to its pool: stop its infra, keep all disk state. Recoverable by an as-is re-checkout." />
+                                    ToolTip.Tip="Hand this workspace back to its pool: stop its containers (nothing removed), keep all disk state. It stays free to take — reclaim it as-is anytime." />
                             <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
                                     ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
                             <Button Content="Repair" Command="{Binding RepairCommand}"
@@ -221,20 +225,24 @@
                                 <TextBlock Grid.Column="0" Text="DOCKER" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                    <Button Content="Up" Command="{Binding UpCommand}"
+                                    <Button Content="Refresh" Command="{Binding RefreshStatusCommand}"
                                             FontSize="11" Padding="8,3"
-                                            ToolTip.Tip="docker compose up — start this workspace's infra." />
-                                    <Button Content="Down" Command="{Binding DownCommand}"
-                                            FontSize="11" Padding="8,3"
-                                            ToolTip.Tip="docker compose down — stop this workspace's infra." />
-                                    <Button Content="Reset" Command="{Binding ResetCommand}"
-                                            FontSize="11" Padding="8,3"
-                                            ToolTip.Tip="Tear the infra down and bring it back up, wiping volumes." />
-                                    <Button Content="Refresh status" Command="{Binding RefreshStatusCommand}"
-                                            FontSize="11" Padding="8,3" />
-                                    <Button Content="Open in Docker" Command="{Binding OpenDockerCommand}"
-                                            FontSize="11" Padding="8,3"
-                                            ToolTip.Tip="Open Docker Desktop to inspect this workspace's sprig-&lt;name&gt; project." />
+                                            ToolTip.Tip="Re-probe this workspace's containers." />
+                                    <DropDownButton Content="Manage" FontSize="11" Padding="8,3"
+                                                    ToolTip.Tip="Start, stop or inspect this workspace's Docker infrastructure.">
+                                        <DropDownButton.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="Up" Command="{Binding UpCommand}"
+                                                          ToolTip.Tip="docker compose up — start this workspace's infra." />
+                                                <MenuItem Header="Down" Command="{Binding DownCommand}"
+                                                          ToolTip.Tip="docker compose down — stop and remove this workspace's containers (volumes kept)." />
+                                                <MenuItem Header="Reset" Command="{Binding ResetCommand}"
+                                                          ToolTip.Tip="Restart the infra (down then up); volumes are kept." />
+                                                <MenuItem Header="Open in Docker" Command="{Binding OpenDockerCommand}"
+                                                          ToolTip.Tip="Open Docker Desktop to inspect this workspace's sprig-&lt;name&gt; project." />
+                                            </MenuFlyout>
+                                        </DropDownButton.Flyout>
+                                    </DropDownButton>
                                 </StackPanel>
                             </Grid>
 

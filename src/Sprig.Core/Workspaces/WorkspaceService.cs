@@ -536,6 +536,23 @@ public sealed partial class WorkspaceService(
         return true;
     }
 
+    /// <summary>Stop the workspace's containers without removing them (<c>compose stop</c>) if there's
+    /// infra and Docker is reachable; otherwise a no-op. Frees CPU/RAM while keeping the containers,
+    /// networks and volumes in place, so a later checkout restarts them fast. This is the "hand back to
+    /// the pool" counterpart to <see cref="TryStopInfra"/> (which does a full <c>down</c>): release
+    /// isn't a teardown, so nothing is removed. A stopped engine is a no-op too, so release never throws
+    /// when Docker is down.</summary>
+    public bool TryStopContainers(string workspace)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
+        if (infraRepos.Count == 0 || !docker.IsAvailable() || !docker.IsEngineRunning()) return false;
+        foreach (var repo in infraRepos)
+            docker.Stop(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
+        instances.Save(record with { LastStatus = "stopped" });
+        return true;
+    }
+
     /// <summary>Deprecated alias for <see cref="RestartInfra"/> — the CLI verb was renamed
     /// <c>ws reset</c> → <c>ws restart</c> when <c>reset</c> came to mean the git resync. Kept so
     /// existing callers/scripts keep working for one release.</summary>

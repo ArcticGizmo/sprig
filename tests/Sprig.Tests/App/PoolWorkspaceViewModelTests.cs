@@ -194,4 +194,44 @@ public class PoolWorkspaceViewModelTests
         vm.Selected = vm.Workspaces.First(w => w.Name == "app-2");
         Assert.False(vm.ReleaseCommand.CanExecute(null));
     }
+
+    [Fact]
+    public async Task Claim_is_available_only_for_a_free_workspace()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        SeedStack(s, services, maxSlots: 4);
+        SeedWorkspace(services, "app-1", 1, claimed: true, label: "auth");
+        SeedWorkspace(services, "app-2", 2, claimed: false);
+
+        var vm = await LoadedVm(services);
+
+        vm.Selected = vm.Workspaces.First(w => w.Name == "app-2");
+        Assert.True(vm.ClaimCommand.CanExecute(null));
+
+        vm.Selected = vm.Workspaces.First(w => w.Name == "app-1");
+        Assert.False(vm.ClaimCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Claim_opens_the_checkout_overlay_pre_targeted_at_the_selected_workspace()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        SeedStack(s, services, maxSlots: 4);
+        SeedWorkspace(services, "app-1", 1, claimed: false, label: "old", lastUsed: DateTimeOffset.UtcNow.AddDays(-3));
+        SeedWorkspace(services, "app-2", 2, claimed: false, label: "recent", lastUsed: DateTimeOffset.UtcNow.AddMinutes(-5));
+
+        var vm = await LoadedVm(services);
+        // Pick the workspace that is NOT the least-recently-used default, to prove Claim targets the pick.
+        vm.Selected = vm.Workspaces.First(w => w.Name == "app-2");
+        vm.ClaimCommand.Execute(null);
+
+        Assert.True(vm.IsCheckingOut);
+        Assert.Equal("app", vm.CheckoutStack);
+        Assert.False(vm.CheckoutNew);
+        Assert.True(vm.CheckoutReuse);
+        Assert.Equal("app-2", vm.CheckoutTarget?.Name);   // the selected one, not the LRU default
+        Assert.True(vm.ModeAsIs);
+    }
 }

@@ -24,5 +24,10 @@ public interface IDockerService
     /// <summary><c>down</c> keeps volumes; <paramref name="removeVolumes"/> = <c>down -v</c>.</summary>
     void Down(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName, bool removeVolumes = false);
 
+    /// <summary><c>stop</c> halts the project's containers without removing them: frees CPU/RAM but
+    /// leaves the containers, networks and volumes in place, so a later <c>up</c> restarts them quickly.
+    /// Unlike <see cref="Down"/>, nothing is torn down.</summary>
+    void Stop(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName);
+
     IReadOnlyList<ContainerStatus> Ps(IReadOnlyList<string> composeFiles, string projectDirectory, string projectName);
 }

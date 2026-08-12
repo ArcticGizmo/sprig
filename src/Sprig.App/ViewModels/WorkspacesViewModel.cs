@@ -50,13 +50,13 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
-        nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
+        nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
     private WorkspaceItemViewModel? _selected;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
-        nameof(RefreshCommand), nameof(NewWorkspaceCommand),
+        nameof(ClaimCommand), nameof(RefreshCommand), nameof(NewWorkspaceCommand),
         nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
     private bool _busy;
 
@@ -646,6 +646,26 @@ public partial class WorkspacesViewModel : PageViewModel
         {
             Busy = false;
         }
+    }
+
+    bool CanClaim => Selected is { Free: true } && Selected.Record.Stack is not null && !Busy;
+
+    /// <summary>Claim the selected free workspace straight from the detail pane: open the checkout overlay
+    /// pre-targeted at this workspace (reuse, as-is), so a click gives it a label and handling without
+    /// hunting for it in the pool's Checkout list.</summary>
+    [RelayCommand(CanExecute = nameof(CanClaim))]
+    private void Claim()
+    {
+        var item = Selected;
+        if (item is null || !item.Free || item.Record.Stack is not { } stack) return;
+        var group = Pools.FirstOrDefault(p => p.IsPool && p.Stack == stack);
+        if (group is null) return;
+
+        // Reuse the pool's checkout setup, then point the reuse target at exactly this workspace.
+        Checkout(group);
+        CheckoutNew = false;
+        CheckoutReuse = true;
+        CheckoutTarget = CheckoutFreeWorkspaces.FirstOrDefault(w => w.Name == item.Name) ?? CheckoutTarget;
     }
 
     bool CanRelease => Selected is { Claimed: true } && !Busy;

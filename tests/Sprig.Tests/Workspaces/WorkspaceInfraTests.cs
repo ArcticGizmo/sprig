@@ -114,6 +114,37 @@ public class WorkspaceInfraTests
     }
 
     [Fact]
+    public void TryStopContainers_stops_without_tearing_down()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, instances, docker) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+
+        var stopped = svc.TryStopContainers("feat-a");
+
+        Assert.True(stopped);
+        Assert.Contains("sprig-feat-a", docker.Stops);   // compose stop, not down
+        Assert.Empty(docker.Downs);                       // release is not a teardown
+        Assert.Equal("stopped", instances.TryLoad("feat-a")!.LastStatus);
+    }
+
+    [Fact]
+    public void TryStopContainers_is_a_no_op_when_docker_is_unavailable()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        SeedRepo(repo);
+        var (svc, _, docker) = Build(store);
+        svc.Create(Stack(repo), "feat-a");
+        docker.Available = false;
+
+        Assert.False(svc.TryStopContainers("feat-a"));
+        Assert.Empty(docker.Stops);
+    }
+
+    [Fact]
     public void Teardown_brings_infra_down_with_volumes_first()
     {
         using var store = new TempStore();

@@ -269,7 +269,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
     }
 }
 
-[Description("Release a claimed workspace back to the pool (docker down; nothing removed from disk)")]
+[Description("Release a claimed workspace back to the pool (docker stop; nothing removed from disk)")]
 public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
@@ -321,7 +321,7 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
 
         var record = cli.Pools.Release(workspace);
         return CliOutput.Ok(s.Json,
-            $"released '{record.Workspace}' (docker down; nothing removed from disk)",
+            $"released '{record.Workspace}' (docker stop; nothing removed from disk)",
             new { ok = true, workspace = record.Workspace, action = "release" });
     }
 }

@@ -16,6 +16,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **`sprig ws reset` → `sprig ws restart`** — the docker-infra bounce was renamed; `ws reset` stays as a deprecated alias for one release.
+- **Release stops, no longer tears down** — releasing a workspace now runs `docker compose stop` instead of `docker compose down`. Containers are halted (freeing CPU/RAM) but nothing is removed — networks and volumes stay put — so a released workspace really is just "free to take", and reclaiming it as-is only restarts the containers. (Teardown is still a separate, explicit action.)
+- **Workspace detail pane** — a free workspace now shows a **Claim** button that opens checkout pre-targeted at it (no hunting through the pool list). The Docker actions (Up / Down / Reset / Open in Docker) moved under a single **Manage** dropdown, and "Refresh status" is now just **Refresh**.
 
 ### Deprecated
 - **`sprig ws create`** — favour `sprig pool checkout`. It still works and nudges toward the pooled flow.

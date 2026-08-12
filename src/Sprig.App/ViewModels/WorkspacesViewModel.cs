@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Core.Graph;
 using Sprig.Core.Pools;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
@@ -608,6 +609,66 @@ public partial class WorkspacesViewModel : PageViewModel
         }
         catch { /* offline / no remotes — keep the instant list */ }
         finally { StartPointsLoading = false; }
+    }
+
+    // -- branch graph (GitKraken-style visual picker) ---------------------------
+
+    const int BranchGraphLimit = 150;
+
+    /// <summary>True while the branch-graph overlay is open.</summary>
+    [ObservableProperty] private bool _isBranchGraphOpen;
+    [ObservableProperty] private bool _branchGraphLoading;
+    [ObservableProperty] private string? _branchGraphError;
+
+    /// <summary>The laid-out graph the drawn lanes bind to, and the current commit's sha (ringed).</summary>
+    [ObservableProperty] private CommitGraph? _branchGraph;
+    [ObservableProperty] private string? _branchGraphCurrentSha;
+
+    /// <summary>The list rows drawn beside the lanes — one per commit, aligned by row height.</summary>
+    public ObservableCollection<GraphRowViewModel> GraphRows { get; } = [];
+
+    /// <summary>Open the visual branch graph for the checkout's stack (first repo), highlighting the current
+    /// branch. Selecting a branch/commit there sets the same start point the dropdown does.</summary>
+    [RelayCommand]
+    private async Task OpenBranchGraph()
+    {
+        var stack = CheckoutStack;
+        if (stack is null) return;
+
+        BranchGraphError = null;
+        GraphRows.Clear();
+        BranchGraph = null;
+        IsBranchGraphOpen = true;
+        BranchGraphLoading = true;
+        try
+        {
+            var existing = CheckoutNew ? null : CheckoutTarget?.Name;
+            var (commits, current) = await AppServices.RunAsync(() => Services.Pools.CommitGraphFor(stack, existing, BranchGraphLimit));
+            var graph = CommitGraphLayout.Build(commits);
+            var currentSha = current is null
+                ? null
+                : graph.Nodes.FirstOrDefault(n => n.Commit.Refs.Contains(current))?.Commit.Sha;
+
+            BranchGraph = graph;
+            BranchGraphCurrentSha = currentSha;
+            foreach (var n in graph.Nodes)
+                GraphRows.Add(new GraphRowViewModel(n, n.Commit.Sha == currentSha));
+        }
+        catch (Exception ex) { BranchGraphError = ex.Message; }
+        finally { BranchGraphLoading = false; }
+    }
+
+    [RelayCommand]
+    private void CloseBranchGraph() => IsBranchGraphOpen = false;
+
+    /// <summary>Pick a ref from the graph — a branch name (from a pill) or a commit sha (from a row) — as the
+    /// start point, then close the graph. Routes through the same selection the dropdown sets.</summary>
+    [RelayCommand]
+    private void PickGraphRef(string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference)) return;
+        SelectedStartPointItem = new StartPointItemViewModel(new StartPointChoice(reference, null, false, false));
+        IsBranchGraphOpen = false;
     }
 
     /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used

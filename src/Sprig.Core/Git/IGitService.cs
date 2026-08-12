@@ -80,6 +80,11 @@ public interface IGitService
     /// picker can flag "branch from where you are now".</summary>
     string? CurrentBranch(string repo);
 
+    /// <summary>Recent commits across every ref (<c>git log --all --date-order</c>, newest first, capped at
+    /// <paramref name="limit"/>) with parents and ref decorations — the input to the branch-graph view.
+    /// Best-effort: empty on any error.</summary>
+    IReadOnlyList<GraphCommit> ListCommitGraph(string repo, int limit);
+
     /// <summary>True if <paramref name="reference"/> resolves to a commit in the repo — used to check a
     /// chosen start point exists before branching from it (and to fall back per repo when it doesn't).</summary>
     bool RefExists(string repo, string reference);

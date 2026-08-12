@@ -1,3 +1,4 @@
+using Sprig.Core.Git;
 using Sprig.Core.Setup;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
@@ -282,6 +283,12 @@ public sealed partial class WorkspaceService
             .ToList();
         return new StartPointOptions(resolvedDefault, choices);
     }
+
+    /// <summary>Raw input for the branch-graph view of one repo: its recent commits (newest first, capped at
+    /// <paramref name="limit"/>) and the currently checked-out branch (null when detached, for the "current"
+    /// highlight). The caller lays it out (<see cref="Graph.CommitGraphLayout"/>).</summary>
+    public (IReadOnlyList<GraphCommit> Commits, string? CurrentBranch) CommitGraphData(string repoPath, int limit)
+        => (git.ListCommitGraph(repoPath, limit), git.CurrentBranch(repoPath));
 
     // A main/master branch on any remote (or local) — the "most likely what you want" chip.
     static bool IsDefaultBranchName(string reference)

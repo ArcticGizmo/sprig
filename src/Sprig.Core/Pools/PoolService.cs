@@ -95,6 +95,28 @@ public sealed class PoolService(
         return workspaces.StartPoints(paths, fetch);
     }
 
+    /// <summary>Recent commits + current branch for the branch-graph view. Uses the first repo of the stack
+    /// (an existing workspace's first worktree when reusing, else the first source repo) — the graph is
+    /// per-repo, and a single start-point ref spans the stack, so one representative repo drives the view.</summary>
+    public (IReadOnlyList<Git.GraphCommit> Commits, string? CurrentBranch) CommitGraphFor(
+        string stackName, string? existingWorkspace, int limit)
+    {
+        string path;
+        if (existingWorkspace is not null)
+        {
+            var rec = instances.TryLoad(existingWorkspace)
+                ?? throw new PoolException($"'{existingWorkspace}' is not a workspace in the '{stackName}' pool");
+            path = rec.Repos.Count > 0 ? rec.Repos[0].WorktreePath
+                : throw new PoolException($"workspace '{existingWorkspace}' has no repos");
+        }
+        else
+        {
+            var repos = resolver.Resolve(stackName, null).Repos;
+            path = repos.Count > 0 ? repos[0].Root : throw new StackException($"stack '{stackName}' has no repos");
+        }
+        return workspaces.CommitGraphData(path, limit);
+    }
+
     /// <summary>Check a proposed claim <paramref name="branch"/> against an existing pool workspace's repos
     /// without touching anything, so a UI/CLI can warn before committing to the checkout. For a brand-new
     /// workspace (<paramref name="existingWorkspace"/> null) there's nothing to conflict with yet — returns

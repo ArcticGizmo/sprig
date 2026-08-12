@@ -147,6 +147,44 @@ public sealed class GitService(IProcessRunner runner) : IGitService
         return r.Success && r.StdOut.Trim() is { Length: > 0 } name ? name : null;
     }
 
+    public IReadOnlyList<GraphCommit> ListCommitGraph(string repo, int limit)
+    {
+        // One line per commit; fields separated by US (0x1f), which can't appear in any of them. --all spans
+        // every ref; --date-order gives a stable newest-first order suited to a swimlane layout.
+        const string fmt = "%H%x1f%P%x1f%D%x1f%an%x1f%cI%x1f%s";
+        var r = runner.Run("git",
+            ["-C", repo, "log", "--all", "--date-order", $"--max-count={limit}", "--decorate=short",
+             $"--pretty=format:{fmt}"], repo);
+        if (!r.Success) return [];
+        var commits = new List<GraphCommit>();
+        foreach (var raw in r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var f = raw.TrimEnd('\r').Split((char)0x1f); // trim the CRLF's \r so the last field (subject) is clean
+            if (f.Length < 6) continue;
+            var parents = f[1].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            DateTimeOffset? when = DateTimeOffset.TryParse(f[4], out var d) ? d : null;
+            commits.Add(new GraphCommit(f[0], parents, ParseDecorations(f[2]), f[3], when, f[5]));
+        }
+        return commits;
+    }
+
+    // "%D" decorations look like "HEAD -> main, origin/main, tag: v1.0". Strip the HEAD arrow and drop the
+    // bare "HEAD" (detached) marker; keep branch names. Tags are dropped — the graph is a branch picker.
+    static IReadOnlyList<string> ParseDecorations(string decorations)
+    {
+        if (string.IsNullOrWhiteSpace(decorations)) return [];
+        var refs = new List<string>();
+        foreach (var raw in decorations.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = raw;
+            if (name.StartsWith("HEAD -> ", StringComparison.Ordinal)) name = name["HEAD -> ".Length..];
+            else if (name == "HEAD") continue;
+            if (name.StartsWith("tag: ", StringComparison.Ordinal)) continue;
+            refs.Add(name);
+        }
+        return refs;
+    }
+
     public bool RefExists(string repo, string reference)
         => runner.Run("git", ["-C", repo, "rev-parse", "--verify", "--quiet", $"{reference}^{{commit}}"], repo).Success;
 

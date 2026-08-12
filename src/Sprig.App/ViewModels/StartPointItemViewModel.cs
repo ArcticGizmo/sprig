@@ -16,15 +16,5 @@ public sealed class StartPointItemViewModel(StartPointChoice choice)
     public bool IsCurrent => choice.IsCurrent;
 
     /// <summary>A short relative age of the branch's tip commit, e.g. "3d ago" — empty when unknown.</summary>
-    public string When => choice.LastCommit is { } t ? Relative(t) : "";
-
-    static string Relative(DateTimeOffset t)
-    {
-        var d = DateTimeOffset.Now - t;
-        if (d.TotalMinutes < 1) return "just now";
-        if (d.TotalHours < 1) return $"{(int)d.TotalMinutes}m ago";
-        if (d.TotalDays < 1) return $"{(int)d.TotalHours}h ago";
-        if (d.TotalDays < 30) return $"{(int)d.TotalDays}d ago";
-        return $"{(int)(d.TotalDays / 30)}mo ago";
-    }
+    public string When => choice.LastCommit is { } t ? RelativeTime.Format(t) : "";
 }

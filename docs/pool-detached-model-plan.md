@@ -90,6 +90,12 @@ fetch-populated, ranked *current → default → recent*, with chips for main/ma
 recent-by-default and full-search-on-type (`StartPointFilter`). A chosen ref absent from a repo falls back
 to that repo's base (noted on the row).
 
+There's also a **visual branch graph** (GitKraken-style): a branch icon by the dropdown opens an overlay
+that draws the commit DAG in swimlanes (`git log --all` → `CommitGraphLayout` → a custom `GraphLinesControl`),
+current branch ringed, with the searchable dropdown on top to jump to a specific branch. Click a branch pill
+or a commit to set the start point. It reads the **first repo** of the stack (the graph is per-repo; the
+start point still spans the stack).
+
 > **Circle back (advanced, per-repo start point).** `startPoint` is currently one ref for the whole stack.
 > Decide later whether to offer a *different* start point per repo (e.g. repo A from `origin/main`, repo B
 > from `origin/release-2`), and how to resolve a ref that exists in some repos but not others. Tracked as a

@@ -26,6 +26,7 @@ public static class Anchors
     public const string WorkspaceDetail = "workspace.detail";
     public const string WorkspaceRepair = "workspace.repair";
     public const string WorkspaceDocker = "workspace.docker";
+    public const string PoolCheckoutConfirm = "pool.checkout.confirm";
     public const string StackNew = "stack.new";
     public const string StackCreate = "stack.create";
     public const string StackCloneName = "stack.cloneName";
@@ -58,6 +59,7 @@ public static class Anchors
         WorkspaceDetail,
         WorkspaceRepair,
         WorkspaceDocker,
+        PoolCheckoutConfirm,
         SettingsPortsInUse,
         StackCanvas,
     ];

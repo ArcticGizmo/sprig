@@ -99,8 +99,15 @@ never touched.
 **`templates` — seed from a different file.** By default the seed is the target `file`'s own content
 in the source repo (empty if it doesn't exist). That's a problem when the real file is gitignored and
 never committed — the repo instead commits a `.env.template`/`.env.example`. List those here and the
-worktree's copy is seeded from them (concatenated in order; missing ones skipped) before sprig's block
-is injected. Editable per env file in the app's repo editor ("Seed from templates").
+worktree's copy is seeded by **merging** the target file with the templates, in precedence order:
+
+- **target `file` first**, then each template in the order listed (missing ones skipped).
+- The seed is **de-duplicated by key** — a key is taken from the first (highest-precedence) source that
+  defines it, so a template only fills in keys the target file (or an earlier template) didn't already
+  provide. A template never overrides a value a higher-precedence source already gave.
+
+The merged seed is injected between sprig's marker block, so anything you set in `set` still wins over
+every seeded value regardless. Editable per env file in the app's repo editor ("Seed from templates").
 
 ```jsonc
 { "file": ".env.local", "templates": [".env.template"], "set": { "PORT": "${sprig.frontend}" } }

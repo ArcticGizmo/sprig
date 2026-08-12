@@ -78,6 +78,10 @@ public partial class StacksViewModel : PageViewModel
 
     /// <summary>The stack name — path-compatible, used as the filename/key, worktree folder and branch.</summary>
     [ObservableProperty] private string _newName = "";
+
+    /// <summary>Pool capacity (<c>MaxSlots</c>) as typed — the most workspaces this stack's pool may hold
+    /// at once. Held as text (like the port-range fields) so a mid-edit blank doesn't throw; parsed on save.</summary>
+    [ObservableProperty] private string _newCapacity = StackDefinition.DefaultMaxSlots.ToString(CultureInfo.InvariantCulture);
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _isCreating;
@@ -94,6 +98,29 @@ public partial class StacksViewModel : PageViewModel
         NameError = ValidateName(value);
         OnPropertyChanged(nameof(NameError));
         OnPropertyChanged(nameof(HasNameError));
+    }
+
+    /// <summary>Live validation of the capacity — non-null while it isn't a positive whole number.</summary>
+    public string? CapacityError { get; private set; }
+    public bool HasCapacityError => CapacityError is not null;
+
+    partial void OnNewCapacityChanged(string value)
+    {
+        CapacityError = ValidateCapacity(value);
+        OnPropertyChanged(nameof(CapacityError));
+        OnPropertyChanged(nameof(HasCapacityError));
+    }
+
+    /// <summary>Null when the capacity is a positive whole number (or still empty); otherwise the reason.
+    /// The real ceiling (ports × capacity fitting the range) is enforced by <c>StackStore.Save</c>; this
+    /// is just the "is it a sensible number" gate so the field can't push a zero or a word into save.</summary>
+    static string? ValidateCapacity(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0) return null;
+        return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= 1
+            ? null
+            : "Capacity must be a whole number of 1 or more.";
     }
 
     /// <summary>
@@ -353,6 +380,7 @@ public partial class StacksViewModel : PageViewModel
         Error = null; Status = null;
         EditingOriginalName = stack.Name;
         NewName = stack.Name;
+        NewCapacity = stack.MaxSlots.ToString(CultureInfo.InvariantCulture);
 
         foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
@@ -390,6 +418,7 @@ public partial class StacksViewModel : PageViewModel
         CloningStack = false;
         EditingOriginalName = null;
         NewName = "";
+        NewCapacity = StackDefinition.DefaultMaxSlots.ToString(CultureInfo.InvariantCulture);
         foreach (var c in RepoChoices) c.IsSelected = false;
         foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
@@ -538,9 +567,24 @@ public partial class StacksViewModel : PageViewModel
         var shares = StackShares.Derive(repos, ports, bindings);
 
         Error = null; Status = null;
+
+        if (ValidateCapacity(NewCapacity) is { } capacityError) { Error = capacityError; return; }
+        // Blank reads as "leave it at the default" rather than an error, matching the field's empty state.
+        var maxSlots = int.TryParse(NewCapacity.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : StackDefinition.DefaultMaxSlots;
+
         try
         {
-            Services.Stacks.Save(new StackDefinition { Name = name, Repos = repos, Ports = ports, Bindings = bindings, Shares = shares });
+            // Editing preserves the fields the canvas doesn't own (stack-carried setup, schema) by starting
+            // from the stored definition; a new stack starts blank. Either way the canvas-owned fields —
+            // repos, ports, bindings, shares, and capacity — are overwritten from the builder.
+            var basis = EditingOriginalName is { } editing ? Services.Stacks.Get(editing) : null;
+            var definition = (basis ?? new StackDefinition { Name = name }) with
+            {
+                Name = name, Repos = repos, Ports = ports, Bindings = bindings, Shares = shares, MaxSlots = maxSlots,
+            };
+            Services.Stacks.Save(definition);
 
             // Editing with a changed name: the save wrote the new file, so drop the old one.
             var edited = EditingOriginalName;

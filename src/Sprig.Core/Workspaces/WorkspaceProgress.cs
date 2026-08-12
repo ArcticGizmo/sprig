@@ -15,6 +15,21 @@ public enum WorkspaceStepState
     Done,
 }
 
+/// <summary>Outcome of a tolerant infra start (<see cref="WorkspaceService.TryStartInfra"/>): the pool and
+/// refresh flows want "bring it up if you can", not a hard requirement — so instead of letting
+/// <c>docker up</c> throw a raw "cannot connect to the Docker daemon" when Docker Desktop is stopped, the
+/// start reports which of these happened and the caller renders it on the checklist.</summary>
+public enum InfraStartResult
+{
+    /// <summary>The workspace has no docker infrastructure — nothing to start (not a problem).</summary>
+    NoInfra,
+    /// <summary>Docker isn't reachable (CLI missing or the engine stopped) — infra was left down, on
+    /// purpose, rather than crashing the operation.</summary>
+    DockerNotRunning,
+    /// <summary>Containers were brought up.</summary>
+    Started,
+}
+
 /// <summary>One planned unit of work in a workspace operation, identified by a stable <paramref name="Id"/>
 /// so a progress report can target the row the plan created for it. <see cref="SubStep"/> marks a child
 /// row (e.g. one setup command) that a UI indents under its parent.</summary>

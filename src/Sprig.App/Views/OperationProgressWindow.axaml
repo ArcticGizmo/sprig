@@ -65,9 +65,11 @@
                                                FontFamily="{Binding LabelFont}"
                                                Foreground="{Binding LabelBrush}" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis" MaxWidth="320" />
-                                    <TextBlock Text="{Binding Detail}" FontSize="11"
+                                    <!-- Selectable so a failure/warning note (e.g. a Docker error) can be
+                                         copied out; wraps rather than trims so the whole message is readable. -->
+                                    <SelectableTextBlock Text="{Binding Detail}" FontSize="11"
                                                Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis" MaxWidth="200"
+                                               TextWrapping="Wrap" MaxWidth="220"
                                                IsVisible="{Binding HasDetail}" />
                                 </StackPanel>
                             </Grid>
@@ -76,10 +78,11 @@
                             <Border IsVisible="{Binding ShowOutput}" Margin="24,4,0,2"
                                     Background="#12000000" BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="1" CornerRadius="4" Padding="8,6">
-                                <TextBlock Text="{Binding LiveOutput}"
+                                <!-- Selectable + wrapping so the live command tail can be copied in full. -->
+                                <SelectableTextBlock Text="{Binding LiveOutput}"
                                            FontFamily="Cascadia Code, Consolas, monospace" FontSize="11"
                                            Foreground="{StaticResource MutedBrush}"
-                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                           TextWrapping="Wrap" />
                             </Border>
                         </StackPanel>
                     </DataTemplate>
@@ -89,7 +92,8 @@
 
         <!-- Summary + Close -->
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,18,0,0">
-            <TextBlock Grid.Column="0" Text="{Binding Summary}" IsVisible="{Binding HasSummary}"
+            <!-- Selectable so a failure summary (which carries the exception message) can be copied out. -->
+            <SelectableTextBlock Grid.Column="0" Text="{Binding Summary}" IsVisible="{Binding HasSummary}"
                        Foreground="{Binding SummaryBrush}" FontSize="12.5" TextWrapping="Wrap"
                        VerticalAlignment="Center" Margin="0,0,12,0" />
             <Button Grid.Column="1" x:Name="CloseButton" Content="Close" Click="OnCloseClick"

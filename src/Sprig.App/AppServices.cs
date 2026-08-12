@@ -3,6 +3,7 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Init;
+using Sprig.Core.Pools;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
@@ -23,6 +24,10 @@ public sealed class AppServices
     public IGitService Git { get; }
     public IDockerService Docker { get; }
     public WorkspaceService Workspaces { get; }
+
+    /// <summary>The pool lifecycle over the stack's <c>MaxSlots</c> ceiling: checkout / release / status.
+    /// A thin query+allocation layer over the same <c>InstanceStore</c> the workspace list reads.</summary>
+    public PoolService Pools { get; }
     public WorkspaceReconciler Reconciler { get; }
     public RepoRegistryStore Repos { get; }
     public StackStore Stacks { get; }
@@ -62,6 +67,7 @@ public sealed class AppServices
         Repos = new RepoRegistryStore(Paths);
         Stacks = new StackStore(Paths, Repos, instances);
         StackResolver = new StackResolver(Repos, Stacks, Git);
+        Pools = new PoolService(Stacks, instances, StackResolver, Workspaces, Paths);
         Init = new InitInspector(Git);
         Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Stacks, StackResolver, Workspaces);
     }

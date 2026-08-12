@@ -18,16 +18,27 @@
             <TextBlock DockPanel.Dock="Top" Text="{Binding OverlayTitle}" FontSize="18" FontWeight="SemiBold"
                        Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" Margin="0,0,0,14" />
 
-            <!-- Name — always visible: you name the stack, then wire it on the canvas. -->
-            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,14">
-                <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
-                <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
-                           Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
-                <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
-                           Foreground="{StaticResource MutedBrush}"
-                           Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
-            </StackPanel>
+            <!-- Name + capacity — always visible: you name the stack, size its pool, then wire it on the canvas. -->
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,16,120" Margin="0,0,0,14">
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                    <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="e.g. web+api" />
+                    <TextBlock IsVisible="{Binding HasNameError}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{StaticResource DangerBrush}" Text="{Binding NameError}" />
+                    <TextBlock IsVisible="{Binding !HasNameError}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedBrush}"
+                               Text="Used for the worktree folder, branch and CLI — letters, numbers, and . _ + - (no spaces)." />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="4">
+                    <TextBlock Text="Capacity" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                               ToolTip.Tip="The most workspaces this stack's pool may hold at once." />
+                    <TextBox Text="{Binding NewCapacity, Mode=TwoWay}" PlaceholderText="3" />
+                    <TextBlock IsVisible="{Binding HasCapacityError}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{StaticResource DangerBrush}" Text="{Binding CapacityError}" />
+                    <TextBlock IsVisible="{Binding !HasCapacityError}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedBrush}" Text="max workspaces at once" />
+                </StackPanel>
+            </Grid>
             <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,14,0,0">
                 <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                            Foreground="{StaticResource DangerBrush}" Text="{Binding Error}" TextWrapping="Wrap" />

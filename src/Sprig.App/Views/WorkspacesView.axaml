@@ -21,70 +21,110 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="New workspace" Command="{Binding NewWorkspaceCommand}"
                             AutomationProperties.AutomationId="workspace.new"
-                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                            ToolTip.Tip="Ad-hoc create — lets you stand up a subset of a stack's repos. The usual path is Checkout on a pool below." />
                     <Button Content="Refresh" Command="{Binding RefreshCommand}" />
                 </StackPanel>
             </Grid>
 
-            <ListBox Grid.Row="1" IsVisible="{Binding HasWorkspaces}"
-                     ItemsSource="{Binding Workspaces}" SelectedItem="{Binding Selected, Mode=TwoWay}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
-                        <StackPanel Spacing="2" Margin="4,6">
-                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" />
-                            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
-                                <Run Text="{Binding Stack}" /><Run Text="  ·  " /><Run Text="{Binding Status}" />
-                            </TextBlock>
-                            <TextBlock IsVisible="{Binding IsPartial}" FontSize="11" TextTrimming="CharacterEllipsis"
-                                       Foreground="{StaticResource WarnBrush}">
-                                <Run Text="partial · " /><Run Text="{Binding PartialSummary}" />
-                            </TextBlock>
-                            <TextBlock IsVisible="{Binding TeardownFailed}" FontSize="11" TextTrimming="CharacterEllipsis"
-                                       Foreground="{StaticResource WarnBrush}">
-                                <Run Text="teardown failed — retry to finish" />
-                            </TextBlock>
-                        </StackPanel>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+            <!-- Grouped by pool: one card per stack (capacity + checkout), its workspaces listed under it.
+                 The rows across every pool share a single selection (VM.Selected), so picking one anywhere
+                 drives the detail pane and deselects the rest. -->
+            <ScrollViewer Grid.Row="1" IsVisible="{Binding HasPools}" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Pools}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PoolGroupViewModel">
+                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,10">
+                                <StackPanel Spacing="8">
+                                    <!-- Pool header: stack · capacity · status · checkout -->
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding Stack}" FontWeight="SemiBold" FontSize="14"
+                                                           Foreground="{StaticResource TitleBrush}" />
+                                                <TextBlock Text="{Binding CapacitySummary}" FontSize="12" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource AccentBrush}" IsVisible="{Binding IsPool}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding StatusSummary}" FontSize="11"
+                                                       Foreground="{StaticResource MutedBrush}"
+                                                       IsVisible="{Binding StatusSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Checkout" VerticalAlignment="Center"
+                                                FontSize="12" Padding="12,4" IsVisible="{Binding IsPool}"
+                                                IsEnabled="{Binding CanCheckout}"
+                                                ToolTip.Tip="{Binding CheckoutBlockedReason}"
+                                                Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                                Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).CheckoutCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+
+                                    <!-- Empty pool: nothing built yet -->
+                                    <TextBlock IsVisible="{Binding IsEmptyPool}" FontSize="11" TextWrapping="Wrap"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               Text="No workspaces built yet — Checkout builds the first one." />
+
+                                    <!-- Workspaces in this pool -->
+                                    <ListBox IsVisible="{Binding HasWorkspaces}" ItemsSource="{Binding Workspaces}"
+                                             Background="Transparent" Padding="0"
+                                             SelectedItem="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).Selected, Mode=TwoWay}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
+                                                <Grid ColumnDefinitions="Auto,*" Margin="0,3">
+                                                    <!-- claimed ● / free ○ dot -->
+                                                    <TextBlock Grid.Column="0" Text="●" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                               IsVisible="{Binding Claimed}" Foreground="{StaticResource OkBrush}" />
+                                                    <TextBlock Grid.Column="0" Text="○" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                               IsVisible="{Binding Free}" Foreground="{StaticResource MutedBrush}" />
+                                                    <StackPanel Grid.Column="1" Spacing="1">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" />
+                                                            <TextBlock Text="⚠ degraded" FontSize="11" VerticalAlignment="Center"
+                                                                       IsVisible="{Binding SetupFailed}" Foreground="{StaticResource WarnBrush}" />
+                                                        </StackPanel>
+                                                        <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                                                   TextTrimming="CharacterEllipsis">
+                                                            <Run Text="{Binding StateSummary}" /><Run Text="   " /><Run Text="{Binding AgeSummary}" />
+                                                        </TextBlock>
+                                                        <TextBlock IsVisible="{Binding IsPartial}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{StaticResource WarnBrush}">
+                                                            <Run Text="partial · " /><Run Text="{Binding PartialSummary}" />
+                                                        </TextBlock>
+                                                        <TextBlock IsVisible="{Binding TeardownFailed}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{StaticResource WarnBrush}"
+                                                                   Text="teardown failed — retry to finish" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
         </Grid>
 
         <!-- Right: detail card -->
         <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="8" Padding="18">
             <Panel>
-                <!-- empty: no stacks upstream — point back to Stacks -->
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440" Spacing="12">
-                    <StackPanel.IsVisible>
-                        <MultiBinding Converter="{x:Static BoolConverters.And}">
-                            <Binding Path="!HasWorkspaces" />
-                            <Binding Path="!HasAnyStacks" />
-                        </MultiBinding>
-                    </StackPanel.IsVisible>
+                <!-- empty: no pools at all (no stacks upstream) — point back to Stacks -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440" Spacing="12"
+                            IsVisible="{Binding !HasPools}">
                     <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
-                               Text="Workspaces are created from a stack — and you don't have one yet. Build a stack first, then spin up a workspace from it." />
+                               Text="Workspaces come from a stack's pool — and you don't have a stack yet. Build one first, then check out a workspace from it." />
                     <Button Content="Build a stack  →" Command="{Binding BuildStackCommand}"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Center" />
                 </StackPanel>
 
-                <!-- empty: stacks exist, no workspaces yet -->
+                <!-- pools exist, nothing selected: point at Checkout -->
                 <TextBlock VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                            MaxWidth="440" Foreground="{StaticResource MutedBrush}"
-                           Text="No workspaces yet.&#x0a;Click &quot;New workspace&quot; to create your first isolated workspace from a stack.">
+                           Text="Pick a workspace to see its detail — or Checkout from a pool to claim one.">
                     <TextBlock.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
-                            <Binding Path="!HasWorkspaces" />
-                            <Binding Path="HasAnyStacks" />
-                        </MultiBinding>
-                    </TextBlock.IsVisible>
-                </TextBlock>
-
-                <!-- select prompt -->
-                <TextBlock VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"
-                           Foreground="{StaticResource MutedBrush}" Text="Select a workspace to see its detail.">
-                    <TextBlock.IsVisible>
-                        <MultiBinding Converter="{x:Static BoolConverters.And}">
-                            <Binding Path="HasWorkspaces" />
+                            <Binding Path="HasPools" />
                             <Binding Path="!HasSelected" />
                         </MultiBinding>
                     </TextBlock.IsVisible>
@@ -103,6 +143,18 @@
                                 <Run Text="   status: " /><Run Text="{Binding Selected.Status}" />
                                 <Run Text="   drift: " /><Run Text="{Binding Selected.Drift, FallbackValue='—'}" />
                             </TextBlock>
+                            <!-- Pool state: claimed (with its label) or free, plus how long ago. -->
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="●" FontSize="12" VerticalAlignment="Center"
+                                           IsVisible="{Binding Selected.Claimed}" Foreground="{StaticResource OkBrush}" />
+                                <TextBlock Text="○" FontSize="12" VerticalAlignment="Center"
+                                           IsVisible="{Binding Selected.Free}" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource FgBrush}">
+                                    <Run Text="{Binding Selected.StateSummary}" /><Run Text="   " /><Run Text="{Binding Selected.AgeSummary}" />
+                                </TextBlock>
+                                <TextBlock Text="⚠ degraded — setup failed" FontSize="12" VerticalAlignment="Center"
+                                           IsVisible="{Binding Selected.SetupFailed}" Foreground="{StaticResource WarnBrush}" />
+                            </StackPanel>
                             <!-- A partial workspace holds only some of its stack's repos; say which are
                                  missing (and which stack ports went unprovisioned as a result). -->
                             <TextBlock IsVisible="{Binding Selected.IsPartial}" FontSize="12" TextWrapping="Wrap"
@@ -125,6 +177,10 @@
                                     <Setter Property="Margin" Value="0,0,8,8" />
                                 </Style>
                             </WrapPanel.Styles>
+                            <Button Content="Release" Command="{Binding ReleaseCommand}"
+                                    IsVisible="{Binding Selected.Claimed}"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                    ToolTip.Tip="Hand this workspace back to its pool: stop its infra, keep all disk state. Recoverable by an as-is re-checkout." />
                             <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
                                     ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
                             <Button Content="Repair" Command="{Binding RepairCommand}"
@@ -154,7 +210,8 @@
                         <!-- status / error -->
                         <TextBlock IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{StaticResource OkBrush}" Text="{Binding StatusMessage}" TextWrapping="Wrap" />
-                        <TextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                        <!-- Selectable so the error (often an exception message) can be copied for debugging. -->
+                        <SelectableTextBlock IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding Error}" />
 
                         <!-- docker status -->
@@ -325,6 +382,80 @@
                                 AutomationProperties.AutomationId="workspace.create"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                         <Button Content="Cancel" Command="{Binding CancelCreateCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Checkout overlay -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsCheckingOut}" Background="#B0000000"
+                Margin="-28,-20,-24,-16">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="22" Width="440"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}">
+                        <Run Text="Checkout — " /><Run Text="{Binding CheckoutStack}" />
+                    </TextBlock>
+
+                    <!-- Target: reuse a free workspace, or build a new one within capacity. -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Workspace" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <RadioButton GroupName="checkoutTarget" Content="Reuse a free workspace"
+                                     IsEnabled="{Binding CanReuseWorkspace}"
+                                     IsChecked="{Binding CheckoutReuse, Mode=TwoWay}" />
+                        <ComboBox ItemsSource="{Binding CheckoutFreeWorkspaces}" SelectedItem="{Binding CheckoutTarget, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch" Margin="24,0,0,0"
+                                  IsVisible="{Binding CheckoutReuse}" IsEnabled="{Binding CheckoutReuse}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
+                                    <TextBlock>
+                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding StateSummary}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <RadioButton GroupName="checkoutTarget" Content="Build a new workspace"
+                                     IsEnabled="{Binding CanCheckoutNew}"
+                                     IsChecked="{Binding CheckoutNew, Mode=TwoWay}" />
+                    </StackPanel>
+
+                    <!-- Handling: only when reusing. as-is resumes; fresh resyncs everything to base (wipes
+                         volumes); refresh resyncs a chosen subset. -->
+                    <StackPanel Spacing="6" IsVisible="{Binding ShowHandling}">
+                        <TextBlock Text="Handling" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeAsIs, Mode=TwoWay}"
+                                     Content="As-is — resume exactly as it was left"
+                                     ToolTip.Tip="Fastest: no git changes, volumes and installed deps kept." />
+                        <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeFresh, Mode=TwoWay}"
+                                     Content="Fresh — resync every repo to base, wipe volumes"
+                                     ToolTip.Tip="Clean base and clean DB; installed deps kept (setup reconciles them)." />
+                        <RadioButton GroupName="checkoutMode" IsChecked="{Binding ModeRefresh, Mode=TwoWay}"
+                                     Content="Refresh some repos — resync only the ones you pick"
+                                     ToolTip.Tip="Move chosen repos to base; the rest stay as they are, volumes kept." />
+                        <ItemsControl ItemsSource="{Binding CheckoutRefreshRepos}" Margin="24,2,0,0"
+                                      IsVisible="{Binding ShowRefreshRepos}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WorkspaceRepoChoiceViewModel">
+                                    <CheckBox IsChecked="{Binding Included, Mode=TwoWay}" Content="{Binding Name}" Margin="0,1" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Label: required, describes what this checkout is for. -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Label" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <TextBox Text="{Binding CheckoutLabel, Mode=TwoWay}" PlaceholderText="e.g. billing-bug repro" />
+                    </StackPanel>
+
+                    <TextBlock IsVisible="{Binding CheckoutError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding CheckoutError}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Checkout" Command="{Binding ConfirmCheckoutCommand}"
+                                AutomationProperties.AutomationId="pool.checkout.confirm"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                        <Button Content="Cancel" Command="{Binding CancelCheckoutCommand}" />
                     </StackPanel>
                 </StackPanel>
             </Border>

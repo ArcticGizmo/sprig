@@ -25,6 +25,49 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     public string Stack => Record.Stack ?? "(ad-hoc)";
     public string ReposSummary => string.Join(", ", Record.Repos.Select(r => r.Name));
 
+    // -- pool state (from InstanceRecord) --------------------------------------
+
+    /// <summary>True when this workspace is checked out (in use). Drives the claimed vs. free dot/row style.</summary>
+    public bool Claimed => Record.Claimed;
+
+    /// <summary>Convenience inverse of <see cref="Claimed"/> for binding a "can check out" affordance.</summary>
+    public bool Free => !Record.Claimed;
+
+    /// <summary>The checkout label while claimed; kept as a "last used" hint after release (null if never labelled).</summary>
+    public string? Label => Record.Label;
+
+    /// <summary>True when a setup step failed on the last checkout/refresh — this workspace is degraded,
+    /// not cleanly claimed. Drives the warning badge.</summary>
+    public bool SetupFailed => Record.SetupFailed;
+
+    /// <summary>One-line state for the row: claimed (with label) or free (with the label it last carried).</summary>
+    public string StateSummary => Record.Claimed
+        ? (string.IsNullOrWhiteSpace(Record.Label) ? "claimed" : $"claimed · “{Record.Label}”")
+        : (string.IsNullOrWhiteSpace(Record.Label) ? "free" : $"free · was “{Record.Label}”");
+
+    /// <summary>Relative age hint: how long ago this workspace was claimed (if in use) or freed (if released).
+    /// Empty when neither timestamp is set (a freshly built, never-released workspace).</summary>
+    public string AgeSummary
+    {
+        get
+        {
+            if (Record.Claimed && Record.ClaimedAt is { } claimed) return $"claimed {Ago(claimed)}";
+            if (!Record.Claimed && Record.LastUsedAt is { } freed) return $"freed {Ago(freed)}";
+            return "";
+        }
+    }
+
+    /// <summary>Compact "2h" / "5m" / "3d" relative age from a past timestamp to now.</summary>
+    static string Ago(DateTimeOffset when)
+    {
+        var span = DateTimeOffset.UtcNow - when;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        if (span.TotalMinutes < 1) return "just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+
     /// <summary>True when this workspace holds a subset of its stack's repos — drives the list badge.</summary>
     public bool IsPartial => Record.IsPartial;
 

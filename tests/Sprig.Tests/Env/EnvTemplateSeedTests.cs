@@ -80,19 +80,39 @@ public class EnvTemplateSeedTests : IDisposable
     }
 
     [Fact]
-    public void The_real_target_files_values_win_over_a_template()
+    public void The_real_target_files_values_win_a_shared_key_but_distinct_template_keys_merge()
     {
-        // Both the real (gitignored) target file AND a committed template exist — the developer's
-        // real values are what the worktree wants, so they win; the template is only a fallback.
-        File.WriteAllText(Path.Combine(_source, ".env.local"), "FROM_TARGET=1\n");
-        File.WriteAllText(Path.Combine(_source, ".env.template"), "FROM_TEMPLATE=1\n");
+        // Both the real (gitignored) target file AND a committed template exist. For a key they SHARE,
+        // the developer's real value wins (the target has precedence); a key ONLY the template defines
+        // is still merged in — a template fills gaps, it never overrides.
+        File.WriteAllText(Path.Combine(_source, ".env.local"), "SHARED=fromtarget\nONLY_TARGET=1\n");
+        File.WriteAllText(Path.Combine(_source, ".env.template"), "SHARED=fromtemplate\nONLY_TEMPLATE=1\n");
         var config = Config(".env.local", [".env.template"], ("PORT", "${sprig.ports.frontend}"));
 
         _svc.Apply(config, _source, _worktree, Scope());
 
         var lines = WorktreeText(".env.local").Split('\n');
-        Assert.Contains("FROM_TARGET=1", lines);
-        Assert.DoesNotContain("FROM_TEMPLATE=1", lines);
+        Assert.Contains("SHARED=fromtarget", lines);          // target wins the shared key
+        Assert.DoesNotContain("SHARED=fromtemplate", lines);  // the template's value for it is dropped
+        Assert.Contains("ONLY_TARGET=1", lines);
+        Assert.Contains("ONLY_TEMPLATE=1", lines);            // distinct template key merged in
+    }
+
+    [Fact]
+    public void An_earlier_template_wins_a_shared_key_over_a_later_one()
+    {
+        // No real target file — the two templates merge in order, and the first to define a key wins it.
+        File.WriteAllText(Path.Combine(_source, ".env.a"), "SHARED=fromA\nONLY_A=1\n");
+        File.WriteAllText(Path.Combine(_source, ".env.b"), "SHARED=fromB\nONLY_B=1\n");
+        var config = Config(".env.local", [".env.a", ".env.b"], ("PORT", "${sprig.ports.frontend}"));
+
+        _svc.Apply(config, _source, _worktree, Scope());
+
+        var lines = WorktreeText(".env.local").Split('\n');
+        Assert.Contains("SHARED=fromA", lines);
+        Assert.DoesNotContain("SHARED=fromB", lines);
+        Assert.Contains("ONLY_A=1", lines);
+        Assert.Contains("ONLY_B=1", lines);
     }
 
     [Fact]

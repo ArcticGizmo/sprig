@@ -120,8 +120,9 @@ public sealed class PoolService(
         var resolved = resolver.Resolve(stackName, null);
         workspaces.Create(resolved, name, progress); // fresh worktrees + env + compose + setup
         progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Running));
-        workspaces.TryStartInfra(name);
-        progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Done));
+        // A stopped Docker doesn't fail the checkout — the workspace is still claimed; the infra row just
+        // reports the skip so the user knows to start Docker and bring it up.
+        progress?.Report(WorkspaceService.InfraStartReport(workspaces.TryStartInfra(name)));
         return MarkClaimed(name, label, index);
     }
 
@@ -162,8 +163,7 @@ public sealed class PoolService(
         {
             case CheckoutMode.AsIs:
                 progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Running));
-                workspaces.TryStartInfra(workspace);
-                progress?.Report(new WorkspaceStepProgress(RefreshStepIds.Infra, WorkspaceStepState.Done));
+                progress?.Report(WorkspaceService.InfraStartReport(workspaces.TryStartInfra(workspace)));
                 break;
             case CheckoutMode.Fresh:
                 workspaces.RefreshToBase(workspace, onlyRepos: null, force, removeVolumes: true, progress, resolvedRepos);

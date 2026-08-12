@@ -487,28 +487,49 @@ public sealed partial class WorkspaceService(
         Up(workspace);
     }
 
+    /// <summary>The checklist note shown on the infra row when a start was skipped because Docker isn't
+    /// running — a plain, actionable message instead of the raw daemon-connection exception.</summary>
+    public const string DockerNotRunningNote =
+        "Docker isn't running — infrastructure not started. Start Docker Desktop, then bring it up.";
+
+    /// <summary>Map a tolerant infra-start outcome to its report on the shared <see cref="RefreshStepIds.Infra"/>
+    /// row: a clean Done when it started or there was nothing to start, a Warning (never a hard Error) when
+    /// Docker isn't reachable — so the row explains the skip rather than the operation crashing on it.</summary>
+    internal static WorkspaceStepProgress InfraStartReport(InfraStartResult result) => result switch
+    {
+        InfraStartResult.DockerNotRunning => new(RefreshStepIds.Infra, WorkspaceStepState.Warning, DockerNotRunningNote),
+        InfraStartResult.NoInfra => new(RefreshStepIds.Infra, WorkspaceStepState.Done, "no Docker infrastructure"),
+        _ => new(RefreshStepIds.Infra, WorkspaceStepState.Done),
+    };
+
     /// <summary>Bring infra up if there's any to run and Docker is reachable; otherwise a no-op.
     /// Unlike <see cref="Up"/>, this never throws on a repo-only workspace or a stopped Docker — the
-    /// pool/refresh flows want "make it running if possible", not a hard requirement. Returns whether
-    /// containers were actually started.</summary>
-    public bool TryStartInfra(string workspace)
+    /// pool/refresh flows want "make it running if possible", not a hard requirement. The returned
+    /// <see cref="InfraStartResult"/> says which happened so the caller can surface a stopped engine on
+    /// the checklist (rather than letting <c>docker up</c> throw a raw daemon-connection error).</summary>
+    public InfraStartResult TryStartInfra(string workspace)
     {
         var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
         var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
-        if (infraRepos.Count == 0 || !docker.IsAvailable()) return false;
+        if (infraRepos.Count == 0) return InfraStartResult.NoInfra;
+        // IsAvailable only proves the CLI is installed; IsEngineRunning is the reachability probe. Checking
+        // it here means a stopped Docker Desktop is a clean skip, not a "cannot connect to the Docker daemon"
+        // exception thrown mid-checkout.
+        if (!docker.IsAvailable() || !docker.IsEngineRunning()) return InfraStartResult.DockerNotRunning;
         foreach (var repo in infraRepos)
             docker.Up(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
         instances.Save(record with { LastStatus = "running" });
-        return true;
+        return InfraStartResult.Started;
     }
 
     /// <summary>Stop infra if there's any and Docker is reachable; otherwise a no-op. <paramref name="removeVolumes"/>
-    /// wipes data. The tolerant counterpart to <see cref="Down"/>, for the pool/refresh flows.</summary>
+    /// wipes data. The tolerant counterpart to <see cref="Down"/>, for the pool/refresh flows. A stopped
+    /// engine is a no-op too (nothing is up to stop), so release never throws when Docker is down.</summary>
     public bool TryStopInfra(string workspace, bool removeVolumes = false)
     {
         var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
         var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
-        if (infraRepos.Count == 0 || !docker.IsAvailable()) return false;
+        if (infraRepos.Count == 0 || !docker.IsAvailable() || !docker.IsEngineRunning()) return false;
         foreach (var repo in infraRepos)
             docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes);
         instances.Save(record with { LastStatus = "stopped" });
@@ -632,11 +653,11 @@ public sealed partial class WorkspaceService(
 
         // Restart infra so the regenerated compose takes effect; a fresh checkout wipes volumes first
         // (clean runtime data), the others keep them. Both helpers are tolerant — a repo-only workspace
-        // or a stopped Docker just skips, so the refresh itself still succeeds.
+        // or a stopped Docker just skips, so the refresh itself still succeeds; a stopped engine is
+        // relayed as a Warning on the infra row rather than silently reported as Done.
         progress?.Report(new(RefreshStepIds.Infra, WorkspaceStepState.Running));
         TryStopInfra(workspace, removeVolumes);
-        TryStartInfra(workspace);
-        progress?.Report(new(RefreshStepIds.Infra, WorkspaceStepState.Done));
+        progress?.Report(InfraStartReport(TryStartInfra(workspace)));
 
         return instances.TryLoad(workspace) ?? refreshed;
     }

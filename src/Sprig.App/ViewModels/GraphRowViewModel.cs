@@ -26,6 +26,10 @@ public sealed class GraphRowViewModel
     public bool IsCurrent { get; }
     public string When => Node.Commit.When is { } t ? RelativeTime.Format(t) : "";
 
+    /// <summary>Row height: message on the first line, and a second line of branch tags when present. The
+    /// graph control is fed the same heights and pins each dot to the first (message) line, so dots align.</summary>
+    public double RowHeight => HasRefs ? 50 : 28;
+
     static GraphRefViewModel.RefKind Classify(string reference, string? currentBranch)
     {
         if (reference == currentBranch) return GraphRefViewModel.RefKind.Current;

@@ -10,7 +10,8 @@ namespace Sprig.App.Controls;
 /// share <see cref="RowHeight"/> so dots line up with their row. Height/width come from the laid-out graph.</summary>
 public sealed class GraphLinesControl : Control
 {
-    public const double RowHeight = 32;
+    public const double RowHeight = 28;      // a single (message) line — the uniform fallback height
+    const double FirstLineCenter = 14;       // dot y within a row: centred on the first (message) line
     const double LaneWidth = 20;
     const double DotRadius = 7;
     const double Pad = 12; // left inset before lane 0
@@ -31,31 +32,56 @@ public sealed class GraphLinesControl : Control
     public static readonly StyledProperty<string?> SelectedShaProperty =
         AvaloniaProperty.Register<GraphLinesControl, string?>(nameof(SelectedSha));
 
+    /// <summary>Per-row heights (aligned with the list rows beside the graph, which vary — taller when a
+    /// commit carries branch tags). Null falls back to a uniform <see cref="RowHeight"/>.</summary>
+    public static readonly StyledProperty<IReadOnlyList<double>?> RowHeightsProperty =
+        AvaloniaProperty.Register<GraphLinesControl, IReadOnlyList<double>?>(nameof(RowHeights));
+
     public CommitGraph? Graph { get => GetValue(GraphProperty); set => SetValue(GraphProperty, value); }
     public string? CurrentSha { get => GetValue(CurrentShaProperty); set => SetValue(CurrentShaProperty, value); }
     public string? SelectedSha { get => GetValue(SelectedShaProperty); set => SetValue(SelectedShaProperty, value); }
+    public IReadOnlyList<double>? RowHeights { get => GetValue(RowHeightsProperty); set => SetValue(RowHeightsProperty, value); }
 
     static GraphLinesControl()
     {
-        AffectsRender<GraphLinesControl>(GraphProperty, CurrentShaProperty, SelectedShaProperty);
-        AffectsMeasure<GraphLinesControl>(GraphProperty);
+        AffectsRender<GraphLinesControl>(GraphProperty, CurrentShaProperty, SelectedShaProperty, RowHeightsProperty);
+        AffectsMeasure<GraphLinesControl>(GraphProperty, RowHeightsProperty);
     }
 
     static IBrush LaneBrush(int lane) => new SolidColorBrush(Palette[((lane % Palette.Length) + Palette.Length) % Palette.Length]);
     static double LaneX(int lane) => Pad + LaneWidth / 2 + lane * LaneWidth;
-    static double RowY(int row) => RowHeight / 2 + row * RowHeight;
+
+    double HeightOf(int row)
+    {
+        var h = RowHeights;
+        return h is not null && row < h.Count ? h[row] : RowHeight;
+    }
+
+    // Cumulative top of each row + the y-centre for a given row, honouring variable heights.
+    double[] RowTops(int count)
+    {
+        var tops = new double[count];
+        double y = 0;
+        for (var i = 0; i < count; i++) { tops[i] = y; y += HeightOf(i); }
+        return tops;
+    }
 
     protected override Size MeasureOverride(Size availableSize)
     {
         var g = Graph;
         if (g is null || g.Nodes.Count == 0) return new Size(0, 0);
-        return new Size(Pad * 2 + g.LaneCount * LaneWidth, g.Nodes.Count * RowHeight);
+        double total = 0;
+        for (var i = 0; i < g.Nodes.Count; i++) total += HeightOf(i);
+        return new Size(Pad * 2 + g.LaneCount * LaneWidth, total);
     }
 
     public override void Render(DrawingContext context)
     {
         var g = Graph;
         if (g is null || g.Nodes.Count == 0) return;
+
+        var tops = RowTops(g.Nodes.Count);
+        double RowY(int row) => tops[row] + FirstLineCenter; // align with the row's first (message) line
 
         // Links first (under the dots). A cubic bezier with vertical tangents reads as a smooth lane that
         // curves only where it changes column.

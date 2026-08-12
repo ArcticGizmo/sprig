@@ -1,0 +1,124 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        xmlns:controls="clr-namespace:Sprig.App.Controls"
+        x:Class="Sprig.App.Views.BranchGraphWindow"
+        x:DataType="vm:WorkspacesViewModel"
+        Width="900" Height="640" MinWidth="560" MinHeight="380"
+        CanResize="True" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{StaticResource FormBgBrush}"
+        Title="Start from — branch graph">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="18">
+        <TextBlock Grid.Row="0" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                   Text="Start from — branch graph" Margin="0,0,0,10" />
+
+        <!-- Find a branch specifically → highlights + scrolls the graph to it. -->
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto" Margin="0,0,0,10">
+            <TextBox Grid.Row="0" Text="{Binding StartPointSearch, Mode=TwoWay}" PlaceholderText="Find a branch…" />
+            <ListBox Grid.Row="1" ItemsSource="{Binding StartPointResults}" MaxHeight="96" Margin="0,4,0,0"
+                     Background="Transparent" BorderThickness="0"
+                     SelectedItem="{Binding GraphSearchSelection, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:StartPointItemViewModel">
+                        <TextBlock Text="{Binding Ref}" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- Graph: sha+age | lanes | tags-over-message, three columns aligned by shared row heights. -->
+        <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6">
+            <Panel>
+                <TextBlock Text="loading…" IsVisible="{Binding BranchGraphLoading}" Foreground="{StaticResource MutedBrush}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <TextBlock IsVisible="{Binding BranchGraphError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Text="{Binding BranchGraphError}" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16" />
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                              Offset="{Binding GraphScrollOffset, Mode=TwoWay}">
+                    <Grid ColumnDefinitions="Auto,Auto,*">
+
+                        <!-- Left: commit hash + age, aligned to the first (message) line of each row. -->
+                        <ItemsControl Grid.Column="0" ItemsSource="{Binding GraphRows}" Margin="6,0,4,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:GraphRowViewModel">
+                                    <Grid Height="{Binding RowHeight}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" Height="28" VerticalAlignment="Top">
+                                            <TextBlock Text="{Binding ShortSha}" FontFamily="Cascadia Code, Consolas, monospace"
+                                                       FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding When}" FontSize="10" Foreground="{StaticResource MutedBrush}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Middle: the drawn lanes. -->
+                        <controls:GraphLinesControl Grid.Column="1" VerticalAlignment="Top"
+                                                    Graph="{Binding BranchGraph}" CurrentSha="{Binding BranchGraphCurrentSha}"
+                                                    SelectedSha="{Binding GraphSelectedSha}" RowHeights="{Binding GraphRowHeights}" />
+
+                        <!-- Right: message (first line) then branch tags (second line). -->
+                        <ItemsControl Grid.Column="2" ItemsSource="{Binding GraphRows}" Margin="6,0,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:GraphRowViewModel">
+                                    <Grid Height="{Binding RowHeight}" RowDefinitions="28,*">
+                                        <!-- message → select this commit -->
+                                        <Button Grid.Row="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                Background="Transparent" BorderThickness="0" Padding="4,0" VerticalAlignment="Center"
+                                                Command="{Binding $parent[Window].((vm:WorkspacesViewModel)DataContext).SelectGraphRefCommand}"
+                                                CommandParameter="{Binding ShortSha}">
+                                            <TextBlock Text="{Binding Subject}" TextTrimming="CharacterEllipsis" />
+                                        </Button>
+                                        <!-- branch tags → select that branch -->
+                                        <ItemsControl Grid.Row="1" ItemsSource="{Binding Refs}" IsVisible="{Binding HasRefs}"
+                                                      Margin="4,0,0,4" VerticalAlignment="Top">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:GraphRefViewModel">
+                                                    <Button Padding="8,2" CornerRadius="4"
+                                                            Background="{Binding Background}" Foreground="{Binding Foreground}"
+                                                            BorderBrush="#F2C94C"
+                                                            Command="{Binding $parent[Window].((vm:WorkspacesViewModel)DataContext).SelectGraphRefCommand}"
+                                                            CommandParameter="{Binding Name}">
+                                                        <Button.BorderThickness>
+                                                            <MultiBinding Converter="{x:Static vm:GraphConverters.SelectedBorder}">
+                                                                <Binding Path="Name" />
+                                                                <Binding Path="$parent[Window].((vm:WorkspacesViewModel)DataContext).GraphSelectedRef" />
+                                                            </MultiBinding>
+                                                        </Button.BorderThickness>
+                                                        <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold" />
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+                </ScrollViewer>
+            </Panel>
+        </Border>
+
+        <!-- Footer: selection + apply/close. -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="Selected:" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center"
+                           IsVisible="{Binding HasGraphSelection}" />
+                <TextBlock Text="{Binding GraphSelectedRef}" FontWeight="SemiBold" VerticalAlignment="Center"
+                           IsVisible="{Binding HasGraphSelection}" />
+                <TextBlock Text="click a branch tag or a commit to select it" Foreground="{StaticResource MutedBrush}"
+                           FontSize="11" VerticalAlignment="Center" IsVisible="{Binding !HasGraphSelection}" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="Use this start point" Margin="0,0,8,0"
+                    Command="{Binding ConfirmGraphSelectionCommand}" IsEnabled="{Binding HasGraphSelection}"
+                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+            <Button Grid.Column="2" Content="Close" Command="{Binding CloseBranchGraphCommand}" />
+        </Grid>
+    </Grid>
+</Window>

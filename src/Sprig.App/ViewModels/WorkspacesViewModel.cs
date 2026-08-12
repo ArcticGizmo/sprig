@@ -644,16 +644,24 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>The list rows drawn beside the lanes — one per commit, aligned by row height.</summary>
     public ObservableCollection<GraphRowViewModel> GraphRows { get; } = [];
 
+    /// <summary>Per-row heights fed to the graph control so its dots line up with the (variable-height) rows.</summary>
+    [ObservableProperty] private IReadOnlyList<double> _graphRowHeights = [];
+
+    /// <summary>Raised when the branch-graph window should open (payload is this VM, used as its DataContext).
+    /// The view's code-behind opens the resizable window, mirroring the progress-window pattern.</summary>
+    public event Action<WorkspacesViewModel>? BranchGraphRequested;
+
     /// <summary>Open the visual branch graph for the checkout's stack (first repo), highlighting the current
     /// branch. Selecting a branch/commit there sets the same start point the dropdown does.</summary>
     [RelayCommand]
     private async Task OpenBranchGraph()
     {
         var stack = CheckoutStack;
-        if (stack is null) return;
+        if (stack is null || IsBranchGraphOpen) return; // already open — don't stack windows
 
         BranchGraphError = null;
         GraphRows.Clear();
+        GraphRowHeights = [];
         BranchGraph = null;
         GraphSelectedRef = null;
         GraphSelectedSha = null;
@@ -661,6 +669,7 @@ public partial class WorkspacesViewModel : PageViewModel
         GraphScrollOffset = default;
         IsBranchGraphOpen = true;
         BranchGraphLoading = true;
+        BranchGraphRequested?.Invoke(this); // open the window now; it shows the spinner while we load
         try
         {
             var existing = CheckoutNew ? null : CheckoutTarget?.Name;
@@ -674,6 +683,7 @@ public partial class WorkspacesViewModel : PageViewModel
             BranchGraphCurrentSha = currentSha;
             foreach (var n in graph.Nodes)
                 GraphRows.Add(new GraphRowViewModel(n, current));
+            GraphRowHeights = GraphRows.Select(r => r.RowHeight).ToList();
         }
         catch (Exception ex) { BranchGraphError = ex.Message; }
         finally { BranchGraphLoading = false; }

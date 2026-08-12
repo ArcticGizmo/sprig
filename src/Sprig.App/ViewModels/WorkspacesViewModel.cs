@@ -7,6 +7,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia;
+using Sprig.App.Controls;
 using Sprig.Core.Graph;
 using Sprig.Core.Pools;
 using Sprig.Core.Stacks;
@@ -624,6 +626,21 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty] private CommitGraph? _branchGraph;
     [ObservableProperty] private string? _branchGraphCurrentSha;
 
+    /// <summary>The ref a click picked (branch name or short sha) and the commit it highlights. Selecting
+    /// highlights (rings) the commit rather than applying immediately — a "Use this" confirm applies it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasGraphSelection))]
+    private string? _graphSelectedRef;
+    [ObservableProperty] private string? _graphSelectedSha;
+
+    /// <summary>Scroll offset of the graph, so the search can jump it to a branch's row.</summary>
+    [ObservableProperty] private Vector _graphScrollOffset;
+
+    /// <summary>The overlay search's selection — picking a branch here highlights + scrolls the graph to it.</summary>
+    [ObservableProperty] private StartPointItemViewModel? _graphSearchSelection;
+
+    public bool HasGraphSelection => !string.IsNullOrWhiteSpace(GraphSelectedRef);
+
     /// <summary>The list rows drawn beside the lanes — one per commit, aligned by row height.</summary>
     public ObservableCollection<GraphRowViewModel> GraphRows { get; } = [];
 
@@ -638,6 +655,10 @@ public partial class WorkspacesViewModel : PageViewModel
         BranchGraphError = null;
         GraphRows.Clear();
         BranchGraph = null;
+        GraphSelectedRef = null;
+        GraphSelectedSha = null;
+        GraphSearchSelection = null;
+        GraphScrollOffset = default;
         IsBranchGraphOpen = true;
         BranchGraphLoading = true;
         try
@@ -652,7 +673,7 @@ public partial class WorkspacesViewModel : PageViewModel
             BranchGraph = graph;
             BranchGraphCurrentSha = currentSha;
             foreach (var n in graph.Nodes)
-                GraphRows.Add(new GraphRowViewModel(n, n.Commit.Sha == currentSha));
+                GraphRows.Add(new GraphRowViewModel(n, current));
         }
         catch (Exception ex) { BranchGraphError = ex.Message; }
         finally { BranchGraphLoading = false; }
@@ -661,14 +682,35 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private void CloseBranchGraph() => IsBranchGraphOpen = false;
 
-    /// <summary>Pick a ref from the graph — a branch name (from a pill) or a commit sha (from a row) — as the
-    /// start point, then close the graph. Routes through the same selection the dropdown sets.</summary>
+    /// <summary>Select (highlight) a ref in the graph — a branch name (pill) or short sha (commit row). Rings
+    /// the commit and remembers the pick, but does <b>not</b> apply/close; that's <see cref="ConfirmGraphSelection"/>.</summary>
     [RelayCommand]
-    private void PickGraphRef(string? reference)
+    private void SelectGraphRef(string? reference)
     {
         if (string.IsNullOrWhiteSpace(reference)) return;
-        SelectedStartPointItem = new StartPointItemViewModel(new StartPointChoice(reference, null, false, false));
+        GraphSelectedRef = reference;
+        var row = GraphRows.FirstOrDefault(r => r.Refs.Any(x => x.Name == reference))
+                  ?? GraphRows.FirstOrDefault(r => r.ShortSha == reference);
+        GraphSelectedSha = row?.Sha;
+    }
+
+    /// <summary>Apply the highlighted selection as the start point (routing through the dropdown's selection)
+    /// and close the graph.</summary>
+    [RelayCommand]
+    private void ConfirmGraphSelection()
+    {
+        if (string.IsNullOrWhiteSpace(GraphSelectedRef)) return;
+        SelectedStartPointItem = new StartPointItemViewModel(new StartPointChoice(GraphSelectedRef, null, false, false));
         IsBranchGraphOpen = false;
+    }
+
+    // Picking a branch in the overlay's search highlights it in the graph and scrolls down to its row.
+    partial void OnGraphSearchSelectionChanged(StartPointItemViewModel? value)
+    {
+        if (value is null) return;
+        SelectGraphRef(value.Ref);
+        var idx = GraphRows.ToList().FindIndex(r => r.Sha == GraphSelectedSha);
+        if (idx >= 0) GraphScrollOffset = new Vector(0, idx * GraphLinesControl.RowHeight);
     }
 
     /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used

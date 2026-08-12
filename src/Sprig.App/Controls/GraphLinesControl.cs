@@ -10,10 +10,10 @@ namespace Sprig.App.Controls;
 /// share <see cref="RowHeight"/> so dots line up with their row. Height/width come from the laid-out graph.</summary>
 public sealed class GraphLinesControl : Control
 {
-    public const double RowHeight = 30;
-    const double LaneWidth = 16;
-    const double DotRadius = 4.5;
-    const double Pad = 10; // left inset before lane 0
+    public const double RowHeight = 32;
+    const double LaneWidth = 20;
+    const double DotRadius = 7;
+    const double Pad = 12; // left inset before lane 0
 
     // A small, high-contrast lane palette, cycled by lane index.
     static readonly Color[] Palette =
@@ -28,12 +28,16 @@ public sealed class GraphLinesControl : Control
     public static readonly StyledProperty<string?> CurrentShaProperty =
         AvaloniaProperty.Register<GraphLinesControl, string?>(nameof(CurrentSha));
 
+    public static readonly StyledProperty<string?> SelectedShaProperty =
+        AvaloniaProperty.Register<GraphLinesControl, string?>(nameof(SelectedSha));
+
     public CommitGraph? Graph { get => GetValue(GraphProperty); set => SetValue(GraphProperty, value); }
     public string? CurrentSha { get => GetValue(CurrentShaProperty); set => SetValue(CurrentShaProperty, value); }
+    public string? SelectedSha { get => GetValue(SelectedShaProperty); set => SetValue(SelectedShaProperty, value); }
 
     static GraphLinesControl()
     {
-        AffectsRender<GraphLinesControl>(GraphProperty, CurrentShaProperty);
+        AffectsRender<GraphLinesControl>(GraphProperty, CurrentShaProperty, SelectedShaProperty);
         AffectsMeasure<GraphLinesControl>(GraphProperty);
     }
 
@@ -70,13 +74,16 @@ public sealed class GraphLinesControl : Control
             context.DrawGeometry(null, new Pen(LaneBrush(link.FromLane), 2), geo);
         }
 
-        // Dots on top; the current commit gets a light ring so you can see where "you are now" sits.
+        // Dots on top. The current commit gets a light ring ("you are now"); the selected commit gets a
+        // bright accent ring (what a click has picked) — drawn last so it wins when they coincide.
         foreach (var node in g.Nodes)
         {
             var centre = new Point(LaneX(node.Lane), RowY(node.Row));
             context.DrawEllipse(LaneBrush(node.Lane), null, centre, DotRadius, DotRadius);
             if (CurrentSha is { Length: > 0 } cur && node.Commit.Sha == cur)
-                context.DrawEllipse(null, new Pen(Brushes.White, 2), centre, DotRadius + 2.5, DotRadius + 2.5);
+                context.DrawEllipse(null, new Pen(Brushes.White, 2), centre, DotRadius + 3, DotRadius + 3);
+            if (SelectedSha is { Length: > 0 } sel && node.Commit.Sha == sel)
+                context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.Parse("#F2C94C")), 3), centre, DotRadius + 4, DotRadius + 4);
         }
     }
 }

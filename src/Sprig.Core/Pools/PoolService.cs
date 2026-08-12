@@ -74,11 +74,12 @@ public sealed class PoolService(
         return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(stackName, null).Repos);
     }
 
-    /// <summary>Fetch and gather the "start from" picker options for a checkout: the default ref (the
-    /// upstream-preferring base a null start point resolves to) plus the ranked candidate refs to branch
-    /// from. Inspects an existing workspace's worktrees when reusing, else the stack's source repos. Touches
-    /// the network (fetch), so callers should run it off the UI thread.</summary>
-    public StartPointOptions StartPointsFor(string stackName, string? existingWorkspace)
+    /// <summary>Gather the "start from" picker options for a checkout: the default ref (the upstream-preferring
+    /// base a null start point resolves to) plus the ranked candidate refs to branch from. Inspects an
+    /// existing workspace's worktrees when reusing, else the stack's source repos. With
+    /// <paramref name="fetch"/> false it's an instant local read (existing remote-tracking refs); with it true
+    /// it fetches first (network) for freshness — run that off the UI thread.</summary>
+    public StartPointOptions StartPointsFor(string stackName, string? existingWorkspace, bool fetch)
     {
         IReadOnlyList<string> paths;
         if (existingWorkspace is not null)
@@ -91,7 +92,7 @@ public sealed class PoolService(
         {
             paths = resolver.Resolve(stackName, null).Repos.Select(r => r.Root).ToList();
         }
-        return workspaces.StartPoints(paths);
+        return workspaces.StartPoints(paths, fetch);
     }
 
     /// <summary>Check a proposed claim <paramref name="branch"/> against an existing pool workspace's repos

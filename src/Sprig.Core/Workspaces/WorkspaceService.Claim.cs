@@ -251,7 +251,7 @@ public sealed partial class WorkspaceService
     /// <see cref="StartPointOptions.Default"/> (what a null start point resolves to — the upstream-preferring
     /// base) and the union of every repo's candidate refs, ranked upstream → origin → other remotes → local.
     /// Best-effort per repo, so one repo with no remotes doesn't sink the list.</summary>
-    public StartPointOptions StartPoints(IReadOnlyList<string> repoPaths)
+    public StartPointOptions StartPoints(IReadOnlyList<string> repoPaths, bool fetch)
     {
         var latest = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
         var order = new List<string>();
@@ -259,7 +259,9 @@ public sealed partial class WorkspaceService
         string? resolvedDefault = null;
         foreach (var path in repoPaths)
         {
-            TryQuiet(() => git.Fetch(path));
+            // The slow bit — skipped for the instant local read; the caller does a background fetch pass to
+            // refresh. (Correctness is unaffected: Create/Claim fetch again before actually cutting the branch.)
+            if (fetch) TryQuiet(() => git.Fetch(path));
             if (resolvedDefault is null)
                 try { resolvedDefault = git.ResolveDefaultBase(path); } catch { /* no base here; try the next repo */ }
             if (git.CurrentBranch(path) is { } cur) currentBranches.Add(cur);

@@ -28,7 +28,7 @@ public class StartPointTests
         git.StartPointCandidates.Add(new BranchRef("feature-x", At(2026, 8)));
         var svc = Build(git, store);
 
-        var opts = svc.StartPoints(["/repo"]);
+        var opts = svc.StartPoints(["/repo"], fetch: true);
 
         Assert.Equal("upstream/main", opts.Default);
         // current (feature-x) leads, then the default main/master, then the rest by recency.
@@ -36,6 +36,19 @@ public class StartPointTests
         Assert.True(opts.Candidates.Single(c => c.Ref == "feature-x").IsCurrent);
         Assert.True(opts.Candidates.Single(c => c.Ref == "upstream/main").IsDefaultBranch);
         Assert.Contains("/repo", git.Fetched); // fetched so the list is current
+    }
+
+    [Fact]
+    public void StartPoints_without_fetch_reads_local_refs_only()
+    {
+        using var store = new TempStore();
+        var git = new FakeGitService { DefaultBase = "main" };
+        git.StartPointCandidates.Add(new BranchRef("main", At(2026, 1)));
+        var svc = Build(git, store);
+
+        svc.StartPoints(["/repo"], fetch: false);
+
+        Assert.Empty(git.Fetched); // instant read — no network
     }
 
     [Fact]

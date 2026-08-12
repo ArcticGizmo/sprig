@@ -275,7 +275,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         if (!string.IsNullOrWhiteSpace(s.From)) return s.From!.Trim();
         if (!interactive) return null; // default: the stack's (upstream-preferring) base
 
-        var options = cli.Pools.StartPointsFor(stackName, existing);
+        var options = cli.Pools.StartPointsFor(stackName, existing, fetch: true);
         var defaultChoice = $"default — {options.Default ?? "base"}";
         var choices = new List<string> { defaultChoice };
         choices.AddRange(options.Candidates.Select(c => c.Ref));

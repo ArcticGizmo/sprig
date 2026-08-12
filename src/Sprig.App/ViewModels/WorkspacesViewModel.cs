@@ -567,29 +567,47 @@ public partial class WorkspacesViewModel : PageViewModel
         PendingStartPointItem = null; // ready for the next open (so re-picking the same row still fires)
     }
 
-    /// <summary>Fetch the stack's connected remotes and fill the picker. Runs off the UI thread; on failure
-    /// (offline / no remotes) the picker just offers the default.</summary>
+    // Short-lived cache of fetched picker options per stack, so reopening skips the network refresh.
+    readonly Dictionary<string, (DateTimeOffset When, StartPointOptions Opts)> _startPointCache = new(StringComparer.Ordinal);
+    static readonly TimeSpan StartPointCacheTtl = TimeSpan.FromSeconds(30);
+
+    void ApplyStartPoints(StartPointOptions options)
+    {
+        _defaultBaseLabel = options.Default ?? "base";
+        _allStartPoints = options.Candidates;
+        OnPropertyChanged(nameof(DefaultStartPointLabel));
+        OnPropertyChanged(nameof(StartPointDisplay));
+        RebuildStartPointResults();
+    }
+
+    /// <summary>Fill the picker fast: show cached-or-local refs immediately (no network), then refresh from a
+    /// background fetch unless the cache is still warm. The actual checkout re-fetches before branching, so
+    /// the instantly-shown list can lag slightly without affecting what you end up on.</summary>
     async Task LoadStartPointsAsync(string stack)
     {
+        // 1) Instant: cached options if we have them, else a local (no-fetch) read — the list shows at once.
+        if (_startPointCache.TryGetValue(stack, out var cached))
+            ApplyStartPoints(cached.Opts);
+        else
+        {
+            try { ApplyStartPoints(await AppServices.RunAsync(() => Services.Pools.StartPointsFor(stack, null, fetch: false))); }
+            catch { ApplyStartPoints(new StartPointOptions(null, [])); }
+        }
+
+        // Skip the network refresh while the cache is warm.
+        if (_startPointCache.TryGetValue(stack, out var c) && DateTimeOffset.Now - c.When < StartPointCacheTtl)
+            return;
+
+        // 2) Background: fetch remotes, refresh the list, and cache the result. The spinner shows meanwhile.
         StartPointsLoading = true;
         try
         {
-            var options = await AppServices.RunAsync(() => Services.Pools.StartPointsFor(stack, null));
-            _defaultBaseLabel = options.Default ?? "base";
-            _allStartPoints = options.Candidates;
+            var fresh = await AppServices.RunAsync(() => Services.Pools.StartPointsFor(stack, null, fetch: true));
+            _startPointCache[stack] = (DateTimeOffset.Now, fresh);
+            ApplyStartPoints(fresh);
         }
-        catch
-        {
-            _defaultBaseLabel = "base";
-            _allStartPoints = [];
-        }
-        finally
-        {
-            StartPointsLoading = false;
-            OnPropertyChanged(nameof(DefaultStartPointLabel));
-            OnPropertyChanged(nameof(StartPointDisplay));
-            RebuildStartPointResults();
-        }
+        catch { /* offline / no remotes — keep the instant list */ }
+        finally { StartPointsLoading = false; }
     }
 
     /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used

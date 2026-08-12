@@ -84,6 +84,10 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         [Description("Materialise a brand-new workspace (fails if the pool is full)")]
         public bool New { get; set; }
 
+        [CommandOption("--from <ref>")]
+        [Description("Start the branch from this ref (e.g. upstream/main); default is the stack's base")]
+        public string? From { get; set; }
+
         [CommandOption("--fresh")]
         [Description("Fresh: reinstall deps and wipe volumes (clean environment)")]
         public bool Fresh { get; set; }
@@ -135,6 +139,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         var branch = ResolveBranch(console, s, interactive);
         var label = ResolveLabel(console, s);
         var existing = target.IsNew ? null : target.Workspace;
+        var startPoint = ResolveStartPoint(console, s, interactive, stackName, existing);
 
         // Surface (do not resolve) a branch already taken on a remote — a heads-up before we cut it. A local
         // conflict is a hard block enforced by the service; this is only the softer remote case.
@@ -149,17 +154,18 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         // Machine path stays quiet and structured: no checklist, just the record.
         if (s.Json)
         {
-            CliOutput.Json(cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force));
+            CliOutput.Json(cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force, startPoint: startPoint));
             return 0;
         }
 
         // Human path: plan up front, then drive the live checklist while the checkout runs — the same
         // feedback create gives (worktrees, dependency install, infra), for every mode.
-        console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(stackName)}[/]…");
+        console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(stackName)}[/]" +
+            (startPoint is null ? "" : $" [dim](start: {Markup.Escape(startPoint)})[/]") + "…");
         var plan = cli.Pools.PlanCheckout(stackName, existing, mode);
         InstanceRecord record = null!;
         Checklist.Run(console, plan, progress =>
-            record = cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force, progress));
+            record = cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force, progress, startPoint));
 
         var labelSuffix = string.IsNullOrEmpty(label) ? "" : $" [dim]({Markup.Escape(label!)})[/]";
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] checked out [bold]{Markup.Escape(record.Workspace)}[/] " +
@@ -259,6 +265,22 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
     {
         _ = console;
         return string.IsNullOrWhiteSpace(s.Label) ? null : s.Label!.Trim();
+    }
+
+    // The start point for the new branch. `--from` is explicit (no fetch). Interactive fetches the connected
+    // remotes and offers the branches to pick — default first (the upstream-preferring base). Null = default.
+    // For a fork/gitflow setup this is where you pick upstream/main over your fork's stale origin/main.
+    string? ResolveStartPoint(IAnsiConsole console, Settings s, bool interactive, string stackName, string? existing)
+    {
+        if (!string.IsNullOrWhiteSpace(s.From)) return s.From!.Trim();
+        if (!interactive) return null; // default: the stack's (upstream-preferring) base
+
+        var options = cli.Pools.StartPointsFor(stackName, existing);
+        var defaultChoice = $"default — {options.Default ?? "base"}";
+        var choices = new List<string> { defaultChoice };
+        choices.AddRange(options.Candidates.Select(c => c.Ref));
+        var pick = Term.SelectOne(console, "Start the new branch from? [grey](esc = default)[/]", choices);
+        return pick is null || pick == defaultChoice ? null : pick;
     }
 
     // A free workspace's picker line: name, its last label, and roughly how long ago it was released — so

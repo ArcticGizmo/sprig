@@ -440,6 +440,66 @@
                                      ToolTip.Tip="Clean environment: setup re-runs and docker volumes are wiped for clean runtime data." />
                     </StackPanel>
 
+                    <!-- Start from: which ref the new branch begins at. Default is the stack's base
+                         (prefers upstream/main over your fork's origin/main); searchable picker for any other
+                         remote branch, with chips for the likely picks and your current branch. -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Start from" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <Button x:Name="startFromButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                Command="{Binding ToggleStartPointCommand}">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="{Binding StartPointDisplay}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" Text="▾" Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0" />
+                            </Grid>
+                        </Button>
+                        <Popup IsOpen="{Binding IsStartPointOpen, Mode=TwoWay}" PlacementTarget="{Binding #startFromButton}"
+                               Placement="Bottom" IsLightDismissEnabled="True" HorizontalOffset="0" VerticalOffset="4">
+                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="6" Padding="6" Width="392">
+                                <StackPanel Spacing="6">
+                                    <TextBox Text="{Binding StartPointSearch, Mode=TwoWay}" PlaceholderText="Search branches…" />
+                                    <!-- loading spinner shown inside the menu while branches are fetched -->
+                                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding StartPointsLoading}" Margin="2">
+                                        <ProgressBar IsIndeterminate="True" Width="120" Height="3" VerticalAlignment="Center" />
+                                        <TextBlock Text="fetching branches…" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <!-- Default row: let each repo resolve its base -->
+                                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,5"
+                                            Background="Transparent" BorderThickness="0"
+                                            Command="{Binding PickStartPointCommand}" CommandParameter="{x:Null}">
+                                        <TextBlock Text="{Binding DefaultStartPointLabel}" />
+                                    </Button>
+                                    <ListBox ItemsSource="{Binding StartPointResults}" MaxHeight="260"
+                                             Background="Transparent" BorderThickness="0"
+                                             SelectedItem="{Binding PendingStartPointItem, Mode=TwoWay}">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:StartPointItemViewModel">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Ref}" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="8,0">
+                                                        <Border Background="{StaticResource AccentBrush}" CornerRadius="3" Padding="5,1"
+                                                                IsVisible="{Binding IsDefault}">
+                                                            <TextBlock Text="main" FontSize="10" Foreground="#0B1220" />
+                                                        </Border>
+                                                        <Border BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                                                                CornerRadius="3" Padding="5,1" IsVisible="{Binding IsCurrent}">
+                                                            <TextBlock Text="current" FontSize="10" Foreground="{StaticResource AccentBrush}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding When}" FontSize="10"
+                                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
+
                     <!-- Branch: required, the workspace's identity — cut across every repo in the stack. -->
                     <StackPanel Spacing="4">
                         <TextBlock Text="Branch" Foreground="{StaticResource MutedBrush}" FontSize="12" />

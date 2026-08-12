@@ -74,6 +74,26 @@ public sealed class PoolService(
         return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(stackName, null).Repos);
     }
 
+    /// <summary>Fetch and gather the "start from" picker options for a checkout: the default ref (the
+    /// upstream-preferring base a null start point resolves to) plus the ranked candidate refs to branch
+    /// from. Inspects an existing workspace's worktrees when reusing, else the stack's source repos. Touches
+    /// the network (fetch), so callers should run it off the UI thread.</summary>
+    public StartPointOptions StartPointsFor(string stackName, string? existingWorkspace)
+    {
+        IReadOnlyList<string> paths;
+        if (existingWorkspace is not null)
+        {
+            var rec = instances.TryLoad(existingWorkspace)
+                ?? throw new PoolException($"'{existingWorkspace}' is not a workspace in the '{stackName}' pool");
+            paths = rec.Repos.Select(r => r.WorktreePath).ToList();
+        }
+        else
+        {
+            paths = resolver.Resolve(stackName, null).Repos.Select(r => r.Root).ToList();
+        }
+        return workspaces.StartPoints(paths);
+    }
+
     /// <summary>Check a proposed claim <paramref name="branch"/> against an existing pool workspace's repos
     /// without touching anything, so a UI/CLI can warn before committing to the checkout. For a brand-new
     /// workspace (<paramref name="existingWorkspace"/> null) there's nothing to conflict with yet — returns
@@ -97,7 +117,7 @@ public sealed class PoolService(
     /// </summary>
     public InstanceRecord Checkout(string stackName, string? existingWorkspace, string branch, string? label = null,
         CheckoutMode mode = CheckoutMode.Keep, bool force = false,
-        IProgress<WorkspaceStepProgress>? progress = null)
+        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null)
     {
         if (string.IsNullOrWhiteSpace(branch))
             throw new PoolException("a checkout needs a branch name");
@@ -115,7 +135,7 @@ public sealed class PoolService(
             if (target.Claimed)
                 throw new PoolException($"workspace '{existingWorkspace}' is already claimed");
 
-            workspaces.Claim(target.Workspace, branch, mode == CheckoutMode.Fresh, force, progress, resolved.Repos);
+            workspaces.Claim(target.Workspace, branch, mode == CheckoutMode.Fresh, force, progress, resolved.Repos, startPoint);
             return MarkClaimed(target.Workspace, label, target.WorkspaceIndex);
         }
 
@@ -131,8 +151,8 @@ public sealed class PoolService(
 
         var index = NextIndex(stackName, members, stack.MaxSlots);
         var name = $"{stackName}-{index}";
-        workspaces.Create(resolved, name, progress);        // parked slot: detached at base, warm (env/compose/setup done)
-        workspaces.CutBranchAndStart(name, branch, progress); // minimal claim: cut branch at base + start infra
+        workspaces.Create(resolved, name, progress, startPoint); // parked slot at the chosen start point, warm
+        workspaces.CutBranchAndStart(name, branch, progress);    // minimal claim: cut branch at start point + start infra
         return MarkClaimed(name, label, index);
     }
 

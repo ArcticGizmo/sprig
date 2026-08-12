@@ -154,13 +154,18 @@ public sealed partial class WorkspaceService
 
             // Cut the branch at the chosen start point and reset tracked files to it (clean, predictable
             // checkout). Cut from current HEAD first (always safe), then hard-reset — gitignored artifacts
-            // are untouched, so the warm environment survives regardless of mode.
+            // are untouched, so the warm environment survives regardless of mode. A chosen start point that
+            // doesn't exist in this repo falls back to the repo's base (noted on the row) — the single-ref
+            // form: see the per-repo TODO above.
             progress?.Report(new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Running));
             TryQuiet(() => git.Fetch(repo.WorktreePath));
-            var start = startPoint ?? git.ResolveDefaultBase(repo.WorktreePath);
+            var chosen = startPoint is not null && git.RefExists(repo.WorktreePath, startPoint);
+            var start = chosen ? startPoint! : git.ResolveDefaultBase(repo.WorktreePath);
             git.SwitchNewBranch(repo.WorktreePath, branch);
             git.ResetHard(repo.WorktreePath, start);
-            progress?.Report(new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Done));
+            progress?.Report(startPoint is not null && !chosen
+                ? new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Done, $"'{startPoint}' not in {repo.Name} — used {start}")
+                : new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Done));
 
             // Env + compose always reapply (cheap, and keep them aligned with the freshly-reset tree).
             progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Running));
@@ -241,4 +246,68 @@ public sealed partial class WorkspaceService
                 git.HasUncommittedChanges(r.WorktreePath),
                 git.CountUnpushedCommits(r.WorktreePath)))
             .ToList());
+
+    /// <summary>Fetch the given repos and gather the "start from" picker options: the resolved
+    /// <see cref="StartPointOptions.Default"/> (what a null start point resolves to — the upstream-preferring
+    /// base) and the union of every repo's candidate refs, ranked upstream → origin → other remotes → local.
+    /// Best-effort per repo, so one repo with no remotes doesn't sink the list.</summary>
+    public StartPointOptions StartPoints(IReadOnlyList<string> repoPaths)
+    {
+        var latest = new Dictionary<string, DateTimeOffset?>(StringComparer.Ordinal);
+        var order = new List<string>();
+        var currentBranches = new HashSet<string>(StringComparer.Ordinal);
+        string? resolvedDefault = null;
+        foreach (var path in repoPaths)
+        {
+            TryQuiet(() => git.Fetch(path));
+            if (resolvedDefault is null)
+                try { resolvedDefault = git.ResolveDefaultBase(path); } catch { /* no base here; try the next repo */ }
+            if (git.CurrentBranch(path) is { } cur) currentBranches.Add(cur);
+            foreach (var b in git.ListStartPointCandidates(path))
+            {
+                if (!latest.TryGetValue(b.Name, out var date)) { order.Add(b.Name); latest[b.Name] = b.LastCommit; }
+                else if (b.LastCommit > date) latest[b.Name] = b.LastCommit; // newest tip across repos
+            }
+        }
+
+        // Order so the likely picks lead: where you are now, then the default-ish main/master, then most
+        // recently active. A picker showing "recent" with no search text gets the useful few from the top.
+        var choices = order
+            .Select(name => new StartPointChoice(name, latest[name], IsDefaultBranchName(name), currentBranches.Contains(name)))
+            .OrderByDescending(c => c.IsCurrent)
+            .ThenByDescending(c => c.IsDefaultBranch)
+            .ThenByDescending(c => c.LastCommit ?? DateTimeOffset.MinValue)
+            .ToList();
+        return new StartPointOptions(resolvedDefault, choices);
+    }
+
+    // A main/master branch on any remote (or local) — the "most likely what you want" chip.
+    static bool IsDefaultBranchName(string reference)
+    {
+        var tail = reference.Contains('/') ? reference[(reference.LastIndexOf('/') + 1)..] : reference;
+        return tail is "main" or "master";
+    }
+}
+
+/// <summary>One start-point option for the picker: the ref, its tip-commit date (for recency), and whether
+/// it's a likely default (main/master) or the repo's current branch — the two chips the picker highlights.</summary>
+public sealed record StartPointChoice(string Ref, DateTimeOffset? LastCommit, bool IsDefaultBranch, bool IsCurrent);
+
+/// <summary>Options for the "start from" picker: the default ref a null start point resolves to (may be null
+/// if no base could be found), and the ranked candidate refs to branch from.</summary>
+public sealed record StartPointOptions(string? Default, IReadOnlyList<StartPointChoice> Candidates);
+
+/// <summary>Pure filter behind the picker's list. With no search text it shows the most-relevant few (the
+/// pre-ordered current → default → recent leaders), capped at <paramref name="recentLimit"/>; with search
+/// text it returns every candidate whose ref contains it (case-insensitive), uncapped — so a specific branch
+/// is always findable even when it's not "recent".</summary>
+public static class StartPointFilter
+{
+    public static IReadOnlyList<StartPointChoice> Apply(IReadOnlyList<StartPointChoice> all, string? search, int recentLimit)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+            return recentLimit > 0 && all.Count > recentLimit ? all.Take(recentLimit).ToList() : all;
+        var q = search.Trim();
+        return all.Where(c => c.Ref.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
 }

@@ -152,7 +152,7 @@ public sealed partial class WorkspaceService(
     /// needs no special handling here: it arrives already narrowed, so only its repos are
     /// materialised and only its ports are allocated.</summary>
     public InstanceRecord Create(ResolvedStack stack, string workspace,
-        IProgress<WorkspaceStepProgress>? progress = null)
+        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null)
     {
         ValidateCreate(stack, workspace);
 
@@ -196,13 +196,19 @@ public sealed partial class WorkspaceService(
                 var repo = plan.Repo;
                 var repoScope = wired.ScopeFor(repo.Name);
 
-                // Park the slot: add the worktree in detached HEAD at the repo's base. A fresh slot carries
-                // no branch of its own — identity is attached later at claim (git also forbids the same
-                // branch in two worktrees, so N slots could never all sit on main). The expensive warm
-                // state (env, compose, node_modules) is built below regardless of git state.
+                // Park the slot: add the worktree in detached HEAD at the chosen start point (default: the
+                // repo's base). A fresh slot carries no branch of its own — identity is attached later at
+                // claim (git also forbids the same branch in two worktrees, so N slots could never all sit on
+                // main). Fetch first so the base reflects the latest remotes (a stale local origin/main was
+                // the whole point of the upstream-preferring base). The expensive warm state (env, compose,
+                // node_modules) is built below regardless of git state.
                 current = CreateStepIds.Worktree(repo.Name);
                 progress?.Report(new(current, WorkspaceStepState.Running));
-                git.AddWorktreeDetached(repo.Root, plan.Worktree, git.ResolveDefaultBase(repo.Root));
+                TryQuiet(() => git.Fetch(repo.Root));
+                var start = startPoint is not null && git.RefExists(repo.Root, startPoint)
+                    ? startPoint
+                    : git.ResolveDefaultBase(repo.Root);
+                git.AddWorktreeDetached(repo.Root, plan.Worktree, start);
                 addedWorktrees.Add((repo.Root, plan.Worktree));
                 progress?.Report(new(current, WorkspaceStepState.Done));
 

@@ -34,6 +34,34 @@ public class GitServiceTests
     }
 
     [Fact]
+    public void ResolveDefaultBase_prefers_upstream_over_origin()
+    {
+        using var repo = new TempGitRepo();
+        var git = NewService();
+
+        // Two bare remotes as siblings of the repo (cleaned up with it): 'origin' is your fork, 'upstream'
+        // the canonical repo you branch from. Both carry main; the base should resolve to upstream's.
+        var upstream = Path.Combine(repo.Root, "upstream.git");
+        var origin = Path.Combine(repo.Root, "origin.git");
+        var runner = new ProcessRunner();
+        runner.Run("git", ["init", "--bare", upstream], repo.Root).EnsureSuccess();
+        runner.Run("git", ["init", "--bare", origin], repo.Root).EnsureSuccess();
+        repo.Git("remote", "add", "upstream", upstream);
+        repo.Git("remote", "add", "origin", origin);
+        repo.Git("push", "upstream", "main");
+        repo.Git("push", "origin", "main");
+        repo.Git("fetch", "--all");
+
+        Assert.Equal("upstream/main", git.ResolveDefaultBase(repo.Path));
+
+        // And the candidate list surfaces both remotes' branches, each with a commit date.
+        var candidates = git.ListStartPointCandidates(repo.Path);
+        Assert.Contains(candidates, c => c.Name == "upstream/main");
+        Assert.Contains(candidates, c => c.Name == "origin/main");
+        Assert.All(candidates, c => Assert.NotNull(c.LastCommit));
+    }
+
+    [Fact]
     public void IsIgnored_applies_gitignore_rules_even_for_paths_that_do_not_exist()
     {
         using var repo = new TempGitRepo();

@@ -97,21 +97,58 @@ public sealed class GitService(IProcessRunner runner) : IGitService
 
     public string ResolveDefaultBase(string repo)
     {
-        // Prefer the remote's default branch (origin/HEAD → "origin/main"); the abbrev-ref form gives
-        // the branch name directly when origin/HEAD is set.
-        var head = runner.Run("git", ["-C", repo, "rev-parse", "--abbrev-ref", "origin/HEAD"], repo);
-        if (head.Success)
+        // Prefer an 'upstream' remote over 'origin'. In a fork/gitflow setup 'origin' is your own fork (whose
+        // main drifts far behind), while 'upstream' is the canonical repo you actually branch from — so
+        // branching off origin/main gives a stale base. For each remote, take its default branch
+        // (<remote>/HEAD → e.g. upstream/main) when set, else the usual main/master. Fall back to a local
+        // branch last (a purely-local repo, and the shape most tests use).
+        foreach (var remote in new[] { "upstream", "origin" })
         {
-            var name = head.StdOut.Trim();
-            if (name.Length > 0 && name != "origin/HEAD") return name;
+            var head = runner.Run("git", ["-C", repo, "rev-parse", "--abbrev-ref", $"{remote}/HEAD"], repo);
+            if (head.Success)
+            {
+                var name = head.StdOut.Trim();
+                if (name.Length > 0 && name != $"{remote}/HEAD") return name;
+            }
+            foreach (var branch in new[] { $"{remote}/main", $"{remote}/master" })
+                if (RefExists(repo, branch)) return branch;
         }
-        // Fall back through the usual suspects — a remote branch first (real dev), then a local one
-        // (a purely-local repo, and the shape most tests use).
-        foreach (var candidate in new[] { "origin/main", "origin/master", "main", "master" })
+        foreach (var candidate in new[] { "main", "master" })
             if (RefExists(repo, candidate)) return candidate;
         throw new InvalidOperationException(
-            $"could not determine a base branch for '{repo}' (looked for origin/HEAD, main, master)");
+            $"could not determine a base branch for '{repo}' (looked for upstream/origin HEAD, main, master)");
     }
+
+    public IReadOnlyList<BranchRef> ListStartPointCandidates(string repo)
+    {
+        // Every remote-tracking branch (all remotes) then every local branch — the "start from" picker's
+        // options, each with its tip-commit date for recency ordering. Drops the symbolic '<remote>/HEAD'
+        // entries, which aren't real start points. Fields are tab-separated (a tab can't appear in a ref).
+        var r = runner.Run("git",
+            ["-C", repo, "for-each-ref", "--sort=-committerdate",
+             "--format=%(refname:short)\t%(committerdate:iso-strict)", "refs/remotes", "refs/heads"], repo);
+        if (!r.Success) return [];
+        var list = new List<BranchRef>();
+        foreach (var line in r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var tab = line.IndexOf('\t');
+            var name = (tab < 0 ? line : line[..tab]).Trim();
+            if (name.Length == 0 || name.EndsWith("/HEAD", StringComparison.Ordinal)) continue;
+            DateTimeOffset? date = tab >= 0 && DateTimeOffset.TryParse(line[(tab + 1)..].Trim(), out var d) ? d : null;
+            list.Add(new BranchRef(name, date));
+        }
+        return list;
+    }
+
+    public string? CurrentBranch(string repo)
+    {
+        // symbolic-ref fails (non-zero) on a detached HEAD, which is exactly when there's no "current branch".
+        var r = runner.Run("git", ["-C", repo, "symbolic-ref", "--quiet", "--short", "HEAD"], repo);
+        return r.Success && r.StdOut.Trim() is { Length: > 0 } name ? name : null;
+    }
+
+    public bool RefExists(string repo, string reference)
+        => runner.Run("git", ["-C", repo, "rev-parse", "--verify", "--quiet", $"{reference}^{{commit}}"], repo).Success;
 
     public void ResetHard(string repo, string reference)
         => runner.Run("git", ["-C", repo, "reset", "--hard", reference], repo).EnsureSuccess();
@@ -121,9 +158,6 @@ public sealed class GitService(IProcessRunner runner) : IGitService
         var r = runner.Run("git", ["-C", repo, "rev-list", "--count", $"{baseRef}..HEAD"], repo);
         return r.Success && int.TryParse(r.StdOut.Trim(), out var n) ? n : 0;
     }
-
-    bool RefExists(string repo, string reference)
-        => runner.Run("git", ["-C", repo, "rev-parse", "--verify", "--quiet", $"{reference}^{{commit}}"], repo).Success;
 
     public IReadOnlyList<WorktreeInfo> ListWorktrees(string repo)
     {

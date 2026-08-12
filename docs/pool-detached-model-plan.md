@@ -78,11 +78,17 @@ keep leaves deps + volumes untouched (fast); fresh reinstalls deps and wipes vol
 *keep what's expensive on disk*, **not** *keep my uncommitted source edits* — those are reset to the start
 point (and were already reported at release).
 
-### Start point (default base; picker is the follow-up)
+### Start point (default prefers upstream; searchable picker)
 
-The **start point** defaults to each repo's base (`origin/main`). `Claim` already takes a `startPoint`
-parameter (a single ref applied to every repo) so the next step — a **branch picker** that fetches and lets
-you start from any connected remote's branch — is a small wire-up through the pool, CLI and UI.
+The **start point** defaults to each repo's base, and `ResolveDefaultBase` now **prefers an `upstream`
+remote over `origin`** — the fork/gitflow case where you branch from the canonical repo but push to your
+fork, so `origin/main` is stale. Slot creation and claim both **fetch first**, so the base is current.
+
+Override it with a **branch picker**: `Claim` takes a `startPoint` (a single ref applied to every repo),
+surfaced as `--from <ref>` and an interactive list in the CLI, and a searchable dropdown in the app —
+fetch-populated, ranked *current → default → recent*, with chips for main/master and your current branch,
+recent-by-default and full-search-on-type (`StartPointFilter`). A chosen ref absent from a repo falls back
+to that repo's base (noted on the row).
 
 > **Circle back (advanced, per-repo start point).** `startPoint` is currently one ref for the whole stack.
 > Decide later whether to offer a *different* start point per repo (e.g. repo A from `origin/main`, repo B

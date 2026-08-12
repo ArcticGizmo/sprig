@@ -24,6 +24,10 @@ public sealed class FakeGitService : IGitService
     public List<(string Worktree, string Reference)> Detached { get; } = [];
     public int UnpushedCommits { get; set; }
     public bool Dirty { get; set; }
+    public List<BranchRef> StartPointCandidates { get; } = [];
+    public string? Current { get; set; }
+    /// <summary>Refs that <see cref="RefExists"/> reports present; the default base is always treated as present.</summary>
+    public HashSet<string> ExistingRefs { get; } = [];
 
     public bool IsGitRepo(string path) => RepoExists;
     public IReadOnlyCollection<string> ListTrackedFiles(string repo) => TrackedFiles;
@@ -48,6 +52,9 @@ public sealed class FakeGitService : IGitService
     public void DeleteBranch(string repo, string branch) => DeletedBranches.Add(branch);
     public void Fetch(string repo) => Fetched.Add(repo);
     public string ResolveDefaultBase(string repo) => DefaultBase;
+    public IReadOnlyList<BranchRef> ListStartPointCandidates(string repo) => StartPointCandidates;
+    public string? CurrentBranch(string repo) => Current;
+    public bool RefExists(string repo, string reference) => reference == DefaultBase || ExistingRefs.Contains(reference);
     public void ResetHard(string repo, string reference) => HardResets.Add((repo, reference));
     public int CountCommitsAhead(string repo, string baseRef) => CommitsAhead;
 }

@@ -178,6 +178,25 @@ public class PoolCheckoutTests
     }
 
     [Fact]
+    public void Checkout_from_a_specific_ref_starts_the_branch_there()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 1);
+        // A divergent 'release' branch carrying a marker file that main doesn't have.
+        repo.Git("checkout", "-b", "release");
+        File.WriteAllText(Path.Combine(repo.Path, "marker.txt"), "from-release\n");
+        repo.Git("add", "-A");
+        repo.Git("-c", "user.email=t@sprig", "-c", "user.name=sprig", "commit", "-m", "release marker");
+        repo.Git("checkout", "main");
+
+        var ws = pools.Checkout("app", null, "feature", startPoint: "release");
+
+        // The slot started from 'release', so the marker is present in the worktree.
+        Assert.True(File.Exists(Path.Combine(ws.Repos[0].WorktreePath, "marker.txt")));
+    }
+
+    [Fact]
     public void ClaimedWorkspaces_lists_only_claimed_ones()
     {
         using var store = new TempStore();

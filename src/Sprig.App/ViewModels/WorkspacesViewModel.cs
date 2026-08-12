@@ -502,6 +502,96 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>The handling choices only make sense when reusing an existing workspace.</summary>
     public bool ShowHandling => IsCheckingOut && !CheckoutNew && CheckoutTarget is not null;
 
+    // -- "start from" picker: searchable, chipped, recent-by-default -------------
+
+    /// <summary>The rows currently shown in the picker dropdown (recent when the search box is empty, matches
+    /// otherwise). Rebuilt from <see cref="_allStartPoints"/> whenever the search text changes.</summary>
+    public ObservableCollection<StartPointItemViewModel> StartPointResults { get; } = [];
+
+    IReadOnlyList<StartPointChoice> _allStartPoints = [];
+    const int StartPointRecentLimit = 8;
+    string _defaultBaseLabel = "base";
+
+    /// <summary>The chosen start point; <c>null</c> means "Default" (let each repo resolve its base).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartPointDisplay))]
+    private StartPointItemViewModel? _selectedStartPointItem;
+
+    /// <summary>True while the branch list is being fetched (branches come from a network fetch) — the
+    /// dropdown shows a spinner meanwhile.</summary>
+    [ObservableProperty] private bool _startPointsLoading;
+
+    /// <summary>Whether the picker dropdown is open.</summary>
+    [ObservableProperty] private bool _isStartPointOpen;
+
+    /// <summary>The search text; empty shows the recent leaders, any text filters every candidate.</summary>
+    [ObservableProperty] private string _startPointSearch = "";
+
+    /// <summary>The dropdown's list selection (transient) — picking one funnels through
+    /// <see cref="PickStartPoint"/>. Distinct from <see cref="SelectedStartPointItem"/>, the confirmed choice.</summary>
+    [ObservableProperty] private StartPointItemViewModel? _pendingStartPointItem;
+
+    /// <summary>Label on the collapsed picker: the chosen ref, or the default base.</summary>
+    public string StartPointDisplay => SelectedStartPointItem?.Ref ?? DefaultStartPointLabel;
+
+    /// <summary>Text for the always-present "Default" row / collapsed label — the resolved base.</summary>
+    public string DefaultStartPointLabel => $"Default — {_defaultBaseLabel}";
+
+    partial void OnStartPointSearchChanged(string value) => RebuildStartPointResults();
+
+    partial void OnPendingStartPointItemChanged(StartPointItemViewModel? value)
+    {
+        if (value is not null) PickStartPoint(value);
+    }
+
+    void RebuildStartPointResults()
+    {
+        StartPointResults.Clear();
+        foreach (var c in StartPointFilter.Apply(_allStartPoints, StartPointSearch, StartPointRecentLimit))
+            StartPointResults.Add(new StartPointItemViewModel(c));
+    }
+
+    [RelayCommand]
+    private void ToggleStartPoint()
+    {
+        IsStartPointOpen = !IsStartPointOpen;
+        if (IsStartPointOpen) { StartPointSearch = ""; PendingStartPointItem = null; RebuildStartPointResults(); }
+    }
+
+    /// <summary>Pick a start point (or the "Default" row, which passes <c>null</c>) and close the dropdown.</summary>
+    [RelayCommand]
+    private void PickStartPoint(StartPointItemViewModel? item)
+    {
+        SelectedStartPointItem = item;
+        IsStartPointOpen = false;
+        PendingStartPointItem = null; // ready for the next open (so re-picking the same row still fires)
+    }
+
+    /// <summary>Fetch the stack's connected remotes and fill the picker. Runs off the UI thread; on failure
+    /// (offline / no remotes) the picker just offers the default.</summary>
+    async Task LoadStartPointsAsync(string stack)
+    {
+        StartPointsLoading = true;
+        try
+        {
+            var options = await AppServices.RunAsync(() => Services.Pools.StartPointsFor(stack, null));
+            _defaultBaseLabel = options.Default ?? "base";
+            _allStartPoints = options.Candidates;
+        }
+        catch
+        {
+            _defaultBaseLabel = "base";
+            _allStartPoints = [];
+        }
+        finally
+        {
+            StartPointsLoading = false;
+            OnPropertyChanged(nameof(DefaultStartPointLabel));
+            OnPropertyChanged(nameof(StartPointDisplay));
+            RebuildStartPointResults();
+        }
+    }
+
     /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used
     /// free workspace (keep), or building a new one when the pool has none free — mirroring the CLI.</summary>
     [RelayCommand]
@@ -536,7 +626,18 @@ public partial class WorkspacesViewModel : PageViewModel
 
         ModeKeep = true;
         ModeFresh = false;
+
+        // Reset the start-from picker to "Default", then fetch the real remote branches in the background.
+        _defaultBaseLabel = "base";
+        _allStartPoints = [];
+        StartPointResults.Clear();
+        StartPointSearch = "";
+        SelectedStartPointItem = null;
+        IsStartPointOpen = false;
+        OnPropertyChanged(nameof(StartPointDisplay));
+
         IsCheckingOut = true;
+        _ = LoadStartPointsAsync(group.Stack);
     }
 
     [RelayCommand]
@@ -596,8 +697,9 @@ public partial class WorkspacesViewModel : PageViewModel
         {
             var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
             var labelArg = label.Length == 0 ? null : label;
+            var startPoint = SelectedStartPointItem?.Ref; // null = Default (each repo resolves its base)
             var record = await AppServices.RunAsync(() =>
-                Services.Pools.Checkout(stack, existing, branch, labelArg, mode, force: false, progress));
+                Services.Pools.Checkout(stack, existing, branch, labelArg, mode, force: false, progress, startPoint));
 
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == record.Workspace) ?? Selected;

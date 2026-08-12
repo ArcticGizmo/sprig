@@ -64,10 +64,25 @@ public interface IGitService
     /// local base branch.</summary>
     void Fetch(string repo);
 
-    /// <summary>The ref a workspace's repos resync to on a refresh — the remote's default branch when
-    /// there is one (<c>origin/HEAD</c> → e.g. <c>origin/main</c>), else the local <c>main</c>/<c>master</c>.
-    /// Throws when none can be found.</summary>
+    /// <summary>The default ref a workspace branches from / resyncs to. Prefers an <c>upstream</c> remote
+    /// over <c>origin</c> (fork/gitflow: you branch from the canonical repo, not your fork's stale main):
+    /// <c>&lt;remote&gt;/HEAD</c> → e.g. <c>upstream/main</c>, else <c>&lt;remote&gt;/main|master</c>, else a
+    /// local <c>main</c>/<c>master</c>. Throws when none can be found.</summary>
     string ResolveDefaultBase(string repo);
+
+    /// <summary>Candidate start points for the "start from" picker: every remote-tracking branch (all
+    /// remotes) and every local branch, each with its tip-commit date (for recency ordering), minus the
+    /// symbolic <c>&lt;remote&gt;/HEAD</c> entries. Best-effort: empty on any error. Fetch first if you want
+    /// them current.</summary>
+    IReadOnlyList<BranchRef> ListStartPointCandidates(string repo);
+
+    /// <summary>The repo's currently checked-out branch (short name), or null when HEAD is detached — so a
+    /// picker can flag "branch from where you are now".</summary>
+    string? CurrentBranch(string repo);
+
+    /// <summary>True if <paramref name="reference"/> resolves to a commit in the repo — used to check a
+    /// chosen start point exists before branching from it (and to fall back per repo when it doesn't).</summary>
+    bool RefExists(string repo, string reference);
 
     /// <summary>Hard-reset the checked-out branch (and working tree) to <paramref name="reference"/>.
     /// Touches <b>tracked</b> files only — gitignored artifacts (node_modules, build output, real

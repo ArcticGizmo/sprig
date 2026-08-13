@@ -196,9 +196,9 @@ public sealed partial class WorkspaceService(
                 var repo = plan.Repo;
                 var repoScope = wired.ScopeFor(repo.Name);
 
-                // Park the slot: add the worktree in detached HEAD at the chosen start point (default: the
-                // repo's base). A fresh slot carries no branch of its own — identity is attached later at
-                // claim (git also forbids the same branch in two worktrees, so N slots could never all sit on
+                // Park the workspace: add the worktree in detached HEAD at the chosen start point (default: the
+                // repo's base). A freshly-created workspace carries no branch of its own — identity is attached later at
+                // claim (git also forbids the same branch in two worktrees, so N workspaces could never all sit on
                 // main). Fetch first so the base reflects the latest remotes (a stale local origin/main was
                 // the whole point of the upstream-preferring base). The expensive warm state (env, compose,
                 // node_modules) is built below regardless of git state.
@@ -278,7 +278,7 @@ public sealed partial class WorkspaceService(
         catch (Exception ex)
         {
             progress?.Report(new(current, WorkspaceStepState.Error, ex.Message));
-            // Best-effort rollback across every repo materialised so far. A parked slot carries no branch,
+            // Best-effort rollback across every repo materialised so far. A parked workspace carries no branch,
             // so there's nothing to delete — just remove the worktree and its folder.
             foreach (var (root, worktree) in addedWorktrees)
             {
@@ -292,7 +292,7 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>Shared cheap pre-flight validation for create (used by both create and its planner). A
-    /// freshly-created slot carries no branch (it's parked detached), so there's no branch-name conflict to
+    /// freshly-created workspace carries no branch (it's parked detached), so there's no branch-name conflict to
     /// guard here — that check moves to <see cref="CheckClaim"/>, run when a branch is actually cut.</summary>
     void ValidateCreate(ResolvedStack stack, string workspace)
     {

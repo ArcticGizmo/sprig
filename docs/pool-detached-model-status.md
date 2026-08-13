@@ -8,7 +8,7 @@ first. This doc is the "where we are + what's left" handoff.
 
 Three bodies of work are built, tested (**664 tests green**), and committed on `pools`:
 
-1. **Detached-slot / branch-on-claim pool model** — idle slots park in detached HEAD; claiming cuts a
+1. **Detached-workspace / branch-on-claim pool model** — idle workspaces park in detached HEAD; claiming cuts a
    user-named branch across the stack; label is optional; release reports pending work and touches no git.
 2. **Keep/fresh + start point** — `ResolveDefaultBase` prefers `upstream` over `origin`; a searchable,
    fetch-instant "Start from" dropdown (chips, recent-by-default) with `--from <ref>` in the CLI.
@@ -25,7 +25,7 @@ a513cc5 Refine the branch graph: bigger dots, select-to-highlight, coloured pill
 160350d Add a visual branch graph (GitKraken-style) to the start-point picker
 caa60e3 Start-point selection: prefer upstream base + searchable branch picker
 ade2bd1 Make the start-from picker instant: local-first, background fetch, cache
-4c9d04e Detached-slot pool model: branch-on-claim, keep/fresh handling
+4c9d04e Detached-workspace pool model: branch-on-claim, keep/fresh handling
 ```
 (`ade2bd1` sits between the two start-point commits — the picker-perf change.)
 
@@ -95,7 +95,7 @@ ade2bd1 Make the start-from picker instant: local-first, background fetch, cache
 
 ## Model quick-reference (see plan doc for full detail)
 
-- Idle slot = detached HEAD at base; **claim** cuts one branch across the stack (the identity); label optional.
+- Idle workspace = detached HEAD at base; **claim** cuts one branch across the stack (the identity); label optional.
 - **keep** vs **fresh**: both cut a clean branch from the start point and reset tracked files to it (gitignored
   artifacts survive). keep leaves deps + volumes (fast); fresh reinstalls deps + wipes volumes.
 - **Start point** default = each repo's base, upstream-preferred; overridable via picker (`startPoint` is one

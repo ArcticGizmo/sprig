@@ -30,7 +30,7 @@ public sealed record InstanceRecord
 
     /// <summary>The <b>claim branch</b> — the single git branch name the user chose at claim, cut across
     /// every repo in the stack. This is the load-bearing identity of a claimed workspace (mirrored per repo
-    /// on <see cref="InstanceRepo.Branch"/>). Null while the workspace is parked (idle slot, worktrees in
+    /// on <see cref="InstanceRepo.Branch"/>). Null while the workspace is parked (idle workspace, worktrees in
     /// detached HEAD with no branch of their own).</summary>
     public string? Branch { get; init; }
 
@@ -82,7 +82,7 @@ public sealed record InstanceRepo
     /// <summary>The source repo whose worktree this is.</summary>
     public required string SourcePath { get; init; }
     /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>). Stable for the life of the
-    /// slot — machine-named, never renamed when a branch is claimed.</summary>
+    /// workspace — machine-named, never renamed when a branch is claimed.</summary>
     public required string WorktreePath { get; init; }
     /// <summary>The branch checked out in this repo's worktree: the workspace's claim branch when claimed,
     /// <c>null</c> while parked (the worktree sits in detached HEAD with no branch of its own).</summary>

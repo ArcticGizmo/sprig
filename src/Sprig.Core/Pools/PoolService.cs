@@ -62,7 +62,7 @@ public sealed class PoolService(
             var resolved = resolver.Resolve(stackName, null);
             var placeholder = $"{stackName}-{NextIndex(stackName, Members(stackName), stack.MaxSlots)}";
             var steps = workspaces.PlanCreate(resolved, placeholder).ToList();
-            // A new slot is created fresh at base, so its claim is minimal: just cut the branch per repo.
+            // A new workspace is created fresh at base, so its claim is minimal: just cut the branch per repo.
             foreach (var repo in resolved.Repos)
                 steps.Add(new WorkspaceStep(RefreshStepIds.Claim(repo.Name), $"Create branch — {repo.Name}"));
             steps.Add(new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure"));
@@ -131,9 +131,9 @@ public sealed class PoolService(
     /// <summary>
     /// Check out a workspace from the stack's pool: cut the claim <paramref name="branch"/> across its repos
     /// and mark it claimed (with an optional recognition <paramref name="label"/>). When
-    /// <paramref name="existingWorkspace"/> is named, that unclaimed slot is reused and its branch cut per
+    /// <paramref name="existingWorkspace"/> is named, that unclaimed workspace is reused and its branch cut per
     /// <paramref name="mode"/> (keep / fresh); when null, a brand-new parked <c>&lt;stack&gt;-&lt;n&gt;</c>
-    /// slot is materialised (only if the pool has room under <c>maxSlots</c>) and claimed minimally — it's
+    /// workspace is materialised (only if the pool has room under <c>maxSlots</c>) and claimed minimally — it's
     /// already fresh at base. The branch pre-flight is atomic across every repo (see
     /// <see cref="WorkspaceService.Claim"/>); a name that already exists aborts before anything is cut. Runs
     /// under a per-stack lock so the pick/allocate is atomic.
@@ -168,13 +168,13 @@ public sealed class PoolService(
                 $"pool '{stackName}' is full ({members.Count}/{stack.MaxSlots} in use) — release one first");
 
         // Pre-flight the branch against the source repos BEFORE materialising anything, so a name conflict
-        // never leaves a half-created slot behind.
+        // never leaves a half-created workspace behind.
         WorkspaceService.ThrowIfBlocked(
             workspaces.CheckClaimAcross(resolved.Repos.Select(r => (r.Name, r.Root)), branch), branch);
 
         var index = NextIndex(stackName, members, stack.MaxSlots);
         var name = $"{stackName}-{index}";
-        workspaces.Create(resolved, name, progress, startPoint); // parked slot at the chosen start point, warm
+        workspaces.Create(resolved, name, progress, startPoint); // parked workspace at the chosen start point, warm
         workspaces.CutBranchAndStart(name, branch, progress);    // minimal claim: cut branch at start point + start infra
         return MarkClaimed(name, label, index);
     }
@@ -186,7 +186,7 @@ public sealed class PoolService(
     /// volumes and node_modules stay (halted, not deleted), so a later checkout is fast. The branch/label are
     /// kept as "last used" hints. Returns the released record plus a <see cref="ReleaseReport"/> of any
     /// pending work (uncommitted changes / unpushed commits) — <b>surfaced, never acted on</b> — so the user
-    /// knows what's at stake before a later fresh checkout resets the slot. Idempotent-ish: releasing an
+    /// knows what's at stake before a later fresh checkout resets the workspace. Idempotent-ish: releasing an
     /// already-free workspace just re-stamps it.
     /// </summary>
     public (InstanceRecord Record, ReleaseReport Pending) Release(string workspace)

@@ -1,4 +1,4 @@
-# Pool → Detached-Slot / Branch-on-Claim Model
+# Pool → Parked-Workspace / Branch-on-Claim Model
 
 **Status:** Design agreed 2026-08-12 · supersedes the branch-per-workspace scheme in
 `docs/pool-model-plan.md` (M1–M5). Implementation on the `pools` branch.
@@ -12,7 +12,7 @@ human actually used — the label — floated free of anything git or the filesy
 show you. Reset logic had to keep those names in sync, which is where the "fresh reset"
 friction came from.
 
-The reframe: **an idle workspace is an anonymous, pre-warmed slot with no branch of its
+The reframe: **an idle workspace is anonymous and pre-warmed, with no branch of its
 own. Identity attaches at _claim_ time, and the thing that carries it is a real git
 branch** — because that is exactly what a worktree is built to hold. The label drops to an
 optional readability aid.
@@ -22,25 +22,25 @@ optional readability aid.
 A worktree holds **one** branch (or a detached HEAD) at a time, and git forbids the same
 branch being checked out in two worktrees at once. So:
 
-- A pool has N slots per repo → N worktrees of that repo. They **cannot** all sit on
-  `main`. A per-slot "home branch" would satisfy that constraint, but it never diverges
+- A pool has N workspaces → N worktrees of each repo. They **cannot** all sit on
+  `main`. A per-workspace "home branch" would satisfy that constraint, but it never diverges
   from `main` (nothing commits to it), so it's a redundant alias.
 - **Detached HEAD** solves it cleanly: a worktree parked in detached HEAD at `origin/main`
-  isn't "checking out a branch", so any number of idle slots can park at the same commit.
+  isn't "checking out a branch", so any number of idle workspaces can park at the same commit.
   No home branch needed.
 
 The warm value of the pool — the registered worktree, docker volumes, `node_modules`,
-`.env` — all lives in the **folder + docker**, keyed to the stable slot name
-`<stack>-<slot>`. None of it depends on a branch. So an idle slot carries no branch, and
+`.env` — all lives in the **folder + docker**, keyed to the stable workspace name
+`<stack>-<n>`. None of it depends on a branch. So an idle workspace carries no branch, and
 `origin/main` *is* the base every claim branches from.
 
 ## Worktrees, not full clones (confirmed)
 
-Kept worktrees over per-slot isolated clones:
+Kept worktrees over per-workspace isolated clones:
 
 - The cost we pool to avoid is **infra re-init** (docker, seeds, `node_modules`), which is
   identical either way. On the git axis, worktrees are strictly cheaper: shared object
-  store, cheap creation, one `fetch` refreshes every slot's `origin/main`.
+  store, cheap creation, one `fetch` refreshes every workspace's `origin/main`.
 - Working trees are already isolated per worktree (HEAD/index/tree are per-worktree). The
   shared **ref namespace** is a *feature* here — it's what makes the cross-repo
   branch-name conflict check natural. N independent clones would each have a private branch
@@ -53,7 +53,7 @@ Kept worktrees over per-slot isolated clones:
 
 | Identity | Value | Lifecycle |
 |---|---|---|
-| **Slot** — worktree folder + docker/compose project | `<repo>--<stack>-<slot>` / `sprig-<stack>-<slot>` | stable for the life of the slot; machine-named |
+| **Workspace** — worktree folder + docker/compose project | `<repo>--<stack>-<n>` / `sprig-<stack>-<n>` | stable for the life of the workspace; machine-named |
 | **Branch** — the work | user-chosen at claim, spans all repos in the stack | created on claim, kept on release |
 | **Label** — the sticky note | optional free text | cosmetic; recognition only |
 
@@ -61,16 +61,16 @@ Kept worktrees over per-slot isolated clones:
 
 Claiming is **two independent choices**: the branch's **start point** (git) and how the warm **environment**
 is handled (disk/docker). Pulling these apart is what makes "keep" predictable — the new branch always
-starts from a *known* ref, never from "whatever the slot happened to be parked on".
+starts from a *known* ref, never from "whatever the workspace happened to be parked on".
 
 | Event | git action |
 |---|---|
-| **Slot created** | `git worktree add <path> --detach <base>` (base resolved via existing `ResolveDefaultBase`) — a *freshly-created* slot parks in detached HEAD (N slots can't all sit on `main`) |
-| **Claim — new slot** | `git switch -c <branch>` from base (the slot is already at base; env/compose/setup already done by create) + start infra — the minimal `CutBranchAndStart` path |
+| **Workspace created** | `git worktree add <path> --detach <base>` (base resolved via existing `ResolveDefaultBase`) — a *freshly-created* workspace parks in detached HEAD (N workspaces can't all sit on `main`) |
+| **Claim — new workspace** | `git switch -c <branch>` from base (the workspace is already at base; env/compose/setup already done by create) + start infra — the minimal `CutBranchAndStart` path |
 | **Claim — keep** (reuse, default) | `git fetch`; `git switch -c <branch>` then `git reset --hard <startPoint>` (default base); reapply env/compose; **keep** deps + volumes (no reinstall); start infra |
 | **Claim — fresh** (reuse) | same git as keep, but **reinstall deps (setup)** and **wipe volumes** |
 | **Release** | report pending work — **touch no git at all**. The worktree stays on its claim branch; nothing is detached or reset. |
-| **Idle after release** | on its (unique) claim branch — no conflict, because each released slot has its own branch name |
+| **Idle after release** | on its (unique) claim branch — no conflict, because each released workspace has its own branch name |
 
 **keep vs fresh** differ *only* in the warm state: both cut a clean branch from the start point and reset
 tracked source to it (gitignored artifacts — node_modules, docker volumes, real `.env` — always survive).
@@ -82,7 +82,7 @@ point (and were already reported at release).
 
 The **start point** defaults to each repo's base, and `ResolveDefaultBase` now **prefers an `upstream`
 remote over `origin`** — the fork/gitflow case where you branch from the canonical repo but push to your
-fork, so `origin/main` is stale. Slot creation and claim both **fetch first**, so the base is current.
+fork, so `origin/main` is stale. Workspace creation and claim both **fetch first**, so the base is current.
 
 Override it with a **branch picker**: `Claim` takes a `startPoint` (a single ref applied to every repo),
 surfaced as `--from <ref>` and an interactive list in the CLI, and a searchable dropdown in the app —
@@ -91,7 +91,7 @@ recent-by-default and full-search-on-type (`StartPointFilter`). A chosen ref abs
 to that repo's base (noted on the row).
 
 There's also a **visual branch graph** (GitKraken-style): a branch icon by the dropdown opens an overlay
-that draws the commit DAG in swimlanes (`git log --all` → `CommitGraphLayout` → a custom `GraphLinesControl`),
+that draws the commit DAG in swimlanes (`git log --all` → `CommitGraphLayout` → a per-row `RowGraphControl`),
 current branch ringed, with the searchable dropdown on top to jump to a specific branch. Click a branch pill
 or a commit to set the start point. It reads the **first repo** of the stack (the graph is per-repo; the
 start point still spans the stack).
@@ -101,7 +101,7 @@ start point still spans the stack).
 > from `origin/release-2`), and how to resolve a ref that exists in some repos but not others. Tracked as a
 > `TODO` on `WorkspaceService.Claim`.
 
-> **Why release touches no git.** Detached parking exists only to solve the *freshly-created* case where many slots would otherwise want `main`. Once a slot has been claimed it owns a **unique** branch, so it can sit on that branch between uses with no conflict — and leaving it there is the only way release can be truly report-only (a `switch --detach` would fail on an uncommitted tree, i.e. it would have to *act*). The next claim always cuts a new branch from the chosen start point (default base), so git state is resolved at claim time, never at release.
+> **Why release touches no git.** Detached parking exists only to solve the *freshly-created* case where many workspaces would otherwise want `main`. Once a workspace has been claimed it owns a **unique** branch, so it can sit on that branch between uses with no conflict — and leaving it there is the only way release can be truly report-only (a `switch --detach` would fail on an uncommitted tree, i.e. it would have to *act*). The next claim always cuts a new branch from the chosen start point (default base), so git state is resolved at claim time, never at release.
 
 ## Claim: conflict pre-flight (atomic across the stack)
 
@@ -126,17 +126,17 @@ On release, per repo, surface two distinct categories of pending work and act on
 
 e.g. *"repo A: 3 uncommitted files · repo B: 2 unpushed commits"*. The branch ref survives
 release, so unpushed commits are stranded-but-recoverable, not lost — but the user should
-know before a later `fresh` resets the slot.
+know before a later `fresh` resets the workspace.
 
 ## Data-model changes (`InstanceRecord` / `InstanceRepo`)
 
-- `InstanceRepo.Branch` becomes the **claim branch** — `null` while the slot is parked
+- `InstanceRepo.Branch` becomes the **claim branch** — `null` while the workspace is parked
   (detached), set to the user's branch name on claim, retained on release.
 - Add a workspace-level **`Branch`** (the single claim-branch name that spans the stack's
   repos) so the UI/CLI has one name to show; `InstanceRepo.Branch` mirrors it per repo.
 - `Label` stays but becomes optional (drop the "a checkout needs a label" guard).
 - Name validation tightened from the `^[A-Za-z0-9._-]+$` regex to real git ref rules
-  (`git check-ref-format`) for both the slot name and the user's branch name.
+  (`git check-ref-format`) for both the workspace name and the user's branch name.
 
 ## Scope for the first cut
 
@@ -147,7 +147,7 @@ know before a later `fresh` resets the slot.
 
 ## Migration
 
-Existing workspaces carry `sprig--<workspace>` branches and no detached-slot concept.
+Existing workspaces carry `sprig--<workspace>` branches and no detached-workspace concept.
 This is personal tooling on the `pools` branch — plan is **new model only**: existing
 pooled workspaces should be town down (`sprig ws rm --force`) and re-created, rather than
 migrated in place.

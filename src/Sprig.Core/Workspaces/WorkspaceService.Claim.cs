@@ -7,7 +7,7 @@ namespace Sprig.Core.Workspaces;
 
 /// <summary>Per-repo pending work found when a workspace is released — <b>surfaced, never acted on</b>. The
 /// branch ref survives release, so <see cref="UnpushedCommits"/> are stranded-but-recoverable, not lost;
-/// the user decides what to do before a later fresh checkout resets the slot.</summary>
+/// the user decides what to do before a later fresh checkout resets the workspace.</summary>
 public sealed record RepoPending(string Repo, bool Dirty, int UnpushedCommits)
 {
     public bool HasAny => Dirty || UnpushedCommits > 0;
@@ -54,7 +54,7 @@ public sealed partial class WorkspaceService
         => CheckClaimAcross(record.Repos.Select(r => (r.Name, r.SourcePath)), branch);
 
     /// <summary>The repo-list form of <see cref="CheckClaim"/> — so a not-yet-created workspace can be
-    /// pre-flighted against its stack's source repos <b>before</b> any slot is materialised.</summary>
+    /// pre-flighted against its stack's source repos <b>before</b> any workspace is materialised.</summary>
     public ClaimConflicts CheckClaimAcross(IEnumerable<(string Name, string SourcePath)> repos, string branch)
     {
         var blocked = new List<string>();
@@ -78,7 +78,7 @@ public sealed partial class WorkspaceService
     }
 
     /// <summary>Throw if <paramref name="branch"/> isn't a legal git branch name. Public so the pool can
-    /// reject a bad name <b>before</b> materialising a slot (the validity check must precede any side effect).</summary>
+    /// reject a bad name <b>before</b> materialising a workspace (the validity check must precede any side effect).</summary>
     public void EnsureValidBranchName(string branch)
     {
         if (!git.IsValidBranchName(branch))
@@ -122,7 +122,7 @@ public sealed partial class WorkspaceService
     /// <para>
     /// Both modes cut the branch at <paramref name="startPoint"/> (default: the repo's base — <c>origin/main</c>)
     /// and reset the tracked tree to it, so the code is a clean, predictable checkout; gitignored artifacts
-    /// (node_modules, docker volumes, real .env) always survive, and the slot's previous branch is left as a
+    /// (node_modules, docker volumes, real .env) always survive, and the workspace's previous branch is left as a
     /// ref (no commits lost). They differ only in the warm state: <b>keep</b> (<paramref name="fresh"/> =
     /// false) leaves volumes and installed deps as they are — the fast path; <b>fresh</b> reinstalls deps
     /// (setup) and wipes volumes for clean runtime data.
@@ -182,7 +182,7 @@ public sealed partial class WorkspaceService
             }
 
             // Setup (dependency install) runs only on fresh; keep trusts the warm node_modules already on
-            // disk. On keep we carry the prior setup outcomes so a previously-degraded slot stays flagged.
+            // disk. On keep we carry the prior setup outcomes so a previously-degraded workspace stays flagged.
             var setupOutcomes = repo.Setup;
             if (fresh && HasSetup(resolved))
             {
@@ -209,12 +209,12 @@ public sealed partial class WorkspaceService
         return instances.TryLoad(workspace) ?? claimed;
     }
 
-    /// <summary>Cut the claim <paramref name="branch"/> on a <b>freshly-created</b> slot and start its infra —
-    /// the minimal claim for the new-workspace path. The slot was just materialised by <see cref="Create"/>
+    /// <summary>Cut the claim <paramref name="branch"/> on a <b>freshly-created</b> workspace and start its infra —
+    /// the minimal claim for the new-workspace path. The workspace was just materialised by <see cref="Create"/>
     /// at base with env/compose/setup already done, so this only creates the branch (from the current base
     /// HEAD) and starts infra; it deliberately skips the reset/env/compose/setup that <see cref="Claim"/>
-    /// does for a reused slot, to avoid redoing work Create just finished. The branch pre-flight is the
-    /// pool's responsibility here (it runs before Create so a bad name never materialises a slot).</summary>
+    /// does for a reused workspace, to avoid redoing work Create just finished. The branch pre-flight is the
+    /// pool's responsibility here (it runs before Create so a bad name never materialises a workspace).</summary>
     public InstanceRecord CutBranchAndStart(string workspace, string branch,
         IProgress<WorkspaceStepProgress>? progress = null)
     {
@@ -225,7 +225,7 @@ public sealed partial class WorkspaceService
         foreach (var repo in record.Repos)
         {
             progress?.Report(new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Running));
-            git.SwitchNewBranch(repo.WorktreePath, branch); // slot is parked at base — branch starts there
+            git.SwitchNewBranch(repo.WorktreePath, branch); // workspace is parked at base — branch starts there
             progress?.Report(new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Done));
             updatedRepos.Add(repo with { Branch = branch });
         }

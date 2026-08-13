@@ -368,7 +368,7 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
                 });
 
         // Report pending work — surfaced, never acted on — so nothing is silently stranded before a later
-        // fresh checkout resets the slot.
+        // fresh checkout resets the workspace.
         if (pending.HasPending)
         {
             console.MarkupLine($"[yellow]heads-up:[/] pending work stays on branch [green]{Markup.Escape(record.Branch ?? "-")}[/] " +

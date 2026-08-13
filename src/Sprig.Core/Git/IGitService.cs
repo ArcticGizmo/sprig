@@ -38,7 +38,7 @@ public interface IGitService
     void AddWorktree(string repo, string worktreePath, string branch);
 
     /// <summary>Add a worktree at <paramref name="worktreePath"/> in <b>detached HEAD</b> at
-    /// <paramref name="reference"/> — a parked slot with no branch of its own, so any number of slots can
+    /// <paramref name="reference"/> — a parked workspace with no branch of its own, so any number of workspaces can
     /// share the same base commit (git forbids the same branch in two worktrees; detached sidesteps it).</summary>
     void AddWorktreeDetached(string repo, string worktreePath, string reference);
 

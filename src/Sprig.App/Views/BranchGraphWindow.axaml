@@ -41,10 +41,12 @@
                     <ItemsControl x:Name="RowsHost" ItemsSource="{Binding GraphRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:GraphRowViewModel">
-                                <Grid ColumnDefinitions="Auto,Auto,*" MinHeight="38">
-                                    <!-- Left: hash + age, aligned to the first (message) line. -->
-                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" Margin="8,11,10,0"
-                                                VerticalAlignment="Top">
+                                <!-- Fixed-width first column so the graph column starts at the same x on every
+                                     row (an Auto column would vary with the sha/age text width and zig-zag the lanes). -->
+                                <Grid ColumnDefinitions="140,Auto,*" MinHeight="38">
+                                    <!-- Left: hash + age, right-aligned toward the lanes, on the first line. -->
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" Margin="8,11,12,0"
+                                                VerticalAlignment="Top" HorizontalAlignment="Right">
                                         <TextBlock Text="{Binding ShortSha}" FontFamily="Cascadia Code, Consolas, monospace"
                                                    FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                         <TextBlock Text="{Binding When}" FontSize="10" Foreground="{StaticResource MutedBrush}" />

@@ -7,9 +7,10 @@ namespace Sprig.App.ViewModels;
 /// the commit as the start point; selecting a pill picks that branch.</summary>
 public sealed class GraphRowViewModel
 {
-    public GraphRowViewModel(GraphNode node, string? currentBranch)
+    public GraphRowViewModel(GraphNode node, GraphRowRender cell, string? currentBranch)
     {
         Node = node;
+        Cell = cell;
         IsCurrent = currentBranch is not null && node.Commit.Refs.Contains(currentBranch);
         Refs = node.Commit.Refs
             .Select(r => new GraphRefViewModel(r, Classify(r, currentBranch)))
@@ -17,6 +18,9 @@ public sealed class GraphRowViewModel
     }
 
     public GraphNode Node { get; }
+
+    /// <summary>This row's graph slice (lanes crossing it + the dot), drawn by the per-row control.</summary>
+    public GraphRowRender Cell { get; }
     public string Sha => Node.Commit.Sha;
     public string ShortSha => Node.Commit.Sha.Length >= 8 ? Node.Commit.Sha[..8] : Node.Commit.Sha;
     public string Subject => Node.Commit.Subject;
@@ -25,10 +29,6 @@ public sealed class GraphRowViewModel
     public bool HasRefs => Refs.Count > 0;
     public bool IsCurrent { get; }
     public string When => Node.Commit.When is { } t ? RelativeTime.Format(t) : "";
-
-    /// <summary>Row height: message on the first line, and a second line of branch tags when present. The
-    /// graph control is fed the same heights and pins each dot to the first (message) line, so dots align.</summary>
-    public double RowHeight => HasRefs ? 50 : 28;
 
     static GraphRefViewModel.RefKind Classify(string reference, string? currentBranch)
     {

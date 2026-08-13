@@ -7,8 +7,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Avalonia;
-using Sprig.App.Controls;
 using Sprig.Core.Graph;
 using Sprig.Core.Pools;
 using Sprig.Core.Stacks;
@@ -633,19 +631,16 @@ public partial class WorkspacesViewModel : PageViewModel
     private string? _graphSelectedRef;
     [ObservableProperty] private string? _graphSelectedSha;
 
-    /// <summary>Scroll offset of the graph, so the search can jump it to a branch's row.</summary>
-    [ObservableProperty] private Vector _graphScrollOffset;
-
     /// <summary>The overlay search's selection — picking a branch here highlights + scrolls the graph to it.</summary>
     [ObservableProperty] private StartPointItemViewModel? _graphSearchSelection;
 
+    /// <summary>Raised (with a row index) to ask the window to bring that commit row into view.</summary>
+    public event Action<int>? ScrollToRowRequested;
+
     public bool HasGraphSelection => !string.IsNullOrWhiteSpace(GraphSelectedRef);
 
-    /// <summary>The list rows drawn beside the lanes — one per commit, aligned by row height.</summary>
+    /// <summary>The list rows drawn beside the lanes — one per commit; each carries its own graph slice.</summary>
     public ObservableCollection<GraphRowViewModel> GraphRows { get; } = [];
-
-    /// <summary>Per-row heights fed to the graph control so its dots line up with the (variable-height) rows.</summary>
-    [ObservableProperty] private IReadOnlyList<double> _graphRowHeights = [];
 
     /// <summary>Raised when the branch-graph window should open (payload is this VM, used as its DataContext).
     /// The view's code-behind opens the resizable window, mirroring the progress-window pattern.</summary>
@@ -661,12 +656,10 @@ public partial class WorkspacesViewModel : PageViewModel
 
         BranchGraphError = null;
         GraphRows.Clear();
-        GraphRowHeights = [];
         BranchGraph = null;
         GraphSelectedRef = null;
         GraphSelectedSha = null;
         GraphSearchSelection = null;
-        GraphScrollOffset = default;
         IsBranchGraphOpen = true;
         BranchGraphLoading = true;
         BranchGraphRequested?.Invoke(this); // open the window now; it shows the spinner while we load
@@ -681,9 +674,8 @@ public partial class WorkspacesViewModel : PageViewModel
 
             BranchGraph = graph;
             BranchGraphCurrentSha = currentSha;
-            foreach (var n in graph.Nodes)
-                GraphRows.Add(new GraphRowViewModel(n, current));
-            GraphRowHeights = GraphRows.Select(r => r.RowHeight).ToList();
+            for (var i = 0; i < graph.Nodes.Count; i++)
+                GraphRows.Add(new GraphRowViewModel(graph.Nodes[i], graph.Cells[i], current));
         }
         catch (Exception ex) { BranchGraphError = ex.Message; }
         finally { BranchGraphLoading = false; }
@@ -720,7 +712,7 @@ public partial class WorkspacesViewModel : PageViewModel
         if (value is null) return;
         SelectGraphRef(value.Ref);
         var idx = GraphRows.ToList().FindIndex(r => r.Sha == GraphSelectedSha);
-        if (idx >= 0) GraphScrollOffset = new Vector(0, idx * GraphLinesControl.RowHeight);
+        if (idx >= 0) ScrollToRowRequested?.Invoke(idx);
     }
 
     /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used

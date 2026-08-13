@@ -180,6 +180,7 @@ public sealed class GitService(IProcessRunner runner) : IGitService
             if (name.StartsWith("HEAD -> ", StringComparison.Ordinal)) name = name["HEAD -> ".Length..];
             else if (name == "HEAD") continue;
             if (name.StartsWith("tag: ", StringComparison.Ordinal)) continue;
+            if (name.EndsWith("/HEAD", StringComparison.Ordinal)) continue; // e.g. origin/HEAD — not a real branch
             refs.Add(name);
         }
         return refs;

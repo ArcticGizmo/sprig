@@ -18,9 +18,25 @@ public partial class BranchGraphWindow : Window
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_vm is not null) _vm.PropertyChanged -= OnVmChanged;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged -= OnVmChanged;
+            _vm.ScrollToRowRequested -= ScrollToRow;
+        }
         _vm = DataContext as WorkspacesViewModel;
-        if (_vm is not null) _vm.PropertyChanged += OnVmChanged;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged += OnVmChanged;
+            _vm.ScrollToRowRequested += ScrollToRow;
+        }
+    }
+
+    // Bring a commit row into view when the search jumps to a branch (rows vary in height, so we can't just
+    // compute an offset — ask the container to reveal itself).
+    void ScrollToRow(int index)
+    {
+        if (RowsHost.ContainerFromIndex(index) is Control container)
+            container.BringIntoView();
     }
 
     void OnVmChanged(object? sender, PropertyChangedEventArgs e)

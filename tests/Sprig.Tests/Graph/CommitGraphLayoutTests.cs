@@ -42,6 +42,22 @@ public class CommitGraphLayoutTests
     }
 
     [Fact]
+    public void Row_cells_capture_pass_through_and_convergence()
+    {
+        var g = CommitGraphLayout.Build([C("A", "C"), C("B", "C"), C("C")]);
+
+        // Row 0 (A, lane 0): a line down toward its parent in lane 0.
+        Assert.Contains(g.Cells[0].Segments, s => s.Kind == SegmentKind.NodeToBottom && s.ToLane == 0);
+        // Row 1 (B, lane 1): A's line to C passes straight through lane 0; B descends in its own lane 1
+        // (it only merges into C's lane at C's row, below).
+        Assert.Contains(g.Cells[1].Segments, s => s.Kind == SegmentKind.PassThrough && s.FromLane == 0);
+        Assert.Contains(g.Cells[1].Segments, s => s.Kind == SegmentKind.NodeToBottom && s.ToLane == 1);
+        // Row 2 (C, lane 0): both incoming lanes converge into the node.
+        Assert.Equal(2, g.Cells[2].Segments.Count(s => s.Kind == SegmentKind.TopToNode));
+        Assert.All(g.Cells, c => Assert.Equal(g.LaneCount, c.LaneCount));
+    }
+
+    [Fact]
     public void A_parent_off_the_bottom_of_the_window_is_dropped_not_crashed()
     {
         // 'a' points at 'z', which isn't in the (truncated) window — the link is simply omitted.

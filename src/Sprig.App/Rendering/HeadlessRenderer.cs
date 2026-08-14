@@ -95,7 +95,7 @@ internal static class HeadlessRenderer
             // states the live store can't show at once: first-run (empty) and running.
             RenderHomeStates(outDir);
 
-            // The stack wiring diagram (patchbay), from a fixed sample so it renders the same
+            // The stack wiring diagram (repo graph), from a fixed sample so it renders the same
             // regardless of what's in the live store — and so drawing it is exercised on real Skia.
             RenderWiringSample(outDir);
 
@@ -780,7 +780,7 @@ internal static class HeadlessRenderer
             Ports = ports.ToDictionary(p => p.Name, p => p.Port),
         };
 
-    /// <summary>Render the patchbay for a fixed multi-repo sample (two shared ports + a transform).</summary>
+    /// <summary>Render the repo graph for a fixed multi-repo sample (owner→consumer lines + shared chips).</summary>
     static void RenderWiringSample(string outDir)
     {
         string[] repos = ["sprig-example-vue", "dotnet-api", "worker"];
@@ -811,8 +811,16 @@ internal static class HeadlessRenderer
             },
         };
 
-        var graph = WiringGraph.Build(repos, ports, inputs, bindings);
-        CaptureControl(new WiringCanvas { Graph = graph }, Path.Combine(outDir, "stacks_wiring_diagram.png"));
+        // Ownership overlay so the diagram shows directed owner→consumer lines, not only chips.
+        var owners = new Dictionary<string, string>
+        {
+            ["frontend_port"] = "sprig-example-vue",
+            ["api_port"] = "dotnet-api",
+            ["postgres_port"] = "dotnet-api",
+            ["queue_port"] = "worker",
+        };
+        var graph = RepoGraph.Build(repos, ports, inputs, bindings, owners);
+        CaptureControl(new RepoGraphCanvas { Graph = graph }, Path.Combine(outDir, "stacks_wiring_diagram.png"));
     }
 
     static void CaptureControl(Control content, string path)

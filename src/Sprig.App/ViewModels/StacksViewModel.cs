@@ -206,9 +206,6 @@ public partial class StacksViewModel : PageViewModel
     /// </summary>
     [ObservableProperty] private RepoGraph? _builderRepoGraph;
 
-    /// <summary>False shows the port-centric patchbay; true shows the repo dependency graph.</summary>
-    [ObservableProperty] private bool _graphView;
-
     /// <summary>
     /// Which repo owns (produces) each stack port — port → repo. A visualization-only overlay (it never
     /// feeds resolution) that decides whether a port draws as a directed owner→consumer line or a shared

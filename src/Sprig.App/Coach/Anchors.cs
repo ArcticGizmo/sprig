@@ -32,7 +32,6 @@ public static class Anchors
     public const string StackCloneName = "stack.cloneName";
     public const string StackCloneConfirm = "stack.cloneConfirm";
     public const string SettingsPortsInUse = "settings.portsInUse";
-    public const string StackCanvas = "stack.canvas";
     public const string StackGraph = "stack.graph";
 
     /// <summary>
@@ -62,19 +61,12 @@ public static class Anchors
         WorkspaceDocker,
         PoolCheckoutConfirm,
         SettingsPortsInUse,
-        StackCanvas,
         StackGraph,
     ];
 
-    // --- Inside the wiring canvas (resolved by IAnchorSource, keyed on domain identity) ---
-    /// <summary>A named stack port on the canvas rail, e.g. <c>stack.port:api_port</c>.</summary>
-    public static string StackPort(string port) => $"stack.port:{port}";
-
-    /// <summary>A repo node on the canvas, e.g. <c>stack.node:sample-api</c>.</summary>
+    // --- Inside the repo graph (resolved by IAnchorSource, keyed on domain identity) ---
+    /// <summary>A repo node on the repo graph, e.g. <c>stack.node:sample-api</c>.</summary>
     public static string StackNode(string repo) => $"stack.node:{repo}";
-
-    /// <summary>One repo input's pin (its jack + label), e.g. <c>stack.pin:sample-web/apiUrl</c>.</summary>
-    public static string StackPin(string repo, string input) => $"stack.pin:{repo}/{input}";
 
     // --- List rows (AutomationId bound from row data in XAML) ---
 
@@ -85,9 +77,6 @@ public static class Anchors
     /// <summary>A left-nav entry by its page title, e.g. <c>nav:Stacks</c> — so a step can point at where
     /// you'd go next.</summary>
     public static string Nav(string pageTitle) => $"nav:{pageTitle}";
-
-    /// <summary>The canvas's auto-wire button (drawn, not a control).</summary>
-    public const string StackAutoWire = "stack.autoWire";
 }
 
 /// <summary>

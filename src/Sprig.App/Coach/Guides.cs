@@ -194,17 +194,17 @@ public static class Guides
                 Prepare = () => { nav.ShowStacksFresh(); return Task.CompletedTask; },
             },
 
-            new(Anchors.StackCanvas,
+            new(Anchors.StackGraph,
                 "Both repos, wired by convention",
-                "Here's the builder. Both repos sit on the right, the stack's ports on the left. Selecting the repos auto-wired every input to a port — each cable shows what feeds what. sample-api's port and dbPort, sample-web's port and apiUrl: all supplied by the stack.")
+                "Here's the builder. Each repo is a node, and the ports it defines live in the rail on the left. Selecting the repos auto-wired every input to a port — click a repo to see and edit what fills each input. sample-api's port and dbPort, sample-web's port and apiUrl: all supplied by the stack.")
             {
                 Side = CoachSide.Left,
                 Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
             },
 
-            new(Anchors.StackCanvas,
+            new(Anchors.StackGraph,
                 "Each repo gets its own ports — unless you say otherwise",
-                "Auto-wire gives every input a separate port, so two services never collide by accident. When you *do* want two repos to share one — the web app talking to the API's exact port — you drag one onto the other. Sharing is always a deliberate choice, never a surprise.")
+                "Auto-wire gives every input a separate port, so two services never collide by accident. When you *do* want two repos to share one — the web app talking to the API's exact port — you say which repo owns it, and a line is drawn from owner to consumer. Sharing is always a deliberate choice, never a surprise.")
             {
                 Side = CoachSide.Left,
                 Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },

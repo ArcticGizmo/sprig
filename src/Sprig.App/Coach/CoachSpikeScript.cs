@@ -33,12 +33,11 @@ public static class CoachSpikeScript
             "This panel starts outside the viewport. Measuring it before scrolling would give the wrong rectangle, so the resolver brings it into view and flushes layout first. The callout flipped side to stay on screen.")
         { Side = CoachSide.Above, Prepare = () => { nav.GoToSettings(); return Task.CompletedTask; } },
 
-        // A repo node rather than a port: node identity is whatever repos are selected, so it's deterministic
-        // here, whereas port names come from auto-wire's naming convention. Ports resolve through the exact
-        // same path (Anchors.StackPort) — this case is about the mechanism, not the key.
+        // A repo node: node identity is whatever repos are selected, so it's deterministic here. The node
+        // is drawn by the repo graph, resolved through IAnchorSource keyed by repo name.
         new(Anchors.StackNode("sample-api"),
             "Case 3 — pixels, not controls",
-            "This node is drawn by the wiring canvas, so there is no control to tag. The canvas publishes the same rectangle it already uses for hit-testing, keyed by repo name — so the highlight can never disagree with what you can click or drag.")
+            "This node is drawn by the repo graph, so there is no control to tag. The canvas publishes the same rectangle it already uses for hit-testing, keyed by repo name — so the highlight can never disagree with what you can click.")
         { Side = CoachSide.Left, Prepare = () => nav.OpenStackBuilderWired() },
     ];
 }

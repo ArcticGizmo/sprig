@@ -53,16 +53,11 @@
             <!-- Guidance and legend stay pinned; only the canvas scrolls. The canvas fills whatever
                  vertical space is left between them, so the text is never pushed off-screen. -->
             <DockPanel LastChildFill="True">
-                <!-- View switch: the patchbay (port-centric wiring) vs the repo graph (repo-centric
-                     dependencies). Same edit surface, two lenses on the same build. The "Guess owners"
-                     assist only makes sense on the graph, so it rides alongside and shows there. -->
+                <!-- The repo graph is the stack editor. The "Guess owners" assist sits at the top. -->
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Center"
                             Spacing="12" Margin="0,0,0,8">
-                    <ToggleSwitch IsChecked="{Binding GraphView}" OffContent="Patchbay" OnContent="Repo graph"
-                                  VerticalAlignment="Center"
-                                  ToolTip.Tip="Switch between the port patchbay and the repo dependency graph" />
                     <Button Content="⌕ Guess owners" Command="{Binding GuessOwnersCommand}"
-                            IsVisible="{Binding GraphView}" VerticalAlignment="Center" Padding="10,4" FontSize="11"
+                            VerticalAlignment="Center" Padding="10,4" FontSize="11"
                             ToolTip.Tip="Infer each unowned port's owner from its name (e.g. api_port → api). Only fills blanks — your picks are kept." />
                 </StackPanel>
 
@@ -71,39 +66,14 @@
                     <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
                                Text="Each input has been wired to a port by convention. Review it and change anything that isn't what you meant — two repos only share a port if you say so." />
                     <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               IsVisible="{Binding !GraphView}"
-                               Text="Drag a port onto an input to rewire it, or drag an input back to a source to unbind it. Click a port to rename it, an input to set a literal value, a ƒ node to edit a transform, or a line to select it." />
-                    <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               IsVisible="{Binding GraphView}"
-                               Text="Repos are nodes; a port with an owner and one other consumer draws as an owner→consumer line, and anything shared becomes a counted chip. Hover a repo or a line to reveal port names. Click a chip to name its owner (turning it into a line), or a line to change/clear it. Drag a node to tidy." />
+                               Text="Repos are nodes; a port with an owner and one other consumer draws as an owner→consumer line, and anything shared becomes a counted chip. Hover a repo or a line to reveal port names. Click a repo to edit its inputs, a chip to name its owner, or a line to change/clear it. Drag a node to tidy." />
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"
                            Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !CanAutoWire}"
-                           Text="Add a repo below to start. sprig reads the inputs it declares and wires them to ports for you." />
+                           Text="Add a repo to start — use the ＋ add repo node on the canvas. sprig reads the inputs it declares and wires them to ports for you." />
 
-                <!-- Column headers, aligned to the canvas columns (patchbay only). -->
-                <Grid DockPanel.Dock="Top" HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284" Margin="0,0,0,8"
-                      IsVisible="{Binding !GraphView}">
-                    <TextBlock Grid.Column="0" Text="SOURCE" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                    <Button Grid.Column="0" Content="✦ Tidy" Command="{Binding CleanupCommand}"
-                            IsVisible="{Binding CanCleanup}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Padding="8,2" FontSize="10"
-                            ToolTip.Tip="Reorder sources and repos to reduce line crossings" />
-                    <TextBlock Grid.Column="1" Text="TRANSFORM" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                    <TextBlock Grid.Column="2" Text="REPO" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
-                </Grid>
-
-                <!-- Legend pinned to the bottom, per view. -->
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsVisible="{Binding !GraphView}">
-                    <TextBlock Text="■ plain" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="■ transform" Foreground="{StaticResource DevBrush}" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="■ producer port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="■ unbound" Foreground="{StaticResource DangerBrush}" FontSize="11" />
-                </WrapPanel>
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsVisible="{Binding GraphView}">
+                <!-- Legend pinned to the bottom. -->
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
                     <TextBlock Text="→ owner → consumer" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="⬡ shared ports" Foreground="#FBBF24" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="● port" Foreground="#4ADE80" FontSize="11" Margin="0,0,14,0" />
@@ -114,12 +84,12 @@
                     <TextBlock Text="★ provides" Foreground="{StaticResource OkBrush}" FontSize="11" />
                 </WrapPanel>
 
-                <!-- Graph view gets a persistent ports rail on the left: create / rename / remove ports,
-                     accept ones a binding references but the stack hasn't defined yet, and spot at a glance
-                     which ports nothing uses. Reflection bindings (CompileBindings off) keep the per-row
+                <!-- A persistent ports rail on the left: create / rename / remove / reorder ports, accept
+                     ones a binding references but the stack hasn't defined yet, and spot at a glance which
+                     ports nothing uses. Reflection bindings (CompileBindings off) keep the per-row
                      StackPortRow commands and the window-VM commands simple. -->
                 <DockPanel LastChildFill="True">
-                    <Border DockPanel.Dock="Left" IsVisible="{Binding GraphView}" x:CompileBindings="False" Width="236"
+                    <Border DockPanel.Dock="Left" x:CompileBindings="False" Width="236"
                             Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,8,0">
                         <DockPanel>
@@ -216,34 +186,11 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar.
-                         Both lenses live here; the toggle shows one. -->
+                    <!-- The graph canvas fills the remaining space; its own ScrollViewer is the only scrollbar. -->
                     <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1" CornerRadius="8" ClipToBounds="True">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                            <Panel>
-                            <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
-                                                   IsVisible="{Binding !GraphView}"
-                                                   AutomationProperties.AutomationId="stack.canvas"
-                                                   HorizontalAlignment="Center"
-                                                   WireCommand="{Binding WirePinCommand}"
-                                                   UnwireCommand="{Binding UnwirePinCommand}"
-                                                   WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
-                                                   CreatePortCommand="{Binding CreatePortCommand}"
-                                                   SetExpressionCommand="{Binding SetExpressionCommand}"
-                                                   Variables="{Binding BindingVariables}"
-                                                   RenamePortCommand="{Binding RenamePortCommand}"
-                                                   RemovePortCommand="{Binding RemoveNamedPortCommand}"
-                                                   AddPortCommand="{Binding AddNamedPortCommand}"
-                                                   AppendSourceCommand="{Binding AppendSourceCommand}"
-                                                   AddableRepos="{Binding AddableRepos}"
-                                                   AddRepoCommand="{Binding AddStackRepoCommand}"
-                                                   RemoveRepoCommand="{Binding RemoveStackRepoCommand}"
-                                                   ReorderRepoCommand="{Binding ReorderRepoCommand}"
-                                                   ReorderPortCommand="{Binding ReorderPortCommand}"
-                                                   AutoWireCommand="{Binding AutoWireCommand}" />
                             <controls:RepoGraphCanvas Graph="{Binding BuilderRepoGraph}" IsEditable="True"
-                                                      IsVisible="{Binding GraphView}"
                                                       AutomationProperties.AutomationId="stack.graph"
                                                       HorizontalAlignment="Center"
                                                       SetOwnerCommand="{Binding SetPortOwnerCommand}"
@@ -251,8 +198,7 @@
                                                       AddableRepos="{Binding AddableRepos}"
                                                       AddRepoCommand="{Binding AddStackRepoCommand}"
                                                       RemoveRepoCommand="{Binding RemoveStackRepoCommand}" />
-                        </Panel>
-                    </ScrollViewer>
+                        </ScrollViewer>
                     </Border>
                 </DockPanel>
             </DockPanel>
@@ -262,9 +208,9 @@
              left null otherwise so it stays inert (e.g. static docs captures). -->
         <coach:CoachOverlay x:Name="Coachmarks" />
 
-        <!-- Per-repo input editor, opened by clicking a node on the repo graph. A structured picker per
-             input drives the very same bindings the patchbay edits, so the graph's lines redraw live
-             behind this. Clicking the scrim (handled in code-behind) or Done closes it. -->
+        <!-- Per-repo input editor, opened by clicking a node on the repo graph. Each input is a token box
+             over the repo's bindings, so the graph's pins and lines redraw live behind this. Clicking the
+             scrim (handled in code-behind) or Done closes it. -->
         <Border x:Name="RepoEditorScrim" Background="#B0000000"
                 IsVisible="{Binding RepoEditor, Converter={x:Static ObjectConverters.IsNotNull}}"
                 PointerPressed="OnScrimPressed">

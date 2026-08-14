@@ -25,14 +25,27 @@ namespace Sprig.App.Controls;
 /// repos changes. Revisit persisting per-repo positions on the stack if hand-tidy turns out to be worth
 /// keeping (see the pools-branch handoff notes).</para>
 ///
-/// The one editing affordance here is ownership: click a chip to name the port's owner (promoting it to
-/// a line), or an edge to change / clear it. All other editing stays on the patchbay
-/// (<see cref="WiringCanvas"/>); this is the read-optimised second lens. Layout is derived from
+/// This is the stack editor: click a repo node to edit its inputs (the token-box modal), the "＋ add repo"
+/// node or a node's ✕ to add/remove repos, a chip to name a port's owner (promoting it to a line), or an
+/// edge to change / clear it. Ports are managed in the rail beside it. Layout is derived from
 /// <see cref="RepoGraph"/>; this control only draws and hit-tests.
 /// </summary>
-public sealed class RepoGraphCanvas : Control, ICustomHitTest
+public sealed class RepoGraphCanvas : Control, ICustomHitTest, Coach.IAnchorSource
 {
     public bool HitTest(Point point) => true;
+
+    /// <summary>
+    /// Publish a drawn repo node's rect so a coachmark can point at it (<c>stack.node:&lt;repo&gt;</c>).
+    /// Reuses the same rect the layout already produced for hit-testing, so the highlight can never
+    /// disagree with what's on screen. Meaningful only after a layout pass.
+    /// </summary>
+    public bool TryGetAnchor(string anchorId, out Rect bounds)
+    {
+        bounds = default;
+        const string prefix = "stack.node:";
+        return anchorId.StartsWith(prefix, StringComparison.Ordinal)
+            && _nodeRects.TryGetValue(anchorId[prefix.Length..], out bounds);
+    }
 
     public static readonly StyledProperty<RepoGraph?> GraphProperty =
         AvaloniaProperty.Register<RepoGraphCanvas, RepoGraph?>(nameof(Graph));
@@ -69,7 +82,7 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     public ICommand? AddRepoCommand { get => GetValue(AddRepoCommandProperty); set => SetValue(AddRepoCommandProperty, value); }
     public ICommand? RemoveRepoCommand { get => GetValue(RemoveRepoCommandProperty); set => SetValue(RemoveRepoCommandProperty, value); }
 
-    // Palette (mirrors App.axaml / WiringCanvas).
+    // Palette (mirrors App.axaml).
     static readonly IBrush Bg = Brush.Parse("#181820");
     static readonly IBrush Panel = Brush.Parse("#1F1F2A");
     static readonly IBrush PanelHead = Brush.Parse("#14141B");

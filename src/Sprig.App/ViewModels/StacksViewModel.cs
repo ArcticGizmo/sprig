@@ -251,6 +251,46 @@ public partial class StacksViewModel : PageViewModel
         RebuildBuilderWiring();
     }
 
+    /// <summary>The per-repo input editor opened from the graph (null when closed).</summary>
+    [ObservableProperty] private RepoInputEditorViewModel? _repoEditor;
+
+    /// <summary>Open the structured input editor for a repo (click its node on the graph).</summary>
+    [RelayCommand]
+    private void EditRepoInputs(string? repo)
+    {
+        if (repo is null) return;
+        var group = Bindings.FirstOrDefault(g => g.Repo == repo);
+        if (group is null) return;
+
+        CloseRepoEditor(); // detach any prior editor before opening the next
+        var declared = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var editor = new RepoInputEditorViewModel(group, declared, CreatePortFromEditor);
+        editor.CloseRequested += CloseRepoEditor;
+        RepoEditor = editor;
+    }
+
+    /// <summary>Close (and detach) the per-repo input editor.</summary>
+    void CloseRepoEditor()
+    {
+        if (RepoEditor is { } editor)
+        {
+            editor.CloseRequested -= CloseRepoEditor;
+            editor.Detach();
+            RepoEditor = null;
+        }
+    }
+
+    /// <summary>Declare a new stack port on behalf of the graph editor's "＋ new port" action.</summary>
+    void CreatePortFromEditor(string name)
+    {
+        var n = name.Trim();
+        if (n.Length == 0 || Ports.Any(p => p.Name.Trim() == n)) return;
+        Ports.Add(NewPortRow(n));
+        ReindexPortPreviews();
+        RebuildBindingVariables();
+        RebuildBuilderWiring();
+    }
+
     /// <summary>
     /// Fill in owners for the ports that don't have one, inferred from their names (<c>api_port</c> →
     /// <c>api</c>). A conservative assist — it only ever fills blanks, never overrides an owner you
@@ -527,7 +567,7 @@ public partial class StacksViewModel : PageViewModel
     }
 
     [RelayCommand]
-    private void CancelCreate() { IsCreating = false; Error = null; }
+    private void CancelCreate() { CloseRepoEditor(); IsCreating = false; Error = null; }
 
     [RelayCommand]
     private void AddPort()
@@ -669,6 +709,7 @@ public partial class StacksViewModel : PageViewModel
 
             NewName = "";
             foreach (var c in RepoChoices) c.IsSelected = false;
+            CloseRepoEditor();
             Ports.Clear();
             Bindings.Clear();
             _portOwners.Clear();

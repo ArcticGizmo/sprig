@@ -42,15 +42,27 @@ public partial class StackEditorWindow : Window
         base.OnClosed(e);
     }
 
-    // Escape cancels the edit (matches the old overlay). The cancel flows through the view model, which
-    // flips IsCreating and lets the opener close this window.
+    // Escape closes the per-repo input editor if it's open, otherwise cancels the whole edit (matching
+    // the old overlay). The cancel flows through the view model, which flips IsCreating and lets the
+    // opener close this window.
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            (DataContext as StacksViewModel)?.CancelCreateCommand.Execute(null);
+            if (DataContext is StacksViewModel { RepoEditor: { } editor })
+                editor.CloseCommand.Execute(null);
+            else
+                (DataContext as StacksViewModel)?.CancelCreateCommand.Execute(null);
             e.Handled = true;
         }
         base.OnKeyDown(e);
+    }
+
+    // A click on the modal's dimmed backdrop (but not its inner panel) closes the input editor.
+    void OnScrimPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!ReferenceEquals(e.Source, RepoEditorScrim)) return;
+        (DataContext as StacksViewModel)?.RepoEditor?.CloseCommand.Execute(null);
+        e.Handled = true;
     }
 }

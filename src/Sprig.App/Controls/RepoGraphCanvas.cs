@@ -44,9 +44,14 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> SetOwnerCommandProperty =
         AvaloniaProperty.Register<RepoGraphCanvas, ICommand?>(nameof(SetOwnerCommand));
 
+    /// <summary>Invoked with a repo name (string) when a repo node is clicked (to edit its inputs).</summary>
+    public static readonly StyledProperty<ICommand?> EditRepoCommandProperty =
+        AvaloniaProperty.Register<RepoGraphCanvas, ICommand?>(nameof(EditRepoCommand));
+
     public RepoGraph? Graph { get => GetValue(GraphProperty); set => SetValue(GraphProperty, value); }
     public bool IsEditable { get => GetValue(IsEditableProperty); set => SetValue(IsEditableProperty, value); }
     public ICommand? SetOwnerCommand { get => GetValue(SetOwnerCommandProperty); set => SetValue(SetOwnerCommandProperty, value); }
+    public ICommand? EditRepoCommand { get => GetValue(EditRepoCommandProperty); set => SetValue(EditRepoCommandProperty, value); }
 
     // Palette (mirrors App.axaml / WiringCanvas).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -494,9 +499,11 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
-        if (_dragRepo is not null)
+        if (_dragRepo is { } repo)
         {
             e.Pointer.Capture(null);
+            // A press that never moved is a click: open that repo's input editor. A drag just repositions.
+            if (!_dragMoved && IsEditable) EditRepoCommand?.Execute(repo);
             _dragRepo = null;
             _dragMoved = false;
             e.Handled = true;

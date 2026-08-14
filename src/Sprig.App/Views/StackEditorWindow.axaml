@@ -139,7 +139,8 @@
                                                       IsVisible="{Binding GraphView}"
                                                       AutomationProperties.AutomationId="stack.graph"
                                                       HorizontalAlignment="Center"
-                                                      SetOwnerCommand="{Binding SetPortOwnerCommand}" />
+                                                      SetOwnerCommand="{Binding SetPortOwnerCommand}"
+                                                      EditRepoCommand="{Binding EditRepoInputsCommand}" />
                         </Panel>
                     </ScrollViewer>
                 </Border>
@@ -149,5 +150,71 @@
         <!-- Coach layer for the editor window. DataContext + AnchorRoot are set in code-behind (AttachCoach);
              left null otherwise so it stays inert (e.g. static docs captures). -->
         <coach:CoachOverlay x:Name="Coachmarks" />
+
+        <!-- Per-repo input editor, opened by clicking a node on the repo graph. A structured picker per
+             input drives the very same bindings the patchbay edits, so the graph's lines redraw live
+             behind this. Clicking the scrim (handled in code-behind) or Done closes it. -->
+        <Border x:Name="RepoEditorScrim" Background="#B0000000"
+                IsVisible="{Binding RepoEditor, Converter={x:Static ObjectConverters.IsNotNull}}"
+                PointerPressed="OnScrimPressed">
+            <Border DataContext="{Binding RepoEditor}" x:DataType="vm:RepoInputEditorViewModel"
+                    Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="20"
+                    Width="540" MaxHeight="640" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="{Binding RepoName, StringFormat='Edit {0}'}" FontSize="16"
+                                       FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                            <TextBlock Text="Set what fills each input — the graph updates as you go."
+                                       FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="✕" Command="{Binding CloseCommand}"
+                                Padding="8,2" VerticalAlignment="Top" />
+                    </Grid>
+
+                    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,14,0,0">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                            <TextBox Text="{Binding NewPortName, Mode=TwoWay}" PlaceholderText="new port name" Width="150" FontSize="12" />
+                            <Button Content="＋ add port" Command="{Binding AddPortCommand}" FontSize="12"
+                                    ToolTip.Tip="Declare a new stack port so you can bind an input to it" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Done" Command="{Binding CloseCommand}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                    </Grid>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:RepoInputRowViewModel">
+                                    <Grid ColumnDefinitions="150,116,*" Margin="0,0,4,12">
+                                        <StackPanel Grid.Column="0" Spacing="1" Margin="0,0,10,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Input}" FontSize="12.5" Foreground="{StaticResource FgBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Example}" FontSize="10.5" Foreground="{StaticResource MutedBrush}"
+                                                       TextWrapping="Wrap"
+                                                       IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind, Mode=TwoWay}"
+                                                  VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
+                                        <Panel Grid.Column="2" VerticalAlignment="Center">
+                                            <ComboBox IsVisible="{Binding IsPort}" ItemsSource="{Binding AvailablePorts}"
+                                                      SelectedItem="{Binding PortName, Mode=TwoWay}" PlaceholderText="pick a port"
+                                                      HorizontalAlignment="Stretch" />
+                                            <TextBox IsVisible="{Binding IsLiteral}" Text="{Binding LiteralValue, Mode=TwoWay}"
+                                                     PlaceholderText="a fixed value" FontSize="12" />
+                                            <controls:SprigTokenBox IsVisible="{Binding IsCustom}" Value="{Binding CustomExpression, Mode=TwoWay}"
+                                                                    Variables="{Binding Variables}" Watermark="literal or ${sprig.ports.NAME}" />
+                                            <TextBlock IsVisible="{Binding IsWorkspace}" Text="uses the workspace name"
+                                                       FontSize="11.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                        </Panel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Border>
     </Grid>
 </Window>

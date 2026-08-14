@@ -104,11 +104,13 @@
                     <TextBlock Text="■ unbound" Foreground="{StaticResource DangerBrush}" FontSize="11" />
                 </WrapPanel>
                 <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsVisible="{Binding GraphView}">
-                    <TextBlock Text="■ owner → consumer line" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="■ shared port chip" Foreground="#FBBF24" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="★ provides a port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="● input filled" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="○ empty" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                    <TextBlock Text="→ owner → consumer" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="⬡ shared ports" Foreground="#FBBF24" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="● port" Foreground="#4ADE80" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="● composite" Foreground="#1F9D54" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="● literal" Foreground="#FB923C" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="○ empty" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="★ provides" Foreground="{StaticResource OkBrush}" FontSize="11" />
                 </WrapPanel>
 
                 <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar.
@@ -189,7 +191,7 @@
                         <ItemsControl ItemsSource="{Binding Rows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:RepoInputRowViewModel">
-                                    <Grid ColumnDefinitions="150,116,*" Margin="0,0,4,12">
+                                    <Grid ColumnDefinitions="150,*,Auto" Margin="0,0,4,12">
                                         <StackPanel Grid.Column="0" Spacing="1" Margin="0,0,10,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Input}" FontSize="12.5" Foreground="{StaticResource FgBrush}"
                                                        TextWrapping="Wrap" />
@@ -197,33 +199,24 @@
                                                        TextWrapping="Wrap"
                                                        IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                         </StackPanel>
-                                        <ComboBox Grid.Column="1" ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind, Mode=TwoWay}"
-                                                  VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
-                                        <Panel Grid.Column="2" VerticalAlignment="Center">
-                                            <!-- Port: pick an existing one, or ＋ to name a new port and bind to it in place
-                                                 (the first-run answer to "there's no port defined yet"). -->
-                                            <Grid IsVisible="{Binding IsPort}" ColumnDefinitions="*,Auto">
-                                                <ComboBox Grid.Column="0" ItemsSource="{Binding AvailablePorts}"
-                                                          SelectedItem="{Binding PortName, Mode=TwoWay}" PlaceholderText="pick a port"
-                                                          HorizontalAlignment="Stretch" IsVisible="{Binding !AddingPort}" />
-                                                <Button Grid.Column="1" Content="＋" Command="{Binding StartAddPortCommand}"
-                                                        IsVisible="{Binding !AddingPort}" Margin="6,0,0,0" Padding="8,4"
-                                                        ToolTip.Tip="Create a new port and bind this input to it" />
-                                                <TextBox Grid.Column="0" Text="{Binding NewPortName, Mode=TwoWay}"
-                                                         PlaceholderText="new port name" IsVisible="{Binding AddingPort}" FontSize="12" />
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="6,0,0,0"
-                                                            IsVisible="{Binding AddingPort}">
-                                                    <Button Content="✓" Command="{Binding ConfirmAddPortCommand}" Padding="8,4" />
-                                                    <Button Content="✕" Command="{Binding CancelAddPortCommand}" Padding="8,4" />
-                                                </StackPanel>
-                                            </Grid>
-                                            <TextBox IsVisible="{Binding IsLiteral}" Text="{Binding LiteralValue, Mode=TwoWay}"
-                                                     PlaceholderText="a fixed value" FontSize="12" />
-                                            <controls:SprigTokenBox IsVisible="{Binding IsCustom}" Value="{Binding CustomExpression, Mode=TwoWay}"
-                                                                    Variables="{Binding Variables}" Watermark="literal or ${sprig.ports.NAME}" />
-                                            <TextBlock IsVisible="{Binding IsWorkspace}" Text="uses the workspace name"
-                                                       FontSize="11.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                                        </Panel>
+
+                                        <!-- The full custom editor (autocomplete + highlighting), same as everywhere else. -->
+                                        <controls:SprigTokenBox Grid.Column="1" VerticalAlignment="Center"
+                                                                Value="{Binding Expression, Mode=TwoWay}" Variables="{Binding Variables}"
+                                                                Watermark="literal or ${sprig.ports.NAME}"
+                                                                IsVisible="{Binding !AddingPort}" />
+                                        <!-- ＋ port: name a new port and reference it here (the first-run shortcut). -->
+                                        <TextBox Grid.Column="1" VerticalAlignment="Center" Text="{Binding NewPortName, Mode=TwoWay}"
+                                                 PlaceholderText="new port name" IsVisible="{Binding AddingPort}" FontSize="12" />
+
+                                        <Button Grid.Column="2" Content="＋ port" Command="{Binding StartAddPortCommand}"
+                                                IsVisible="{Binding !AddingPort}" Margin="6,0,0,0" Padding="8,4" VerticalAlignment="Center"
+                                                ToolTip.Tip="Create a new port and reference it from this input" />
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="6,0,0,0"
+                                                    VerticalAlignment="Center" IsVisible="{Binding AddingPort}">
+                                            <Button Content="✓" Command="{Binding ConfirmAddPortCommand}" Padding="8,4" />
+                                            <Button Content="✕" Command="{Binding CancelAddPortCommand}" Padding="8,4" />
+                                        </StackPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

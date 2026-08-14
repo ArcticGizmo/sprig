@@ -10,13 +10,25 @@ public sealed record RepoGraphNode(
     IReadOnlyList<string> Owns,
     IReadOnlyList<RepoGraphChip> Chips);
 
+/// <summary>How an input is filled — drives the colour of its pin on the graph.</summary>
+public enum RepoInputMode
+{
+    /// <summary>Nothing bound yet.</summary>
+    Empty,
+    /// <summary>A fixed value (or the workspace name) — no stack-port reference at all.</summary>
+    Literal,
+    /// <summary>Exactly a single bare <c>${sprig.ports.X}</c> — a clean, direct port reference.</summary>
+    Port,
+    /// <summary>References a port but wraps or combines it (a template, multiple sources).</summary>
+    Composite,
+}
+
 /// <summary>
-/// One declared input drawn as a pin on a repo node. <see cref="Bound"/> is true when the stack fills
-/// it with anything (so the canvas can show it green rather than empty); <see cref="Owned"/> is true
-/// when it's bound to a port this same repo owns — i.e. the pin is what the repo <i>provides</i>, drawn
-/// as a star rather than a dot.
+/// One declared input drawn as a pin on a repo node. <see cref="Mode"/> classifies how it's filled (so
+/// the canvas can colour it); <see cref="Owned"/> is true when it references a port this same repo owns
+/// — i.e. the pin is what the repo <i>provides</i>, drawn as a star rather than a dot.
 /// </summary>
-public sealed record RepoGraphPin(string Name, bool Bound, bool Owned);
+public sealed record RepoGraphPin(string Name, RepoInputMode Mode, bool Owned);
 
 /// <summary>
 /// A port chip attached to a consuming repo: the port name and how many repos consume it. Drawn in
@@ -116,10 +128,15 @@ public sealed record RepoGraph(
             var pins = names.Select(name =>
             {
                 var expr = repoBindings is not null && repoBindings.TryGetValue(name, out var e) ? e : null;
-                var bound = !string.IsNullOrWhiteSpace(expr);
-                // Provides: bound to a port this repo itself owns — the pin the arrows flow out of.
-                var provides = PortExpressions.ReferencedPorts(expr).Any(owned.Contains);
-                return new RepoGraphPin(name, bound, provides);
+                var refs = PortExpressions.ReferencedPorts(expr).Where(declared.Contains).ToList();
+                var mode = string.IsNullOrWhiteSpace(expr) ? RepoInputMode.Empty
+                    : refs.Count == 0 ? RepoInputMode.Literal
+                    : refs.Count == 1 && !PortExpressions.ReferencesWorkspace(expr) && PortExpressions.IsBareSourceReference(expr)
+                        ? RepoInputMode.Port
+                        : RepoInputMode.Composite;
+                // Provides: references a port this repo itself owns — the pin the arrows flow out of.
+                var provides = refs.Any(owned.Contains);
+                return new RepoGraphPin(name, mode, provides);
             }).ToList();
             return new RepoGraphNode(r, pins, ownsByRepo[r], chipsByRepo[r]);
         }).ToList();

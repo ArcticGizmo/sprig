@@ -62,7 +62,9 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     static readonly IBrush Muted = Brush.Parse("#8C8CA0");
     static readonly IBrush Border = Brush.Parse("#2D2D3C");
     static readonly IBrush Wire = Brush.Parse("#60A5FA");
-    static readonly IBrush Signal = Brush.Parse("#4ADE80");   // producer / owned
+    static readonly IBrush Signal = Brush.Parse("#4ADE80");   // straight port reference
+    static readonly IBrush DeepGreen = Brush.Parse("#1F9D54"); // composite (port + text)
+    static readonly IBrush Orange = Brush.Parse("#FB923C");   // literal
     static readonly IBrush Share = Brush.Parse("#FBBF24");    // shared-port chips
     static readonly IBrush Danger = Brush.Parse("#F87171");
 
@@ -78,7 +80,7 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     readonly Dictionary<string, Rect> _nodeRects = new(StringComparer.Ordinal);
     readonly Dictionary<string, Point> _manualPos = new(StringComparer.Ordinal); // top-left overrides from dragging
     readonly List<(string Port, string Owner, string Consumer, Point A, Point C1, Point C2, Point B, Point Label)> _edges = new();
-    readonly List<(Rect Rect, string Port, string Repo)> _chips = new();
+    readonly List<(Rect Rect, string Repo)> _chips = new();   // one collapsed "N shared" pill per node
     string? _layoutSignature; // the repo-set the auto-layout was computed for
 
     RepoGraph? _laidOut;
@@ -156,22 +158,17 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             _nodeRects[node.Repo] = new Rect(topLeft, new Size(NodeW, heights[node.Repo]));
         }
 
-        // Chips: a row of pills just above each node's top edge (wrapping across the node width).
+        // Chips: the shared/unowned ports a node consumes are "global" values used across the stack.
+        // Drawing one pill per port ate the whole band, so collapse them to a single counted label above
+        // the node ("⬡ N shared") and reveal the actual port names on hover.
         foreach (var node in g.Nodes)
         {
             if (node.Chips.Count == 0) continue;
             var rect = _nodeRects[node.Repo];
-            var perRow = Math.Max(1, (int)((NodeW + ChipGapY) / (ChipW(node) + ChipGapY)));
-            for (var i = 0; i < node.Chips.Count; i++)
-            {
-                var col = i % perRow;
-                var rowIdx = i / perRow;
-                var w = ChipW(node);
-                var cx = rect.X + col * (w + ChipGapY);
-                var rowsTotal = (node.Chips.Count + perRow - 1) / perRow;
-                var cy = rect.Y - ChipBandGap - (rowsTotal - rowIdx) * (ChipH + ChipGapY) + ChipGapY;
-                _chips.Add((new Rect(cx, cy, w, ChipH), node.Chips[i].Port, node.Repo));
-            }
+            var w = Ft(ChipLabel(node), 10.5, Share).Width + 20;
+            var cx = rect.X + (NodeW - w) / 2;
+            var cy = rect.Y - ChipBandGap - ChipH;
+            _chips.Add((new Rect(cx, cy, w, ChipH), node.Repo));
         }
 
         // Edges: route from the owner's border to the consumer's border along the line between their
@@ -263,14 +260,8 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
 
     static double NodeHeight(RepoGraphNode n) => HeadH + Math.Max(1, n.Inputs.Count) * InputRowH + NodePadY;
 
-    double ChipW(RepoGraphNode n) => Math.Min(NodeW, 84);
-    double ChipBandHeight(RepoGraphNode n)
-    {
-        if (n.Chips.Count == 0) return 0;
-        var perRow = Math.Max(1, (int)((NodeW + ChipGapY) / (ChipW(n) + ChipGapY)));
-        var rows = (n.Chips.Count + perRow - 1) / perRow;
-        return rows * (ChipH + ChipGapY) + ChipBandGap;
-    }
+    static string ChipLabel(RepoGraphNode n) => $"⬡ {n.Chips.Count} shared";
+    static double ChipBandHeight(RepoGraphNode n) => n.Chips.Count == 0 ? 0 : ChipH + ChipBandGap;
 
     // -- render ---------------------------------------------------------------
 
@@ -296,21 +287,19 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             if (showLabel) DrawEdgeLabel(ctx, e.Label, e.Port);
         }
 
-        // Chips (shared / unowned port pills above their consumer).
-        foreach (var (rect, port, repo) in _chips)
+        // Chips: one collapsed "⬡ N shared" pill per node, with a stem down to it. The individual shared
+        // ports are revealed in a tooltip when the node (or its pill) is hovered — see below.
+        foreach (var (rect, repo) in _chips)
         {
+            var node = g.Nodes.FirstOrDefault(n => n.Repo == repo);
+            if (node is null) continue;
             var dim = _hoverRepo is not null && _hoverRepo != repo;
             using var _ = ctx.PushOpacity(dim ? 0.3 : 1.0);
-            var count = _laidOut?.Nodes.FirstOrDefault(n => n.Repo == repo)?
-                .Chips.FirstOrDefault(c => c.Port == port)?.UsedBy ?? 1;
-            var label = count > 1 ? $"{port} ×{count}" : port;
             ctx.DrawRectangle(Brush.Parse("#2A2313"), new Pen(Share, 1.3), rect, ChipH / 2, ChipH / 2);
-            DrawText(ctx, Truncate(label, rect.Width - 14, 10.5), rect, Share, 10.5, center: true);
-            // Little stem down to the node top.
-            var stem = new Pen(Share, 1.3);
+            DrawText(ctx, ChipLabel(node), rect, Share, 10.5, center: true);
             var sx = rect.Center.X;
             if (_nodeRects.TryGetValue(repo, out var nr))
-                ctx.DrawLine(stem, new Point(sx, rect.Bottom), new Point(sx, Math.Min(nr.Top, rect.Bottom + 6)));
+                ctx.DrawLine(new Pen(Share, 1.3), new Point(sx, rect.Bottom), new Point(sx, Math.Min(nr.Top, rect.Bottom + 6)));
         }
 
         // Nodes.
@@ -329,23 +318,53 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
 
             var rowY = r.Y + HeadH + 6;
 
-            // Input pins, one per declared input: a green dot when the input is filled, grey when empty,
-            // and a green star when it's bound to a port THIS repo owns (the value it provides). The star
-            // replaces the old "serves …" subtitle, which would just overflow the node.
+            // Input pins, one per declared input, coloured by how the input is filled: a straight port
+            // reference is green, a composite (port wrapped in text) deep green, a literal orange, and an
+            // empty input a hollow grey dot. A pin bound to a port THIS repo owns is a star (what it
+            // provides) rather than a dot — the star replaced the old "serves …" subtitle that overflowed.
             foreach (var pin in node.Inputs)
             {
                 var centre = new Point(r.X + 17, rowY + InputRowH / 2);
+                var (col, filled) = pin.Mode switch
+                {
+                    RepoInputMode.Port => (Signal, true),
+                    RepoInputMode.Composite => (DeepGreen, true),
+                    RepoInputMode.Literal => (Orange, true),
+                    _ => (Muted, false),   // Empty
+                };
                 if (pin.Owned)
-                    ctx.DrawGeometry(Signal, new Pen(Signal, 1), Star(centre, 6.4, 2.7));
+                    ctx.DrawGeometry(col, new Pen(col, 1), Star(centre, 6.4, 2.7));
                 else
-                    ctx.DrawEllipse(pin.Bound ? Signal : PanelHead, new Pen(pin.Bound ? Signal : Muted, 1.4), centre, 3.6, 3.6);
+                    ctx.DrawEllipse(filled ? col : PanelHead, new Pen(col, 1.4), centre, 3.6, 3.6);
                 DrawText(ctx, Truncate(pin.Name, NodeW - 46, 10.5), new Rect(r.X + 30, rowY, NodeW - 42, InputRowH),
-                    pin.Bound ? Fg : Muted, 10.5, vcenter: true);
+                    pin.Mode == RepoInputMode.Empty ? Muted : Fg, 10.5, vcenter: true);
                 rowY += InputRowH;
             }
             if (node.Inputs.Count == 0)
                 DrawText(ctx, "no inputs", new Rect(r.X + 16, rowY, NodeW - 24, InputRowH), Muted, 10, vcenter: true);
         }
+
+        // Hovering a node with shared ports expands its collapsed pill into a tooltip naming each port
+        // and how many repos use it — the detail the count label hides to save space.
+        if (_hoverRepo is { } hr && _chips.FirstOrDefault(c => c.Repo == hr) is { Repo: not null } pill
+            && g.Nodes.FirstOrDefault(n => n.Repo == hr) is { Chips.Count: > 0 } hn)
+            DrawChipTooltip(ctx, pill.Rect, hn.Chips);
+    }
+
+    /// <summary>List each shared port a node consumes (name ×usage) above its collapsed pill.</summary>
+    void DrawChipTooltip(DrawingContext ctx, Rect pill, IReadOnlyList<RepoGraphChip> chips)
+    {
+        var lines = chips.Select(c => c.UsedBy > 1 ? $"{c.Port} ×{c.UsedBy}" : c.Port).ToList();
+        var fts = lines.Select(l => Ft(l, 11, Share)).ToList();
+        const double padX = 10, padY = 8, lineH = 17;
+        var w = fts.Max(f => f.Width) + padX * 2;
+        var h = padY * 2 + lines.Count * lineH;
+        var x = Math.Max(4, Math.Min(pill.Center.X - w / 2, _size.Width - w - 4));
+        var y = Math.Max(4, pill.Y - h - 6);
+        var box = new Rect(x, y, w, h);
+        ctx.DrawRectangle(Brush.Parse("#0F0F16"), new Pen(Share, 1), box, 8, 8);
+        for (var i = 0; i < fts.Count; i++)
+            ctx.DrawText(fts[i], new Point(x + padX, y + padY + i * lineH));
     }
 
     void DrawEdgeLabel(DrawingContext ctx, Point at, string port)
@@ -459,10 +478,10 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         var pos = e.GetPosition(this);
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
-            // A chip or an edge opens the ownership menu (editing only).
-            if (IsEditable && ChipAt(pos) is { } chip)
+            // A chip pill or an edge opens the ownership menu (editing only).
+            if (IsEditable && ChipAt(pos) is { } chipRepo)
             {
-                OpenChipMenu(chip.Port);
+                OpenChipMenu(chipRepo);
                 e.Handled = true;
             }
             else if (IsEditable && EdgeAt(pos) is { } edge)
@@ -498,9 +517,9 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             return;
         }
 
-        // A node under the cursor reveals its edges' labels; otherwise a line under the cursor reveals
-        // its own. Node wins so hovering a repo doesn't flicker between the two.
-        var node = NodeAt(pos);
+        // A node (or its shared-ports pill) under the cursor reveals that node's labels/tooltip;
+        // otherwise a line under the cursor reveals its own. Node wins so it doesn't flicker.
+        var node = NodeAt(pos) ?? ChipAt(pos);
         var edge = node is null ? EdgeIndexAt(pos) : -1;
         if (node != _hoverRepo || edge != _hoverEdge)
         {
@@ -538,10 +557,10 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         return null;
     }
 
-    (string Port, string Repo)? ChipAt(Point p)
+    string? ChipAt(Point p)
     {
-        foreach (var (rect, port, repo) in _chips)
-            if (rect.Contains(p)) return (port, repo);
+        foreach (var (rect, repo) in _chips)
+            if (rect.Contains(p)) return repo;
         return null;
     }
 
@@ -567,17 +586,27 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         return -1;
     }
 
-    /// <summary>Clicking a shared/unowned chip: pick which repo owns the port (promotes it to a line).</summary>
-    void OpenChipMenu(string port)
+    /// <summary>Clicking a node's collapsed shared-ports pill: for each shared port, pick an owner to
+    /// promote it into a directed line (a submenu of candidate repos per port).</summary>
+    void OpenChipMenu(string repo)
     {
+        var node = _laidOut?.Nodes.FirstOrDefault(n => n.Repo == repo);
+        if (node is null || node.Chips.Count == 0) return;
+
         var flyout = new MenuFlyout();
-        var header = new MenuItem { Header = $"Owner of '{port}'", IsEnabled = false };
-        flyout.Items.Add(header);
-        foreach (var repo in RepoNames())
+        flyout.Items.Add(new MenuItem { Header = "Assign an owner to make a line:", IsEnabled = false });
+        foreach (var chip in node.Chips)
         {
-            var item = new MenuItem { Header = repo };
-            item.Click += (_, _) => SetOwnerCommand?.Execute(new SetPortOwnerRequest(port, repo));
-            flyout.Items.Add(item);
+            var portItem = new MenuItem { Header = chip.Port };
+            foreach (var candidate in RepoNames())
+            {
+                var port = chip.Port;
+                var owner = candidate;
+                var sub = new MenuItem { Header = owner };
+                sub.Click += (_, _) => SetOwnerCommand?.Execute(new SetPortOwnerRequest(port, owner));
+                portItem.Items.Add(sub);
+            }
+            flyout.Items.Add(portItem);
         }
         flyout.ShowAt(this, showAtPointer: true);
     }

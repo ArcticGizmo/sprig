@@ -148,23 +148,28 @@ public class RepoGraphTests
     }
 
     [Fact]
-    public void Pins_report_bound_and_which_one_the_repo_provides()
+    public void Pins_report_their_mode_and_which_one_the_repo_provides()
     {
-        // api owns api_port and binds its own 'port' input to it (that pin is what it provides); 'log' is
-        // a bare literal (bound but not a provided port); 'spare' is left empty (unbound).
+        // 'port' is a bare port ref (and the port api owns → provides); 'url' wraps a port (composite);
+        // 'log' is a literal; 'spare' is empty.
         var g = RepoGraph.Build(
             repos: ["api"],
             ports: ["api_port"],
-            repoInputs: Inputs(("api", ["port", "log", "spare"])),
-            bindings: Bindings(("api", [("port", "${sprig.ports.api_port}"), ("log", "info")])),
+            repoInputs: Inputs(("api", ["port", "url", "log", "spare"])),
+            bindings: Bindings(("api",
+            [
+                ("port", "${sprig.ports.api_port}"),
+                ("url", "http://localhost:${sprig.ports.api_port}"),
+                ("log", "info"),
+            ])),
             owners: Owners(("api_port", "api")));
 
         var pins = g.Nodes.Single().Inputs.ToDictionary(p => p.Name);
-        Assert.True(pins["port"].Bound);
+        Assert.Equal(RepoInputMode.Port, pins["port"].Mode);
         Assert.True(pins["port"].Owned);   // provides api_port → drawn as a star
-        Assert.True(pins["log"].Bound);
+        Assert.Equal(RepoInputMode.Composite, pins["url"].Mode);
+        Assert.Equal(RepoInputMode.Literal, pins["log"].Mode);
         Assert.False(pins["log"].Owned);
-        Assert.False(pins["spare"].Bound); // empty → grey dot
-        Assert.False(pins["spare"].Owned);
+        Assert.Equal(RepoInputMode.Empty, pins["spare"].Mode);
     }
 }

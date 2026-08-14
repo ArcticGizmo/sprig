@@ -38,7 +38,25 @@ public sealed partial class RepoInputEditorViewModel : ViewModelBase
         foreach (var p in declaredPorts) Variables.Add("ports." + p);
 
         foreach (var row in group.Rows)
-            Rows.Add(new RepoInputRowViewModel(row, AvailablePorts, Variables, declaredPorts));
+            Rows.Add(new RepoInputRowViewModel(row, AvailablePorts, Variables, declaredPorts, DeclarePort));
+    }
+
+    /// <summary>
+    /// Declare a port (or reuse one of the same name) and make it selectable everywhere in this modal —
+    /// the shared machinery behind both the footer "＋ add port" and a row's inline "new port". Returns
+    /// the canonical name so a caller can immediately bind to it; null when the name is blank.
+    /// </summary>
+    string? DeclarePort(string name)
+    {
+        var n = name.Trim();
+        if (n.Length == 0) return null;
+        if (!AvailablePorts.Contains(n))
+        {
+            _createPort(n);                 // the parent declares it (and rebuilds the graph)
+            AvailablePorts.Add(n);
+            Variables.Add("ports." + n);
+        }
+        return n;
     }
 
     public string RepoName { get; }
@@ -52,16 +70,12 @@ public sealed partial class RepoInputEditorViewModel : ViewModelBase
 
     [ObservableProperty] private string _newPortName = "";
 
-    /// <summary>Mint a new stack port so it can be picked here — declared in the parent, then offered locally.</summary>
+    /// <summary>Mint a new stack port so it can be picked here (footer action — declares without binding).</summary>
     [RelayCommand]
     private void AddPort()
     {
-        var name = NewPortName.Trim();
+        DeclarePort(NewPortName);
         NewPortName = "";
-        if (name.Length == 0 || AvailablePorts.Contains(name)) return;
-        _createPort(name);                       // the parent declares it (and rebuilds the graph)
-        AvailablePorts.Add(name);                // ...and it becomes selectable in every row here
-        Variables.Add("ports." + name);
     }
 
     [RelayCommand]
@@ -84,17 +98,22 @@ public sealed partial class RepoInputRowViewModel : ViewModelBase
 {
     readonly BindingRow _row;
     readonly PropertyChangedEventHandler _onRowChanged;
-    bool _suppress;   // true while we're mirroring the expression INTO the fields (don't write back)
+    readonly Func<string, string?> _declarePort;
+    bool _suppress;    // true while we're mirroring the expression INTO the fields (don't write back)
+    bool _composing;   // true while WE write the expression (so our own write doesn't re-sync and bounce)
 
     public RepoInputRowViewModel(BindingRow row, ObservableCollection<string> availablePorts,
-        ObservableCollection<string> variables, IReadOnlyList<string> declaredPorts)
+        ObservableCollection<string> variables, IReadOnlyList<string> declaredPorts, Func<string, string?> declarePort)
     {
         _row = row;
         AvailablePorts = availablePorts;
         Variables = variables;
         _declared = declaredPorts;
+        _declarePort = declarePort;
         SyncFromExpression();
-        _onRowChanged = (_, e) => { if (e.PropertyName == nameof(BindingRow.Expression)) SyncFromExpression(); };
+        // React only to EXTERNAL edits (e.g. the patchbay rewiring the same row). Our own composed writes
+        // are guarded by _composing, so choosing "Literal" and leaving it blank doesn't bounce back to Port.
+        _onRowChanged = (_, e) => { if (e.PropertyName == nameof(BindingRow.Expression) && !_composing) SyncFromExpression(); };
         _row.PropertyChanged += _onRowChanged;
     }
 
@@ -102,6 +121,9 @@ public sealed partial class RepoInputRowViewModel : ViewModelBase
 
     public string Input => _row.Input;
     public string? Example => _row.Example;
+
+    /// <summary>The composed expression currently on the underlying binding (the single source of truth).</summary>
+    public string RawExpression => _row.Expression;
     public ObservableCollection<string> AvailablePorts { get; }
     public ObservableCollection<string> Variables { get; }
 
@@ -118,6 +140,31 @@ public sealed partial class RepoInputRowViewModel : ViewModelBase
     public bool IsWorkspace => Kind == InputSourceKind.Workspace;
     public bool IsLiteral => Kind == InputSourceKind.Literal;
     public bool IsCustom => Kind == InputSourceKind.Custom;
+
+    /// <summary>True while the inline "new port" name box is showing (in place of the port dropdown).</summary>
+    [ObservableProperty] private bool _addingPort;
+    [ObservableProperty] private string _newPortName = "";
+
+    /// <summary>Show the inline "name a new port" box — the first-run answer to "there's no port yet".</summary>
+    [RelayCommand]
+    private void StartAddPort() { NewPortName = ""; AddingPort = true; }
+
+    /// <summary>Create the named port and bind this input straight to it.</summary>
+    [RelayCommand]
+    private void ConfirmAddPort()
+    {
+        var created = _declarePort(NewPortName);
+        AddingPort = false;
+        NewPortName = "";
+        if (created is { Length: > 0 })
+        {
+            Kind = InputSourceKind.Port;
+            PortName = created;   // composes ${sprig.ports.<created>} onto the binding
+        }
+    }
+
+    [RelayCommand]
+    private void CancelAddPort() { AddingPort = false; NewPortName = ""; }
 
     partial void OnKindChanged(InputSourceKind value)
     {
@@ -140,6 +187,7 @@ public sealed partial class RepoInputRowViewModel : ViewModelBase
     void Compose()
     {
         if (_suppress) return;
+        _composing = true;
         _row.Expression = Kind switch
         {
             InputSourceKind.Workspace => "${sprig.workspace}",
@@ -147,6 +195,7 @@ public sealed partial class RepoInputRowViewModel : ViewModelBase
             InputSourceKind.Literal => LiteralValue,
             _ => CustomExpression,
         };
+        _composing = false;
     }
 
     /// <summary>Classify the current expression back into the structured fields (kind + value).</summary>
@@ -157,7 +206,15 @@ public sealed partial class RepoInputRowViewModel : ViewModelBase
         var ports = PortExpressions.ReferencedPorts(expr).Where(_declared.Contains).ToList();
         var usesWorkspace = PortExpressions.ReferencesWorkspace(expr);
 
-        if (expr == "${sprig.workspace}")
+        if (expr.Length == 0)
+        {
+            // Unbound: default to the Port picker with nothing chosen, so a first-time author lands on
+            // "pick or create a port" rather than an empty literal box — and the binding stays unset
+            // until they actually choose one.
+            Kind = InputSourceKind.Port;
+            PortName = null;
+        }
+        else if (expr == "${sprig.workspace}")
         {
             Kind = InputSourceKind.Workspace;
         }

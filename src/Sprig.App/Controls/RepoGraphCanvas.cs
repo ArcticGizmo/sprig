@@ -261,8 +261,7 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     static double MaxRowWidth(Dictionary<int, List<string>> order) =>
         order.Values.Max(row => row.Count * NodeW + (row.Count - 1) * HGap);
 
-    static double NodeHeight(RepoGraphNode n) => HeadH + Math.Max(1, n.Inputs.Count) * InputRowH + NodePadY
-                                                 + (n.Owns.Count > 0 ? InputRowH : 0);
+    static double NodeHeight(RepoGraphNode n) => HeadH + Math.Max(1, n.Inputs.Count) * InputRowH + NodePadY;
 
     double ChipW(RepoGraphNode n) => Math.Min(NodeW, 84);
     double ChipBandHeight(RepoGraphNode n)
@@ -328,21 +327,20 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             ctx.DrawRectangle(PanelHead, null, new Rect(r.X, r.Y, NodeW, HeadH), 12, 12);
             DrawText(ctx, node.Repo, new Rect(r.X + 12, r.Y, NodeW - 24, HeadH), Title, 13, vcenter: true);
 
-            var rowY = r.Y + HeadH + 4;
-            if (owns)
-            {
-                DrawText(ctx, "serves " + Truncate(string.Join(", ", node.Owns), NodeW - 60, 10),
-                    new Rect(r.X + 12, rowY, NodeW - 20, InputRowH), Signal, 10, vcenter: true);
-                rowY += InputRowH;
-            }
+            var rowY = r.Y + HeadH + 6;
 
-            // Input pins (the little dots), one per declared input.
-            foreach (var input in node.Inputs)
+            // Input pins, one per declared input: a green dot when the input is filled, grey when empty,
+            // and a green star when it's bound to a port THIS repo owns (the value it provides). The star
+            // replaces the old "serves …" subtitle, which would just overflow the node.
+            foreach (var pin in node.Inputs)
             {
-                var cy = rowY + InputRowH / 2;
-                ctx.DrawEllipse(PanelHead, new Pen(Muted, 1.4), new Point(r.X + 16, cy), 3.5, 3.5);
-                DrawText(ctx, Truncate(input, NodeW - 44, 10.5), new Rect(r.X + 28, rowY, NodeW - 40, InputRowH),
-                    Fg, 10.5, vcenter: true);
+                var centre = new Point(r.X + 17, rowY + InputRowH / 2);
+                if (pin.Owned)
+                    ctx.DrawGeometry(Signal, new Pen(Signal, 1), Star(centre, 6.4, 2.7));
+                else
+                    ctx.DrawEllipse(pin.Bound ? Signal : PanelHead, new Pen(pin.Bound ? Signal : Muted, 1.4), centre, 3.6, 3.6);
+                DrawText(ctx, Truncate(pin.Name, NodeW - 46, 10.5), new Rect(r.X + 30, rowY, NodeW - 42, InputRowH),
+                    pin.Bound ? Fg : Muted, 10.5, vcenter: true);
                 rowY += InputRowH;
             }
             if (node.Inputs.Count == 0)
@@ -375,6 +373,22 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             c.EndFigure(true);
         }
         ctx.DrawGeometry(brush, null, geo);
+    }
+
+    /// <summary>A filled five-point star centred at <paramref name="c"/> — the "provides a port" pin.</summary>
+    static StreamGeometry Star(Point c, double outer, double inner)
+    {
+        var geo = new StreamGeometry();
+        using var ctx = geo.Open();
+        for (var i = 0; i < 10; i++)
+        {
+            var angle = -Math.PI / 2 + i * Math.PI / 5;
+            var radius = i % 2 == 0 ? outer : inner;
+            var p = new Point(c.X + radius * Math.Cos(angle), c.Y + radius * Math.Sin(angle));
+            if (i == 0) ctx.BeginFigure(p, true); else ctx.LineTo(p);
+        }
+        ctx.EndFigure(true);
+        return geo;
     }
 
     static StreamGeometry CubicPath(Point a, Point c1, Point c2, Point b)

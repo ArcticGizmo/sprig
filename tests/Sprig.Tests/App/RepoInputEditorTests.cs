@@ -106,6 +106,49 @@ public class RepoInputEditorTests
     }
 
     [Fact]
+    public void An_unbound_input_defaults_to_the_port_picker_with_nothing_chosen()
+    {
+        var group = new RepoBindingGroup("web");
+        var row = new BindingRow("x", null) { Expression = "" };
+        group.Rows.Add(row);
+        var e = new RepoInputEditorViewModel(group, ["api"], _ => { });
+
+        Assert.Equal(InputSourceKind.Port, e.Rows[0].Kind); // lands on "pick or create a port"
+        Assert.Null(e.Rows[0].PortName);
+        Assert.Equal("", row.Expression);                    // ...but stays unbound until a port is chosen
+    }
+
+    [Fact]
+    public void A_rows_new_port_is_declared_and_bound_in_place()
+    {
+        string? created = null;
+        var e = Editor([("apiUrl", "")], [], name => created = name); // no ports defined yet
+
+        e.Rows[0].NewPortName = "api_port";
+        e.Rows[0].ConfirmAddPortCommand.Execute(null);
+
+        Assert.Equal("api_port", created);
+        Assert.Equal(InputSourceKind.Port, e.Rows[0].Kind);
+        Assert.Equal("api_port", e.Rows[0].PortName);
+        Assert.Equal("${sprig.ports.api_port}", e.Rows[0].RawExpression);
+    }
+
+    [Fact]
+    public void Choosing_literal_and_leaving_it_blank_stays_literal()
+    {
+        var group = new RepoBindingGroup("web");
+        var row = new BindingRow("x", null) { Expression = "5432" };
+        group.Rows.Add(row);
+        var e = new RepoInputEditorViewModel(group, ["api"], _ => { });
+
+        e.Rows[0].Kind = InputSourceKind.Literal;
+        e.Rows[0].LiteralValue = ""; // clears the value — must NOT bounce back to the Port default
+
+        Assert.Equal(InputSourceKind.Literal, e.Rows[0].Kind);
+        Assert.Equal("", row.Expression);
+    }
+
+    [Fact]
     public void Detach_stops_the_row_tracking_its_binding()
     {
         var group = new RepoBindingGroup("web");

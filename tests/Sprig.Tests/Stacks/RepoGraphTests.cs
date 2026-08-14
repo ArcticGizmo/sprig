@@ -144,6 +144,27 @@ public class RepoGraphTests
             bindings: Bindings(("a", [("first", "literal")])),
             owners: Owners());
 
-        Assert.Equal(new[] { "first", "second", "third" }, g.Nodes.Single().Inputs);
+        Assert.Equal(new[] { "first", "second", "third" }, g.Nodes.Single().Inputs.Select(p => p.Name));
+    }
+
+    [Fact]
+    public void Pins_report_bound_and_which_one_the_repo_provides()
+    {
+        // api owns api_port and binds its own 'port' input to it (that pin is what it provides); 'log' is
+        // a bare literal (bound but not a provided port); 'spare' is left empty (unbound).
+        var g = RepoGraph.Build(
+            repos: ["api"],
+            ports: ["api_port"],
+            repoInputs: Inputs(("api", ["port", "log", "spare"])),
+            bindings: Bindings(("api", [("port", "${sprig.ports.api_port}"), ("log", "info")])),
+            owners: Owners(("api_port", "api")));
+
+        var pins = g.Nodes.Single().Inputs.ToDictionary(p => p.Name);
+        Assert.True(pins["port"].Bound);
+        Assert.True(pins["port"].Owned);   // provides api_port → drawn as a star
+        Assert.True(pins["log"].Bound);
+        Assert.False(pins["log"].Owned);
+        Assert.False(pins["spare"].Bound); // empty → grey dot
+        Assert.False(pins["spare"].Owned);
     }
 }

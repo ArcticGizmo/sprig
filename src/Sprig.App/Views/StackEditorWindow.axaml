@@ -106,7 +106,9 @@
                 <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsVisible="{Binding GraphView}">
                     <TextBlock Text="■ owner → consumer line" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="■ shared port chip" Foreground="#FBBF24" FontSize="11" Margin="0,0,14,0" />
-                    <TextBlock Text="■ owns a port" Foreground="{StaticResource OkBrush}" FontSize="11" />
+                    <TextBlock Text="★ provides a port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="● input filled" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="○ empty" Foreground="{StaticResource MutedBrush}" FontSize="11" />
                 </WrapPanel>
 
                 <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar.
@@ -198,9 +200,23 @@
                                         <ComboBox Grid.Column="1" ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind, Mode=TwoWay}"
                                                   VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="0,0,8,0" />
                                         <Panel Grid.Column="2" VerticalAlignment="Center">
-                                            <ComboBox IsVisible="{Binding IsPort}" ItemsSource="{Binding AvailablePorts}"
-                                                      SelectedItem="{Binding PortName, Mode=TwoWay}" PlaceholderText="pick a port"
-                                                      HorizontalAlignment="Stretch" />
+                                            <!-- Port: pick an existing one, or ＋ to name a new port and bind to it in place
+                                                 (the first-run answer to "there's no port defined yet"). -->
+                                            <Grid IsVisible="{Binding IsPort}" ColumnDefinitions="*,Auto">
+                                                <ComboBox Grid.Column="0" ItemsSource="{Binding AvailablePorts}"
+                                                          SelectedItem="{Binding PortName, Mode=TwoWay}" PlaceholderText="pick a port"
+                                                          HorizontalAlignment="Stretch" IsVisible="{Binding !AddingPort}" />
+                                                <Button Grid.Column="1" Content="＋" Command="{Binding StartAddPortCommand}"
+                                                        IsVisible="{Binding !AddingPort}" Margin="6,0,0,0" Padding="8,4"
+                                                        ToolTip.Tip="Create a new port and bind this input to it" />
+                                                <TextBox Grid.Column="0" Text="{Binding NewPortName, Mode=TwoWay}"
+                                                         PlaceholderText="new port name" IsVisible="{Binding AddingPort}" FontSize="12" />
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="6,0,0,0"
+                                                            IsVisible="{Binding AddingPort}">
+                                                    <Button Content="✓" Command="{Binding ConfirmAddPortCommand}" Padding="8,4" />
+                                                    <Button Content="✕" Command="{Binding CancelAddPortCommand}" Padding="8,4" />
+                                                </StackPanel>
+                                            </Grid>
                                             <TextBox IsVisible="{Binding IsLiteral}" Text="{Binding LiteralValue, Mode=TwoWay}"
                                                      PlaceholderText="a fixed value" FontSize="12" />
                                             <controls:SprigTokenBox IsVisible="{Binding IsCustom}" Value="{Binding CustomExpression, Mode=TwoWay}"

@@ -237,7 +237,7 @@ public partial class StacksViewModel : PageViewModel
             if (!portSet.Contains(port) || !repoSet.Contains(_portOwners[port]))
                 _portOwners.Remove(port);
         BuilderRepoGraph = RepoGraph.Build(repos, ports, inputs, bindings, _portOwners);
-        RebuildUndeclaredPorts();
+        RebuildPortUsage();
     }
 
     /// <summary>Assign or clear a stack port's owning repo on the repo graph (null repo clears it).</summary>
@@ -291,8 +291,12 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>The name typed into the "Defined ports" panel's add field.</summary>
     [ObservableProperty] private string _definedPortEntry = "";
 
-    /// <summary>Recompute the referenced-but-undeclared set from the current bindings and declared ports.</summary>
-    void RebuildUndeclaredPorts()
+    /// <summary>
+    /// From the current bindings and declared ports, recompute two things the ports rail shows: which
+    /// declared ports are actually referenced (so unused ones can be flagged), and which referenced ports
+    /// aren't declared yet (the "not yet defined" quick-adds).
+    /// </summary>
+    void RebuildPortUsage()
     {
         var declared = new HashSet<string>(
             Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0), StringComparer.Ordinal);
@@ -300,13 +304,28 @@ public partial class StacksViewModel : PageViewModel
         foreach (var group in Bindings)
             foreach (var row in group.Rows)
                 foreach (var port in PortExpressions.ReferencedPorts(row.Expression))
-                    if (!declared.Contains(port)) referenced.Add(port);
+                    referenced.Add(port);
 
-        var wanted = referenced.OrderBy(p => p, StringComparer.Ordinal).ToList();
+        foreach (var row in Ports) row.InUse = referenced.Contains(row.Name.Trim());
+
+        var wanted = referenced.Where(p => !declared.Contains(p)).OrderBy(p => p, StringComparer.Ordinal).ToList();
         if (UndeclaredPorts.SequenceEqual(wanted)) return;
         UndeclaredPorts.Clear();
         foreach (var p in wanted) UndeclaredPorts.Add(p);
         OnPropertyChanged(nameof(HasUndeclaredPorts));
+    }
+
+    /// <summary>Commit an inline port rename from the ports rail — collision-checked; the row's name change
+    /// then propagates to every binding that referenced the old name (via <see cref="OnPortRowChanged"/>).</summary>
+    [RelayCommand]
+    private void CommitPortRename(StackPortRow? row)
+    {
+        if (row is null) return;
+        var n = row.EditName.Trim();
+        row.Editing = false;
+        if (n.Length == 0 || n == row.Name.Trim()) return;
+        if (Ports.Any(p => p != row && p.Name.Trim() == n)) return; // don't collide with another port
+        row.Name = n;
     }
 
     /// <summary>Declare a port from the panel's add field (does nothing for a blank or duplicate name).</summary>
@@ -1174,6 +1193,21 @@ public partial class StackPortRow : ViewModelBase
     /// the user's state alone — see <c>StacksViewModel.AutoWire</c>.
     /// </summary>
     public bool Auto { get; set; }
+
+    /// <summary>True when some binding references this port — the ports rail dims the ones nothing uses.</summary>
+    [ObservableProperty] private bool _inUse;
+
+    /// <summary>True while this port's name is being edited inline in the ports rail.</summary>
+    [ObservableProperty] private bool _editing;
+
+    /// <summary>The draft name shown in the inline rename box; committed via the view model (collision-checked).</summary>
+    [ObservableProperty] private string _editName = "";
+
+    /// <summary>Begin an inline rename (ports rail ✎), seeding the draft from the current name.</summary>
+    [RelayCommand] private void StartEdit() { EditName = Name; Editing = true; }
+
+    /// <summary>Abandon the inline rename without changing anything.</summary>
+    [RelayCommand] private void CancelEdit() { Editing = false; }
 }
 
 public sealed partial class RepoBindingGroup(string repo) : ViewModelBase

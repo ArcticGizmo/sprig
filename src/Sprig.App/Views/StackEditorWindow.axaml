@@ -81,72 +81,6 @@
                            Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !CanAutoWire}"
                            Text="Add a repo below to start. sprig reads the inputs it declares and wires them to ports for you." />
 
-                <!-- Defined ports (graph view). The single place ports are declared: the panel lists what's
-                     defined, lets you add new ones, and — crucially — surfaces any port a binding references
-                     but the stack doesn't define, so you can accept it into existence. Reflection bindings
-                     (CompileBindings off) keep the per-chip commands-on-the-window-VM bindings simple. -->
-                <Border DockPanel.Dock="Top" IsVisible="{Binding GraphView}" x:CompileBindings="False"
-                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,8">
-                    <StackPanel Spacing="8">
-                        <!-- DockPanel, not a horizontal StackPanel: the chips ItemsControl fills the middle
-                             with a bounded width, so its WrapPanel actually wraps instead of running off. -->
-                        <DockPanel>
-                            <TextBlock DockPanel.Dock="Left" Text="Defined ports" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Top" Margin="0,3,8,0" />
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
-                                        VerticalAlignment="Top">
-                                <TextBox Text="{Binding DefinedPortEntry}" PlaceholderText="new port name" Width="130" FontSize="12" />
-                                <Button Content="＋ define" Command="{Binding AddDefinedPortCommand}" FontSize="11" />
-                            </StackPanel>
-                            <Panel VerticalAlignment="Top">
-                                <ItemsControl ItemsSource="{Binding PortNames}">
-                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                                    BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="0,0,6,6">
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource OkBrush}"
-                                                               VerticalAlignment="Center" />
-                                                    <Button Content="✕" FontSize="10" Padding="3,0" Background="Transparent"
-                                                            Command="{Binding $parent[Window].DataContext.RemoveNamedPortCommand}"
-                                                            CommandParameter="{Binding}" ToolTip.Tip="Remove this port" />
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <TextBlock Text="none yet" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                           VerticalAlignment="Center" Margin="0,3,0,0" IsVisible="{Binding !HasPorts}" />
-                            </Panel>
-                        </DockPanel>
-
-                        <!-- Broken references: a binding names a port the stack doesn't define. -->
-                        <DockPanel IsVisible="{Binding HasUndeclaredPorts}">
-                            <TextBlock DockPanel.Dock="Left" Text="Referenced but not defined" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource DangerBrush}" VerticalAlignment="Top" Margin="0,3,8,0" />
-                            <ItemsControl ItemsSource="{Binding UndeclaredPorts}">
-                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" CornerRadius="10"
-                                                Padding="8,2" Margin="0,0,6,6">
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource DangerBrush}"
-                                                           VerticalAlignment="Center" />
-                                                <Button Content="accept" FontSize="10" Padding="4,0"
-                                                        Command="{Binding $parent[Window].DataContext.AcceptPortCommand}"
-                                                        CommandParameter="{Binding}" ToolTip.Tip="Define this port" />
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </DockPanel>
-                    </StackPanel>
-                </Border>
-
                 <!-- Column headers, aligned to the canvas columns (patchbay only). -->
                 <Grid DockPanel.Dock="Top" HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284" Margin="0,0,0,8"
                       IsVisible="{Binding !GraphView}">
@@ -180,12 +114,105 @@
                     <TextBlock Text="★ provides" Foreground="{StaticResource OkBrush}" FontSize="11" />
                 </WrapPanel>
 
-                <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar.
-                     Both lenses live here; the toggle shows one. -->
-                <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                        <Panel>
+                <!-- Graph view gets a persistent ports rail on the left: create / rename / remove ports,
+                     accept ones a binding references but the stack hasn't defined yet, and spot at a glance
+                     which ports nothing uses. Reflection bindings (CompileBindings off) keep the per-row
+                     StackPortRow commands and the window-VM commands simple. -->
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Left" IsVisible="{Binding GraphView}" x:CompileBindings="False" Width="236"
+                            Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,8,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Ports" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" Margin="0,0,0,8" />
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                                <TextBox Grid.Column="0" Text="{Binding DefinedPortEntry}" PlaceholderText="new port name" FontSize="12">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding AddDefinedPortCommand}" />
+                                    </TextBox.KeyBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Content="＋" Command="{Binding AddDefinedPortCommand}" Margin="4,0,0,0"
+                                        ToolTip.Tip="Define this port" />
+                            </Grid>
+
+                            <!-- Referenced but undefined — quick-add each into existence. -->
+                            <StackPanel DockPanel.Dock="Bottom" IsVisible="{Binding HasUndeclaredPorts}" Spacing="4" Margin="0,8,0,0">
+                                <TextBlock Text="Not yet defined" FontSize="10.5" FontWeight="SemiBold"
+                                           Foreground="{StaticResource DangerBrush}" />
+                                <ItemsControl ItemsSource="{Binding UndeclaredPorts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,3">
+                                                <TextBlock Grid.Column="0" Text="{Binding}" FontSize="12"
+                                                           Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Content="＋ add" FontSize="10" Padding="6,1"
+                                                        Command="{Binding $parent[Window].DataContext.AcceptPortCommand}"
+                                                        CommandParameter="{Binding}" ToolTip.Tip="Define this port" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- The defined ports themselves — rename inline, remove, and dim/flag the unused. -->
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <Panel>
+                                    <TextBlock Text="No ports defined yet." FontSize="11" TextWrapping="Wrap"
+                                               Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasPorts}" />
+                                    <ItemsControl ItemsSource="{Binding Ports}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                        Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1" CornerRadius="6" Padding="6,3" Margin="0,0,0,4">
+                                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                                        <!-- view mode -->
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
+                                                                    VerticalAlignment="Center" IsVisible="{Binding !Editing}">
+                                                            <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                                       Foreground="{StaticResource OkBrush}" />
+                                                            <Border Background="#3A2A12" CornerRadius="4" Padding="4,0" VerticalAlignment="Center"
+                                                                    IsVisible="{Binding !InUse}" ToolTip.Tip="No input references this port">
+                                                                <TextBlock Text="unused" FontSize="9.5" Foreground="#FBBF24" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1" Content="✎" FontSize="10" Padding="4,0" Background="Transparent"
+                                                                IsVisible="{Binding !Editing}" Command="{Binding StartEditCommand}"
+                                                                ToolTip.Tip="Rename" />
+                                                        <Button Grid.Column="2" Content="✕" FontSize="10" Padding="4,0" Background="Transparent"
+                                                                IsVisible="{Binding !Editing}" ToolTip.Tip="Remove"
+                                                                Command="{Binding $parent[Window].DataContext.RemoveNamedPortCommand}"
+                                                                CommandParameter="{Binding Name}" />
+                                                        <!-- rename mode -->
+                                                        <TextBox Grid.Column="0" Text="{Binding EditName}" FontSize="12" IsVisible="{Binding Editing}">
+                                                            <TextBox.KeyBindings>
+                                                                <KeyBinding Gesture="Enter"
+                                                                            Command="{Binding $parent[Window].DataContext.CommitPortRenameCommand}"
+                                                                            CommandParameter="{Binding}" />
+                                                                <KeyBinding Gesture="Escape" Command="{Binding CancelEditCommand}" />
+                                                            </TextBox.KeyBindings>
+                                                        </TextBox>
+                                                        <Button Grid.Column="1" Content="✓" FontSize="10" Padding="4,0" IsVisible="{Binding Editing}"
+                                                                Command="{Binding $parent[Window].DataContext.CommitPortRenameCommand}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Grid.Column="2" Content="✕" FontSize="10" Padding="4,0" IsVisible="{Binding Editing}"
+                                                                Command="{Binding CancelEditCommand}" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Panel>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar.
+                         Both lenses live here; the toggle shows one. -->
+                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <Panel>
                             <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
                                                    IsVisible="{Binding !GraphView}"
                                                    AutomationProperties.AutomationId="stack.canvas"
@@ -214,7 +241,8 @@
                                                       EditRepoCommand="{Binding EditRepoInputsCommand}" />
                         </Panel>
                     </ScrollViewer>
-                </Border>
+                    </Border>
+                </DockPanel>
             </DockPanel>
         </DockPanel>
 

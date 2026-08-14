@@ -6,6 +6,7 @@ using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering;
 using Sprig.Core.Stacks;
@@ -48,10 +49,25 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     public static readonly StyledProperty<ICommand?> EditRepoCommandProperty =
         AvaloniaProperty.Register<RepoGraphCanvas, ICommand?>(nameof(EditRepoCommand));
 
+    /// <summary>Registered repos not yet in the stack — listed by the canvas "add repo" node.</summary>
+    public static readonly StyledProperty<System.Collections.IEnumerable?> AddableReposProperty =
+        AvaloniaProperty.Register<RepoGraphCanvas, System.Collections.IEnumerable?>(nameof(AddableRepos));
+
+    /// <summary>Invoked with a repo name (string) from the canvas "add repo" node.</summary>
+    public static readonly StyledProperty<ICommand?> AddRepoCommandProperty =
+        AvaloniaProperty.Register<RepoGraphCanvas, ICommand?>(nameof(AddRepoCommand));
+
+    /// <summary>Invoked with a repo name (string) when a node's ✕ is confirmed.</summary>
+    public static readonly StyledProperty<ICommand?> RemoveRepoCommandProperty =
+        AvaloniaProperty.Register<RepoGraphCanvas, ICommand?>(nameof(RemoveRepoCommand));
+
     public RepoGraph? Graph { get => GetValue(GraphProperty); set => SetValue(GraphProperty, value); }
     public bool IsEditable { get => GetValue(IsEditableProperty); set => SetValue(IsEditableProperty, value); }
     public ICommand? SetOwnerCommand { get => GetValue(SetOwnerCommandProperty); set => SetValue(SetOwnerCommandProperty, value); }
     public ICommand? EditRepoCommand { get => GetValue(EditRepoCommandProperty); set => SetValue(EditRepoCommandProperty, value); }
+    public System.Collections.IEnumerable? AddableRepos { get => GetValue(AddableReposProperty); set => SetValue(AddableReposProperty, value); }
+    public ICommand? AddRepoCommand { get => GetValue(AddRepoCommandProperty); set => SetValue(AddRepoCommandProperty, value); }
+    public ICommand? RemoveRepoCommand { get => GetValue(RemoveRepoCommandProperty); set => SetValue(RemoveRepoCommandProperty, value); }
 
     // Palette (mirrors App.axaml / WiringCanvas).
     static readonly IBrush Bg = Brush.Parse("#181820");
@@ -81,6 +97,10 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     readonly Dictionary<string, Point> _manualPos = new(StringComparer.Ordinal); // top-left overrides from dragging
     readonly List<(string Port, string Owner, string Consumer, Point A, Point C1, Point C2, Point B, Point Label)> _edges = new();
     readonly List<(Rect Rect, string Repo)> _chips = new();   // one collapsed "N shared" pill per node
+    readonly Dictionary<string, Rect> _repoRemove = new(StringComparer.Ordinal); // per-node ✕ hit area (editing)
+    Rect _addRepoRect;        // the "＋ add repo" node (editing)
+    string? _hoverRemove;     // repo whose ✕ is under the cursor
+    bool _hoverAdd;           // cursor over the "＋ add repo" node
     string? _layoutSignature; // the repo-set the auto-layout was computed for
 
     RepoGraph? _laidOut;
@@ -112,9 +132,18 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         _nodeRects.Clear();
         _edges.Clear();
         _chips.Clear();
+        _repoRemove.Clear();
+        _addRepoRect = default;
         var g = Graph;
         _laidOut = g;
-        if (g is null || g.Nodes.Count == 0) { _size = new Size(400, 240); return; }
+        if (g is null) { _size = new Size(400, 240); return; }
+        if (g.Nodes.Count == 0)
+        {
+            // Empty stack: still offer the "add repo" node so the first repo can be added here.
+            if (IsEditable) _addRepoRect = new Rect(Pad, Pad, 168, HeadH);
+            _size = new Size(360, 120);
+            return;
+        }
 
         // Drop manual positions for repos that have gone, and force a fresh auto-layout whenever the set
         // of repos changes (added/removed) — a hand-tidy is only meaningful for a stable node set.
@@ -155,7 +184,9 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         foreach (var node in g.Nodes)
         {
             var topLeft = _manualPos.TryGetValue(node.Repo, out var m) ? m : auto[node.Repo];
-            _nodeRects[node.Repo] = new Rect(topLeft, new Size(NodeW, heights[node.Repo]));
+            var rect = new Rect(topLeft, new Size(NodeW, heights[node.Repo]));
+            _nodeRects[node.Repo] = rect;
+            if (IsEditable) _repoRemove[node.Repo] = new Rect(rect.Right - 24, rect.Y + 8, 15, 15);
         }
 
         // Chips: the shared/unowned ports a node consumes are "global" values used across the stack.
@@ -207,6 +238,16 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
 
         var maxX = _nodeRects.Values.Max(r => r.Right);
         var maxY = _nodeRects.Values.Max(r => r.Bottom);
+
+        // The "＋ add repo" node sits below the graph, centred on the node spread (editing only).
+        if (IsEditable)
+        {
+            var minX = _nodeRects.Values.Min(r => r.Left);
+            _addRepoRect = new Rect((minX + maxX) / 2 - 84, maxY + 28, 168, HeadH);
+            maxX = Math.Max(maxX, _addRepoRect.Right);
+            maxY = _addRepoRect.Bottom;
+        }
+
         _size = new Size(maxX + Pad, maxY + Pad);
     }
 
@@ -314,7 +355,11 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             var owns = node.Owns.Count > 0;
             ctx.DrawRectangle(Panel, new Pen(owns ? Signal : Border, owns ? 1.6 : 1.4), r, 12, 12);
             ctx.DrawRectangle(PanelHead, null, new Rect(r.X, r.Y, NodeW, HeadH), 12, 12);
-            DrawText(ctx, node.Repo, new Rect(r.X + 12, r.Y, NodeW - 24, HeadH), Title, 13, vcenter: true);
+            DrawText(ctx, node.Repo, new Rect(r.X + 12, r.Y, NodeW - (IsEditable ? 40 : 24), HeadH), Title, 13, vcenter: true);
+
+            // Remove (✕) in the header's top-right — drag/click on the node body still edits/moves it.
+            if (_repoRemove.TryGetValue(node.Repo, out var rm))
+                DrawText(ctx, "✕", rm, _hoverRemove == node.Repo ? Danger : Muted, 12, center: true);
 
             var rowY = r.Y + HeadH + 6;
 
@@ -350,6 +395,14 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         if (_hoverRepo is { } hr && _chips.FirstOrDefault(c => c.Repo == hr) is { Repo: not null } pill
             && g.Nodes.FirstOrDefault(n => n.Repo == hr) is { Chips.Count: > 0 } hn)
             DrawChipTooltip(ctx, pill.Rect, hn.Chips);
+
+        // The "＋ add repo" node (dashed, editing only).
+        if (_addRepoRect != default)
+        {
+            var pen = new Pen(_hoverAdd ? Wire : Muted, _hoverAdd ? 2 : 1) { DashStyle = new DashStyle([3, 3], 0) };
+            ctx.DrawRectangle(PanelHead, pen, _addRepoRect, 10, 10);
+            DrawText(ctx, "＋ add repo…", _addRepoRect, _hoverAdd ? Fg : Muted, 12, center: true);
+        }
     }
 
     /// <summary>List each shared port a node consumes (name ×usage) above its collapsed pill.</summary>
@@ -479,8 +532,19 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         var pos = e.GetPosition(this);
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
+            // A node's ✕ (confirm-remove) and the "add repo" node win before drag/edit/owner handling.
+            if (IsEditable && RemoveIconAt(pos) is { } removeRepo)
+            {
+                OpenRemoveRepoConfirm(removeRepo);
+                e.Handled = true;
+            }
+            else if (IsEditable && _addRepoRect != default && _addRepoRect.Contains(pos))
+            {
+                OpenAddRepoMenu();
+                e.Handled = true;
+            }
             // A chip pill or an edge opens the ownership menu (editing only).
-            if (IsEditable && ChipAt(pos) is { } chipRepo)
+            else if (IsEditable && ChipAt(pos) is { } chipRepo)
             {
                 OpenChipMenu(chipRepo);
                 e.Handled = true;
@@ -522,13 +586,25 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         // otherwise a line under the cursor reveals its own. Node wins so it doesn't flicker.
         var node = NodeAt(pos) ?? ChipAt(pos);
         var edge = node is null ? EdgeIndexAt(pos) : -1;
-        if (node != _hoverRepo || edge != _hoverEdge)
+        var removeHover = IsEditable ? RemoveIconAt(pos) : null;
+        var addHover = IsEditable && _addRepoRect != default && _addRepoRect.Contains(pos);
+        if (node != _hoverRepo || edge != _hoverEdge || removeHover != _hoverRemove || addHover != _hoverAdd)
         {
             _hoverRepo = node;
             _hoverEdge = edge;
+            _hoverRemove = removeHover;
+            _hoverAdd = addHover;
             InvalidateVisual();
         }
         base.OnPointerMoved(e);
+    }
+
+    /// <summary>The repo whose header ✕ contains <paramref name="p"/> (a slightly inflated hit area), or null.</summary>
+    string? RemoveIconAt(Point p)
+    {
+        foreach (var kv in _repoRemove)
+            if (kv.Value.Inflate(3).Contains(p)) return kv.Key;
+        return null;
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -547,7 +623,11 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
-        if (_hoverRepo is not null || _hoverEdge >= 0) { _hoverRepo = null; _hoverEdge = -1; InvalidateVisual(); }
+        if (_hoverRepo is not null || _hoverEdge >= 0 || _hoverRemove is not null || _hoverAdd)
+        {
+            _hoverRepo = null; _hoverEdge = -1; _hoverRemove = null; _hoverAdd = false;
+            InvalidateVisual();
+        }
         base.OnPointerExited(e);
     }
 
@@ -630,6 +710,45 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     }
 
     IEnumerable<string> RepoNames() => _laidOut?.Nodes.Select(n => n.Repo) ?? [];
+
+    /// <summary>The "add repo" node's menu: one item per registered repo not yet in the stack.</summary>
+    void OpenAddRepoMenu()
+    {
+        var flyout = new MenuFlyout();
+        var any = false;
+        if (AddableRepos is not null)
+            foreach (var obj in AddableRepos)
+            {
+                if (obj?.ToString() is not { Length: > 0 } name) continue;
+                any = true;
+                var item = new MenuItem { Header = name };
+                item.Click += (_, _) => AddRepoCommand?.Execute(name);
+                flyout.Items.Add(item);
+            }
+        if (!any) flyout.Items.Add(new MenuItem { Header = "No more repos to add", IsEnabled = false });
+        flyout.ShowAt(this, showAtPointer: true);
+    }
+
+    /// <summary>Confirm before removing a repo from the stack (the node's ✕).</summary>
+    void OpenRemoveRepoConfirm(string repo)
+    {
+        var msg = new TextBlock
+        {
+            Text = $"Remove '{repo}' from this stack? Its inputs and their wiring are dropped.",
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 240, Margin = new Thickness(0, 0, 0, 4),
+        };
+        var remove = new Button { Content = "Remove", Foreground = Danger };
+        var cancel = new Button { Content = "Cancel" };
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { remove, cancel },
+        };
+        var flyout = new Flyout { Content = new StackPanel { Spacing = 10, Children = { msg, buttons } } };
+        remove.Click += (_, _) => { flyout.Hide(); RemoveRepoCommand?.Execute(repo); };
+        cancel.Click += (_, _) => flyout.Hide();
+        flyout.ShowAt(this, showAtPointer: true);
+    }
 
     static double Distance(Point a, Point b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
 

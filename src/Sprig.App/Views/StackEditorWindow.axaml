@@ -238,7 +238,10 @@
                                                       AutomationProperties.AutomationId="stack.graph"
                                                       HorizontalAlignment="Center"
                                                       SetOwnerCommand="{Binding SetPortOwnerCommand}"
-                                                      EditRepoCommand="{Binding EditRepoInputsCommand}" />
+                                                      EditRepoCommand="{Binding EditRepoInputsCommand}"
+                                                      AddableRepos="{Binding AddableRepos}"
+                                                      AddRepoCommand="{Binding AddStackRepoCommand}"
+                                                      RemoveRepoCommand="{Binding RemoveStackRepoCommand}" />
                         </Panel>
                     </ScrollViewer>
                     </Border>

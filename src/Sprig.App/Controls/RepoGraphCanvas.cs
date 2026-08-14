@@ -80,6 +80,7 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
     Size _size = new(400, 300);
 
     string? _hoverRepo;
+    int _hoverEdge = -1;   // index into _edges of the line under the cursor, or -1
     string? _dragRepo;
     Vector _dragOffset;   // cursor→node-top-left offset held during a drag (Point − Point is a Vector)
     Point _pressPos;
@@ -275,15 +276,20 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         var g = _laidOut;
         if (g is null) return;
 
-        // Edges first, under the nodes.
-        foreach (var e in _edges)
+        // Edges first, under the nodes. Port labels are drill-in detail, so they stay hidden at rest and
+        // reveal only on hover — of the line itself, or of a repo it touches — which keeps the resting
+        // view about structure (who depends on whom) and never a mat of overlapping text.
+        for (var i = 0; i < _edges.Count; i++)
         {
+            var e = _edges[i];
             var dim = _hoverRepo is not null && _hoverRepo != e.Owner && _hoverRepo != e.Consumer;
+            var hot = i == _hoverEdge;
             var brush = dim ? new SolidColorBrush(((ISolidColorBrush)Wire).Color, 0.18) : Wire;
-            var pen = new Pen(brush, 2.4) { LineCap = PenLineCap.Round };
+            var pen = new Pen(brush, hot ? 3.4 : 2.4) { LineCap = PenLineCap.Round };
             ctx.DrawGeometry(null, pen, CubicPath(e.A, e.C1, e.C2, e.B));
             DrawArrowHead(ctx, e.B, Norm(e.B - e.C2), brush);
-            if (!dim) DrawEdgeLabel(ctx, e.Label, e.Port);
+            var showLabel = hot || (_hoverRepo is not null && (e.Owner == _hoverRepo || e.Consumer == _hoverRepo));
+            if (showLabel) DrawEdgeLabel(ctx, e.Label, e.Port);
         }
 
         // Chips (shared / unowned port pills above their consumer).
@@ -473,8 +479,16 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
             return;
         }
 
-        var hover = NodeAt(pos);
-        if (hover != _hoverRepo) { _hoverRepo = hover; InvalidateVisual(); }
+        // A node under the cursor reveals its edges' labels; otherwise a line under the cursor reveals
+        // its own. Node wins so hovering a repo doesn't flicker between the two.
+        var node = NodeAt(pos);
+        var edge = node is null ? EdgeIndexAt(pos) : -1;
+        if (node != _hoverRepo || edge != _hoverEdge)
+        {
+            _hoverRepo = node;
+            _hoverEdge = edge;
+            InvalidateVisual();
+        }
         base.OnPointerMoved(e);
     }
 
@@ -492,7 +506,7 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
-        if (_hoverRepo is not null) { _hoverRepo = null; InvalidateVisual(); }
+        if (_hoverRepo is not null || _hoverEdge >= 0) { _hoverRepo = null; _hoverEdge = -1; InvalidateVisual(); }
         base.OnPointerExited(e);
     }
 
@@ -510,21 +524,26 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
         return null;
     }
 
-    (string Port, string Owner)? EdgeAt(Point p)
+    (string Port, string Owner)? EdgeAt(Point p) =>
+        EdgeIndexAt(p) is var i && i >= 0 ? (_edges[i].Port, _edges[i].Owner) : null;
+
+    /// <summary>Index of the line under <paramref name="p"/> (near its label or its actual bezier), or -1.</summary>
+    int EdgeIndexAt(Point p)
     {
-        foreach (var e in _edges)
+        for (var i = 0; i < _edges.Count; i++)
         {
-            if (Distance(e.Label, p) < 20) return (e.Port, e.Owner);
+            var e = _edges[i];
+            if (Distance(e.Label, p) < 20) return i;
             // Sample the curve — the lanes bow away from the straight line, so test the actual bezier.
             var prev = e.A;
-            for (var i = 1; i <= 16; i++)
+            for (var s = 1; s <= 16; s++)
             {
-                var pt = BezierAt(e.A, e.C1, e.C2, e.B, i / 16.0);
-                if (DistanceToSegment(prev, pt, p) < 7) return (e.Port, e.Owner);
+                var pt = BezierAt(e.A, e.C1, e.C2, e.B, s / 16.0);
+                if (DistanceToSegment(prev, pt, p) < 7) return i;
                 prev = pt;
             }
         }
-        return null;
+        return -1;
     }
 
     /// <summary>Clicking a shared/unowned chip: pick which repo owns the port (promotes it to a line).</summary>

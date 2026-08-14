@@ -75,7 +75,7 @@
                                Text="Drag a port onto an input to rewire it, or drag an input back to a source to unbind it. Click a port to rename it, an input to set a literal value, a ƒ node to edit a transform, or a line to select it." />
                     <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                IsVisible="{Binding GraphView}"
-                               Text="Repos are nodes; a port with an owner and one other consumer draws as an owner→consumer line, and anything shared becomes a counted chip. Click a chip to name its owner (turning it into a line), or a line to change/clear it. Drag a node to tidy." />
+                               Text="Repos are nodes; a port with an owner and one other consumer draws as an owner→consumer line, and anything shared becomes a counted chip. Hover a repo or a line to reveal port names. Click a chip to name its owner (turning it into a line), or a line to change/clear it. Drag a node to tidy." />
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"
                            Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !CanAutoWire}"

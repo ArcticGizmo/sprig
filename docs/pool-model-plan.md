@@ -1,5 +1,11 @@
 # Sprig → Pool Model: Phased Implementation Plan
 
+> **⚠️ Superseded (history).** The checkout model described here — `sprig--<workspace>` branches and
+> the **as-is / fresh / refresh** handling modes — has been replaced by the detached-workspace /
+> branch-on-claim model: idle workspaces park in detached HEAD, claiming cuts a user-named branch, and
+> handling is **keep / fresh** only. See `docs/pool-detached-model-plan.md` for the current design and
+> `docs/pooled-workflow.md` for the user-facing guide. This doc is kept as a record of the M1–M5 work.
+
 **Status:** M1–M5 implemented on the `pools` branch · **Date:** 2026-08-11
 
 > **Implementation status:** M1 (refresh-to-master), M2 (stack capacity / implicit pool),

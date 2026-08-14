@@ -9,8 +9,10 @@ the file formats, see the [configuration reference](config-reference.md).
 - **Repo** — a git repo with a committed `.sprig.json` declaring the inputs it consumes.
 - **Stack** — a named set of repos plus the ports and per-repo bindings that supply those inputs.
   Lives centrally, never in a repo.
-- **Workspace** — a live instance of a stack: one git worktree per repo (on a `sprig--<workspace>`
-  branch), a set of allocated ports, and optional docker infra.
+- **Workspace** — a live instance of a stack: one git worktree per repo (parked in **detached HEAD**
+  at the base until you claim it and name a branch), a set of allocated ports, and optional docker
+  infra. The pooled flow — check out, work, release — is the recommended way to get one; see the
+  [pooled workflow](pooled-workflow.md).
 - **Central store** — `%LOCALAPPDATA%\sprig`: the repo registry, stack definitions, and the
   per-workspace records that are the source of truth for what should exist.
 
@@ -68,8 +70,8 @@ commands. A single-app repo has one module; a monorepo has several (e.g. `apps/w
   you already built won't change if you edit the stack, so editing an in-use one would mislead.
 
 ### Workspaces
-- **New workspace**: pick a stack, name the workspace, Create. sprig makes the worktrees, branches,
-  and allocated ports.
+- **New workspace**: pick a stack, name the workspace, Create. sprig makes the worktrees (parked in
+  detached HEAD at the base — no branch until you claim it) and the allocated ports.
 - **Partial workspaces**: the create form lists the stack's repos, all ticked. Untick the ones you
   don't need this time and sprig leaves them out entirely — no worktree, no `.env`, and their compose
   files are ignored, so `up` only starts the infra of the repos you kept. Any stack port left with no
@@ -226,8 +228,8 @@ a list.
 ```sh
 sprig rm                            # at a terminal: pick the workspace, then confirm
 sprig rm feature-x                  # at a terminal: asks to confirm before tearing down
-sprig rm feature-x --yes            # tears down infra + worktrees; keeps the sprig branch
-sprig rm feature-x --yes --force    # also deletes the sprig--feature-x branch (loses its commits)
+sprig rm feature-x --yes            # tears down infra + worktrees; keeps the claim branch
+sprig rm feature-x --yes --force    # also deletes the claim branch (loses its commits)
 ```
 
 At a terminal `rm` confirms before it destroys anything (and offers to delete the branch), so `--yes`

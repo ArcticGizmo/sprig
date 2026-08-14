@@ -200,7 +200,25 @@ public partial class StacksViewModel : PageViewModel
     /// <summary>The wiring graph for the in-progress build — rebuilt on every binding/port change.</summary>
     [ObservableProperty] private WiringGraph? _builderWiring;
 
-    /// <summary>Rebuild the live graph the builder's canvas draws from the current rows + ports.</summary>
+    /// <summary>
+    /// The repo-centric view of the in-progress build — the same wiring seen as repos with directed
+    /// owner→consumer dependency lines and shared-port chips. The second lens on the same edit surface.
+    /// </summary>
+    [ObservableProperty] private RepoGraph? _builderRepoGraph;
+
+    /// <summary>False shows the port-centric patchbay; true shows the repo dependency graph.</summary>
+    [ObservableProperty] private bool _graphView;
+
+    /// <summary>
+    /// Which repo owns (produces) each stack port — port → repo. A visualization-only overlay (it never
+    /// feeds resolution) that decides whether a port draws as a directed owner→consumer line or a shared
+    /// chip on the repo graph. Held on the side rather than on a port row because it's a cross-repo
+    /// relationship, not a property of one port; persisted to <see cref="StackDefinition.Owners"/> on
+    /// save and pruned to the live ports/repos on every rebuild.
+    /// </summary>
+    readonly Dictionary<string, string> _portOwners = new(StringComparer.Ordinal);
+
+    /// <summary>Rebuild the live graphs the builder's canvases draw from the current rows + ports.</summary>
     void RebuildBuilderWiring()
     {
         var repos = Bindings.Select(g => g.Repo).ToList();
@@ -210,6 +228,44 @@ public partial class StacksViewModel : PageViewModel
         var bindings = Bindings.ToDictionary(
             g => g.Repo, g => (IReadOnlyDictionary<string, string>)g.Rows.ToDictionary(r => r.Input, r => r.Expression));
         BuilderWiring = WiringGraph.Build(repos, ports, inputs, bindings);
+
+        // Drop ownership picks whose port or repo has since gone, so a stale owner never lingers in the
+        // graph (or gets written on save), then rebuild the repo-centric view from the same data.
+        var portSet = new HashSet<string>(ports, StringComparer.Ordinal);
+        var repoSet = new HashSet<string>(repos, StringComparer.Ordinal);
+        foreach (var port in _portOwners.Keys.ToList())
+            if (!portSet.Contains(port) || !repoSet.Contains(_portOwners[port]))
+                _portOwners.Remove(port);
+        BuilderRepoGraph = RepoGraph.Build(repos, ports, inputs, bindings, _portOwners);
+    }
+
+    /// <summary>Assign or clear a stack port's owning repo on the repo graph (null repo clears it).</summary>
+    [RelayCommand]
+    private void SetPortOwner(SetPortOwnerRequest? request)
+    {
+        if (request is null) return;
+        var port = request.Port.Trim();
+        if (port.Length == 0) return;
+        if (request.Repo is { Length: > 0 } repo) _portOwners[port] = repo;
+        else _portOwners.Remove(port);
+        RebuildBuilderWiring();
+    }
+
+    /// <summary>
+    /// Fill in owners for the ports that don't have one, inferred from their names (<c>api_port</c> →
+    /// <c>api</c>). A conservative assist — it only ever fills blanks, never overrides an owner you
+    /// picked, and skips a port when the name is ambiguous — so it's safe to run and then review on the
+    /// graph. No-op when nothing new can be guessed.
+    /// </summary>
+    [RelayCommand]
+    private void GuessOwners()
+    {
+        var repos = Bindings.Select(g => g.Repo).ToList();
+        var ports = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
+        var proposals = StackOwnerGuess.Guess(repos, ports, _portOwners);
+        if (proposals.Count == 0) return;
+        foreach (var (port, repo) in proposals) _portOwners[port] = repo;
+        RebuildBuilderWiring();
     }
 
     BindingRow? FindRow(string repo, string input) =>
@@ -408,6 +464,11 @@ public partial class StacksViewModel : PageViewModel
                     if (repoBindings.TryGetValue(row.Input, out var expr))
                         row.Expression = expr;
 
+        // Restore the ownership overlay, then rebuild so the graph opens showing exactly what was saved.
+        _portOwners.Clear();
+        foreach (var o in stack.Owners) _portOwners[o.Port] = o.Repo;
+        RebuildBuilderWiring();
+
         IsCreating = true;
     }
 
@@ -423,6 +484,7 @@ public partial class StacksViewModel : PageViewModel
         foreach (var row in Ports) row.PropertyChanged -= OnPortRowChanged;
         Ports.Clear();
         Bindings.Clear();
+        _portOwners.Clear();
         RebuildBindingVariables();
         // Rebuild the (now empty) graph so the canvas doesn't keep drawing the last session's ports.
         RebuildBuilderWiring();
@@ -518,6 +580,10 @@ public partial class StacksViewModel : PageViewModel
             foreach (var bindingRow in group.Rows)
                 if (bindingRow.Expression.Contains(oldToken, StringComparison.Ordinal))
                     bindingRow.Expression = bindingRow.Expression.Replace(oldToken, newToken, StringComparison.Ordinal);
+
+        // Ownership is keyed by port name, so a rename must carry the owner across or the graph would
+        // silently orphan it (and the prune would drop it on the next rebuild).
+        if (_portOwners.Remove(oldName, out var ownerRepo)) _portOwners[newName] = ownerRepo;
     }
 
     /// <summary>Create a port row wired for change tracking (rename propagation + previews).</summary>
@@ -566,6 +632,16 @@ public partial class StacksViewModel : PageViewModel
 
         var shares = StackShares.Derive(repos, ports, bindings);
 
+        // The ownership overlay, filtered to what actually survives the save (a port dropped for being
+        // unwired, or a repo removed, takes its owner with it). Deterministic order for a stable file.
+        var portSet = new HashSet<string>(ports, StringComparer.Ordinal);
+        var repoSet = new HashSet<string>(repos, StringComparer.Ordinal);
+        var owners = _portOwners
+            .Where(kv => portSet.Contains(kv.Key) && repoSet.Contains(kv.Value))
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => new PortOwner { Port = kv.Key, Repo = kv.Value })
+            .ToList();
+
         Error = null; Status = null;
 
         if (ValidateCapacity(NewCapacity) is { } capacityError) { Error = capacityError; return; }
@@ -582,7 +658,8 @@ public partial class StacksViewModel : PageViewModel
             var basis = EditingOriginalName is { } editing ? Services.Stacks.Get(editing) : null;
             var definition = (basis ?? new StackDefinition { Name = name }) with
             {
-                Name = name, Repos = repos, Ports = ports, Bindings = bindings, Shares = shares, MaxSlots = maxSlots,
+                Name = name, Repos = repos, Ports = ports, Bindings = bindings, Shares = shares,
+                Owners = owners, MaxSlots = maxSlots,
             };
             Services.Stacks.Save(definition);
 
@@ -594,6 +671,7 @@ public partial class StacksViewModel : PageViewModel
             foreach (var c in RepoChoices) c.IsSelected = false;
             Ports.Clear();
             Bindings.Clear();
+            _portOwners.Clear();
             EditingOriginalName = null;
             IsCreating = false;
             Status = edited is null ? $"created stack '{name}'" : $"updated stack '{name}'";

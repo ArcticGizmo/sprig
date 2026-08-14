@@ -53,19 +53,37 @@
             <!-- Guidance and legend stay pinned; only the canvas scrolls. The canvas fills whatever
                  vertical space is left between them, so the text is never pushed off-screen. -->
             <DockPanel LastChildFill="True">
+                <!-- View switch: the patchbay (port-centric wiring) vs the repo graph (repo-centric
+                     dependencies). Same edit surface, two lenses on the same build. The "Guess owners"
+                     assist only makes sense on the graph, so it rides alongside and shows there. -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Spacing="12" Margin="0,0,0,8">
+                    <ToggleSwitch IsChecked="{Binding GraphView}" OffContent="Patchbay" OnContent="Repo graph"
+                                  VerticalAlignment="Center"
+                                  ToolTip.Tip="Switch between the port patchbay and the repo dependency graph" />
+                    <Button Content="⌕ Guess owners" Command="{Binding GuessOwnersCommand}"
+                            IsVisible="{Binding GraphView}" VerticalAlignment="Center" Padding="10,4" FontSize="11"
+                            ToolTip.Tip="Infer each unowned port's owner from its name (e.g. api_port → api). Only fills blanks — your picks are kept." />
+                </StackPanel>
+
                 <!-- Leads with what has already happened, since the canvas arrives wired now. -->
                 <StackPanel DockPanel.Dock="Top" Spacing="3" Margin="0,0,0,8" IsVisible="{Binding CanAutoWire}">
                     <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
                                Text="Each input has been wired to a port by convention. Review it and change anything that isn't what you meant — two repos only share a port if you say so." />
                     <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               IsVisible="{Binding !GraphView}"
                                Text="Drag a port onto an input to rewire it, or drag an input back to a source to unbind it. Click a port to rename it, an input to set a literal value, a ƒ node to edit a transform, or a line to select it." />
+                    <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               IsVisible="{Binding GraphView}"
+                               Text="Repos are nodes; a port with an owner and one other consumer draws as an owner→consumer line, and anything shared becomes a counted chip. Click a chip to name its owner (turning it into a line), or a line to change/clear it. Drag a node to tidy." />
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"
                            Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !CanAutoWire}"
                            Text="Add a repo below to start. sprig reads the inputs it declares and wires them to ports for you." />
 
-                <!-- Column headers, aligned to the canvas columns (the actions are drawn on the canvas). -->
-                <Grid DockPanel.Dock="Top" HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284" Margin="0,0,0,8">
+                <!-- Column headers, aligned to the canvas columns (patchbay only). -->
+                <Grid DockPanel.Dock="Top" HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284" Margin="0,0,0,8"
+                      IsVisible="{Binding !GraphView}">
                     <TextBlock Grid.Column="0" Text="SOURCE" HorizontalAlignment="Center" VerticalAlignment="Center"
                                FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                     <Button Grid.Column="0" Content="✦ Tidy" Command="{Binding CleanupCommand}"
@@ -78,37 +96,51 @@
                                FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                 </Grid>
 
-                <!-- Legend pinned to the bottom, always visible. -->
-                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <!-- Legend pinned to the bottom, per view. -->
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsVisible="{Binding !GraphView}">
                     <TextBlock Text="■ plain" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="■ transform" Foreground="{StaticResource DevBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="■ producer port" Foreground="{StaticResource OkBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="■ unbound" Foreground="{StaticResource DangerBrush}" FontSize="11" />
                 </WrapPanel>
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" IsVisible="{Binding GraphView}">
+                    <TextBlock Text="■ owner → consumer line" Foreground="{StaticResource AccentBrush}" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="■ shared port chip" Foreground="#FBBF24" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="■ owns a port" Foreground="{StaticResource OkBrush}" FontSize="11" />
+                </WrapPanel>
 
-                <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar. -->
+                <!-- The canvas fills the remaining space; its own ScrollViewer is the only scrollbar.
+                     Both lenses live here; the toggle shows one. -->
                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                         BorderThickness="1" CornerRadius="8" ClipToBounds="True">
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                        <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
-                                               AutomationProperties.AutomationId="stack.canvas"
-                                               HorizontalAlignment="Center"
-                                               WireCommand="{Binding WirePinCommand}"
-                                               UnwireCommand="{Binding UnwirePinCommand}"
-                                               WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
-                                               CreatePortCommand="{Binding CreatePortCommand}"
-                                               SetExpressionCommand="{Binding SetExpressionCommand}"
-                                               Variables="{Binding BindingVariables}"
-                                               RenamePortCommand="{Binding RenamePortCommand}"
-                                               RemovePortCommand="{Binding RemoveNamedPortCommand}"
-                                               AddPortCommand="{Binding AddNamedPortCommand}"
-                                               AppendSourceCommand="{Binding AppendSourceCommand}"
-                                               AddableRepos="{Binding AddableRepos}"
-                                               AddRepoCommand="{Binding AddStackRepoCommand}"
-                                               RemoveRepoCommand="{Binding RemoveStackRepoCommand}"
-                                               ReorderRepoCommand="{Binding ReorderRepoCommand}"
-                                               ReorderPortCommand="{Binding ReorderPortCommand}"
-                                               AutoWireCommand="{Binding AutoWireCommand}" />
+                        <Panel>
+                            <controls:WiringCanvas Graph="{Binding BuilderWiring}" IsEditable="True"
+                                                   IsVisible="{Binding !GraphView}"
+                                                   AutomationProperties.AutomationId="stack.canvas"
+                                                   HorizontalAlignment="Center"
+                                                   WireCommand="{Binding WirePinCommand}"
+                                                   UnwireCommand="{Binding UnwirePinCommand}"
+                                                   WireWorkspaceCommand="{Binding WireWorkspaceCommand}"
+                                                   CreatePortCommand="{Binding CreatePortCommand}"
+                                                   SetExpressionCommand="{Binding SetExpressionCommand}"
+                                                   Variables="{Binding BindingVariables}"
+                                                   RenamePortCommand="{Binding RenamePortCommand}"
+                                                   RemovePortCommand="{Binding RemoveNamedPortCommand}"
+                                                   AddPortCommand="{Binding AddNamedPortCommand}"
+                                                   AppendSourceCommand="{Binding AppendSourceCommand}"
+                                                   AddableRepos="{Binding AddableRepos}"
+                                                   AddRepoCommand="{Binding AddStackRepoCommand}"
+                                                   RemoveRepoCommand="{Binding RemoveStackRepoCommand}"
+                                                   ReorderRepoCommand="{Binding ReorderRepoCommand}"
+                                                   ReorderPortCommand="{Binding ReorderPortCommand}"
+                                                   AutoWireCommand="{Binding AutoWireCommand}" />
+                            <controls:RepoGraphCanvas Graph="{Binding BuilderRepoGraph}" IsEditable="True"
+                                                      IsVisible="{Binding GraphView}"
+                                                      AutomationProperties.AutomationId="stack.graph"
+                                                      HorizontalAlignment="Center"
+                                                      SetOwnerCommand="{Binding SetPortOwnerCommand}" />
+                        </Panel>
                     </ScrollViewer>
                 </Border>
             </DockPanel>

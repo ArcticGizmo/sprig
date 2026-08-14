@@ -276,4 +276,63 @@ public class StackStoreTests
         Assert.Equal(2, stacks.Get("web+api")!.Schema);
         Assert.Single(stacks.Get("web+api")!.Shares);
     }
+
+    [Fact]
+    public void Explicit_owners_round_trip_through_save_and_get()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+
+        stacks.Save(SharedStack() with { Owners = [new PortOwner { Port = "api_port", Repo = "api" }] });
+
+        var owner = Assert.Single(stacks.Get("web+api")!.Owners);
+        Assert.Equal(("api_port", "api"), (owner.Port, owner.Repo));
+    }
+
+    [Fact]
+    public void Save_rejects_an_owner_of_an_undeclared_port()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var bad = Stack() with { Owners = [new PortOwner { Port = "ghost", Repo = "api" }] };
+        var ex = Assert.Throws<StackException>(() => stacks.Save(bad));
+        Assert.Contains("ghost", ex.Message);
+    }
+
+    [Fact]
+    public void Save_rejects_an_owner_repo_not_in_the_stack()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var bad = Stack() with { Owners = [new PortOwner { Port = "api_port", Repo = "outsider" }] };
+        var ex = Assert.Throws<StackException>(() => stacks.Save(bad));
+        Assert.Contains("outsider", ex.Message);
+    }
+
+    [Fact]
+    public void Save_rejects_a_port_owned_twice()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        var bad = Stack() with
+        {
+            Owners =
+            [
+                new PortOwner { Port = "api_port", Repo = "api" },
+                new PortOwner { Port = "api_port", Repo = "vue" },
+            ],
+        };
+        var ex = Assert.Throws<StackException>(() => stacks.Save(bad));
+        Assert.Contains("more than one owner", ex.Message);
+    }
+
+    [Fact]
+    public void An_owner_that_never_consumes_its_own_port_is_allowed()
+    {
+        using var s = new TempStore();
+        var (stacks, _, _) = Build(s);
+        // 'api' owns api_port but only 'vue' binds it — a producer that doesn't read its own value is fine.
+        stacks.Save(Stack() with { Owners = [new PortOwner { Port = "api_port", Repo = "api" }] });
+        Assert.Single(stacks.Get("web+api")!.Owners);
+    }
 }

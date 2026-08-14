@@ -33,6 +33,7 @@ public static class Anchors
     public const string StackCloneConfirm = "stack.cloneConfirm";
     public const string SettingsPortsInUse = "settings.portsInUse";
     public const string StackCanvas = "stack.canvas";
+    public const string StackGraph = "stack.graph";
 
     /// <summary>
     /// Every anchor that must be declared as an <c>AutomationProperties.AutomationId</c> in the views.
@@ -62,6 +63,7 @@ public static class Anchors
         PoolCheckoutConfirm,
         SettingsPortsInUse,
         StackCanvas,
+        StackGraph,
     ];
 
     // --- Inside the wiring canvas (resolved by IAnchorSource, keyed on domain identity) ---

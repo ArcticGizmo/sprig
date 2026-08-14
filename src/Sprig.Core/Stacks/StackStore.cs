@@ -104,6 +104,7 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
                 $"{string.Join(", ", setupUnknown.Select(r => $"'{r}'"))} that the stack doesn't include");
 
         ValidateShares(stack);
+        ValidateOwners(stack);
         ValidateCapacity(stack);
     }
 
@@ -161,6 +162,34 @@ public sealed partial class StackStore(ISprigPaths paths, RepoRegistryStore regi
                         $"stack '{stack.Name}' shares port '{share.Port}' with {c.Repo}.{c.Input}, " +
                         $"but that input's binding doesn't reference ${{sprig.ports.{share.Port}}}");
             }
+        }
+    }
+
+    /// <summary>
+    /// The explicit <see cref="StackDefinition.Owners"/> overlay must name real things: each owned port
+    /// is declared, its owning repo is in the stack, and no port is owned twice. Like
+    /// <see cref="ValidateShares"/> this keeps the overlay trustworthy without re-deriving it — but note
+    /// ownership is a pure view hint, so (unlike shares) it deliberately does <b>not</b> require the
+    /// owner to bind the port: a repo can serve on a port it never itself consumes.
+    /// </summary>
+    static void ValidateOwners(StackDefinition stack)
+    {
+        var ports = new HashSet<string>(stack.Ports, StringComparer.Ordinal);
+        var repos = new HashSet<string>(stack.Repos, StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var owner in stack.Owners)
+        {
+            if (!ports.Contains(owner.Port))
+                throw new StackException(
+                    $"stack '{stack.Name}' assigns an owner to port '{owner.Port}', but no such port is declared");
+            if (!repos.Contains(owner.Repo))
+                throw new StackException(
+                    $"stack '{stack.Name}' says repo '{owner.Repo}' owns port '{owner.Port}', " +
+                    "which the stack doesn't include");
+            if (!seen.Add(owner.Port))
+                throw new StackException(
+                    $"stack '{stack.Name}' assigns port '{owner.Port}' more than one owner");
         }
     }
 

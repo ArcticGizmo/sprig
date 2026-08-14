@@ -56,6 +56,18 @@ public sealed record StackDefinition
     /// store: every consumer's binding must reference <c>${sprig.ports.&lt;Port&gt;}</c>.
     /// </summary>
     public IReadOnlyList<SharedPort> Shares { get; init; } = [];
+
+    /// <summary>
+    /// Which repo "owns" (produces / serves on) each stack port, when the author has said so. Purely a
+    /// <b>visualization overlay</b>, in the same spirit as <see cref="Shares"/>: it never feeds
+    /// resolution and never changes what a value resolves to — repos stay pure consumers (see
+    /// docs/pool-model-plan.md §4a). Its only job is to let the repo-graph view draw a directed
+    /// <c>owner → consumer</c> dependency line for a port instead of a fan-out cable. Optional and
+    /// additive: an absent list just means no ownership has been assigned yet (no migration needed).
+    /// Kept honest by the store: each entry's port is declared and its repo is in the stack, and a
+    /// port is owned at most once.
+    /// </summary>
+    public IReadOnlyList<PortOwner> Owners { get; init; } = [];
 }
 
 /// <summary>A stack port shared by more than one repo, and the consumers wired to it.</summary>
@@ -73,4 +85,18 @@ public sealed record PortConsumer
 {
     public required string Repo { get; init; }
     public required string Input { get; init; }
+}
+
+/// <summary>
+/// Records that a stack port is produced by (served on by) a particular repo — a visualization-only
+/// overlay that lets the repo-graph view draw a directed owner→consumer dependency line. See
+/// <see cref="StackDefinition.Owners"/>; it never participates in resolution.
+/// </summary>
+public sealed record PortOwner
+{
+    /// <summary>The owned stack port (one of <see cref="StackDefinition.Ports"/>).</summary>
+    public required string Port { get; init; }
+
+    /// <summary>The repo that owns/produces the port (one of <see cref="StackDefinition.Repos"/>).</summary>
+    public required string Repo { get; init; }
 }

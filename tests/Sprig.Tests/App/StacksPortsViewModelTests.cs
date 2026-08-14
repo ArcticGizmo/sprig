@@ -90,6 +90,31 @@ public class StacksPortsViewModelTests
     }
 
     [Fact]
+    public void Moving_a_port_reorders_it_and_reindexes_the_previewed_numbers()
+    {
+        using var s = new TempStore();
+        var vm = NewBuilderWithWeb(out var services, s);
+        var start = services.Settings.Get().PortRangeStart;
+
+        vm.DefinedPortEntry = "first_port";
+        vm.AddDefinedPortCommand.Execute(null);
+        vm.DefinedPortEntry = "second_port";
+        vm.AddDefinedPortCommand.Execute(null);
+
+        var named = vm.Ports.Where(p => p.Name.Trim().Length > 0).ToList();
+        var second = named.Single(p => p.Name == "second_port");
+        var before = vm.Ports.IndexOf(second);
+
+        vm.MovePortUpCommand.Execute(second);
+
+        Assert.True(vm.Ports.IndexOf(second) < before);              // it moved up
+        // Previews follow position from the configured range start.
+        var reordered = vm.Ports.Where(p => p.Name.Trim().Length > 0).ToList();
+        for (var i = 0; i < reordered.Count; i++)
+            Assert.Equal((start + i).ToString(), reordered[i].Preview);
+    }
+
+    [Fact]
     public void A_rename_that_would_collide_with_another_port_is_refused()
     {
         using var s = new TempStore();

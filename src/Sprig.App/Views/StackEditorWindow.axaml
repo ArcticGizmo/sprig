@@ -165,26 +165,35 @@
                                                 <Border IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                                         Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                                         BorderThickness="1" CornerRadius="6" Padding="6,3" Margin="0,0,0,4">
-                                                    <Grid ColumnDefinitions="*,Auto,Auto">
-                                                        <!-- view mode -->
-                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
+                                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                                                        <!-- view mode: name + previewed port number + unused flag -->
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5"
                                                                     VerticalAlignment="Center" IsVisible="{Binding !Editing}">
                                                             <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
-                                                                       Foreground="{StaticResource OkBrush}" />
+                                                                       TextTrimming="CharacterEllipsis" Foreground="{StaticResource OkBrush}" />
+                                                            <TextBlock Text="{Binding Preview, StringFormat=':{0}'}" FontSize="10"
+                                                                       VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                                                                       ToolTip.Tip="Previewed host port number (order decides it)" />
                                                             <Border Background="#3A2A12" CornerRadius="4" Padding="4,0" VerticalAlignment="Center"
                                                                     IsVisible="{Binding !InUse}" ToolTip.Tip="No input references this port">
                                                                 <TextBlock Text="unused" FontSize="9.5" Foreground="#FBBF24" />
                                                             </Border>
                                                         </StackPanel>
-                                                        <Button Grid.Column="1" Content="✎" FontSize="10" Padding="4,0" Background="Transparent"
-                                                                IsVisible="{Binding !Editing}" Command="{Binding StartEditCommand}"
-                                                                ToolTip.Tip="Rename" />
-                                                        <Button Grid.Column="2" Content="✕" FontSize="10" Padding="4,0" Background="Transparent"
+                                                        <Button Grid.Column="1" Content="↑" FontSize="10" Padding="3,0" Background="Transparent"
+                                                                IsVisible="{Binding !Editing}" ToolTip.Tip="Move up (lower port number)"
+                                                                Command="{Binding $parent[Window].DataContext.MovePortUpCommand}" CommandParameter="{Binding}" />
+                                                        <Button Grid.Column="2" Content="↓" FontSize="10" Padding="3,0" Background="Transparent"
+                                                                IsVisible="{Binding !Editing}" ToolTip.Tip="Move down (higher port number)"
+                                                                Command="{Binding $parent[Window].DataContext.MovePortDownCommand}" CommandParameter="{Binding}" />
+                                                        <Button Grid.Column="3" Content="✎" FontSize="10" Padding="3,0" Background="Transparent"
+                                                                IsVisible="{Binding !Editing}" Command="{Binding StartEditCommand}" ToolTip.Tip="Rename" />
+                                                        <Button Grid.Column="4" Content="✕" FontSize="10" Padding="3,0" Background="Transparent"
                                                                 IsVisible="{Binding !Editing}" ToolTip.Tip="Remove"
                                                                 Command="{Binding $parent[Window].DataContext.RemoveNamedPortCommand}"
                                                                 CommandParameter="{Binding Name}" />
                                                         <!-- rename mode -->
-                                                        <TextBox Grid.Column="0" Text="{Binding EditName}" FontSize="12" IsVisible="{Binding Editing}">
+                                                        <TextBox Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding EditName}" FontSize="12"
+                                                                 IsVisible="{Binding Editing}">
                                                             <TextBox.KeyBindings>
                                                                 <KeyBinding Gesture="Enter"
                                                                             Command="{Binding $parent[Window].DataContext.CommitPortRenameCommand}"
@@ -192,10 +201,10 @@
                                                                 <KeyBinding Gesture="Escape" Command="{Binding CancelEditCommand}" />
                                                             </TextBox.KeyBindings>
                                                         </TextBox>
-                                                        <Button Grid.Column="1" Content="✓" FontSize="10" Padding="4,0" IsVisible="{Binding Editing}"
+                                                        <Button Grid.Column="3" Content="✓" FontSize="10" Padding="3,0" IsVisible="{Binding Editing}"
                                                                 Command="{Binding $parent[Window].DataContext.CommitPortRenameCommand}"
                                                                 CommandParameter="{Binding}" />
-                                                        <Button Grid.Column="2" Content="✕" FontSize="10" Padding="4,0" IsVisible="{Binding Editing}"
+                                                        <Button Grid.Column="4" Content="✕" FontSize="10" Padding="3,0" IsVisible="{Binding Editing}"
                                                                 Command="{Binding CancelEditCommand}" />
                                                     </Grid>
                                                 </Border>

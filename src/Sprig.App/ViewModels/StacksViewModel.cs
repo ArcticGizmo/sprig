@@ -328,6 +328,31 @@ public partial class StacksViewModel : PageViewModel
         row.Name = n;
     }
 
+    /// <summary>Move a port one place up the rail. Port order is meaningful: the list order decides which
+    /// host port <b>number</b> each named port gets (first gets the lowest), so this is a real edit, not
+    /// just cosmetics. Skips over any blank rows to find the neighbouring named port.</summary>
+    [RelayCommand]
+    private void MovePortUp(StackPortRow? row) => MovePort(row, -1);
+
+    /// <summary>Move a port one place down the rail (see <see cref="MovePortUp"/>).</summary>
+    [RelayCommand]
+    private void MovePortDown(StackPortRow? row) => MovePort(row, +1);
+
+    void MovePort(StackPortRow? row, int dir)
+    {
+        if (row is null) return;
+        var i = Ports.IndexOf(row);
+        if (i < 0) return;
+        for (var j = i + dir; j >= 0 && j < Ports.Count; j += dir)
+            if (Ports[j].Name.Trim().Length > 0)   // swap with the nearest named neighbour
+            {
+                Ports.Move(i, j);
+                ReindexPortPreviews();
+                RebuildBuilderWiring();
+                return;
+            }
+    }
+
     /// <summary>Declare a port from the panel's add field (does nothing for a blank or duplicate name).</summary>
     [RelayCommand]
     private void AddDefinedPort()

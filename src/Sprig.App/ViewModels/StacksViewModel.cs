@@ -237,6 +237,7 @@ public partial class StacksViewModel : PageViewModel
             if (!portSet.Contains(port) || !repoSet.Contains(_portOwners[port]))
                 _portOwners.Remove(port);
         BuilderRepoGraph = RepoGraph.Build(repos, ports, inputs, bindings, _portOwners);
+        RebuildUndeclaredPorts();
     }
 
     /// <summary>Assign or clear a stack port's owning repo on the repo graph (null repo clears it).</summary>
@@ -264,7 +265,7 @@ public partial class StacksViewModel : PageViewModel
 
         CloseRepoEditor(); // detach any prior editor before opening the next
         var declared = Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0).ToList();
-        var editor = new RepoInputEditorViewModel(group, declared, CreatePortFromEditor);
+        var editor = new RepoInputEditorViewModel(group, declared);
         editor.CloseRequested += CloseRepoEditor;
         RepoEditor = editor;
     }
@@ -280,16 +281,45 @@ public partial class StacksViewModel : PageViewModel
         }
     }
 
-    /// <summary>Declare a new stack port on behalf of the graph editor's "＋ new port" action.</summary>
-    void CreatePortFromEditor(string name)
+    // --- Defined ports panel (graph view): declare ports, and accept ones referenced-but-undeclared ----
+
+    /// <summary>Stack ports referenced by some binding but not declared — the graph draws those bindings
+    /// red, and the panel offers to accept each into existence. Rebuilt with the wiring.</summary>
+    public ObservableCollection<string> UndeclaredPorts { get; } = [];
+    public bool HasUndeclaredPorts => UndeclaredPorts.Count > 0;
+
+    /// <summary>The name typed into the "Defined ports" panel's add field.</summary>
+    [ObservableProperty] private string _definedPortEntry = "";
+
+    /// <summary>Recompute the referenced-but-undeclared set from the current bindings and declared ports.</summary>
+    void RebuildUndeclaredPorts()
     {
-        var n = name.Trim();
-        if (n.Length == 0 || Ports.Any(p => p.Name.Trim() == n)) return;
-        Ports.Add(NewPortRow(n));
-        ReindexPortPreviews();
-        RebuildBindingVariables();
-        RebuildBuilderWiring();
+        var declared = new HashSet<string>(
+            Ports.Select(p => p.Name.Trim()).Where(n => n.Length > 0), StringComparer.Ordinal);
+        var referenced = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in Bindings)
+            foreach (var row in group.Rows)
+                foreach (var port in PortExpressions.ReferencedPorts(row.Expression))
+                    if (!declared.Contains(port)) referenced.Add(port);
+
+        var wanted = referenced.OrderBy(p => p, StringComparer.Ordinal).ToList();
+        if (UndeclaredPorts.SequenceEqual(wanted)) return;
+        UndeclaredPorts.Clear();
+        foreach (var p in wanted) UndeclaredPorts.Add(p);
+        OnPropertyChanged(nameof(HasUndeclaredPorts));
     }
+
+    /// <summary>Declare a port from the panel's add field (does nothing for a blank or duplicate name).</summary>
+    [RelayCommand]
+    private void AddDefinedPort()
+    {
+        AddNamedPort(DefinedPortEntry);
+        DefinedPortEntry = "";
+    }
+
+    /// <summary>Accept a referenced-but-undeclared port into existence — same as declaring it.</summary>
+    [RelayCommand]
+    private void AcceptPort(string? name) => AddNamedPort(name);
 
     /// <summary>
     /// Fill in owners for the ports that don't have one, inferred from their names (<c>api_port</c> →

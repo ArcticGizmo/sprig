@@ -172,4 +172,20 @@ public class RepoGraphTests
         Assert.False(pins["log"].Owned);
         Assert.Equal(RepoInputMode.Empty, pins["spare"].Mode);
     }
+
+    [Fact]
+    public void An_input_referencing_an_undeclared_port_is_flagged()
+    {
+        // 'ghost' isn't in the stack's declared ports → the pin is a broken (red) reference.
+        var g = RepoGraph.Build(
+            repos: ["web"],
+            ports: ["api_port"],
+            repoInputs: Inputs(("web", ["good", "bad"])),
+            bindings: Bindings(("web", [("good", "${sprig.ports.api_port}"), ("bad", "${sprig.ports.ghost}")])),
+            owners: Owners());
+
+        var pins = g.Nodes.Single().Inputs.ToDictionary(p => p.Name);
+        Assert.Equal(RepoInputMode.Port, pins["good"].Mode);
+        Assert.Equal(RepoInputMode.Undeclared, pins["bad"].Mode);
+    }
 }

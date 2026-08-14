@@ -81,6 +81,72 @@
                            Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !CanAutoWire}"
                            Text="Add a repo below to start. sprig reads the inputs it declares and wires them to ports for you." />
 
+                <!-- Defined ports (graph view). The single place ports are declared: the panel lists what's
+                     defined, lets you add new ones, and — crucially — surfaces any port a binding references
+                     but the stack doesn't define, so you can accept it into existence. Reflection bindings
+                     (CompileBindings off) keep the per-chip commands-on-the-window-VM bindings simple. -->
+                <Border DockPanel.Dock="Top" IsVisible="{Binding GraphView}" x:CompileBindings="False"
+                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                    <StackPanel Spacing="8">
+                        <!-- DockPanel, not a horizontal StackPanel: the chips ItemsControl fills the middle
+                             with a bounded width, so its WrapPanel actually wraps instead of running off. -->
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="Defined ports" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Top" Margin="0,3,8,0" />
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
+                                        VerticalAlignment="Top">
+                                <TextBox Text="{Binding DefinedPortEntry}" PlaceholderText="new port name" Width="130" FontSize="12" />
+                                <Button Content="＋ define" Command="{Binding AddDefinedPortCommand}" FontSize="11" />
+                            </StackPanel>
+                            <Panel VerticalAlignment="Top">
+                                <ItemsControl ItemsSource="{Binding PortNames}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="0,0,6,6">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource OkBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <Button Content="✕" FontSize="10" Padding="3,0" Background="Transparent"
+                                                            Command="{Binding $parent[Window].DataContext.RemoveNamedPortCommand}"
+                                                            CommandParameter="{Binding}" ToolTip.Tip="Remove this port" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="none yet" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                           VerticalAlignment="Center" Margin="0,3,0,0" IsVisible="{Binding !HasPorts}" />
+                            </Panel>
+                        </DockPanel>
+
+                        <!-- Broken references: a binding names a port the stack doesn't define. -->
+                        <DockPanel IsVisible="{Binding HasUndeclaredPorts}">
+                            <TextBlock DockPanel.Dock="Left" Text="Referenced but not defined" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{StaticResource DangerBrush}" VerticalAlignment="Top" Margin="0,3,8,0" />
+                            <ItemsControl ItemsSource="{Binding UndeclaredPorts}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" CornerRadius="10"
+                                                Padding="8,2" Margin="0,0,6,6">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="{Binding}" FontSize="11.5" Foreground="{StaticResource DangerBrush}"
+                                                           VerticalAlignment="Center" />
+                                                <Button Content="accept" FontSize="10" Padding="4,0"
+                                                        Command="{Binding $parent[Window].DataContext.AcceptPortCommand}"
+                                                        CommandParameter="{Binding}" ToolTip.Tip="Define this port" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- Column headers, aligned to the canvas columns (patchbay only). -->
                 <Grid DockPanel.Dock="Top" HorizontalAlignment="Center" Width="820" ColumnDefinitions="194,342,284" Margin="0,0,0,8"
                       IsVisible="{Binding !GraphView}">
@@ -109,6 +175,7 @@
                     <TextBlock Text="● port" Foreground="#4ADE80" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="● composite" Foreground="#1F9D54" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="● literal" Foreground="#FB923C" FontSize="11" Margin="0,0,14,0" />
+                    <TextBlock Text="● undefined port" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="○ empty" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,14,0" />
                     <TextBlock Text="★ provides" Foreground="{StaticResource OkBrush}" FontSize="11" />
                 </WrapPanel>
@@ -178,11 +245,9 @@
                     </Grid>
 
                     <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto" Margin="0,14,0,0">
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                            <TextBox Text="{Binding NewPortName, Mode=TwoWay}" PlaceholderText="new port name" Width="150" FontSize="12" />
-                            <Button Content="＋ add port" Command="{Binding AddPortCommand}" FontSize="12"
-                                    ToolTip.Tip="Declare a new stack port so you can bind an input to it" />
-                        </StackPanel>
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="Reference a port with ${sprig.ports.NAME}; define ports on the main screen." />
                         <Button Grid.Column="1" Content="Done" Command="{Binding CloseCommand}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                     </Grid>
@@ -191,7 +256,7 @@
                         <ItemsControl ItemsSource="{Binding Rows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:RepoInputRowViewModel">
-                                    <Grid ColumnDefinitions="150,*,Auto" Margin="0,0,4,12">
+                                    <Grid ColumnDefinitions="150,*" Margin="0,0,4,12">
                                         <StackPanel Grid.Column="0" Spacing="1" Margin="0,0,10,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Input}" FontSize="12.5" Foreground="{StaticResource FgBrush}"
                                                        TextWrapping="Wrap" />
@@ -200,23 +265,12 @@
                                                        IsVisible="{Binding Example, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                         </StackPanel>
 
-                                        <!-- The full custom editor (autocomplete + highlighting), same as everywhere else. -->
+                                        <!-- The full custom editor (autocomplete + highlighting), same as everywhere else. A
+                                             reference to a port that isn't defined yet shows red until it's accepted on the
+                                             main screen's "Defined ports" panel. -->
                                         <controls:SprigTokenBox Grid.Column="1" VerticalAlignment="Center"
                                                                 Value="{Binding Expression, Mode=TwoWay}" Variables="{Binding Variables}"
-                                                                Watermark="literal or ${sprig.ports.NAME}"
-                                                                IsVisible="{Binding !AddingPort}" />
-                                        <!-- ＋ port: name a new port and reference it here (the first-run shortcut). -->
-                                        <TextBox Grid.Column="1" VerticalAlignment="Center" Text="{Binding NewPortName, Mode=TwoWay}"
-                                                 PlaceholderText="new port name" IsVisible="{Binding AddingPort}" FontSize="12" />
-
-                                        <Button Grid.Column="2" Content="＋ port" Command="{Binding StartAddPortCommand}"
-                                                IsVisible="{Binding !AddingPort}" Margin="6,0,0,0" Padding="8,4" VerticalAlignment="Center"
-                                                ToolTip.Tip="Create a new port and reference it from this input" />
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="6,0,0,0"
-                                                    VerticalAlignment="Center" IsVisible="{Binding AddingPort}">
-                                            <Button Content="✓" Command="{Binding ConfirmAddPortCommand}" Padding="8,4" />
-                                            <Button Content="✕" Command="{Binding CancelAddPortCommand}" Padding="8,4" />
-                                        </StackPanel>
+                                                                Watermark="literal or ${sprig.ports.NAME}" />
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

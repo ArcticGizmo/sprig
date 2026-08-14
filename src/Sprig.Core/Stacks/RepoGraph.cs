@@ -21,6 +21,8 @@ public enum RepoInputMode
     Port,
     /// <summary>References a port but wraps or combines it (a template, multiple sources).</summary>
     Composite,
+    /// <summary>References a port that isn't declared on the stack — a broken binding, drawn red.</summary>
+    Undeclared,
 }
 
 /// <summary>
@@ -128,8 +130,11 @@ public sealed record RepoGraph(
             var pins = names.Select(name =>
             {
                 var expr = repoBindings is not null && repoBindings.TryGetValue(name, out var e) ? e : null;
-                var refs = PortExpressions.ReferencedPorts(expr).Where(declared.Contains).ToList();
+                var allRefs = PortExpressions.ReferencedPorts(expr);
+                var refs = allRefs.Where(declared.Contains).ToList();
+                var hasUndeclared = allRefs.Any(p => !declared.Contains(p));
                 var mode = string.IsNullOrWhiteSpace(expr) ? RepoInputMode.Empty
+                    : hasUndeclared ? RepoInputMode.Undeclared        // references a port that doesn't exist
                     : refs.Count == 0 ? RepoInputMode.Literal
                     : refs.Count == 1 && !PortExpressions.ReferencesWorkspace(expr) && PortExpressions.IsBareSourceReference(expr)
                         ? RepoInputMode.Port

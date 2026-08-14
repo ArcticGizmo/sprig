@@ -330,6 +330,7 @@ public sealed class RepoGraphCanvas : Control, ICustomHitTest
                     RepoInputMode.Port => (Signal, true),
                     RepoInputMode.Composite => (DeepGreen, true),
                     RepoInputMode.Literal => (Orange, true),
+                    RepoInputMode.Undeclared => (Danger, true),   // references a port that doesn't exist
                     _ => (Muted, false),   // Empty
                 };
                 if (pin.Owned)

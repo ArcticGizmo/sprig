@@ -30,25 +30,78 @@ public static partial class ConfigReferences
         return found.OrderBy(s => s, StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>References that are neither a declared input nor <c>workspace</c> — i.e. mistakes.</summary>
+    /// <summary>
+    /// References that resolve to nothing the repo declares — i.e. mistakes. A reference is accepted when it
+    /// is <c>workspace</c>, a stack-era declared <see cref="InputDeclaration"/> (dotless), or a map-era
+    /// <c>&lt;capability&gt;.&lt;output&gt;</c>: a self/local-provided output (checked exactly) or a needed
+    /// capability / alias (the output is only knowable at map-resolve time, so the head alone must match).
+    /// </summary>
     public static IReadOnlyList<string> UndeclaredReferences(SprigRepoConfig config)
     {
-        var declared = config.Inputs.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
-        return ReferencedPaths(config)
-            .Where(p => p != "workspace" && !declared.Contains(p))
-            .ToList();
+        var inputs = config.Inputs.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
+        var (provided, needed) = CapabilitySurface(config);
+        var bad = new List<string>();
+        foreach (var p in ReferencedPaths(config))
+        {
+            if (p == "workspace")
+                continue;
+            var dot = p.IndexOf('.');
+            if (dot < 0)
+            {
+                if (!inputs.Contains(p))            // stack-era input, or an unknown bare name
+                    bad.Add(p);
+                continue;
+            }
+            var head = p[..dot];
+            var tail = p[(dot + 1)..];
+            if (provided.TryGetValue(head, out var outs) && outs.Contains(tail))
+                continue;                            // self/local-provided output — exact match
+            if (needed.Contains(head))
+                continue;                            // wired need/alias — output validated at resolve time
+            bad.Add(p);
+        }
+        return bad;
+    }
+
+    /// <summary>The repo's map-model surface: provided capabilities → their output names, and the set of
+    /// needed capability names + aliases. Gathered across every module (repo-global, as inputs are).</summary>
+    static (Dictionary<string, HashSet<string>> Provided, HashSet<string> Needed) CapabilitySurface(SprigRepoConfig config)
+    {
+        var provided = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var needed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var module in config.EffectiveModules)
+        {
+            foreach (var p in module.Provides)
+            {
+                if (!provided.TryGetValue(p.Capability, out var outs))
+                    provided[p.Capability] = outs = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var o in p.Outputs.Keys)
+                    outs.Add(o);
+            }
+            foreach (var n in module.Needs)
+            {
+                needed.Add(n.Capability);
+                needed.Add(n.Alias);
+            }
+        }
+        return (provided, needed);
     }
 
     static IEnumerable<string> Templates(SprigRepoConfig config)
     {
         // Walk both the legacy flat surface (schema ≤2 / the editor's pre-modules shape) and the module
-        // surface, so undeclared-input detection works whichever shape the config is in. Inputs are shared
-        // at the repo level, so every module's templates are checked against the same declared set.
+        // surface, so undeclared-reference detection works whichever shape the config is in.
         foreach (var t in EnvComposeTemplates(config.Env ?? [], config.Compose ?? []))
             yield return t;
         foreach (var module in config.Modules)
             foreach (var t in EnvComposeTemplates(module.Env, module.Compose))
                 yield return t;
+        // Map-model: provided outputs' derived templates (EffectiveModules unifies top-level sugar + modules).
+        foreach (var module in config.EffectiveModules)
+            foreach (var cap in module.Provides)
+                foreach (var o in cap.Outputs.Values)
+                    if (!o.IsPort && !string.IsNullOrEmpty(o.Template))
+                        yield return o.Template!;
     }
 
     static IEnumerable<string> EnvComposeTemplates(

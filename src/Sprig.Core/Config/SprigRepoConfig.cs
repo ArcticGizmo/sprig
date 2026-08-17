@@ -33,6 +33,18 @@ public sealed record SprigRepoConfig
     public IReadOnlyList<ModuleDeclaration> Modules { get; init; } = [];
 
     /// <summary>
+    /// <b>Map model (schema v1).</b> Capabilities this repo offers others (its own ports + values derived
+    /// from them). Top-level entries are the single-app sugar — folded into the implicit <c>app</c> module by
+    /// <see cref="EffectiveModules"/>. A monorepo declares provides per <see cref="ModuleDeclaration"/> instead.
+    /// Empty for a stack-era config; the stack path ignores it. See docs/graph-model-redesign.md.
+    /// </summary>
+    public IReadOnlyList<ProvidedCapability> Provides { get; init; } = [];
+
+    /// <summary><b>Map model (schema v1).</b> Capabilities this repo consumes from others (single-app sugar;
+    /// folded into the implicit module). See <see cref="Provides"/>.</summary>
+    public IReadOnlyList<Need> Needs { get; init; } = [];
+
+    /// <summary>
     /// <b>Legacy (schema ≤ 2), load-only.</b> Which <c>.env.*</c> files to clobber and which keys to set.
     /// A schema-2 file carries these at the top level; migration moves them into a default module and
     /// nulls them, so a normalised schema-3 config never re-serialises them. New shape:
@@ -67,7 +79,8 @@ public sealed record SprigRepoConfig
     {
         get
         {
-            var hasFlat = Env is { Count: > 0 } || Compose is { Count: > 0 } || Setup is { Count: > 0 };
+            var hasFlat = Env is { Count: > 0 } || Compose is { Count: > 0 } || Setup is { Count: > 0 }
+                || Provides.Count > 0 || Needs.Count > 0;
             if (!hasFlat)
                 return Modules;
             var list = new List<ModuleDeclaration>(Modules.Count + 1)
@@ -76,6 +89,7 @@ public sealed record SprigRepoConfig
                 {
                     Name = SprigConfigMigration.DefaultModuleName, Path = "",
                     Env = Env ?? [], Compose = Compose ?? [], Setup = Setup ?? [],
+                    Provides = Provides, Needs = Needs,
                 },
             };
             list.AddRange(Modules);
@@ -101,6 +115,14 @@ public sealed record ModuleDeclaration
     /// resolved under it and setup runs in it.
     /// </summary>
     public string Path { get; init; } = "";
+
+    /// <summary><b>Map model (schema v1).</b> Capabilities this module offers (its own ports + derived values).
+    /// Empty for a stack-era config.</summary>
+    public IReadOnlyList<ProvidedCapability> Provides { get; init; } = [];
+
+    /// <summary><b>Map model (schema v1).</b> Capabilities this module consumes — wired to a sibling module
+    /// (local, nearest-wins) or, if none, to the outer map. Empty for a stack-era config.</summary>
+    public IReadOnlyList<Need> Needs { get; init; } = [];
 
     /// <summary>Which <c>.env.*</c> files (relative to <see cref="Path"/>) to clobber and which keys to set.</summary>
     public IReadOnlyList<EnvOverride> Env { get; init; } = [];

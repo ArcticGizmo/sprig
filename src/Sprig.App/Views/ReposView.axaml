@@ -216,9 +216,53 @@
                                                                 Foreground="{StaticResource AccentBrush}" />
                                 </TextBlock>
 
-                                <TextBlock Text="This module declares no env, compose or setup yet."
+                                <TextBlock Text="This module declares nothing yet."
                                            FontSize="12" Foreground="{StaticResource MutedBrush}"
                                            IsVisible="{Binding SelectedConfig.SelectedModule.IsEmpty}" />
+
+                                <!-- provides (map model) -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasProvides}">
+                                    <TextBlock Text="PROVIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OkBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Provides}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ProvideRow">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}">
+                                                        <Run Text="{Binding Capability}" Foreground="{StaticResource OkBrush}" FontWeight="SemiBold" /><Run Text="{Binding Type, StringFormat='  ({0})'}" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                                                    </TextBlock>
+                                                    <ItemsControl ItemsSource="{Binding Outputs}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:KvRow">
+                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- needs (map model) -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasNeeds}">
+                                    <TextBlock Text="NEEDS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Needs}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:NeedRow">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                                    <TextBlock Text="{Binding Capability}" FontFamily="Consolas,monospace" FontSize="12"
+                                                               Foreground="{StaticResource AccentBrush}" />
+                                                    <TextBlock Text="{Binding AliasLabel}" FontFamily="Consolas,monospace" FontSize="11"
+                                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                                               IsVisible="{Binding ShowAlias}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
 
                                 <!-- env -->
                                 <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasEnv}">

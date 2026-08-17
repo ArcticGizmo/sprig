@@ -16,17 +16,33 @@ public sealed record EnvGroup(string File, IReadOnlyList<string> Templates, IRea
 }
 public sealed record ComposeInfo(string File, IReadOnlyList<KvRow> Overrides);
 
-/// <summary>One module tab in the read-only view: the module's name/path and a summary of its env,
-/// compose and setup. Inputs are not here — they are shared and shown once above the tabs.</summary>
+/// <summary>One capability a module provides (map model): its contract name, optional type hint, and its
+/// outputs — each shown as <c>name</c> → <c>port</c> or the derived template.</summary>
+public sealed record ProvideRow(string Capability, string? Type, IReadOnlyList<KvRow> Outputs);
+
+/// <summary>One capability a module needs (map model): the contract name and the local alias it's
+/// referenced by (only shown when it differs from the capability name).</summary>
+public sealed record NeedRow(string Capability, string Alias)
+{
+    public bool ShowAlias => Alias.Length > 0 && Alias != Capability;
+    public string AliasLabel => ShowAlias ? $"as {Alias}" : "";
+}
+
+/// <summary>One module tab in the read-only view: the module's name/path and a summary of what it
+/// <b>provides</b> and <b>needs</b> (the map model), plus its env, compose and setup.</summary>
 public sealed record ModuleTabView(
     string Name, string Path,
+    IReadOnlyList<ProvideRow> Provides, IReadOnlyList<NeedRow> Needs,
     IReadOnlyList<EnvGroup> Env, IReadOnlyList<ComposeInfo> Compose, IReadOnlyList<string> Setup)
 {
     public bool HasPath => Path.Length > 0;
+    public bool HasProvides => Provides.Count > 0;
+    public bool HasNeeds => Needs.Count > 0;
     public bool HasEnv => Env.Count > 0;
     public bool HasCompose => Compose.Count > 0;
     public bool HasSetup => Setup.Count > 0;
-    public bool IsEmpty => Env.Count == 0 && Compose.Count == 0 && Setup.Count == 0;
+    public bool IsEmpty => Provides.Count == 0 && Needs.Count == 0
+        && Env.Count == 0 && Compose.Count == 0 && Setup.Count == 0;
 }
 
 /// <summary>
@@ -67,6 +83,11 @@ public sealed partial class RepoConfigViewModel : ObservableObject
             var modules = c.EffectiveModules.Select(m => new ModuleTabView(
                 m.Name,
                 m.Path,
+                m.Provides.Select(p => new ProvideRow(p.Capability, p.Type,
+                    p.Outputs.Select(o => new KvRow(o.Key, o.Value.IsPort
+                        ? (string.IsNullOrWhiteSpace(o.Value.Allowed) ? "port" : $"port ({o.Value.Allowed})")
+                        : o.Value.Template ?? "")).ToList())).ToList(),
+                m.Needs.Select(n => new NeedRow(n.Capability, n.Alias)).ToList(),
                 m.Env.Select(e => new EnvGroup(e.File,
                     e.Templates ?? [],
                     e.Set.Select(kv => new KvRow(kv.Key, kv.Value)).ToList())).ToList(),

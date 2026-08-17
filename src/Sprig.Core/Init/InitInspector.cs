@@ -71,6 +71,157 @@ public sealed class InitInspector
     public InitProposal Inspect(string repoRoot, IReadOnlyList<ModuleSpec> modules)
         => modules.Count == 0 ? Inspect(repoRoot) : InspectModules(repoRoot, modules, dropEmpty: false);
 
+    /// <summary>
+    /// Map-model counterpart to <see cref="Inspect(string)"/> (the Graph Turn): a detected listen/service
+    /// port becomes a <b>provided</b> capability the repo owns (auto-allocated per workspace) rather than a
+    /// stack-supplied input, and the matching env/compose value is rewritten to <c>${sprig.&lt;cap&gt;.port}</c>.
+    /// <b>needs</b> (external services this repo consumes) can't be inferred reliably — an embedded URL is
+    /// surfaced as a note for the author to declare by hand. Heuristic and advisory; a starting point.
+    /// </summary>
+    public InitProposal InspectMap(string repoRoot)
+    {
+        var notes = new List<string>();
+        var usedCaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var provides = new List<ProvidedCapability>();
+        var env = new List<EnvOverride>();
+
+        DetectEnvProvides(repoRoot, provides, usedCaps, env, notes);
+        var compose = DetectComposeProvides(repoRoot, provides, usedCaps, notes);
+
+        var module = new ModuleDeclaration
+        {
+            Name = SprigConfigMigration.DefaultModuleName, Path = "",
+            Provides = provides, Env = env, Compose = compose,
+        };
+        var hasSurface = provides.Count > 0 || env.Count > 0 || compose.Count > 0;
+        var config = new SprigRepoConfig
+        {
+            Schema = SprigConfigLoader.SupportedSchema,
+            Name = Path.GetFileName(repoRoot.TrimEnd('\\', '/')),
+            Modules = hasSurface ? [module] : [],
+        };
+
+        if (!hasSurface)
+            notes.Add("no ports or compose detected — declare this repo's provides/needs by hand");
+        notes.Add("review the provided capabilities; add any 'needs' (services this repo consumes) by hand");
+        return new InitProposal(config, notes);
+    }
+
+    /// <summary>Env detection for the map model: each bare-port key becomes its own provided capability with
+    /// a single <c>port</c> output, and its value is rewritten to reference it. Same git-aware targeting as
+    /// <see cref="DetectEnv"/> — only untracked files are overridden, tracked neighbours seed as templates.</summary>
+    void DetectEnvProvides(string repoRoot, List<ProvidedCapability> provides, HashSet<string> usedCaps,
+        List<EnvOverride> envOverrides, List<string> notes)
+    {
+        var scanRoot = ScanRoot(repoRoot, "");
+        if (!Directory.Exists(scanRoot)) return;
+        var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
+        var envFiles = EnumerateEnvFiles(repoRoot, scanRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+
+        foreach (var dir in envFiles.GroupBy(DirOf, StringComparer.OrdinalIgnoreCase))
+        {
+            var templates = dir.Where(tracked.Contains).ToList();
+            foreach (var target in dir.Where(f => !tracked.Contains(f)))
+            {
+                var set = new Dictionary<string, string>();
+                void Scan(string relFile)
+                {
+                    var abs = Path.Combine(repoRoot, relFile);
+                    if (!File.Exists(abs)) return;
+                    foreach (var (key, value) in ParseEnv(File.ReadAllText(abs)))
+                    {
+                        if (IsBarePort(value) && !set.ContainsKey(key))
+                        {
+                            var cap = UniqueName(Sanitize(key), usedCaps);
+                            provides.Add(new ProvidedCapability
+                            {
+                                Capability = cap,
+                                Outputs = new Dictionary<string, OutputSpec> { ["port"] = OutputSpec.Port() },
+                            });
+                            set[key] = $"${{sprig.{cap}.port}}";
+                        }
+                        else if (relFile == target && LooksLikeEmbeddedPort(key, value))
+                            notes.Add($"'{key}' in {relFile} looks like it consumes another service — declare a need and reference it (e.g. ${{sprig.api.url}})");
+                    }
+                }
+                Scan(target);
+                foreach (var t in templates) Scan(t);
+                if (set.Count == 0) continue;
+                envOverrides.Add(new EnvOverride
+                {
+                    File = target,
+                    Templates = templates.Count > 0 ? templates : null,
+                    Set = set,
+                });
+            }
+        }
+    }
+
+    /// <summary>Compose detection for the map model: each service with a published port becomes a provided
+    /// capability named after the service (single <c>port</c> output), and the port mapping is rewritten to
+    /// reference it. container_name is still suffixed with the workspace slug.</summary>
+    List<ComposeConfig> DetectComposeProvides(string repoRoot, List<ProvidedCapability> provides,
+        HashSet<string> usedCaps, List<string> notes)
+    {
+        var result = new List<ComposeConfig>();
+        var scanRoot = ScanRoot(repoRoot, "");
+        if (!Directory.Exists(scanRoot)) return result;
+
+        foreach (var file in EnumerateComposeFiles(repoRoot, scanRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+        {
+            string text;
+            try { text = File.ReadAllText(Path.Combine(repoRoot, file)); }
+            catch { notes.Add($"could not parse {file} — skipping compose detection"); continue; }
+
+            YamlMappingNode root;
+            try
+            {
+                var stream = new YamlStream();
+                using var reader = new StringReader(text);
+                stream.Load(reader);
+                root = (YamlMappingNode)stream.Documents[0].RootNode;
+            }
+            catch { notes.Add($"could not parse {file} — skipping compose detection"); continue; }
+
+            var overrides = new List<ComposeOverride>();
+            if (TryGetMap(root, "services", out var services))
+                foreach (var entry in services.Children)
+                {
+                    var svc = ((YamlScalarNode)entry.Key).Value!;
+                    if (entry.Value is not YamlMappingNode svcNode) continue;
+
+                    if (TryGetScalar(svcNode, "container_name", out var cname))
+                        overrides.Add(new ComposeOverride
+                        {
+                            Path = ["services", svc, "container_name"],
+                            Template = $"{cname}--${{sprig.workspace}}",
+                        });
+
+                    if (svcNode.Children.TryGetValue(new YamlScalarNode("ports"), out var portsNode)
+                        && portsNode is YamlSequenceNode { Children.Count: > 0 } seq
+                        && seq.Children[0] is YamlScalarNode { Value: { } mapping })
+                    {
+                        var (_, container) = SplitPort(mapping);
+                        var cap = UniqueName(Sanitize(svc), usedCaps);
+                        provides.Add(new ProvidedCapability
+                        {
+                            Capability = cap, Type = "port",
+                            Outputs = new Dictionary<string, OutputSpec> { ["port"] = OutputSpec.Port() },
+                        });
+                        overrides.Add(new ComposeOverride
+                        {
+                            Path = ["services", svc, "ports", "0"],
+                            Template = $"${{sprig.{cap}.port}}:{container}",
+                        });
+                    }
+                }
+
+            if (overrides.Count > 0)
+                result.Add(new ComposeConfig { File = file, Overrides = overrides });
+        }
+        return result;
+    }
+
     InitProposal InspectModules(string repoRoot, IReadOnlyList<ModuleSpec> specs, bool dropEmpty)
     {
         var notes = new List<string>();

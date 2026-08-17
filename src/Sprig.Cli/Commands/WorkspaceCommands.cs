@@ -773,6 +773,10 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         [CommandOption("--register")]
         [Description("Register the repo after writing")]
         public bool Register { get; set; }
+
+        [CommandOption("--map")]
+        [Description("[experimental] Propose the map model (provides/needs) instead of stack inputs")]
+        public bool Map { get; set; }
     }
 
     static readonly JsonSerializerOptions ConfigJsonOptions = new()
@@ -790,7 +794,8 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         if (!Directory.Exists(root))
             throw new ArgumentException($"path does not exist: {root}");
 
-        var proposal = new InitInspector(cli.Git).Inspect(root);
+        var inspector = new InitInspector(cli.Git);
+        var proposal = s.Map ? inspector.InspectMap(root) : inspector.Inspect(root);
         var text = JsonSerializer.Serialize(proposal.Config, ConfigJsonOptions);
 
         // --print previews without touching disk — the one read-only path. --json pairs with it to

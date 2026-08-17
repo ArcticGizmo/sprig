@@ -13,6 +13,10 @@ public interface ISprigPaths
     string InstancesDir { get; }
     /// <summary>Directory holding stack/template definitions.</summary>
     string StacksDir { get; }
+    /// <summary>Directory holding map definitions (the Graph Turn model).</summary>
+    string MapsDir { get; }
+    /// <summary>The file backing a named map.</summary>
+    string MapFile(string name);
     /// <summary>The known-repos registry file.</summary>
     string ReposFile { get; }
     /// <summary>The port-allocation store file.</summary>
@@ -42,6 +46,8 @@ public sealed class SprigPaths : ISprigPaths
     public string Root { get; }
     public string InstancesDir => Path.Combine(Root, "instances");
     public string StacksDir => Path.Combine(Root, "stacks");
+    public string MapsDir => Path.Combine(Root, "maps");
+    public string MapFile(string name) => Path.Combine(MapsDir, name + ".json");
     public string ReposFile => Path.Combine(Root, "repos.json");
     public string PortsFile => Path.Combine(Root, "ports.json");
     public string SettingsFile => Path.Combine(Root, "settings.json");

@@ -3,6 +3,7 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Init;
+using Sprig.Core.Maps;
 using Sprig.Core.Pools;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
@@ -32,6 +33,12 @@ public sealed class AppServices
     public RepoRegistryStore Repos { get; }
     public StackStore Stacks { get; }
     public StackResolver StackResolver { get; }
+
+    /// <summary>The map model (the Graph Turn): definitions + the resolver that turns a map + selection into
+    /// a checkout. Runs alongside stacks during the transition.</summary>
+    public MapStore Maps { get; }
+    public MapResolver MapResolver { get; }
+
     public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
     public IPortStore Ports { get; }
@@ -68,6 +75,8 @@ public sealed class AppServices
         Stacks = new StackStore(Paths, Repos, instances);
         StackResolver = new StackResolver(Repos, Stacks, Git);
         Pools = new PoolService(Stacks, instances, StackResolver, Workspaces, Paths);
+        Maps = new MapStore(Paths, Repos);
+        MapResolver = new MapResolver(Repos, Maps, Git, Paths);
         Init = new InitInspector(Git);
         Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Stacks, StackResolver, Workspaces);
     }

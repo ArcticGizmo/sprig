@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:core="clr-namespace:Sprig.Core.Maps;assembly=Sprig.Core"
+             x:Class="Sprig.App.Views.MapsView"
+             x:DataType="vm:MapsViewModel">
+    <Grid Margin="28,20,24,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MaxWidth="{StaticResource ListPaneMaxWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: header + map list -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,16,0">
+            <TextBlock Grid.Row="0" Text="Maps" FontSize="22" FontWeight="SemiBold"
+                       Foreground="{StaticResource TitleBrush}" Margin="0,0,0,12" />
+
+            <ListBox Grid.Row="1" IsVisible="{Binding HasMaps}"
+                     ItemsSource="{Binding Maps}" SelectedItem="{Binding Selected, Mode=TwoWay}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="core:MapDefinition">
+                        <StackPanel Spacing="3" Margin="2,6" Background="Transparent">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                            <ItemsControl ItemsSource="{Binding Repos}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="core:MapRepo">
+                                        <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Empty state -->
+            <Border Grid.Row="1" IsVisible="{Binding !HasMaps}" VerticalAlignment="Top"
+                    Padding="16" CornerRadius="8" Background="{StaticResource PanelBgBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="No maps yet" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                               Text="A map lists the repos in play and wires them from their own provides/needs. Author one as JSON and import it with the CLI: sprig map import &lt;file&gt;." />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Right: selected map detail + check out a workspace -->
+        <ScrollViewer Grid.Column="1" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="16" Margin="4,2,4,4">
+                <TextBlock Text="{Binding Selected.Name}" FontSize="18" FontWeight="SemiBold"
+                           Foreground="{StaticResource TitleBrush}" />
+
+                <StackPanel Spacing="8">
+                    <TextBlock Text="REPOS TO INCLUDE" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource MutedBrush}" />
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                               Text="Uncheck a repo to leave it out. If a repo you keep needs something a left-out repo provides, checkout tells you what to supply." />
+                    <ItemsControl ItemsSource="{Binding RepoChoices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MapRepoChoice">
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,2" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <Border Padding="16" CornerRadius="8" Background="{StaticResource PanelBgBrush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="CHECK OUT A WORKSPACE" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource MutedBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBox Width="220" PlaceholderText="workspace name"
+                                     Text="{Binding NewWorkspaceName}" VerticalAlignment="Center" />
+                            <Button Content="Create workspace" Command="{Binding CreateWorkspaceCommand}"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220"
+                                    IsEnabled="{Binding !Busy}" />
+                            <TextBlock Text="working…" Foreground="{StaticResource MutedBrush}"
+                                       VerticalAlignment="Center" IsVisible="{Binding Busy}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="12"
+                                   IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Classes.error="{Binding StatusIsError}"
+                                   Foreground="{StaticResource OkBrush}">
+                            <TextBlock.Styles>
+                                <Style Selector="TextBlock.error">
+                                    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                </Style>
+                            </TextBlock.Styles>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

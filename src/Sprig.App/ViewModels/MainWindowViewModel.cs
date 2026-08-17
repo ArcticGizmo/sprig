@@ -105,6 +105,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _nav = nav;
         var repos = new ReposViewModel(services);
         var stacks = new StacksViewModel(services, nav);
+        var maps = new MapsViewModel(services);
         var workspaces = new WorkspacesViewModel(services, nav);
         var home = new HomeViewModel(services, nav);
         // Settings is built here (rather than lower down) so the navigator can reach it — coachmark
@@ -122,13 +123,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Settings + About are navigable (so they get active-state highlighting) but live in the
         // bottom nav slot rather than the workflow list, so they're not in NavItems.
-        Pages = [home, repos, stacks, workspaces, Learn, Settings, About];
+        Pages = [home, repos, stacks, maps, workspaces, Learn, Settings, About];
         NavItems =
         [
             home,
             new NavHeaderViewModel("Set up"),
             repos,
             stacks,
+            maps,
             new NavHeaderViewModel("Run"),
             workspaces,
             new NavHeaderViewModel("Learn"),

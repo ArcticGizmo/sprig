@@ -13,6 +13,7 @@ public sealed class FakeGitService : IGitService
     public List<string> RemovedWorktrees { get; } = [];
     public List<string> DeletedBranches { get; } = [];
     public List<string> Fetched { get; } = [];
+    public List<(string Url, string Dest)> Cloned { get; } = [];
     public List<(string Repo, string Reference)> HardResets { get; } = [];
     public string DefaultBase { get; set; } = "main";
     public int CommitsAhead { get; set; }
@@ -52,6 +53,7 @@ public sealed class FakeGitService : IGitService
     public void Prune(string repo) => Pruned.Add(repo);
     public void DeleteBranch(string repo, string branch) => DeletedBranches.Add(branch);
     public void Fetch(string repo) => Fetched.Add(repo);
+    public void Clone(string url, string destPath) => Cloned.Add((url, destPath));
     public string ResolveDefaultBase(string repo) => DefaultBase;
     public IReadOnlyList<BranchRef> ListStartPointCandidates(string repo) => StartPointCandidates;
     public string? CurrentBranch(string repo) => Current;

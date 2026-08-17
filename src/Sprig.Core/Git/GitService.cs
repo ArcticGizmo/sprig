@@ -95,6 +95,9 @@ public sealed class GitService(IProcessRunner runner) : IGitService
     public void Fetch(string repo)
         => runner.Run("git", ["-C", repo, "fetch", "--all", "--prune"], repo);
 
+    public void Clone(string url, string destPath)
+        => runner.Run("git", ["clone", url, destPath], null).EnsureSuccess();
+
     public string ResolveDefaultBase(string repo)
     {
         // Prefer an 'upstream' remote over 'origin'. In a fork/gitflow setup 'origin' is your own fork (whose

@@ -56,7 +56,7 @@ public static class CliApp
         var resolver = new StackResolver(registry, stacks, git);
         var pools = new PoolService(stacks, instances, resolver, workspaces, paths);
         var maps = new Core.Maps.MapStore(paths, registry);
-        var mapResolver = new Core.Maps.MapResolver(registry, maps);
+        var mapResolver = new Core.Maps.MapResolver(registry, maps, git, paths);
 
         var context = new CliContext(paths, workspaces, reconciler, registry, stacks, resolver,
             pools, maps, mapResolver, settings, git, ansi);

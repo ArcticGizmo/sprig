@@ -64,6 +64,11 @@ public interface IGitService
     /// local base branch.</summary>
     void Fetch(string repo);
 
+    /// <summary>Clone <paramref name="url"/> into <paramref name="destPath"/> (a fresh full checkout). The
+    /// clone's <c>origin</c> becomes <paramref name="url"/> — for a map bootstrap that URL is the
+    /// canonical/upstream source (a fork workflow re-points origin afterwards; see the Graph Turn M5).</summary>
+    void Clone(string url, string destPath);
+
     /// <summary>The default ref a workspace branches from / resyncs to. Prefers an <c>upstream</c> remote
     /// over <c>origin</c> (fork/gitflow: you branch from the canonical repo, not your fork's stale main):
     /// <c>&lt;remote&gt;/HEAD</c> → e.g. <c>upstream/main</c>, else <c>&lt;remote&gt;/main|master</c>, else a

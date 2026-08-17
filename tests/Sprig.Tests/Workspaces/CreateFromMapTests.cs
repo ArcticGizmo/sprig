@@ -75,6 +75,29 @@ public class CreateFromMapTests
     }
 
     [Fact]
+    public void A_map_workspace_can_be_claimed_reapplying_stored_module_scopes()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), MonoConfig);
+        Directory.CreateDirectory(Path.Combine(repo.Path, "apps", "api"));
+        File.WriteAllText(Path.Combine(repo.Path, "apps", "api", "docker-compose.yml"), ApiComposeYml);
+
+        var svc = Build(store);
+        var created = svc.CreateFromMap("feat-a", null, [Resolve(repo)]);
+        var port = created.Ports["mono.mono-api.port"];
+
+        // Claim cuts a branch, resets to base, and reapplies env/compose — for a map workspace that means
+        // rebuilding each module's scope from the stored InstanceModule values (no map re-resolution).
+        var claimed = svc.Claim("feat-a", "work", fresh: false);
+        var worktree = repo.SiblingWorktree("feat-a");
+
+        Assert.Equal("work", claimed.Branch);
+        Assert.Contains($"API=http://localhost:{port}", File.ReadAllText(Path.Combine(worktree, "apps", "web", ".env.local")));
+        Assert.Contains($"{port}:3000", File.ReadAllText(Assert.Single(claimed.Repos[0].ComposePaths)));
+    }
+
+    [Fact]
     public void An_unmet_need_fails_with_rollback()
     {
         using var store = new TempStore();

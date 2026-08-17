@@ -113,11 +113,28 @@ public sealed record InstanceRepo
         : GeneratedComposePath is { Length: > 0 } p ? [p]
         : [];
 
-    /// <summary>This repo's resolved input values (input name → value) as supplied by the stack.</summary>
+    /// <summary>This repo's resolved input values (input name → value) as supplied by the stack. Empty for a
+    /// map workspace (which stores per-module capability scopes in <see cref="Modules"/> instead).</summary>
     public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Per-module resolved scopes for a <b>map</b> workspace — each module's env/compose templates
+    /// resolve against its own capability values. Empty for a stack/ad-hoc workspace (which uses the
+    /// repo-level <see cref="Inputs"/>). Lets claim/refresh rebuild each module's scope from the record alone,
+    /// with no map re-resolution.</summary>
+    public IReadOnlyList<InstanceModule> Modules { get; init; } = [];
 
     /// <summary>Outcome of this repo's <c>setup</c> commands, in order (empty if none declared).
     /// Recorded even on failure — setup warns rather than rolling back — so the failure survives
     /// for the UI/CLI to surface.</summary>
     public IReadOnlyList<SetupOutcome> Setup { get; init; } = [];
+}
+
+/// <summary>One module's resolved scope within a map workspace: the module name/path and the concrete
+/// capability-qualified values (<c>&lt;capability&gt;.&lt;output&gt; → value</c>) its env/compose templates resolve
+/// against. Rebuilt into an <c>IVariableSource</c> at claim/refresh time.</summary>
+public sealed record InstanceModule
+{
+    public required string Name { get; init; }
+    public string Path { get; init; } = "";
+    public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
 }

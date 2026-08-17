@@ -11,10 +11,13 @@ namespace Sprig.Core.Maps;
 /// <see cref="ResolvedWorkspace.Unsatisfied"/> so a partial checkout produces a gap list, not a crash.</summary>
 public sealed class MapResolutionException(string message) : Exception(message);
 
-/// <summary>A module resolved to a concrete materialisation unit: its scope (the values its
-/// env/compose/setup templates resolve against) plus everything needed to lay it down.</summary>
+/// <summary>A module resolved to a concrete materialisation unit: its <see cref="Values"/> (the
+/// capability-qualified values its env/compose templates resolve against, workspace-independent) and a
+/// ready <see cref="Scope"/> built from them, plus everything needed to lay it down. The values are stored
+/// on the workspace record so claim/refresh can rebuild the scope without re-resolving the map.</summary>
 public sealed record ResolvedModule(
-    string Repo, string RepoRoot, string Module, string Path, ModuleDeclaration Declaration, IVariableSource Scope);
+    string Repo, string RepoRoot, string Module, string Path, ModuleDeclaration Declaration,
+    IReadOnlyDictionary<string, string> Values, IVariableSource Scope);
 
 /// <summary>A need with no provider in the selection and no fallback — the gap surfaced to the user.</summary>
 public sealed record UnsatisfiedNeed(string Repo, string Module, string Capability);
@@ -90,7 +93,7 @@ public static class CapabilityResolver
 
                 modules.Add(new ResolvedModule(
                     repo.Name, repo.Root, module.Name, module.Path, module,
-                    SprigScope.ForValues(workspace, values)));
+                    values, SprigScope.ForValues(workspace, values)));
             }
         }
 

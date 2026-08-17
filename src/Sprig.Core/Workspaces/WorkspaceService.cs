@@ -628,21 +628,20 @@ public sealed partial class WorkspaceService(
             // source. Either way it's fresh, so it picks up anything that moved on with the base.
             var config = ConfigFor(repo, resolvedRepos);
             var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, config);
-            var scope = ScopeFromInputs(workspace, repo.Inputs);
 
             progress?.Report(new(RefreshStepIds.Resync(repo.Name), WorkspaceStepState.Running));
             git.ResetHard(repo.WorktreePath, bases[repo.Name]);
             progress?.Report(new(RefreshStepIds.Resync(repo.Name), WorkspaceStepState.Done));
 
             progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Running));
-            env.Apply(config, repo.SourcePath, repo.WorktreePath, scope);
+            ApplyEnvFor(repo, resolved, workspace);
             progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Done));
 
             var composePaths = repo.ComposePaths;
             if (config.EffectiveModules.Any(m => m.Compose.Count > 0))
             {
                 progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Running));
-                composePaths = GenerateComposeFiles(resolved, workspace, scope);
+                composePaths = GenerateComposeFor(repo, resolved, workspace);
                 progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Done));
             }
 
@@ -705,6 +704,50 @@ public sealed partial class WorkspaceService(
         var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["workspace"] = workspace };
         foreach (var (key, value) in inputs) values[key] = value;
         return new DictionaryVariableSource(values);
+    }
+
+    /// <summary>Reapply a repo's env overrides on claim/refresh, handling both scope models: a <b>map</b>
+    /// workspace resolves each module against its own stored capability scope; a stack/ad-hoc workspace uses
+    /// one repo-level input scope. Source is never mutated.</summary>
+    void ApplyEnvFor(InstanceRepo repo, ResolvedRepo resolved, string workspace)
+    {
+        if (repo.Modules.Count > 0)
+        {
+            var byName = resolved.Config.EffectiveModules.ToDictionary(m => m.Name, StringComparer.Ordinal);
+            foreach (var stored in repo.Modules)
+                if (byName.TryGetValue(stored.Name, out var module))
+                    env.ApplyModule(module, repo.SourcePath, repo.WorktreePath,
+                        Substitution.SprigScope.ForValues(workspace, stored.Values));
+        }
+        else
+        {
+            env.Apply(resolved.Config, repo.SourcePath, repo.WorktreePath, ScopeFromInputs(workspace, repo.Inputs));
+        }
+    }
+
+    /// <summary>Regenerate a repo's compose files on claim/refresh, per the same two scope models as
+    /// <see cref="ApplyEnvFor"/>. Returns the generated file paths.</summary>
+    IReadOnlyList<string> GenerateComposeFor(InstanceRepo repo, ResolvedRepo resolved, string workspace)
+    {
+        if (repo.Modules.Count == 0)
+            return GenerateComposeFiles(resolved, workspace, ScopeFromInputs(workspace, repo.Inputs));
+
+        var stored = repo.Modules.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        var composePaths = new List<string>();
+        foreach (var module in resolved.Config.EffectiveModules)
+        {
+            if (!stored.TryGetValue(module.Name, out var im)) continue;
+            var scope = Substitution.SprigScope.ForValues(workspace, im.Values);
+            foreach (var composeCfg in module.Compose)
+            {
+                var dest = Path.Combine(paths.InstanceDir(workspace),
+                    $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
+                compose.GenerateToFile(
+                    Path.Combine(repo.SourcePath, module.Path, composeCfg.File), composeCfg, scope, dest);
+                composePaths.Add(dest);
+            }
+        }
+        return composePaths;
     }
 
     /// <summary>Live container status across the workspace's infra repos.</summary>

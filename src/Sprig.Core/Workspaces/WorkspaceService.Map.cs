@@ -81,10 +81,12 @@ public sealed partial class WorkspaceService
                 addedWorktrees.Add((repo.Root, plan.Worktree));
                 progress?.Report(new(current, WorkspaceStepState.Done));
 
-                // Env + compose per module, each against its own capability scope.
+                // Env + compose per module, each against its own capability scope. The scope's concrete
+                // values are recorded (InstanceModule) so claim/refresh can rebuild them without the map.
                 current = CreateStepIds.Env(repo.Name);
                 progress?.Report(new(current, WorkspaceStepState.Running));
                 var composePaths = new List<string>();
+                var moduleScopes = new List<InstanceModule>();
                 foreach (var rm in modulesByRepo[repo.Name])
                 {
                     env.ApplyModule(rm.Declaration, repo.Root, plan.Worktree, rm.Scope);
@@ -96,6 +98,7 @@ public sealed partial class WorkspaceService
                             Path.Combine(repo.Root, rm.Path, composeCfg.File), composeCfg, rm.Scope, dest);
                         composePaths.Add(dest);
                     }
+                    moduleScopes.Add(new InstanceModule { Name = rm.Module, Path = rm.Path, Values = rm.Values });
                 }
                 progress?.Report(new(current, WorkspaceStepState.Done));
 
@@ -119,6 +122,7 @@ public sealed partial class WorkspaceService
                     WorktreePath = plan.Worktree,
                     Branch = null,
                     GeneratedComposePaths = composePaths,
+                    Modules = moduleScopes,
                     Setup = setupOutcomes,
                 });
             }

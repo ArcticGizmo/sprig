@@ -151,7 +151,6 @@ public sealed partial class WorkspaceService
         {
             var config = ConfigFor(repo, resolvedRepos);
             var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, config);
-            var scope = ScopeFromInputs(workspace, repo.Inputs);
 
             // Cut the branch at the chosen start point and reset tracked files to it (clean, predictable
             // checkout). Cut from current HEAD first (always safe), then hard-reset — gitignored artifacts
@@ -170,14 +169,14 @@ public sealed partial class WorkspaceService
 
             // Env + compose always reapply (cheap, and keep them aligned with the freshly-reset tree).
             progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Running));
-            env.Apply(config, repo.SourcePath, repo.WorktreePath, scope);
+            ApplyEnvFor(repo, resolved, workspace);
             progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Done));
 
             var composePaths = repo.ComposePaths;
             if (config.EffectiveModules.Any(m => m.Compose.Count > 0))
             {
                 progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Running));
-                composePaths = GenerateComposeFiles(resolved, workspace, scope);
+                composePaths = GenerateComposeFor(repo, resolved, workspace);
                 progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Done));
             }
 

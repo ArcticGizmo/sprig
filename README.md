@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-<strong>Worktree + infrastructure isolation for any git repo.</strong>
+<strong>Self-describing repos. One map of how they fit. Check out any slice, fully wired.</strong>
 </p>
 
 <br>

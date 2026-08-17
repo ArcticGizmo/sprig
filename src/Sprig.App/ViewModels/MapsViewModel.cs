@@ -26,11 +26,20 @@ public sealed partial class MapsViewModel : PageViewModel
     /// deselected repo is passed to CreateFromMap's --without).</summary>
     public ObservableCollection<MapRepoChoice> RepoChoices { get; } = [];
 
+    /// <summary>Registered repos, each with a checkbox for whether the map being authored includes it.</summary>
+    public ObservableCollection<MapRepoChoice> EditRepos { get; } = [];
+
     [ObservableProperty] private MapDefinition? _selected;
     [ObservableProperty] private string _newWorkspaceName = "";
     [ObservableProperty] private string? _status;
     [ObservableProperty] private bool _statusIsError;
     [ObservableProperty] private bool _busy;
+
+    // --- authoring a map (create / edit) ---
+    [ObservableProperty] private bool _isEditing;
+    [ObservableProperty] private string _editName = "";
+    [ObservableProperty] private string? _editError;
+    string? _editingOriginal;   // the map being edited (for rename), or null when creating
 
     public bool HasMaps => Maps.Count > 0;
 
@@ -40,7 +49,7 @@ public sealed partial class MapsViewModel : PageViewModel
         Reload();
     }
 
-    protected override void OnActivated() => Reload();
+    protected override void OnActivated() { if (!IsEditing) Reload(); }
 
     void Reload()
     {
@@ -64,6 +73,82 @@ public sealed partial class MapsViewModel : PageViewModel
 
     partial void OnNewWorkspaceNameChanged(string value) => CreateWorkspaceCommand.NotifyCanExecuteChanged();
     partial void OnBusyChanged(bool value) => CreateWorkspaceCommand.NotifyCanExecuteChanged();
+
+    // --- authoring commands ---
+
+    /// <summary>Start composing a brand-new map: a blank name and every registered repo unchecked.</summary>
+    [RelayCommand]
+    private void NewMap()
+    {
+        _editingOriginal = null;
+        EditName = "";
+        EditError = null;
+        LoadEditRepos(null);
+        IsEditing = true;
+    }
+
+    /// <summary>Edit the selected map: its name and which registered repos it includes.</summary>
+    [RelayCommand]
+    private void EditSelected()
+    {
+        if (Selected is null) return;
+        _editingOriginal = Selected.Name;
+        EditName = Selected.Name;
+        EditError = null;
+        LoadEditRepos(Selected);
+        IsEditing = true;
+    }
+
+    [RelayCommand]
+    private void CancelEdit()
+    {
+        IsEditing = false;
+        EditError = null;
+    }
+
+    /// <summary>Persist the map being authored. On a rename the old file is removed. Validation errors
+    /// (bad name, no repos, an unregistered repo) surface inline rather than throwing.</summary>
+    [RelayCommand]
+    private void SaveMap()
+    {
+        var name = EditName.Trim();
+        var repos = EditRepos.Where(c => c.IsSelected).Select(c => MapRepo.Local(c.Name)).ToList();
+        try
+        {
+            _services.Maps.Save(new MapDefinition { Name = name, Repos = repos });
+            if (_editingOriginal is { } old && !string.Equals(old, name, System.StringComparison.Ordinal))
+                _services.Maps.Remove(old);
+            _services.NotifyStoreChanged();
+            IsEditing = false;
+            EditError = null;
+            Reload();
+            Selected = Maps.FirstOrDefault(m => m.Name == name) ?? Selected;
+        }
+        catch (System.Exception ex)
+        {
+            EditError = ex.Message;
+        }
+    }
+
+    /// <summary>Delete the selected map (the workspaces it created are untouched).</summary>
+    [RelayCommand]
+    private void DeleteSelected()
+    {
+        if (Selected is null) return;
+        _services.Maps.Remove(Selected.Name);
+        _services.NotifyStoreChanged();
+        Reload();
+    }
+
+    void LoadEditRepos(MapDefinition? map)
+    {
+        EditRepos.Clear();
+        var inMap = map is null
+            ? new System.Collections.Generic.HashSet<string>()
+            : map.Repos.Select(r => r.Name).ToHashSet(System.StringComparer.Ordinal);
+        foreach (var repo in _services.Repos.List())
+            EditRepos.Add(new MapRepoChoice(repo.Name) { IsSelected = inMap.Contains(repo.Name) });
+    }
 
     bool CanCreate => !Busy && Selected is not null && !string.IsNullOrWhiteSpace(NewWorkspaceName);
 

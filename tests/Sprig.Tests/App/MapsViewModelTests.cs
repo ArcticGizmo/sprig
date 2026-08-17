@@ -64,6 +64,69 @@ public class MapsViewModelTests
     }
 
     [Fact]
+    public void New_map_composes_and_saves_from_selected_registered_repos()
+    {
+        using var store = new TempStore();
+        using var a = CommitConfig("alpha", """{ "schema": 3, "name": "alpha" }""");
+        using var b = CommitConfig("beta", """{ "schema": 3, "name": "beta" }""");
+        var services = new AppServices(store.Root);
+        services.Repos.Add(a.Path);
+        services.Repos.Add(b.Path);
+
+        var vm = new MapsViewModel(services);
+        vm.NewMapCommand.Execute(null);
+        Assert.True(vm.IsEditing);
+        Assert.Equal(["alpha", "beta"], vm.EditRepos.Select(r => r.Name));   // every registered repo, unchecked
+
+        vm.EditName = "world";
+        vm.EditRepos.Single(r => r.Name == "alpha").IsSelected = true;
+        vm.SaveMapCommand.Execute(null);
+
+        Assert.False(vm.IsEditing);
+        Assert.Null(vm.EditError);
+        var saved = services.Maps.Get("world")!;
+        Assert.Equal(["alpha"], saved.Repos.Select(r => r.Name));
+        Assert.Equal("world", vm.Selected!.Name);
+    }
+
+    [Fact]
+    public void Editing_a_map_updates_its_repos_and_a_rename_removes_the_old()
+    {
+        using var store = new TempStore();
+        using var a = CommitConfig("alpha", """{ "schema": 3, "name": "alpha" }""");
+        var services = new AppServices(store.Root);
+        services.Repos.Add(a.Path);
+        services.Maps.Save(new MapDefinition { Name = "old", Repos = [MapRepo.Local("alpha")] });
+
+        var vm = new MapsViewModel(services);
+        vm.EditSelectedCommand.Execute(null);
+        Assert.Equal("old", vm.EditName);
+        Assert.True(vm.EditRepos.Single(r => r.Name == "alpha").IsSelected);   // membership reflected
+
+        vm.EditName = "renamed";
+        vm.SaveMapCommand.Execute(null);
+
+        Assert.Null(services.Maps.Get("old"));            // old file removed on rename
+        Assert.NotNull(services.Maps.Get("renamed"));
+    }
+
+    [Fact]
+    public void Saving_an_invalid_map_surfaces_the_error_inline()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+
+        var vm = new MapsViewModel(services);
+        vm.NewMapCommand.Execute(null);
+        vm.EditName = "empty";                            // no repos selected
+        vm.SaveMapCommand.Execute(null);
+
+        Assert.True(vm.IsEditing);                        // stays open
+        Assert.NotNull(vm.EditError);
+        Assert.Empty(services.Maps.List());
+    }
+
+    [Fact]
     public async Task Deselecting_a_repo_leaves_it_out_of_the_checkout()
     {
         using var store = new TempStore();

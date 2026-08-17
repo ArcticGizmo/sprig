@@ -24,6 +24,54 @@ public sealed class MapLsCommand(CliContext cli) : Command<GlobalSettings>
     }
 }
 
+[Description("Import a map definition from a JSON file (validates + saves it)")]
+public sealed class MapImportCommand(CliContext cli) : Command<MapImportCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "<file>")]
+        [Description("Path to a map JSON file")]
+        public string File { get; set; } = "";
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var map = cli.Maps.Import(s.File);
+        return CliOutput.Ok(s.Json, $"imported map '{map.Name}' ({map.Repos.Count} repo{(map.Repos.Count == 1 ? "" : "s")})",
+            new { ok = true, name = map.Name, repos = map.Repos.Select(r => r.Name) });
+    }
+}
+
+[Description("Show a map's repos, wiring and defaults")]
+public sealed class MapShowCommand(CliContext cli) : Command<MapShowCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "<name>")]
+        [Description("Map name")]
+        public string Name { get; set; } = "";
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var map = cli.Maps.Get(s.Name) ?? throw new Core.Maps.MapException($"unknown map '{s.Name}'");
+        if (s.Json) { CliOutput.Json(map); return 0; }
+
+        cli.Ansi.MarkupLine($"[bold]{Markup.Escape(map.Name)}[/]");
+        foreach (var r in map.Repos)
+            cli.Ansi.MarkupLine($"  repo [green]{Markup.Escape(r.Name)}[/]"
+                + (string.IsNullOrWhiteSpace(r.Repo) ? "" : $" [dim]({Markup.Escape(r.Repo!)})[/]"));
+        foreach (var (repo, caps) in map.Wiring)
+            foreach (var (need, provider) in caps)
+                cli.Ansi.MarkupLine($"  wire [yellow]{Markup.Escape(repo)}[/].{Markup.Escape(need)} -> {Markup.Escape(provider)}");
+        foreach (var (repo, caps) in map.Defaults)
+            foreach (var (cap, outs) in caps)
+                foreach (var (o, v) in outs)
+                    cli.Ansi.MarkupLine($"  default [yellow]{Markup.Escape(repo)}[/].{Markup.Escape(cap)}.{Markup.Escape(o)} = {Markup.Escape(v)}");
+        return 0;
+    }
+}
+
 [Description("Create a workspace from a map (selecting a slice of its repos)")]
 public sealed class MapCreateCommand(CliContext cli) : Command<MapCreateCommand.Settings>
 {

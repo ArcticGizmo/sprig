@@ -140,6 +140,8 @@ public static class CliApp
         {
             map.SetDescription("[experimental] Check out workspaces from a map (self-describing repos)");
             map.AddCommand<MapLsCommand>("ls");
+            map.AddCommand<MapShowCommand>("show");
+            map.AddCommand<MapImportCommand>("import");
             map.AddCommand<MapCreateCommand>("create");
         });
 

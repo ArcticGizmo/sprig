@@ -818,13 +818,12 @@ public class ManagementViewModelTests
         var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
         vm.RepoChoices.Single().IsSelected = true;
         vm.AutoWireCommand.Execute(null);
-        Assert.NotEmpty(vm.BuilderWiring!.Ports); // the first session wired a port
+        Assert.NotEmpty(vm.Ports); // the first session wired a port
 
         vm.NewStackCommand.Execute(null); // reopen the builder for a fresh stack
 
-        // The canvas draws from BuilderWiring, so a stale graph is what surfaces the orphaned port names.
-        Assert.Empty(vm.BuilderWiring!.Ports);
-        Assert.Empty(vm.BuilderWiring.Repos);
+        // The canvas draws from the repo graph, so a stale graph is what surfaces the orphaned port names.
+        Assert.Empty(vm.BuilderRepoGraph!.Nodes);
         Assert.Empty(vm.Ports);
         Assert.Empty(vm.PortNames);
     }
@@ -858,8 +857,9 @@ public class ManagementViewModelTests
         vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
 
         Assert.Equal("${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
-        Assert.NotNull(vm.BuilderWiring);
-        Assert.Contains(vm.BuilderWiring!.Edges, e => e is { Repo: "vue", Input: "apiUrl", Port: "api_port" });
+        // The graph reflects the binding: vue's apiUrl pin now reads a stack port.
+        var vue = vm.BuilderRepoGraph!.Nodes.Single(n => n.Repo == "vue");
+        Assert.Contains(vue.Inputs, p => p is { Name: "apiUrl", Mode: RepoInputMode.Port });
     }
 
     [Fact]
@@ -886,7 +886,9 @@ public class ManagementViewModelTests
         vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
         vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
 
-        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
+        // Two repos read the one port, so the graph draws it as a shared chip on each.
+        var chips = vm.BuilderRepoGraph!.Nodes.SelectMany(n => n.Chips);
+        Assert.Contains(chips, c => c is { Port: "api_port", UsedBy: 2 });
     }
 
     // --- Phase 2: source→input drag commands (create-on-drop, workspace, replace) --------------
@@ -922,8 +924,9 @@ public class ManagementViewModelTests
         vm.CreatePortCommand.Execute(new CreatePortRequest("vue", "apiUrl", "api_port")); // same name
 
         Assert.Single(vm.Ports.Where(p => p.Name == "api_port")); // not duplicated
-        // Both inputs now consume the one port — the live graph marks it shared.
-        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
+        // Both inputs now consume the one port — the graph draws it as a shared chip.
+        var chips = vm.BuilderRepoGraph!.Nodes.SelectMany(n => n.Chips);
+        Assert.Contains(chips, c => c is { Port: "api_port", UsedBy: 2 });
     }
 
     [Fact]
@@ -955,8 +958,6 @@ public class ManagementViewModelTests
         vm.WireWorkspaceCommand.Execute(new PinRef("api", "name"));
 
         Assert.Equal("${sprig.workspace}", Row(vm, "api", "name").Expression);
-        Assert.Contains(vm.BuilderWiring!.Repos.SelectMany(r => r.Pins), p => p is { Input: "name", UsesWorkspace: true });
-        Assert.True(vm.BuilderWiring.Workspace.Used);
     }
 
     [Fact]
@@ -972,12 +973,14 @@ public class ManagementViewModelTests
         vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "env", "production"));
 
         Assert.Equal("production", Row(vm, "api", "env").Expression);
-        Assert.Contains(vm.BuilderWiring!.Repos.SelectMany(r => r.Pins), p => p is { Input: "env", IsLiteral: true });
-        Assert.Empty(vm.BuilderWiring.TransformNodes);
+        // A plain value draws as a literal pin — no port reference, nothing composite.
+        var pins = vm.BuilderRepoGraph!.Nodes.SelectMany(n => n.Inputs).ToList();
+        Assert.Contains(pins, p => p is { Name: "env", Mode: RepoInputMode.Literal });
+        Assert.DoesNotContain(pins, p => p.Mode == RepoInputMode.Composite);
     }
 
     [Fact]
-    public void SetExpression_with_a_wrapped_workspace_creates_a_transform_node()
+    public void SetExpression_wraps_the_workspace_source_in_a_template()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
@@ -988,7 +991,7 @@ public class ManagementViewModelTests
 
         vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "name", "svc-${sprig.workspace}"));
 
-        Assert.Contains(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "name", UsesWorkspace: true });
+        Assert.Equal("svc-${sprig.workspace}", Row(vm, "api", "name").Expression);
     }
 
     // --- Phase 5: multi-input transforms (fan-in) -----------------------------------------------
@@ -1011,10 +1014,9 @@ public class ManagementViewModelTests
 
         Assert.Equal("${sprig.ports.host_port}:${sprig.ports.admin_port}", Row(vm, "api", "addr").Expression);
 
-        // The live graph shows one node fed by both ports (two edges, one transform node).
-        var node = Assert.Single(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "addr" });
-        Assert.Equal(["host_port", "admin_port"], node.Ports);
-        Assert.Equal(2, vm.BuilderWiring.Edges.Count(e => e is { Repo: "api", Input: "addr" }));
+        // The graph shows the input drawing from more than one port — a composite pin.
+        var api = vm.BuilderRepoGraph!.Nodes.Single(n => n.Repo == "api");
+        Assert.Contains(api.Inputs, p => p is { Name: "addr", Mode: RepoInputMode.Composite });
     }
 
     [Fact]

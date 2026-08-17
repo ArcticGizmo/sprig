@@ -51,8 +51,7 @@ public sealed record RepoGraphEdge(string Owner, string Consumer, string Port);
 /// A stack's wiring as a repo-centric graph: repos are the nodes, and each stack port becomes either a
 /// directed <c>owner → consumer</c> line (a clean dependency between exactly two repos) or a labelled
 /// chip with a usage count (a value shared across many repos, or one with no owner to point a line
-/// from). This is the read-optimised counterpart to <see cref="WiringGraph"/>'s port-centric patchbay:
-/// the same underlying data (repos, ports, bindings) plus the ownership overlay
+/// from). It derives purely from the stack's repos, ports, and bindings plus the ownership overlay
 /// (<see cref="StackDefinition.Owners"/>), arranged to make natural dependencies obvious and to keep
 /// fan-out from turning into crossing cables. Pure and derived — positions are the view's job; this is
 /// only what connects to what.

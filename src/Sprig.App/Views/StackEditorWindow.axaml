@@ -88,10 +88,15 @@
                      ones a binding references but the stack hasn't defined yet, and spot at a glance which
                      ports nothing uses. Reflection bindings (CompileBindings off) keep the per-row
                      StackPortRow commands and the window-VM commands simple. -->
-                <DockPanel LastChildFill="True">
-                    <Border DockPanel.Dock="Left" x:CompileBindings="False" Width="236"
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="236" MinWidth="200" MaxWidth="560" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="220" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" x:CompileBindings="False"
                             Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                            BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,8,0">
+                            BorderThickness="1" CornerRadius="8" Padding="10">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Top" Text="Ports" FontSize="13" FontWeight="SemiBold"
                                        Foreground="{StaticResource TitleBrush}" Margin="0,0,0,8" />
@@ -101,7 +106,8 @@
                                         <KeyBinding Gesture="Enter" Command="{Binding AddDefinedPortCommand}" />
                                     </TextBox.KeyBindings>
                                 </TextBox>
-                                <Button Grid.Column="1" Content="＋" Command="{Binding AddDefinedPortCommand}" Margin="4,0,0,0"
+                                <Button Grid.Column="1" Content="Add" Command="{Binding AddDefinedPortCommand}" Margin="6,0,0,0"
+                                        Padding="12,0" Background="{StaticResource AccentBrush}" Foreground="#0B1220"
                                         ToolTip.Tip="Define this port" />
                             </Grid>
 
@@ -129,18 +135,36 @@
                                 <Panel>
                                     <TextBlock Text="No ports defined yet." FontSize="11" TextWrapping="Wrap"
                                                Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasPorts}" />
-                                    <ItemsControl ItemsSource="{Binding Ports}">
+                                    <ItemsControl x:Name="PortsList" ItemsSource="{Binding Ports}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                                         Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                                        BorderThickness="1" CornerRadius="6" Padding="6,3" Margin="0,0,0,4">
-                                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
-                                                        <!-- view mode: name + previewed port number + unused flag -->
-                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5"
-                                                                    VerticalAlignment="Center" IsVisible="{Binding !Editing}">
-                                                            <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
-                                                                       TextTrimming="CharacterEllipsis" Foreground="{StaticResource OkBrush}" />
+                                                        BorderThickness="1" CornerRadius="6" Padding="4,3" Margin="0,0,0,4">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                                        <!-- drag handle: dragging reorders the rail, and order sets the host port number -->
+                                                        <Border Grid.Column="0" Classes="port-grip" Background="Transparent" Cursor="SizeAll"
+                                                                Padding="3,0" Margin="0,0,4,0" VerticalAlignment="Stretch"
+                                                                ToolTip.Tip="Drag to reorder — order sets the host port number">
+                                                            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                                                <StackPanel Spacing="2">
+                                                                    <Ellipse Width="2.5" Height="2.5" Fill="{StaticResource MutedBrush}" />
+                                                                    <Ellipse Width="2.5" Height="2.5" Fill="{StaticResource MutedBrush}" />
+                                                                    <Ellipse Width="2.5" Height="2.5" Fill="{StaticResource MutedBrush}" />
+                                                                </StackPanel>
+                                                                <StackPanel Spacing="2">
+                                                                    <Ellipse Width="2.5" Height="2.5" Fill="{StaticResource MutedBrush}" />
+                                                                    <Ellipse Width="2.5" Height="2.5" Fill="{StaticResource MutedBrush}" />
+                                                                    <Ellipse Width="2.5" Height="2.5" Fill="{StaticResource MutedBrush}" />
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <!-- name — ellipsised so a long name never collides with the number -->
+                                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" Foreground="{StaticResource OkBrush}" />
+                                                        <!-- previewed port number + unused flag -->
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5"
+                                                                    VerticalAlignment="Center" Margin="6,0,2,0">
                                                             <TextBlock Text="{Binding Preview, StringFormat=':{0}'}" FontSize="10"
                                                                        VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
                                                                        ToolTip.Tip="Previewed host port number (order decides it)" />
@@ -149,33 +173,13 @@
                                                                 <TextBlock Text="unused" FontSize="9.5" Foreground="#FBBF24" />
                                                             </Border>
                                                         </StackPanel>
-                                                        <Button Grid.Column="1" Content="↑" FontSize="10" Padding="3,0" Background="Transparent"
-                                                                IsVisible="{Binding !Editing}" ToolTip.Tip="Move up (lower port number)"
-                                                                Command="{Binding $parent[Window].DataContext.MovePortUpCommand}" CommandParameter="{Binding}" />
-                                                        <Button Grid.Column="2" Content="↓" FontSize="10" Padding="3,0" Background="Transparent"
-                                                                IsVisible="{Binding !Editing}" ToolTip.Tip="Move down (higher port number)"
-                                                                Command="{Binding $parent[Window].DataContext.MovePortDownCommand}" CommandParameter="{Binding}" />
                                                         <Button Grid.Column="3" Content="✎" FontSize="10" Padding="3,0" Background="Transparent"
-                                                                IsVisible="{Binding !Editing}" Command="{Binding StartEditCommand}" ToolTip.Tip="Rename" />
+                                                                Command="{Binding $parent[Window].DataContext.OpenPortEditorCommand}"
+                                                                CommandParameter="{Binding}" ToolTip.Tip="Edit port" />
                                                         <Button Grid.Column="4" Content="✕" FontSize="10" Padding="3,0" Background="Transparent"
-                                                                IsVisible="{Binding !Editing}" ToolTip.Tip="Remove"
+                                                                ToolTip.Tip="Delete port"
                                                                 Command="{Binding $parent[Window].DataContext.RemoveNamedPortCommand}"
                                                                 CommandParameter="{Binding Name}" />
-                                                        <!-- rename mode -->
-                                                        <TextBox Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding EditName}" FontSize="12"
-                                                                 IsVisible="{Binding Editing}">
-                                                            <TextBox.KeyBindings>
-                                                                <KeyBinding Gesture="Enter"
-                                                                            Command="{Binding $parent[Window].DataContext.CommitPortRenameCommand}"
-                                                                            CommandParameter="{Binding}" />
-                                                                <KeyBinding Gesture="Escape" Command="{Binding CancelEditCommand}" />
-                                                            </TextBox.KeyBindings>
-                                                        </TextBox>
-                                                        <Button Grid.Column="3" Content="✓" FontSize="10" Padding="3,0" IsVisible="{Binding Editing}"
-                                                                Command="{Binding $parent[Window].DataContext.CommitPortRenameCommand}"
-                                                                CommandParameter="{Binding}" />
-                                                        <Button Grid.Column="4" Content="✕" FontSize="10" Padding="3,0" IsVisible="{Binding Editing}"
-                                                                Command="{Binding CancelEditCommand}" />
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
@@ -186,8 +190,12 @@
                         </DockPanel>
                     </Border>
 
+                    <GridSplitter Grid.Column="1" Width="8" ResizeDirection="Columns"
+                                  Background="Transparent" HorizontalAlignment="Center"
+                                  ToolTip.Tip="Drag to resize the ports panel" />
+
                     <!-- The graph canvas fills the remaining space; its own ScrollViewer is the only scrollbar. -->
-                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    <Border Grid.Column="2" Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1" CornerRadius="8" ClipToBounds="True">
                         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                             <controls:RepoGraphCanvas Graph="{Binding BuilderRepoGraph}" IsEditable="True"
@@ -200,7 +208,7 @@
                                                       RemoveRepoCommand="{Binding RemoveStackRepoCommand}" />
                         </ScrollViewer>
                     </Border>
-                </DockPanel>
+                </Grid>
             </DockPanel>
         </DockPanel>
 
@@ -263,6 +271,41 @@
                         </ItemsControl>
                     </ScrollViewer>
                 </DockPanel>
+            </Border>
+        </Border>
+
+        <!-- Port rename modal, opened by a row's ✎ on the ports rail. One DataContext (the window VM) via
+             reflection bindings: the name box edits PortEditor.EditName, the buttons run the VM commands.
+             Clicking the scrim (code-behind) or Cancel closes it; Enter saves. -->
+        <Border x:Name="PortEditorScrim" Background="#B0000000" x:CompileBindings="False"
+                IsVisible="{Binding PortEditor, Converter={x:Static ObjectConverters.IsNotNull}}"
+                PointerPressed="OnPortScrimPressed">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="20"
+                    Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Edit port" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Text="Rename the port; every binding that references it updates to match."
+                                   FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Name" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                        <TextBox x:Name="PortEditorNameBox" Text="{Binding PortEditor.EditName, Mode=TwoWay}">
+                            <TextBox.KeyBindings>
+                                <KeyBinding Gesture="Enter" Command="{Binding CommitPortEditorCommand}" CommandParameter="{Binding PortEditor}" />
+                                <KeyBinding Gesture="Escape" Command="{Binding CancelPortEditorCommand}" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                        <TextBlock Text="{Binding PortEditor.Preview, StringFormat='Previewed host port: {0} — set by the row order on the rail.'}"
+                                   FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Command="{Binding CancelPortEditorCommand}" />
+                        <Button Content="Save" Command="{Binding CommitPortEditorCommand}" CommandParameter="{Binding PortEditor}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                    </StackPanel>
+                </StackPanel>
             </Border>
         </Border>
     </Grid>

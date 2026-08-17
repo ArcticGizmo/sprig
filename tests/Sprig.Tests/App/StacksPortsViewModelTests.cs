@@ -132,4 +132,72 @@ public class StacksPortsViewModelTests
 
         Assert.Equal("a_port", a.Name); // unchanged
     }
+
+    [Fact]
+    public void Dragging_a_port_onto_another_slot_reorders_it_and_reindexes_the_previews()
+    {
+        using var s = new TempStore();
+        var vm = NewBuilderWithWeb(out var services, s);
+        var start = services.Settings.Get().PortRangeStart;
+
+        vm.DefinedPortEntry = "first_port";
+        vm.AddDefinedPortCommand.Execute(null);
+        vm.DefinedPortEntry = "second_port";
+        vm.AddDefinedPortCommand.Execute(null);
+        vm.DefinedPortEntry = "third_port";
+        vm.AddDefinedPortCommand.Execute(null);
+
+        var named = vm.Ports.Where(p => p.Name.Trim().Length > 0).ToList();
+        var third = named.Single(p => p.Name == "third_port");
+        var first = named.Single(p => p.Name == "first_port");
+
+        vm.MovePortTo(third, first); // drop the dragged row onto the first port's slot
+
+        Assert.True(vm.Ports.IndexOf(third) < vm.Ports.IndexOf(first)); // it moved ahead
+        // Previews follow position from the configured range start.
+        var reordered = vm.Ports.Where(p => p.Name.Trim().Length > 0).ToList();
+        for (var i = 0; i < reordered.Count; i++)
+            Assert.Equal((start + i).ToString(), reordered[i].Preview);
+    }
+
+    [Fact]
+    public void The_port_editor_opens_seeded_then_commits_the_rename_and_closes()
+    {
+        using var s = new TempStore();
+        var vm = NewBuilderWithWeb(out _, s);
+
+        var row = vm.Bindings.Single().Rows.Single(r => r.Input == "apiUrl");
+        row.Expression = "${sprig.ports.api_port}";
+        vm.AcceptPortCommand.Execute("api_port");
+        var port = vm.Ports.Single(p => p.Name == "api_port");
+
+        vm.OpenPortEditorCommand.Execute(port);
+        Assert.Same(port, vm.PortEditor);      // the modal is open on this port
+        Assert.Equal("api_port", port.EditName); // seeded from the current name
+
+        port.EditName = "backend_port";
+        vm.CommitPortEditorCommand.Execute(port);
+
+        Assert.Null(vm.PortEditor);            // modal closed
+        Assert.Equal("backend_port", port.Name);
+        Assert.Equal("${sprig.ports.backend_port}", row.Expression); // propagated to the binding
+    }
+
+    [Fact]
+    public void Cancelling_the_port_editor_closes_it_and_changes_nothing()
+    {
+        using var s = new TempStore();
+        var vm = NewBuilderWithWeb(out _, s);
+
+        vm.DefinedPortEntry = "api_port";
+        vm.AddDefinedPortCommand.Execute(null);
+        var port = vm.Ports.Single(p => p.Name == "api_port");
+
+        vm.OpenPortEditorCommand.Execute(port);
+        port.EditName = "changed_port";
+        vm.CancelPortEditorCommand.Execute(null);
+
+        Assert.Null(vm.PortEditor);            // modal closed
+        Assert.Equal("api_port", port.Name);   // rename abandoned
+    }
 }

@@ -55,9 +55,11 @@ public static class CliApp
         var stacks = new StackStore(paths, registry, instances, settings);
         var resolver = new StackResolver(registry, stacks, git);
         var pools = new PoolService(stacks, instances, resolver, workspaces, paths);
+        var maps = new Core.Maps.MapStore(paths, registry);
+        var mapResolver = new Core.Maps.MapResolver(registry, maps);
 
         var context = new CliContext(paths, workspaces, reconciler, registry, stacks, resolver,
-            pools, settings, git, ansi);
+            pools, maps, mapResolver, settings, git, ansi);
 
         // The registrar hands the one CliContext (and the console) to every command; commands are
         // constructed by reflection from there.
@@ -130,6 +132,15 @@ public static class CliApp
             pool.AddCommand<PoolCheckoutCommand>("checkout");
             pool.AddCommand<PoolReleaseCommand>("release");
             pool.AddCommand<PoolStatusCommand>("status");
+        });
+
+        // EXPERIMENTAL (the Graph Turn) — self-describing repos wired through a map. Runs alongside stacks
+        // during the transition; becomes the primary create path when stacks are retired (M7).
+        config.AddBranch("map", map =>
+        {
+            map.SetDescription("[experimental] Check out workspaces from a map (self-describing repos)");
+            map.AddCommand<MapLsCommand>("ls");
+            map.AddCommand<MapCreateCommand>("create");
         });
 
         config.AddBranch("settings", settings =>

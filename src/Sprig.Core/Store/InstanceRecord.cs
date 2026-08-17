@@ -12,6 +12,15 @@ public sealed record InstanceRecord
 {
     public required string Workspace { get; init; }
     public string? Stack { get; init; }
+
+    /// <summary>The map this workspace was created from (the Graph Turn model), or null for a stack/ad-hoc
+    /// workspace. Mutually exclusive with <see cref="Stack"/> in practice.</summary>
+    public string? Map { get; init; }
+
+    /// <summary>The repos selected from the map for this workspace (a slice of the map). Empty for a
+    /// stack/ad-hoc workspace.</summary>
+    public IReadOnlyList<string> SelectedRepos { get; init; } = [];
+
     public IReadOnlyList<InstanceRepo> Repos { get; init; } = [];
     public IReadOnlyDictionary<string, int> Ports { get; init; } = new Dictionary<string, int>();
     public string? LastStatus { get; init; }

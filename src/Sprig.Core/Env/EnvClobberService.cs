@@ -16,24 +16,34 @@ public sealed class EnvClobberService
     public const string BeginMarker = "# >>> sprig >>>";
     public const string EndMarker = "# <<< sprig <<<";
 
-    /// <summary>Apply every module's env overrides; returns the worktree file paths written. Each
-    /// module's files (and its template seeds) resolve under the module's path.</summary>
+    /// <summary>Apply every module's env overrides against one shared <paramref name="scope"/> (the stack
+    /// model, where inputs are repo-level). Returns the worktree file paths written.</summary>
     public IReadOnlyList<string> Apply(SprigRepoConfig config, string sourceRepo, string worktree, IVariableSource scope)
     {
         var written = new List<string>();
         foreach (var module in config.EffectiveModules)
-            foreach (var over in module.Env)
-            {
-                var resolved = Resolve(over, scope);
-                var block = RenderBlock(resolved);
+            written.AddRange(ApplyModule(module, sourceRepo, worktree, scope));
+        return written;
+    }
 
-                var seed = SeedFor(over, sourceRepo, module.Path);
+    /// <summary>Apply a single module's env overrides against <paramref name="scope"/> — the map model, where
+    /// each module resolves against its own capability scope. Files and template seeds resolve under the
+    /// module's path.</summary>
+    public IReadOnlyList<string> ApplyModule(ModuleDeclaration module, string sourceRepo, string worktree, IVariableSource scope)
+    {
+        var written = new List<string>();
+        foreach (var over in module.Env)
+        {
+            var resolved = Resolve(over, scope);
+            var block = RenderBlock(resolved);
 
-                var target = Path.Combine(worktree, module.Path, over.File);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.WriteAllText(target, Wrap(seed, block));
-                written.Add(target);
-            }
+            var seed = SeedFor(over, sourceRepo, module.Path);
+
+            var target = Path.Combine(worktree, module.Path, over.File);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllText(target, Wrap(seed, block));
+            written.Add(target);
+        }
         return written;
     }
 

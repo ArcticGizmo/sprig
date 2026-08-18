@@ -213,92 +213,164 @@
                                            FontSize="12" Foreground="{StaticResource MutedBrush}"
                                            IsVisible="{Binding SelectedConfig.SelectedModule.IsEmpty}" />
 
-                                <!-- provides (map model) -->
-                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasProvides}">
+                                <!-- provides (map model): one read-only card per capability, mirroring the editor -->
+                                <StackPanel Spacing="8" IsVisible="{Binding SelectedConfig.SelectedModule.HasProvides}">
                                     <TextBlock Text="PROVIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OkBrush}" />
                                     <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Provides}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ProvideRow">
-                                                <StackPanel Spacing="2" Margin="0,0,0,6">
-                                                    <TextBlock FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}">
-                                                        <Run Text="{Binding Capability}" Foreground="{StaticResource OkBrush}" FontWeight="SemiBold" />
-                                                    </TextBlock>
-                                                    <ItemsControl ItemsSource="{Binding Outputs}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:KvRow">
-                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                                    <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                                </TextBlock>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </StackPanel>
+                                                <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock FontFamily="Consolas,monospace" FontSize="14">
+                                                            <Run Text="${sprig." Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding Capability}" Foreground="{StaticResource OkBrush}" FontWeight="SemiBold" /><Run Text="}" Foreground="{StaticResource MutedBrush}" />
+                                                        </TextBlock>
+                                                        <ItemsControl ItemsSource="{Binding Outputs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:ProvideOutputRow">
+                                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{Binding BannerBrush}"
+                                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7" Margin="0,0,0,6">
+                                                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                            <TextBlock Grid.Column="0" Text="{Binding Badge}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="11" Foreground="{Binding BannerBrush}" VerticalAlignment="Center" />
+                                                                            <TextBlock Grid.Column="1" Text="{Binding Reference}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="13" Foreground="{StaticResource FgBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                                            <TextBlock Grid.Column="2" Text="{Binding Detail}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                                                                       IsVisible="{Binding HasDetail}" TextWrapping="Wrap" />
+                                                                        </Grid>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
 
-                                <!-- needs (map model) -->
-                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasNeeds}">
+                                <!-- needs (map model): one read-only card per value, its used outputs beneath -->
+                                <StackPanel Spacing="8" IsVisible="{Binding SelectedConfig.SelectedModule.HasNeeds}">
                                     <TextBlock Text="NEEDS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
                                     <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Needs}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:NeedRow">
-                                                <TextBlock Text="{Binding Value}" FontFamily="Consolas,monospace" FontSize="12"
-                                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,2" />
+                                                <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock FontFamily="Consolas,monospace" FontSize="14">
+                                                            <Run Text="${sprig." Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" /><Run Text="}" Foreground="{StaticResource MutedBrush}" />
+                                                        </TextBlock>
+                                                        <ItemsControl ItemsSource="{Binding Usages}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:NeedUsageRow">
+                                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource AccentBrush}"
+                                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7" Margin="0,0,0,6">
+                                                                        <StackPanel Spacing="3">
+                                                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                                <TextBlock Grid.Column="0" Text="{Binding Output, StringFormat='● {0}'}"
+                                                                                           FontFamily="Consolas,monospace" FontSize="11"
+                                                                                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding Reference}" FontFamily="Consolas,monospace"
+                                                                                           FontSize="13" Foreground="{StaticResource FgBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                                            </Grid>
+                                                                            <TextBlock IsVisible="{Binding HasLocations}" FontSize="11" TextWrapping="Wrap"
+                                                                                       Foreground="{StaticResource MutedBrush}">
+                                                                                <Run Text="referenced by  " /><Run Text="{Binding LocationsSummary}" />
+                                                                            </TextBlock>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <TextBlock IsVisible="{Binding !HasUsages}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   Text="Not referenced in this module's overrides." />
+                                                    </StackPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
 
-                                <!-- env -->
-                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasEnv}">
+                                <!-- env: one read-only card per file — its templates and keys as inset rows -->
+                                <StackPanel Spacing="8" IsVisible="{Binding SelectedConfig.SelectedModule.HasEnv}">
                                     <TextBlock Text="ENV OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                                     <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Env}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:EnvGroup">
-                                                <StackPanel Spacing="2" Margin="0,0,0,6">
-                                                    <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
-                                                    <TextBlock FontSize="11" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}"
-                                                               TextWrapping="Wrap" IsVisible="{Binding HasTemplates}">
-                                                        <Run Text="seeded from: " /><Run Text="{Binding TemplatesSummary}" />
-                                                    </TextBlock>
-                                                    <ItemsControl ItemsSource="{Binding Items}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:KvRow">
-                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                                    <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                                </TextBlock>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </StackPanel>
+                                                <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock Text="{Binding File}" FontFamily="Consolas,monospace" FontSize="14"
+                                                                   FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
+                                                        <ItemsControl ItemsSource="{Binding Templates}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="sys:String">
+                                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7" Margin="18,0,0,6">
+                                                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                            <TextBlock Grid.Column="0" Text="● template" FontFamily="Consolas,monospace"
+                                                                                       FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                                            <TextBlock Grid.Column="1" Text="{Binding}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="13" Foreground="{StaticResource FgBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                                        </Grid>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <ItemsControl ItemsSource="{Binding Items}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:KvRow">
+                                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7" Margin="0,0,0,6">
+                                                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                            <TextBlock Grid.Column="0" Text="{Binding Key, StringFormat='● {0}'}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                                            <TextBlock Grid.Column="1" Text="{Binding Value}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="13" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                                        </Grid>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
 
-                                <!-- compose -->
-                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasCompose}">
+                                <!-- compose: one read-only card per file — each override an inset row -->
+                                <StackPanel Spacing="8" IsVisible="{Binding SelectedConfig.SelectedModule.HasCompose}">
                                     <TextBlock Text="COMPOSE OVERRIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
                                     <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Compose}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ComposeInfo">
-                                                <StackPanel Spacing="2" Margin="0,0,0,6">
-                                                    <TextBlock Text="{Binding File}" FontStyle="Italic" Foreground="{StaticResource FgBrush}" />
-                                                    <ItemsControl ItemsSource="{Binding Overrides}">
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:KvRow">
-                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
-                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
-                                                                    <Run Text="{Binding Key}" /><Run Text=" → " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
-                                                                </TextBlock>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </StackPanel>
+                                                <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                        BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock Text="{Binding File}" FontFamily="Consolas,monospace" FontSize="14"
+                                                                   FontWeight="SemiBold" Foreground="{StaticResource FgBrush}" />
+                                                        <ItemsControl ItemsSource="{Binding Overrides}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:KvRow">
+                                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7" Margin="0,0,0,6">
+                                                                        <StackPanel Spacing="2">
+                                                                            <TextBlock Text="{Binding Key}" FontFamily="Consolas,monospace" FontSize="11"
+                                                                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                                                            <TextBlock FontFamily="Consolas,monospace" FontSize="13" TextWrapping="Wrap">
+                                                                                <Run Text="→ " Foreground="{StaticResource MutedBrush}" /><Run Text="{Binding Value}" Foreground="{StaticResource FgBrush}" />
+                                                                            </TextBlock>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>

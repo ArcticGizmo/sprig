@@ -35,6 +35,10 @@ stack era — recreate stack-era workspaces by hand.
   status-coloured start banner (green = gitignored/safe, red = tracked or not-ignored, amber = missing
   template) and the git-safety/found state on the right, before the remove button. Templates are indented
   and prefixed `● template` so it's obvious they feed the file above.
+- **Repo preview matches the editor** — the read-only pane now renders provides, needs and env/compose
+  overrides with the same card layout as editing: a `${sprig.…}` namespace header per capability/value with
+  its outputs as inset rows, and one card per override file. A need's used outputs are read off where it's
+  referenced, just like in the editor.
 - **Maps** — `maps/<name>.json` in the central store composes a slice of repos. It records only the
   deviations: `wiring` (which provider wins when several could) and `defaults` (a literal fallback for
   a need whose provider you left out), plus an optional `maxSlots` pool ceiling. Everything else is

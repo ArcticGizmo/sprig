@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Sprig.Core.Config;
 
@@ -15,12 +16,34 @@ public sealed record EnvGroup(string File, IReadOnlyList<string> Templates, IRea
 }
 public sealed record ComposeInfo(string File, IReadOnlyList<KvRow> Overrides);
 
-/// <summary>One capability a module provides (map model): its contract name and its outputs — each shown
-/// as <c>name</c> → <c>port</c> or the derived template.</summary>
-public sealed record ProvideRow(string Capability, IReadOnlyList<KvRow> Outputs);
+/// <summary>One output of a provided capability in the read-only preview: the reference a consumer types
+/// (<see cref="Reference"/>), whether it's the always-present port anchor (green) or a derived shape (amber),
+/// and its detail (allowed port set, or the shape's template). Mirrors an editor provides output row.</summary>
+public sealed record ProvideOutputRow(string Name, string Reference, bool IsPort, string Detail)
+{
+    public string Badge => IsPort ? "● port" : "● derived";
+    public IBrush BannerBrush => EditBrush.Of(IsPort ? "OkBrush" : "WarnBrush");
+    public bool HasDetail => Detail.Length > 0;
+}
 
-/// <summary>One value a module needs (map model): the value name it wires to.</summary>
-public sealed record NeedRow(string Value);
+/// <summary>One capability a module provides (map model): its name (the <c>${sprig.&lt;capability&gt;}</c>
+/// namespace) and its outputs.</summary>
+public sealed record ProvideRow(string Capability, IReadOnlyList<ProvideOutputRow> Outputs);
+
+/// <summary>One output of a needed value the module references, with where it's referenced — discovered
+/// from the module's env/compose overrides, exactly as the editor does.</summary>
+public sealed record NeedUsageRow(string Output, string Reference, IReadOnlyList<string> Locations)
+{
+    public string LocationsSummary => string.Join("   ", Locations);
+    public bool HasLocations => Locations.Count > 0;
+}
+
+/// <summary>One value a module needs (map model): the value name (the <c>${sprig.&lt;value&gt;}</c>
+/// namespace) and the outputs it's referenced with.</summary>
+public sealed record NeedRow(string Value, IReadOnlyList<NeedUsageRow> Usages)
+{
+    public bool HasUsages => Usages.Count > 0;
+}
 
 /// <summary>One module tab in the read-only view: the module's name/path and a summary of what it
 /// <b>provides</b> and <b>needs</b> (the map model), plus its env, compose and setup.</summary>
@@ -89,11 +112,11 @@ public sealed partial class RepoConfigViewModel : ObservableObject
                 m.Name,
                 m.Path,
                 m.Provides.Select(p => new ProvideRow(p.Capability,
-                    p.Ports.Select(o => new KvRow(o.Key,
-                            string.IsNullOrWhiteSpace(o.Value.Allowed) ? "port" : $"port ({o.Value.Allowed})"))
-                        .Concat(p.Shapes.Select(s => new KvRow(s.Key, s.Value)))
+                    p.Ports.Select(o => new ProvideOutputRow(o.Key, ProvideEditRow.Token(p.Capability, o.Key), true,
+                            string.IsNullOrWhiteSpace(o.Value.Allowed) ? "" : o.Value.Allowed!))
+                        .Concat(p.Shapes.Select(sp => new ProvideOutputRow(sp.Key, ProvideEditRow.Token(p.Capability, sp.Key), false, sp.Value)))
                         .ToList())).ToList(),
-                m.Needs.Select(n => new NeedRow(n.Value)).ToList(),
+                m.Needs.Select(n => new NeedRow(n.Value, UsagesFor(m, n.Value))).ToList(),
                 m.Env.Select(e => new EnvGroup(e.File,
                     e.Templates ?? [],
                     e.Set.Select(kv => new KvRow(kv.Key, kv.Value)).ToList())).ToList(),
@@ -117,5 +140,40 @@ public sealed partial class RepoConfigViewModel : ObservableObject
         {
             return new RepoConfigViewModel("", [], ex.Message);
         }
+    }
+
+    /// <summary>The outputs a module references a given need <paramref name="value"/> with, and where —
+    /// read off its env/compose override templates (the read-only analogue of the editor's per-need usage
+    /// discovery, so the preview shows the same value → outputs shape as editing does).</summary>
+    static IReadOnlyList<NeedUsageRow> UsagesFor(ModuleDeclaration mod, string value)
+    {
+        var order = new List<string>();
+        var byOutput = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        void Scan(string template, string location)
+        {
+            foreach (var reference in ConfigReferences.ReferencedNames(template))
+            {
+                var dot = reference.IndexOf('.');
+                if (dot <= 0 || reference[..dot] != value) continue;
+                var output = reference[(dot + 1)..].Trim();
+                if (output.Length == 0) continue;
+                if (!byOutput.TryGetValue(output, out var locs)) { byOutput[output] = locs = []; order.Add(output); }
+                if (!locs.Contains(location)) locs.Add(location);
+            }
+        }
+
+        foreach (var e in mod.Env)
+        {
+            var f = string.IsNullOrWhiteSpace(e.File) ? ".env" : e.File.Trim();
+            foreach (var (k, t) in e.Set) Scan(t, $"{f} · {k}");
+        }
+        foreach (var comp in mod.Compose)
+        {
+            var f = string.IsNullOrWhiteSpace(comp.File) ? "compose" : comp.File.Trim();
+            foreach (var o in comp.Overrides) Scan(o.Template, $"{f} · {string.Join(".", o.Path)}");
+        }
+
+        return order.Select(o => new NeedUsageRow(o, ProvideEditRow.Token(value, o), byOutput[o])).ToList();
     }
 }

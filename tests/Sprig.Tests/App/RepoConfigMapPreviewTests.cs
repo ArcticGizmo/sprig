@@ -29,10 +29,34 @@ public class RepoConfigMapPreviewTests
 
         var provide = Assert.Single(module.Provides);
         Assert.Equal("acme-api", provide.Capability);
-        Assert.Contains(provide.Outputs, o => o.Key == "port" && o.Value == "port");
-        Assert.Contains(provide.Outputs, o => o.Key == "url" && o.Value.Contains("localhost"));
+        // The port anchor and the derived shape both surface, each with its reference token.
+        Assert.Contains(provide.Outputs, o => o.Name == "port" && o.IsPort && o.Reference == "${sprig.acme-api.port}");
+        Assert.Contains(provide.Outputs, o => o.Name == "url" && !o.IsPort && o.Detail.Contains("localhost"));
 
         Assert.True(module.HasNeeds);
         Assert.Equal(["acme-db", "auth"], module.Needs.Select(n => n.Value));
+    }
+
+    [Fact]
+    public void A_needs_used_outputs_are_read_off_the_overrides_in_the_preview()
+    {
+        using var s = new TempStore();
+        var dir = WriteConfig(s, """
+            { "schema": 1, "name": "acme",
+              "needs": [ { "value": "api" } ],
+              "env": [ { "file": ".env", "set": {
+                  "VITE_API_URL": "${sprig.api.url}",
+                  "VITE_API_PORT": "${sprig.api.port}"
+              } } ] }
+            """);
+
+        var vm = RepoConfigViewModel.Load(dir);
+        var need = Assert.Single(Assert.Single(vm.Modules).Needs);
+
+        Assert.True(need.HasUsages);
+        Assert.Equal(["port", "url"], need.Usages.Select(u => u.Output).OrderBy(o => o));
+        var url = need.Usages.Single(u => u.Output == "url");
+        Assert.Equal("${sprig.api.url}", url.Reference);
+        Assert.Contains(".env · VITE_API_URL", url.Locations);
     }
 }

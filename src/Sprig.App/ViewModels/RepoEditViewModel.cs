@@ -53,7 +53,13 @@ public partial class PortEditRow : ObservableObject
 public partial class ShapeEditRow : ObservableObject
 {
     readonly Action<ShapeEditRow> _remove;
-    public ShapeEditRow(Action<ShapeEditRow> remove) => _remove = remove;
+
+    public ShapeEditRow(Action<ShapeEditRow> remove, IEnumerable<string> variables, IEnumerable<string> openCapabilities)
+    {
+        _remove = remove;
+        Variables = variables;
+        OpenCapabilities = openCapabilities;
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Ref))]
@@ -70,6 +76,13 @@ public partial class ShapeEditRow : ObservableObject
     /// <summary>The reference a consumer types for this shape: <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c>.</summary>
     public string Ref => ProvideEditRow.Token(Head, Name);
 
+    /// <summary>The repo's known <c>${sprig.*}</c> names (workspace + every self-provided output, incl. this
+    /// capability's own <c>port</c>) — feeds the template field's inline autocomplete and token colouring.</summary>
+    public IEnumerable<string> Variables { get; }
+
+    /// <summary>Needed-capability heads whose outputs live in another repo (coloured known, any tail).</summary>
+    public IEnumerable<string> OpenCapabilities { get; }
+
     [RelayCommand] private void Remove() => _remove(this);
 }
 
@@ -80,7 +93,15 @@ public partial class ShapeEditRow : ObservableObject
 public partial class ProvideEditRow : ObservableObject
 {
     readonly Action<ProvideEditRow> _remove;
-    public ProvideEditRow(Action<ProvideEditRow> remove) => _remove = remove;
+    readonly IEnumerable<string> _variables;
+    readonly IEnumerable<string> _openCapabilities;
+
+    public ProvideEditRow(Action<ProvideEditRow> remove, IEnumerable<string> variables, IEnumerable<string> openCapabilities)
+    {
+        _remove = remove;
+        _variables = variables;
+        _openCapabilities = openCapabilities;
+    }
 
     /// <summary>The service name — name the service (<c>vite-server</c>), not one of its shapes.</summary>
     [ObservableProperty] private string _capability = "";
@@ -97,8 +118,12 @@ public partial class ProvideEditRow : ObservableObject
         foreach (var s in Shapes) s.Head = value;
     }
 
-    [RelayCommand] private void AddShape() =>
-        Shapes.Add(new ShapeEditRow(r => Shapes.Remove(r)) { Head = Capability });
+    /// <summary>A fresh derived-shape row wired to this capability — carrying the repo's reference surface so
+    /// its template field autocompletes this capability's own <c>port</c> (and everything else in scope).</summary>
+    public ShapeEditRow NewShape() =>
+        new(r => Shapes.Remove(r), _variables, _openCapabilities) { Head = Capability };
+
+    [RelayCommand] private void AddShape() => Shapes.Add(NewShape());
 
     [RelayCommand] private void Remove() => _remove(this);
 
@@ -575,8 +600,9 @@ public partial class ModuleEditTab : ObservableObject
         _owner.SprigVariableNames, _owner.SprigNeededCapabilities);
 
     // A fresh capability already carries its permanent port anchor — the user only names it and, optionally,
-    // adds derived shapes.
-    [RelayCommand] private void AddProvide() => Provides.Add(new ProvideEditRow(r => Provides.Remove(r)));
+    // adds derived shapes. Threads the owner's reference surface so shape templates autocomplete.
+    [RelayCommand] private void AddProvide() =>
+        Provides.Add(new ProvideEditRow(r => Provides.Remove(r), _owner.SprigVariableNames, _owner.SprigNeededCapabilities));
 
     [RelayCommand] private void AddNeed() => Needs.Add(new NeedEditRow(r => Needs.Remove(r)));
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
@@ -737,16 +763,17 @@ public partial class RepoEditViewModel : ObservableObject
             var tab = new ModuleEditTab(vm, m.Name, m.Path);
             foreach (var p in m.Provides)
             {
-                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability };
+                var pr = new ProvideEditRow(r => tab.Provides.Remove(r), vm.SprigVariableNames, vm.SprigNeededCapabilities)
+                    { Capability = p.Capability };
                 // One permanent port; adopt the allowed set from whatever port the config declared (if any).
                 if (p.Ports.Count > 0) pr.Port.Allowed = p.Ports.First().Value.Allowed ?? "";
                 foreach (var (shapeName, template) in p.Shapes)
-                    pr.Shapes.Add(new ShapeEditRow(r => pr.Shapes.Remove(r))
-                    {
-                        Name = shapeName,
-                        Template = template,
-                        Head = p.Capability,
-                    });
+                {
+                    var sr = pr.NewShape();
+                    sr.Name = shapeName;
+                    sr.Template = template;
+                    pr.Shapes.Add(sr);
+                }
                 tab.Provides.Add(pr);
             }
             foreach (var n in m.Needs)

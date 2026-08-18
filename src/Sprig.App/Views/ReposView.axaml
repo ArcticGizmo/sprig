@@ -518,9 +518,10 @@
                                                                      FontFamily="Consolas,monospace" FontWeight="SemiBold" FontSize="15"
                                                                      Foreground="{StaticResource OkBrush}" Background="{StaticResource FormBgBrush}"
                                                                      BorderBrush="{StaticResource OkBrush}" BorderThickness="1" CornerRadius="6" Padding="8,3"
+                                                                     VerticalAlignment="Center" VerticalContentAlignment="Center"
                                                                      PlaceholderText="vite-server"
                                                                      ToolTip.Tip="Name the service, not the socket — 'vite-server' reads as a hierarchy; 'vite-port' stutters into vite-port.port." />
-                                                            <TextBlock Text=".…}" FontFamily="Consolas,monospace" FontSize="15"
+                                                            <TextBlock Text="}" FontFamily="Consolas,monospace" FontSize="15"
                                                                        Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                                                         </StackPanel>
                                                         <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
@@ -554,9 +555,12 @@
                                                                                    FontSize="11" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" />
                                                                         <TextBox Grid.Column="1" Width="110" Text="{Binding Name, Mode=TwoWay}"
                                                                                  PlaceholderText="url" FontFamily="Consolas,monospace"
-                                                                                 ToolTip.Tip="{Binding Ref}" />
-                                                                        <TextBox Grid.Column="2" MinWidth="0" Text="{Binding Template, Mode=TwoWay}"
-                                                                                 PlaceholderText="http://localhost:${sprig.vite-server.port}" FontFamily="Consolas,monospace" />
+                                                                                 VerticalContentAlignment="Center" ToolTip.Tip="{Binding Ref}" />
+                                                                        <controls:SprigTokenBox Grid.Column="2" MinWidth="0"
+                                                                                 Value="{Binding Template, Mode=TwoWay}"
+                                                                                 Variables="{Binding Variables}"
+                                                                                 OpenCapabilities="{Binding OpenCapabilities}"
+                                                                                 Watermark="http://localhost:${sprig.vite-server.port}" />
                                                                         <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
                                                                                 Foreground="{StaticResource DangerBrush}" Padding="8,2" />
                                                                     </Grid>

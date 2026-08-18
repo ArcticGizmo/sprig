@@ -1,4 +1,4 @@
-using Sprig.App;
+﻿using Sprig.App;
 using Sprig.App.Controls;
 using Sprig.App.ViewModels;
 using Sprig.Core.Stacks;
@@ -6,7 +6,7 @@ using Sprig.Core.Stacks;
 namespace Sprig.Tests.App;
 
 /// <summary>
-/// VM tests over a temp central store. These exercise the VM→Core wiring for the synchronous
+/// VM tests over a temp central store. These exercise the VMâ†’Core wiring for the synchronous
 /// management flows (repos + stacks). Workspace lifecycle VMs are covered by the headless-render
 /// integration + the Core tests they delegate to.
 /// </summary>
@@ -16,12 +16,12 @@ public class ManagementViewModelTests
     {
         var dir = Path.Combine(root, name);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":2, "name":"{{name}}" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":1, "name":"{{name}}" }""");
         return dir;
     }
 
     /// <summary>The editor now edits modules as tabs; these single-module tests work against the current
-    /// tab — the one a migrated config produced, or a freshly added empty one.</summary>
+    /// tab â€” the one a migrated config produced, or a freshly added empty one.</summary>
     static ModuleEditTab Mod(RepoEditViewModel e)
     {
         if (e.Modules.Count == 0)
@@ -174,16 +174,18 @@ public class ManagementViewModelTests
     }
 
     [Fact]
-    public async Task Repos_edit_changes_a_value_and_saves_it_back()
+    public async Task Repos_edit_adds_an_env_override_and_saves_it_back()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
+        // Map-model config: a module that PROVIDES a port capability, its env referencing that provide.
         File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
-            { "schema":2, "name":"api",
-              "inputs":[ { "name":"port", "example":"5000" } ],
-              "env":[ { "file":".env", "set":{ "PORT":"${sprig.port}" } } ] }
+            { "schema":1, "name":"api",
+              "modules":[ { "name":"api",
+                "provides":[ { "capability":"api", "ports": { "port": true } } ],
+                "env":[ { "file":".env", "set":{ "PORT":"${sprig.api.port}" } } ] } ] }
             """);
 
         var vm = new ReposViewModel(services) { NewPath = dir };
@@ -194,8 +196,7 @@ public class ManagementViewModelTests
         Assert.True(vm.IsEditing);
         Assert.Equal("api", vm.Editor!.Name);
 
-        // change the input's example and add a new env override via the overlay
-        vm.Editor.Inputs.First().Example = "6000";
+        // add a new env override via the merged-env overlay
         var env = Mod(vm.Editor!).Env.First();
         await env.StatusReady;                     // let the merged-env overlay build
         var overlay = env.Overlay!;
@@ -212,32 +213,7 @@ public class ManagementViewModelTests
 
         // re-read from disk to prove it persisted
         var reloaded = RepoEditViewModel.Load(dir);
-        Assert.Equal("6000", reloaded.Inputs.First().Example);
         Assert.Contains(reloaded.Modules[0].Env.First().CurrentSet, k => k.Key == "HOST" && k.Value == "localhost");
-    }
-
-    [Fact]
-    public void Repos_edit_with_invalid_input_name_surfaces_error_and_does_not_write()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var dir = Path.Combine(s.Root, "api");
-        Directory.CreateDirectory(dir);
-        var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":2, "name":"api", "inputs":[ { "name":"port" } ] }""");
-        var before = File.ReadAllText(configPath);
-
-        services.Repos.Add(dir);
-        var vm = new ReposViewModel(services);
-        vm.Selected = vm.Repos.First(r => r.Name == "api");
-        vm.BeginEditCommand.Execute(null);
-
-        vm.Editor!.Inputs.First().Name = "bad name!"; // spaces/'!' are not identifier chars
-        vm.SaveEditCommand.Execute(null);
-
-        Assert.True(vm.IsEditing);              // stays in edit mode
-        Assert.NotNull(vm.Editor.Error);
-        Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
     }
 
     [Fact]
@@ -261,7 +237,7 @@ public class ManagementViewModelTests
         Assert.True(vm.GitMissing);
         Assert.False(vm.GitOk);
 
-        // add a .git dir → now it reads as a git repo
+        // add a .git dir â†’ now it reads as a git repo
         Directory.CreateDirectory(Path.Combine(plain, ".git"));
         vm.NewPath = plain + " "; // change value to retrigger detection
         Assert.True(vm.PathIsGitRepo);
@@ -287,7 +263,7 @@ public class ManagementViewModelTests
         Assert.Contains(hits, h => h.EndsWith("proj-a"));
         Assert.Contains(hits, h => h.EndsWith("proj-b"));
         Assert.DoesNotContain(hits, h => h.EndsWith("other"));
-        Assert.Empty(vm.SuggestPaths("")); // nothing typed → no suggestions
+        Assert.Empty(vm.SuggestPaths("")); // nothing typed â†’ no suggestions
     }
 
     [Fact]
@@ -297,7 +273,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
         var before = File.ReadAllText(configPath);
         File.WriteAllText(Path.Combine(dir, "docker-compose.yml"),
             "services:\n  db:\n    image: postgres:16\n");
@@ -326,7 +302,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), "services:\n  a:\n    image: x\n");
         Directory.CreateDirectory(Path.Combine(dir, "web"));
         File.WriteAllText(Path.Combine(dir, "web", "compose.yaml"), "services:\n  b:\n    image: y\n");
@@ -344,85 +320,13 @@ public class ManagementViewModelTests
     }
 
     [Fact]
-    public void Manually_added_compose_file_gets_the_same_auto_detection_as_the_initial_add()
-    {
-        using var s = new TempStore();
-        var dir = Path.Combine(s.Root, "api");
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
-        File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), """
-            services:
-              postgres:
-                image: postgres:17
-                container_name: librarydb_postgres
-                ports:
-                  - "6050:5432"
-            """);
-
-        var editor = RepoEditViewModel.Load(dir);
-        var mod = Mod(editor);
-        mod.AddComposeFileCommand.Execute(null);
-        var row = mod.Compose.Single();
-
-        // Pointing a hand-added row at a real compose file runs add-time detection: it declares the
-        // port input and seeds the container-name + port rewrites, just like scaffolding on first add.
-        row.File = "docker-compose.yml";
-
-        Assert.Contains(editor.Inputs, i => i.Name == "postgres_port" && i.Example == "6050");
-        var overrides = row.CurrentOverrides;
-        Assert.Contains(overrides, o => o.Path.SequenceEqual(["services", "postgres", "container_name"])
-                                        && o.Template == "librarydb_postgres--${sprig.workspace}");
-        Assert.Contains(overrides, o => o.Path.SequenceEqual(["services", "postgres", "ports", "0"])
-                                        && o.Template == "${sprig.postgres_port}:5432");
-
-        // The declared input means the seeded overrides reference a known variable — nothing flagged.
-        Assert.DoesNotContain(editor.MissingInputRefs, r => r == "postgres_port");
-        Assert.True(editor.Save());
-
-        var reloaded = RepoEditViewModel.Load(dir);
-        Assert.Equal(2, reloaded.Modules[0].Compose.Single().CurrentOverrides.Count);
-    }
-
-    [Fact]
-    public void Auto_detection_does_not_clobber_overrides_the_user_has_edited()
-    {
-        using var s = new TempStore();
-        var dir = Path.Combine(s.Root, "api");
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
-        File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), """
-            services:
-              postgres:
-                container_name: librarydb_postgres
-                ports:
-                  - "6050:5432"
-            """);
-
-        var editor = RepoEditViewModel.Load(dir);
-        var mod = Mod(editor);
-        mod.AddComposeFileCommand.Execute(null);
-        var row = mod.Compose.Single();
-        row.File = "docker-compose.yml";
-
-        // Drop one of the auto-detected overrides, then re-point at the same file (as a module-path
-        // change would): detection must not re-propose the removed override.
-        var cname = row.Overlay!.Lines.SelectMany(l => l.Runs)
-            .Single(r => r.IsToken && r.Path.SequenceEqual(["services", "postgres", "container_name"]));
-        row.Overlay.RemoveCommand.Execute(cname);
-        row.Refresh();
-
-        Assert.DoesNotContain(row.CurrentOverrides,
-            o => o.Path.SequenceEqual(["services", "postgres", "container_name"]));
-    }
-
-    [Fact]
     public void Setup_commands_round_trip_through_load_and_save()
     {
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            """{ "schema":2, "name":"api", "setup":["npm ci"] }""");
+            """{ "schema":1, "name":"api", "setup":["npm ci"] }""");
 
         var editor = RepoEditViewModel.Load(dir);
         var mod = Mod(editor);
@@ -443,7 +347,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "");
         File.WriteAllText(Path.Combine(dir, ".env.example"), "");
         File.WriteAllText(Path.Combine(dir, "README.md"), "");
@@ -472,12 +376,12 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
         var before = File.ReadAllText(configPath);
 
         var git = new FakeGitService();
-        git.TrackedFiles.Add(".env");       // committed → off-limits
-        git.IgnoredFiles.Add(".env.local"); // gitignored → safe
+        git.TrackedFiles.Add(".env");       // committed â†’ off-limits
+        git.IgnoredFiles.Add(".env.local"); // gitignored â†’ safe
         var editor = RepoEditViewModel.Load(dir, git);
 
         var mod = Mod(editor);
@@ -501,7 +405,7 @@ public class ManagementViewModelTests
         Assert.Contains("tracked", editor.Error);
         Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
 
-        // pointing at a gitignored file clears the block — the override carries across the file change
+        // pointing at a gitignored file clears the block â€” the override carries across the file change
         row.File = ".env.local";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
@@ -515,7 +419,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
         File.WriteAllText(Path.Combine(dir, ".env.template"), "PORT=\nDATABASE_URL=\n");
 
@@ -537,9 +441,9 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
-        // A non-conventional name the companion heuristics would never find — only an explicit template does.
+        // A non-conventional name the companion heuristics would never find â€” only an explicit template does.
         File.WriteAllText(Path.Combine(dir, "shared.env"), "SHARED_SECRET=\nAPI_KEY=\n");
 
         var editor = RepoEditViewModel.Load(dir);
@@ -558,34 +462,6 @@ public class ManagementViewModelTests
         Assert.Contains(row.Overlay!.Keys, k => k.Key == "API_KEY");
     }
 
-    [Fact]
-    public async Task Referenced_but_undeclared_input_is_offered_as_quick_add_and_blocks_save()
-    {
-        using var s = new TempStore();
-        var dir = Path.Combine(s.Root, "api");
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
-            { "schema":2, "name":"api",
-              "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.port}" } } ] }
-            """);
-
-        var editor = RepoEditViewModel.Load(dir);
-        await Mod(editor).Env.First().StatusReady;   // let the env overlay settle
-
-        // "port" is referenced by the override but not declared → surfaced for quick add,
-        // and that same gap blocks the save.
-        Assert.Contains("port", editor.MissingInputRefs);
-        Assert.True(editor.HasMissingInputRefs);
-        Assert.False(editor.Save());
-        Assert.Contains("port", editor.Error);
-
-        // quick-add declares it: the chip clears and the config now saves
-        editor.QuickAddInputCommand.Execute("port");
-        Assert.DoesNotContain("port", editor.MissingInputRefs);
-        Assert.False(editor.HasMissingInputRefs);
-        Assert.Contains(editor.Inputs, i => i.Name == "port");
-        Assert.True(editor.Save());
-    }
 
     [Fact]
     public async Task Env_file_that_is_not_gitignored_is_flagged_even_when_missing()
@@ -593,7 +469,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.present"), ""); // exists on disk, but not ignored
 
         var git = new FakeGitService();
@@ -603,528 +479,22 @@ public class ManagementViewModelTests
         mod.AddEnvFileCommand.Execute(null);
         var row = mod.Env.First();
 
-        // gitignored → safe
+        // gitignored â†’ safe
         row.File = ".env.local";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
 
-        // exists but not ignored → amber warning (would surface as a worktree change)
+        // exists but not ignored â†’ amber warning (would surface as a worktree change)
         row.File = ".env.present";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.NotIgnored, row.Status);
         Assert.True(row.ShowNotIgnoredWarning);
 
-        // no matching file AND not ignored → still warned (the case naive existence detection missed)
+        // no matching file AND not ignored â†’ still warned (the case naive existence detection missed)
         row.File = ".env.ghost";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.NotIgnoredNew, row.Status);
         Assert.True(row.ShowNotIgnoredWarning);
         Assert.Contains("No matching file", row.NotIgnoredMessage);
-    }
-
-    [Fact]
-    public void Stacks_create_from_checked_repos_and_remove()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepo(s.Root, "vue"));
-        services.Repos.Add(MakeRepo(s.Root, "api"));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
-        Assert.Equal(2, vm.RepoChoices.Count);
-        foreach (var c in vm.RepoChoices) c.IsSelected = true;
-
-        vm.CreateCommand.Execute(null);
-
-        Assert.Contains(vm.Stacks, st => st.Name == "web+api" && st.Repos.Count == 2);
-
-        vm.Selected = vm.Stacks.First(st => st.Name == "web+api");
-        vm.RemoveCommand.Execute(null);          // opens the confirm bar
-        Assert.True(vm.ConfirmingRemove);
-        vm.ConfirmRemoveCommand.Execute(null);   // actually removes
-        Assert.DoesNotContain(vm.Stacks, st => st.Name == "web+api");
-    }
-
-    [Fact]
-    public void Stacks_create_with_no_repos_surfaces_error()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "empty" };
-
-        vm.CreateCommand.Execute(null); // no repos checked
-
-        Assert.NotNull(vm.Error);
-        Assert.Empty(vm.Stacks);
-    }
-
-    [Fact]
-    public void Selected_stack_is_editable_when_no_workspaces_use_it()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepo(s.Root, "vue"));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "solo" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.CreateCommand.Execute(null);
-        vm.Selected = vm.Stacks.Single();
-
-        Assert.Equal(0, vm.AttachedWorkspaces);
-        Assert.True(vm.CanEditSelected);
-        Assert.False(vm.EditBlocked);
-    }
-
-    [Fact]
-    public void Editing_a_stack_prefills_the_builder_and_rename_drops_the_old()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepo(s.Root, "vue"));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "solo" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.CreateCommand.Execute(null);
-        vm.Selected = vm.Stacks.Single();
-
-        vm.EditSelectedCommand.Execute(null);
-        Assert.True(vm.IsEditing);
-        Assert.Equal("solo", vm.NewName);
-        Assert.Equal("Edit stack", vm.OverlayTitle);
-
-        vm.NewName = "solo2";
-        vm.CreateCommand.Execute(null);
-
-        Assert.False(vm.IsEditing);
-        Assert.Contains(vm.Stacks, st => st.Name == "solo2");
-        Assert.DoesNotContain(vm.Stacks, st => st.Name == "solo");
-    }
-
-    [Theory]
-    [InlineData("web+api", false)]     // '+' is allowed (filename, not a branch)
-    [InlineData("web-api.v2", false)]
-    [InlineData("", false)]            // empty: don't nag before typing
-    [InlineData("web api", true)]      // space
-    [InlineData("web/api", true)]      // path separator
-    [InlineData("café", true)]         // non-ASCII
-    public void Stack_name_validation_flags_bad_characters(string name, bool expectError)
-    {
-        using var s = new TempStore();
-        var vm = new StacksViewModel(new AppServices(s.Root), new Navigator()) { NewName = name };
-        Assert.Equal(expectError, vm.HasNameError);
-    }
-
-    // A repo whose .sprig.json declares inputs, for exercising the builder's wiring aids.
-    // Internal so the first-run fix tests can build the same fixtures.
-    internal static string MakeRepoWithInputs(string root, string name, params (string Name, string Example)[] inputs)
-    {
-        var dir = Path.Combine(root, name);
-        Directory.CreateDirectory(dir);
-        var decls = string.Join(",", inputs.Select(i => $$"""{ "name":"{{i.Name}}", "example":"{{i.Example}}" }"""));
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            $$"""{ "schema":2, "name":"{{name}}", "inputs":[ {{decls}} ] }""");
-        return dir;
-    }
-
-    static BindingRow Row(StacksViewModel vm, string repo, string input) =>
-        vm.Bindings.First(g => g.Repo == repo).Rows.First(r => r.Input == input);
-
-    [Fact]
-    public void AutoWire_fills_unbound_bindings_and_adds_ports()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000"), ("apiUrl", "http://localhost:4000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-
-        vm.AutoWireCommand.Execute(null);
-
-        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
-        Assert.Equal("http://localhost:${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
-        Assert.Contains(vm.Ports, p => p.Name == "frontend_port");
-        Assert.Contains(vm.Ports, p => p.Name == "api_port");
-    }
-
-    /// <summary>
-    /// Select every repo, then clear the wiring auto-wire proposes on selection — for tests that assert on
-    /// one command's own behaviour and need an input row present but a blank canvas to measure against.
-    /// </summary>
-    static void SelectReposUnwired(StacksViewModel vm)
-    {
-        foreach (var c in vm.RepoChoices) c.IsSelected = true;
-        foreach (var port in vm.Ports.ToList()) vm.RemovePortCommand.Execute(port);
-        foreach (var group in vm.Bindings)
-            foreach (var row in group.Rows) row.Expression = "";
-    }
-
-    static StacksViewModel WebPlusApi(AppServices services, string root)
-    {
-        services.Repos.Add(MakeRepoWithInputs(root, "vue", ("apiUrl", "http://localhost:4000")));
-        services.Repos.Add(MakeRepoWithInputs(root, "api", ("port", "5000")));
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
-
-        // These tests are about deliberately SHARING one port between two repos — the one thing auto-wire
-        // won't propose — so start from a blank canvas and wire it by hand.
-        SelectReposUnwired(vm);
-        vm.AddPortCommand.Execute(null);
-        vm.Ports.Single().Name = "api_port";
-        return vm;
-    }
-
-    [Fact]
-    public void Saving_persists_the_shared_port_relationship()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-
-        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
-        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
-        vm.CreateCommand.Execute(null);
-
-        var saved = services.Stacks.Get("web+api");
-        Assert.NotNull(saved);
-        var share = Assert.Single(saved!.Shares);
-        Assert.Equal("api_port", share.Port);
-        Assert.Equal(2, share.Consumers.Count);
-    }
-
-    [Fact]
-    public void Renaming_a_port_rewrites_every_binding_that_uses_it()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
-
-        vm.Ports.Single().Name = "web_port"; // commit a rename
-
-        Assert.Equal("${sprig.ports.web_port}", Row(vm, "vue", "frontend").Expression);
-    }
-
-    [Fact]
-    public void NewStack_clears_the_live_graph_so_a_prior_session_leaves_no_orphaned_ports()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-        Assert.NotEmpty(vm.BuilderWiring!.Ports); // the first session wired a port
-
-        vm.NewStackCommand.Execute(null); // reopen the builder for a fresh stack
-
-        // The canvas draws from BuilderWiring, so a stale graph is what surfaces the orphaned port names.
-        Assert.Empty(vm.BuilderWiring!.Ports);
-        Assert.Empty(vm.BuilderWiring.Repos);
-        Assert.Empty(vm.Ports);
-        Assert.Empty(vm.PortNames);
-    }
-
-    [Fact]
-    public void Selecting_a_stack_populates_the_detail_summary()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-        Row(vm, "vue", "apiUrl").Expression = "http://localhost:${sprig.ports.api_port}";
-        Row(vm, "api", "port").Expression = "${sprig.ports.api_port}";
-        vm.CreateCommand.Execute(null);
-
-        vm.Selected = vm.Stacks.Single();
-
-        // The read-only detail pane lists each repo's inputs and their expressions.
-        var vue = vm.DetailBindings.Single(b => b.Repo == "vue");
-        Assert.Contains(vue.Rows, r => r.Input == "apiUrl" && r.Expression == "http://localhost:${sprig.ports.api_port}");
-        var api = vm.DetailBindings.Single(b => b.Repo == "api");
-        Assert.Contains(api.Rows, r => r.Input == "port" && r.Expression == "${sprig.ports.api_port}");
-    }
-
-    [Fact]
-    public void WirePin_binds_the_input_to_the_port_and_updates_the_live_graph()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-
-        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
-
-        Assert.Equal("${sprig.ports.api_port}", Row(vm, "vue", "apiUrl").Expression);
-        Assert.NotNull(vm.BuilderWiring);
-        Assert.Contains(vm.BuilderWiring!.Edges, e => e is { Repo: "vue", Input: "apiUrl", Port: "api_port" });
-    }
-
-    [Fact]
-    public void UnwirePin_clears_the_binding()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
-        Assert.NotEqual("", Row(vm, "api", "port").Expression);
-
-        vm.UnwirePinCommand.Execute(new PinRef("api", "port"));
-
-        Assert.Equal("", Row(vm, "api", "port").Expression);
-    }
-
-    [Fact]
-    public void Wiring_two_pins_to_one_port_marks_it_shared_in_the_live_graph()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        var vm = WebPlusApi(services, s.Root);
-
-        vm.WirePinCommand.Execute(new WireRequest("vue", "apiUrl", "api_port"));
-        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
-
-        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
-    }
-
-    // --- Phase 2: source→input drag commands (create-on-drop, workspace, replace) --------------
-
-    [Fact]
-    public void CreatePort_mints_a_new_port_and_wires_the_input_to_it()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-
-        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "api_port"));
-
-        Assert.Contains(vm.Ports, p => p.Name == "api_port");
-        Assert.Equal("${sprig.ports.api_port}", Row(vm, "api", "port").Expression);
-    }
-
-    [Fact]
-    public void CreatePort_reuses_an_existing_port_of_the_same_name_rather_than_duplicating()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("apiUrl", "http://localhost:4000")));
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web+api" };
-        foreach (var c in vm.RepoChoices) c.IsSelected = true;
-
-        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "api_port"));
-        vm.CreatePortCommand.Execute(new CreatePortRequest("vue", "apiUrl", "api_port")); // same name
-
-        Assert.Single(vm.Ports.Where(p => p.Name == "api_port")); // not duplicated
-        // Both inputs now consume the one port — the live graph marks it shared.
-        Assert.Contains(vm.BuilderWiring!.Ports, p => p.Name == "api_port" && p.Shared);
-    }
-
-    [Fact]
-    public void CreatePort_ignores_a_blank_name()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        SelectReposUnwired(vm);
-
-        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "   "));
-
-        Assert.Empty(vm.Ports);
-        Assert.Equal("", Row(vm, "api", "port").Expression);
-    }
-
-    [Fact]
-    public void WireWorkspace_binds_the_input_to_the_workspace_source()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("name", "svc")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-
-        vm.WireWorkspaceCommand.Execute(new PinRef("api", "name"));
-
-        Assert.Equal("${sprig.workspace}", Row(vm, "api", "name").Expression);
-        Assert.Contains(vm.BuilderWiring!.Repos.SelectMany(r => r.Pins), p => p is { Input: "name", UsesWorkspace: true });
-        Assert.True(vm.BuilderWiring.Workspace.Used);
-    }
-
-    [Fact]
-    public void SetExpression_types_a_literal_directly_onto_an_input()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("env", "production")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-
-        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "env", "production"));
-
-        Assert.Equal("production", Row(vm, "api", "env").Expression);
-        Assert.Contains(vm.BuilderWiring!.Repos.SelectMany(r => r.Pins), p => p is { Input: "env", IsLiteral: true });
-        Assert.Empty(vm.BuilderWiring.TransformNodes);
-    }
-
-    [Fact]
-    public void SetExpression_with_a_wrapped_workspace_creates_a_transform_node()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("name", "svc")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-
-        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "name", "svc-${sprig.workspace}"));
-
-        Assert.Contains(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "name", UsesWorkspace: true });
-    }
-
-    // --- Phase 5: multi-input transforms (fan-in) -----------------------------------------------
-
-    [Fact]
-    public void AppendSource_fans_a_second_port_into_a_transform()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("addr", "a:b")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AddNamedPortCommand.Execute("host_port");
-        vm.AddNamedPortCommand.Execute("admin_port");
-
-        // Start from a transform over one port, then fan a second port into its node.
-        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "addr", "${sprig.ports.host_port}:"));
-        vm.AppendSourceCommand.Execute(new AppendSourceRequest("api", "addr", "${sprig.ports.admin_port}"));
-
-        Assert.Equal("${sprig.ports.host_port}:${sprig.ports.admin_port}", Row(vm, "api", "addr").Expression);
-
-        // The live graph shows one node fed by both ports (two edges, one transform node).
-        var node = Assert.Single(vm.BuilderWiring!.TransformNodes, n => n is { Repo: "api", Input: "addr" });
-        Assert.Equal(["host_port", "admin_port"], node.Ports);
-        Assert.Equal(2, vm.BuilderWiring.Edges.Count(e => e is { Repo: "api", Input: "addr" }));
-    }
-
-    [Fact]
-    public void AppendSource_ignores_a_source_already_present()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("addr", "a")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AddNamedPortCommand.Execute("host_port");
-        vm.SetExpressionCommand.Execute(new SetExpressionRequest("api", "addr", "${sprig.ports.host_port}"));
-
-        vm.AppendSourceCommand.Execute(new AppendSourceRequest("api", "addr", "${sprig.ports.host_port}"));
-
-        Assert.Equal("${sprig.ports.host_port}", Row(vm, "api", "addr").Expression); // unchanged
-    }
-
-    // --- Phase 4: port management from the canvas -----------------------------------------------
-
-    [Fact]
-    public void AddNamedPort_adds_a_port_and_ignores_blanks_and_duplicates()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        SelectReposUnwired(vm);
-
-        vm.AddNamedPortCommand.Execute("api_port");
-        Assert.Contains(vm.Ports, p => p.Name == "api_port");
-
-        vm.AddNamedPortCommand.Execute("api_port"); // duplicate ignored
-        vm.AddNamedPortCommand.Execute("   ");        // blank ignored
-        Assert.Single(vm.Ports);
-    }
-
-    [Fact]
-    public void RenamePort_from_the_canvas_rewrites_bindings_and_rejects_collisions()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-        Assert.Equal("${sprig.ports.frontend_port}", Row(vm, "vue", "frontend").Expression);
-
-        vm.RenamePortCommand.Execute(new RenamePortRequest("frontend_port", "web_port"));
-        Assert.Contains(vm.Ports, p => p.Name == "web_port");
-        Assert.Equal("${sprig.ports.web_port}", Row(vm, "vue", "frontend").Expression);
-
-        // Renaming onto an existing port name is rejected (no silent merge).
-        vm.AddNamedPortCommand.Execute("other");
-        vm.RenamePortCommand.Execute(new RenamePortRequest("web_port", "other"));
-        Assert.Contains(vm.Ports, p => p.Name == "web_port"); // unchanged
-    }
-
-    [Fact]
-    public void Saving_drops_ports_that_no_binding_uses()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AddNamedPortCommand.Execute("api_port");     // will be wired
-        vm.AddNamedPortCommand.Execute("orphan_port");  // never referenced
-        vm.WirePinCommand.Execute(new WireRequest("api", "port", "api_port"));
-
-        vm.CreateCommand.Execute(null);
-
-        var saved = services.Stacks.Get("web");
-        Assert.NotNull(saved);
-        Assert.Contains("api_port", saved!.Ports);
-        Assert.DoesNotContain("orphan_port", saved.Ports); // auto-cleared on save
-    }
-
-    [Fact]
-    public void RemoveNamedPort_from_the_canvas_drops_the_port()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "vue", ("frontend", "3000")));
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.AutoWireCommand.Execute(null);
-        Assert.Contains(vm.Ports, p => p.Name == "frontend_port");
-
-        vm.RemoveNamedPortCommand.Execute("frontend_port");
-        Assert.DoesNotContain(vm.Ports, p => p.Name == "frontend_port");
-    }
-
-    [Fact]
-    public void Dropping_a_port_on_an_already_bound_input_replaces_the_binding()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        services.Repos.Add(MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-
-        var vm = new StacksViewModel(services, new Navigator()) { NewName = "web" };
-        vm.RepoChoices.Single().IsSelected = true;
-        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "first_port"));
-        Assert.Equal("${sprig.ports.first_port}", Row(vm, "api", "port").Expression);
-
-        // Drop a different port on the same (bound) input → the repo side is single, so it replaces.
-        vm.CreatePortCommand.Execute(new CreatePortRequest("api", "port", "second_port"));
-
-        Assert.Equal("${sprig.ports.second_port}", Row(vm, "api", "port").Expression);
     }
 }

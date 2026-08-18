@@ -33,46 +33,33 @@ public static class SprigConfigValidator
         foreach (var key in config.Unknown.Keys)
             issues.Add(new(key, "unknown top-level key"));
 
-        ValidateInputs(config, issues);
+        // Map-model surface: provides/needs on the repo (single-app sugar) and per module.
+        // Capability names are unique across the whole repo (a duplicate is a local ambiguity nearest-wins
+        // can't resolve).
+        var seenCaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        ValidateProvides(config.Provides, "provides", seenCaps, issues);
+        ValidateNeeds(config.Needs, "needs", issues);
 
-        // A config may be in the legacy flat shape (a schema-≤2 file before migration, or the editor's
-        // pre-modules Build output) or the new module shape. Validate whichever is present. Compose files
+        // A config may be in the single-app flat shape (top-level env/compose/setup) or the module shape.
+        // Validate whichever is present. Compose files
         // must be unique by their *effective* path (module path + file) across the whole repo, so the same
         // filename may appear in two modules at different paths but never collide.
         var seenComposePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         ValidateEnv(config.Env ?? [], "env", issues);
         ValidateCompose(config.Compose ?? [], "compose", "", seenComposePaths, issues);
         ValidateSetup(config.Setup ?? [], "setup", issues);
-        ValidateModules(config, seenComposePaths, issues);
+        ValidateModules(config, seenComposePaths, seenCaps, issues);
 
         foreach (var reference in ConfigReferences.UndeclaredReferences(config))
             issues.Add(new("template",
-                $"references '${{sprig.{reference}}}' which is not a declared input (add it to \"inputs\")"));
+                $"references '${{sprig.{reference}}}' which is not a provided/needed capability output "
+                + "or 'workspace'"));
 
         return new ValidationResult(issues);
     }
 
-    static void ValidateInputs(SprigRepoConfig config, List<ValidationIssue> issues)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < config.Inputs.Count; i++)
-        {
-            var input = config.Inputs[i];
-            var at = $"inputs[{i}]";
-            if (string.IsNullOrWhiteSpace(input.Name))
-                issues.Add(new($"{at}.name", "must be a non-empty input name"));
-            else if (!IsIdentifier(input.Name))
-                issues.Add(new($"{at}.name", $"'{input.Name}' must contain only letters, digits, '-' or '_'"));
-            else if (!seen.Add(input.Name))
-                issues.Add(new($"{at}.name", $"duplicate input name '{input.Name}'"));
-
-            if (!string.IsNullOrWhiteSpace(input.AllowedPorts)
-                && !Ports.PortSetSpec.TryParse(input.AllowedPorts, out _, out var portErr))
-                issues.Add(new($"{at}.allowedPorts", portErr!));
-        }
-    }
-
-    static void ValidateModules(SprigRepoConfig config, HashSet<string> seenComposePaths, List<ValidationIssue> issues)
+    static void ValidateModules(
+        SprigRepoConfig config, HashSet<string> seenComposePaths, HashSet<string> seenCaps, List<ValidationIssue> issues)
     {
         var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var m = 0; m < config.Modules.Count; m++)
@@ -91,9 +78,79 @@ public static class SprigConfigValidator
                 issues.Add(new($"{at}.path",
                     "must be a relative path inside the repo (no drive letter, leading '/' or '..' segments)"));
 
+            ValidateProvides(module.Provides, $"{at}.provides", seenCaps, issues);
+            ValidateNeeds(module.Needs, $"{at}.needs", issues);
             ValidateEnv(module.Env, $"{at}.env", issues);
             ValidateCompose(module.Compose, $"{at}.compose", module.Path, seenComposePaths, issues);
             ValidateSetup(module.Setup, $"{at}.setup", issues);
+        }
+    }
+
+    static void ValidateProvides(
+        IReadOnlyList<ProvidedCapability> provides, string prefix, HashSet<string> seenCaps, List<ValidationIssue> issues)
+    {
+        for (var i = 0; i < provides.Count; i++)
+        {
+            var p = provides[i];
+            var at = $"{prefix}[{i}]";
+            if (string.IsNullOrWhiteSpace(p.Capability))
+                issues.Add(new($"{at}.capability", "must be a non-empty capability name"));
+            else if (!IsIdentifier(p.Capability))
+                issues.Add(new($"{at}.capability", $"'{p.Capability}' must contain only letters, digits, '-' or '_'"));
+            else if (!seenCaps.Add(p.Capability))
+                issues.Add(new($"{at}.capability", $"duplicate provided capability '{p.Capability}' in this repo"));
+
+            if (p.Ports.Count == 0 && p.Shapes.Count == 0)
+                issues.Add(new($"{at}", "a capability must declare at least one port or shape"));
+
+            // Ports and shapes share one output namespace — a name is one or the other, never both.
+            var seenOutputs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (name, spec) in p.Ports)
+            {
+                if (string.IsNullOrWhiteSpace(name) || !IsIdentifier(name))
+                    issues.Add(new($"{at}.ports", $"port name '{name}' must contain only letters, digits, '-' or '_'"));
+                else if (!seenOutputs.Add(name))
+                    issues.Add(new($"{at}.ports.{name}", $"duplicate output name '{name}' in this capability"));
+                if (!string.IsNullOrWhiteSpace(spec.Allowed)
+                    && !Ports.PortSetSpec.TryParse(spec.Allowed, out _, out var portErr))
+                    issues.Add(new($"{at}.ports.{name}.allowed", portErr!));
+            }
+            foreach (var (name, template) in p.Shapes)
+            {
+                if (string.IsNullOrWhiteSpace(name) || !IsIdentifier(name))
+                    issues.Add(new($"{at}.shapes", $"shape name '{name}' must contain only letters, digits, '-' or '_'"));
+                else if (!seenOutputs.Add(name))
+                    issues.Add(new($"{at}.shapes.{name}", $"duplicate output name '{name}' in this capability"));
+                if (string.IsNullOrWhiteSpace(template))
+                    issues.Add(new($"{at}.shapes.{name}", "a derived shape must be a non-empty template"));
+            }
+
+            ValidateShapeReferences(p, at, issues);
+        }
+    }
+
+    /// <summary>A derived shape may reference only this capability's own outputs (its <c>port</c> and sibling
+    /// shapes) or <c>${sprig.workspace}</c> — never another capability/need, itself, or a cycle. The rule lives
+    /// in <see cref="ConfigReferences.ShapeReferenceIssues"/> so the editor's live per-field error matches
+    /// exactly what Save rejects.</summary>
+    static void ValidateShapeReferences(ProvidedCapability p, string at, List<ValidationIssue> issues)
+    {
+        foreach (var (shape, message) in ConfigReferences.ShapeReferenceIssues(p.Capability, p.Shapes))
+            issues.Add(new($"{at}.shapes.{shape}", message));
+    }
+
+    static void ValidateNeeds(IReadOnlyList<Need> needs, string prefix, List<ValidationIssue> issues)
+    {
+        for (var i = 0; i < needs.Count; i++)
+        {
+            var n = needs[i];
+            var at = $"{prefix}[{i}]";
+            if (string.IsNullOrWhiteSpace(n.Capability))
+                issues.Add(new($"{at}.capability", "must be a non-empty capability name"));
+            else if (!IsIdentifier(n.Capability))
+                issues.Add(new($"{at}.capability", $"'{n.Capability}' must contain only letters, digits, '-' or '_'"));
+            if (!string.IsNullOrWhiteSpace(n.As) && !IsIdentifier(n.As!))
+                issues.Add(new($"{at}.as", $"'{n.As}' must contain only letters, digits, '-' or '_'"));
         }
     }
 

@@ -5,8 +5,8 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
-using Sprig.Core.Stacks;
 using Sprig.Core.Store;
+using Sprig.Core.Substitution;
 
 namespace Sprig.Core.Workspaces;
 
@@ -47,44 +47,19 @@ public sealed partial class WorkspaceService(
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
 
-    /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
+    /// <summary>Create an isolated workspace from a single ad-hoc repo (the "isolate one repo" path). Resolves
+    /// the repo to a one-element selection and runs it through the map create path with no map. Rolls back on
+    /// failure.</summary>
     public InstanceRecord Create(string repoPath, string workspace,
         IProgress<WorkspaceStepProgress>? progress = null)
-        => Create(ResolveSingleRepo(repoPath), workspace, progress);
-
-    /// <summary>The ordered checklist <see cref="Create(ResolvedStack, string, IProgress{WorkspaceStepProgress})"/>
-    /// will work through, computed up front so a UI can show every row before execution starts. Runs the
-    /// same cheap pre-flight validation as create, so a bad name / duplicate workspace fails here rather
-    /// than mid-checklist.</summary>
-    public IReadOnlyList<WorkspaceStep> PlanCreate(ResolvedStack stack, string workspace)
-    {
-        ValidateCreate(stack, workspace);
-        var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
-        foreach (var repo in stack.Repos)
-        {
-            steps.Add(new(CreateStepIds.Worktree(repo.Name), $"Create worktree — {repo.Name}"));
-            steps.Add(new(CreateStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
-            if (repo.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
-                steps.Add(new(CreateStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
-            if (HasSetup(repo))
-            {
-                // A parent "Install dependencies" row with one indented sub-row per command (across all
-                // the repo's modules, in order), so each command's progress + live output is on its own line.
-                steps.Add(new(CreateStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
-                foreach (var cmd in SetupCommands(repo))
-                    steps.Add(new(CreateStepIds.SetupCommand(repo.Name, cmd.Index), cmd.Command) { SubStep = true });
-            }
-        }
-        steps.Add(new(CreateStepIds.Record, "Save workspace record"));
-        return steps;
-    }
+        => CreateFromMap(workspace, null, ResolveSingleRepo(repoPath), progress: progress);
 
     /// <summary>Whether this repo has setup commands to run (and a runner to run them).</summary>
     bool HasSetup(ResolvedRepo repo) =>
         setup is not null && repo.Config.EffectiveModules.Any(m => m.Setup.Count > 0);
 
     /// <summary>The repo's setup commands flattened across its modules, in order, with a global index
-    /// (so step ids line up between <see cref="PlanCreate"/> and <see cref="RunSetup"/>) and the module's
+    /// (so step ids line up between <see cref="PlanCreateFromMap"/> and <see cref="RunSetup"/>) and the module's
     /// path/name for the working directory and grouping. Blank commands are skipped but still consume an
     /// index, so the ids are stable regardless of blanks.</summary>
     static IEnumerable<(int Index, string Command, string ModulePath, string ModuleName)> SetupCommands(ResolvedRepo repo)
@@ -127,187 +102,14 @@ public sealed partial class WorkspaceService(
         return outcomes;
     }
 
-    /// <summary>Create an isolated workspace from a resolved stack (1+ repos). Rolls back on failure.
-    /// Reports checklist progress to <paramref name="progress"/> if supplied (steps match
-    /// <see cref="PlanCreate"/>). A partial stack (see <see cref="ResolvedStack.ExcludedRepos"/>)
-    /// needs no special handling here: it arrives already narrowed, so only its repos are
-    /// materialised and only its ports are allocated.</summary>
-    public InstanceRecord Create(ResolvedStack stack, string workspace,
-        IProgress<WorkspaceStepProgress>? progress = null)
-    {
-        ValidateCreate(stack, workspace);
-
-        var branch = BranchFor(workspace);
-
-        // Pre-compute each repo's sibling worktree path and guard against collisions.
-        var plans = new List<RepoPlan>();
-        foreach (var repo in stack.Repos)
-        {
-            var parent = Directory.GetParent(repo.Root)?.FullName
-                ?? throw new WorkspaceException($"repo '{repo.Root}' has no parent directory for a sibling worktree");
-            var dirName = Path.GetFileName(repo.Root.TrimEnd('\\', '/'));
-            var worktree = Path.Combine(parent, $"{dirName}--{workspace}");
-            if (Directory.Exists(worktree))
-                throw new WorkspaceException($"worktree path already exists: {worktree}");
-            plans.Add(new RepoPlan(repo, worktree));
-        }
-
-        var portsAcquired = false;
-        var addedWorktrees = new List<(string root, string worktree)>();
-        // The step whose real work is currently in flight, so the catch can paint the right row red.
-        var current = CreateStepIds.Ports;
-        try
-        {
-            // The stack owns the ports; allocate one real non-colliding number per named port.
-            // A repo input may pin its port to a fixed set (e.g. pre-registered Auth0 callbacks);
-            // resolve those onto the stack ports so allocation only draws from the allowed set.
-            progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Running));
-            var constraints = PortConstraintResolver.Resolve(stack.Repos, stack.Bindings, stack.Ports);
-            var requests = stack.Ports
-                .Select(p => new PortRequest(p, constraints.GetValueOrDefault(p)))
-                .ToList();
-            var allPorts = ports.Acquire(workspace, requests);
-            portsAcquired = true;
-
-            // Resolve per-repo input scopes from the stack's bindings (hard-fails on an unbound input).
-            var wired = StackWiring.Resolve(workspace, allPorts, stack.Repos, stack.Bindings);
-            progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Done));
-
-            var repoRecords = new List<InstanceRepo>();
-            foreach (var plan in plans)
-            {
-                var repo = plan.Repo;
-                var repoScope = wired.ScopeFor(repo.Name);
-
-                current = CreateStepIds.Worktree(repo.Name);
-                progress?.Report(new(current, WorkspaceStepState.Running));
-                git.AddWorktree(repo.Root, plan.Worktree, branch);
-                addedWorktrees.Add((repo.Root, plan.Worktree));
-                progress?.Report(new(current, WorkspaceStepState.Done));
-
-                current = CreateStepIds.Env(repo.Name);
-                progress?.Report(new(current, WorkspaceStepState.Running));
-                env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
-                progress?.Report(new(current, WorkspaceStepState.Done));
-
-                // A repo may override several compose files across its modules; generate one isolated copy
-                // per file, named with the module + a slug of the source path so two files never collide in
-                // the instance dir (the same filename in two modules stays distinct). Each source path is
-                // resolved under its module's directory.
-                var composePaths = new List<string>();
-                var modules = repo.Config.EffectiveModules;
-                if (modules.Any(m => m.Compose.Count > 0))
-                {
-                    current = CreateStepIds.Compose(repo.Name);
-                    progress?.Report(new(current, WorkspaceStepState.Running));
-                    foreach (var module in modules)
-                        foreach (var composeCfg in module.Compose)
-                        {
-                            var dest = Path.Combine(paths.InstanceDir(workspace),
-                                $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
-                            compose.GenerateToFile(
-                                Path.Combine(repo.Root, module.Path, composeCfg.File), composeCfg, repoScope, dest);
-                            composePaths.Add(dest);
-                        }
-                    progress?.Report(new(current, WorkspaceStepState.Done));
-                }
-
-                // Install the repo's dependencies in the fresh worktree. This is the last step and
-                // deliberately soft: SetupRunner never throws on a non-zero exit, so a failed install
-                // is recorded (and surfaced here as a Warning) but does NOT trip the rollback below —
-                // the worktree/env/compose are already good and worth keeping.
-                IReadOnlyList<Setup.SetupOutcome> setupOutcomes = [];
-                if (HasSetup(repo))
-                {
-                    var setupStep = CreateStepIds.Setup(repo.Name);
-                    progress?.Report(new(setupStep, WorkspaceStepState.Running));
-                    setupOutcomes = RunSetup(repo, plan.Worktree, progress);
-                    var failed = setupOutcomes.FirstOrDefault(o => !o.Success);
-                    progress?.Report(failed is null
-                        ? new(setupStep, WorkspaceStepState.Done)
-                        : new(setupStep, WorkspaceStepState.Warning, $"'{failed.Command}' exited {failed.ExitCode} — worktree kept"));
-                }
-
-                repoRecords.Add(new InstanceRepo
-                {
-                    Name = repo.Name,
-                    SourcePath = repo.Root,
-                    WorktreePath = plan.Worktree,
-                    Branch = branch,
-                    GeneratedComposePaths = composePaths,
-                    Inputs = wired.Inputs[repo.Name],
-                    Setup = setupOutcomes,
-                });
-            }
-
-            current = CreateStepIds.Record;
-            progress?.Report(new(current, WorkspaceStepState.Running));
-            var record = new InstanceRecord
-            {
-                Workspace = workspace,
-                Stack = stack.StackName,
-                Repos = repoRecords,
-                Ports = new Dictionary<string, int>(allPorts),
-                ExcludedRepos = stack.ExcludedRepos,
-                SkippedPorts = stack.SkippedPorts,
-                LastStatus = "created",
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
-            instances.Save(record);
-            progress?.Report(new(current, WorkspaceStepState.Done));
-            return record;
-        }
-        catch (Exception ex)
-        {
-            progress?.Report(new(current, WorkspaceStepState.Error, ex.Message));
-            // Best-effort rollback across every repo materialised so far.
-            foreach (var (root, worktree) in addedWorktrees)
-            {
-                TryQuiet(() => git.RemoveWorktree(root, worktree));
-                TryQuiet(() => git.DeleteBranch(root, branch));
-                WorktreeInspector.TryDeleteDirectory(worktree);
-            }
-            if (portsAcquired) TryQuiet(() => ports.Release(workspace));
-            TryQuiet(() => instances.Delete(workspace));
-            throw;
-        }
-    }
-
-    /// <summary>Shared cheap pre-flight validation for create (used by both create and its planner).</summary>
-    void ValidateCreate(ResolvedStack stack, string workspace)
-    {
-        ValidateName(workspace);
-        if (stack.Repos.Count == 0)
-            throw new WorkspaceException("nothing to create: the stack has no repos");
-        if (instances.TryLoad(workspace) is not null)
-            throw new WorkspaceException($"workspace '{workspace}' already exists");
-
-        // The branch sprig will cut for each repo. A flat 'sprig--<ws>' name (no '/') can't hit git's
-        // directory/file ref conflict, so the only way create fails on it is if that exact branch already
-        // exists — catch it here with a clear message rather than letting `git worktree add` throw a raw fatal.
-        var branch = BranchFor(workspace);
-        foreach (var repo in stack.Repos)
-            if (git.BranchExists(repo.Root, branch))
-                throw new WorkspaceException(
-                    $"branch '{branch}' already exists in repo '{repo.Name}' — delete or rename it, " +
-                    "or choose a different workspace name");
-    }
-
-    /// <summary>The branch sprig cuts for a workspace. Flat <c>sprig--&lt;ws&gt;</c> (no <c>/</c>) so it can
-    /// never hit git's directory/file ref conflict the way a <c>sprig/&lt;ws&gt;</c> name would against a
-    /// plain <c>sprig</c> branch. Mirrors the sibling worktree folder convention (<c>&lt;dir&gt;--&lt;ws&gt;</c>).</summary>
-    internal static string BranchFor(string workspace) => $"sprig--{workspace}";
-
-    /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>
-    public ResolvedStack ResolveSingleRepo(string repoPath)
+    /// <summary>Resolve an ad-hoc single repo path into a one-element selection for the map create path.</summary>
+    public IReadOnlyList<ResolvedRepo> ResolveSingleRepo(string repoPath)
     {
         if (!git.IsGitRepo(repoPath))
             throw new WorkspaceException($"'{repoPath}' is not a git repository");
         var root = git.ResolveRepoRoot(repoPath);
         var config = LoadValidConfig(root);
-        // Ad-hoc single repo: no stack, so only zero-input repos can stand up this way.
-        return new ResolvedStack(null, [new ResolvedRepo(config.Name, root, config)],
-            [], new Dictionary<string, IReadOnlyDictionary<string, string>>());
+        return [new ResolvedRepo(config.Name, root, config)];
     }
 
     sealed record RepoPlan(ResolvedRepo Repo, string Worktree);
@@ -471,10 +273,258 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>Restart the workspace's infra (down then up, keeping volumes).</summary>
-    public void Reset(string workspace)
+    public void RestartInfra(string workspace)
     {
         Down(workspace);
         Up(workspace);
+    }
+
+    /// <summary>The checklist note shown on the infra row when a start was skipped because Docker isn't
+    /// running — a plain, actionable message instead of the raw daemon-connection exception.</summary>
+    public const string DockerNotRunningNote =
+        "Docker isn't running — infrastructure not started. Start Docker Desktop, then bring it up.";
+
+    /// <summary>Map a tolerant infra-start outcome to its report on the shared <see cref="RefreshStepIds.Infra"/>
+    /// row: a clean Done when it started or there was nothing to start, a Warning (never a hard Error) when
+    /// Docker isn't reachable — so the row explains the skip rather than the operation crashing on it.</summary>
+    internal static WorkspaceStepProgress InfraStartReport(InfraStartResult result) => result switch
+    {
+        InfraStartResult.DockerNotRunning => new(RefreshStepIds.Infra, WorkspaceStepState.Warning, DockerNotRunningNote),
+        InfraStartResult.NoInfra => new(RefreshStepIds.Infra, WorkspaceStepState.Done, "no Docker infrastructure"),
+        _ => new(RefreshStepIds.Infra, WorkspaceStepState.Done),
+    };
+
+    /// <summary>Bring infra up if there's any to run and Docker is reachable; otherwise a no-op.
+    /// Unlike <see cref="Up"/>, this never throws on a repo-only workspace or a stopped Docker — the
+    /// pool/refresh flows want "make it running if possible", not a hard requirement. The returned
+    /// <see cref="InfraStartResult"/> says which happened so the caller can surface a stopped engine on
+    /// the checklist (rather than letting <c>docker up</c> throw a raw daemon-connection error).</summary>
+    public InfraStartResult TryStartInfra(string workspace)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
+        if (infraRepos.Count == 0) return InfraStartResult.NoInfra;
+        // IsAvailable only proves the CLI is installed; IsEngineRunning is the reachability probe. Checking
+        // it here means a stopped Docker Desktop is a clean skip, not a "cannot connect to the Docker daemon"
+        // exception thrown mid-checkout.
+        if (!docker.IsAvailable() || !docker.IsEngineRunning()) return InfraStartResult.DockerNotRunning;
+        foreach (var repo in infraRepos)
+            docker.Up(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
+        instances.Save(record with { LastStatus = "running" });
+        return InfraStartResult.Started;
+    }
+
+    /// <summary>Stop infra if there's any and Docker is reachable; otherwise a no-op. <paramref name="removeVolumes"/>
+    /// wipes data. The tolerant counterpart to <see cref="Down"/>, for the pool/refresh flows. A stopped
+    /// engine is a no-op too (nothing is up to stop), so release never throws when Docker is down.</summary>
+    public bool TryStopInfra(string workspace, bool removeVolumes = false)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
+        if (infraRepos.Count == 0 || !docker.IsAvailable() || !docker.IsEngineRunning()) return false;
+        foreach (var repo in infraRepos)
+            docker.Down(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace), removeVolumes);
+        instances.Save(record with { LastStatus = "stopped" });
+        return true;
+    }
+
+    /// <summary>Stop the workspace's containers without removing them (<c>compose stop</c>) if there's
+    /// infra and Docker is reachable; otherwise a no-op. Frees CPU/RAM while keeping the containers,
+    /// networks and volumes in place, so a later checkout restarts them fast. This is the "hand back to
+    /// the pool" counterpart to <see cref="TryStopInfra"/> (which does a full <c>down</c>): release
+    /// isn't a teardown, so nothing is removed. A stopped engine is a no-op too, so release never throws
+    /// when Docker is down.</summary>
+    public bool TryStopContainers(string workspace)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var infraRepos = record.Repos.Where(r => r.ComposePaths.Count > 0).ToList();
+        if (infraRepos.Count == 0 || !docker.IsAvailable() || !docker.IsEngineRunning()) return false;
+        foreach (var repo in infraRepos)
+            docker.Stop(repo.ComposePaths, repo.WorktreePath, ProjectName(workspace));
+        instances.Save(record with { LastStatus = "stopped" });
+        return true;
+    }
+
+    /// <summary>Deprecated alias for <see cref="RestartInfra"/> — the CLI verb was renamed
+    /// <c>ws reset</c> → <c>ws restart</c> when <c>reset</c> came to mean the git resync. Kept so
+    /// existing callers/scripts keep working for one release.</summary>
+    public void Reset(string workspace) => RestartInfra(workspace);
+
+    /// <summary>
+    /// Resync a workspace's repos to their base branch and rebuild its sprig-managed state, without
+    /// throwing away the expensive on-disk artifacts. Per repo: fetch, hard-reset the worktree branch
+    /// to base (tracked files only — gitignored node_modules/build output/real .env values survive),
+    /// re-clobber env, regenerate compose, and re-run setup; then infra is restarted (volumes kept).
+    /// <para>
+    /// Works purely from the stored <see cref="InstanceRecord"/> (like teardown does), so it needs no
+    /// stack resolver. <paramref name="onlyRepos"/> narrows the refresh to a subset; the rest are left
+    /// exactly as they are. A refresh discards commits the base doesn't contain, so it refuses (listing
+    /// the offenders) unless <paramref name="force"/> is set — work is never lost silently.
+    /// </para>
+    /// </summary>
+    /// <summary>The ordered checklist a <see cref="RefreshToBase"/> will work through, computed up front so
+    /// a UI can show every row before work starts. Step ids match what <see cref="RefreshToBase"/> reports.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanRefresh(InstanceRecord record, IReadOnlyList<string>? onlyRepos,
+        IReadOnlyList<ResolvedRepo>? resolvedRepos = null)
+    {
+        var steps = new List<WorkspaceStep>();
+        foreach (var repo in SelectRefreshRepos(record, onlyRepos))
+        {
+            var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, ConfigFor(repo, resolvedRepos));
+            steps.Add(new(RefreshStepIds.Resync(repo.Name), $"Resync to base — {repo.Name}"));
+            steps.Add(new(RefreshStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
+            if (resolved.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
+                steps.Add(new(RefreshStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
+            if (HasSetup(resolved))
+            {
+                steps.Add(new(RefreshStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
+                foreach (var cmd in SetupCommands(resolved))
+                    steps.Add(new(RefreshStepIds.SetupCommand(repo.Name, cmd.Index), cmd.Command) { SubStep = true });
+            }
+        }
+        steps.Add(new(RefreshStepIds.Infra, "Restart infrastructure"));
+        return steps;
+    }
+
+    public InstanceRecord RefreshToBase(string workspace, IReadOnlyList<string>? onlyRepos = null,
+        bool force = false, bool removeVolumes = false, IProgress<WorkspaceStepProgress>? progress = null,
+        IReadOnlyList<ResolvedRepo>? resolvedRepos = null)
+    {
+        var record = instances.TryLoad(workspace)
+            ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+
+        var targets = SelectRefreshRepos(record, onlyRepos);
+        var targetNames = new HashSet<string>(targets.Select(r => r.Name), StringComparer.Ordinal);
+
+        // Pre-flight across every target: fetch, resolve its base, and collect any that carry commits the
+        // base doesn't — a hard-reset would discard those. Fail once, before touching anything, so a
+        // guarded refresh never leaves a half-reset workspace.
+        var bases = new Dictionary<string, string>(StringComparer.Ordinal);
+        var unmerged = new List<string>();
+        foreach (var repo in targets)
+        {
+            TryQuiet(() => git.Fetch(repo.WorktreePath));
+            var baseRef = git.ResolveDefaultBase(repo.WorktreePath);
+            bases[repo.Name] = baseRef;
+            if (git.CountCommitsAhead(repo.WorktreePath, baseRef) > 0)
+                unmerged.Add($"{repo.Name} (has commits not in {baseRef})");
+        }
+        if (unmerged.Count > 0 && !force)
+            throw new WorkspaceException(
+                "refusing to refresh — a refresh resets each repo to its base branch, which would " +
+                "discard commits in:\n  " + string.Join("\n  ", unmerged) +
+                "\nmerge or push them first, or pass --force to discard them.");
+
+        var updatedRepos = new List<InstanceRepo>();
+        foreach (var repo in record.Repos)
+        {
+            if (!targetNames.Contains(repo.Name)) { updatedRepos.Add(repo); continue; }
+
+            // Use the caller's resolved config when supplied (a pooled refresh passes it, so the stack's
+            // overlay — e.g. stack-carried setup — is honoured), else reload the committed config from
+            // source. Either way it's fresh, so it picks up anything that moved on with the base.
+            var config = ConfigFor(repo, resolvedRepos);
+            var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, config);
+
+            progress?.Report(new(RefreshStepIds.Resync(repo.Name), WorkspaceStepState.Running));
+            git.ResetHard(repo.WorktreePath, bases[repo.Name]);
+            progress?.Report(new(RefreshStepIds.Resync(repo.Name), WorkspaceStepState.Done));
+
+            progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Running));
+            ApplyEnvFor(repo, resolved, workspace);
+            progress?.Report(new(RefreshStepIds.Env(repo.Name), WorkspaceStepState.Done));
+
+            var composePaths = repo.ComposePaths;
+            if (config.EffectiveModules.Any(m => m.Compose.Count > 0))
+            {
+                progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Running));
+                composePaths = GenerateComposeFor(repo, resolved, workspace);
+                progress?.Report(new(RefreshStepIds.Compose(repo.Name), WorkspaceStepState.Done));
+            }
+
+            IReadOnlyList<Setup.SetupOutcome> setupOutcomes = [];
+            if (HasSetup(resolved))
+            {
+                progress?.Report(new(RefreshStepIds.Setup(repo.Name), WorkspaceStepState.Running));
+                setupOutcomes = RunSetup(resolved, repo.WorktreePath, progress);
+                var failed = setupOutcomes.FirstOrDefault(o => !o.Success);
+                progress?.Report(failed is null
+                    ? new(RefreshStepIds.Setup(repo.Name), WorkspaceStepState.Done)
+                    : new(RefreshStepIds.Setup(repo.Name), WorkspaceStepState.Warning, $"'{failed.Command}' exited {failed.ExitCode}"));
+            }
+
+            updatedRepos.Add(repo with { GeneratedComposePaths = composePaths, Setup = setupOutcomes });
+        }
+
+        var refreshed = record with { Repos = updatedRepos, LastStatus = "refreshed" };
+        instances.Save(refreshed);
+
+        // Restart infra so the regenerated compose takes effect; a fresh checkout wipes volumes first
+        // (clean runtime data), the others keep them. Both helpers are tolerant — a repo-only workspace
+        // or a stopped Docker just skips, so the refresh itself still succeeds; a stopped engine is
+        // relayed as a Warning on the infra row rather than silently reported as Done.
+        progress?.Report(new(RefreshStepIds.Infra, WorkspaceStepState.Running));
+        TryStopInfra(workspace, removeVolumes);
+        progress?.Report(InfraStartReport(TryStartInfra(workspace)));
+
+        return instances.TryLoad(workspace) ?? refreshed;
+    }
+
+    /// <summary>The repos a refresh will touch: all of them, or the named subset. An unknown name is an
+    /// error (a typo shouldn't silently refresh nothing).</summary>
+    static IReadOnlyList<InstanceRepo> SelectRefreshRepos(InstanceRecord record, IReadOnlyList<string>? onlyRepos)
+    {
+        if (onlyRepos is null || onlyRepos.Count == 0) return record.Repos;
+        var known = new HashSet<string>(record.Repos.Select(r => r.Name), StringComparer.Ordinal);
+        var unknown = onlyRepos.Where(n => !known.Contains(n)).ToList();
+        if (unknown.Count > 0)
+            throw new WorkspaceException(
+                $"workspace '{record.Workspace}' has no repo{(unknown.Count == 1 ? "" : "s")} " +
+                string.Join(", ", unknown.Select(n => $"'{n}'")) +
+                $" (it has: {string.Join(", ", record.Repos.Select(r => r.Name))})");
+        var wanted = new HashSet<string>(onlyRepos, StringComparer.Ordinal);
+        return record.Repos.Where(r => wanted.Contains(r.Name)).ToList();
+    }
+
+    /// <summary>The effective config for a repo during refresh: the caller's resolved config (which carries
+    /// the caller resolved (the fresh config) when it lists this repo, else the committed <c>.sprig.json</c>
+    /// reloaded from source.</summary>
+    SprigRepoConfig ConfigFor(InstanceRepo repo, IReadOnlyList<ResolvedRepo>? resolvedRepos)
+        => resolvedRepos?.FirstOrDefault(r => string.Equals(r.Name, repo.Name, StringComparison.Ordinal))?.Config
+            ?? LoadValidConfig(repo.SourcePath);
+
+    /// <summary>Reapply a repo's env overrides on claim/refresh: each module resolves against its own stored
+    /// capability scope (the concrete values <see cref="CreateFromMap"/> recorded per module). Source is never
+    /// mutated.</summary>
+    void ApplyEnvFor(InstanceRepo repo, ResolvedRepo resolved, string workspace)
+    {
+        var byName = resolved.Config.EffectiveModules.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        foreach (var stored in repo.Modules)
+            if (byName.TryGetValue(stored.Name, out var module))
+                env.ApplyModule(module, repo.SourcePath, repo.WorktreePath,
+                    Substitution.SprigScope.ForValues(workspace, stored.Values));
+    }
+
+    /// <summary>Regenerate a repo's compose files on claim/refresh, each module against its stored scope
+    /// (matching <see cref="ApplyEnvFor"/>). Returns the generated file paths.</summary>
+    IReadOnlyList<string> GenerateComposeFor(InstanceRepo repo, ResolvedRepo resolved, string workspace)
+    {
+        var stored = repo.Modules.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        var composePaths = new List<string>();
+        foreach (var module in resolved.Config.EffectiveModules)
+        {
+            if (!stored.TryGetValue(module.Name, out var im)) continue;
+            var scope = Substitution.SprigScope.ForValues(workspace, im.Values);
+            foreach (var composeCfg in module.Compose)
+            {
+                var dest = Path.Combine(paths.InstanceDir(workspace),
+                    $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
+                compose.GenerateToFile(
+                    Path.Combine(repo.SourcePath, module.Path, composeCfg.File), composeCfg, scope, dest);
+                composePaths.Add(dest);
+            }
+        }
+        return composePaths;
     }
 
     /// <summary>Live container status across the workspace's infra repos.</summary>

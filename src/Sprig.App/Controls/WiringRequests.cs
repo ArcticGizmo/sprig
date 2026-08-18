@@ -29,3 +29,10 @@ public sealed record ReorderRepoRequest(int From, int To);
 
 /// <summary>Move a stack port to a new position on the rail (drag-reorder by its grip on the canvas).</summary>
 public sealed record ReorderPortRequest(int From, int To);
+
+/// <summary>
+/// Assign (or clear) the owning repo of a stack port on the repo-graph canvas — the visualization-only
+/// overlay that decides whether a port is drawn as a directed owner→consumer line or a shared chip. A
+/// null <see cref="Repo"/> clears the ownership.
+/// </summary>
+public sealed record SetPortOwnerRequest(string Port, string? Repo);

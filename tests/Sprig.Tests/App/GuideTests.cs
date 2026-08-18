@@ -37,7 +37,6 @@ public class GuideTests
 
     static Guide RegisterRepo => Guides.All.Single(g => g.Id == Guides.RegisterRepoId);
     static Guide SplitModules => Guides.All.Single(g => g.Id == Guides.SplitModulesId);
-    static Guide WireStack => Guides.All.Single(g => g.Id == Guides.WireStackId);
     static Guide RunWorkspace => Guides.All.Single(g => g.Id == Guides.RunWorkspaceId);
     static Guide RepairDrift => Guides.All.Single(g => g.Id == Guides.RepairDriftId);
 
@@ -74,7 +73,7 @@ public class GuideTests
         await new ReposViewModel(h.Services).AddPathAsync(apiPath);
 
         Assert.Equal(1, h.Vm.Coach.Index); // advanced off the waiting step on its own
-        Assert.Equal(Anchors.RepoInputs, h.Vm.Coach.Mark!.Anchor);
+        Assert.Equal(Anchors.RepoModules, h.Vm.Coach.Mark!.Anchor);
     }
 
     [Fact]
@@ -127,7 +126,7 @@ public class GuideTests
         await h.Vm.StartGuide(RegisterRepo, onFinished: () => { });
 
         await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);   // step 1 (waiting) → 2: inputs
-        Assert.Equal(Anchors.RepoInputs, h.Vm.Coach.Mark!.Anchor);
+        Assert.Equal(Anchors.RepoModules, h.Vm.Coach.Mark!.Anchor);
         await h.Vm.Coach.NextCommand.ExecuteAsync(null);     // step 2 → 3: the module card
 
         // Step 3 now introduces modules (and forward-refs the modules guide), so it anchors the module card.
@@ -154,7 +153,7 @@ public class GuideTests
         Assert.Single(repos.Editor!.Modules);
 
         await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // inputs are shared
-        Assert.Equal(Anchors.RepoInputs, h.Vm.Coach.Mark!.Anchor);
+        Assert.Equal(Anchors.RepoModules, h.Vm.Coach.Mark!.Anchor);
 
         await h.Vm.Coach.NextCommand.ExecuteAsync(null);   // the add-module button
         Assert.Equal(Anchors.RepoAddModule, h.Vm.Coach.Mark!.Anchor);
@@ -191,61 +190,16 @@ public class GuideTests
         Assert.Equal(2, repos.Editor!.Modules.Count);      // still two, not three
     }
 
-    // --- Guide 3: wire up a multi-repo stack ---------------------------------
-
-    [Fact]
-    public void Guide_two_starts_at_repos_registered_and_needs_two_repos()
-    {
-        var guide = WireStack;
-        Assert.Equal(SampleStage.ReposRegistered, guide.Stage);
-    }
-
-    [Fact]
-    public async Task Guide_two_opens_the_builder_and_ends_on_a_create_step()
-    {
-        using var h = new Harness(SampleStage.ReposRegistered);
-        await h.Vm.StartGuide(WireStack, onFinished: () => { });
-
-        // Step 1 orients on the New-stack button; the builder-opening step then wires both repos.
-        Assert.Equal(Anchors.StackNew, h.Vm.Coach.Mark!.Anchor);
-        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
-        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
-        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
-
-        // The create step waits on the user; its anchor is the Create-stack button.
-        Assert.True(h.Vm.Coach.IsWaiting);
-        Assert.Equal(Anchors.StackCreate, h.Vm.Coach.Mark!.Anchor);
-        Assert.Empty(h.Services.Stacks.List());
-    }
-
-    [Fact]
-    public async Task Show_me_creates_the_stack_and_advances_past_the_wait()
-    {
-        using var h = new Harness(SampleStage.ReposRegistered);
-        await h.Vm.StartGuide(WireStack, onFinished: () => { });
-        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
-        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
-        await h.Vm.Coach.NextCommand.ExecuteAsync(null);
-        var createIndex = h.Vm.Coach.Index;
-
-        await h.Vm.Coach.ShowMeCommand.ExecuteAsync(null);
-
-        // A stack now exists, wiring both repos, and the wait advanced off the create step on its own.
-        var stack = Assert.Single(h.Services.Stacks.List());
-        Assert.Equal(2, stack.Repos.Count);
-        Assert.True(h.Vm.Coach.Index > createIndex);
-    }
-
     // --- Guide 3: create and run a workspace ---------------------------------
 
     [Fact]
-    public void Guide_three_starts_at_stack_wired()
-        => Assert.Equal(SampleStage.StackWired, RunWorkspace.Stage);
+    public void Guide_three_starts_at_map_ready()
+        => Assert.Equal(SampleStage.MapReady, RunWorkspace.Stage);
 
     [Fact]
     public async Task Guide_three_ends_on_a_create_step_then_shows_what_was_made()
     {
-        using var h = new Harness(SampleStage.StackWired);
+        using var h = new Harness(SampleStage.MapReady);
         await h.Vm.StartGuide(RunWorkspace, onFinished: () => { });
 
         Assert.Equal(Anchors.WorkspaceNew, h.Vm.Coach.Mark!.Anchor);
@@ -298,7 +252,7 @@ public class GuideTests
         var learn = new LearnViewModel(new AppServices(store.Root), new Navigator());
 
         Assert.Equal(
-            [RegisterRepo.Title, SplitModules.Title, WireStack.Title, RunWorkspace.Title, RepairDrift.Title],
+            [RegisterRepo.Title, SplitModules.Title, RunWorkspace.Title, RepairDrift.Title],
             learn.Guides.Select(g => g.Title));
     }
 

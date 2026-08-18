@@ -1,0 +1,705 @@
+<title>One Name, Many Shapes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --paper:    #F5F7F3;
+    --surface:  #FFFFFF;
+    --panel:    #ECF0EA;
+    --panel-2:  #E3E9DF;
+    --ink:      #1A211C;
+    --ink-soft: #515C55;
+    --ink-faint:#8B948C;
+    --line:     #DBE2D8;
+    --line-2:   #C9D2C5;
+
+    --accent:      #2F7A4F;   /* port / self — the one real resource */
+    --accent-soft: #E2EFE7;
+    --accent-line: #B9D8C6;
+    --derived:      #A76A12;  /* derived string — a formula */
+    --derived-soft: #F5EBD6;
+    --derived-line: #E4CE9C;
+    --need:      #3A6EA5;     /* a need — consumed from elsewhere */
+    --need-soft: #E4EDF6;
+
+    --bad: #B23A3A;
+
+    --shadow: 0 1px 2px rgba(20,30,22,.05), 0 8px 24px rgba(20,30,22,.06);
+    --radius: 10px;
+
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Cascadia Code", "Cascadia Mono", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:    #11150F;
+      --surface:  #191E17;
+      --panel:    #1C2219;
+      --panel-2:  #232a1f;
+      --ink:      #E7ECE4;
+      --ink-soft: #A4AEA2;
+      --ink-faint:#6C7669;
+      --line:     #2A3226;
+      --line-2:   #38412f;
+
+      --accent:      #5FB588;
+      --accent-soft: #1D3527;
+      --accent-line: #2F553D;
+      --derived:      #DDB25C;
+      --derived-soft: #352B14;
+      --derived-line: #55461f;
+      --need:      #7FB0E0;
+      --need-soft: #1B2A3A;
+
+      --bad: #E07A7A;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:    #11150F;
+    --surface:  #191E17;
+    --panel:    #1C2219;
+    --panel-2:  #232a1f;
+    --ink:      #E7ECE4;
+    --ink-soft: #A4AEA2;
+    --ink-faint:#6C7669;
+    --line:     #2A3226;
+    --line-2:   #38412f;
+
+    --accent:      #5FB588;
+    --accent-soft: #1D3527;
+    --accent-line: #2F553D;
+    --derived:      #DDB25C;
+    --derived-soft: #352B14;
+    --derived-line: #55461f;
+    --need:      #7FB0E0;
+    --need-soft: #1B2A3A;
+
+    --bad: #E07A7A;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: clamp(28px, 6vw, 72px) clamp(18px, 5vw, 40px) 96px;
+  }
+
+  /* ---- typographic system ---- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+  }
+  h1 {
+    font-size: clamp(34px, 6vw, 56px);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+  .dek {
+    font-size: clamp(17px, 2.4vw, 20px);
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0;
+  }
+  h2 {
+    font-size: clamp(22px, 3.4vw, 28px);
+    letter-spacing: -.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  h3 { font-size: 18px; margin: 0; letter-spacing: -.005em; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); }
+
+  .section { margin-top: clamp(52px, 8vw, 84px); }
+  .section > .lead { color: var(--ink-soft); max-width: 62ch; margin: 10px 0 0; }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  hr.rule {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 40px 0 0;
+  }
+
+  /* ---- token chips (the ${sprig...} vernacular) ---- */
+  .tok {
+    font-family: var(--mono);
+    font-size: .92em;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0;
+    padding: 3px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--line-2);
+    background: var(--surface);
+    white-space: nowrap;
+    line-height: 1.3;
+  }
+  .tok .dim  { color: var(--ink-faint); }
+  .tok .head { color: var(--accent); font-weight: 600; }
+  .tok .port { color: var(--accent); font-weight: 600; }
+  .tok .der  { color: var(--derived); font-weight: 600; }
+
+  /* ---- app-chrome mockup ---- */
+  .mock {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  .mock-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mock-title::before {
+    content: "";
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    flex: 0 0 auto;
+  }
+
+  /* faux avalonia controls */
+  .field {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--ink);
+    min-width: 0;
+  }
+  .field.ph { color: var(--ink-faint); }
+  .lbl {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: .04em;
+  }
+  .chk {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 13px; color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .chk .box {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid var(--line-2); background: var(--surface);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--accent);
+  }
+  .chk .box.on { background: var(--accent-soft); border-color: var(--accent-line); }
+  .btn-add {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--accent);
+    background: transparent;
+    border: 1px dashed var(--accent-line);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: default;
+  }
+
+  /* card for capability */
+  .cap {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .cap + .cap { margin-top: 12px; }
+
+  /* generic rows */
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+
+  /* type hint chip */
+  .hint {
+    font-family: var(--mono); font-size: 11px;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid var(--accent-line);
+  }
+
+  /* annotation callouts on the "before" */
+  .annot {
+    margin-top: 14px;
+    display: grid;
+    gap: 8px;
+  }
+  .annot li {
+    list-style: none;
+    font-size: 14px;
+    color: var(--ink-soft);
+    padding-left: 26px;
+    position: relative;
+  }
+  .annot li::before {
+    content: "→";
+    position: absolute; left: 0; top: 0;
+    color: var(--bad);
+    font-family: var(--mono);
+  }
+  ul.reset { margin: 0; padding: 0; }
+
+  /* option header */
+  .opt-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .opt-num {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    border: 1px solid var(--accent-line);
+    background: var(--accent-soft);
+    border-radius: 6px;
+    padding: 2px 9px;
+    flex: 0 0 auto;
+  }
+  .opt-idea { color: var(--ink-soft); margin: 4px 0 20px; max-width: 64ch; }
+
+  /* pros/cons grid */
+  .tradeoffs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 18px;
+  }
+  @media (max-width: 620px) { .tradeoffs { grid-template-columns: 1fr; } }
+  .tradeoffs h4 {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+    text-transform: uppercase; margin: 0 0 8px;
+  }
+  .tradeoffs .good h4 { color: var(--accent); }
+  .tradeoffs .bad-c h4 { color: var(--derived); }
+  .tradeoffs ul { margin: 0; padding-left: 18px; }
+  .tradeoffs li { font-size: 14px; color: var(--ink-soft); margin-bottom: 6px; }
+
+  /* naming rule good/bad */
+  .rulecard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 20px;
+  }
+  @media (max-width: 620px) { .rulecard { grid-template-columns: 1fr; } }
+  .rulebox {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--surface);
+  }
+  .rulebox .tag {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; margin-bottom: 12px; display: flex; gap: 8px; align-items:center;
+  }
+  .rulebox.ok  { border-color: var(--accent-line); }
+  .rulebox.no  { border-color: var(--derived-line); }
+  .rulebox.ok .tag  { color: var(--accent); }
+  .rulebox.no .tag  { color: var(--bad); }
+  .rulebox .tok { margin: 4px 6px 4px 0; }
+  .rulebox .note { font-size: 13px; color: var(--ink-soft); margin: 10px 0 0; }
+
+  /* segmented kind picker */
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line-2);
+    border-radius: 7px;
+    overflow: hidden;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .seg span {
+    padding: 5px 11px;
+    color: var(--ink-soft);
+    border-right: 1px solid var(--line-2);
+  }
+  .seg span:last-child { border-right: 0; }
+  .seg span.sel { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .seg span.sel-d { background: var(--derived-soft); color: var(--derived); font-weight: 600; }
+
+  /* the "shape" list rows for options A/B */
+  .shape {
+    display: grid;
+    grid-template-columns: minmax(210px, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 10px;
+    border-radius: 7px;
+    background: var(--panel-2);
+  }
+  .shape + .shape { margin-top: 8px; }
+  .shape.port  { box-shadow: inset 3px 0 0 var(--accent); }
+  .shape.der   { box-shadow: inset 3px 0 0 var(--derived); }
+  .shape .kind {
+    font-family: var(--mono); font-size: 11px; letter-spacing:.03em;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .shape .kind.p { color: var(--accent); }
+  .shape .kind.d { color: var(--derived); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex:0 0 auto; }
+  .dot.p { background: var(--accent); }
+  .dot.d { background: var(--derived); }
+
+  /* recommendation */
+  .rec {
+    border: 1px solid var(--accent-line);
+    background: var(--accent-soft);
+    border-radius: var(--radius);
+    padding: clamp(20px, 4vw, 30px);
+    margin-top: 26px;
+  }
+  .rec h2 { margin-bottom: 10px; }
+  .rec p { color: var(--ink); }
+  .rec strong { color: var(--accent); }
+
+  footer {
+    margin-top: 70px; padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">sprig · repos · the provides editor</p>
+    <h1>One name, many shapes</h1>
+    <p class="dek">A capability isn&rsquo;t a name <em>plus</em> a bag of outputs. It&rsquo;s a single
+      name that shows up in several shapes &mdash; a port, a URL, a connection string. Three ways to
+      make the editor say that out loud.</p>
+  </header>
+
+  <!-- ============ THE PROBLEM ============ -->
+  <section class="section">
+    <span class="kicker">Where it&rsquo;s blurry today</span>
+    <h2>The name and its outputs look like the same kind of thing</h2>
+    <p class="lead">The current editor stacks a capability&rsquo;s name next to its outputs on a flat
+      plane, and hangs a lonely <code>port</code> checkbox off each output. Nothing on screen tells you
+      the name is the <em>parent</em> and the outputs are its <em>shapes</em> &mdash; so
+      <span class="tok"><span class="dim">${sprig.</span><span class="head">&hellip;</span><span class="dim">}</span></span>
+      never comes into focus.</p>
+
+    <div class="mock" style="margin-top:20px" aria-label="Current provides editor, reconstructed">
+      <p class="mock-title">Provides &mdash; current</p>
+
+      <div class="cap">
+        <div class="row" style="margin-bottom:12px">
+          <span class="lbl">capability</span>
+          <input class="field" value="vite-port" style="width:150px" readonly>
+          <span class="lbl">type</span>
+          <input class="field ph" value="http" style="width:90px" readonly>
+        </div>
+
+        <div class="row">
+          <input class="field" value="port" style="width:120px" readonly>
+          <span class="chk"><span class="box on">&check;</span> port</span>
+          <input class="field ph" value="allowed ports (optional)" style="flex:1;min-width:160px" readonly>
+        </div>
+        <div class="row">
+          <input class="field" value="url" style="width:120px" readonly>
+          <span class="chk"><span class="box"></span> port</span>
+          <input class="field" value="http://localhost:${sprig.vite-port.port}" style="flex:1;min-width:160px" readonly>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn-add" tabindex="-1">+ output</button>
+        </div>
+      </div>
+    </div>
+
+    <ul class="reset annot">
+      <li>The <strong>capability name</strong> row and the <strong>output name</strong> rows use the
+        same field styling &mdash; the hierarchy is flat, so which is the variable and which are its
+        shapes isn&rsquo;t readable.</li>
+      <li>The <code>port</code> checkbox sits at the output level with no anchor. &ldquo;Is the
+        <em>capability</em> a port? Is this <em>row</em> a port?&rdquo; It reads as a mystery toggle.</li>
+      <li>Nothing steers naming, so <span class="tok"><span class="dim">${sprig.</span><span class="head">vite-port</span><span class="dim">.</span><span class="port">port</span><span class="dim">}</span></span>
+        &mdash; the <em>stutter</em> &mdash; is the path of least resistance.</li>
+    </ul>
+  </section>
+
+  <!-- ============ THE REFRAME ============ -->
+  <section class="section">
+    <span class="kicker">The reframe</span>
+    <h2>Lean on the reference: <span style="font-family:var(--mono);font-size:.8em">${sprig.&lt;name&gt;.&lt;shape&gt;}</span></h2>
+    <p class="lead">Every consumer types the same two-segment token. The <strong>name</strong> is the
+      thing you&rsquo;re wiring to; the <strong>shape</strong> is which form of it you want. One name,
+      resolved into as many shapes as the service exposes:</p>
+
+    <div class="mock" style="margin-top:20px;background:transparent;border-style:dashed;box-shadow:none">
+      <div class="row" style="gap:14px;align-items:center">
+        <span class="tok" style="font-size:1.05em"><span class="dim">${sprig.</span><span class="head">vite-server</span><span class="dim">.</span><span class="port">port</span><span class="dim">}</span></span>
+        <span class="tok" style="font-size:1.05em"><span class="dim">${sprig.</span><span class="head">vite-server</span><span class="dim">.</span><span class="der">url</span><span class="dim">}</span></span>
+        <span style="color:var(--ink-faint);font-family:var(--mono);font-size:13px">&larr; same head, different shape</span>
+      </div>
+    </div>
+
+    <div style="margin-top:20px">
+      <p style="margin:0 0 4px"><strong>And a naming rule that falls out of it:</strong> name the
+        <em>service</em>, not the socket. The shape already says <code>port</code> &mdash; the name
+        shouldn&rsquo;t say it again.</p>
+    </div>
+
+    <div class="rulecard">
+      <div class="rulebox ok">
+        <div class="tag">&check; reads as a hierarchy</div>
+        <span class="tok"><span class="dim">${sprig.</span><span class="head">vite-server</span><span class="dim">.</span><span class="port">port</span><span class="dim">}</span></span>
+        <span class="tok"><span class="dim">${sprig.</span><span class="head">vite-server</span><span class="dim">.</span><span class="der">url</span><span class="dim">}</span></span>
+        <p class="note">The service is <code>vite-server</code>; it comes in a <code>port</code> shape
+          and a <code>url</code> shape. The name owns both.</p>
+      </div>
+      <div class="rulebox no">
+        <div class="tag">&times; the stutter</div>
+        <span class="tok"><span class="dim">${sprig.</span><span class="head" style="color:var(--bad)">vite-port</span><span class="dim">.</span><span class="port">port</span><span class="dim">}</span></span>
+        <span class="tok"><span class="dim">${sprig.</span><span class="head" style="color:var(--bad)">vite-port</span><span class="dim">.</span><span class="der">url</span><span class="dim">}</span></span>
+        <p class="note">Naming the capability after one of its shapes gives you
+          <code>vite-port.port</code>, and makes <code>vite-port.url</code> read as nonsense.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION A ============ -->
+  <section class="section">
+    <div class="opt-head">
+      <span class="opt-num">A</span>
+      <h3>The token, made literal</h3>
+    </div>
+    <p class="opt-idea">The capability header <em>is</em> the reference stem. You edit the name inside a
+      live <code>${sprig.___}</code> chip; each shape below it renders its own full token, so the
+      hierarchy is impossible to miss. The <code>port</code> checkbox becomes a two-state
+      <em>kind</em> toggle per shape &mdash; port or derived.</p>
+
+    <div class="mock" aria-label="Option A mockup">
+      <p class="mock-title">Provides &mdash; option A</p>
+      <div class="cap">
+        <div class="row" style="align-items:center;margin-bottom:14px">
+          <span class="tok" style="font-size:1.15em;padding:6px 10px">
+            <span class="dim">${sprig.</span><input class="field" value="vite-server"
+              style="width:130px;font-size:1em;padding:2px 6px;border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent);font-weight:600" readonly><span class="dim">.&hellip;}</span>
+          </span>
+          <span class="hint">http</span>
+        </div>
+
+        <div class="shape port">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span class="kind p"><span class="dot p"></span>PORT · allocated</span>
+            <span class="tok" style="border:0;background:transparent;padding:0"><span class="dim">${sprig.vite-server.</span><span class="port">port</span><span class="dim">}</span></span>
+          </div>
+          <input class="field ph" value="allowed: 5170-5179" style="width:150px" readonly>
+        </div>
+
+        <div class="shape der">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span class="kind d"><span class="dot d"></span>DERIVED</span>
+            <span class="tok" style="border:0;background:transparent;padding:0"><span class="dim">${sprig.vite-server.</span><span class="der">url</span><span class="dim">}</span></span>
+          </div>
+          <input class="field" value="http://localhost:${sprig.vite-server.port}" style="width:230px;max-width:100%" readonly>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn-add" tabindex="-1">+ port shape</button>
+          <button class="btn-add" tabindex="-1" style="border-color:var(--derived-line);color:var(--derived)">+ derived shape</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tradeoffs">
+      <div class="good">
+        <h4>Strengths</h4>
+        <ul>
+          <li>The name lives inside the actual token &mdash; the parent/shape relationship is literal, not implied.</li>
+          <li>Consumers see the exact string they&rsquo;ll type, per shape.</li>
+          <li>&ldquo;+ port / + derived&rdquo; replaces the ambiguous checkbox with an explicit choice at creation.</li>
+        </ul>
+      </div>
+      <div class="bad-c">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>Repeating <code>${sprig.vite-server.}</code> on every row costs horizontal space.</li>
+          <li>An editable field nested inside a token chip is a slightly unusual control to build in Avalonia.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION B ============ -->
+  <section class="section">
+    <div class="opt-head">
+      <span class="opt-num">B</span>
+      <h3>The port is the anchor</h3>
+    </div>
+    <p class="opt-idea">A service really owns exactly one real thing: a port. So lead with it. The name
+      sits atop a single, always-present <strong>Port</strong> &mdash; the root &mdash; and everything
+      else is filed under &ldquo;Also exposes&rdquo; as formulas over that port. There is no
+      checkbox at all: <em>port</em> is structural, <em>derived</em> is an addition.</p>
+
+    <div class="mock" aria-label="Option B mockup">
+      <p class="mock-title">Provides &mdash; option B</p>
+      <div class="cap">
+        <div class="row" style="align-items:baseline;margin-bottom:6px">
+          <input class="field" value="vite-server" style="width:150px;font-weight:600;color:var(--accent);border-color:var(--accent-line)" readonly>
+          <span class="hint">http</span>
+        </div>
+
+        <div class="shape port" style="grid-template-columns:auto minmax(140px,1fr) auto">
+          <span class="kind p"><span class="dot p"></span>PORT</span>
+          <span class="tok" style="border:0;background:transparent;padding:0;justify-self:start"><span class="dim">.</span><span class="port">port</span></span>
+          <input class="field ph" value="allowed: 5170-5179" style="width:150px" readonly>
+        </div>
+
+        <p class="lbl" style="margin:16px 0 8px 2px">also exposes &mdash; formulas over the port</p>
+
+        <div class="shape der" style="grid-template-columns:auto minmax(90px,120px) 1fr">
+          <span class="kind d"><span class="dot d"></span>DERIVED</span>
+          <span class="tok" style="border:0;background:transparent;padding:0;justify-self:start"><span class="dim">.</span><span class="der">url</span></span>
+          <input class="field" value="http://localhost:${sprig.vite-server.port}" style="min-width:0" readonly>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn-add" tabindex="-1" style="border-color:var(--derived-line);color:var(--derived)">+ derived shape</button>
+          <button class="btn-add" tabindex="-1">+ extra port</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tradeoffs">
+      <div class="good">
+        <h4>Strengths</h4>
+        <ul>
+          <li>Encodes the truth of the model &mdash; a port is the one owned resource; the rest are views of it.</li>
+          <li>Kills the checkbox entirely; nothing to misread.</li>
+          <li>Puts the name directly above its port, which quietly enforces the naming rule.</li>
+        </ul>
+      </div>
+      <div class="bad-c">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>A capability with <em>no</em> port (a pure derived value, or an externally-fixed one) is the awkward case &mdash; needs an &ldquo;extra port&rdquo; / &ldquo;no port&rdquo; escape hatch.</li>
+          <li>Two-tier layout (anchor vs. &ldquo;also exposes&rdquo;) is more structure to build than a flat list.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION C ============ -->
+  <section class="section">
+    <div class="opt-head">
+      <span class="opt-num">C</span>
+      <h3>Shape-kind picker</h3>
+    </div>
+    <p class="opt-idea">The lightest-touch change: keep the flat row-per-output table, but replace the
+      bare <code>port</code> checkbox with a segmented <em>kind</em> picker. Now <code>port</code> is
+      one shape among several, and the <code>type</code> hint finally earns its keep &mdash; choosing
+      <code>URL</code> or <code>Connection string</code> pre-fills a sensible formula.</p>
+
+    <div class="mock" aria-label="Option C mockup">
+      <p class="mock-title">Provides &mdash; option C</p>
+      <div class="cap">
+        <div class="row" style="margin-bottom:14px">
+          <span class="lbl">capability</span>
+          <input class="field" value="orders-db" style="width:150px;font-weight:600;color:var(--accent);border-color:var(--accent-line)" readonly>
+          <span class="lbl">type</span>
+          <input class="field ph" value="postgres" style="width:110px" readonly>
+        </div>
+
+        <div class="row" style="gap:10px">
+          <input class="field" value="port" style="width:120px" readonly>
+          <span class="seg"><span class="sel">Port</span><span>URL</span><span>Conn&nbsp;str</span><span>Custom</span></span>
+          <input class="field ph" value="allowed (optional)" style="flex:1;min-width:120px" readonly>
+        </div>
+        <div class="row" style="gap:10px">
+          <input class="field" value="connString" style="width:120px" readonly>
+          <span class="seg"><span>Port</span><span>URL</span><span class="sel-d">Conn&nbsp;str</span><span>Custom</span></span>
+          <input class="field" value="Host=localhost;Port=${sprig.orders-db.port};Db=orders" style="flex:1;min-width:120px" readonly>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn-add" tabindex="-1">+ shape</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tradeoffs">
+      <div class="good">
+        <h4>Strengths</h4>
+        <ul>
+          <li>Smallest diff from today&rsquo;s layout &mdash; low build cost, low risk.</li>
+          <li>Presets (URL, Conn str) teach the common formulas and cut typos in templates.</li>
+          <li>Gives the <code>type</code> hint a real job: seeding the shape presets.</li>
+        </ul>
+      </div>
+      <div class="bad-c">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>Still a flat table &mdash; does the least to surface the name-owns-its-shapes hierarchy.</li>
+          <li>Doesn&rsquo;t show the resolved <code>${sprig&hellip;}</code> token, so naming stays uncoached.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RECOMMENDATION ============ -->
+  <section class="section">
+    <span class="kicker">Where I&rsquo;d land</span>
+    <div class="rec">
+      <h2>Blend A&rsquo;s literal token with B&rsquo;s port anchor</h2>
+      <p><strong>Take the name-inside-the-token header from A</strong> so the hierarchy is stated in the
+        one place everyone already reads &mdash; the reference. <strong>Take the port-as-root idea from
+        B</strong> so the checkbox disappears and the model&rsquo;s one real resource leads. That
+        combination fixes both frictions in your feedback: the blurriness (the name visibly parents its
+        shapes) and the naming trap (the token preview makes <code>vite-port.port</code> look wrong the
+        instant you type it). Keep <strong>C&rsquo;s presets</strong> as the payload of the &ldquo;+ derived
+        shape&rdquo; button &mdash; a small menu (URL / connection string / custom) so common formulas
+        are one click, not a hand-typed template.</p>
+      <p style="margin-bottom:0">If build cost has to be minimal for this pass, ship <strong>C</strong>
+        alone now &mdash; it&rsquo;s a near drop-in for the existing table &mdash; and grow it toward
+        A/B once the layout work is worth it.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>sprig · the Graph Turn · provides editor</span>
+    <span>ReposView.axaml · schema v1</span>
+  </footer>
+
+</div>

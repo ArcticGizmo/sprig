@@ -162,4 +162,28 @@ public class EnvOverlayViewModelTests
         Assert.False(Row(vm, "HOST").ReferencesUnknownInput);
         Assert.False(vm.Overrides.Single(o => o.Key == "HOST").ReferencesUnknownInput);
     }
+
+    [Fact]
+    public void A_needed_capabilitys_output_is_accepted_by_its_head_not_flagged()
+    {
+        var vars = new ObservableCollection<string> { "workspace" };
+        var open = new ObservableCollection<string>();   // no needs declared yet
+        var vm = new EnvOverlayViewModel(["DB"], NoExamples, variables: vars, openCapabilities: open);
+
+        // ${sprig.db.connString} — the output lives in another repo. Undeclared until 'db' is a need.
+        var db = Row(vm, "DB");
+        db.Draft = "${sprig.db.connString}";
+        vm.ApplyCommand.Execute(db);
+        Assert.True(Row(vm, "DB").ReferencesUnknownInput);
+
+        // declaring the need (its capability head) greens it, whatever the output — the overlay watches
+        // the live open-capability list too.
+        open.Add("db");
+        Assert.False(Row(vm, "DB").ReferencesUnknownInput);
+
+        // an unknown capability's output is still flagged.
+        db.Draft = "${sprig.cache.url}";
+        vm.ApplyCommand.Execute(db);
+        Assert.True(Row(vm, "DB").ReferencesUnknownInput);
+    }
 }

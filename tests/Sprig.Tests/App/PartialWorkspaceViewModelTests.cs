@@ -1,47 +1,52 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Sprig.App;
 using Sprig.App.ViewModels;
-using Sprig.Core.Stacks;
+using Sprig.Core.Maps;
 using Sprig.Core.Store;
 
 namespace Sprig.Tests.App;
 
 /// <summary>
-/// The create-workspace form's repo checklist — the UI half of partial workspaces. Nothing here
-/// creates a workspace (that's covered in Core); these pin what the form tells the user before they
-/// commit, and the badge the workspace list shows afterwards.
+/// The create-workspace form's repo checklist â€” the UI half of partial workspaces on the map model.
+/// Nothing here creates a workspace (that's covered in Core); these pin what the form tells the user
+/// before they commit â€” which repos are dropped and any needs the remaining slice can no longer meet.
 /// </summary>
 public class PartialWorkspaceViewModelTests
 {
-    /// <summary>api owns api_port; web consumes it and owns web_port. Same shape as the Core tests.</summary>
-    static void SeedWebApiStack(TempStore s, AppServices services)
+    /// <summary>web NEEDS 'api'; api PROVIDES it. A map of both. No git â€” the form only resolves configs.</summary>
+    static void SeedWebApiMap(TempStore s, AppServices services)
     {
-        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "web",
-            ("apiUrl", "http://localhost:5000"), ("devPort", "5173")));
-        services.Stacks.Save(new StackDefinition
+        services.Repos.Add(WriteRepo(s.Root, "api", """
+            { "schema":1, "name":"api", "modules":[
+              { "name":"main", "provides":[ { "capability":"api", "ports": { "port": true } } ] } ] }
+            """));
+        services.Repos.Add(WriteRepo(s.Root, "web", """
+            { "schema":1, "name":"web", "modules":[
+              { "name":"main", "needs":[ { "capability":"api" } ] } ] }
+            """));
+        services.Maps.Save(new MapDefinition
         {
             Name = "web+api",
-            Repos = ["api", "web"],
-            Ports = ["api_port", "web_port"],
-            Bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
-            {
-                ["api"] = new Dictionary<string, string> { ["port"] = "${sprig.ports.api_port}" },
-                ["web"] = new Dictionary<string, string>
-                {
-                    ["apiUrl"] = "http://localhost:${sprig.ports.api_port}",
-                    ["devPort"] = "${sprig.ports.web_port}",
-                },
-            },
+            Repos = [MapRepo.Local("api"), MapRepo.Local("web")],
         });
     }
 
+    static string WriteRepo(string root, string name, string json)
+    {
+        var dir = Path.Combine(root, name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), json);
+        return dir;
+    }
+
     [Fact]
-    public async Task The_create_form_lists_the_stacks_repos_all_selected()
+    public async Task The_create_form_lists_the_maps_repos_all_selected()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedWebApiStack(s, services);
+        SeedWebApiMap(s, services);
 
         var vm = new WorkspacesViewModel(services, new Navigator());
         await vm.NewWorkspaceCommand.ExecuteAsync(null);
@@ -55,36 +60,35 @@ public class PartialWorkspaceViewModelTests
     }
 
     [Fact]
-    public async Task Unticking_a_repo_says_what_is_dropped_and_which_ports_go_unprovisioned()
+    public async Task Dropping_the_provider_leaves_the_consumer_with_an_unmet_need()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedWebApiStack(s, services);
+        SeedWebApiMap(s, services);
 
         var vm = new WorkspacesViewModel(services, new Navigator());
         await vm.NewWorkspaceCommand.ExecuteAsync(null);
-        vm.NewRepos.First(r => r.Name == "web").Included = false;
-
-        Assert.True(vm.IsPartialSelection);
-        Assert.Contains("web", vm.PartialHint);
-        Assert.Contains("web_port", vm.PartialHint);      // orphaned by dropping web
-        Assert.DoesNotContain("api_port", vm.PartialHint); // api still consumes it
-    }
-
-    [Fact]
-    public async Task Dropping_the_api_keeps_the_port_the_web_still_points_at()
-    {
-        using var s = new TempStore();
-        var services = new AppServices(s.Root);
-        SeedWebApiStack(s, services);
-
-        var vm = new WorkspacesViewModel(services, new Navigator());
-        await vm.NewWorkspaceCommand.ExecuteAsync(null);
-        vm.NewRepos.First(r => r.Name == "api").Included = false;
+        vm.NewRepos.First(r => r.Name == "api").Included = false;   // web still needs 'api'
 
         Assert.True(vm.IsPartialSelection);
         Assert.Contains("api", vm.PartialHint);
-        Assert.DoesNotContain("won't be provisioned", vm.PartialHint); // nothing orphaned
+        Assert.Contains("unmet", vm.PartialHint);   // the need 'api' has no provider left in the slice
+    }
+
+    [Fact]
+    public async Task Dropping_the_consumer_leaves_no_unmet_need()
+    {
+        using var s = new TempStore();
+        var services = new AppServices(s.Root);
+        SeedWebApiMap(s, services);
+
+        var vm = new WorkspacesViewModel(services, new Navigator());
+        await vm.NewWorkspaceCommand.ExecuteAsync(null);
+        vm.NewRepos.First(r => r.Name == "web").Included = false;   // api is a lone provider, no needs
+
+        Assert.True(vm.IsPartialSelection);
+        Assert.Contains("web", vm.PartialHint);
+        Assert.DoesNotContain("unmet", vm.PartialHint);
     }
 
     [Fact]
@@ -92,7 +96,7 @@ public class PartialWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedWebApiStack(s, services);
+        SeedWebApiMap(s, services);
 
         var vm = new WorkspacesViewModel(services, new Navigator());
         await vm.NewWorkspaceCommand.ExecuteAsync(null);
@@ -111,17 +115,16 @@ public class PartialWorkspaceViewModelTests
         var record = new InstanceRecord
         {
             Workspace = "backend-only",
-            Stack = "web+api",
+            Map = "web+api",
             Repos = [new InstanceRepo { Name = "api", SourcePath = "C:/api", WorktreePath = "C:/api--backend-only" }],
-            Ports = new Dictionary<string, int> { ["api_port"] = 5000 },
+            SelectedRepos = ["api"],
             ExcludedRepos = ["web"],
-            SkippedPorts = ["web_port"],
         };
 
         var item = new WorkspaceItemViewModel(record);
 
         Assert.True(item.IsPartial);
-        Assert.Equal("without web · ports not provisioned: web_port", item.PartialSummary);
-        Assert.Equal("", new WorkspaceItemViewModel(record with { ExcludedRepos = [], SkippedPorts = [] }).PartialSummary);
+        Assert.Equal("without web", item.PartialSummary);
+        Assert.Equal("", new WorkspaceItemViewModel(record with { ExcludedRepos = [] }).PartialSummary);
     }
 }

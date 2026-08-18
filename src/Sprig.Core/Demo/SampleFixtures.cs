@@ -1,4 +1,4 @@
-using Sprig.Core.Stacks;
+using Sprig.Core.Maps;
 
 namespace Sprig.Core.Demo;
 
@@ -8,7 +8,7 @@ namespace Sprig.Core.Demo;
 public sealed record SampleFile(string RelativePath, string Resource);
 
 /// <summary>
-/// The guided tour's fixture content: two throwaway repos and the stack that wires them together.
+/// The guided tour's fixture content: two throwaway repos and the map that composes them.
 ///
 /// Everything here is <b>content, not code</b> — the repo files are embedded verbatim and written to
 /// disk unmodified, so nothing can generate them wrongly. They are authored to the same
@@ -18,19 +18,14 @@ public sealed record SampleFile(string RelativePath, string Resource);
 /// </summary>
 public static class SampleFixtures
 {
-    /// <summary>Registry/binding name of the sample backend (matches <c>name</c> in its config).</summary>
+    /// <summary>Registry name of the sample backend (matches <c>name</c> in its config).</summary>
     public const string ApiRepo = "sample-api";
 
-    /// <summary>Registry/binding name of the sample front end (matches <c>name</c> in its config).</summary>
+    /// <summary>Registry name of the sample front end (matches <c>name</c> in its config).</summary>
     public const string WebRepo = "sample-web";
 
-    /// <summary>Name of the stack that wires the two sample repos together.</summary>
-    public const string StackName = "sample";
-
-    // Stack port names. The tour leans on api_port being consumed by BOTH repos.
-    public const string ApiPort = "api_port";
-    public const string WebPort = "web_port";
-    public const string DbPort = "db_port";
+    /// <summary>Name of the map that composes the two sample repos.</summary>
+    public const string MapName = "sample";
 
     const string Prefix = "Sprig.Demo.";
 
@@ -55,41 +50,16 @@ public static class SampleFixtures
     ];
 
     /// <summary>
-    /// The sample stack. Three ports, and — the point of the whole tour — <c>api_port</c> feeds two
-    /// consumers: the API's own <c>port</c>, and the URL handed to the web app. The explicit
-    /// <see cref="StackDefinition.Shares"/> entry is what makes the wiring canvas draw that as one
-    /// cable reaching two repos.
+    /// The sample map. It just lists the two repos — the wiring is derived from their own provides/needs:
+    /// sample-web NEEDS <c>api</c>, sample-api PROVIDES it (a port plus a <c>url</c> built from that port),
+    /// so the map composes them with no explicit wiring or defaults. A pool ceiling so the tour can show
+    /// checkout/release.
     /// </summary>
-    public static StackDefinition Stack() => new()
+    public static MapDefinition Map() => new()
     {
-        Name = StackName,
-        Repos = [ApiRepo, WebRepo],
-        Ports = [ApiPort, WebPort, DbPort],
-        Bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
-        {
-            [ApiRepo] = new Dictionary<string, string>
-            {
-                ["port"] = $"${{sprig.ports.{ApiPort}}}",
-                ["dbPort"] = $"${{sprig.ports.{DbPort}}}",
-            },
-            [WebRepo] = new Dictionary<string, string>
-            {
-                ["port"] = $"${{sprig.ports.{WebPort}}}",
-                ["apiUrl"] = $"http://localhost:${{sprig.ports.{ApiPort}}}",
-            },
-        },
-        Shares =
-        [
-            new SharedPort
-            {
-                Port = ApiPort,
-                Consumers =
-                [
-                    new PortConsumer { Repo = ApiRepo, Input = "port" },
-                    new PortConsumer { Repo = WebRepo, Input = "apiUrl" },
-                ],
-            },
-        ],
+        Name = MapName,
+        Repos = [MapRepo.Local(ApiRepo), MapRepo.Local(WebRepo)],
+        MaxSlots = 3,
     };
 
     /// <summary>Read one embedded fixture as text.</summary>

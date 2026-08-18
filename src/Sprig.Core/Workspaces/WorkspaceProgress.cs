@@ -15,6 +15,21 @@ public enum WorkspaceStepState
     Done,
 }
 
+/// <summary>Outcome of a tolerant infra start (<see cref="WorkspaceService.TryStartInfra"/>): the pool and
+/// refresh flows want "bring it up if you can", not a hard requirement — so instead of letting
+/// <c>docker up</c> throw a raw "cannot connect to the Docker daemon" when Docker Desktop is stopped, the
+/// start reports which of these happened and the caller renders it on the checklist.</summary>
+public enum InfraStartResult
+{
+    /// <summary>The workspace has no docker infrastructure — nothing to start (not a problem).</summary>
+    NoInfra,
+    /// <summary>Docker isn't reachable (CLI missing or the engine stopped) — infra was left down, on
+    /// purpose, rather than crashing the operation.</summary>
+    DockerNotRunning,
+    /// <summary>Containers were brought up.</summary>
+    Started,
+}
+
 /// <summary>One planned unit of work in a workspace operation, identified by a stable <paramref name="Id"/>
 /// so a progress report can target the row the plan created for it. <see cref="SubStep"/> marks a child
 /// row (e.g. one setup command) that a UI indents under its parent.</summary>
@@ -44,6 +59,22 @@ internal static class CreateStepIds
     public static string Setup(string repo) => $"{repo}:setup";
     /// <summary>Sub-step id for one setup command (keyed by its index in the repo's setup list).</summary>
     public static string SetupCommand(string repo, int index) => $"{repo}:setup:{index}";
+}
+
+/// <summary>Stable step ids for the refresh/checkout checklist. Reuses the create ids for the
+/// env/compose/setup rows (same strings, so <see cref="WorkspaceService.RunSetup"/>'s reports line up),
+/// and adds the resync + infra rows a refresh has.</summary>
+internal static class RefreshStepIds
+{
+    public const string Infra = "infra";
+    public static string Resync(string repo) => $"{repo}:resync";
+    /// <summary>The "cut the claim branch" row on the checkout checklist (distinct from the teardown's
+    /// branch-delete row).</summary>
+    public static string Claim(string repo) => $"{repo}:claim";
+    public static string Env(string repo) => CreateStepIds.Env(repo);
+    public static string Compose(string repo) => CreateStepIds.Compose(repo);
+    public static string Setup(string repo) => CreateStepIds.Setup(repo);
+    public static string SetupCommand(string repo, int index) => CreateStepIds.SetupCommand(repo, index);
 }
 
 /// <summary>Stable step ids for the teardown checklist.</summary>

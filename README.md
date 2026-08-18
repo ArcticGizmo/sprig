@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-<strong>Worktree + infrastructure isolation for any git repo.</strong>
+<strong>Self-describing repos. One map of how they fit. Check out any slice, fully wired.</strong>
 </p>
 
 <br>
@@ -17,17 +17,23 @@ throwaway worktree.
 
 - **Isolated worktrees** — each workspace gets a `<repo>--<workspace>` worktree on a fresh
   `sprig--<workspace>` branch, off your current `HEAD`. Your main checkout is untouched.
-- **Non-colliding ports** — named ports are allocated per workspace, so two workspaces of the
-  same stack run side by side without port clashes.
+- **Non-colliding ports** — each repo owns its ports and they're allocated per workspace, so two
+  workspaces of the same map run side by side without port clashes.
 - **Isolated docker infra** — sprig generates a per-workspace compose file (project name
   `sprig-<workspace>`) so containers, networks, and volumes don't collide.
+- **Self-describing repos** — a repo (and each module within it) declares what it **provides**
+  (its own ports, and URLs/values built from them) and what it **needs** from others. There's no
+  central place that wires values in — sprig derives the wiring by matching capability names.
+- **Maps, not stacks** — a _map_ is an open graph of repos you take slices of. It stores only the
+  _deviations_ from automatic wiring (which provider wins when several could; a manual fallback for a
+  need whose provider you left out). Check out any slice — one repo, or many — fully wired.
 - **Monorepo-aware modules** — one repo can declare many _modules_, each a slice
-  (`apps/web`, `apps/api`) with its own `.env` files, compose files and setup commands under
-  its own `path`, all sharing one set of repo-level inputs.
-- **Partial workspaces** — deselect the repos you don't need this time. Their worktrees, env files and
-  compose files are never generated, and any port left with nothing to serve isn't provisioned.
-- **One-directional config** — a repo declares only the _inputs_ it needs; a _stack_ supplies
-  every value. Easy to trace: values flow one way, stack → repo.
+  (`apps/web`, `apps/api`) with its own `.env` files, compose files, setup commands, and its own
+  provides/needs under its own `path`. Sibling modules wire to each other locally; unmet needs bubble
+  up to the map.
+- **Partial workspaces** — take just the repos you need this time (`--only`/`--without`). Their
+  worktrees, env and compose are never generated; a need whose provider you left out is filled by a
+  map default, or reported as a gap.
 - **Drift-safe** — `reconcile`/`doctor` detects and repairs record-vs-reality drift (a deleted
   or orphaned worktree), so a half-cleaned-up workspace is always recoverable.
 
@@ -74,14 +80,21 @@ $want = (Select-String -Path SHA256SUMS.txt -Pattern 'Sprig-win-Setup.exe').Line
 ## The model in one picture
 
 ```
-Repo (.sprig.json, committed in the repo)      Stack (central store, never in a repo)
-  = CONSUMER                                      = PRODUCER
-  declares inputs it needs        <── binds ──    owns named ports (auto-allocated)
-  one or more MODULES, each with                  supplies each repo's inputs via
-    its own env/compose/setup under a path        bindings[repo][input] = expression
-  env/compose templates reference
-  ${sprig.<input>} and ${sprig.workspace}
+Repo (.sprig.json, committed in the repo)      Map (central store, never in a repo)
+  = SELF-DESCRIBING                               = A SLICE + ITS DEVIATIONS
+  one or more MODULES, each with                  lists the repos in play, and stores only:
+    its own env/compose/setup under a path          - wiring:   who wins when >1 provider
+    PROVIDES  its ports + values built from them    - defaults: a literal for a need whose
+    NEEDS     capabilities from other repos                     provider isn't in the slice
+  templates reference                            everything else — which provider satisfies
+  ${sprig.<capability>.<output>} and               each need — is DERIVED by capability name
+  ${sprig.workspace}                               at checkout.
 ```
+
+Wiring is derived, not declared: a `need` is matched to a `provide` of the same **capability name**
+— a sibling module first (nearest-wins), else a single provider across the slice. More than one
+provider is an ambiguity the map resolves; none is a gap a map default fills, or an unmet need that
+stops the checkout with an explanation.
 
 Every value originates in the stack and flows one way into a repo. A repo never produces values
 for another repo — the stack wires them together. **Inputs are shared across a repo's modules**, so a

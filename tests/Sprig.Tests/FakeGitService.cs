@@ -12,16 +12,53 @@ public sealed class FakeGitService : IGitService
     public List<string> Pruned { get; } = [];
     public List<string> RemovedWorktrees { get; } = [];
     public List<string> DeletedBranches { get; } = [];
+    public List<string> Fetched { get; } = [];
+    public List<(string Url, string Dest)> Cloned { get; } = [];
+    public List<(string Repo, string Reference)> HardResets { get; } = [];
+    public string DefaultBase { get; set; } = "main";
+    public int CommitsAhead { get; set; }
+
+    // New-model (detached-slot / branch-on-claim) knobs and capture lists.
+    public HashSet<string> LocalBranches { get; } = [];
+    public HashSet<string> RemoteBranches { get; } = [];
+    public List<(string Worktree, string Branch, string? StartPoint)> SwitchedNewBranches { get; } = [];
+    public List<(string Worktree, string Reference)> Detached { get; } = [];
+    public int UnpushedCommits { get; set; }
+    public bool Dirty { get; set; }
+    public List<BranchRef> StartPointCandidates { get; } = [];
+    public List<GraphCommit> CommitGraph { get; } = [];
+    public string? Current { get; set; }
+    /// <summary>Refs that <see cref="RefExists"/> reports present; the default base is always treated as present.</summary>
+    public HashSet<string> ExistingRefs { get; } = [];
 
     public bool IsGitRepo(string path) => RepoExists;
     public IReadOnlyCollection<string> ListTrackedFiles(string repo) => TrackedFiles;
     public bool IsIgnored(string repo, string relativePath) => IgnoredFiles.Contains(relativePath);
     public string ResolveRepoRoot(string path) => path;
-    public bool BranchExists(string repo, string branch) => true;
+    public bool BranchExists(string repo, string branch) => LocalBranches.Contains(branch);
+    public bool RemoteBranchExists(string repo, string branch) => RemoteBranches.Contains(branch);
+    public bool IsValidBranchName(string name) =>
+        !string.IsNullOrWhiteSpace(name) && !name.StartsWith('-') && !name.Contains("..") && !name.EndsWith(".lock");
     public void AddWorktree(string repo, string worktreePath, string branch)
         => Worktrees.Add(new WorktreeInfo(worktreePath, "head", branch, false));
+    public void AddWorktreeDetached(string repo, string worktreePath, string reference)
+        => Worktrees.Add(new WorktreeInfo(worktreePath, "head", null, false, false, true));
+    public void SwitchNewBranch(string worktreePath, string branch, string? startPoint = null)
+        => SwitchedNewBranches.Add((worktreePath, branch, startPoint));
+    public void DetachTo(string worktreePath, string reference) => Detached.Add((worktreePath, reference));
+    public bool HasUncommittedChanges(string worktreePath) => Dirty;
+    public int CountUnpushedCommits(string worktreePath) => UnpushedCommits;
     public IReadOnlyList<WorktreeInfo> ListWorktrees(string repo) => Worktrees;
     public void RemoveWorktree(string repo, string worktreePath) => RemovedWorktrees.Add(worktreePath);
     public void Prune(string repo) => Pruned.Add(repo);
     public void DeleteBranch(string repo, string branch) => DeletedBranches.Add(branch);
+    public void Fetch(string repo) => Fetched.Add(repo);
+    public void Clone(string url, string destPath) => Cloned.Add((url, destPath));
+    public string ResolveDefaultBase(string repo) => DefaultBase;
+    public IReadOnlyList<BranchRef> ListStartPointCandidates(string repo) => StartPointCandidates;
+    public string? CurrentBranch(string repo) => Current;
+    public IReadOnlyList<GraphCommit> ListCommitGraph(string repo, int limit) => CommitGraph;
+    public bool RefExists(string repo, string reference) => reference == DefaultBase || ExistingRefs.Contains(reference);
+    public void ResetHard(string repo, string reference) => HardResets.Add((repo, reference));
+    public int CountCommitsAhead(string repo, string baseRef) => CommitsAhead;
 }

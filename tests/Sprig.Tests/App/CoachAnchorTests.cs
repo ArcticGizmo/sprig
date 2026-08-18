@@ -45,10 +45,9 @@ public class CoachAnchorTests
 
         foreach (var mark in CoachSpikeScript.Marks(new Navigator()))
         {
-            // Drawn anchors (canvas contents) aren't in XAML — they're resolved through IAnchorSource, and
-            // their prefixes are owned by WiringCanvas.TryGetAnchor.
-            var isDrawn = mark.Anchor.StartsWith("stack.port:") || mark.Anchor.StartsWith("stack.node:")
-                       || mark.Anchor.StartsWith("stack.pin:") || mark.Anchor == Anchors.StackAutoWire;
+            // Drawn anchors (canvas contents) aren't in XAML — they're resolved through IAnchorSource,
+            // keyed by domain identity (RepoGraphCanvas.TryGetAnchor owns the stack.node: prefix).
+            var isDrawn = mark.Anchor.StartsWith("stack.node:");
 
             Assert.True(isDrawn || chrome.Contains(mark.Anchor),
                 $"spike mark points at '{mark.Anchor}', which is neither declared in a view nor a drawn anchor");

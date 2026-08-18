@@ -12,10 +12,47 @@ public sealed record InstanceRecord
 {
     public required string Workspace { get; init; }
     public string? Stack { get; init; }
+
+    /// <summary>The map this workspace was created from (the Graph Turn model), or null for a stack/ad-hoc
+    /// workspace. Mutually exclusive with <see cref="Stack"/> in practice.</summary>
+    public string? Map { get; init; }
+
+    /// <summary>The repos selected from the map for this workspace (a slice of the map). Empty for a
+    /// stack/ad-hoc workspace.</summary>
+    public IReadOnlyList<string> SelectedRepos { get; init; } = [];
+
     public IReadOnlyList<InstanceRepo> Repos { get; init; } = [];
     public IReadOnlyDictionary<string, int> Ports { get; init; } = new Dictionary<string, int>();
     public string? LastStatus { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+
+    // --- Pool state (M2). A pooled workspace is one of a stack's bounded set; these describe where it
+    // sits in that pool and whether it's currently in use. Absent/default on a pre-pool workspace. ---
+
+    /// <summary>This workspace's index within its stack's pool (the <c>n</c> in <c>&lt;stack&gt;-&lt;n&gt;</c>).
+    /// Null for a workspace not created through the pool flow.</summary>
+    public int? WorkspaceIndex { get; init; }
+
+    /// <summary>True while this workspace is checked out (in use). An <b>unclaimed</b> workspace is free
+    /// to take — but not necessarily clean; how it's handled is decided at the next checkout.</summary>
+    public bool Claimed { get; init; }
+
+    /// <summary>The <b>claim branch</b> — the single git branch name the user chose at claim, cut across
+    /// every repo in the stack. This is the load-bearing identity of a claimed workspace (mirrored per repo
+    /// on <see cref="InstanceRepo.Branch"/>). Null while the workspace is parked (idle workspace, worktrees in
+    /// detached HEAD with no branch of their own).</summary>
+    public string? Branch { get; init; }
+
+    /// <summary>The free-text label the user gave this workspace at claim — <b>optional</b> metadata to
+    /// recognise it by ("auth refactor"), never load-bearing (the branch is). Null when unlabelled.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>When this workspace was last checked out; null if never claimed.</summary>
+    public DateTimeOffset? ClaimedAt { get; init; }
+
+    /// <summary>When this workspace was last released; lets checkout show "least recently used" hints so
+    /// you can pick the leftover state you want. Null if never released.</summary>
+    public DateTimeOffset? LastUsedAt { get; init; }
 
     /// <summary>True when a teardown ran but couldn't dismantle everything, so this record was kept
     /// (rather than deleted) to keep the workspace visible and the sweep resumable. Teardown is
@@ -39,6 +76,12 @@ public sealed record InstanceRecord
     /// <summary>True when this workspace holds a subset of its stack's repos.</summary>
     [JsonIgnore]
     public bool IsPartial => ExcludedRepos.Count > 0;
+
+    /// <summary>True when any repo's last setup run had a failed command — a <b>degraded</b> workspace
+    /// that stood up but may not actually work. Derived from the recorded outcomes, which create and
+    /// every checkout/refresh rewrite, so it always reflects the latest run.</summary>
+    [JsonIgnore]
+    public bool SetupFailed => Repos.Any(r => r.Setup.Any(o => !o.Success));
 }
 
 /// <summary>One repo's materialised state within an instance.</summary>
@@ -47,9 +90,11 @@ public sealed record InstanceRepo
     public required string Name { get; init; }
     /// <summary>The source repo whose worktree this is.</summary>
     public required string SourcePath { get; init; }
-    /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>).</summary>
+    /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>). Stable for the life of the
+    /// workspace — machine-named, never renamed when a branch is claimed.</summary>
     public required string WorktreePath { get; init; }
-    /// <summary>The sprig-created branch (<c>sprig--&lt;workspace&gt;</c>), if any.</summary>
+    /// <summary>The branch checked out in this repo's worktree: the workspace's claim branch when claimed,
+    /// <c>null</c> while parked (the worktree sits in detached HEAD with no branch of its own).</summary>
     public string? Branch { get; init; }
 
     /// <summary>The generated compose files in the central store (one per overridden compose file in
@@ -68,11 +113,28 @@ public sealed record InstanceRepo
         : GeneratedComposePath is { Length: > 0 } p ? [p]
         : [];
 
-    /// <summary>This repo's resolved input values (input name → value) as supplied by the stack.</summary>
+    /// <summary>This repo's resolved input values (input name → value) as supplied by the stack. Empty for a
+    /// map workspace (which stores per-module capability scopes in <see cref="Modules"/> instead).</summary>
     public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Per-module resolved scopes for a <b>map</b> workspace — each module's env/compose templates
+    /// resolve against its own capability values. Empty for a stack/ad-hoc workspace (which uses the
+    /// repo-level <see cref="Inputs"/>). Lets claim/refresh rebuild each module's scope from the record alone,
+    /// with no map re-resolution.</summary>
+    public IReadOnlyList<InstanceModule> Modules { get; init; } = [];
 
     /// <summary>Outcome of this repo's <c>setup</c> commands, in order (empty if none declared).
     /// Recorded even on failure — setup warns rather than rolling back — so the failure survives
     /// for the UI/CLI to surface.</summary>
     public IReadOnlyList<SetupOutcome> Setup { get; init; } = [];
+}
+
+/// <summary>One module's resolved scope within a map workspace: the module name/path and the concrete
+/// capability-qualified values (<c>&lt;capability&gt;.&lt;output&gt; → value</c>) its env/compose templates resolve
+/// against. Rebuilt into an <c>IVariableSource</c> at claim/refresh time.</summary>
+public sealed record InstanceModule
+{
+    public required string Name { get; init; }
+    public string Path { get; init; } = "";
+    public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
 }

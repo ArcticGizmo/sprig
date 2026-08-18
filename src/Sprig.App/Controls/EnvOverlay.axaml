@@ -131,6 +131,7 @@
                             <TextBlock Text="OVERRIDE WITH" FontSize="10" Foreground="{StaticResource MutedBrush}" />
                             <controls:SprigTokenBox Value="{Binding Draft, Mode=TwoWay}"
                                                     Variables="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).Variables}"
+                                                    OpenCapabilities="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).OpenCapabilities}"
                                                     Watermark="{Binding ValueWatermark}" />
                           </StackPanel>
 
@@ -163,37 +164,6 @@
           </Grid>
         </StackPanel>
       </ScrollViewer>
-    </Border>
-
-    <!-- Inspector: just the keys being overridden, pulled out of the (possibly long) merged view above.
-         "REPLACEMENTS" didn't say how this related to that view, so it read as a second, competing copy of
-         the same data. It isn't — this is the subset sprig will rewrite, and the only place to undo one. -->
-    <Border CornerRadius="6" Padding="14,12" IsVisible="{Binding HasOverrides}"
-            Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-      <StackPanel Spacing="6">
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0" Text="KEYS SPRIG WILL REWRITE" Classes="phead" VerticalAlignment="Center" />
-          <TextBlock Grid.Column="1" Text="{Binding OverrideCount}" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-        </Grid>
-        <TextBlock Text="Only these keys change; every other line is copied through as-is. Remove one to leave that key exactly as the file has it."
-                   FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
-        <ItemsControl ItemsSource="{Binding Overrides}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:EnvOverrideViewModel">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="0,3">
-                <StackPanel Grid.Column="0" Spacing="1">
-                  <TextBlock Text="{Binding Key}" Classes="mono" Foreground="{StaticResource FgBrush}" />
-                  <TextBlock Text="{Binding Rewrite}" Classes="mono rw" TextWrapping="Wrap"
-                             Classes.invalid="{Binding ReferencesUnknownInput}" />
-                </StackPanel>
-                <Button Grid.Column="1" Content="✕" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}"
-                        Command="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).RemoveCommand}"
-                        CommandParameter="{Binding Row}" />
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </StackPanel>
     </Border>
 
   </StackPanel>

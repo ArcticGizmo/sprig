@@ -16,22 +16,16 @@ public static class Anchors
 {
     // --- Chrome (AutomationId in XAML) ---
     public const string ReposAdd = "repos.add";
-    public const string RepoInputs = "repo.inputs";
     public const string RepoModules = "repo.modules";
     public const string RepoAddModule = "repo.addModule";
     public const string RepoDetail = "repo.detail";
-    public const string StackDetail = "stack.detail";
     public const string WorkspaceNew = "workspace.new";
     public const string WorkspaceCreate = "workspace.create";
     public const string WorkspaceDetail = "workspace.detail";
     public const string WorkspaceRepair = "workspace.repair";
     public const string WorkspaceDocker = "workspace.docker";
-    public const string StackNew = "stack.new";
-    public const string StackCreate = "stack.create";
-    public const string StackCloneName = "stack.cloneName";
-    public const string StackCloneConfirm = "stack.cloneConfirm";
+    public const string PoolCheckoutConfirm = "pool.checkout.confirm";
     public const string SettingsPortsInUse = "settings.portsInUse";
-    public const string StackCanvas = "stack.canvas";
 
     /// <summary>
     /// Every anchor that must be declared as an <c>AutomationProperties.AutomationId</c> in the views.
@@ -44,33 +38,17 @@ public static class Anchors
     public static IReadOnlyList<string> Chrome { get; } =
     [
         ReposAdd,
-        RepoInputs,
         RepoModules,
         RepoAddModule,
         RepoDetail,
-        StackNew,
-        StackCreate,
-        StackCloneName,
-        StackCloneConfirm,
-        StackDetail,
         WorkspaceNew,
         WorkspaceCreate,
         WorkspaceDetail,
         WorkspaceRepair,
         WorkspaceDocker,
+        PoolCheckoutConfirm,
         SettingsPortsInUse,
-        StackCanvas,
     ];
-
-    // --- Inside the wiring canvas (resolved by IAnchorSource, keyed on domain identity) ---
-    /// <summary>A named stack port on the canvas rail, e.g. <c>stack.port:api_port</c>.</summary>
-    public static string StackPort(string port) => $"stack.port:{port}";
-
-    /// <summary>A repo node on the canvas, e.g. <c>stack.node:sample-api</c>.</summary>
-    public static string StackNode(string repo) => $"stack.node:{repo}";
-
-    /// <summary>One repo input's pin (its jack + label), e.g. <c>stack.pin:sample-web/apiUrl</c>.</summary>
-    public static string StackPin(string repo, string input) => $"stack.pin:{repo}/{input}";
 
     // --- List rows (AutomationId bound from row data in XAML) ---
 
@@ -78,12 +56,9 @@ public static class Anchors
     /// can spotlight one repo among several and dim the rest.</summary>
     public static string RepoRow(string name) => $"repo.row:{name}";
 
-    /// <summary>A left-nav entry by its page title, e.g. <c>nav:Stacks</c> — so a step can point at where
+    /// <summary>A left-nav entry by its page title, e.g. <c>nav:Maps</c> — so a step can point at where
     /// you'd go next.</summary>
     public static string Nav(string pageTitle) => $"nav:{pageTitle}";
-
-    /// <summary>The canvas's auto-wire button (drawn, not a control).</summary>
-    public const string StackAutoWire = "stack.autoWire";
 }
 
 /// <summary>

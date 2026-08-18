@@ -12,51 +12,8 @@ using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Config;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
-using Sprig.Core.Init;
 
 namespace Sprig.App.ViewModels;
-
-/// <summary>One editable <c>${sprig.&lt;name&gt;}</c> input declaration.</summary>
-public partial class InputEditRow : ObservableObject
-{
-    readonly Action<InputEditRow> _remove;
-    public InputEditRow(Action<InputEditRow> remove) => _remove = remove;
-
-    [ObservableProperty] private string _name = "";
-    [ObservableProperty] private string _example = "";
-    [ObservableProperty] private string _description = "";
-
-    /// <summary>Optional port restriction spec (e.g. <c>8100-8103</c>) — see <c>PortSetSpec</c>.</summary>
-    [ObservableProperty] private string _allowedPorts = "";
-
-    /// <summary>
-    /// Whether this row's port-restriction editor is showing.
-    ///
-    /// Restricting ports is an advanced case (the classic one is Auth0 callback URLs that must be
-    /// pre-registered per port); nearly every input leaves it blank. So the field stays behind a link until
-    /// it's wanted, rather than sitting at the same visual weight as the input's name.
-    /// </summary>
-    [ObservableProperty] private bool _restricting;
-
-    /// <summary>Offer the restriction editor — nothing set, and not asked for yet.</summary>
-    public bool ShowRestrictLink => !Restricting && string.IsNullOrWhiteSpace(AllowedPorts);
-
-    /// <summary>Show the editor once asked for, or whenever a restriction already exists.</summary>
-    public bool ShowRestrictBox => !ShowRestrictLink;
-
-    partial void OnRestrictingChanged(bool value) => RaiseRestrictVisibility();
-    partial void OnAllowedPortsChanged(string value) => RaiseRestrictVisibility();
-
-    void RaiseRestrictVisibility()
-    {
-        OnPropertyChanged(nameof(ShowRestrictLink));
-        OnPropertyChanged(nameof(ShowRestrictBox));
-    }
-
-    [RelayCommand] private void Restrict() => Restricting = true;
-
-    [RelayCommand] private void Remove() => _remove(this);
-}
 
 /// <summary>One editable <c>setup</c> command — a free-form line run at the worktree root.</summary>
 public partial class SetupCommandRow : ObservableObject
@@ -65,6 +22,204 @@ public partial class SetupCommandRow : ObservableObject
     public SetupCommandRow(Action<SetupCommandRow> remove) => _remove = remove;
 
     [ObservableProperty] private string _command = "";
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
+/// <summary>The single, permanent PORT of a provided capability — the one real resource a repo owns, an
+/// auto-allocated host port optionally pinned to an <see cref="Allowed"/> set. Every capability exports
+/// exactly one, always named <c>port</c>; it can't be added, removed or renamed, so it's the fixed anchor
+/// the whole <c>${sprig.&lt;cap&gt;.…}</c> hierarchy hangs off. <see cref="Ref"/> renders the exact token.</summary>
+public partial class PortEditRow : ObservableObject
+{
+    /// <summary>Fixed at <c>port</c> — never editable.</summary>
+    public string Name => "port";
+
+    /// <summary>Optional restriction spec (e.g. <c>8100-8103</c>); blank = the whole settings range.</summary>
+    [ObservableProperty] private string _allowed = "";
+
+    /// <summary>The owning capability name, pushed down by the parent so the row can render its full token.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _head = "";
+
+    /// <summary>The reference a consumer types for this port: <c>${sprig.&lt;head&gt;.port}</c>.</summary>
+    public string Ref => ProvideEditRow.Token(Head, Name);
+}
+
+/// <summary>One editable derived SHAPE of a provided capability (map model): a string <see cref="Template"/>
+/// built over the capability's ports (a url, a connString). <see cref="Ref"/> renders the exact
+/// <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c> a consumer types.</summary>
+public partial class ShapeEditRow : ObservableObject
+{
+    static readonly IReadOnlyList<string> NoOpenCapabilities = [];
+
+    readonly Action<ShapeEditRow> _remove;
+
+    public ShapeEditRow(Action<ShapeEditRow> remove) => _remove = remove;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _name = "";
+
+    /// <summary>The template (e.g. <c>http://localhost:${sprig.vite-server.port}</c>).</summary>
+    [ObservableProperty] private string _template = "";
+
+    /// <summary>The owning capability name, pushed down by the parent (see <see cref="PortEditRow.Head"/>).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _head = "";
+
+    /// <summary>The reference a consumer types for this shape: <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c>.</summary>
+    public string Ref => ProvideEditRow.Token(Head, Name);
+
+    /// <summary>The names this shape's template may reference — its capability's <c>port</c>, its SIBLING
+    /// shapes (never itself), and <c>workspace</c>. Owned here and kept in step by the parent, so the
+    /// template field's autocomplete offers exactly the legal references and can't suggest a self-reference.</summary>
+    public ObservableCollection<string> Variables { get; } = [];
+
+    /// <summary>A shape references only its own capability, so there are no open (cross-repo) heads.</summary>
+    public IReadOnlyList<string> OpenCapabilities => NoOpenCapabilities;
+
+    /// <summary>Set by the parent when this shape's template self-references, references out of scope, or is
+    /// part of a cycle — shown inline under the field. Null when the template is fine.</summary>
+    [ObservableProperty] private string? _referenceError;
+
+    /// <summary>Replace <see cref="Variables"/> in place (equality-guarded) so bound token boxes update live.</summary>
+    public void SetScope(IReadOnlyList<string> names)
+    {
+        if (Variables.SequenceEqual(names, StringComparer.Ordinal)) return;
+        Variables.Clear();
+        foreach (var n in names) Variables.Add(n);
+    }
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
+/// <summary>One editable provided capability, shaped for the "one name, many shapes" editor: a contract
+/// <see cref="Capability"/> name (the head of every <c>${sprig.&lt;name&gt;.…}</c> reference), its single
+/// permanent <see cref="Port"/> (the anchor — the real resource, always exported), and its derived
+/// <see cref="Shapes"/> (formulas over that port).</summary>
+public partial class ProvideEditRow : ObservableObject
+{
+    readonly Action<ProvideEditRow> _remove;
+
+    public ProvideEditRow(Action<ProvideEditRow> remove)
+    {
+        _remove = remove;
+        Shapes.CollectionChanged += OnShapesChanged;
+        Refresh();
+    }
+
+    /// <summary>The service name — name the service (<c>vite-server</c>), not one of its shapes.</summary>
+    [ObservableProperty] private string _capability = "";
+
+    /// <summary>The one, always-present port anchor (fixed name <c>port</c>).</summary>
+    public PortEditRow Port { get; } = new();
+
+    public ObservableCollection<ShapeEditRow> Shapes { get; } = [];
+
+    /// <summary>Keep the port token, every shape's token, each shape's autocomplete scope, and the live
+    /// reference errors in step as the capability name is typed.</summary>
+    partial void OnCapabilityChanged(string value)
+    {
+        Port.Head = value;
+        foreach (var s in Shapes) s.Head = value;
+        Refresh();
+    }
+
+    /// <summary>A fresh derived-shape row wired to this capability. Its autocomplete scope + errors are filled
+    /// in by <see cref="Refresh"/>.</summary>
+    public ShapeEditRow NewShape() => new(r => Shapes.Remove(r)) { Head = Capability };
+
+    [RelayCommand] private void AddShape() => Shapes.Add(NewShape());
+
+    [RelayCommand] private void Remove() => _remove(this);
+
+    void OnShapesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (ShapeEditRow s in e.OldItems) s.PropertyChanged -= OnShapeFieldChanged;
+        if (e.NewItems is not null) foreach (ShapeEditRow s in e.NewItems) s.PropertyChanged += OnShapeFieldChanged;
+        Refresh();
+    }
+
+    void OnShapeFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // A rename moves the reference surface (autocomplete scopes) AND can change errors; a template edit
+        // only changes errors.
+        if (e.PropertyName == nameof(ShapeEditRow.Name)) Refresh();
+        else if (e.PropertyName == nameof(ShapeEditRow.Template)) RefreshShapeErrors();
+    }
+
+    void Refresh()
+    {
+        RefreshShapeScopes();
+        RefreshShapeErrors();
+    }
+
+    /// <summary>Give each shape its own autocomplete scope: <c>workspace</c>, this capability's <c>port</c>,
+    /// and its SIBLING shapes — deliberately excluding the shape itself, so it can never autocomplete to a
+    /// self-reference.</summary>
+    void RefreshShapeScopes()
+    {
+        var cap = Capability.Trim();
+        foreach (var shape in Shapes)
+        {
+            var wanted = new List<string> { "workspace" };
+            if (cap.Length > 0)
+            {
+                wanted.Add($"{cap}.port");
+                foreach (var sibling in Shapes)
+                {
+                    if (ReferenceEquals(sibling, shape)) continue;   // never offer this shape its own name
+                    var n = sibling.Name.Trim();
+                    if (n.Length > 0) wanted.Add($"{cap}.{n}");
+                }
+            }
+            shape.SetScope(wanted);
+        }
+    }
+
+    /// <summary>Flag each shape whose template self-references, references out of scope, or is part of a cycle
+    /// — the same rule Save enforces (<see cref="Sprig.Core.Config.ConfigReferences.ShapeReferenceIssues"/>),
+    /// surfaced live under the offending field.</summary>
+    void RefreshShapeErrors()
+    {
+        var cap = Capability.Trim();
+        var errors = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (cap.Length > 0)
+        {
+            var shapes = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var s in Shapes)
+            {
+                var n = s.Name.Trim();
+                if (n.Length > 0) shapes[n] = s.Template ?? "";
+            }
+            foreach (var (shape, message) in Sprig.Core.Config.ConfigReferences.ShapeReferenceIssues(cap, shapes))
+                errors.TryAdd(shape, message);   // first problem per shape
+        }
+        foreach (var s in Shapes)
+            s.ReferenceError = errors.GetValueOrDefault(s.Name.Trim());
+    }
+
+    /// <summary>The reference token for an output <paramref name="name"/> under <paramref name="head"/>:
+    /// <c>${sprig.head.name}</c>, with a <c>…</c> placeholder while either half is still blank.</summary>
+    public static string Token(string? head, string? name)
+    {
+        var h = string.IsNullOrWhiteSpace(head) ? "…" : head!.Trim();
+        var n = string.IsNullOrWhiteSpace(name) ? "…" : name!.Trim();
+        return $"${{sprig.{h}.{n}}}";
+    }
+}
+
+/// <summary>One editable needed capability (map model): the contract name and an optional local alias.</summary>
+public partial class NeedEditRow : ObservableObject
+{
+    readonly Action<NeedEditRow> _remove;
+    public NeedEditRow(Action<NeedEditRow> remove) => _remove = remove;
+
+    [ObservableProperty] private string _capability = "";
+    [ObservableProperty] private string _as = "";
 
     [RelayCommand] private void Remove() => _remove(this);
 }
@@ -121,6 +276,7 @@ public partial class EnvFileEditRow : ObservableObject
     readonly Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> _examplesFor;
     readonly Func<string, bool> _exists;
     readonly IEnumerable<string> _variables;
+    readonly IEnumerable<string> _openCapabilities;
     CancellationTokenSource? _cts;
 
     /// <summary>The saved overrides (KEY→template) this row was loaded with — the overlay's fallback
@@ -133,7 +289,8 @@ public partial class EnvFileEditRow : ObservableObject
         Func<string, IReadOnlyList<string>> keysFor,
         Func<string, IReadOnlyDictionary<string, IReadOnlyList<EnvExample>>> examplesFor,
         Func<string, bool> exists,
-        IEnumerable<string> variables)
+        IEnumerable<string> variables,
+        IEnumerable<string> openCapabilities)
     {
         _remove = remove;
         _classify = classify;
@@ -141,6 +298,7 @@ public partial class EnvFileEditRow : ObservableObject
         _examplesFor = examplesFor;
         _exists = exists;
         _variables = variables;
+        _openCapabilities = openCapabilities;
         // Seed templates contribute their own keys to the merged view, so re-gather when they change.
         Templates.CollectionChanged += OnTemplatesChanged;
     }
@@ -248,7 +406,7 @@ public partial class EnvFileEditRow : ObservableObject
         // overrides the live overlay already holds (else the loaded seed) — so editing the file path
         // or templates never drops in-progress overrides.
         var seed = Overlay?.ToSet() ?? _seedSet;
-        Overlay = new EnvOverlayViewModel(keys, examples, seed, _variables);
+        Overlay = new EnvOverlayViewModel(keys, examples, seed, _variables, _openCapabilities);
     }
 
     /// <summary>The keys shown in the merged env view: the union of those declared in the target file
@@ -323,6 +481,7 @@ public partial class ComposeFileEditRow : ObservableObject
     readonly Func<string, string> _readText;
     readonly Func<string, string, IReadOnlyList<ComposeOverride>> _detect;
     readonly IEnumerable<string> _variables;
+    readonly IEnumerable<string> _openCapabilities;
 
     /// <summary>Overrides loaded from disk — seeds the overlay's first build so a missing/blank path
     /// doesn't drop them before the file is (re)supplied. Null <em>only</em> for a hand-added row (never
@@ -338,13 +497,15 @@ public partial class ComposeFileEditRow : ObservableObject
         Func<string, bool> exists,
         Func<string, string> readText,
         Func<string, string, IReadOnlyList<ComposeOverride>> detect,
-        IEnumerable<string> variables)
+        IEnumerable<string> variables,
+        IEnumerable<string> openCapabilities)
     {
         _remove = remove;
         _exists = exists;
         _readText = readText;
         _detect = detect;
         _variables = variables;
+        _openCapabilities = openCapabilities;
     }
 
     [ObservableProperty] private string _file = "";
@@ -425,17 +586,17 @@ public partial class ComposeFileEditRow : ObservableObject
             if (detected.Count > 0) seed = detected;
         }
 
-        Overlay = new ComposeOverlayViewModel(text, seed, _variables);
+        Overlay = new ComposeOverlayViewModel(text, seed, _variables, _openCapabilities);
     }
 
     [RelayCommand] private void Remove() => _remove(this);
 }
 
 /// <summary>
-/// One editable module tab: its name, its path (subdirectory), and its own env / compose / setup
-/// rows. Inputs are not here — they are shared and edited once above the tabs. The env/compose rows
-/// reuse the owner's git-safety + overlay machinery, prepending this module's path (read live) so the
-/// checks resolve under it; changing the path re-evaluates every row.
+/// One editable module tab: its name, its path (subdirectory), and its own provides / needs / env /
+/// compose / setup rows. The env/compose rows reuse the owner's git-safety + overlay machinery,
+/// prepending this module's path (read live) so the checks resolve under it; changing the path
+/// re-evaluates every row.
 /// </summary>
 public partial class ModuleEditTab : ObservableObject
 {
@@ -448,6 +609,10 @@ public partial class ModuleEditTab : ObservableObject
         _path = path;
         Env.CollectionChanged += OnOverrideRowsChanged;
         Compose.CollectionChanged += OnOverrideRowsChanged;
+        // Provides/needs edits change the repo's ${sprig.*} reference surface — watch them (rows and their
+        // fields) so the owner can keep the token box's variable/capability lists live as you type.
+        Provides.CollectionChanged += OnProvidesChanged;
+        Needs.CollectionChanged += OnNeedsChanged;
     }
 
     /// <summary>Module name — the tab label, and the module's identity (unique within the repo).</summary>
@@ -464,6 +629,10 @@ public partial class ModuleEditTab : ObservableObject
     /// <summary>Amber ⚠: a path was entered but no such directory exists (informational — doesn't block save).</summary>
     public bool ShowPathMissing => Path.Trim().Length > 0 && !_owner.RepoDirExists(Path);
 
+    /// <summary>Map model: capabilities this module provides / needs.</summary>
+    public ObservableCollection<ProvideEditRow> Provides { get; } = [];
+    public ObservableCollection<NeedEditRow> Needs { get; } = [];
+
     public ObservableCollection<EnvFileEditRow> Env { get; } = [];
     public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
     public ObservableCollection<SetupCommandRow> Setup { get; } = [];
@@ -471,6 +640,12 @@ public partial class ModuleEditTab : ObservableObject
     /// <summary>Raised whenever this module's env/compose overrides change (rows added/removed/edited), so
     /// the owner can recompute the shared "referenced but not declared" input hint across every module.</summary>
     public event EventHandler? OverridesChanged;
+
+    /// <summary>Raised whenever this module's provides/needs surface changes — a capability/output/alias added,
+    /// removed, or renamed. The owner rebuilds the ${sprig.*} reference lists off this. Deliberately separate
+    /// from <see cref="OverridesChanged"/>: those are what the overlays react to, and rebuilding the reference
+    /// lists from that path would re-enter through the overlays and recurse.</summary>
+    public event EventHandler? CapabilitySurfaceChanged;
 
     // The file resolves under the module path, so moving the module re-runs every row's git-safety and
     // existence check, and its overrides may now name different inputs.
@@ -488,7 +663,7 @@ public partial class ModuleEditTab : ObservableObject
         f => _owner.EnvKeysFor(RepoEditViewModel.JoinPath(Path, f)),
         f => _owner.EnvExamplesFor(RepoEditViewModel.JoinPath(Path, f)),
         f => _owner.RepoFileExists(RepoEditViewModel.JoinPath(Path, f)),
-        _owner.SprigVariableNames);
+        _owner.SprigVariableNames, _owner.SprigNeededCapabilities);
 
     /// <summary>A fresh compose row wired to this module (removal, path-aware exists/read callbacks, and
     /// the add-time auto-detection that pre-fills a hand-added file's overrides).</summary>
@@ -497,8 +672,13 @@ public partial class ModuleEditTab : ObservableObject
         f => _owner.RepoFileExists(RepoEditViewModel.JoinPath(Path, f)),
         f => _owner.ReadRepoFile(RepoEditViewModel.JoinPath(Path, f)),
         _owner.DetectComposeOverrides,
-        _owner.SprigVariableNames);
+        _owner.SprigVariableNames, _owner.SprigNeededCapabilities);
 
+    // A fresh capability already carries its permanent port anchor — the user only names it and, optionally,
+    // adds derived shapes (each scoped to this capability's own outputs).
+    [RelayCommand] private void AddProvide() => Provides.Add(new ProvideEditRow(r => Provides.Remove(r)));
+
+    [RelayCommand] private void AddNeed() => Needs.Add(new NeedEditRow(r => Needs.Remove(r)));
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
     [RelayCommand] private void AddComposeFile() => Compose.Add(NewComposeRow());
     [RelayCommand] private void AddSetupCommand() => Setup.Add(new SetupCommandRow(r => Setup.Remove(r)));
@@ -525,12 +705,70 @@ public partial class ModuleEditTab : ObservableObject
     }
 
     void Bubble(object? sender, EventArgs e) => OverridesChanged?.Invoke(this, EventArgs.Empty);
+
+    // -- provides/needs surface tracking (for the live ${sprig.*} reference lists) ---------------------
+
+    void OnProvidesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (ProvideEditRow p in e.OldItems) UnsubscribeProvide(p);
+        if (e.NewItems is not null) foreach (ProvideEditRow p in e.NewItems) SubscribeProvide(p);
+        RaiseCapabilitySurfaceChanged();
+    }
+
+    // The port anchor never moves the reference surface (its name is the fixed "port"), so only the
+    // capability rename and the derived shapes are watched.
+    void SubscribeProvide(ProvideEditRow p)
+    {
+        p.PropertyChanged += OnProvideFieldChanged;          // Capability rename
+        p.Shapes.CollectionChanged += OnOutputsChanged;
+        foreach (var s in p.Shapes) s.PropertyChanged += OnOutputFieldChanged;
+    }
+
+    void UnsubscribeProvide(ProvideEditRow p)
+    {
+        p.PropertyChanged -= OnProvideFieldChanged;
+        p.Shapes.CollectionChanged -= OnOutputsChanged;
+        foreach (var s in p.Shapes) s.PropertyChanged -= OnOutputFieldChanged;
+    }
+
+    void OnOutputsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (INotifyPropertyChanged o in e.OldItems) o.PropertyChanged -= OnOutputFieldChanged;
+        if (e.NewItems is not null) foreach (INotifyPropertyChanged o in e.NewItems) o.PropertyChanged += OnOutputFieldChanged;
+        RaiseCapabilitySurfaceChanged();
+    }
+
+    void OnProvideFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProvideEditRow.Capability)) RaiseCapabilitySurfaceChanged();
+    }
+
+    // Only a rename of a port/shape moves the reference surface — a Head/Allowed/Template edit doesn't.
+    void OnOutputFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PortEditRow.Name)) RaiseCapabilitySurfaceChanged();
+    }
+
+    void OnNeedsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (NeedEditRow n in e.OldItems) n.PropertyChanged -= OnNeedFieldChanged;
+        if (e.NewItems is not null) foreach (NeedEditRow n in e.NewItems) n.PropertyChanged += OnNeedFieldChanged;
+        RaiseCapabilitySurfaceChanged();
+    }
+
+    void OnNeedFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(NeedEditRow.Capability) or nameof(NeedEditRow.As))
+            RaiseCapabilitySurfaceChanged();
+    }
+
+    void RaiseCapabilitySurfaceChanged() => CapabilitySurfaceChanged?.Invoke(this, EventArgs.Empty);
 }
 
 /// <summary>
 /// Editable view over a repo's <c>.sprig.json</c>. The repo <b>name</b> is intentionally not
-/// editable here — it is the registry/stack key, so renaming is a separate operation. Inputs are
-/// declared once (shared), then each <b>module</b> is a tab with its own env / compose / setup.
+/// editable here — it is the registry key, so renaming is a separate operation. Each <b>module</b> is a
+/// tab with its own provides / needs / env / compose / setup.
 /// </summary>
 public partial class RepoEditViewModel : ObservableObject
 {
@@ -547,26 +785,27 @@ public partial class RepoEditViewModel : ObservableObject
     RepoEditViewModel(string repoPath)
     {
         RepoPath = repoPath;
-        // Keep the ${sprig.*} variable list live: it feeds token autocomplete + validity, and inputs
-        // can be added/renamed in this same form.
-        Inputs.CollectionChanged += OnInputsChanged;
-        // A module's overrides are where ${sprig.*} inputs get referenced — track each module so the
-        // shared "referenced but not declared" quick-add list stays current across every module.
+        // A module's provides/needs are the ${sprig.*} reference surface — track each module so the token
+        // box's variable + capability lists stay current across every module as they're edited.
         Modules.CollectionChanged += OnModulesChanged;
         RefreshSprigVariableNames();
     }
 
     public string RepoPath { get; }
 
-    /// <summary>The variables a repo template may reference — <c>workspace</c> plus each declared
-    /// input name. Drives <c>${sprig.*}</c> autocomplete and the invalid-reference highlight; kept in
-    /// sync as inputs are edited above.</summary>
+    /// <summary>The variables a repo template may reference verbatim — <c>workspace</c> and each self-provided
+    /// <c>&lt;capability&gt;.&lt;output&gt;</c>. Drives <c>${sprig.*}</c> autocomplete and the invalid-reference
+    /// highlight; kept in sync as provides are edited.</summary>
     public ObservableCollection<string> SprigVariableNames { get; } = [];
 
-    /// <summary>The logical repo name — shown for context, not editable (it keys the registry/stacks).</summary>
-    public string Name { get; private set; } = "";
+    /// <summary>Open capability heads (needs + aliases): a dotted <c>${sprig.&lt;head&gt;.&lt;output&gt;}</c> is
+    /// valid whatever the output, because that output lives in another repo (resolved at map time). Feeds the
+    /// token box's capability-aware highlight so a valid need-reference isn't flagged; kept live as needs are
+    /// edited.</summary>
+    public ObservableCollection<string> SprigNeededCapabilities { get; } = [];
 
-    public ObservableCollection<InputEditRow> Inputs { get; } = [];
+    /// <summary>The logical repo name — shown for context, not editable (it keys the registry).</summary>
+    public string Name { get; private set; } = "";
 
     /// <summary>The repo's module tabs — each with its own env / compose / setup. Add/remove down to zero.</summary>
     public ObservableCollection<ModuleEditTab> Modules { get; } = [];
@@ -576,18 +815,6 @@ public partial class RepoEditViewModel : ObservableObject
 
     /// <summary>True when at least one module exists — gates the module detail vs. the empty state.</summary>
     public bool HasModules => Modules.Count > 0;
-
-    /// <summary>True when at least one input is declared — gates the inputs column header.</summary>
-    public bool HasInputs => Inputs.Count > 0;
-
-    /// <summary><c>${sprig.*}</c> names referenced by an env/compose override that aren't declared as
-    /// inputs yet — offered as one-click "quick add" chips so you can reference inputs as you go and
-    /// declare them after. These are exactly what blocks a save (see <see cref="Save"/>), so the list
-    /// empties to nothing before the config is valid.</summary>
-    public ObservableCollection<string> MissingInputRefs { get; } = [];
-
-    /// <summary>True when at least one referenced input is undeclared — gates the quick-add strip.</summary>
-    public bool HasMissingInputRefs => MissingInputRefs.Count > 0;
 
     [ObservableProperty] private string? _error;
 
@@ -604,19 +831,26 @@ public partial class RepoEditViewModel : ObservableObject
             foreach (var f in git.ListTrackedFiles(repoPath))
                 vm._tracked.Add(Normalize(f));
 
-        foreach (var i in c.Inputs)
-            vm.Inputs.Add(new InputEditRow(vm.RemoveInputRow)
-            {
-                Name = i.Name,
-                Example = i.Example ?? "",
-                Description = i.Description ?? "",
-                AllowedPorts = i.AllowedPorts ?? "",
-            });
-
         // One tab per module; each hydrates its own env/compose/setup rows (path-aware via the tab).
         foreach (var m in c.EffectiveModules)
         {
             var tab = new ModuleEditTab(vm, m.Name, m.Path);
+            foreach (var p in m.Provides)
+            {
+                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability };
+                // One permanent port; adopt the allowed set from whatever port the config declared (if any).
+                if (p.Ports.Count > 0) pr.Port.Allowed = p.Ports.First().Value.Allowed ?? "";
+                foreach (var (shapeName, template) in p.Shapes)
+                {
+                    var sr = pr.NewShape();
+                    sr.Name = shapeName;
+                    sr.Template = template;
+                    pr.Shapes.Add(sr);
+                }
+                tab.Provides.Add(pr);
+            }
+            foreach (var n in m.Needs)
+                tab.Needs.Add(new NeedEditRow(r => tab.Needs.Remove(r)) { Capability = n.Capability, As = n.As ?? "" });
             foreach (var e in m.Env)
             {
                 var row = tab.NewEnvRow();
@@ -643,7 +877,7 @@ public partial class RepoEditViewModel : ObservableObject
         }
         vm.SelectedModule = vm.Modules.FirstOrDefault();
 
-        vm.RefreshMissingInputRefs();
+        vm.RefreshSprigVariableNames();   // pick up self-provided outputs now that modules are loaded
         return vm;
     }
 
@@ -652,14 +886,20 @@ public partial class RepoEditViewModel : ObservableObject
     void OnModulesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.OldItems is not null)
-            foreach (ModuleEditTab t in e.OldItems) t.OverridesChanged -= OnModuleOverridesChanged;
+            foreach (ModuleEditTab t in e.OldItems)
+                t.CapabilitySurfaceChanged -= OnModuleCapabilitySurfaceChanged;
         if (e.NewItems is not null)
-            foreach (ModuleEditTab t in e.NewItems) t.OverridesChanged += OnModuleOverridesChanged;
+            foreach (ModuleEditTab t in e.NewItems)
+                t.CapabilitySurfaceChanged += OnModuleCapabilitySurfaceChanged;
         OnPropertyChanged(nameof(HasModules));
-        RefreshMissingInputRefs();
+        RefreshSprigVariableNames();   // a module added/removed changes the provides/needs surface
     }
 
-    void OnModuleOverridesChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
+    // A provide/need/output was added, removed, or renamed: rebuild the ${sprig.*} reference lists live so
+    // the token box greens a freshly-typed capability reference. Driven by the provides/needs rows, not by
+    // the overlays — RefreshSprigVariableNames only mutates the reference collections (guarded by equality),
+    // so the overlays' reaction to that never loops back here.
+    void OnModuleCapabilitySurfaceChanged(object? sender, EventArgs e) => RefreshSprigVariableNames();
 
     /// <summary>Set by <see cref="AddModule"/> so the view knows to focus the name box of the module it
     /// just added (and leaves it blank for the user to type). The view reads this once, as the new tab's
@@ -687,70 +927,58 @@ public partial class RepoEditViewModel : ObservableObject
             SelectedModule = Modules.Count == 0 ? null : Modules[Math.Min(idx, Modules.Count - 1)];
     }
 
-    void RemoveInputRow(InputEditRow r) => Inputs.Remove(r);
+    // -- ${sprig.*} reference surface (workspace + provides/needs) --------------
 
-    // -- ${sprig.*} variables (workspace + declared inputs) --------------------
-
-    void OnInputsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (e.OldItems is not null)
-            foreach (InputEditRow r in e.OldItems) r.PropertyChanged -= OnInputRowChanged;
-        if (e.NewItems is not null)
-            foreach (InputEditRow r in e.NewItems) r.PropertyChanged += OnInputRowChanged;
-        RefreshSprigVariableNames();
-        RefreshMissingInputRefs();   // declaring/removing an input changes what's still "missing"
-        OnPropertyChanged(nameof(HasInputs));
-    }
-
-    void OnInputRowChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(InputEditRow.Name)) return;
-        RefreshSprigVariableNames();
-        RefreshMissingInputRefs();
-    }
-
-    // -- referenced-but-undeclared inputs (quick add) --------------------------
-
-    /// <summary>Recompute which referenced <c>${sprig.*}</c> inputs aren't declared yet, off the live
-    /// edit state. Cheap and best-effort — a refresh must never interrupt editing.</summary>
-    void RefreshMissingInputRefs()
-    {
-        List<string> missing;
-        try { missing = ConfigReferences.UndeclaredReferences(Build()).ToList(); }
-        catch { return; }
-        if (MissingInputRefs.SequenceEqual(missing, StringComparer.Ordinal)) return;
-        MissingInputRefs.Clear();
-        foreach (var m in missing) MissingInputRefs.Add(m);
-        OnPropertyChanged(nameof(HasMissingInputRefs));
-    }
-
-    /// <summary>Declare a referenced-but-missing input from its quick-add chip (name pre-filled; fill
-    /// example/description later). No-op if it's already declared.</summary>
-    [RelayCommand]
-    private void QuickAddInput(string? name)
-    {
-        var n = (name ?? "").Trim();
-        if (n.Length == 0 || Inputs.Any(i => string.Equals(i.Name.Trim(), n, StringComparison.Ordinal)))
-            return;
-        Inputs.Add(new InputEditRow(RemoveInputRow) { Name = n });   // OnInputsChanged refreshes the rest
-    }
-
-    /// <summary>Rebuild the variable list in place (so bound editors update) from the current inputs.</summary>
+    /// <summary>Rebuild the reference surfaces in place (so bound editors update) from the current provides
+    /// and needs — the exact <see cref="SprigVariableNames"/> and the open
+    /// <see cref="SprigNeededCapabilities"/> heads.</summary>
     void RefreshSprigVariableNames()
     {
         var names = new List<string> { "workspace" };
-        foreach (var i in Inputs)
+        // Map model: self-provided outputs are referenceable as ${sprig.<capability>.<output>} — greened
+        // exactly. A need's outputs live in another repo, so they can't be enumerated: its capability/alias
+        // head goes into the open set instead, and the token box accepts any output under it.
+        var open = new List<string>();
+        foreach (var tab in Modules)
         {
-            var n = i.Name.Trim();
-            if (n.Length > 0 && !names.Contains(n)) names.Add(n);
+            foreach (var p in tab.Provides)
+            {
+                var cap = p.Capability.Trim();
+                if (cap.Length == 0) continue;
+                var port = $"{cap}.port";                    // the always-present anchor
+                if (!names.Contains(port)) names.Add(port);
+                foreach (var s in p.Shapes)
+                {
+                    var nm = s.Name.Trim();
+                    if (nm.Length == 0) continue;
+                    var full = $"{cap}.{nm}";
+                    if (!names.Contains(full)) names.Add(full);
+                }
+            }
+            foreach (var n in tab.Needs)
+            {
+                var cap = n.Capability.Trim();
+                if (cap.Length > 0 && !open.Contains(cap)) open.Add(cap);
+                var alias = n.As.Trim();
+                if (alias.Length > 0 && !open.Contains(alias)) open.Add(alias);
+            }
         }
-        SprigVariableNames.Clear();
-        foreach (var n in names) SprigVariableNames.Add(n);
+        // Only churn a collection when it actually changed — a Clear+Add of identical content still raises a
+        // reset that overlays react to, which (via OverridesChanged) would re-enter this method and recurse
+        // forever. The equality guard makes the notification cycle converge.
+        if (!SprigVariableNames.SequenceEqual(names, StringComparer.Ordinal))
+        {
+            SprigVariableNames.Clear();
+            foreach (var n in names) SprigVariableNames.Add(n);
+        }
+        if (!SprigNeededCapabilities.SequenceEqual(open, StringComparer.Ordinal))
+        {
+            SprigNeededCapabilities.Clear();
+            foreach (var c in open) SprigNeededCapabilities.Add(c);
+        }
     }
 
     // -- file/git helpers (shared by every module's rows) ----------------------
-
-    [RelayCommand] private void AddInput() => Inputs.Add(new InputEditRow(RemoveInputRow));
 
     /// <summary>True if a repo-relative path names a file that exists in the repo (cheap, best-effort).</summary>
     public bool RepoFileExists(string file)
@@ -772,28 +1000,16 @@ public partial class RepoEditViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Run add-time compose detection over a hand-added compose file (the same detection the initial add
-    /// runs), so manually adding another compose file isn't a blank slate. Declares any port inputs it
-    /// proposes — skipping names already declared — and returns the value overrides for the row to seed
-    /// its overlay with. New inputs land in the shared <see cref="Inputs"/> list, immediately becoming
-    /// known <c>${sprig.*}</c> variables so the seeded overrides don't render as undeclared.
+    /// Seed a hand-added compose file's overrides. The stack-era auto-detection proposed
+    /// <c>${sprig.&lt;input&gt;}</c> port rewrites plus matching input declarations — a shape the map model no
+    /// longer has (a provided port capability is what a compose port should become). Until a map-model
+    /// in-editor compose auto-detection exists, a hand-added compose file starts as a blank slate; author its
+    /// provides/needs (and reference them in the overlay) by hand. Signature kept for the row that calls it.
     /// </summary>
     public IReadOnlyList<ComposeOverride> DetectComposeOverrides(string composeText, string fileLabel)
     {
-        var detection = InitInspector.DetectComposeInText(composeText, fileLabel, SprigVariableNames);
-        foreach (var input in detection.Inputs)
-        {
-            if (Inputs.Any(i => string.Equals(i.Name.Trim(), input.Name, StringComparison.Ordinal)))
-                continue;
-            Inputs.Add(new InputEditRow(RemoveInputRow)
-            {
-                Name = input.Name,
-                Example = input.Example ?? "",
-                Description = input.Description ?? "",
-                AllowedPorts = input.AllowedPorts ?? "",
-            });
-        }
-        return detection.Overrides;
+        _ = (composeText, fileLabel);
+        return [];   // map-model compose auto-detection is a follow-up (see docs/graph-turn-followup-plan.md)
     }
 
     /// <summary>Read a repo-relative file's text, or <c>""</c> if it's missing/unreadable (best-effort).</summary>
@@ -888,23 +1104,29 @@ public partial class RepoEditViewModel : ObservableObject
     internal static string JoinPath(string basePath, string file) =>
         string.IsNullOrEmpty(basePath) ? file : $"{basePath.Replace('\\', '/').TrimEnd('/')}/{file}";
 
-    /// <summary>Reconstruct a full config from the edited fields — inputs (shared) plus one module per
-    /// tab, each with its env / compose / setup. Zero tabs → a config that declares no modules.</summary>
+    /// <summary>Reconstruct a full config from the edited fields — one module per tab, each with its
+    /// provides / needs / env / compose / setup. Zero tabs → a config that declares no modules.</summary>
     public SprigRepoConfig Build() => new()
     {
         Schema = _schema,
         Name = Name,
-        Inputs = Inputs.Select(i => new InputDeclaration
-        {
-            Name = i.Name.Trim(),
-            Example = Blank(i.Example),
-            Description = Blank(i.Description),
-            AllowedPorts = Blank(i.AllowedPorts),
-        }).ToList(),
         Modules = Modules.Select(t => new ModuleDeclaration
         {
             Name = t.Name.Trim(),
             Path = t.Path.Trim(),
+            Provides = t.Provides.Select(p => new ProvidedCapability
+            {
+                Capability = p.Capability.Trim(),
+                // Exactly one port, always named "port" — the permanent anchor.
+                Ports = new Dictionary<string, PortSpec>(StringComparer.Ordinal)
+                    { ["port"] = PortSpec.Constrained(Blank(p.Port.Allowed)) },
+                Shapes = p.Shapes
+                    .Where(s => s.Name.Trim().Length > 0)
+                    .ToDictionary(s => s.Name.Trim(), s => s.Template.Trim(), StringComparer.Ordinal),
+            }).ToList(),
+            Needs = t.Needs
+                .Where(n => n.Capability.Trim().Length > 0)
+                .Select(n => new Need { Capability = n.Capability.Trim(), As = Blank(n.As) }).ToList(),
             Env = t.Env.Select(e =>
             {
                 var templates = e.Templates.Select(x => x.Path.Trim()).Where(p => p.Length > 0).ToList();

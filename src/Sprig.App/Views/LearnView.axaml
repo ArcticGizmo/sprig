@@ -24,7 +24,7 @@
                         <TextBlock Text="Show me a working setup" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{StaticResource TitleBrush}" />
                         <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{StaticResource FgBrush}"
-                                   Text="Spin up a complete throwaway sample — repos, a stack and a workspace already wired together — and click around to see how the pieces fit. Deleted when you leave." />
+                                   Text="Spin up a complete throwaway sample — repos, a map and a workspace already composed together — and click around to see how the pieces fit. Deleted when you leave." />
                     </StackPanel>
                     <Button Grid.Column="1" Content="Show me  →" Command="{Binding ShowWorkingSetupCommand}"
                             VerticalAlignment="Center" Padding="16,8"

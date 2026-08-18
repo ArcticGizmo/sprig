@@ -7,6 +7,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### The Graph Turn — self-describing repos + maps (replaces stacks)
+
+sprig's model changed. A repo no longer declares only the *inputs* it consumes for a *stack* to
+supply; instead a repo — and each module within it — **describes itself**: what it **provides**
+(its own ports, and URLs/values built from them) and what it **needs** from others. Stacks are gone,
+replaced by **maps**: an open graph of repos you take slices of, storing only the *deviations* from
+automatic wiring. Wiring is **derived by matching capability name**, so there's no central place that
+binds values in. Fresh **schema v1** for the repo config and the map; there is no migration from the
+stack era — recreate stack-era workspaces by hand.
+
+### Added
+- **Self-describing repos (`provides`/`needs`)** — per module, a repo declares the capabilities it
+  offers (`provides`: named `outputs` that are auto-allocated ports or strings derived from them) and
+  the capabilities it consumes (`needs`, with an optional local `as` alias). Referenced everywhere as
+  `${sprig.<capability>.<output>}`. Authored in the app's repo editor; `sprig init` infers provides
+  from detected ports. See `docs/config-reference.md`.
+- **Maps** — `maps/<name>.json` in the central store composes a slice of repos. It records only the
+  deviations: `wiring` (which provider wins when several could) and `defaults` (a literal fallback for
+  a need whose provider you left out), plus an optional `maxSlots` pool ceiling. Everything else is
+  derived from the repos' own provides/needs at checkout, so editing a map never invalidates a live
+  workspace. Multiple maps are first-class. Author them in the app (Maps page) or `sprig map import`;
+  `sprig map ls|show`.
+- **Derived wiring (nearest-wins)** — a `need` binds to a `provide` of the same capability name: a
+  sibling module first, then a single provider across the slice. More than one provider is an
+  ambiguity the map resolves; none is a gap a map default fills, else an unmet need stops the checkout
+  with the gap list. A monorepo is its own local map — siblings wire locally, unmet needs bubble up.
+- **Map-backed pooled workspaces** — `sprig pool checkout <map>` takes a bounded, reusable
+  `<map>-<n>` workspace (label it; reuse **keep**/**fresh**); `sprig pool release` hands it back;
+  `sprig pool status <map>` shows the pool. The ceiling is the map's `maxSlots` (default 5). Release
+  keeps everything on disk so a re-checkout is instant.
+- **`sprig ws refresh`** — resync a workspace's repos to their base branch, keeping installed deps (a
+  git reset, not a disk wipe). Refuses to discard un-pushed commits unless `--force`.
+- **Degraded workspaces** — a workspace whose setup failed is flagged in `pool status` and at
+  checkout, rather than being handed over as if healthy.
+
+### Changed
+- **`sprig create` is map-based** — `--map <name>` (with `--only`/`--without` narrowing the slice) or
+  `--repo <path>` for a lone repo; the interactive wizard picks a map then its repos.
+- **Fresh schema v1** — the repo config and map both start at schema 1; stack `inputs` and the
+  schema-≤2 flat-config migration are gone. A single-app repo may still write `env`/`compose`/`setup`
+  at the top level (folded into an implicit `app` module).
+- **`sprig ws reset` → `sprig ws restart`** — the docker-infra bounce was renamed; `ws reset` stays a
+  deprecated alias for one release.
+- **Release stops, no longer tears down** — releasing a workspace runs `docker compose stop` instead
+  of `down`: containers are halted (freeing CPU/RAM) but networks and volumes stay, so reclaiming it
+  as-is only restarts the containers. (Teardown is still a separate, explicit action.)
+
+### Removed
+- **Stacks** — the `sprig stack` command, the stack builder/wiring canvas in the app, stack
+  definitions, shared ports, and repo `inputs` are all gone, superseded by maps + provides/needs.
+
+### Deprecated
+- **`sprig ws create`** — favour `sprig pool checkout`. It still works and nudges toward the pooled flow.
+
 ---
 
 ## [v0.6.2] - 2026-08-09

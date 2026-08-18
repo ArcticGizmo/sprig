@@ -55,10 +55,11 @@ public class TourScriptTests
     {
         var marks = TourScript.Marks(new Navigator(), includeInfra: false);
 
-        // Repo detail → point at the Stacks nav → the stack detail → point at the Workspaces nav → workspace.
+        // Repo detail → point at the Maps nav → the map-composes beat (whole page) → point at the Workspaces
+        // nav → workspace.
         Assert.Equal(Anchors.RepoDetail, marks[2].Anchor);
-        Assert.Equal(Anchors.Nav("Stacks"), marks[3].Anchor);
-        Assert.Equal(Anchors.StackDetail, marks[4].Anchor);
+        Assert.Equal(Anchors.Nav("Maps"), marks[3].Anchor);
+        Assert.Null(marks[4].Anchor);
         Assert.Equal(Anchors.Nav("Workspaces"), marks[5].Anchor);
         Assert.Equal(Anchors.WorkspaceDetail, marks[6].Anchor);
     }

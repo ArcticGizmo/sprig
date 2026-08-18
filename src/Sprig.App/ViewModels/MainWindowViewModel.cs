@@ -17,7 +17,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>Navigation + coachmark preconditions for scripts built at runtime.</summary>
     readonly Navigator _nav;
 
-    /// <summary>The navigable pages, in workflow order: Home, then Repos, Stacks, Workspaces.</summary>
+    /// <summary>The navigable pages, in workflow order: Home, then Repos, Maps, Workspaces.</summary>
     public IReadOnlyList<PageViewModel> Pages { get; }
 
     /// <summary>Left-nav rows: page entries interleaved with section headers ("Set up" / "Run").</summary>
@@ -104,13 +104,13 @@ public partial class MainWindowViewModel : ViewModelBase
         var nav = new Navigator();
         _nav = nav;
         var repos = new ReposViewModel(services);
-        var stacks = new StacksViewModel(services, nav);
+        var maps = new MapsViewModel(services);
         var workspaces = new WorkspacesViewModel(services, nav);
         var home = new HomeViewModel(services, nav);
         // Settings is built here (rather than lower down) so the navigator can reach it — coachmark
         // preconditions navigate to it.
         Settings = new SettingsViewModel(services);
-        nav.Configure(Navigate, home, repos, stacks, workspaces, Settings);
+        nav.Configure(Navigate, home, repos, maps, workspaces, Settings);
 
         Guide = new SetupGuideViewModel(services, nav);
         nav.SetGuideLauncher(Guide.Start);
@@ -122,13 +122,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Settings + About are navigable (so they get active-state highlighting) but live in the
         // bottom nav slot rather than the workflow list, so they're not in NavItems.
-        Pages = [home, repos, stacks, workspaces, Learn, Settings, About];
+        Pages = [home, repos, maps, workspaces, Learn, Settings, About];
         NavItems =
         [
             home,
             new NavHeaderViewModel("Set up"),
             repos,
-            stacks,
+            maps,
             new NavHeaderViewModel("Run"),
             workspaces,
             new NavHeaderViewModel("Learn"),

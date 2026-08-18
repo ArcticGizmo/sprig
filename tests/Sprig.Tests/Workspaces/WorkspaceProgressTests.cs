@@ -16,18 +16,18 @@ public class WorkspaceProgressTests
 {
     // Zero-input, no-compose, no-setup repo — the ad-hoc single-repo path stands it up.
     const string PlainConfig = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ] }
         """;
 
     const string ConfigWithSetup = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "setup": [ "npm ci" ] }
         """;
 
     const string ConfigWithTwoSetup = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "setup": [ "npm ci", "npm run build" ] }
         """;
@@ -56,7 +56,7 @@ public class WorkspaceProgressTests
         Seed(repo, PlainConfig);
         var svc = Build(store);
 
-        var plan = svc.PlanCreate(svc.ResolveSingleRepo(repo.Path), "feat-a");
+        var plan = svc.PlanCreateFromMap(svc.ResolveSingleRepo(repo.Path), "feat-a");
 
         // No compose in the config and no setup runner → just ports, worktree, env, record.
         Assert.Equal(
@@ -113,7 +113,7 @@ public class WorkspaceProgressTests
         Seed(repo, ConfigWithTwoSetup);
         var svc = Build(store, new SetupRunner(new RecordingProcessRunner()));
 
-        var plan = svc.PlanCreate(svc.ResolveSingleRepo(repo.Path), "feat-a");
+        var plan = svc.PlanCreateFromMap(svc.ResolveSingleRepo(repo.Path), "feat-a");
 
         // Parent row, then one indented sub-row per command labelled with the command itself.
         Assert.Contains(plan, s => s.Id == "vue-app:setup" && !s.SubStep);

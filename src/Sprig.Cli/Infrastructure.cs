@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Sprig.Core.Git;
+using Sprig.Core.Maps;
+using Sprig.Core.Pools;
 using Sprig.Core.Settings;
 using Sprig.Core.Stacks;
 using Sprig.Core.Store;
@@ -18,8 +20,9 @@ public sealed record CliContext(
     WorkspaceService Workspaces,
     WorkspaceReconciler Reconciler,
     RepoRegistryStore Repos,
-    StackStore Stacks,
-    StackResolver Resolver,
+    MapStore Maps,
+    MapResolver MapResolver,
+    MapPoolService MapPool,
     ISettingsStore Settings,
     IGitService Git,
     IAnsiConsole Ansi);

@@ -67,9 +67,9 @@ public partial class SetupGuideViewModel : ViewModelBase
 
     async Task RefreshAsync()
     {
-        var (repos, stacks, workspaces) = await AppServices.RunAsync(() =>
-            (_services.Repos.List().Count, _services.Stacks.List().Count, _services.Workspaces.List().Count));
-        State = new SetupState(repos, stacks, workspaces);
+        var (repos, maps, workspaces) = await AppServices.RunAsync(() =>
+            (_services.Repos.List().Count, _services.Maps.List().Count, _services.Workspaces.List().Count));
+        State = new SetupState(repos, maps, workspaces);
     }
 
     /// <summary>Do the current step: open its flow, or close the strip once everything's running.</summary>
@@ -79,19 +79,19 @@ public partial class SetupGuideViewModel : ViewModelBase
         switch (State.Stage)
         {
             case SetupStage.Empty: _nav.AddRepo(); break;
-            case SetupStage.ReposReady: _nav.NewStack(); break;
-            case SetupStage.StackReady: _nav.NewWorkspace(); break;
+            case SetupStage.ReposReady: _nav.NewMap(); break;
+            case SetupStage.MapReady: _nav.NewWorkspace(); break;
             default: IsActive = false; break;
         }
     }
 
-    /// <summary>Revisit the previous step's flow — e.g. add another repo while wiring a stack.</summary>
+    /// <summary>Revisit the previous step's flow — e.g. add another repo while composing a map.</summary>
     [RelayCommand]
     private void Back()
     {
         switch (StepNumber)
         {
-            case 3: _nav.NewStack(); break;
+            case 3: _nav.NewMap(); break;
             case 2: _nav.AddRepo(); break;
         }
     }

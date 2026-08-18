@@ -34,6 +34,57 @@ public class GitServiceTests
     }
 
     [Fact]
+    public void ResolveDefaultBase_prefers_upstream_over_origin()
+    {
+        using var repo = new TempGitRepo();
+        var git = NewService();
+
+        // Two bare remotes as siblings of the repo (cleaned up with it): 'origin' is your fork, 'upstream'
+        // the canonical repo you branch from. Both carry main; the base should resolve to upstream's.
+        var upstream = Path.Combine(repo.Root, "upstream.git");
+        var origin = Path.Combine(repo.Root, "origin.git");
+        var runner = new ProcessRunner();
+        runner.Run("git", ["init", "--bare", upstream], repo.Root).EnsureSuccess();
+        runner.Run("git", ["init", "--bare", origin], repo.Root).EnsureSuccess();
+        repo.Git("remote", "add", "upstream", upstream);
+        repo.Git("remote", "add", "origin", origin);
+        repo.Git("push", "upstream", "main");
+        repo.Git("push", "origin", "main");
+        repo.Git("fetch", "--all");
+
+        Assert.Equal("upstream/main", git.ResolveDefaultBase(repo.Path));
+
+        // And the candidate list surfaces both remotes' branches, each with a commit date.
+        var candidates = git.ListStartPointCandidates(repo.Path);
+        Assert.Contains(candidates, c => c.Name == "upstream/main");
+        Assert.Contains(candidates, c => c.Name == "origin/main");
+        Assert.All(candidates, c => Assert.NotNull(c.LastCommit));
+    }
+
+    [Fact]
+    public void ListCommitGraph_returns_commits_with_parents_and_ref_labels()
+    {
+        using var repo = new TempGitRepo();
+        var git = NewService();
+        // Seed is on main; add a feature branch with a commit on top.
+        repo.Git("checkout", "-b", "feature");
+        File.WriteAllText(Path.Combine(repo.Path, "f.txt"), "x");
+        repo.Git("add", "-A");
+        repo.Git("-c", "user.email=t@sprig", "-c", "user.name=sprig", "commit", "-m", "feature work");
+
+        var graph = git.ListCommitGraph(repo.Path, 50);
+
+        Assert.NotEmpty(graph);
+        var tip = graph.First(c => c.Refs.Contains("feature"));
+        Assert.Equal("feature work", tip.Subject);
+        Assert.Single(tip.Parents);   // one parent — the seed
+        Assert.NotNull(tip.When);
+        // The seed commit is a root (no parents) and still carries the 'main' ref label.
+        var seed = graph.Single(c => c.Parents.Count == 0);
+        Assert.Contains("main", seed.Refs);
+    }
+
+    [Fact]
     public void IsIgnored_applies_gitignore_rules_even_for_paths_that_do_not_exist()
     {
         using var repo = new TempGitRepo();

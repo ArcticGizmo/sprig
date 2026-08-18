@@ -1,24 +1,30 @@
 {
-  // The sample web app needs its own port AND a URL for the API. Note that it does not
-  // know the API's port — it asks for a finished `apiUrl`, and the stack composes one.
-  "schema": 3,
+  // The sample web app PROVIDES its own `web` port, and NEEDS the `api` capability — which
+  // sample-api provides. It doesn't know the API's port; it references `${sprig.api.url}`,
+  // the finished URL the provider builds. The map wires need→provide by capability name.
+  "schema": 1,
   "name": "sample-web",
-  "inputs": [
-    { "name": "port", "example": "3000", "description": "Port this web app listens on" },
-    { "name": "apiUrl", "example": "http://localhost:5000", "description": "Where to reach the sample API" }
-  ],
-  // One slice at the repo root, so one module, "app". Inputs above are shared across modules.
+  // One slice at the repo root, so one module, "app".
   "modules": [
     {
       "name": "app",
       "path": "",
+      "provides": [
+        {
+          "capability": "web",
+          "ports": { "port": true }
+        }
+      ],
+      "needs": [
+        { "capability": "api" }
+      ],
       "env": [
         {
           "file": ".env",
           "templates": [".env.template"],
           "set": {
-            "PORT": "${sprig.port}",
-            "VITE_API_URL": "${sprig.apiUrl}"
+            "PORT": "${sprig.web.port}",
+            "VITE_API_URL": "${sprig.api.url}"
           }
         }
       ]

@@ -28,13 +28,13 @@ public class SetupValidationTests
     public void Setup_round_trips_through_the_loader()
     {
         var json = """
-            { "schema": 2, "name": "r", "setup": ["npm ci", "dotnet restore"] }
+            { "schema": 1, "name": "r", "setup": ["npm ci", "dotnet restore"] }
             """;
 
         var config = SprigConfigLoader.Parse(json);
 
-        // Migrated to schema 3: the flat setup is folded into the default module.
-        Assert.Equal(new[] { "npm ci", "dotnet restore" }, Assert.Single(config.Modules).Setup);
+        // No migration: the flat setup stays top-level, surfaced as the implicit "app" module.
+        Assert.Equal(new[] { "npm ci", "dotnet restore" }, Assert.Single(config.EffectiveModules).Setup);
         Assert.True(SprigConfigValidator.Validate(config).IsValid);
     }
 }

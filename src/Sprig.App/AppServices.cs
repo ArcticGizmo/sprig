@@ -3,6 +3,8 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Init;
+using Sprig.Core.Maps;
+using Sprig.Core.Pools;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
@@ -23,10 +25,16 @@ public sealed class AppServices
     public IGitService Git { get; }
     public IDockerService Docker { get; }
     public WorkspaceService Workspaces { get; }
+
     public WorkspaceReconciler Reconciler { get; }
     public RepoRegistryStore Repos { get; }
-    public StackStore Stacks { get; }
-    public StackResolver StackResolver { get; }
+
+    /// <summary>The map model (the Graph Turn): definitions + the resolver that turns a map + selection into
+    /// a checkout, and the pool lifecycle over a map's <c>MaxSlots</c> ceiling (checkout / release / status).</summary>
+    public MapStore Maps { get; }
+    public MapResolver MapResolver { get; }
+    public MapPoolService MapPool { get; }
+
     public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
     public IPortStore Ports { get; }
@@ -60,10 +68,11 @@ public sealed class AppServices
             new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner));
         Reconciler = new WorkspaceReconciler(Git, instances);
         Repos = new RepoRegistryStore(Paths);
-        Stacks = new StackStore(Paths, Repos, instances);
-        StackResolver = new StackResolver(Repos, Stacks, Git);
+        Maps = new MapStore(Paths, Repos);
+        MapResolver = new MapResolver(Repos, Maps, Git, Paths);
+        MapPool = new MapPoolService(Maps, instances, MapResolver, Workspaces, Paths);
         Init = new InitInspector(Git);
-        Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Stacks, StackResolver, Workspaces);
+        Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Maps, MapResolver, Workspaces);
     }
 
     /// <summary>

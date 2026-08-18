@@ -16,24 +16,34 @@ public sealed class EnvClobberService
     public const string BeginMarker = "# >>> sprig >>>";
     public const string EndMarker = "# <<< sprig <<<";
 
-    /// <summary>Apply every module's env overrides; returns the worktree file paths written. Each
-    /// module's files (and its template seeds) resolve under the module's path.</summary>
+    /// <summary>Apply every module's env overrides against one shared <paramref name="scope"/> (the stack
+    /// model, where inputs are repo-level). Returns the worktree file paths written.</summary>
     public IReadOnlyList<string> Apply(SprigRepoConfig config, string sourceRepo, string worktree, IVariableSource scope)
     {
         var written = new List<string>();
         foreach (var module in config.EffectiveModules)
-            foreach (var over in module.Env)
-            {
-                var resolved = Resolve(over, scope);
-                var block = RenderBlock(resolved);
+            written.AddRange(ApplyModule(module, sourceRepo, worktree, scope));
+        return written;
+    }
 
-                var seed = SeedFor(over, sourceRepo, module.Path);
+    /// <summary>Apply a single module's env overrides against <paramref name="scope"/> — the map model, where
+    /// each module resolves against its own capability scope. Files and template seeds resolve under the
+    /// module's path.</summary>
+    public IReadOnlyList<string> ApplyModule(ModuleDeclaration module, string sourceRepo, string worktree, IVariableSource scope)
+    {
+        var written = new List<string>();
+        foreach (var over in module.Env)
+        {
+            var resolved = Resolve(over, scope);
+            var block = RenderBlock(resolved);
 
-                var target = Path.Combine(worktree, module.Path, over.File);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.WriteAllText(target, Wrap(seed, block));
-                written.Add(target);
-            }
+            var seed = SeedFor(over, sourceRepo, module.Path);
+
+            var target = Path.Combine(worktree, module.Path, over.File);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllText(target, Wrap(seed, block));
+            written.Add(target);
+        }
         return written;
     }
 
@@ -50,41 +60,49 @@ public sealed class EnvClobberService
     }
 
     /// <summary>
-    /// The seed content for an override's target file, preferring the developer's real values. The
-    /// target file's own content in the source repo wins whenever it exists and isn't empty — on a
-    /// working machine the (gitignored) <c>.env</c> holds the actual values you want carried into the
-    /// worktree. Only when that file is absent or empty do the declared <see cref="EnvOverride.Templates"/>
-    /// apply, their (block-stripped) contents concatenated in order (missing/empty ones skipped). Empty
-    /// when nothing is available.
+    /// The seed content for an override's target file: the real target file merged with the declared
+    /// <see cref="EnvOverride.Templates"/>, in <b>precedence order</b> — the target file first (on a
+    /// working machine its gitignored copy holds the actual values you want carried into the worktree),
+    /// then each template in turn. Every source is block-stripped; a key is taken from the first source
+    /// that defines it, so a lower-precedence source only contributes keys not already present — a
+    /// template never overrides a value the target file (or an earlier template) already gave. Missing
+    /// sources are skipped; non-assignment lines (comments/blanks) are kept in order. Empty when nothing
+    /// is available. (The sprig override block still wraps the result, so anything sprig itself sets in
+    /// <see cref="EnvOverride.Set"/> wins over every seeded value regardless.)
     /// </summary>
     static string SeedFor(EnvOverride over, string sourceRepo, string basePath)
     {
-        // The real target file's own values take priority — a committed template is only a stand-in
-        // for when that gitignored file isn't on this machine, never a replacement for it.
-        var sourceFile = Path.Combine(sourceRepo, basePath, over.File);
-        if (File.Exists(sourceFile))
-        {
-            var own = StripBlocks(File.ReadAllText(sourceFile));
-            if (own.Trim().Length > 0) return own;
-        }
-
+        // Highest precedence first: the real target file, then each declared template in order.
+        var sources = new List<string> { over.File };
         if (over.Templates is { Count: > 0 } templates)
-        {
-            var sb = new StringBuilder();
-            foreach (var rel in templates)
-            {
-                if (string.IsNullOrWhiteSpace(rel)) continue;
-                var abs = Path.Combine(sourceRepo, basePath, rel);
-                if (!File.Exists(abs)) continue;
-                var text = StripBlocks(File.ReadAllText(abs));
-                if (text.Length == 0) continue;
-                sb.Append(text);
-                if (!text.EndsWith('\n')) sb.Append('\n');
-            }
-            return sb.ToString();
-        }
+            sources.AddRange(templates.Where(t => !string.IsNullOrWhiteSpace(t)));
 
-        return "";
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var kept = new List<string>();
+        foreach (var rel in sources)
+        {
+            var abs = Path.Combine(sourceRepo, basePath, rel);
+            if (!File.Exists(abs)) continue;
+            foreach (var line in StripBlocks(File.ReadAllText(abs)).Replace("\r\n", "\n").Split('\n'))
+            {
+                // An assignment whose key a higher-precedence source already provided is dropped; unique
+                // keys, comments and blanks are kept in order.
+                if (EnvKey(line) is { } key && !seen.Add(key)) continue;
+                kept.Add(line);
+            }
+        }
+        return string.Join('\n', kept);
+    }
+
+    /// <summary>The key of an env assignment line (leading/trailing whitespace ignored), or null when the
+    /// line is a comment or blank / carries no <c>KEY=</c>. Mirrors the tolerant parse the rest of the
+    /// codebase uses, so dedup keys line up with how these files are read elsewhere.</summary>
+    internal static string? EnvKey(string line)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.Length == 0 || trimmed.StartsWith('#')) return null;
+        var eq = trimmed.IndexOf('=');
+        return eq <= 0 ? null : trimmed[..eq].Trim();
     }
 
     static SortedDictionary<string, string> Resolve(EnvOverride over, IVariableSource scope)

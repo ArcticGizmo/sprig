@@ -195,8 +195,10 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>A repo is selected, its config loaded cleanly, and we're not already editing.</summary>
     public bool CanEdit => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
 
-    /// <summary>A zero-input repo can stand up on its own (the ad-hoc create path) — no stack needed.</summary>
-    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true, HasInputs: false } && !IsEditing;
+    /// <summary>A self-describing repo can stand up on its own (the ad-hoc create path) — no map needed.
+    /// Requires a VALID config: an invalid one (e.g. an old-schema import) would only fail the checkout, so
+    /// the button is disabled and the read-only view shows a fix-or-delete warning instead.</summary>
+    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true, IsValid: true } && !IsEditing;
 
     /// <summary>True while the inline "name this workspace" prompt of the fast path is open.</summary>
     [ObservableProperty] private bool _isIsolating;
@@ -259,7 +261,8 @@ public partial class ReposViewModel : PageViewModel
     [RelayCommand]
     private void CancelIsolate() => IsIsolating = false;
 
-    /// <summary>Create an isolated workspace directly from this repo — no stack (ad-hoc engine path).</summary>
+    /// <summary>Create an isolated workspace directly from this repo — no map, just the one repo wired by its
+    /// own provides/needs (the "isolate one repo" path).</summary>
     [RelayCommand]
     private async Task ConfirmIsolate()
     {
@@ -269,12 +272,12 @@ public partial class ReposViewModel : PageViewModel
         if (name.Length == 0) { IsolateError = "enter a workspace name"; return; }
 
         // Resolve + plan up front so pre-flight problems stay in the inline isolate form.
-        ResolvedStack resolved;
+        IReadOnlyList<ResolvedRepo> repos;
         IReadOnlyList<WorkspaceStep> plan;
         try
         {
-            resolved = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo.Path));
-            plan = Services.Workspaces.PlanCreate(resolved, name);
+            repos = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo.Path));
+            plan = Services.Workspaces.PlanCreateFromMap(repos, name);
         }
         catch (Exception ex) { IsolateError = ex.Message; return; }
 
@@ -287,7 +290,7 @@ public partial class ReposViewModel : PageViewModel
         try
         {
             var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(resolved, name, progress));
+            var record = await AppServices.RunAsync(() => Services.Workspaces.CreateFromMap(name, null, repos, progress: progress));
             var setupFail = SetupWarning.Summarize(record);
             Status = setupFail is null
                 ? $"created workspace '{name}' — open the Workspaces tab to run or remove it"
@@ -485,10 +488,11 @@ public partial class ReposViewModel : PageViewModel
                 if (runInit)
                 {
                     // Given explicit module definitions, scan each one's path; otherwise a single default
-                    // module scanning the whole repo.
+                    // module scanning the whole repo. Map-native: the proposal is provides/needs, not stack
+                    // inputs — the editor opens straight onto the capability surface.
                     var proposal = moduleSpecs is { Count: > 0 }
-                        ? Services.Init.Inspect(path, moduleSpecs)
-                        : Services.Init.Inspect(path);
+                        ? Services.Init.InspectMap(path, moduleSpecs)
+                        : Services.Init.InspectMap(path);
                     ConfigJson.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
                     // Keep the proposal's advisory notes. They explain which env keys and compose ports
                     // became inputs and why — the exact question someone asks on landing in the editor

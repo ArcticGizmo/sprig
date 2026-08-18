@@ -6,7 +6,7 @@ namespace Sprig.App.ViewModels;
 
 /// <summary>
 /// App-level navigation between the top-level pages, plus "go and start the action" shortcuts so an
-/// empty state can be a one-click fix (e.g. Stacks with no repos → jump to Repos and open Add).
+/// empty state can be a one-click fix (e.g. Maps with no repos → jump to Repos and open Add).
 /// Wired up by <see cref="MainWindowViewModel"/> once every page exists.
 /// </summary>
 public sealed class Navigator
@@ -17,18 +17,18 @@ public sealed class Navigator
     Action<Coach.Guide> _enterGuide = static _ => { };
     PageViewModel? _home;
     ReposViewModel? _repos;
-    StacksViewModel? _stacks;
+    MapsViewModel? _maps;
     WorkspacesViewModel? _workspaces;
     PageViewModel? _settings;
 
     public void Configure(Action<PageViewModel> navigate, PageViewModel home,
-        ReposViewModel repos, StacksViewModel stacks, WorkspacesViewModel workspaces,
+        ReposViewModel repos, MapsViewModel maps, WorkspacesViewModel workspaces,
         PageViewModel? settings = null)
     {
         _navigate = navigate;
         _home = home;
         _repos = repos;
-        _stacks = stacks;
+        _maps = maps;
         _workspaces = workspaces;
         _settings = settings;
     }
@@ -116,56 +116,17 @@ public sealed class Navigator
 
     public void GoHome() => Go(_home);
     public void GoToRepos() => Go(_repos);
-    public void GoToStacks() => Go(_stacks);
+    public void GoToMaps() => Go(_maps);
     public void GoToWorkspaces() => Go(_workspaces);
     public void GoToSettings() => Go(_settings);
 
-    /// <summary>
-    /// Open the stack builder with every registered repo selected and auto-wired — the state in which the
-    /// canvas has nodes, ports and cables to point at. A coachmark precondition, not a user-facing action.
-    /// </summary>
-    public Task OpenStackBuilderWired()
+    /// <summary>Show the Maps page with no editor open, so the "New map" button is on screen.</summary>
+    public void ShowMapsFresh()
     {
-        if (_stacks is null) return Task.CompletedTask;
-
-        Go(_stacks);
-        if (_stacks.NewStackCommand.CanExecute(null)) _stacks.NewStackCommand.Execute(null);
-        foreach (var choice in _stacks.RepoChoices) choice.IsSelected = true;
-        if (_stacks.AutoWireCommand.CanExecute(null)) _stacks.AutoWireCommand.Execute(null);
-
-        return Task.CompletedTask;
-    }
-
-    /// <summary>Show the Stacks page with no builder open, so the "New stack" button is on screen.</summary>
-    public void ShowStacksFresh()
-    {
-        if (_stacks is null) return;
-        Go(_stacks);
-        if (_stacks.IsCreating && _stacks.CancelCreateCommand.CanExecute(null))
-            _stacks.CancelCreateCommand.Execute(null);
-    }
-
-    /// <summary>
-    /// Open (or keep open) the stack builder over every registered repo, named and auto-wired, so a guide
-    /// can point at the wiring. Idempotent: if the builder is already open it isn't reset, so this can be a
-    /// precondition on several consecutive steps without wiping the user's progress.
-    /// </summary>
-    public void PrepareStackBuilder(string name)
-    {
-        if (_stacks is null) return;
-        Go(_stacks);
-        if (!_stacks.IsCreating && _stacks.NewStackCommand.CanExecute(null))
-            _stacks.NewStackCommand.Execute(null);
-        _stacks.NewName = name;
-        foreach (var choice in _stacks.RepoChoices) choice.IsSelected = true;  // selection auto-wires
-        if (_stacks.AutoWireCommand.CanExecute(null)) _stacks.AutoWireCommand.Execute(null);
-    }
-
-    /// <summary>Save the stack the builder is composing — a guide step's "Show me".</summary>
-    public Task CreateStack()
-    {
-        if (_stacks is { } s && s.CreateCommand.CanExecute(null)) s.CreateCommand.Execute(null);
-        return Task.CompletedTask;
+        if (_maps is null) return;
+        Go(_maps);
+        if (_maps.IsEditing && _maps.CancelEditCommand.CanExecute(null))
+            _maps.CancelEditCommand.Execute(null);
     }
 
     /// <summary>Show the Workspaces page with no create form open, so "New workspace" is on screen.</summary>
@@ -178,9 +139,9 @@ public sealed class Navigator
     }
 
     /// <summary>
-    /// Open (or keep open) the New-workspace form, pre-filled with a name and the first stack, infra off so a
+    /// Open (or keep open) the New-workspace form, pre-filled with a name and the first map, infra off so a
     /// guide never depends on Docker. Idempotent, so it can precondition several consecutive steps.
-    /// <para>Awaits the open: the form loads its stacks and repo checklist asynchronously, and its own
+    /// <para>Awaits the open: the form loads its maps and repo checklist asynchronously, and its own
     /// resets would otherwise land <i>after</i> the fields set here.</para>
     /// </summary>
     public async Task PrepareNewWorkspace(string name)
@@ -190,7 +151,7 @@ public sealed class Navigator
         if (!_workspaces.IsCreating) await _workspaces.NewWorkspaceCommand.ExecuteAsync(null);
         _workspaces.NewName = name;
         _workspaces.StartInfraOnCreate = false;   // teaching worktrees/ports/compose; no daemon needed
-        _workspaces.NewStack ??= _workspaces.AvailableStacks.FirstOrDefault();
+        _workspaces.NewMap ??= _workspaces.AvailableMaps.FirstOrDefault();
     }
 
     /// <summary>Create the workspace the form describes — a guide step's "Show me". Async (real worktrees).</summary>
@@ -214,8 +175,8 @@ public sealed class Navigator
     /// <summary>Jump to Repos and open the Add-repo modal.</summary>
     public void AddRepo() { if (_repos is null) return; Go(_repos); _repos.OpenAddCommand.Execute(null); }
 
-    /// <summary>Jump to Stacks and open the New-stack builder.</summary>
-    public void NewStack() { if (_stacks is null) return; Go(_stacks); _stacks.NewStackCommand.Execute(null); }
+    /// <summary>Jump to Maps and open the New-map editor.</summary>
+    public void NewMap() { if (_maps is null) return; Go(_maps); _maps.NewMapCommand.Execute(null); }
 
     /// <summary>Jump to Workspaces and open the New-workspace flow.</summary>
     public void NewWorkspace() { if (_workspaces is null) return; Go(_workspaces); _workspaces.NewWorkspaceCommand.Execute(null); }
@@ -231,12 +192,12 @@ public sealed class Navigator
         _repos.Selected ??= _repos.Repos.FirstOrDefault();
     }
 
-    /// <summary>Jump to Stacks with the first stack selected, so its wiring summary is populated.</summary>
-    public void ShowFirstStack()
+    /// <summary>Jump to Maps with the first map selected, so its detail summary is populated.</summary>
+    public void ShowFirstMap()
     {
-        if (_stacks is null) return;
-        Go(_stacks);
-        _stacks.Selected ??= _stacks.Stacks.FirstOrDefault();
+        if (_maps is null) return;
+        Go(_maps);
+        _maps.Selected ??= _maps.Maps.FirstOrDefault();
     }
 
     /// <summary>Jump to Workspaces with the first workspace selected, so its detail panel is populated.</summary>

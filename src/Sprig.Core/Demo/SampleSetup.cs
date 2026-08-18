@@ -1,5 +1,6 @@
+using Sprig.Core.Maps;
 using Sprig.Core.Processes;
-using Sprig.Core.Stacks;
+using Sprig.Core.Stacks;   // RepoRegistryStore lives here (kept through the stack retirement)
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -19,22 +20,22 @@ public enum SampleStage
 {
     /// <summary>Sample repos are real git repos on disk, but nothing is registered with sprig yet.</summary>
     RepoOnDisk,
-    /// <summary>Both repos registered; no stack defined.</summary>
+    /// <summary>Both repos registered; no map defined.</summary>
     ReposRegistered,
-    /// <summary>A stack wiring the repos is saved; no workspace created.</summary>
-    StackWired,
+    /// <summary>A map composing the repos is saved; no workspace created.</summary>
+    MapReady,
     /// <summary>A workspace exists — the full worked example.</summary>
     Running,
 }
 
 /// <summary>
 /// Builds a complete, working sprig setup out of nothing, for the guided tour: two throwaway git
-/// repos, a stack wiring them together, and one workspace created from it.
+/// repos, a map composing them, and one workspace created from it.
 ///
 /// Two rules make this safe and honest:
 /// <list type="number">
-/// <item><b>It uses the real engine.</b> Registry → stack store → resolver →
-/// <see cref="WorkspaceService.Create"/>, exactly as the app does. Nothing is faked and no store
+/// <item><b>It uses the real engine.</b> Registry → map store → resolver →
+/// <see cref="WorkspaceService.CreateFromMap"/>, exactly as the app does. Nothing is faked and no store
 /// JSON is hand-written, so what the user sees is what sprig actually produces.</item>
 /// <item><b>It only ever touches its own store.</b> Point it at a demo root
 /// (<see cref="AppProfile.DemoFolderName"/>). The sample repos live <i>inside</i> that root, and
@@ -49,8 +50,8 @@ public sealed class SampleSetup(
     ISprigPaths paths,
     IProcessRunner runner,
     RepoRegistryStore repos,
-    StackStore stacks,
-    StackResolver resolver,
+    MapStore maps,
+    MapResolver mapResolver,
     WorkspaceService workspaces)
 {
     /// <summary>The workspace the tour creates.</summary>
@@ -79,7 +80,7 @@ public sealed class SampleSetup(
     {
         public const string Scaffold = "sample:scaffold";
         public const string Register = "sample:register";
-        public const string Stack = "sample:stack";
+        public const string Map = "sample:map";
         public const string Workspace = "sample:workspace";
     }
 
@@ -92,7 +93,7 @@ public sealed class SampleSetup(
     {
         var steps = new List<WorkspaceStep> { new(Steps.Scaffold, "Create two sample repos") };
         if (stage >= SampleStage.ReposRegistered) steps.Add(new(Steps.Register, "Register them with sprig"));
-        if (stage >= SampleStage.StackWired) steps.Add(new(Steps.Stack, "Define a stack that wires them together"));
+        if (stage >= SampleStage.MapReady) steps.Add(new(Steps.Map, "Compose a map from the two repos"));
         if (stage >= SampleStage.Running) steps.Add(new(Steps.Workspace, $"Create the '{WorkspaceName}' workspace"));
         return steps;
     }
@@ -156,13 +157,16 @@ public sealed class SampleSetup(
             });
             if (stage == SampleStage.ReposRegistered) return;
 
-            Run(progress, Steps.Stack, () => stacks.Save(SampleFixtures.Stack()));
-            if (stage == SampleStage.StackWired) return;
+            Run(progress, Steps.Map, () => maps.Save(SampleFixtures.Map()));
+            if (stage == SampleStage.MapReady) return;
 
             // The inner create reports against its own step ids, which this coarse checklist has no
             // rows for; a UI ignores unknown ids, so they're simply not forwarded.
-            Run(progress, Steps.Workspace,
-                () => workspaces.Create(resolver.Resolve(SampleFixtures.StackName), WorkspaceName));
+            Run(progress, Steps.Workspace, () =>
+            {
+                var (map, resolvedRepos) = mapResolver.Resolve(SampleFixtures.MapName);
+                workspaces.CreateFromMap(WorkspaceName, map, resolvedRepos);
+            });
         }
         catch (Exception ex)
         {
@@ -180,7 +184,7 @@ public sealed class SampleSetup(
     {
         if (!Directory.Exists(SampleReposDir)) return null;
         if (Existing() is not null) return SampleStage.Running;
-        if (stacks.Get(SampleFixtures.StackName) is not null) return SampleStage.StackWired;
+        if (maps.Get(SampleFixtures.MapName) is not null) return SampleStage.MapReady;
         if (repos.Get(SampleFixtures.ApiRepo) is not null) return SampleStage.ReposRegistered;
         return SampleStage.RepoOnDisk;
     }

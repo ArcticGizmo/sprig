@@ -1,26 +1,35 @@
 {
-  // The sample API declares only what it CONSUMES. It never says which port it gets —
-  // the stack decides that, and supplies it. Values flow one way: stack → repo.
-  "schema": 3,
+  // The sample API is SELF-DESCRIBING. It declares what it PROVIDES: an `api` capability
+  // (its own port, plus a `url` built from that port) and a `db` capability (its database
+  // port). Nothing external "supplies" these — the repo owns them, and a map wires other
+  // repos to them by capability name.
+  "schema": 1,
   "name": "sample-api",
-  "inputs": [
-    { "name": "port", "example": "5000", "description": "Port this API listens on" },
-    { "name": "dbPort", "example": "5432", "description": "Port its database binds on the host" }
-  ],
-  // A repo's env/compose/setup live inside a MODULE. This sample is a single slice at the
-  // repo root, so it has one module, "app". A monorepo would list several — apps/web,
-  // apps/api — each with its own path, env, compose and setup. The inputs above stay shared.
+  // A repo's provides/needs/env/compose/setup live inside a MODULE. This sample is a single
+  // slice at the repo root, so it has one module, "app". A monorepo would list several —
+  // apps/web, apps/api — each with its own path, provides, needs, env and compose.
   "modules": [
     {
       "name": "app",
       "path": "",
+      "provides": [
+        {
+          "capability": "api",
+          "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.api.port}" }
+        },
+        {
+          "capability": "db",
+          "ports": { "port": true }
+        }
+      ],
       "env": [
         {
           "file": ".env",
           "templates": [".env.template"],
           "set": {
-            "PORT": "${sprig.port}",
-            "DATABASE_URL": "postgres://sample:sample@localhost:${sprig.dbPort}/sample"
+            "PORT": "${sprig.api.port}",
+            "DATABASE_URL": "postgres://sample:sample@localhost:${sprig.db.port}/sample"
           }
         }
       ],
@@ -29,7 +38,7 @@
           "file": "docker-compose.yml",
           "overrides": [
             { "path": ["services", "db", "container_name"], "template": "sample-db--${sprig.workspace}" },
-            { "path": ["services", "db", "ports", "0"], "template": "${sprig.dbPort}:5432" }
+            { "path": ["services", "db", "ports", "0"], "template": "${sprig.db.port}:5432" }
           ]
         }
       ]

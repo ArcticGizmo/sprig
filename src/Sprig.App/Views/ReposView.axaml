@@ -116,6 +116,23 @@
                         <TextBlock IsVisible="{Binding !SelectedConfig.Ok}" Foreground="{StaticResource DangerBrush}"
                                    TextWrapping="Wrap" Text="{Binding SelectedConfig.Error}" />
 
+                        <!-- validation warning: parsed but out of date (e.g. an old-schema import). Fixable,
+                             not fatal — offer edit or delete rather than letting a checkout crash. -->
+                        <Border IsVisible="{Binding SelectedConfig.HasValidationError}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource WarnBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="⚠ This repo's configuration is out of date" FontWeight="SemiBold"
+                                           Foreground="{StaticResource WarnBrush}" />
+                                <TextBlock Text="{Binding SelectedConfig.ValidationError}" TextWrapping="Wrap"
+                                           FontSize="12" FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Edit &amp; fix" Command="{Binding BeginEditCommand}" />
+                                    <Button Content="Delete config" Command="{Binding DeleteCommand}"
+                                            Foreground="{StaticResource DangerBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Fast path: a zero-input repo can stand up on its own, no stack needed. -->
                         <Border IsVisible="{Binding CanIsolate}" Background="{StaticResource PanelBgBrush}"
                                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10"
@@ -146,30 +163,6 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
-
-                        <!-- inputs -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasInputs}">
-                            <TextBlock Text="INPUTS (supplied by the stack)" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Inputs}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:InputRow">
-                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,1">
-                                            <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace"
-                                                       Foreground="{StaticResource FgBrush}" MinWidth="90" />
-                                            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center">
-                                                <Run Text="e.g. " /><Run Text="{Binding Example}" />
-                                            </TextBlock>
-                                            <TextBlock FontSize="11" VerticalAlignment="Center" FontFamily="Consolas,monospace"
-                                                       Foreground="{StaticResource AccentBrush}"
-                                                       IsVisible="{Binding AllowedPorts, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                <Run Text="ports " /><Run Text="{Binding AllowedPorts}" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
 
                         <!-- modules -->
                         <StackPanel Spacing="12" IsVisible="{Binding SelectedConfig.HasModules}">
@@ -216,9 +209,53 @@
                                                                 Foreground="{StaticResource AccentBrush}" />
                                 </TextBlock>
 
-                                <TextBlock Text="This module declares no env, compose or setup yet."
+                                <TextBlock Text="This module declares nothing yet."
                                            FontSize="12" Foreground="{StaticResource MutedBrush}"
                                            IsVisible="{Binding SelectedConfig.SelectedModule.IsEmpty}" />
+
+                                <!-- provides (map model) -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasProvides}">
+                                    <TextBlock Text="PROVIDES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource OkBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Provides}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ProvideRow">
+                                                <StackPanel Spacing="2" Margin="0,0,0,6">
+                                                    <TextBlock FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}">
+                                                        <Run Text="{Binding Capability}" Foreground="{StaticResource OkBrush}" FontWeight="SemiBold" />
+                                                    </TextBlock>
+                                                    <ItemsControl ItemsSource="{Binding Outputs}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:KvRow">
+                                                                <TextBlock FontFamily="Consolas,monospace" FontSize="12" Margin="12,0,0,0"
+                                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap">
+                                                                    <Run Text="{Binding Key}" /><Run Text=" = " /><Run Text="{Binding Value}" Foreground="{StaticResource AccentBrush}" />
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- needs (map model) -->
+                                <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasNeeds}">
+                                    <TextBlock Text="NEEDS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                                    <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Needs}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:NeedRow">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                                    <TextBlock Text="{Binding Capability}" FontFamily="Consolas,monospace" FontSize="12"
+                                                               Foreground="{StaticResource AccentBrush}" />
+                                                    <TextBlock Text="{Binding AliasLabel}" FontFamily="Consolas,monospace" FontSize="11"
+                                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                                               IsVisible="{Binding ShowAlias}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
 
                                 <!-- env -->
                                 <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.SelectedModule.HasEnv}">
@@ -365,87 +402,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- inputs card (shared across every module) -->
-                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="10" Padding="18,16">
-                            <StackPanel Spacing="8" AutomationProperties.AutomationId="repo.inputs">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Grid.Column="0" Text="INPUTS (supplied by the stack)" FontSize="11"
-                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
-                                               VerticalAlignment="Center" />
-                                    <Button Grid.Column="1" Content="+ Add input" Command="{Binding AddInputCommand}"
-                                            FontSize="11" Padding="8,3" />
-                                </Grid>
-                                <!-- column header: labels the row fields so the rows can stay compact -->
-                                <Grid ColumnDefinitions="1.2*,0.9*,1.7*,1.1*,32" ColumnSpacing="8" Margin="2,0,0,0"
-                                      IsVisible="{Binding HasInputs}">
-                                    <TextBlock Grid.Column="0" Text="Name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                    <!-- "Example" alone read as a default, or as a value that gets used. It is
-                                         neither: it documents the shape for whoever wires the stack. -->
-                                    <TextBlock Grid.Column="1" Text="Example shape" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                               ToolTip.Tip="Documentation only — never used as a value. Shows whoever wires the stack what to supply, e.g. 5000 or http://localhost:5000" />
-                                    <TextBlock Grid.Column="2" Text="Description" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                    <TextBlock Grid.Column="3" Text="Allowed ports" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                               ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
-                                </Grid>
-                                <ItemsControl ItemsSource="{Binding Inputs}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:InputEditRow">
-                                            <Grid ColumnDefinitions="1.2*,0.9*,1.7*,1.1*,32" ColumnSpacing="8" Margin="2,0,0,6">
-                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
-                                                         PlaceholderText="name" FontFamily="Consolas,monospace" />
-                                                <TextBox Grid.Column="1" Text="{Binding Example, Mode=TwoWay}" MinWidth="0"
-                                                         PlaceholderText="5000" />
-                                                <TextBox Grid.Column="2" Text="{Binding Description, Mode=TwoWay}" MinWidth="0"
-                                                         PlaceholderText="optional" />
-                                                <!-- Advanced and almost always blank, so it hides behind a link
-                                                     until wanted (and shows itself whenever a value exists). -->
-                                                <Button Grid.Column="3" Content="restrict…" Command="{Binding RestrictCommand}"
-                                                        IsVisible="{Binding ShowRestrictLink}" FontSize="11" Padding="0"
-                                                        Background="Transparent" Foreground="{StaticResource MutedBrush}"
-                                                        HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                        ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports." />
-                                                <TextBox Grid.Column="3" Text="{Binding AllowedPorts, Mode=TwoWay}" MinWidth="0"
-                                                         IsVisible="{Binding ShowRestrictBox}"
-                                                         PlaceholderText="8100-8103" FontFamily="Consolas,monospace"
-                                                         ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
-                                                <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}"
-                                                        Foreground="{StaticResource DangerBrush}" Padding="0" Width="32"
-                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <!-- quick add: inputs referenced by an override but not declared yet. Save stays
-                                     blocked until these are gone (the validator flags each), but you can declare
-                                     them as you go by clicking a chip. -->
-                                <Border IsVisible="{Binding HasMissingInputRefs}" Margin="2,2,0,0"
-                                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
-                                        BorderThickness="1" CornerRadius="6" Padding="10,8">
-                                    <StackPanel Spacing="6">
-                                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
-                                                   Text="Referenced by an override but not declared yet — click to add (must be resolved before saving):" />
-                                        <ItemsControl ItemsSource="{Binding MissingInputRefs}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="sys:String">
-                                                    <Button Content="{Binding StringFormat='+ {0}'}" FontFamily="Consolas,monospace"
-                                                            FontSize="11" Padding="8,3" Margin="0,0,6,6"
-                                                            Command="{Binding $parent[ItemsControl].((vm:RepoEditViewModel)DataContext).QuickAddInputCommand}"
-                                                            CommandParameter="{Binding}" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-                            </Border>
-
-                            <!-- modules card: one tab per module (its own env/compose/setup); inputs above are shared -->
+                            <!-- modules card: one tab per module (its own provides/needs/env/compose/setup) -->
                             <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="1" CornerRadius="10" Padding="18,16">
                             <StackPanel Spacing="12" AutomationProperties.AutomationId="repo.modules">
@@ -536,6 +493,121 @@
                                                             BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" />
                                                 </Grid>
                                             </Border>
+
+                            <!-- provides (map model) -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="PROVIDES" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource OkBrush}" VerticalAlignment="Center"
+                                               ToolTip.Tip="Capabilities this module offers others. Each is ONE name that comes in many shapes: a port (the real resource it owns) and strings derived from it. Consumers reference a shape as ${sprig.&lt;capability&gt;.&lt;output&gt;} — so name the service (vite-server), not the socket (not vite-port)." />
+                                    <Button Grid.Column="1" Content="+ Add capability" Command="{Binding AddProvideCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Provides}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ProvideEditRow">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+                                                <StackPanel Spacing="10">
+                                                    <!-- Header: the capability name lives INSIDE the ${sprig.…} token it heads. -->
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                                                            <TextBlock Text="${sprig." FontFamily="Consolas,monospace" FontSize="15"
+                                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                            <TextBox MinWidth="140" Text="{Binding Capability, Mode=TwoWay}"
+                                                                     FontFamily="Consolas,monospace" FontWeight="SemiBold" FontSize="15"
+                                                                     Foreground="{StaticResource OkBrush}" Background="{StaticResource FormBgBrush}"
+                                                                     BorderBrush="{StaticResource OkBrush}" BorderThickness="1" CornerRadius="6" Padding="8,3"
+                                                                     VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                     PlaceholderText="vite-server"
+                                                                     ToolTip.Tip="Name the service, not the socket — 'vite-server' reads as a hierarchy; 'vite-port' stutters into vite-port.port." />
+                                                            <TextBlock Text="}" FontFamily="Consolas,monospace" FontSize="15"
+                                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
+                                                                Foreground="{StaticResource DangerBrush}" Padding="10,2" VerticalAlignment="Center"
+                                                                ToolTip.Tip="Remove this capability" />
+                                                    </Grid>
+
+                                                    <!-- The anchor: the one real resource this capability owns. Always present; can't be
+                                                         renamed or removed, so the row shows the fixed ${sprig.<cap>.port} token, not a name box. -->
+                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource OkBrush}"
+                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,9">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalAlignment="Center">
+                                                            <TextBlock Grid.Column="0" Text="● PORT · allocated" FontFamily="Consolas,monospace"
+                                                                       FontSize="11" Foreground="{StaticResource OkBrush}" VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Port.Ref}" FontFamily="Consolas,monospace"
+                                                                       FontSize="13" Foreground="{StaticResource FgBrush}" VerticalAlignment="Center"
+                                                                       ToolTip.Tip="The reference a consumer types for this capability's port. Always exported." />
+                                                            <TextBox Grid.Column="2" MinWidth="190" Text="{Binding Port.Allowed, Mode=TwoWay}"
+                                                                     PlaceholderText="allowed ports (optional, e.g. 8100-8103)" FontFamily="Consolas,monospace" />
+                                                        </Grid>
+                                                    </Border>
+
+                                                    <!-- Derived shapes: each a formula over the port. Amber to set them apart from the port. -->
+                                                    <ItemsControl ItemsSource="{Binding Shapes}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:ShapeEditRow">
+                                                                <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
+                                                                        BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,9" Margin="0,0,0,8">
+                                                                    <StackPanel Spacing="6">
+                                                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                            <TextBlock Grid.Column="0" Text="● DERIVED" FontFamily="Consolas,monospace"
+                                                                                       FontSize="11" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" />
+                                                                            <TextBox Grid.Column="1" Width="110" Text="{Binding Name, Mode=TwoWay}"
+                                                                                     PlaceholderText="url" FontFamily="Consolas,monospace"
+                                                                                     VerticalContentAlignment="Center" ToolTip.Tip="{Binding Ref}" />
+                                                                            <controls:SprigTokenBox Grid.Column="2" MinWidth="0"
+                                                                                     Value="{Binding Template, Mode=TwoWay}"
+                                                                                     Variables="{Binding Variables}"
+                                                                                     OpenCapabilities="{Binding OpenCapabilities}"
+                                                                                     Watermark="http://localhost:${sprig.vite-server.port}" />
+                                                                            <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
+                                                                                    Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                                        </Grid>
+                                                                        <TextBlock Text="{Binding ReferenceError}" FontSize="11" TextWrapping="Wrap"
+                                                                                   Foreground="{StaticResource DangerBrush}"
+                                                                                   IsVisible="{Binding ReferenceError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+
+                                                    <Button Content="+ derived shape" Command="{Binding AddShapeCommand}"
+                                                            FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                                                            ToolTip.Tip="A string built from this capability's port — a url, a connection string." />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- needs (map model) -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="NEEDS" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                                               ToolTip.Tip="Capabilities this module consumes from others. Wired to a sibling module first, then the map." />
+                                    <Button Grid.Column="1" Content="+ Add need" Command="{Binding AddNeedCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Needs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:NeedEditRow">
+                                            <Grid ColumnDefinitions="2*,*,Auto" ColumnSpacing="8" Margin="0,0,0,6">
+                                                <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Capability, Mode=TwoWay}"
+                                                         PlaceholderText="capability (e.g. orders-db)" FontFamily="Consolas,monospace" />
+                                                <TextBox Grid.Column="1" MinWidth="0" Text="{Binding As, Mode=TwoWay}"
+                                                         PlaceholderText="as (alias, optional)" FontFamily="Consolas,monospace" />
+                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="10,2" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
 
                             <!-- env -->
                             <StackPanel Spacing="8">

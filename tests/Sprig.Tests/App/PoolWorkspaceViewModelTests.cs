@@ -31,7 +31,7 @@ public class PoolWorkspaceViewModelTests
         var dir = Path.Combine(root, name);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            $$"""{ "schema":3, "name":"{{name}}", "modules":[ { "name":"main", "provides":[ { "capability":"{{name}}", "outputs":{ "port": { "port": true } } } ] } ] }""");
+            $$"""{ "schema":1, "name":"{{name}}", "modules":[ { "name":"main", "provides":[ { "capability":"{{name}}", "outputs":{ "port": { "port": true } } } ] } ] }""");
         return dir;
     }
 

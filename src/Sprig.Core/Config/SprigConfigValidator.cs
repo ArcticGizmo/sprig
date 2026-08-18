@@ -40,8 +40,8 @@ public static class SprigConfigValidator
         ValidateProvides(config.Provides, "provides", seenCaps, issues);
         ValidateNeeds(config.Needs, "needs", issues);
 
-        // A config may be in the legacy flat shape (a schema-≤2 file before migration, or the editor's
-        // pre-modules Build output) or the new module shape. Validate whichever is present. Compose files
+        // A config may be in the single-app flat shape (top-level env/compose/setup) or the module shape.
+        // Validate whichever is present. Compose files
         // must be unique by their *effective* path (module path + file) across the whole repo, so the same
         // filename may appear in two modules at different paths but never collide.
         var seenComposePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

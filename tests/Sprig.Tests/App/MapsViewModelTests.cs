@@ -22,7 +22,7 @@ public class MapsViewModelTests
     {
         using var store = new TempStore();
         using var repo = CommitConfig("solo", """
-            { "schema": 3, "name": "solo",
+            { "schema": 1, "name": "solo",
               "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ],
               "env": [ { "file": ".env", "set": { "PORT": "${sprig.api.port}" } } ] }
             """);
@@ -47,7 +47,7 @@ public class MapsViewModelTests
     {
         using var store = new TempStore();
         using var repo = CommitConfig("solo", """
-            { "schema": 3, "name": "solo",
+            { "schema": 1, "name": "solo",
               "needs": [ { "capability": "ghost" } ],
               "env": [ { "file": ".env", "set": { "X": "${sprig.ghost.url}" } } ] }
             """);
@@ -67,8 +67,8 @@ public class MapsViewModelTests
     public void New_map_composes_and_saves_from_selected_registered_repos()
     {
         using var store = new TempStore();
-        using var a = CommitConfig("alpha", """{ "schema": 3, "name": "alpha" }""");
-        using var b = CommitConfig("beta", """{ "schema": 3, "name": "beta" }""");
+        using var a = CommitConfig("alpha", """{ "schema": 1, "name": "alpha" }""");
+        using var b = CommitConfig("beta", """{ "schema": 1, "name": "beta" }""");
         var services = new AppServices(store.Root);
         services.Repos.Add(a.Path);
         services.Repos.Add(b.Path);
@@ -93,7 +93,7 @@ public class MapsViewModelTests
     public void Editing_a_map_updates_its_repos_and_a_rename_removes_the_old()
     {
         using var store = new TempStore();
-        using var a = CommitConfig("alpha", """{ "schema": 3, "name": "alpha" }""");
+        using var a = CommitConfig("alpha", """{ "schema": 1, "name": "alpha" }""");
         var services = new AppServices(store.Root);
         services.Repos.Add(a.Path);
         services.Maps.Save(new MapDefinition { Name = "old", Repos = [MapRepo.Local("alpha")] });
@@ -130,9 +130,9 @@ public class MapsViewModelTests
     public async Task Deselecting_a_repo_leaves_it_out_of_the_checkout()
     {
         using var store = new TempStore();
-        using var web = CommitConfig("web", """{ "schema": 3, "name": "web" }""");
+        using var web = CommitConfig("web", """{ "schema": 1, "name": "web" }""");
         using var api = CommitConfig("api", """
-            { "schema": 3, "name": "api",
+            { "schema": 1, "name": "api",
               "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ] }
             """);
         var services = new AppServices(store.Root);

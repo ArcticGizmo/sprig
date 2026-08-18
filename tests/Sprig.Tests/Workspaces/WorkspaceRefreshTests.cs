@@ -21,12 +21,12 @@ public class WorkspaceRefreshTests
     // Zero declared inputs (so it stands up as an ad-hoc single repo), with an env override that
     // references ${sprig.workspace} — enough to prove env is re-clobbered on refresh.
     const string Config = """
-        { "schema": 2, "name": "app",
+        { "schema": 1, "name": "app",
           "env": [ { "file": ".env", "set": { "APP_ENV": "sprig-${sprig.workspace}" } } ] }
         """;
 
     const string ConfigWithSetup = """
-        { "schema": 2, "name": "app", "setup": [ "npm ci" ] }
+        { "schema": 1, "name": "app", "setup": [ "npm ci" ] }
         """;
 
     static (WorkspaceService svc, InstanceStore instances) Build(TempStore s, IProcessRunner? setupRunner = null)

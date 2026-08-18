@@ -19,7 +19,7 @@ namespace Sprig.Tests.Pools;
 [Collection("git-heavy")]
 public class MapPoolCheckoutTests
 {
-    const string Config = """{ "schema":3, "name":"app" }""";
+    const string Config = """{ "schema":1, "name":"app" }""";
 
     static MapPoolService Build(TempGitRepo repo, TempStore store, int maxSlots)
     {

@@ -16,7 +16,7 @@ public class ManagementViewModelTests
     {
         var dir = Path.Combine(root, name);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":2, "name":"{{name}}" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":1, "name":"{{name}}" }""");
         return dir;
     }
 
@@ -182,7 +182,7 @@ public class ManagementViewModelTests
         Directory.CreateDirectory(dir);
         // Map-model config: a module that PROVIDES a port capability, its env referencing that provide.
         File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
-            { "schema":3, "name":"api",
+            { "schema":1, "name":"api",
               "modules":[ { "name":"api",
                 "provides":[ { "capability":"api", "outputs": { "port": { "port": true } } } ],
                 "env":[ { "file":".env", "set":{ "PORT":"${sprig.api.port}" } } ] } ] }
@@ -273,7 +273,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
         var before = File.ReadAllText(configPath);
         File.WriteAllText(Path.Combine(dir, "docker-compose.yml"),
             "services:\n  db:\n    image: postgres:16\n");
@@ -302,7 +302,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, "docker-compose.yml"), "services:\n  a:\n    image: x\n");
         Directory.CreateDirectory(Path.Combine(dir, "web"));
         File.WriteAllText(Path.Combine(dir, "web", "compose.yaml"), "services:\n  b:\n    image: y\n");
@@ -326,7 +326,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            """{ "schema":2, "name":"api", "setup":["npm ci"] }""");
+            """{ "schema":1, "name":"api", "setup":["npm ci"] }""");
 
         var editor = RepoEditViewModel.Load(dir);
         var mod = Mod(editor);
@@ -347,7 +347,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "");
         File.WriteAllText(Path.Combine(dir, ".env.example"), "");
         File.WriteAllText(Path.Combine(dir, "README.md"), "");
@@ -376,7 +376,7 @@ public class ManagementViewModelTests
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
         var configPath = Path.Combine(dir, ".sprig.json");
-        File.WriteAllText(configPath, """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(configPath, """{ "schema":1, "name":"api" }""");
         var before = File.ReadAllText(configPath);
 
         var git = new FakeGitService();
@@ -419,7 +419,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
         File.WriteAllText(Path.Combine(dir, ".env.template"), "PORT=\nDATABASE_URL=\n");
 
@@ -441,7 +441,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
         // A non-conventional name the companion heuristics would never find — only an explicit template does.
         File.WriteAllText(Path.Combine(dir, "shared.env"), "SHARED_SECRET=\nAPI_KEY=\n");
@@ -469,7 +469,7 @@ public class ManagementViewModelTests
         using var s = new TempStore();
         var dir = Path.Combine(s.Root, "api");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":2, "name":"api" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.present"), ""); // exists on disk, but not ignored
 
         var git = new FakeGitService();

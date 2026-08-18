@@ -9,7 +9,7 @@ public class ConfigReferencesTests
     {
         var config = SprigConfigLoader.Parse("""
             {
-              "schema": 3, "name": "vue",
+              "schema": 1, "name": "vue",
               "modules": [ { "name": "app",
                 "provides": [ { "capability": "frontend", "outputs": { "port": { "port": true } } } ],
                 "env": [ { "file": ".env", "set": {
@@ -30,7 +30,7 @@ public class ConfigReferencesTests
     public void Scans_compose_templates_too()
     {
         var config = SprigConfigLoader.Parse("""
-            { "schema":2, "name":"api",
+            { "schema":1, "name":"api",
               "compose": [ { "file":"docker-compose.yml", "overrides":[
                   { "path":["services","x","image"], "template":"${sprig.imageTag}" } ] } ] }
             """);
@@ -41,7 +41,7 @@ public class ConfigReferencesTests
     public void A_needed_capabilitys_output_is_accepted()
     {
         var config = SprigConfigLoader.Parse("""
-            { "schema":3, "name":"api",
+            { "schema":1, "name":"api",
               "modules": [ { "name":"app",
                 "needs": [ { "capability": "db" } ],
                 "compose": [ { "file":"docker-compose.yml", "overrides":[

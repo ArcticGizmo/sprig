@@ -14,7 +14,7 @@ namespace Sprig.Tests.Workspaces;
 public class WorkspaceSetupTests
 {
     const string ConfigWithSetup = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "setup": [ "npm ci" ] }
         """;

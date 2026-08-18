@@ -14,13 +14,13 @@ public class MapGraphProjectionTests
 
     // A single provider capability with a port output.
     static string Provider(string name, string cap) => $$"""
-        { "schema": 3, "name": "{{name}}",
+        { "schema": 1, "name": "{{name}}",
           "modules": [ { "name": "main", "provides": [
             { "capability": "{{cap}}", "outputs": { "port": { "port": true } } } ] } ] }
         """;
 
     static string Consumer(string name, string cap) => $$"""
-        { "schema": 3, "name": "{{name}}",
+        { "schema": 1, "name": "{{name}}",
           "modules": [ { "name": "main", "needs": [ { "capability": "{{cap}}" } ] } ] }
         """;
 
@@ -47,7 +47,7 @@ public class MapGraphProjectionTests
         // A monorepo whose own module provides 'db', plus another repo that also provides it: the local
         // sibling wins, so it is NOT ambiguous.
         var mono = Repo("mono", """
-            { "schema": 3, "name": "mono",
+            { "schema": 1, "name": "mono",
               "modules": [
                 { "name": "api", "provides": [ { "capability": "db", "outputs": { "port": { "port": true } } } ] },
                 { "name": "web", "needs": [ { "capability": "db" } ] } ] }

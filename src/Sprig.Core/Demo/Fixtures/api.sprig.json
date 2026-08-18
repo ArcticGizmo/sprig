@@ -3,7 +3,7 @@
   // (its own port, plus a `url` built from that port) and a `db` capability (its database
   // port). Nothing external "supplies" these — the repo owns them, and a map wires other
   // repos to them by capability name.
-  "schema": 3,
+  "schema": 1,
   "name": "sample-api",
   // A repo's provides/needs/env/compose/setup live inside a MODULE. This sample is a single
   // slice at the repo root, so it has one module, "app". A monorepo would list several —

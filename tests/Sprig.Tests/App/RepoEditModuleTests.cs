@@ -19,7 +19,7 @@ public class RepoEditModuleTests
     {
         using var s = new TempStore();
         var dir = Write(s, """
-            { "schema":3, "name":"mono",              "modules":[
+            { "schema":1, "name":"mono",              "modules":[
                 { "name":"web", "path":"apps/web",
                   "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.workspace}" } } ], "setup":["npm ci"] },
                 { "name":"api", "path":"apps/api", "setup":["dotnet restore"] } ] }
@@ -40,7 +40,7 @@ public class RepoEditModuleTests
     {
         using var s = new TempStore();
         var dir = Write(s, """
-            { "schema":3, "name":"mono",              "modules":[
+            { "schema":1, "name":"mono",              "modules":[
                 { "name":"web", "path":"apps/web",
                   "env":[ { "file":".env.local", "templates":[".env.template"],
                             "set":{ "PORT":"${sprig.workspace}" } } ] } ] }
@@ -63,7 +63,7 @@ public class RepoEditModuleTests
     {
         using var s = new TempStore();
         var dir = Write(s, """
-            { "schema":3, "name":"mono",
+            { "schema":1, "name":"mono",
               "modules":[
                 { "name":"web", "path":"apps/web", "setup":["npm ci"] },
                 { "name":"api", "path":"apps/api", "setup":["dotnet restore"] } ] }
@@ -71,7 +71,7 @@ public class RepoEditModuleTests
 
         var built = RepoEditViewModel.Load(dir).Build();
 
-        Assert.Equal(3, built.Schema);
+        Assert.Equal(1, built.Schema);
         Assert.Equal(["web", "api"], built.Modules.Select(m => m.Name));
         Assert.Equal(["apps/web", "apps/api"], built.Modules.Select(m => m.Path));
         Assert.Equal(["npm ci"], built.Modules[0].Setup);
@@ -82,7 +82,7 @@ public class RepoEditModuleTests
     public void Add_module_appends_a_selectable_blank_tab_for_the_user_to_name()
     {
         using var s = new TempStore();
-        var dir = Write(s, """{ "schema":3, "name":"empty" }""");
+        var dir = Write(s, """{ "schema":1, "name":"empty" }""");
         var e = RepoEditViewModel.Load(dir);
         Assert.Empty(e.Modules);
         Assert.False(e.HasModules);
@@ -101,7 +101,7 @@ public class RepoEditModuleTests
     public void Remove_module_can_go_down_to_zero()
     {
         using var s = new TempStore();
-        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"only", "setup":["x"] } ] }""");
+        var dir = Write(s, """{ "schema":1, "name":"mono", "modules":[ { "name":"only", "setup":["x"] } ] }""");
         var e = RepoEditViewModel.Load(dir);
 
         e.SelectedModule!.RemoveCommand.Execute(null);
@@ -115,7 +115,7 @@ public class RepoEditModuleTests
     public void Module_path_flags_a_missing_directory_but_does_not_block_save()
     {
         using var s = new TempStore();
-        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"web" } ] }""");
+        var dir = Write(s, """{ "schema":1, "name":"mono", "modules":[ { "name":"web" } ] }""");
         Directory.CreateDirectory(Path.Combine(dir, "apps", "web"));   // exists; apps/api does not
         var e = RepoEditViewModel.Load(dir);
         var tab = e.Modules[0];
@@ -138,7 +138,7 @@ public class RepoEditModuleTests
     public void File_suggestions_start_from_the_module_path_not_the_repo_root()
     {
         using var s = new TempStore();
-        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"api", "path":"apps/api" } ] }""");
+        var dir = Write(s, """{ "schema":1, "name":"mono", "modules":[ { "name":"api", "path":"apps/api" } ] }""");
         Directory.CreateDirectory(Path.Combine(dir, "apps", "api"));
         File.WriteAllText(Path.Combine(dir, "apps", "api", "docker-compose.yml"), "services: {}\n");
         File.WriteAllText(Path.Combine(dir, "root-only.yml"), "x\n");   // at the repo root
@@ -159,7 +159,7 @@ public class RepoEditModuleTests
     public void Deleting_all_modules_then_saving_writes_an_empty_module_list()
     {
         using var s = new TempStore();
-        var dir = Write(s, """{ "schema":3, "name":"mono", "modules":[ { "name":"only", "setup":["x"] } ] }""");
+        var dir = Write(s, """{ "schema":1, "name":"mono", "modules":[ { "name":"only", "setup":["x"] } ] }""");
         var e = RepoEditViewModel.Load(dir);
 
         e.SelectedModule!.RemoveCommand.Execute(null);

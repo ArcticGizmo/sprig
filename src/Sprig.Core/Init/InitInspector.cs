@@ -53,7 +53,7 @@ public sealed class InitInspector
     /// declare by hand. An empty module (nothing detected) is dropped, so a bare repo proposes none.
     /// </summary>
     public InitProposal InspectMap(string repoRoot)
-        => InspectMapModules(repoRoot, [new ModuleSpec(SprigConfigMigration.DefaultModuleName, "")], dropEmpty: true);
+        => InspectMapModules(repoRoot, [new ModuleSpec(SprigRepoConfig.DefaultModuleName, "")], dropEmpty: true);
 
     /// <summary>
     /// Multiple-modules counterpart to <see cref="InspectMap(string)"/>: scaffold each given module map-native,

@@ -22,7 +22,7 @@ public class MapPoolServiceTests
         var registry = new RepoRegistryStore(s.Paths);
         var dir = Path.Combine(s.Root, "app");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":3, "name":"app" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"app" }""");
         registry.Add(dir);
 
         var instances = new InstanceStore(s.Paths);

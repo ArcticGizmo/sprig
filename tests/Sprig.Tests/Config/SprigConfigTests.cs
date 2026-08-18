@@ -4,10 +4,10 @@ namespace Sprig.Tests.Config;
 
 public class SprigConfigLoaderTests
 {
-    // A realistic, valid schema-2 (flat) config — its env/compose reference only ${sprig.workspace}.
+    // A realistic, valid single-app (flat) config — its env/compose reference only ${sprig.workspace}.
     const string ValidJson = """
         {
-          "schema": 2,
+          "schema": 1,
           "name": "dotnet-api",
           "env": [
             { "file": ".env.local", "set": { "NAME": "app--${sprig.workspace}" } }
@@ -27,17 +27,16 @@ public class SprigConfigLoaderTests
     [Fact]
     public void Parses_full_valid_config()
     {
-        // Parsing migrates a schema-2 file to schema 3: the flat env/compose surface is folded into a
-        // single default module; the top-level lists are cleared.
+        // Schema v1: no migration. The flat env/compose stay on the record; EffectiveModules surfaces them
+        // as the implicit "app" module every consumer iterates.
         var c = SprigConfigLoader.Parse(ValidJson);
 
-        Assert.Equal(3, c.Schema);
+        Assert.Equal(1, c.Schema);
         Assert.Equal("dotnet-api", c.Name);
-        Assert.Null(c.Env);       // legacy top-level cleared on migration (omitted on write)
-        Assert.Null(c.Compose);
+        Assert.Empty(c.Modules);   // flat shape isn't rewritten into modules
 
-        var module = Assert.Single(c.Modules);
-        Assert.Equal(SprigConfigMigration.DefaultModuleName, module.Name);
+        var module = Assert.Single(c.EffectiveModules);
+        Assert.Equal(SprigRepoConfig.DefaultModuleName, module.Name);
         Assert.Equal("", module.Path);
         Assert.Single(module.Env);
         Assert.Equal(".env.local", module.Env[0].File);
@@ -79,7 +78,7 @@ public class SprigConfigValidatorTests
     {
         var c = SprigConfigLoader.Parse("""
             {
-              "schema": 3, "name": "dotnet-api",
+              "schema": 1, "name": "dotnet-api",
               "modules": [ { "name": "app", "path": "",
                 "provides": [ { "capability": "web", "outputs": { "port": { "port": true } } } ],
                 "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.web.port}" } } ],
@@ -231,11 +230,14 @@ public class SprigConfigValidatorTests
     }
 }
 
-public class SprigConfigMigrationTests
+// Schema v1: there is no migration. A single-app config may write env/compose/setup at the top level
+// instead of inside a module, and SprigRepoConfig.EffectiveModules surfaces that as one implicit "app"
+// module — so every consumer sees a single module shape without the file being rewritten.
+public class FlatConfigSugarTests
 {
-    const string FlatSchema2 = """
+    const string Flat = """
         {
-          "schema": 2,
+          "schema": 1,
           "name": "dotnet-api",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "compose": [ { "file": "docker-compose.yml", "overrides": [
@@ -245,17 +247,15 @@ public class SprigConfigMigrationTests
         """;
 
     [Fact]
-    public void Schema2_flat_config_is_folded_into_a_single_default_module()
+    public void A_flat_config_surfaces_its_top_level_sugar_as_the_implicit_app_module()
     {
-        var c = SprigConfigMigration.Normalize(SprigConfigLoader.Parse(FlatSchema2));
-        // Parse already migrates, so Normalize here is a no-op that also proves idempotence.
+        var c = SprigConfigLoader.Parse(Flat);
 
-        Assert.Equal(3, c.Schema);
-        Assert.Null(c.Env);
-        Assert.Null(c.Compose);
-        Assert.Null(c.Setup);
-
-        var m = Assert.Single(c.Modules);
+        // The file keeps its flat shape (no migration rewrites it) …
+        Assert.Equal(1, c.Schema);
+        Assert.Empty(c.Modules);
+        // … but EffectiveModules folds it into one "app" module every consumer iterates.
+        var m = Assert.Single(c.EffectiveModules);
         Assert.Equal("app", m.Name);
         Assert.Equal("", m.Path);
         Assert.Equal(".env", m.Env[0].File);
@@ -264,38 +264,28 @@ public class SprigConfigMigrationTests
     }
 
     [Fact]
-    public void Schema2_with_no_flat_surface_migrates_to_zero_modules()
+    public void A_config_with_no_flat_surface_and_no_modules_has_no_effective_modules()
     {
-        var c = SprigConfigMigration.Normalize(new SprigRepoConfig { Schema = 2, Name = "x" });
-        Assert.Equal(3, c.Schema);
-        Assert.Empty(c.Modules);
+        var c = SprigConfigLoader.Parse("""{ "schema": 1, "name": "x" }""");
+        Assert.Empty(c.EffectiveModules);
     }
 
     [Fact]
-    public void Schema3_config_is_left_untouched()
+    public void A_module_shaped_config_is_left_as_is()
     {
-        var original = new SprigRepoConfig
-        {
-            Schema = 3, Name = "x",
-            Modules = [new ModuleDeclaration { Name = "web", Path = "apps/web", Setup = ["npm ci"] }],
-        };
-        var c = SprigConfigMigration.Normalize(original);
-        Assert.Same(original, c);   // >= 3 short-circuits, never re-folds
+        var c = SprigConfigLoader.Parse("""
+            { "schema": 1, "name": "x",
+              "modules": [ { "name": "web", "path": "apps/web", "setup": ["npm ci"] } ] }
+            """);
+        var m = Assert.Single(c.EffectiveModules);
+        Assert.Equal("web", m.Name);
+        Assert.Equal("apps/web", m.Path);
     }
 
     [Fact]
-    public void Normalize_is_idempotent()
+    public void Unknown_top_level_keys_are_captured()
     {
-        var once = SprigConfigMigration.Normalize(SprigConfigLoader.Parse(FlatSchema2));
-        var twice = SprigConfigMigration.Normalize(once);
-        Assert.Equal(once.Modules.Count, twice.Modules.Count);
-        Assert.Equal(3, twice.Schema);
-    }
-
-    [Fact]
-    public void Unknown_top_level_keys_survive_migration()
-    {
-        var c = SprigConfigLoader.Parse("""{ "schema": 2, "name": "x", "bogus": 1 }""");
+        var c = SprigConfigLoader.Parse("""{ "schema": 1, "name": "x", "bogus": 1 }""");
         Assert.Contains("bogus", c.Unknown.Keys);
     }
 }

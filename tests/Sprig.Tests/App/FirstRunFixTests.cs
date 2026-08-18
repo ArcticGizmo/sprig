@@ -42,7 +42,7 @@ public class FirstRunFixTests
         var services = new AppServices(s.Root);
 
         File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"),
-            """{ "schema": 2, "name": "has-config" }""");
+            """{ "schema": 1, "name": "has-config" }""");
 
         var vm = new ReposViewModel(services) { NewPath = repo.Path };
         await vm.ConfirmAddCommand.ExecuteAsync(null);

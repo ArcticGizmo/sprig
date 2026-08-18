@@ -14,7 +14,7 @@ namespace Sprig.Tests.Workspaces;
 public class WorkspaceInfraTests
 {
     const string ConfigJson = """
-        { "schema": 3, "name": "dotnet-api",
+        { "schema": 1, "name": "dotnet-api",
           "modules": [ { "name": "app", "path": "",
             "provides": [
               { "capability": "api", "outputs": { "port": { "port": true } } },

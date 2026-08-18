@@ -19,11 +19,11 @@ public class PartialWorkspaceViewModelTests
     static void SeedWebApiMap(TempStore s, AppServices services)
     {
         services.Repos.Add(WriteRepo(s.Root, "api", """
-            { "schema":3, "name":"api", "modules":[
+            { "schema":1, "name":"api", "modules":[
               { "name":"main", "provides":[ { "capability":"api", "outputs":{ "port":{"port":true} } } ] } ] }
             """));
         services.Repos.Add(WriteRepo(s.Root, "web", """
-            { "schema":3, "name":"web", "modules":[
+            { "schema":1, "name":"web", "modules":[
               { "name":"main", "needs":[ { "capability":"api" } ] } ] }
             """));
         services.Maps.Save(new MapDefinition

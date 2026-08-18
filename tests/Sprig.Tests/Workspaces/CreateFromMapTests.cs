@@ -19,7 +19,7 @@ public class CreateFromMapTests
     // A monorepo: the api module PROVIDES mono-api (its own port + a derived url); the web module NEEDS it.
     // Only capability references are used, so it stands up with no map (pure provides/needs wiring).
     const string MonoConfig = """
-        { "schema": 3, "name": "mono",
+        { "schema": 1, "name": "mono",
           "modules": [
             { "name": "api", "path": "apps/api",
               "provides": [ { "capability": "mono-api",
@@ -104,7 +104,7 @@ public class CreateFromMapTests
         using var repo = new TempGitRepo();
         // A single module that NEEDS a capability nobody provides — an unsatisfiable selection.
         File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), """
-            { "schema": 3, "name": "mono",
+            { "schema": 1, "name": "mono",
               "modules": [ { "name": "web", "path": "apps/web",
                 "needs": [ { "capability": "absent-api" } ],
                 "env": [ { "file": ".env", "set": { "API": "${sprig.absent-api.url}" } } ] } ] }

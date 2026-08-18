@@ -49,7 +49,7 @@ public class MapModelParseTests
 {
     const string Mono = """
         {
-          "schema": 3,
+          "schema": 1,
           "name": "acme",
           "modules": [
             { "name": "api", "path": "apps/api",
@@ -97,14 +97,14 @@ public class MapModelParseTests
     public void Single_app_sugar_folds_provides_needs_into_the_implicit_module()
     {
         var c = SprigConfigLoader.Parse("""
-            { "schema": 3, "name": "solo",
+            { "schema": 1, "name": "solo",
               "provides": [ { "capability": "solo-api", "outputs": { "port": { "port": true } } } ],
               "needs": [ { "capability": "ext-db", "as": "db" } ],
               "env": [ { "file": ".env", "set": { "PORT": "${sprig.solo-api.port}", "DB": "${sprig.db.url}" } } ] }
             """);
 
         var module = Assert.Single(c.EffectiveModules);
-        Assert.Equal(SprigConfigMigration.DefaultModuleName, module.Name);
+        Assert.Equal(SprigRepoConfig.DefaultModuleName, module.Name);
         Assert.Equal("solo-api", Assert.Single(module.Provides).Capability);
         Assert.Equal("ext-db", Assert.Single(module.Needs).Capability);
         Assert.True(SprigConfigValidator.Validate(c).IsValid);

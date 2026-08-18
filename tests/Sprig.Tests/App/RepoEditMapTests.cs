@@ -20,7 +20,7 @@ public class RepoEditMapTests
     {
         using var s = new TempStore();
         var dir = WriteConfig(s, """
-            { "schema": 3, "name": "acme",
+            { "schema": 1, "name": "acme",
               "provides": [ { "capability": "acme-api", "type": "http",
                 "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } } ],
               "needs": [ { "capability": "acme-db", "as": "db" } ] }
@@ -51,7 +51,7 @@ public class RepoEditMapTests
     public void Authors_a_provide_and_need_from_scratch_and_saves_valid_json()
     {
         using var s = new TempStore();
-        var dir = WriteConfig(s, """{ "schema": 3, "name": "fresh" }""");
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "fresh" }""");
         var vm = RepoEditViewModel.Load(dir);
 
         vm.AddModuleCommand.Execute(null);
@@ -85,7 +85,7 @@ public class RepoEditMapTests
     public void Reference_lists_track_provides_and_needs_as_they_are_typed()
     {
         using var s = new TempStore();
-        var dir = WriteConfig(s, """{ "schema": 3, "name": "live" }""");
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "live" }""");
         var vm = RepoEditViewModel.Load(dir);
 
         vm.AddModuleCommand.Execute(null);

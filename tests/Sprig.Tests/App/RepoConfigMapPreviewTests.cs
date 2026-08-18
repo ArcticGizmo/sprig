@@ -18,7 +18,7 @@ public class RepoConfigMapPreviewTests
     {
         using var s = new TempStore();
         var dir = WriteConfig(s, """
-            { "schema": 3, "name": "acme",
+            { "schema": 1, "name": "acme",
               "provides": [ { "capability": "acme-api", "type": "http",
                 "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } } ],
               "needs": [ { "capability": "acme-db", "as": "db" }, { "capability": "auth" } ] }

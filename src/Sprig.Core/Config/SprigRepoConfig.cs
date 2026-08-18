@@ -10,6 +10,10 @@ namespace Sprig.Core.Config;
 /// </summary>
 public sealed record SprigRepoConfig
 {
+    /// <summary>The name given to the implicit module a single-app (flat) config is surfaced as by
+    /// <see cref="EffectiveModules"/>.</summary>
+    public const string DefaultModuleName = "app";
+
     /// <summary>Config schema version. Only <see cref="SprigConfigLoader.SupportedSchema"/> is understood.</summary>
     public int Schema { get; init; } = SprigConfigLoader.SupportedSchema;
 
@@ -17,10 +21,10 @@ public sealed record SprigRepoConfig
     public string Name { get; init; } = "";
 
     /// <summary>
-    /// The repo's modules (schema 3+). Each module is a slice of the repo (e.g. a monorepo
-    /// subdirectory) with its own <c>.env</c> files, compose files, setup commands and provides/needs.
-    /// A schema-≤2 file has no modules; <see cref="SprigConfigMigration"/> lifts its flat
-    /// <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/> into a single default module on load.
+    /// The repo's modules. Each module is a slice of the repo (e.g. a monorepo subdirectory) with its own
+    /// <c>.env</c> files, compose files, setup commands and provides/needs. A single-app repo may omit
+    /// <see cref="Modules"/> and use the top-level sugar instead; <see cref="EffectiveModules"/> surfaces
+    /// that as one implicit <c>app</c> module.
     /// </summary>
     public IReadOnlyList<ModuleDeclaration> Modules { get; init; } = [];
 
@@ -37,20 +41,20 @@ public sealed record SprigRepoConfig
     public IReadOnlyList<Need> Needs { get; init; } = [];
 
     /// <summary>
-    /// <b>Legacy (schema ≤ 2), load-only.</b> Which <c>.env.*</c> files to clobber and which keys to set.
-    /// A schema-2 file carries these at the top level; migration moves them into a default module and
-    /// nulls them, so a normalised schema-3 config never re-serialises them. New shape:
-    /// <see cref="ModuleDeclaration.Env"/>. Null (not empty) when absent, so it is omitted on write.
+    /// <b>Single-app sugar.</b> Which <c>.env.*</c> files to clobber and which keys to set, written at the
+    /// top level by a single-slice repo instead of inside a module. <see cref="EffectiveModules"/> folds it
+    /// into the implicit <c>app</c> module; a monorepo uses <see cref="ModuleDeclaration.Env"/> per module.
+    /// Null (not empty) when absent, so it is omitted on write.
     /// </summary>
     public IReadOnlyList<EnvOverride>? Env { get; init; }
 
-    /// <summary><b>Legacy (schema ≤ 2), load-only.</b> Docker compose override declarations; see <see cref="Env"/>.
-    /// New shape: <see cref="ModuleDeclaration.Compose"/>.</summary>
+    /// <summary><b>Single-app sugar.</b> Top-level docker compose override declarations; see <see cref="Env"/>.
+    /// Per-module shape: <see cref="ModuleDeclaration.Compose"/>.</summary>
     public IReadOnlyList<ComposeConfig>? Compose { get; init; }
 
     /// <summary>
-    /// <b>Legacy (schema ≤ 2), load-only.</b> Free-form post-create commands; see <see cref="Env"/>.
-    /// New shape: <see cref="ModuleDeclaration.Setup"/>.
+    /// <b>Single-app sugar.</b> Top-level free-form post-create commands; see <see cref="Env"/>.
+    /// Per-module shape: <see cref="ModuleDeclaration.Setup"/>.
     /// </summary>
     public IReadOnlyList<string>? Setup { get; init; }
 
@@ -59,12 +63,11 @@ public sealed record SprigRepoConfig
     public Dictionary<string, JsonElement> Unknown { get; init; } = new();
 
     /// <summary>
-    /// The modules to materialise, unifying the two shapes a config can be in. A normalised schema-3
-    /// config carries only <see cref="Modules"/> (its top-level lists are empty). A config still in the
-    /// legacy flat shape — one built directly (tests, the editor's pre-modules <c>Build</c>) rather than
-    /// loaded through the migrating loader — surfaces its top-level <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/>
-    /// as one implicit root module (name <c>"app"</c>, empty path), followed by any declared modules.
-    /// Every consumer iterates this, so both shapes behave identically.
+    /// The modules to materialise, unifying the two shapes a config can be in. A module-shaped config
+    /// carries only <see cref="Modules"/>. A single-app config that uses the top-level sugar surfaces its
+    /// <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/>/<see cref="Provides"/>/<see cref="Needs"/>
+    /// as one implicit root module (name <see cref="DefaultModuleName"/>, empty path), followed by any
+    /// declared modules. Every consumer iterates this, so both shapes behave identically.
     /// </summary>
     [JsonIgnore]
     public IReadOnlyList<ModuleDeclaration> EffectiveModules
@@ -79,7 +82,7 @@ public sealed record SprigRepoConfig
             {
                 new()
                 {
-                    Name = SprigConfigMigration.DefaultModuleName, Path = "",
+                    Name = DefaultModuleName, Path = "",
                     Env = Env ?? [], Compose = Compose ?? [], Setup = Setup ?? [],
                     Provides = Provides, Needs = Needs,
                 },

@@ -18,7 +18,7 @@ public class RepoConfigViewModelTests
     {
         using var s = new TempStore();
         var dir = WriteConfig(s, """
-            { "schema": 3, "name": "mono",
+            { "schema": 1, "name": "mono",
               "modules": [
                 { "name": "web", "path": "apps/web",
                   "provides": [ { "capability": "port", "outputs": { "port": { "port": true } } } ],
@@ -52,7 +52,7 @@ public class RepoConfigViewModelTests
     {
         using var s = new TempStore();
         var dir = WriteConfig(s, """
-            { "schema": 2, "name": "solo",
+            { "schema": 1, "name": "solo",
               "env": [ { "file": ".env", "set": { "NAME": "x" } } ] }
             """);
 
@@ -69,7 +69,7 @@ public class RepoConfigViewModelTests
     public void A_repo_with_no_modules_has_none()
     {
         using var s = new TempStore();
-        var dir = WriteConfig(s, """{ "schema": 3, "name": "empty" }""");
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "empty" }""");
 
         var vm = RepoConfigViewModel.Load(dir);
 

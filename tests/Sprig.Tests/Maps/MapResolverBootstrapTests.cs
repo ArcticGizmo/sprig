@@ -10,7 +10,7 @@ namespace Sprig.Tests.Maps;
 public class MapResolverBootstrapTests
 {
     const string Config =
-        """{ "schema": 3, "name": "solo", "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ] }""";
+        """{ "schema": 1, "name": "solo", "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ] }""";
 
     static TempGitRepo SourceRepo()
     {

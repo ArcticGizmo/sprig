@@ -2,7 +2,7 @@
   // The sample web app PROVIDES its own `web` port, and NEEDS the `api` capability — which
   // sample-api provides. It doesn't know the API's port; it references `${sprig.api.url}`,
   // the finished URL the provider builds. The map wires need→provide by capability name.
-  "schema": 3,
+  "schema": 1,
   "name": "sample-web",
   // One slice at the repo root, so one module, "app".
   "modules": [

@@ -9,7 +9,7 @@ public sealed class SprigConfigException(string message, Exception? inner = null
 /// <summary>Reads and parses <c>.sprig.json</c> files. Parsing failures throw; content problems are for the validator.</summary>
 public static class SprigConfigLoader
 {
-    public const int SupportedSchema = 3;
+    public const int SupportedSchema = 1;
 
     internal static readonly JsonSerializerOptions Options = new()
     {
@@ -50,8 +50,9 @@ public static class SprigConfigLoader
         if (config is null)
             throw new SprigConfigException($"'.sprig.json'{where} parsed to null");
 
-        // Single choke-point for every load path: bring older files up to the current schema in memory
-        // (a schema-≤2 flat config is folded into a default module). Persists on next save.
-        return SprigConfigMigration.Normalize(config);
+        // Schema v1 is the only schema — there is no migration. A single-app config may use the top-level
+        // env/compose/setup sugar; SprigRepoConfig.EffectiveModules surfaces that as the implicit 'app'
+        // module, so every consumer sees one module shape.
+        return config;
     }
 }

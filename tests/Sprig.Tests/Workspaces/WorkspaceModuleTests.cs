@@ -16,7 +16,7 @@ public class WorkspaceModuleTests
     // Two modules, each in its own subdirectory. Only ${sprig.workspace} is referenced, so the repo needs
     // no stack inputs and can stand up via the ad-hoc single-repo path.
     const string TwoModuleConfig = """
-        { "schema": 3, "name": "mono",
+        { "schema": 1, "name": "mono",
           "modules": [
             { "name": "web", "path": "apps/web",
               "env": [ { "file": ".env.local", "set": { "NAME": "web--${sprig.workspace}" } } ],

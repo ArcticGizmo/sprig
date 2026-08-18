@@ -16,18 +16,18 @@ public class WorkspaceProgressTests
 {
     // Zero-input, no-compose, no-setup repo — the ad-hoc single-repo path stands it up.
     const string PlainConfig = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ] }
         """;
 
     const string ConfigWithSetup = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "setup": [ "npm ci" ] }
         """;
 
     const string ConfigWithTwoSetup = """
-        { "schema": 2, "name": "vue-app",
+        { "schema": 1, "name": "vue-app",
           "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "setup": [ "npm ci", "npm run build" ] }
         """;

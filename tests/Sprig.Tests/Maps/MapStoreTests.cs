@@ -17,7 +17,7 @@ public class MapStoreTests
     {
         var dir = Path.Combine(store.Root, "repos", name);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":3, "name":"{{name}}" }""");
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), $$"""{ "schema":1, "name":"{{name}}" }""");
         registry.Add(dir);
     }
 

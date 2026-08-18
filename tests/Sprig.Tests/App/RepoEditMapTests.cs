@@ -105,6 +105,84 @@ public class RepoEditMapTests
     }
 
     [Fact]
+    public void A_derived_shapes_autocomplete_offers_siblings_but_never_itself()
+    {
+        using var s = new TempStore();
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "live" }""");
+        var vm = RepoEditViewModel.Load(dir);
+        vm.AddModuleCommand.Execute(null);
+        var tab = vm.SelectedModule!;
+        tab.Name = "app";
+        tab.AddProvideCommand.Execute(null);
+        var provide = tab.Provides[0];
+        provide.Capability = "vite-server";
+
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[0].Name = "url";
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[1].Name = "health";
+
+        var url = provide.Shapes[0];
+        Assert.Contains("vite-server.port", url.Variables);      // the port anchor
+        Assert.Contains("vite-server.health", url.Variables);    // a sibling shape
+        Assert.Contains("workspace", url.Variables);
+        Assert.DoesNotContain("vite-server.url", url.Variables); // never itself
+
+        var health = provide.Shapes[1];
+        Assert.Contains("vite-server.url", health.Variables);
+        Assert.DoesNotContain("vite-server.health", health.Variables);
+    }
+
+    [Fact]
+    public void A_self_referencing_shape_shows_a_live_error_that_clears_when_fixed()
+    {
+        using var s = new TempStore();
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "live" }""");
+        var vm = RepoEditViewModel.Load(dir);
+        vm.AddModuleCommand.Execute(null);
+        var tab = vm.SelectedModule!;
+        tab.Name = "app";
+        tab.AddProvideCommand.Execute(null);
+        var provide = tab.Provides[0];
+        provide.Capability = "api";
+        provide.AddShapeCommand.Execute(null);
+        var url = provide.Shapes[0];
+        url.Name = "url";
+
+        url.Template = "${sprig.api.url}";                        // references itself
+        Assert.NotNull(url.ReferenceError);
+        Assert.Contains("itself", url.ReferenceError);
+
+        url.Template = "http://localhost:${sprig.api.port}";      // now valid
+        Assert.Null(url.ReferenceError);
+    }
+
+    [Fact]
+    public void A_circular_reference_between_shapes_shows_a_live_error_on_both()
+    {
+        using var s = new TempStore();
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "live" }""");
+        var vm = RepoEditViewModel.Load(dir);
+        vm.AddModuleCommand.Execute(null);
+        var tab = vm.SelectedModule!;
+        tab.Name = "app";
+        tab.AddProvideCommand.Execute(null);
+        var provide = tab.Provides[0];
+        provide.Capability = "api";
+
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[0].Name = "a";
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[1].Name = "b";
+        provide.Shapes[0].Template = "${sprig.api.b}";
+        provide.Shapes[1].Template = "${sprig.api.a}";
+
+        Assert.NotNull(provide.Shapes[0].ReferenceError);
+        Assert.NotNull(provide.Shapes[1].ReferenceError);
+        Assert.Contains("circular", provide.Shapes[0].ReferenceError);
+    }
+
+    [Fact]
     public void Reference_lists_track_provides_and_needs_as_they_are_typed()
     {
         using var s = new TempStore();

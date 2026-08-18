@@ -52,14 +52,11 @@ public partial class PortEditRow : ObservableObject
 /// <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c> a consumer types.</summary>
 public partial class ShapeEditRow : ObservableObject
 {
+    static readonly IReadOnlyList<string> NoOpenCapabilities = [];
+
     readonly Action<ShapeEditRow> _remove;
 
-    public ShapeEditRow(Action<ShapeEditRow> remove, IEnumerable<string> variables, IEnumerable<string> openCapabilities)
-    {
-        _remove = remove;
-        Variables = variables;
-        OpenCapabilities = openCapabilities;
-    }
+    public ShapeEditRow(Action<ShapeEditRow> remove) => _remove = remove;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Ref))]
@@ -76,12 +73,25 @@ public partial class ShapeEditRow : ObservableObject
     /// <summary>The reference a consumer types for this shape: <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c>.</summary>
     public string Ref => ProvideEditRow.Token(Head, Name);
 
-    /// <summary>The repo's known <c>${sprig.*}</c> names (workspace + every self-provided output, incl. this
-    /// capability's own <c>port</c>) — feeds the template field's inline autocomplete and token colouring.</summary>
-    public IEnumerable<string> Variables { get; }
+    /// <summary>The names this shape's template may reference — its capability's <c>port</c>, its SIBLING
+    /// shapes (never itself), and <c>workspace</c>. Owned here and kept in step by the parent, so the
+    /// template field's autocomplete offers exactly the legal references and can't suggest a self-reference.</summary>
+    public ObservableCollection<string> Variables { get; } = [];
 
-    /// <summary>Needed-capability heads whose outputs live in another repo (coloured known, any tail).</summary>
-    public IEnumerable<string> OpenCapabilities { get; }
+    /// <summary>A shape references only its own capability, so there are no open (cross-repo) heads.</summary>
+    public IReadOnlyList<string> OpenCapabilities => NoOpenCapabilities;
+
+    /// <summary>Set by the parent when this shape's template self-references, references out of scope, or is
+    /// part of a cycle — shown inline under the field. Null when the template is fine.</summary>
+    [ObservableProperty] private string? _referenceError;
+
+    /// <summary>Replace <see cref="Variables"/> in place (equality-guarded) so bound token boxes update live.</summary>
+    public void SetScope(IReadOnlyList<string> names)
+    {
+        if (Variables.SequenceEqual(names, StringComparer.Ordinal)) return;
+        Variables.Clear();
+        foreach (var n in names) Variables.Add(n);
+    }
 
     [RelayCommand] private void Remove() => _remove(this);
 }
@@ -92,17 +102,13 @@ public partial class ShapeEditRow : ObservableObject
 /// <see cref="Shapes"/> (formulas over that port).</summary>
 public partial class ProvideEditRow : ObservableObject
 {
-    // A derived shape may reference only this capability's own outputs — never a need — so shapes get no
-    // open-capability heads at all.
-    static readonly IReadOnlyList<string> NoOpenCapabilities = [];
-
     readonly Action<ProvideEditRow> _remove;
 
     public ProvideEditRow(Action<ProvideEditRow> remove)
     {
         _remove = remove;
         Shapes.CollectionChanged += OnShapesChanged;
-        RefreshOwnReferences();
+        Refresh();
     }
 
     /// <summary>The service name — name the service (<c>vite-server</c>), not one of its shapes.</summary>
@@ -113,23 +119,18 @@ public partial class ProvideEditRow : ObservableObject
 
     public ObservableCollection<ShapeEditRow> Shapes { get; } = [];
 
-    /// <summary>This capability's own referenceable names — <c>workspace</c>, its <c>port</c>, and its sibling
-    /// shapes. A derived shape may reference ONLY these (never another capability or a need), so this — not the
-    /// whole repo surface — feeds each shape's autocomplete + token colouring. Kept live as name/shapes change.</summary>
-    public ObservableCollection<string> OwnReferences { get; } = [];
-
-    /// <summary>Keep the port, every shape's rendered token, and the own-reference list in step as the
-    /// capability name is typed.</summary>
+    /// <summary>Keep the port token, every shape's token, each shape's autocomplete scope, and the live
+    /// reference errors in step as the capability name is typed.</summary>
     partial void OnCapabilityChanged(string value)
     {
         Port.Head = value;
         foreach (var s in Shapes) s.Head = value;
-        RefreshOwnReferences();
+        Refresh();
     }
 
-    /// <summary>A fresh derived-shape row scoped to this capability: its template autocompletes/colours only
-    /// this capability's own outputs (its port and sibling shapes) + <c>workspace</c>.</summary>
-    public ShapeEditRow NewShape() => new(r => Shapes.Remove(r), OwnReferences, NoOpenCapabilities) { Head = Capability };
+    /// <summary>A fresh derived-shape row wired to this capability. Its autocomplete scope + errors are filled
+    /// in by <see cref="Refresh"/>.</summary>
+    public ShapeEditRow NewShape() => new(r => Shapes.Remove(r)) { Head = Capability };
 
     [RelayCommand] private void AddShape() => Shapes.Add(NewShape());
 
@@ -139,31 +140,66 @@ public partial class ProvideEditRow : ObservableObject
     {
         if (e.OldItems is not null) foreach (ShapeEditRow s in e.OldItems) s.PropertyChanged -= OnShapeFieldChanged;
         if (e.NewItems is not null) foreach (ShapeEditRow s in e.NewItems) s.PropertyChanged += OnShapeFieldChanged;
-        RefreshOwnReferences();
+        Refresh();
     }
 
     void OnShapeFieldChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ShapeEditRow.Name)) RefreshOwnReferences();
+        // A rename moves the reference surface (autocomplete scopes) AND can change errors; a template edit
+        // only changes errors.
+        if (e.PropertyName == nameof(ShapeEditRow.Name)) Refresh();
+        else if (e.PropertyName == nameof(ShapeEditRow.Template)) RefreshShapeErrors();
     }
 
-    void RefreshOwnReferences()
+    void Refresh()
+    {
+        RefreshShapeScopes();
+        RefreshShapeErrors();
+    }
+
+    /// <summary>Give each shape its own autocomplete scope: <c>workspace</c>, this capability's <c>port</c>,
+    /// and its SIBLING shapes — deliberately excluding the shape itself, so it can never autocomplete to a
+    /// self-reference.</summary>
+    void RefreshShapeScopes()
     {
         var cap = Capability.Trim();
-        var wanted = new List<string> { "workspace" };
+        foreach (var shape in Shapes)
+        {
+            var wanted = new List<string> { "workspace" };
+            if (cap.Length > 0)
+            {
+                wanted.Add($"{cap}.port");
+                foreach (var sibling in Shapes)
+                {
+                    if (ReferenceEquals(sibling, shape)) continue;   // never offer this shape its own name
+                    var n = sibling.Name.Trim();
+                    if (n.Length > 0) wanted.Add($"{cap}.{n}");
+                }
+            }
+            shape.SetScope(wanted);
+        }
+    }
+
+    /// <summary>Flag each shape whose template self-references, references out of scope, or is part of a cycle
+    /// — the same rule Save enforces (<see cref="Sprig.Core.Config.ConfigReferences.ShapeReferenceIssues"/>),
+    /// surfaced live under the offending field.</summary>
+    void RefreshShapeErrors()
+    {
+        var cap = Capability.Trim();
+        var errors = new Dictionary<string, string>(StringComparer.Ordinal);
         if (cap.Length > 0)
         {
-            wanted.Add($"{cap}.port");
+            var shapes = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var s in Shapes)
             {
                 var n = s.Name.Trim();
-                if (n.Length > 0) wanted.Add($"{cap}.{n}");
+                if (n.Length > 0) shapes[n] = s.Template ?? "";
             }
+            foreach (var (shape, message) in Sprig.Core.Config.ConfigReferences.ShapeReferenceIssues(cap, shapes))
+                errors.TryAdd(shape, message);   // first problem per shape
         }
-        // Equality-guard the churn so the token boxes reacting to it can't loop back (the M8 lesson).
-        if (OwnReferences.SequenceEqual(wanted, StringComparer.Ordinal)) return;
-        OwnReferences.Clear();
-        foreach (var w in wanted) OwnReferences.Add(w);
+        foreach (var s in Shapes)
+            s.ReferenceError = errors.GetValueOrDefault(s.Name.Trim());
     }
 
     /// <summary>The reference token for an output <paramref name="name"/> under <paramref name="head"/>:

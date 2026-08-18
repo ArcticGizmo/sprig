@@ -168,7 +168,7 @@ public sealed class InitInspector
             var overrides = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var key in portKeys)
             {
-                var baseName = dir.Length > 0 ? Sanitize(dir[(dir.LastIndexOf('/') + 1)..]) : Sanitize(key);
+                var baseName = dir.Length > 0 ? Sanitize(dir[(dir.LastIndexOf('/') + 1)..]) : CapNameFromPortKey(key);
                 var cap = UniqueName(baseName, usedCaps);
                 provides.Add(new ProvidedCapability
                 {
@@ -368,6 +368,20 @@ public sealed class InitInspector
         var proto = mapping.Split('/')[0];
         var parts = proto.Split(':');
         return parts.Length >= 2 ? (parts[^2], parts[^1]) : (parts[^1], parts[^1]);
+    }
+
+    /// <summary>A capability name from a port env key: drop a trailing <c>-port</c>/<c>_port</c> marker so
+    /// <c>VITE_PORT</c> → <c>vite</c> (referenced as <c>${sprig.vite.port}</c>), not <c>vite-port.port</c>.
+    /// A bare <c>PORT</c> (nothing before the marker) keeps <c>port</c> as the name.</summary>
+    static string CapNameFromPortKey(string key)
+    {
+        var slug = Sanitize(key);                       // non-alphanumerics already collapsed to '-'
+        if (slug.EndsWith("-port", StringComparison.OrdinalIgnoreCase))
+        {
+            var prefix = slug[..^"-port".Length].Trim('-');
+            if (prefix.Length > 0) return prefix;
+        }
+        return slug;
     }
 
     static string Sanitize(string key)

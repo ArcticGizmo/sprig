@@ -153,6 +153,18 @@ public class InitInspectorMapTests : IDisposable
     }
 
     [Fact]
+    public void A_port_key_names_the_capability_without_the_port_suffix()
+    {
+        Write(".env.local", "VITE_PORT=5173\n");   // untracked target carrying a port key
+
+        var p = InspectMap();
+
+        var cap = Assert.Single(Provides(p));
+        Assert.Equal("vite", cap.Capability);       // VITE_PORT -> vite (referenced as vite.port), not vite-port
+        Assert.Equal("${sprig.vite.port}", Env(p)[0].Set["VITE_PORT"]);
+    }
+
+    [Fact]
     public void An_embedded_url_is_surfaced_as_a_need_note_not_a_provide()
     {
         Write(".env", "VITE_API_URL=http://localhost:4000\n");

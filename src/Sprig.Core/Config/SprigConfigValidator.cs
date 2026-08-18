@@ -129,87 +129,14 @@ public static class SprigConfigValidator
         }
     }
 
-    /// <summary>
-    /// A derived shape is part of the provider's own contract — resolved in isolation, before any wiring — so
-    /// it may reference ONLY this capability's own outputs (its <c>port</c> and sibling shapes) or
-    /// <c>${sprig.workspace}</c>. Referencing another capability or a need is rejected (that belongs in
-    /// env/compose). A shape referencing itself, or a cycle between shapes, can never resolve, so both are
-    /// flagged here rather than blowing up at checkout.
-    /// </summary>
+    /// <summary>A derived shape may reference only this capability's own outputs (its <c>port</c> and sibling
+    /// shapes) or <c>${sprig.workspace}</c> — never another capability/need, itself, or a cycle. The rule lives
+    /// in <see cref="ConfigReferences.ShapeReferenceIssues"/> so the editor's live per-field error matches
+    /// exactly what Save rejects.</summary>
     static void ValidateShapeReferences(ProvidedCapability p, string at, List<ValidationIssue> issues)
     {
-        if (p.Shapes.Count == 0) return;
-        var outputs = new HashSet<string>(p.OutputNames, StringComparer.Ordinal);
-
-        // Edges: a shape -> the sibling shapes it references (port refs can't form a cycle).
-        var deps = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (var (shapeName, template) in p.Shapes)
-        {
-            var edges = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var reference in ConfigReferences.ReferencedNames(template))
-            {
-                if (reference == "workspace") continue;
-                var dot = reference.IndexOf('.');
-                var head = dot > 0 ? reference[..dot] : reference;
-                var tail = dot > 0 ? reference[(dot + 1)..] : "";
-                if (dot <= 0 || head != p.Capability)
-                {
-                    issues.Add(new($"{at}.shapes.{shapeName}",
-                        $"a derived shape may only reference this capability's own outputs "
-                        + $"(${{sprig.{p.Capability}.<output>}}) or ${{sprig.workspace}}, not '${{sprig.{reference}}}'"));
-                    continue;
-                }
-                if (!outputs.Contains(tail))
-                {
-                    issues.Add(new($"{at}.shapes.{shapeName}",
-                        $"references '${{sprig.{reference}}}', which is not one of '{p.Capability}'s outputs"));
-                    continue;
-                }
-                if (tail == shapeName)
-                    issues.Add(new($"{at}.shapes.{shapeName}", "a derived shape cannot reference itself"));
-                else if (p.Shapes.ContainsKey(tail))
-                    edges.Add(tail);
-            }
-            deps[shapeName] = edges;
-        }
-
-        if (FindShapeCycle(deps) is { } cycle)
-            issues.Add(new($"{at}.shapes",
-                $"circular dependency between derived shapes: {string.Join(" -> ", cycle)}"));
-    }
-
-    /// <summary>Depth-first cycle hunt over the shape dependency graph; returns the offending loop (closed on
-    /// its first node) or null when the graph is acyclic.</summary>
-    static IReadOnlyList<string>? FindShapeCycle(Dictionary<string, HashSet<string>> deps)
-    {
-        var state = new Dictionary<string, int>(StringComparer.Ordinal);   // 0/absent = unseen, 1 = on stack, 2 = done
-        var stack = new List<string>();
-        IReadOnlyList<string>? found = null;
-
-        bool Visit(string node)
-        {
-            state[node] = 1;
-            stack.Add(node);
-            var neighbours = deps.TryGetValue(node, out var e) ? e : new HashSet<string>();
-            foreach (var next in neighbours)
-            {
-                if (state.GetValueOrDefault(next) == 1)
-                {
-                    var from = stack.IndexOf(next);
-                    found = stack.Skip(from).Append(next).ToList();   // e.g. a -> b -> a
-                    return true;
-                }
-                if (state.GetValueOrDefault(next) == 0 && Visit(next)) return true;
-            }
-            state[node] = 2;
-            stack.RemoveAt(stack.Count - 1);
-            return false;
-        }
-
-        foreach (var node in deps.Keys)
-            if (state.GetValueOrDefault(node) == 0 && Visit(node))
-                break;
-        return found;
+        foreach (var (shape, message) in ConfigReferences.ShapeReferenceIssues(p.Capability, p.Shapes))
+            issues.Add(new($"{at}.shapes.{shape}", message));
     }
 
     static void ValidateNeeds(IReadOnlyList<Need> needs, string prefix, List<ValidationIssue> issues)

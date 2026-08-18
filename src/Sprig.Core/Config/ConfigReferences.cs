@@ -56,6 +56,76 @@ public static partial class ConfigReferences
         return dot > 0 && openCapabilities.Contains(reference[..dot]);  // needed cap/alias — any output
     }
 
+    /// <summary>
+    /// Per-shape problems in a capability's derived <paramref name="shapes"/> (name → template). A shape is
+    /// resolved in isolation, before any wiring, so its template may reference ONLY this
+    /// <paramref name="capability"/>'s own outputs (its <c>port</c> and sibling shapes) or
+    /// <c>${sprig.workspace}</c> — never another capability/need, itself, or a cycle. The single source of
+    /// truth behind both the save-time validator and the editor's live per-field error. Returns one
+    /// <c>(shape, message)</c> per problem (a shape may have several); an empty list means all shapes are fine.
+    /// </summary>
+    public static IReadOnlyList<(string Shape, string Message)> ShapeReferenceIssues(
+        string capability, IReadOnlyDictionary<string, string> shapes)
+    {
+        var issues = new List<(string, string)>();
+        if (shapes.Count == 0) return issues;
+
+        var outputs = new HashSet<string>(shapes.Keys, StringComparer.Ordinal) { "port" };
+        var deps = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);   // shape -> sibling shapes it references
+
+        foreach (var (name, template) in shapes)
+        {
+            var edges = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var reference in ReferencedNames(template))
+            {
+                if (reference == "workspace") continue;
+                var dot = reference.IndexOf('.');
+                var head = dot > 0 ? reference[..dot] : reference;
+                var tail = dot > 0 ? reference[(dot + 1)..] : "";
+                if (dot <= 0 || head != capability)
+                    issues.Add((name, $"a derived shape may only reference this capability's own outputs "
+                        + $"(${{sprig.{capability}.<output>}}) or ${{sprig.workspace}}, not '${{sprig.{reference}}}'"));
+                else if (!outputs.Contains(tail))
+                    issues.Add((name, $"references '${{sprig.{reference}}}', which is not one of '{capability}'s outputs"));
+                else if (tail == name)
+                    issues.Add((name, "a derived shape cannot reference itself"));
+                else if (shapes.ContainsKey(tail))
+                    edges.Add(tail);
+            }
+            deps[name] = edges;
+        }
+
+        foreach (var member in ShapesOnACycle(deps))
+            issues.Add((member, "a derived shape is part of a circular dependency between derived shapes"));
+
+        return issues;
+    }
+
+    /// <summary>Every shape that lies on a dependency cycle (a shape that can reach itself through sibling
+    /// references). Self-references are handled separately and never form an edge, so they don't appear here.</summary>
+    static IReadOnlyList<string> ShapesOnACycle(Dictionary<string, HashSet<string>> deps)
+    {
+        var onCycle = new List<string>();
+        foreach (var start in deps.Keys)
+        {
+            var stack = new Stack<string>();
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            stack.Push(start);
+            var found = false;
+            while (stack.Count > 0 && !found)
+            {
+                if (!deps.TryGetValue(stack.Pop(), out var edges)) continue;
+                foreach (var next in edges)
+                {
+                    if (next == start) { found = true; break; }
+                    if (visited.Add(next)) stack.Push(next);
+                }
+            }
+            if (found) onCycle.Add(start);
+        }
+        return onCycle;
+    }
+
     /// <summary>The two reference sets a repo accepts: verbatim <paramref name="exact"/> names (workspace +
     /// inputs + self-provided <c>&lt;cap&gt;.&lt;out&gt;</c>) and <paramref name="open"/> capability heads
     /// (needs/aliases). Feeds <see cref="IsReferenceKnown"/>.</summary>

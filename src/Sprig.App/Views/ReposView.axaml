@@ -550,20 +550,25 @@
                                                             <DataTemplate x:DataType="vm:ShapeEditRow">
                                                                 <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
                                                                         BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,9" Margin="0,0,0,8">
-                                                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
-                                                                        <TextBlock Grid.Column="0" Text="● DERIVED" FontFamily="Consolas,monospace"
-                                                                                   FontSize="11" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" />
-                                                                        <TextBox Grid.Column="1" Width="110" Text="{Binding Name, Mode=TwoWay}"
-                                                                                 PlaceholderText="url" FontFamily="Consolas,monospace"
-                                                                                 VerticalContentAlignment="Center" ToolTip.Tip="{Binding Ref}" />
-                                                                        <controls:SprigTokenBox Grid.Column="2" MinWidth="0"
-                                                                                 Value="{Binding Template, Mode=TwoWay}"
-                                                                                 Variables="{Binding Variables}"
-                                                                                 OpenCapabilities="{Binding OpenCapabilities}"
-                                                                                 Watermark="http://localhost:${sprig.vite-server.port}" />
-                                                                        <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
-                                                                                Foreground="{StaticResource DangerBrush}" Padding="8,2" />
-                                                                    </Grid>
+                                                                    <StackPanel Spacing="6">
+                                                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                            <TextBlock Grid.Column="0" Text="● DERIVED" FontFamily="Consolas,monospace"
+                                                                                       FontSize="11" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" />
+                                                                            <TextBox Grid.Column="1" Width="110" Text="{Binding Name, Mode=TwoWay}"
+                                                                                     PlaceholderText="url" FontFamily="Consolas,monospace"
+                                                                                     VerticalContentAlignment="Center" ToolTip.Tip="{Binding Ref}" />
+                                                                            <controls:SprigTokenBox Grid.Column="2" MinWidth="0"
+                                                                                     Value="{Binding Template, Mode=TwoWay}"
+                                                                                     Variables="{Binding Variables}"
+                                                                                     OpenCapabilities="{Binding OpenCapabilities}"
+                                                                                     Watermark="http://localhost:${sprig.vite-server.port}" />
+                                                                            <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
+                                                                                    Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                                        </Grid>
+                                                                        <TextBlock Text="{Binding ReferenceError}" FontSize="11" TextWrapping="Wrap"
+                                                                                   Foreground="{StaticResource DangerBrush}"
+                                                                                   IsVisible="{Binding ReferenceError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                                    </StackPanel>
                                                                 </Border>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>

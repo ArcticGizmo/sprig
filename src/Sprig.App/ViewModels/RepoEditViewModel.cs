@@ -69,6 +69,60 @@ public partial class SetupCommandRow : ObservableObject
     [RelayCommand] private void Remove() => _remove(this);
 }
 
+/// <summary>One editable output of a provided capability (map model): either an allocated <b>port</b>
+/// (optionally pinned to an <see cref="Allowed"/> set) or a <b>derived</b> string <see cref="Template"/>.</summary>
+public partial class OutputEditRow : ObservableObject
+{
+    readonly Action<OutputEditRow> _remove;
+    public OutputEditRow(Action<OutputEditRow> remove) => _remove = remove;
+
+    [ObservableProperty] private string _name = "";
+
+    /// <summary>True = an auto-allocated port; false = a derived string template.</summary>
+    [ObservableProperty] private bool _isPort = true;
+
+    /// <summary>For a port output: an optional restriction spec (e.g. <c>8100-8103</c>).</summary>
+    [ObservableProperty] private string _allowed = "";
+
+    /// <summary>For a derived output: the template (e.g. <c>http://localhost:${sprig.api.port}</c>).</summary>
+    [ObservableProperty] private string _template = "";
+
+    public bool IsDerived => !IsPort;
+    partial void OnIsPortChanged(bool value) => OnPropertyChanged(nameof(IsDerived));
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
+/// <summary>One editable provided capability (map model): a contract name, an optional type hint, and its
+/// named outputs.</summary>
+public partial class ProvideEditRow : ObservableObject
+{
+    readonly Action<ProvideEditRow> _remove;
+    public ProvideEditRow(Action<ProvideEditRow> remove) => _remove = remove;
+
+    [ObservableProperty] private string _capability = "";
+    [ObservableProperty] private string _type = "";
+
+    public ObservableCollection<OutputEditRow> Outputs { get; } = [];
+
+    [RelayCommand] private void AddOutput() =>
+        Outputs.Add(new OutputEditRow(r => Outputs.Remove(r)) { Name = "port", IsPort = true });
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
+/// <summary>One editable needed capability (map model): the contract name and an optional local alias.</summary>
+public partial class NeedEditRow : ObservableObject
+{
+    readonly Action<NeedEditRow> _remove;
+    public NeedEditRow(Action<NeedEditRow> remove) => _remove = remove;
+
+    [ObservableProperty] private string _capability = "";
+    [ObservableProperty] private string _as = "";
+
+    [RelayCommand] private void Remove() => _remove(this);
+}
+
 /// <summary>One editable template file path an env override seeds from.</summary>
 public partial class TemplateFileRow : ObservableObject
 {
@@ -464,6 +518,10 @@ public partial class ModuleEditTab : ObservableObject
     /// <summary>Amber ⚠: a path was entered but no such directory exists (informational — doesn't block save).</summary>
     public bool ShowPathMissing => Path.Trim().Length > 0 && !_owner.RepoDirExists(Path);
 
+    /// <summary>Map model: capabilities this module provides / needs.</summary>
+    public ObservableCollection<ProvideEditRow> Provides { get; } = [];
+    public ObservableCollection<NeedEditRow> Needs { get; } = [];
+
     public ObservableCollection<EnvFileEditRow> Env { get; } = [];
     public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
     public ObservableCollection<SetupCommandRow> Setup { get; } = [];
@@ -499,6 +557,14 @@ public partial class ModuleEditTab : ObservableObject
         _owner.DetectComposeOverrides,
         _owner.SprigVariableNames);
 
+    [RelayCommand] private void AddProvide()
+    {
+        var p = new ProvideEditRow(r => Provides.Remove(r));
+        p.Outputs.Add(new OutputEditRow(r => p.Outputs.Remove(r)) { Name = "port", IsPort = true });
+        Provides.Add(p);
+    }
+
+    [RelayCommand] private void AddNeed() => Needs.Add(new NeedEditRow(r => Needs.Remove(r)));
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
     [RelayCommand] private void AddComposeFile() => Compose.Add(NewComposeRow());
     [RelayCommand] private void AddSetupCommand() => Setup.Add(new SetupCommandRow(r => Setup.Remove(r)));
@@ -617,6 +683,21 @@ public partial class RepoEditViewModel : ObservableObject
         foreach (var m in c.EffectiveModules)
         {
             var tab = new ModuleEditTab(vm, m.Name, m.Path);
+            foreach (var p in m.Provides)
+            {
+                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability, Type = p.Type ?? "" };
+                foreach (var (outName, spec) in p.Outputs)
+                    pr.Outputs.Add(new OutputEditRow(r => pr.Outputs.Remove(r))
+                    {
+                        Name = outName,
+                        IsPort = spec.IsPort,
+                        Allowed = spec.Allowed ?? "",
+                        Template = spec.Template ?? "",
+                    });
+                tab.Provides.Add(pr);
+            }
+            foreach (var n in m.Needs)
+                tab.Needs.Add(new NeedEditRow(r => tab.Needs.Remove(r)) { Capability = n.Capability, As = n.As ?? "" });
             foreach (var e in m.Env)
             {
                 var row = tab.NewEnvRow();
@@ -643,6 +724,7 @@ public partial class RepoEditViewModel : ObservableObject
         }
         vm.SelectedModule = vm.Modules.FirstOrDefault();
 
+        vm.RefreshSprigVariableNames();   // pick up self-provided outputs now that modules are loaded
         vm.RefreshMissingInputRefs();
         return vm;
     }
@@ -659,6 +741,10 @@ public partial class RepoEditViewModel : ObservableObject
         RefreshMissingInputRefs();
     }
 
+    // NOTE: don't refresh SprigVariableNames here. This fires on every override change, and rebuilding the
+    // shared variable collection makes each env/compose overlay react and re-raise OverridesChanged, which
+    // re-enters this handler — an infinite cycle. The self-provided ${sprig.<cap>.<out>} names are refreshed
+    // on load and on input edits; live-updating them as provides are typed is a deferred polish.
     void OnModuleOverridesChanged(object? sender, EventArgs e) => RefreshMissingInputRefs();
 
     /// <summary>Set by <see cref="AddModule"/> so the view knows to focus the name box of the module it
@@ -744,6 +830,24 @@ public partial class RepoEditViewModel : ObservableObject
             var n = i.Name.Trim();
             if (n.Length > 0 && !names.Contains(n)) names.Add(n);
         }
+        // Map model: self-provided outputs are referenceable as ${sprig.<capability>.<output>}. (A need's
+        // outputs live in another repo, so they can't be enumerated here — the validator accepts them by
+        // the capability head; the token box just can't green-light them yet.)
+        foreach (var tab in Modules)
+            foreach (var p in tab.Provides)
+            {
+                var cap = p.Capability.Trim();
+                if (cap.Length == 0) continue;
+                foreach (var o in p.Outputs)
+                {
+                    var full = $"{cap}.{o.Name.Trim()}";
+                    if (o.Name.Trim().Length > 0 && !names.Contains(full)) names.Add(full);
+                }
+            }
+        // Only churn the collection when it actually changed — a Clear+Add of identical content still
+        // raises a reset that overlays react to, which (via OverridesChanged) would re-enter this method
+        // and recurse forever. The equality guard makes the notification cycle converge.
+        if (SprigVariableNames.SequenceEqual(names, StringComparer.Ordinal)) return;
         SprigVariableNames.Clear();
         foreach (var n in names) SprigVariableNames.Add(n);
     }
@@ -905,6 +1009,20 @@ public partial class RepoEditViewModel : ObservableObject
         {
             Name = t.Name.Trim(),
             Path = t.Path.Trim(),
+            Provides = t.Provides.Select(p => new ProvidedCapability
+            {
+                Capability = p.Capability.Trim(),
+                Type = Blank(p.Type),
+                Outputs = p.Outputs
+                    .Where(o => o.Name.Trim().Length > 0)
+                    .ToDictionary(
+                        o => o.Name.Trim(),
+                        o => o.IsPort ? OutputSpec.Port(Blank(o.Allowed)) : OutputSpec.Derived(o.Template.Trim()),
+                        StringComparer.Ordinal),
+            }).ToList(),
+            Needs = t.Needs
+                .Where(n => n.Capability.Trim().Length > 0)
+                .Select(n => new Need { Capability = n.Capability.Trim(), As = Blank(n.As) }).ToList(),
             Env = t.Env.Select(e =>
             {
                 var templates = e.Templates.Select(x => x.Path.Trim()).Where(p => p.Length > 0).ToList();

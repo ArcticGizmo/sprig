@@ -581,6 +581,88 @@
                                                 </Grid>
                                             </Border>
 
+                            <!-- provides (map model) -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="PROVIDES" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource OkBrush}" VerticalAlignment="Center"
+                                               ToolTip.Tip="Capabilities this module offers others — its own ports and values derived from them. Consumers reference them as ${sprig.&lt;capability&gt;.&lt;output&gt;}." />
+                                    <Button Grid.Column="1" Content="+ Add capability" Command="{Binding AddProvideCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Provides}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ProvideEditRow">
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+                                                <StackPanel Spacing="6">
+                                                    <Grid ColumnDefinitions="2*,*,Auto" ColumnSpacing="8">
+                                                        <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Capability, Mode=TwoWay}"
+                                                                 PlaceholderText="capability (e.g. orders-api)" FontFamily="Consolas,monospace" />
+                                                        <TextBox Grid.Column="1" MinWidth="0" Text="{Binding Type, Mode=TwoWay}"
+                                                                 PlaceholderText="type hint (http)" FontFamily="Consolas,monospace" />
+                                                        <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                                Foreground="{StaticResource DangerBrush}" Padding="10,2" />
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*,Auto" Margin="12,2,0,0">
+                                                        <TextBlock Grid.Column="0" Text="outputs" FontSize="11"
+                                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Content="+ output" Command="{Binding AddOutputCommand}"
+                                                                FontSize="11" Padding="6,2" />
+                                                    </Grid>
+                                                    <ItemsControl ItemsSource="{Binding Outputs}" Margin="12,0,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:OutputEditRow">
+                                                                <Grid ColumnDefinitions="*,Auto,2*,Auto" ColumnSpacing="8" Margin="0,0,0,5">
+                                                                    <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Name, Mode=TwoWay}"
+                                                                             PlaceholderText="output (port)" FontFamily="Consolas,monospace" />
+                                                                    <CheckBox Grid.Column="1" Content="port" IsChecked="{Binding IsPort}"
+                                                                              VerticalAlignment="Center"
+                                                                              ToolTip.Tip="An auto-allocated host port. Uncheck for a derived string built from other outputs." />
+                                                                    <TextBox Grid.Column="2" MinWidth="0" IsVisible="{Binding IsPort}"
+                                                                             Text="{Binding Allowed, Mode=TwoWay}"
+                                                                             PlaceholderText="allowed ports (optional, e.g. 8100-8103)" FontFamily="Consolas,monospace" />
+                                                                    <TextBox Grid.Column="2" MinWidth="0" IsVisible="{Binding IsDerived}"
+                                                                             Text="{Binding Template, Mode=TwoWay}"
+                                                                             PlaceholderText="http://localhost:${sprig.cap.port}" FontFamily="Consolas,monospace" />
+                                                                    <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
+                                                                            Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- needs (map model) -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="NEEDS" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                                               ToolTip.Tip="Capabilities this module consumes from others. Wired to a sibling module first, then the map." />
+                                    <Button Grid.Column="1" Content="+ Add need" Command="{Binding AddNeedCommand}"
+                                            FontSize="11" Padding="8,3" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Needs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:NeedEditRow">
+                                            <Grid ColumnDefinitions="2*,*,Auto" ColumnSpacing="8" Margin="0,0,0,6">
+                                                <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Capability, Mode=TwoWay}"
+                                                         PlaceholderText="capability (e.g. orders-db)" FontFamily="Consolas,monospace" />
+                                                <TextBox Grid.Column="1" MinWidth="0" Text="{Binding As, Mode=TwoWay}"
+                                                         PlaceholderText="as (alias, optional)" FontFamily="Consolas,monospace" />
+                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                        Foreground="{StaticResource DangerBrush}" Padding="10,2" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
                             <!-- env -->
                             <StackPanel Spacing="8">
                                 <Grid ColumnDefinitions="*,Auto">

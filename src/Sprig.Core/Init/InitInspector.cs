@@ -18,10 +18,11 @@ public sealed record ModuleSpec(string Name, string Path);
 /// (auto-allocated per workspace), and rewrites the matching env/compose values to reference them.
 /// Heuristic and advisory — a starting point the user edits.
 /// <para>
-/// Env detection is git-aware and only ever looks at <b>untracked</b> env files (the gitignored
-/// <c>.env.local</c> kind): overriding a tracked file would permanently dirty every worktree, so a
-/// tracked/committed env file is left completely alone — not scanned for ports, not offered as a
-/// template. (The <c>templates</c> seed feature still exists in the schema for hand-authored configs.)
+/// Env detection is git-aware, and reads and writes follow different rules. It <b>reads</b> every env
+/// file to find the port (often documented in a committed <c>.env</c> or a <c>.env.template</c> sample),
+/// but only ever <b>writes</b> the override into an untracked, non-sample file — an existing
+/// <c>.env.local</c>/<c>.env</c>, or a fresh <c>.env.local</c> when git ignores it — never clobbering a
+/// tracked or sample file. A port with nowhere safe to land is reported as a note, not forced.
 /// </para>
 /// </summary>
 public sealed class InitInspector
@@ -100,11 +101,20 @@ public sealed class InitInspector
         return new InitProposal(config, notes);
     }
 
-    /// <summary>Env detection for the map model: each bare-port key becomes its own provided capability with
-    /// a single <c>port</c> output, and its value is rewritten to reference it. Auto-detection only ever
-    /// touches <b>untracked</b> env files (the gitignored <c>.env.local</c> kind) — a tracked/committed env
-    /// file is a shared default sprig must not clobber, so it's ignored entirely rather than scanned or
-    /// seeded as a template. Hand-authored configs can still add <c>templates</c>; the guesser won't.</summary>
+    /// <summary>
+    /// Env detection for the map model: each bare-port key becomes a provided capability, and its value is
+    /// rewritten to <c>${sprig.&lt;cap&gt;.port}</c> in an override file. Two distinct git rules apply, per
+    /// directory:
+    /// <list type="bullet">
+    /// <item><b>Reading</b> is unrestricted — every env file is scanned for port keys, because the port is
+    /// often documented in a committed <c>.env</c> or a <c>.env.template</c> sample.</item>
+    /// <item><b>Writing</b> only ever lands in an <b>untracked, non-sample</b> file: an existing one
+    /// (preferring <c>.env.local</c>, then <c>.env</c>), or a fresh <c>.env.local</c> when git would ignore
+    /// it — never a tracked or sample file. If a port is found but there's nowhere safe to write, it's left
+    /// alone with a note.</item>
+    /// </list>
+    /// One override target per directory, so siblings never each spawn a capability for the same port.
+    /// </summary>
     void DetectEnvProvides(string repoRoot, string moduleRelPath, List<ProvidedCapability> provides,
         HashSet<string> usedCaps, List<EnvOverride> envOverrides, List<string> notes)
     {
@@ -112,47 +122,62 @@ public sealed class InitInspector
         if (!Directory.Exists(scanRoot)) return;
         var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
 
-        // Candidate override targets: untracked (a tracked/committed env is off-limits — overriding it would
-        // dirty every worktree) and never a committed sample (.env.template/.example/.sample/.dist — a seed,
-        // not a runtime file). Then pick exactly ONE per directory, so two files at the same level (e.g. .env
-        // and .env.local) never each spawn their own capability.
-        var byDir = EnumerateEnvFiles(repoRoot, scanRoot)
-            .Where(f => !tracked.Contains(f))
-            .Where(f => !IsEnvSample(Path.GetFileName(f)))
-            .GroupBy(DirOf, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var dir in byDir)
+        foreach (var group in EnumerateEnvFiles(repoRoot, scanRoot).GroupBy(DirOf, StringComparer.OrdinalIgnoreCase))
         {
-            var target = dir
-                .OrderBy(EnvTargetRank)
-                .ThenBy(f => f, StringComparer.OrdinalIgnoreCase)
-                .First();
-            var abs = Path.Combine(repoRoot, target);
-            if (!File.Exists(abs)) continue;
+            var dir = group.Key;
+            var files = group.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
 
-            var set = new Dictionary<string, string>();
-            foreach (var (key, value) in ParseEnv(File.ReadAllText(abs)))
+            // Read every env file in the directory to find the port keys (dedup by key) and flag embedded URLs.
+            var portKeys = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var noted = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var relFile in files)
             {
-                if (IsBarePort(value) && !set.ContainsKey(key))
+                var abs = Path.Combine(repoRoot, relFile);
+                if (!File.Exists(abs)) continue;
+                foreach (var (key, value) in ParseEnv(File.ReadAllText(abs)))
                 {
-                    var cap = UniqueName(Sanitize(key), usedCaps);
-                    provides.Add(new ProvidedCapability
-                    {
-                        Capability = cap,
-                        Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any },
-                    });
-                    set[key] = $"${{sprig.{cap}.port}}";
+                    if (IsBarePort(value)) { if (seen.Add(key)) portKeys.Add(key); }
+                    else if (LooksLikeEmbeddedPort(key, value) && noted.Add(key))
+                        notes.Add($"'{key}' looks like it consumes another service — declare a need and reference it (e.g. ${{sprig.api.url}})");
                 }
-                else if (LooksLikeEmbeddedPort(key, value))
-                    notes.Add($"'{key}' in {target} looks like it consumes another service — declare a need and reference it (e.g. ${{sprig.api.url}})");
+            }
+            if (portKeys.Count == 0) continue;
+
+            // Choose the write target: an existing untracked, non-sample file, else a fresh .env.local when
+            // git ignores it. Never a tracked or sample file.
+            var target = files
+                .Where(f => !tracked.Contains(f) && !IsEnvSample(Path.GetFileName(f)))
+                .OrderBy(EnvTargetRank).ThenBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (target is null)
+            {
+                var candidate = string.IsNullOrEmpty(dir) ? ".env.local" : $"{dir}/.env.local";
+                if (_git.IsIgnored(repoRoot, candidate)) target = candidate;
+            }
+            if (target is null)
+            {
+                var where = dir.Length == 0 ? "the repo root" : dir;
+                notes.Add($"found port(s) {string.Join(", ", portKeys)} in {where}, but every env file there is "
+                    + "committed and no '.env.local' is gitignored — add '.env.local' to .gitignore so sprig can override the port safely");
+                continue;
             }
 
-            if (set.Count == 0) continue;
-            envOverrides.Add(new EnvOverride
+            // One capability per port key. In a subdirectory, name it after the app folder (the service, not
+            // the socket); at the repo root, fall back to the env key.
+            var overrides = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var key in portKeys)
             {
-                File = ModuleRelative(target, moduleRelPath),
-                Set = set,
-            });
+                var baseName = dir.Length > 0 ? Sanitize(dir[(dir.LastIndexOf('/') + 1)..]) : Sanitize(key);
+                var cap = UniqueName(baseName, usedCaps);
+                provides.Add(new ProvidedCapability
+                {
+                    Capability = cap,
+                    Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any },
+                });
+                overrides[key] = $"${{sprig.{cap}.port}}";
+            }
+            envOverrides.Add(new EnvOverride { File = ModuleRelative(target, moduleRelPath), Set = overrides });
         }
     }
 

@@ -59,9 +59,10 @@ public class InitInspectorMapTests : IDisposable
     }
 
     [Fact]
-    public void A_tracked_env_file_is_left_alone_by_auto_detection()
+    public void A_committed_port_with_nowhere_gitignored_to_override_is_left_alone_with_a_note()
     {
-        // A committed .env is a shared default sprig must never clobber — auto-detection ignores it entirely.
+        // Port lives in a committed .env, and .env.local is NOT gitignored — there's nowhere safe to write,
+        // so sprig never clobbers the tracked file; it reports a note instead.
         Write(".env", "PORT=6010\n");
         _git.TrackedFiles.Add(".env");
 
@@ -69,23 +70,57 @@ public class InitInspectorMapTests : IDisposable
 
         Assert.Empty(Provides(p));
         Assert.Empty(Env(p));
+        Assert.Contains(p.Notes, n => n.Contains("gitignore"));
     }
 
     [Fact]
-    public void Only_the_untracked_env_file_is_scanned_when_a_tracked_one_sits_beside_it()
+    public void A_committed_port_is_overridden_in_a_gitignored_env_local()
     {
-        Write(".env", "SHARED_PORT=6010\n");   // tracked default — not scanned, not seeded as a template
-        Write(".env.local", "PORT=7010\n");    // gitignored override — the only detection source
+        // The common SPA shape: VITE_PORT committed in .env, .env.local gitignored (not yet created).
+        // Reading the tracked .env is fine; the override lands in a fresh, gitignored .env.local.
+        Write(".env", "VITE_PORT=3000\n");
+        _git.TrackedFiles.Add(".env");
+        _git.IgnoredFiles.Add(".env.local");
+
+        var p = InspectMap();
+
+        var cap = Assert.Single(Provides(p));
+        var env = Assert.Single(Env(p));
+        Assert.Equal(".env.local", env.File);
+        Assert.Equal($"${{sprig.{cap.Capability}.port}}", env.Set["VITE_PORT"]);
+    }
+
+    [Fact]
+    public void Ports_in_a_tracked_sibling_are_detected_and_overridden_in_the_untracked_target()
+    {
+        Write(".env", "SHARED_PORT=6010\n");   // committed — read for its port, never written
+        Write(".env.local", "PORT=7010\n");    // gitignored override — the write target
         _git.TrackedFiles.Add(".env");
 
         var p = InspectMap();
 
-        Assert.Single(Provides(p));            // only the untracked PORT became a capability
+        // Both ports are found (reading the tracked .env is fine) and both are rewritten in the untracked file.
         var env = Assert.Single(Env(p));
         Assert.Equal(".env.local", env.File);
         Assert.True(env.Set.ContainsKey("PORT"));
-        Assert.False(env.Set.ContainsKey("SHARED_PORT"));   // the tracked file was not scanned
-        Assert.Null(env.Templates);                          // and not attached as a template
+        Assert.True(env.Set.ContainsKey("SHARED_PORT"));
+        Assert.Equal(2, Provides(p).Count);
+    }
+
+    [Fact]
+    public void A_capability_in_a_subdirectory_is_named_after_the_app_folder()
+    {
+        // A monorepo app: port committed in apps/client/.env, override in a gitignored apps/client/.env.local.
+        // Name the capability after the service folder ('client'), not the socket ('vite-port').
+        Write("apps/client/.env", "VITE_PORT=3000\n");
+        _git.TrackedFiles.Add("apps/client/.env");
+        _git.IgnoredFiles.Add("apps/client/.env.local");
+
+        var p = InspectMap();
+
+        var cap = Assert.Single(Provides(p));
+        Assert.Equal("client", cap.Capability);
+        Assert.Equal("apps/client/.env.local", Assert.Single(Env(p)).File);
     }
 
     [Fact]

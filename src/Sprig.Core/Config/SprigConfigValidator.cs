@@ -145,12 +145,10 @@ public static class SprigConfigValidator
         {
             var n = needs[i];
             var at = $"{prefix}[{i}]";
-            if (string.IsNullOrWhiteSpace(n.Capability))
-                issues.Add(new($"{at}.capability", "must be a non-empty capability name"));
-            else if (!IsIdentifier(n.Capability))
-                issues.Add(new($"{at}.capability", $"'{n.Capability}' must contain only letters, digits, '-' or '_'"));
-            if (!string.IsNullOrWhiteSpace(n.As) && !IsIdentifier(n.As!))
-                issues.Add(new($"{at}.as", $"'{n.As}' must contain only letters, digits, '-' or '_'"));
+            if (string.IsNullOrWhiteSpace(n.Value))
+                issues.Add(new($"{at}.value", "must be a non-empty value name"));
+            else if (!IsIdentifier(n.Value))
+                issues.Add(new($"{at}.value", $"'{n.Value}' must contain only letters, digits, '-' or '_'"));
         }
     }
 

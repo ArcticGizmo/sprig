@@ -112,7 +112,7 @@ public partial class WorkspacesViewModel : PageViewModel
             {
                 var slice = _newMapRepos.Where(r => kept.Contains(r.Name)).ToList();
                 var gaps = MapGraphProjection.Project(_newMapDef, slice).Gaps
-                    .Select(g => g.Need.Capability).Distinct().ToList();
+                    .Select(g => g.Need.Value).Distinct().ToList();
                 if (gaps.Count > 0)
                     hint += $" Needs left unmet (supply a default): {string.Join(", ", gaps)}.";
             }

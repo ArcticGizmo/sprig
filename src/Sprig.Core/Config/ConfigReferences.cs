@@ -140,7 +140,7 @@ public static partial class ConfigReferences
     }
 
     /// <summary>The repo's map-model surface: provided capabilities → their output names, and the set of
-    /// needed capability names + aliases. Gathered across every module (repo-global, as inputs are).</summary>
+    /// needed value names. Gathered across every module (repo-global, as inputs are).</summary>
     static (Dictionary<string, HashSet<string>> Provided, HashSet<string> Needed) CapabilitySurface(SprigRepoConfig config)
     {
         var provided = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -155,10 +155,7 @@ public static partial class ConfigReferences
                     outs.Add(o);
             }
             foreach (var n in module.Needs)
-            {
-                needed.Add(n.Capability);
-                needed.Add(n.Alias);
-            }
+                needed.Add(n.Value);
         }
         return (provided, needed);
     }

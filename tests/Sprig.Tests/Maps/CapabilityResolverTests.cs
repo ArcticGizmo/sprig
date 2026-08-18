@@ -58,8 +58,8 @@ public class CapabilityResolverTests
     public void Monorepo_wires_and_resolves_locally_nothing_bubbles_out()
     {
         var acme = Repo("acme",
-            Mod("api", provides: [Http("acme-api")], needs: [new Need { Capability = "acme-db" }]),
-            Mod("web", needs: [new Need { Capability = "acme-api" }]),
+            Mod("api", provides: [Http("acme-api")], needs: [new Need { Value = "acme-db" }]),
+            Mod("web", needs: [new Need { Value = "acme-api" }]),
             Mod("db", provides: [Postgres("acme-db")]));
         var ports = Allocate(acme);
 
@@ -77,7 +77,7 @@ public class CapabilityResolverTests
     [Fact]
     public void A_need_bubbles_up_to_a_provider_in_another_repo()
     {
-        var web = Repo("web", Mod("app", needs: [new Need { Capability = "api" }]));
+        var web = Repo("web", Mod("app", needs: [new Need { Value = "api" }]));
         var api = Repo("api", Mod("app", provides: [Http("api")]));
         var ports = Allocate(web, api);
 
@@ -92,7 +92,7 @@ public class CapabilityResolverTests
     {
         var app = Repo("app",
             Mod("svc", provides: [Http("svc")]),
-            Mod("consumer", needs: [new Need { Capability = "svc" }]));
+            Mod("consumer", needs: [new Need { Value = "svc" }]));
         var other = Repo("other", Mod("svc", provides: [Http("svc")]));
         var ports = Allocate(app, other);
 
@@ -107,7 +107,7 @@ public class CapabilityResolverTests
     {
         var a = Repo("a", Mod("app", provides: [Http("dup")]));
         var b = Repo("b", Mod("app", provides: [Http("dup")]));
-        var c = Repo("c", Mod("app", needs: [new Need { Capability = "dup" }]));
+        var c = Repo("c", Mod("app", needs: [new Need { Value = "dup" }]));
         var ports = Allocate(a, b, c);
 
         var ex = Assert.Throws<MapResolutionException>(() => CapabilityResolver.Resolve("ws", null, [a, b, c], ports));
@@ -117,7 +117,7 @@ public class CapabilityResolverTests
     [Fact]
     public void Map_wiring_bridges_a_generically_named_need_to_a_specific_provider()
     {
-        var web = Repo("web", Mod("app", needs: [new Need { Capability = "backend" }]));
+        var web = Repo("web", Mod("app", needs: [new Need { Value = "backend" }]));
         var api = Repo("orders", Mod("app", provides: [Http("orders-api")]));
         var ports = Allocate(web, api);
         var map = new MapDefinition
@@ -140,7 +140,7 @@ public class CapabilityResolverTests
     [Fact]
     public void A_default_fills_a_need_whose_provider_is_not_selected()
     {
-        var web = Repo("web", Mod("app", needs: [new Need { Capability = "auth" }]));
+        var web = Repo("web", Mod("app", needs: [new Need { Value = "auth" }]));
         var map = new MapDefinition
         {
             Name = "m",
@@ -163,7 +163,7 @@ public class CapabilityResolverTests
     [Fact]
     public void An_inline_literal_fills_a_gap_and_wins_over_reporting()
     {
-        var web = Repo("web", Mod("app", needs: [new Need { Capability = "auth" }]));
+        var web = Repo("web", Mod("app", needs: [new Need { Value = "auth" }]));
         var inline = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
         {
             ["web"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
@@ -181,14 +181,14 @@ public class CapabilityResolverTests
     [Fact]
     public void An_unmet_need_is_reported_not_thrown()
     {
-        var web = Repo("web", Mod("app", needs: [new Need { Capability = "auth", As = "authz" }]));
+        var web = Repo("web", Mod("app", needs: [new Need { Value = "auth" }]));
 
         var rw = CapabilityResolver.Resolve("ws", null, [web], Allocate(web));
 
         var gap = Assert.Single(rw.Unsatisfied);
         Assert.Equal("web", gap.Repo);
         Assert.Equal("app", gap.Module);
-        Assert.Equal("auth", gap.Capability);
+        Assert.Equal("auth", gap.Value);
     }
 
     [Fact]
@@ -213,16 +213,16 @@ public class CapabilityResolverTests
     }
 
     [Fact]
-    public void The_as_alias_names_the_wired_provider_locally()
+    public void A_local_need_is_referenced_under_its_value_name()
     {
         var app = Repo("app",
-            Mod("api", provides: [Postgres("app-db")], needs: [new Need { Capability = "app-db", As = "primary" }]));
+            Mod("api", provides: [Postgres("app-db")], needs: [new Need { Value = "app-db" }]));
         var ports = Allocate(app);
 
         var rw = CapabilityResolver.Resolve("ws", null, [app], ports);
 
-        // Referenced under the alias, not the capability name.
-        Assert.Equal($"Host=localhost;Port={ports["app.app-db.port"]};Database=app", Resolve(Module(rw, "api"), "primary.connString"));
+        // A wired need's outputs are referenced under the need's value name.
+        Assert.Equal($"Host=localhost;Port={ports["app.app-db.port"]};Database=app", Resolve(Module(rw, "api"), "app-db.connString"));
     }
 
     [Fact]

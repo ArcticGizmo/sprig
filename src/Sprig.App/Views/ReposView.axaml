@@ -245,13 +245,8 @@
                                     <ItemsControl ItemsSource="{Binding SelectedConfig.SelectedModule.Needs}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:NeedRow">
-                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
-                                                    <TextBlock Text="{Binding Capability}" FontFamily="Consolas,monospace" FontSize="12"
-                                                               Foreground="{StaticResource AccentBrush}" />
-                                                    <TextBlock Text="{Binding AliasLabel}" FontFamily="Consolas,monospace" FontSize="11"
-                                                               Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
-                                                               IsVisible="{Binding ShowAlias}" />
-                                                </StackPanel>
+                                                <TextBlock Text="{Binding Value}" FontFamily="Consolas,monospace" FontSize="12"
+                                                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,2" />
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -582,6 +577,30 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- quick-add: values referenced in this module's env/compose overrides that
+                                     aren't provided (or needed) yet. One click declares the capability (with a
+                                     stub shape per referenced output), turning a red reference green. -->
+                                <StackPanel Spacing="4" Margin="0,2,0,0" IsVisible="{Binding HasUnresolvedReferences}">
+                                    <TextBlock Text="Referenced in env/compose but not provided — add as a capability you own:"
+                                               FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding UnresolvedReferences}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:String">
+                                                <Button Content="{Binding StringFormat='+ {0}'}" FontFamily="Consolas,monospace"
+                                                        FontSize="11" Padding="8,3" Margin="0,0,6,6"
+                                                        Background="Transparent" Foreground="{StaticResource OkBrush}"
+                                                        BorderBrush="{StaticResource OkBrush}" BorderThickness="1"
+                                                        Command="{Binding $parent[ItemsControl].((vm:ModuleEditTab)DataContext).AddUnresolvedProvideCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        ToolTip.Tip="Declare this as a capability this module provides (with a shape stub for each referenced output)." />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- needs (map model) -->
@@ -589,24 +608,99 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="NEEDS" FontSize="11" FontWeight="SemiBold"
                                                Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
-                                               ToolTip.Tip="Capabilities this module consumes from others. Wired to a sibling module first, then the map." />
-                                    <Button Grid.Column="1" Content="+ Add need" Command="{Binding AddNeedCommand}"
+                                               ToolTip.Tip="Values this module consumes from others. Each names a value provided elsewhere; it's wired to a sibling module first, then the map. Reference its outputs as ${sprig.&lt;value&gt;.&lt;output&gt;}." />
+                                    <Button Grid.Column="1" Content="+ Add value" Command="{Binding AddNeedCommand}"
                                             FontSize="11" Padding="8,3" />
                                 </Grid>
+                                <!-- One card per needed value, mirroring a PROVIDES capability card: the value is
+                                     the namespace at the top, and the outputs referenced under it sit beneath —
+                                     except a need's outputs aren't declared, they're discovered from where you
+                                     reference them (the provider owns them, resolved at map time). -->
                                 <ItemsControl ItemsSource="{Binding Needs}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:NeedEditRow">
-                                            <Grid ColumnDefinitions="2*,*,Auto" ColumnSpacing="8" Margin="0,0,0,6">
-                                                <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Capability, Mode=TwoWay}"
-                                                         PlaceholderText="capability (e.g. orders-db)" FontFamily="Consolas,monospace" />
-                                                <TextBox Grid.Column="1" MinWidth="0" Text="{Binding As, Mode=TwoWay}"
-                                                         PlaceholderText="as (alias, optional)" FontFamily="Consolas,monospace" />
-                                                <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
-                                                        Foreground="{StaticResource DangerBrush}" Padding="10,2" />
-                                            </Grid>
+                                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                                    BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+                                                <StackPanel Spacing="10">
+                                                    <!-- Header: the value name lives INSIDE the ${sprig.…} namespace it heads. -->
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                                                            <TextBlock Text="${sprig." FontFamily="Consolas,monospace" FontSize="15"
+                                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                            <TextBox MinWidth="140" Text="{Binding Value, Mode=TwoWay}"
+                                                                     FontFamily="Consolas,monospace" FontWeight="SemiBold" FontSize="15"
+                                                                     Foreground="{StaticResource AccentBrush}" Background="{StaticResource FormBgBrush}"
+                                                                     BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" CornerRadius="6" Padding="8,3"
+                                                                     VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                                                     PlaceholderText="orders-db"
+                                                                     ToolTip.Tip="The value this module consumes from another repo/module. Reference its outputs as ${sprig.&lt;value&gt;.&lt;output&gt;}." />
+                                                            <TextBlock Text="}" FontFamily="Consolas,monospace" FontSize="15"
+                                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
+                                                                Foreground="{StaticResource DangerBrush}" Padding="10,2" VerticalAlignment="Center"
+                                                                ToolTip.Tip="Remove this value" />
+                                                    </Grid>
+
+                                                    <!-- Used outputs: one row per ${sprig.<value>.<output>} referenced in this module's
+                                                         overrides — the needs analogue of a capability's output rows. -->
+                                                    <ItemsControl ItemsSource="{Binding Usages}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:NeedOutputUsage">
+                                                                <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource AccentBrush}"
+                                                                        BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,9" Margin="0,0,0,8">
+                                                                    <StackPanel Spacing="3">
+                                                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
+                                                                            <TextBlock Grid.Column="0" Text="{Binding Output, StringFormat='● {0}'}"
+                                                                                       FontFamily="Consolas,monospace" FontSize="11"
+                                                                                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                                                            <TextBlock Grid.Column="1" Text="{Binding Reference}" FontFamily="Consolas,monospace"
+                                                                                       FontSize="13" Foreground="{StaticResource FgBrush}" VerticalAlignment="Center"
+                                                                                       TextWrapping="Wrap" />
+                                                                        </Grid>
+                                                                        <TextBlock IsVisible="{Binding HasLocations}" FontSize="11" TextWrapping="Wrap"
+                                                                                   Foreground="{StaticResource MutedBrush}">
+                                                                            <Run Text="referenced by  " /><Run Text="{Binding LocationsSummary}" />
+                                                                        </TextBlock>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+
+                                                    <!-- Declared but not referenced anywhere yet. -->
+                                                    <TextBlock IsVisible="{Binding !HasUsages}" FontSize="11" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource MutedBrush}"
+                                                               Text="Not referenced yet — use it in an env or compose override as ${sprig.&lt;value&gt;.&lt;output&gt;}, and the outputs you reference will appear here." />
+                                                </StackPanel>
+                                            </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- quick-add: the same undeclared references, offered as needs. One click
+                                     declares the value as consumed from elsewhere, resolving every ${sprig.<head>.*}
+                                     reference at once. -->
+                                <StackPanel Spacing="4" Margin="0,2,0,0" IsVisible="{Binding HasUnresolvedReferences}">
+                                    <TextBlock Text="Referenced in env/compose but not needed — add as a value you consume:"
+                                               FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                    <ItemsControl ItemsSource="{Binding UnresolvedReferences}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:String">
+                                                <Button Content="{Binding StringFormat='+ {0}'}" FontFamily="Consolas,monospace"
+                                                        FontSize="11" Padding="8,3" Margin="0,0,6,6"
+                                                        Background="Transparent" Foreground="{StaticResource AccentBrush}"
+                                                        BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                                                        Command="{Binding $parent[ItemsControl].((vm:ModuleEditTab)DataContext).AddUnresolvedNeedCommand}"
+                                                        CommandParameter="{Binding}"
+                                                        ToolTip.Tip="Declare this as a value this module needs from another repo/module." />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- env -->

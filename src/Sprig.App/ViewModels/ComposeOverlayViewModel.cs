@@ -31,7 +31,7 @@ public partial class ComposeOverlayViewModel : ObservableObject
     /// into each token's completion box.</summary>
     public IEnumerable<string> Variables { get; }
 
-    /// <summary>Open capability heads (needs/aliases) — a dotted reference under one of these is valid whatever
+    /// <summary>Open value heads (each need's value name) — a dotted reference under one of these is valid whatever
     /// its output (that output lives in another repo). A live collection owned by the repo editor.</summary>
     public IEnumerable<string> OpenCapabilities { get; }
 

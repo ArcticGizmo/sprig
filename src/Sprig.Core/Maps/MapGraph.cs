@@ -17,11 +17,10 @@ public enum WireStatus
 /// <summary>One provided capability on a module node — a source a need can wire to.</summary>
 public sealed record MapGraphProvide(string Capability, IReadOnlyList<string> Outputs);
 
-/// <summary>One need on a module node: how it resolved, the chosen provider (when Resolved to a real
-/// provider), and the candidate provider repos (when Ambiguous).</summary>
+/// <summary>One need on a module node: the value it consumes, how it resolved, the chosen provider (when
+/// Resolved to a real provider), and the candidate provider repos (when Ambiguous).</summary>
 public sealed record MapGraphNeed(
-    string Capability,
-    string Alias,
+    string Value,
     WireStatus Status,
     string? ProviderRepo,
     string? ProviderCapability,
@@ -93,7 +92,7 @@ public static class MapGraphProjection
                     var wired = Classify(repo.Name, need, map, byCapability);
                     needs.Add(wired);
                     if (wired.Status == WireStatus.Resolved && wired.ProviderRepo is { } toRepo && wired.ProviderCapability is { } toCap && !wired.FromDefault)
-                        edges.Add(new MapGraphEdge(repo.Name, module.Name, need.Capability, toRepo, toCap));
+                        edges.Add(new MapGraphEdge(repo.Name, module.Name, need.Value, toRepo, toCap));
                 }
 
                 modules.Add(new MapGraphModule(repo.Name, module.Name, module.Path, provides, needs));
@@ -107,7 +106,7 @@ public static class MapGraphProjection
     static MapGraphNeed Classify(string repo, Need need, MapDefinition? map, ILookup<string, Provider> byCapability)
     {
         // A map may bridge a generic need to a specific provider capability (need name != provider name).
-        var target = Lookup2(map?.Wiring, repo, need.Capability) ?? need.Capability;
+        var target = Lookup2(map?.Wiring, repo, need.Value) ?? need.Value;
         var candidates = byCapability[target].ToList();
 
         // Nearest-wins: a provider in the same repo beats any other.
@@ -119,18 +118,18 @@ public static class MapGraphProjection
             return Resolved(need, candidates[0], fromDefault: false);
 
         if (candidates.Count > 1)
-            return new MapGraphNeed(need.Capability, need.Alias, WireStatus.Ambiguous, null, target, false,
+            return new MapGraphNeed(need.Value, WireStatus.Ambiguous, null, target, false,
                 candidates.Select(c => c.Repo).OrderBy(r => r, StringComparer.Ordinal).ToList());
 
         // No provider — a map default fills the gap, else it's an open gap.
-        if (Lookup3(map?.Defaults, repo, need.Capability) is not null)
-            return new MapGraphNeed(need.Capability, need.Alias, WireStatus.Resolved, null, null, true, []);
+        if (Lookup3(map?.Defaults, repo, need.Value) is not null)
+            return new MapGraphNeed(need.Value, WireStatus.Resolved, null, null, true, []);
 
-        return new MapGraphNeed(need.Capability, need.Alias, WireStatus.Gap, null, null, false, []);
+        return new MapGraphNeed(need.Value, WireStatus.Gap, null, null, false, []);
     }
 
     static MapGraphNeed Resolved(Need need, Provider p, bool fromDefault) =>
-        new(need.Capability, need.Alias, WireStatus.Resolved, p.Repo, p.Capability, fromDefault, []);
+        new(need.Value, WireStatus.Resolved, p.Repo, p.Capability, fromDefault, []);
 
     static IReadOnlyList<Provider> CollectProviders(IReadOnlyList<ResolvedRepo> repos)
     {

@@ -38,22 +38,16 @@ public sealed record ProvidedCapability
 }
 
 /// <summary>
-/// A capability a repo/module consumes. Resolved at checkout against a provider — a sibling module in
-/// the same repo first (local wiring, nearest-wins), then any provider in the selected map. Referenced
-/// in templates as <c>${sprig.&lt;capability&gt;.&lt;output&gt;}</c>, or via the <see cref="As"/> alias when set.
+/// A value a repo/module consumes. Resolved at checkout against a provider — a sibling module in the
+/// same repo first (local wiring, nearest-wins), then any provider in the selected map. Its
+/// <see cref="Value"/> is the name it wires to (a provided capability of the same name); its outputs are
+/// referenced in templates as <c>${sprig.&lt;value&gt;.&lt;output&gt;}</c>.
 /// </summary>
 public sealed record Need
 {
-    /// <summary>The capability name to wire in (identifier chars only).</summary>
-    public string Capability { get; init; } = "";
-
-    /// <summary>Optional local alias — reference the wired provider's outputs as
-    /// <c>${sprig.&lt;as&gt;.&lt;output&gt;}</c> instead of by capability name. Defaults to the capability name.</summary>
-    public string? As { get; init; }
-
-    /// <summary>The name under which this need is referenced in templates: <see cref="As"/> if set, else <see cref="Capability"/>.</summary>
-    [JsonIgnore]
-    public string Alias => string.IsNullOrWhiteSpace(As) ? Capability : As!;
+    /// <summary>The value name to wire in — matches a provided capability of the same name
+    /// (identifier chars only). Referenced in templates as <c>${sprig.&lt;value&gt;.&lt;output&gt;}</c>.</summary>
+    public string Value { get; init; } = "";
 }
 
 /// <summary>

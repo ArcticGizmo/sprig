@@ -21,7 +21,7 @@ public class RepoConfigMapPreviewTests
             { "schema": 1, "name": "acme",
               "provides": [ { "capability": "acme-api",
                 "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
-              "needs": [ { "capability": "acme-db", "as": "db" }, { "capability": "auth" } ] }
+              "needs": [ { "value": "acme-db" }, { "value": "auth" } ] }
             """);
 
         var vm = RepoConfigViewModel.Load(dir);
@@ -33,8 +33,6 @@ public class RepoConfigMapPreviewTests
         Assert.Contains(provide.Outputs, o => o.Key == "url" && o.Value.Contains("localhost"));
 
         Assert.True(module.HasNeeds);
-        Assert.Equal(["acme-db", "auth"], module.Needs.Select(n => n.Capability));
-        Assert.True(module.Needs[0].ShowAlias);          // aliased "as db"
-        Assert.False(module.Needs[1].ShowAlias);         // no alias â†’ hidden
+        Assert.Equal(["acme-db", "auth"], module.Needs.Select(n => n.Value));
     }
 }

@@ -43,7 +43,7 @@ public class ConfigReferencesTests
         var config = SprigConfigLoader.Parse("""
             { "schema":1, "name":"api",
               "modules": [ { "name":"app",
-                "needs": [ { "capability": "db" } ],
+                "needs": [ { "value": "db" } ],
                 "compose": [ { "file":"docker-compose.yml", "overrides":[
                     { "path":["services","x","image"], "template":"${sprig.db.image}" } ] } ] } ] }
             """);

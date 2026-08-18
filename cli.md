@@ -56,7 +56,7 @@ New-Item -ItemType Directory -Force "$Repo\apps\api", "$Repo\apps\web" | Out-Nul
       "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
     "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}" } } ] },
   { "name": "web", "path": "apps/web",
-    "needs": [ { "capability": "acme-api" } ],
+    "needs": [ { "value": "acme-api" } ],
     "env": [ { "file": ".env", "set": { "API": "${sprig.acme-api.url}" } } ] } ] }
 '@ | Set-Content "$Repo\.sprig.json" -Encoding utf8
 git -C $Repo init -q; git -C $Repo add -A; git -C $Repo -c user.email=t@t -c user.name=t commit -qm init
@@ -151,8 +151,8 @@ Repo config (`.sprig.json`) shape in the map model:
     { "capability": "acme-api",
       "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } }
   ],
-  "needs": [ { "capability": "acme-db", "as": "db" } ],
-  "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}", "DB": "${sprig.db.connString}" } } ]
+  "needs": [ { "value": "acme-db" } ],
+  "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}", "DB": "${sprig.acme-db.connString}" } } ]
 }
 ```
 

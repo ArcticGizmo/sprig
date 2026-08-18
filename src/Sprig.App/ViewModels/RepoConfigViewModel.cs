@@ -19,13 +19,8 @@ public sealed record ComposeInfo(string File, IReadOnlyList<KvRow> Overrides);
 /// as <c>name</c> → <c>port</c> or the derived template.</summary>
 public sealed record ProvideRow(string Capability, IReadOnlyList<KvRow> Outputs);
 
-/// <summary>One capability a module needs (map model): the contract name and the local alias it's
-/// referenced by (only shown when it differs from the capability name).</summary>
-public sealed record NeedRow(string Capability, string Alias)
-{
-    public bool ShowAlias => Alias.Length > 0 && Alias != Capability;
-    public string AliasLabel => ShowAlias ? $"as {Alias}" : "";
-}
+/// <summary>One value a module needs (map model): the value name it wires to.</summary>
+public sealed record NeedRow(string Value);
 
 /// <summary>One module tab in the read-only view: the module's name/path and a summary of what it
 /// <b>provides</b> and <b>needs</b> (the map model), plus its env, compose and setup.</summary>
@@ -98,7 +93,7 @@ public sealed partial class RepoConfigViewModel : ObservableObject
                             string.IsNullOrWhiteSpace(o.Value.Allowed) ? "port" : $"port ({o.Value.Allowed})"))
                         .Concat(p.Shapes.Select(s => new KvRow(s.Key, s.Value)))
                         .ToList())).ToList(),
-                m.Needs.Select(n => new NeedRow(n.Capability, n.Alias)).ToList(),
+                m.Needs.Select(n => new NeedRow(n.Value)).ToList(),
                 m.Env.Select(e => new EnvGroup(e.File,
                     e.Templates ?? [],
                     e.Set.Select(kv => new KvRow(kv.Key, kv.Value)).ToList())).ToList(),

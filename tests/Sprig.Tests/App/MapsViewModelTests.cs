@@ -48,7 +48,7 @@ public class MapsViewModelTests
         using var store = new TempStore();
         using var repo = CommitConfig("solo", """
             { "schema": 1, "name": "solo",
-              "needs": [ { "capability": "ghost" } ],
+              "needs": [ { "value": "ghost" } ],
               "env": [ { "file": ".env", "set": { "X": "${sprig.ghost.url}" } } ] }
             """);
         var services = new AppServices(store.Root);

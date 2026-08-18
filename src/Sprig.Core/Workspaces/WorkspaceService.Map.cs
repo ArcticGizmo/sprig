@@ -86,7 +86,7 @@ public sealed partial class WorkspaceService
             if (resolved.Unsatisfied.Count > 0)
                 throw new WorkspaceException(
                     "unmet needs — add the provider to your selection or supply a value:\n  " +
-                    string.Join("\n  ", resolved.Unsatisfied.Select(u => $"{u.Repo}.{u.Module} needs '{u.Capability}'")));
+                    string.Join("\n  ", resolved.Unsatisfied.Select(u => $"{u.Repo}.{u.Module} needs '{u.Value}'")));
             progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Done));
 
             var modulesByRepo = resolved.Modules.ToLookup(m => m.Repo, StringComparer.Ordinal);

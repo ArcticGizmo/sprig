@@ -28,7 +28,7 @@ public class CreateFromMapTests
               "compose": [ { "file": "docker-compose.yml", "overrides": [
                   { "path": ["services","api","ports","0"], "template": "${sprig.mono-api.port}:3000" } ] } ] },
             { "name": "web", "path": "apps/web",
-              "needs": [ { "capability": "mono-api" } ],
+              "needs": [ { "value": "mono-api" } ],
               "env": [ { "file": ".env.local", "set": { "API": "${sprig.mono-api.url}" } } ] } ] }
         """;
 
@@ -106,7 +106,7 @@ public class CreateFromMapTests
         File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), """
             { "schema": 1, "name": "mono",
               "modules": [ { "name": "web", "path": "apps/web",
-                "needs": [ { "capability": "absent-api" } ],
+                "needs": [ { "value": "absent-api" } ],
                 "env": [ { "file": ".env", "set": { "API": "${sprig.absent-api.url}" } } ] } ] }
             """);
 

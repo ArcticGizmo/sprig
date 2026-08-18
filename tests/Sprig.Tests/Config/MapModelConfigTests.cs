@@ -57,10 +57,10 @@ public class MapModelParseTests
             { "name": "api", "path": "apps/api",
               "provides": [ { "capability": "acme-api",
                 "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
-              "needs": [ { "capability": "acme-db", "as": "db" } ],
-              "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}", "DB": "${sprig.db.connString}" } } ] },
+              "needs": [ { "value": "acme-db" } ],
+              "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}", "DB": "${sprig.acme-db.connString}" } } ] },
             { "name": "web", "path": "apps/web",
-              "needs": [ { "capability": "acme-api" } ],
+              "needs": [ { "value": "acme-api" } ],
               "env": [ { "file": ".env.local", "set": { "VITE_API": "${sprig.acme-api.url}" } } ] },
             { "name": "db", "path": "infra",
               "provides": [ { "capability": "acme-db",
@@ -82,11 +82,9 @@ public class MapModelParseTests
         Assert.True(apiCap.Ports.ContainsKey("port"));
         Assert.Equal("http://localhost:${sprig.acme-api.port}", apiCap.Shapes["url"]);
         var apiNeed = Assert.Single(api.Needs);
-        Assert.Equal("acme-db", apiNeed.Capability);
-        Assert.Equal("db", apiNeed.Alias);
+        Assert.Equal("acme-db", apiNeed.Value);
 
-        Assert.Equal("acme-api", Assert.Single(c.Modules[1].Needs).Capability);
-        Assert.Equal("acme-api", c.Modules[1].Needs[0].Alias);   // no alias -> defaults to capability
+        Assert.Equal("acme-api", Assert.Single(c.Modules[1].Needs).Value);
         var dbCap = Assert.Single(c.Modules[2].Provides);
         Assert.Equal("acme-db", dbCap.Capability);
         Assert.Contains("connString", dbCap.Shapes.Keys);
@@ -102,14 +100,14 @@ public class MapModelParseTests
         var c = SprigConfigLoader.Parse("""
             { "schema": 1, "name": "solo",
               "provides": [ { "capability": "solo-api", "ports": { "port": true } } ],
-              "needs": [ { "capability": "ext-db", "as": "db" } ],
-              "env": [ { "file": ".env", "set": { "PORT": "${sprig.solo-api.port}", "DB": "${sprig.db.url}" } } ] }
+              "needs": [ { "value": "ext-db" } ],
+              "env": [ { "file": ".env", "set": { "PORT": "${sprig.solo-api.port}", "DB": "${sprig.ext-db.url}" } } ] }
             """);
 
         var module = Assert.Single(c.EffectiveModules);
         Assert.Equal(SprigRepoConfig.DefaultModuleName, module.Name);
         Assert.Equal("solo-api", Assert.Single(module.Provides).Capability);
-        Assert.Equal("ext-db", Assert.Single(module.Needs).Capability);
+        Assert.Equal("ext-db", Assert.Single(module.Needs).Value);
         Assert.True(SprigConfigValidator.Validate(c).IsValid);
     }
 }
@@ -238,14 +236,14 @@ public class MapModelValidationTests
     }
 
     [Fact]
-    public void Reference_to_a_needed_capability_output_is_accepted_unchecked()
+    public void Reference_to_a_needed_value_output_is_accepted_unchecked()
     {
         // The provider (and thus the output list) lives in another repo - the head must match a need; the
         // output ('connString') is validated at map-resolve time, not here.
         var r = Repo(Mod("a") with
         {
-            Needs = [new() { Capability = "db", As = "database" }],
-            Env = [new() { File = ".env", Set = new Dictionary<string, string> { ["DB"] = "${sprig.database.connString}" } }],
+            Needs = [new() { Value = "db" }],
+            Env = [new() { File = ".env", Set = new Dictionary<string, string> { ["DB"] = "${sprig.db.connString}" } }],
         });
         Assert.True(SprigConfigValidator.Validate(r).IsValid);
     }

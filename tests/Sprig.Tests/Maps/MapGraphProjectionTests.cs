@@ -21,7 +21,7 @@ public class MapGraphProjectionTests
 
     static string Consumer(string name, string cap) => $$"""
         { "schema": 1, "name": "{{name}}",
-          "modules": [ { "name": "main", "needs": [ { "capability": "{{cap}}" } ] } ] }
+          "modules": [ { "name": "main", "needs": [ { "value": "{{cap}}" } ] } ] }
         """;
 
     [Fact]
@@ -50,7 +50,7 @@ public class MapGraphProjectionTests
             { "schema": 1, "name": "mono",
               "modules": [
                 { "name": "api", "provides": [ { "capability": "db", "ports": { "port": true } } ] },
-                { "name": "web", "needs": [ { "capability": "db" } ] } ] }
+                { "name": "web", "needs": [ { "value": "db" } ] } ] }
             """);
         var other = Repo("other", Provider("other", "db"));
 
@@ -103,7 +103,7 @@ public class MapGraphProjectionTests
 
         var (mod, need) = Assert.Single(graph.Gaps);
         Assert.Equal("web", mod.Repo);
-        Assert.Equal("db", need.Capability);
+        Assert.Equal("db", need.Value);
         Assert.False(graph.IsComplete);
     }
 

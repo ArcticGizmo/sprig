@@ -23,7 +23,7 @@ public class RepoEditMapTests
             { "schema": 1, "name": "acme",
               "provides": [ { "capability": "acme-api",
                 "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
-              "needs": [ { "capability": "acme-db", "as": "db" } ] }
+              "needs": [ { "value": "acme-db" } ] }
             """);
 
         var vm = RepoEditViewModel.Load(dir);
@@ -39,14 +39,13 @@ public class RepoEditMapTests
         Assert.Equal("${sprig.acme-api.url}", shape.Ref);
 
         var need = Assert.Single(tab.Needs);
-        Assert.Equal("acme-db", need.Capability);
-        Assert.Equal("db", need.As);
+        Assert.Equal("acme-db", need.Value);
 
         var config = vm.Build();
         var module = Assert.Single(config.EffectiveModules);
         Assert.True(module.Provides[0].Ports.ContainsKey("port"));
         Assert.Equal("http://localhost:${sprig.acme-api.port}", module.Provides[0].Shapes["url"]);
-        Assert.Equal("acme-db", Assert.Single(module.Needs).Capability);
+        Assert.Equal("acme-db", Assert.Single(module.Needs).Value);
         Assert.True(SprigConfigValidator.Validate(config).IsValid);
     }
 
@@ -70,8 +69,7 @@ public class RepoEditMapTests
         provide.Shapes[0].Template = "http://localhost:${sprig.fresh-api.port}";
 
         tab.AddNeedCommand.Execute(null);
-        tab.Needs[0].Capability = "fresh-db";
-        tab.Needs[0].As = "db";
+        tab.Needs[0].Value = "fresh-db";
 
         Assert.True(vm.Save());
         var reloaded = SprigConfigLoader.LoadFromFile(Path.Combine(dir, ".sprig.json"));
@@ -79,8 +77,7 @@ public class RepoEditMapTests
         Assert.Equal("fresh-api", Assert.Single(module.Provides).Capability);
         Assert.True(module.Provides[0].Ports.ContainsKey("port"));
         Assert.Equal("http://localhost:${sprig.fresh-api.port}", module.Provides[0].Shapes["url"]);
-        Assert.Equal("fresh-db", Assert.Single(module.Needs).Capability);
-        Assert.Equal("db", module.Needs[0].As);
+        Assert.Equal("fresh-db", Assert.Single(module.Needs).Value);
     }
 
     [Fact]
@@ -206,14 +203,133 @@ public class RepoEditMapTests
         Assert.Contains("api.url", vm.SprigVariableNames);
         Assert.Contains("api.port", vm.SprigVariableNames);
 
-        // A need's capability + alias become open heads (any output accepted under them).
+        // A need's value name becomes an open head (any output accepted under it).
         tab.AddNeedCommand.Execute(null);
-        tab.Needs[0].Capability = "db";
-        tab.Needs[0].As = "primary";
+        tab.Needs[0].Value = "db";
         Assert.Contains("db", vm.SprigNeededCapabilities);
-        Assert.Contains("primary", vm.SprigNeededCapabilities);
 
         // workspace is always present; churn stayed bounded (no recursion / overflow while editing).
         Assert.Contains("workspace", vm.SprigVariableNames);
+    }
+
+    const string RefsButUndeclared = """
+        { "schema": 1, "name": "acme",
+          "modules": [ { "name": "app",
+            "env": [ { "file": ".env", "set": {
+                "CACHE_PORT": "${sprig.cache.port}",
+                "CACHE_URL": "${sprig.cache.url}"
+            } } ] } ] }
+        """;
+
+    [Fact]
+    public void A_reference_matching_no_provide_or_need_surfaces_as_a_quick_add()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, RefsButUndeclared));
+        var tab = Assert.Single(vm.Modules);
+
+        // 'cache' is referenced by the env overrides but neither provided nor needed — one chip per head.
+        Assert.True(tab.HasUnresolvedReferences);
+        Assert.Equal(["cache"], tab.UnresolvedReferences);
+    }
+
+    [Fact]
+    public void Quick_add_need_declares_the_value_and_clears_the_chip()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, RefsButUndeclared));
+        var tab = Assert.Single(vm.Modules);
+
+        tab.AddUnresolvedNeedCommand.Execute("cache");
+
+        // A need is an open head, so every ${sprig.cache.*} reference resolves at once — chip gone.
+        Assert.Equal("cache", Assert.Single(tab.Needs).Value);
+        Assert.Empty(tab.UnresolvedReferences);
+        Assert.False(tab.HasUnresolvedReferences);
+    }
+
+    [Fact]
+    public void Quick_add_provide_scaffolds_a_shape_for_each_referenced_output()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, RefsButUndeclared));
+        var tab = Assert.Single(vm.Modules);
+
+        tab.AddUnresolvedProvideCommand.Execute("cache");
+
+        // The capability owns its port (covers cache.port); the referenced 'url' output is stubbed as a shape
+        // (covers cache.url), so both references become declared and the chip clears.
+        var provide = Assert.Single(tab.Provides);
+        Assert.Equal("cache", provide.Capability);
+        Assert.Equal("url", Assert.Single(provide.Shapes).Name);
+        Assert.Empty(tab.UnresolvedReferences);
+    }
+
+    [Fact]
+    public void Quick_add_is_idempotent_and_does_not_duplicate_a_row()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, RefsButUndeclared));
+        var tab = Assert.Single(vm.Modules);
+
+        tab.AddUnresolvedNeedCommand.Execute("cache");
+        tab.AddUnresolvedNeedCommand.Execute("cache");   // no-op: already declared
+
+        Assert.Single(tab.Needs);
+    }
+
+    const string NeedWithReferences = """
+        { "schema": 1, "name": "acme",
+          "modules": [ { "name": "app",
+            "needs": [ { "value": "api" }, { "value": "unused" } ],
+            "env": [ { "file": ".env", "set": {
+                "VITE_API_URL": "${sprig.api.url}",
+                "VITE_API_PORT": "${sprig.api.port}"
+            } } ] } ] }
+        """;
+
+    [Fact]
+    public void A_needs_used_outputs_are_read_off_where_it_is_referenced()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, NeedWithReferences));
+        var tab = Assert.Single(vm.Modules);
+
+        var api = tab.Needs.Single(n => n.Value == "api");
+        Assert.True(api.HasUsages);
+        Assert.Equal(["port", "url"], api.Usages.Select(u => u.Output).OrderBy(o => o));
+
+        var url = api.Usages.Single(u => u.Output == "url");
+        Assert.Equal("${sprig.api.url}", url.Reference);
+        Assert.Contains(".env · VITE_API_URL", url.Locations);
+    }
+
+    [Fact]
+    public void A_need_referenced_nowhere_shows_no_used_outputs()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, NeedWithReferences));
+        var tab = Assert.Single(vm.Modules);
+
+        var unused = tab.Needs.Single(n => n.Value == "unused");
+        Assert.False(unused.HasUsages);
+        Assert.Empty(unused.Usages);
+    }
+
+    [Fact]
+    public void Used_outputs_recompute_live_as_the_value_name_changes()
+    {
+        using var s = new TempStore();
+        var vm = RepoEditViewModel.Load(WriteConfig(s, NeedWithReferences));
+        var tab = Assert.Single(vm.Modules);
+        var need = tab.Needs.Single(n => n.Value == "api");
+
+        // Rename the value away from what the overrides reference — its used outputs fall away.
+        need.Value = "api2";
+        Assert.False(need.HasUsages);
+
+        // Rename it back — the ${sprig.api.*} references bind to it again, live, with no reload.
+        need.Value = "api";
+        Assert.Equal(["port", "url"], need.Usages.Select(u => u.Output).OrderBy(o => o));
     }
 }

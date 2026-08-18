@@ -24,7 +24,7 @@ public class PartialWorkspaceViewModelTests
             """));
         services.Repos.Add(WriteRepo(s.Root, "web", """
             { "schema":1, "name":"web", "modules":[
-              { "name":"main", "needs":[ { "capability":"api" } ] } ] }
+              { "name":"main", "needs":[ { "value":"api" } ] } ] }
             """));
         services.Maps.Save(new MapDefinition
         {

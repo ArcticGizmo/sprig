@@ -20,9 +20,17 @@ stack era — recreate stack-era workspaces by hand.
 ### Added
 - **Self-describing repos (`provides`/`needs`)** — per module, a repo declares the capabilities it
   offers (`provides`: named `outputs` that are auto-allocated ports or strings derived from them) and
-  the capabilities it consumes (`needs`, with an optional local `as` alias). Referenced everywhere as
-  `${sprig.<capability>.<output>}`. Authored in the app's repo editor; `sprig init` infers provides
-  from detected ports. See `docs/config-reference.md`.
+  the values it consumes (`needs`, each a single `value` naming a capability provided elsewhere).
+  Referenced everywhere as `${sprig.<capability>.<output>}` / `${sprig.<value>.<output>}`. Authored in
+  the app's repo editor; `sprig init` infers provides from detected ports. See `docs/config-reference.md`.
+- **Quick-add for undeclared references** — a value referenced in a module's env/compose overrides that
+  matches no `provides` or `needs` now shows a one-click chip under **both** sections: add it as a
+  capability you own (scaffolding a shape stub per referenced output) or as a value you consume. Turns a
+  red `${sprig.…}` reference green without hand-editing the provides/needs lists.
+- **Needs read like provides** — each needed value is now its own card: the value as a `${sprig.<value>}`
+  namespace at the top, and the outputs you reference under it (`${sprig.<value>.<output>}`) listed
+  beneath, each showing the env/compose sites it's referenced from. A need's outputs live in the provider,
+  so — unlike a provides card — they're discovered from your usage rather than declared.
 - **Maps** — `maps/<name>.json` in the central store composes a slice of repos. It records only the
   deviations: `wiring` (which provider wins when several could) and `defaults` (a literal fallback for
   a need whose provider you left out), plus an optional `maxSlots` pool ceiling. Everything else is

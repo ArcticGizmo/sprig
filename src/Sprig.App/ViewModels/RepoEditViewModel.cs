@@ -212,14 +212,56 @@ public partial class ProvideEditRow : ObservableObject
     }
 }
 
-/// <summary>One editable needed capability (map model): the contract name and an optional local alias.</summary>
+/// <summary>One output of a needed value that this module actually references, discovered from its
+/// env/compose overrides (a need's outputs live in another repo, so they can't be declared — they're
+/// read off usage). The needs card lists these under the value's namespace, mirroring how a provides
+/// card lists a capability's declared outputs.</summary>
+public sealed record NeedOutputUsage(string Value, string Output, IReadOnlyList<string> Locations)
+{
+    /// <summary>The exact token referenced: <c>${sprig.&lt;value&gt;.&lt;output&gt;}</c>.</summary>
+    public string Reference => ProvideEditRow.Token(Value, Output);
+
+    /// <summary>The override sites that reference it, e.g. <c>.env · VITE_API_URL</c>.</summary>
+    public string LocationsSummary => string.Join("   ", Locations);
+    public bool HasLocations => Locations.Count > 0;
+}
+
+/// <summary>One editable needed value (map model): the value name this module wires in, referenced by
+/// consumers as <c>${sprig.&lt;value&gt;.&lt;output&gt;}</c>. The value is the namespace; its <see cref="Usages"/>
+/// are the outputs referenced under it, filled in by the owning tab from the env/compose overrides.</summary>
 public partial class NeedEditRow : ObservableObject
 {
     readonly Action<NeedEditRow> _remove;
     public NeedEditRow(Action<NeedEditRow> remove) => _remove = remove;
 
-    [ObservableProperty] private string _capability = "";
-    [ObservableProperty] private string _as = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _value = "";
+
+    /// <summary>The reference a consumer types for this value's outputs: <c>${sprig.&lt;value&gt;.…}</c>,
+    /// with a <c>…</c> placeholder while the name is still blank.</summary>
+    public string Ref => $"${{sprig.{(string.IsNullOrWhiteSpace(Value) ? "…" : Value.Trim())}.…}}";
+
+    /// <summary>The outputs of this value the module references (read off its overrides by the tab). Shown as
+    /// inset rows under the value's namespace — the needs analogue of a provides capability's outputs.</summary>
+    public ObservableCollection<NeedOutputUsage> Usages { get; } = [];
+
+    /// <summary>True once at least one <c>${sprig.&lt;value&gt;.&lt;output&gt;}</c> references this value.</summary>
+    public bool HasUsages => Usages.Count > 0;
+
+    /// <summary>Replace <see cref="Usages"/> in place (change-guarded so bound lists don't churn on every
+    /// keystroke). Called by the owning tab whenever overrides or the value name change.</summary>
+    public void SetUsages(IReadOnlyList<NeedOutputUsage> usages)
+    {
+        if (Usages.Count == usages.Count
+            && Usages.Zip(usages).All(p => p.First.Output == p.Second.Output
+                && p.First.Reference == p.Second.Reference
+                && p.First.LocationsSummary == p.Second.LocationsSummary))
+            return;
+        Usages.Clear();
+        foreach (var u in usages) Usages.Add(u);
+        OnPropertyChanged(nameof(HasUsages));
+    }
 
     [RelayCommand] private void Remove() => _remove(this);
 }
@@ -633,6 +675,19 @@ public partial class ModuleEditTab : ObservableObject
     public ObservableCollection<ProvideEditRow> Provides { get; } = [];
     public ObservableCollection<NeedEditRow> Needs { get; } = [];
 
+    /// <summary>True when at least one value is needed — gates the needs card so an empty one isn't shown.</summary>
+    public bool HasNeeds => Needs.Count > 0;
+
+    /// <summary>Heads referenced by this module's env/compose overrides (<c>${sprig.&lt;head&gt;.&lt;output&gt;}</c>)
+    /// that match neither a provided capability nor a needed value anywhere in the repo — the exact tokens the
+    /// token box paints red. Surfaced as one-click quick-adds under both PROVIDES and NEEDS so an undeclared
+    /// reference can be turned into whichever it should be. Recomputed by <see cref="RefreshUnresolvedReferences"/>
+    /// as overrides and the provides/needs surface change; owner-driven, so no cross-object subscription leaks.</summary>
+    public ObservableCollection<string> UnresolvedReferences { get; } = [];
+
+    /// <summary>Whether any unresolved reference exists — gates the quick-add rows.</summary>
+    public bool HasUnresolvedReferences => UnresolvedReferences.Count > 0;
+
     public ObservableCollection<EnvFileEditRow> Env { get; } = [];
     public ObservableCollection<ComposeFileEditRow> Compose { get; } = [];
     public ObservableCollection<SetupCommandRow> Setup { get; } = [];
@@ -641,7 +696,7 @@ public partial class ModuleEditTab : ObservableObject
     /// the owner can recompute the shared "referenced but not declared" input hint across every module.</summary>
     public event EventHandler? OverridesChanged;
 
-    /// <summary>Raised whenever this module's provides/needs surface changes — a capability/output/alias added,
+    /// <summary>Raised whenever this module's provides/needs surface changes — a capability/output/value added,
     /// removed, or renamed. The owner rebuilds the ${sprig.*} reference lists off this. Deliberately separate
     /// from <see cref="OverridesChanged"/>: those are what the overlays react to, and rebuilding the reference
     /// lists from that path would re-enter through the overlays and recurse.</summary>
@@ -681,6 +736,37 @@ public partial class ModuleEditTab : ObservableObject
     [RelayCommand] private void AddNeed() => Needs.Add(new NeedEditRow(r => Needs.Remove(r)));
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
     [RelayCommand] private void AddComposeFile() => Compose.Add(NewComposeRow());
+
+    /// <summary>Quick-add an unresolved reference head as a NEED: one row named <paramref name="head"/>.
+    /// A need is an open head, so every <c>${sprig.&lt;head&gt;.*}</c> reference resolves at once and the head
+    /// drops off the unresolved list.</summary>
+    [RelayCommand]
+    private void AddUnresolvedNeed(string? head)
+    {
+        var h = (head ?? "").Trim();
+        if (h.Length == 0 || Needs.Any(n => n.Value.Trim() == h)) return;
+        Needs.Add(new NeedEditRow(r => Needs.Remove(r)) { Value = h });
+    }
+
+    /// <summary>Quick-add an unresolved reference head as a PROVIDE: a capability named <paramref name="head"/>
+    /// with its permanent port, plus a derived-shape stub for every non-port output referenced under it — so
+    /// each <c>${sprig.&lt;head&gt;.&lt;output&gt;}</c> becomes declared (the empty shape templates then prompt a
+    /// fill-in). Turns "you referenced it" straight into "you own it".</summary>
+    [RelayCommand]
+    private void AddUnresolvedProvide(string? head)
+    {
+        var h = (head ?? "").Trim();
+        if (h.Length == 0 || Provides.Any(p => p.Capability.Trim() == h)) return;
+        var row = new ProvideEditRow(r => Provides.Remove(r)) { Capability = h };
+        foreach (var output in ReferencedOutputs(h))
+        {
+            if (output == "port") continue;   // the port anchor is always present
+            var shape = row.NewShape();
+            shape.Name = output;
+            row.Shapes.Add(shape);
+        }
+        Provides.Add(row);
+    }
     [RelayCommand] private void AddSetupCommand() => Setup.Add(new SetupCommandRow(r => Setup.Remove(r)));
 
     /// <summary>Delete this whole module (allowed down to zero, so a repo can be rebuilt from scratch).</summary>
@@ -753,16 +839,129 @@ public partial class ModuleEditTab : ObservableObject
     {
         if (e.OldItems is not null) foreach (NeedEditRow n in e.OldItems) n.PropertyChanged -= OnNeedFieldChanged;
         if (e.NewItems is not null) foreach (NeedEditRow n in e.NewItems) n.PropertyChanged += OnNeedFieldChanged;
+        OnPropertyChanged(nameof(HasNeeds));
         RaiseCapabilitySurfaceChanged();
     }
 
     void OnNeedFieldChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(NeedEditRow.Capability) or nameof(NeedEditRow.As))
+        if (e.PropertyName == nameof(NeedEditRow.Value))
             RaiseCapabilitySurfaceChanged();
     }
 
     void RaiseCapabilitySurfaceChanged() => CapabilitySurfaceChanged?.Invoke(this, EventArgs.Empty);
+
+    // -- reference hints (quick-adds + per-need usage) ---------------------------------------------
+
+    /// <summary>Refresh both reference-driven hints from this module's overrides: the undeclared-reference
+    /// quick-add chips, and each need's list of referenced outputs. Owner-driven, off the same triggers
+    /// (overrides changed, provides/needs surface changed); both are change-guarded so over-calling is cheap.</summary>
+    public void RefreshReferenceHints()
+    {
+        RefreshUnresolvedReferences();
+        RefreshNeedUsages();
+    }
+
+    /// <summary>For each need, gather the outputs its value is referenced with across this module's overrides
+    /// (<c>${sprig.&lt;value&gt;.&lt;output&gt;}</c>) plus where — so the needs card can show the value as a
+    /// namespace with its used outputs beneath, the way a provides card shows a capability's declared outputs.</summary>
+    void RefreshNeedUsages()
+    {
+        foreach (var need in Needs)
+        {
+            var value = need.Value.Trim();
+            var order = new List<string>();
+            var byOutput = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            if (value.Length > 0)
+                foreach (var (template, location) in OverrideUsages())
+                    foreach (var reference in Sprig.Core.Config.ConfigReferences.ReferencedNames(template))
+                    {
+                        var dot = reference.IndexOf('.');
+                        if (dot <= 0 || reference[..dot] != value) continue;
+                        var output = reference[(dot + 1)..].Trim();
+                        if (output.Length == 0) continue;
+                        if (!byOutput.TryGetValue(output, out var locs)) { byOutput[output] = locs = []; order.Add(output); }
+                        if (!locs.Contains(location)) locs.Add(location);
+                    }
+            need.SetUsages(order.Select(o => new NeedOutputUsage(value, o, byOutput[o])).ToList());
+        }
+    }
+
+    /// <summary>Recompute <see cref="UnresolvedReferences"/> from this module's env/compose override templates
+    /// against the repo-global reference surface (the owner's exact + open sets — the very sets the token box
+    /// highlights against, so a chip appears for exactly what shows red). A dotless or <c>workspace</c>
+    /// reference is skipped: neither a provide nor a need could resolve it, so a quick-add can't help. Called by
+    /// the owner whenever overrides or the provides/needs surface change; equality-guarded so it's cheap to
+    /// over-call and never churns the bound list needlessly.</summary>
+    public void RefreshUnresolvedReferences()
+    {
+        var exact = new HashSet<string>(_owner.SprigVariableNames, StringComparer.Ordinal);
+        var open = new HashSet<string>(_owner.SprigNeededCapabilities, StringComparer.Ordinal);
+
+        var heads = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var template in OverrideTemplates())
+            foreach (var reference in Sprig.Core.Config.ConfigReferences.ReferencedNames(template))
+            {
+                if (Sprig.Core.Config.ConfigReferences.IsReferenceKnown(reference, exact, open)) continue;
+                var dot = reference.IndexOf('.');
+                if (dot <= 0) continue;   // dotless / malformed — a provide or need can't resolve it
+                var head = reference[..dot];
+                if (head.Length > 0 && seen.Add(head)) heads.Add(head);
+            }
+
+        if (UnresolvedReferences.SequenceEqual(heads, StringComparer.Ordinal)) return;
+        UnresolvedReferences.Clear();
+        foreach (var h in heads) UnresolvedReferences.Add(h);
+        OnPropertyChanged(nameof(HasUnresolvedReferences));
+    }
+
+    /// <summary>Every override template this module currently carries — env values and compose override
+    /// templates, live from the overlays (falling back to the loaded seed before an overlay builds).</summary>
+    IEnumerable<string> OverrideTemplates()
+    {
+        foreach (var e in Env)
+            foreach (var v in e.CurrentSet.Values)
+                yield return v;
+        foreach (var c in Compose)
+            foreach (var o in c.CurrentOverrides)
+                yield return o.Template;
+    }
+
+    /// <summary>Each override template paired with a human-readable site it lives at — <c>&lt;file&gt; · &lt;key&gt;</c>
+    /// for an env value, <c>&lt;file&gt; · &lt;yaml.path&gt;</c> for a compose override — so a need's used outputs
+    /// can point back at where they're referenced.</summary>
+    IEnumerable<(string Template, string Location)> OverrideUsages()
+    {
+        foreach (var e in Env)
+        {
+            var file = e.File.Trim().Length > 0 ? e.File.Trim() : ".env";
+            foreach (var (key, template) in e.CurrentSet)
+                yield return (template, $"{file} · {key}");
+        }
+        foreach (var c in Compose)
+        {
+            var file = c.File.Trim().Length > 0 ? c.File.Trim() : "compose";
+            foreach (var o in c.CurrentOverrides)
+                yield return (o.Template, $"{file} · {string.Join(".", o.Path)}");
+        }
+    }
+
+    /// <summary>The distinct output names referenced under <paramref name="head"/> across this module's
+    /// override templates (e.g. <c>port</c>, <c>url</c> for <c>${sprig.head.port}</c> / <c>${sprig.head.url}</c>)
+    /// — used to stub the shapes a provide quick-add needs so every referenced output ends up declared.</summary>
+    IEnumerable<string> ReferencedOutputs(string head)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var template in OverrideTemplates())
+            foreach (var reference in Sprig.Core.Config.ConfigReferences.ReferencedNames(template))
+            {
+                var dot = reference.IndexOf('.');
+                if (dot <= 0 || reference[..dot] != head) continue;
+                var tail = reference[(dot + 1)..].Trim();
+                if (tail.Length > 0 && seen.Add(tail)) yield return tail;
+            }
+    }
 }
 
 /// <summary>
@@ -798,7 +997,7 @@ public partial class RepoEditViewModel : ObservableObject
     /// highlight; kept in sync as provides are edited.</summary>
     public ObservableCollection<string> SprigVariableNames { get; } = [];
 
-    /// <summary>Open capability heads (needs + aliases): a dotted <c>${sprig.&lt;head&gt;.&lt;output&gt;}</c> is
+    /// <summary>Open value heads (each need's value name): a dotted <c>${sprig.&lt;head&gt;.&lt;output&gt;}</c> is
     /// valid whatever the output, because that output lives in another repo (resolved at map time). Feeds the
     /// token box's capability-aware highlight so a valid need-reference isn't flagged; kept live as needs are
     /// edited.</summary>
@@ -850,7 +1049,7 @@ public partial class RepoEditViewModel : ObservableObject
                 tab.Provides.Add(pr);
             }
             foreach (var n in m.Needs)
-                tab.Needs.Add(new NeedEditRow(r => tab.Needs.Remove(r)) { Capability = n.Capability, As = n.As ?? "" });
+                tab.Needs.Add(new NeedEditRow(r => tab.Needs.Remove(r)) { Value = n.Value });
             foreach (var e in m.Env)
             {
                 var row = tab.NewEnvRow();
@@ -887,12 +1086,25 @@ public partial class RepoEditViewModel : ObservableObject
     {
         if (e.OldItems is not null)
             foreach (ModuleEditTab t in e.OldItems)
+            {
                 t.CapabilitySurfaceChanged -= OnModuleCapabilitySurfaceChanged;
+                t.OverridesChanged -= OnModuleOverridesChanged;
+            }
         if (e.NewItems is not null)
             foreach (ModuleEditTab t in e.NewItems)
+            {
                 t.CapabilitySurfaceChanged += OnModuleCapabilitySurfaceChanged;
+                t.OverridesChanged += OnModuleOverridesChanged;
+            }
         OnPropertyChanged(nameof(HasModules));
         RefreshSprigVariableNames();   // a module added/removed changes the provides/needs surface
+    }
+
+    // A module's env/compose overrides changed: its set of undeclared references may have moved, so recompute
+    // that one tab's quick-add chips. Only that tab's references changed, so no need to sweep the others.
+    void OnModuleOverridesChanged(object? sender, EventArgs e)
+    {
+        if (sender is ModuleEditTab tab) tab.RefreshReferenceHints();
     }
 
     // A provide/need/output was added, removed, or renamed: rebuild the ${sprig.*} reference lists live so
@@ -936,8 +1148,8 @@ public partial class RepoEditViewModel : ObservableObject
     {
         var names = new List<string> { "workspace" };
         // Map model: self-provided outputs are referenceable as ${sprig.<capability>.<output>} — greened
-        // exactly. A need's outputs live in another repo, so they can't be enumerated: its capability/alias
-        // head goes into the open set instead, and the token box accepts any output under it.
+        // exactly. A need's outputs live in another repo, so they can't be enumerated: its value name
+        // goes into the open set instead, and the token box accepts any output under it.
         var open = new List<string>();
         foreach (var tab in Modules)
         {
@@ -957,10 +1169,8 @@ public partial class RepoEditViewModel : ObservableObject
             }
             foreach (var n in tab.Needs)
             {
-                var cap = n.Capability.Trim();
-                if (cap.Length > 0 && !open.Contains(cap)) open.Add(cap);
-                var alias = n.As.Trim();
-                if (alias.Length > 0 && !open.Contains(alias)) open.Add(alias);
+                var val = n.Value.Trim();
+                if (val.Length > 0 && !open.Contains(val)) open.Add(val);
             }
         }
         // Only churn a collection when it actually changed — a Clear+Add of identical content still raises a
@@ -976,6 +1186,11 @@ public partial class RepoEditViewModel : ObservableObject
             SprigNeededCapabilities.Clear();
             foreach (var c in open) SprigNeededCapabilities.Add(c);
         }
+
+        // The known surface just moved, so a reference that was undeclared may now resolve (or vice versa) in
+        // every module — refresh each tab's reference hints (quick-add chips + per-need usage). Only reads the
+        // surface + overrides, so it never loops back into this rebuild.
+        foreach (var tab in Modules) tab.RefreshReferenceHints();
     }
 
     // -- file/git helpers (shared by every module's rows) ----------------------
@@ -1125,8 +1340,8 @@ public partial class RepoEditViewModel : ObservableObject
                     .ToDictionary(s => s.Name.Trim(), s => s.Template.Trim(), StringComparer.Ordinal),
             }).ToList(),
             Needs = t.Needs
-                .Where(n => n.Capability.Trim().Length > 0)
-                .Select(n => new Need { Capability = n.Capability.Trim(), As = Blank(n.As) }).ToList(),
+                .Where(n => n.Value.Trim().Length > 0)
+                .Select(n => new Need { Value = n.Value.Trim() }).ToList(),
             Env = t.Env.Select(e =>
             {
                 var templates = e.Templates.Select(x => x.Path.Trim()).Where(p => p.Length > 0).ToList();

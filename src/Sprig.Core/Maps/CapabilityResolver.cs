@@ -20,7 +20,7 @@ public sealed record ResolvedModule(
     IReadOnlyDictionary<string, string> Values, IVariableSource Scope);
 
 /// <summary>A need with no provider in the selection and no fallback — the gap surfaced to the user.</summary>
-public sealed record UnsatisfiedNeed(string Repo, string Module, string Capability);
+public sealed record UnsatisfiedNeed(string Repo, string Module, string Value);
 
 /// <summary>The resolved wiring for a workspace: the modules to materialise, the allocated ports, and any gaps.</summary>
 public sealed record ResolvedWorkspace(
@@ -107,10 +107,11 @@ public static class CapabilityResolver
         Dictionary<string, string> values,
         List<UnsatisfiedNeed> unsatisfied)
     {
-        var alias = need.Alias;
+        // The head consumers reference the wired provider's outputs under — the need's own value name.
+        var head = need.Value;
 
         // A map may bridge a generic need to a specific provider capability (need name != provider name).
-        var target = Lookup2(map?.Wiring, repo, need.Capability) ?? need.Capability;
+        var target = Lookup2(map?.Wiring, repo, need.Value) ?? need.Value;
         var candidates = byCapability[target].ToList();
 
         // Nearest-wins: a provider in the same repo beats any other; otherwise a single map-wide provider.
@@ -122,27 +123,27 @@ public static class CapabilityResolver
                 chosen = others[0];
             else if (others.Count > 1)
                 throw new MapResolutionException(
-                    $"{repo}.{moduleName} needs '{need.Capability}', but {others.Count} repos provide '{target}' " +
+                    $"{repo}.{moduleName} needs '{need.Value}', but {others.Count} repos provide '{target}' " +
                     $"({string.Join(", ", others.Select(o => o.Repo))}). Add a map wiring entry to pick one.");
         }
 
         if (chosen is not null)
         {
             foreach (var (output, value) in resolvedOutputs[(chosen.Repo, chosen.Capability)])
-                values[$"{alias}.{output}"] = value;
+                values[$"{head}.{output}"] = value;
             return;
         }
 
         // No provider in the selection — a per-checkout literal, then the map's default, else a reported gap.
-        var fallback = Lookup3(inlineLiterals, repo, need.Capability) ?? Lookup3(map?.Defaults, repo, need.Capability);
+        var fallback = Lookup3(inlineLiterals, repo, need.Value) ?? Lookup3(map?.Defaults, repo, need.Value);
         if (fallback is not null)
         {
             foreach (var (output, literal) in fallback)
-                values[$"{alias}.{output}"] = literal;
+                values[$"{head}.{output}"] = literal;
             return;
         }
 
-        unsatisfied.Add(new UnsatisfiedNeed(repo, moduleName, need.Capability));
+        unsatisfied.Add(new UnsatisfiedNeed(repo, moduleName, need.Value));
     }
 
     /// <summary>Resolve every provider's outputs to concrete strings: a port is its allocated number; a

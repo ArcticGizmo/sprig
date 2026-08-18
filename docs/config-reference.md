@@ -84,22 +84,21 @@ special — the classic case is an Auth0 front end whose callback URLs
 
 ### `needs[]` — what the module consumes
 
-Each entry is a capability this module requires from **another** repo (or a sibling module). Needs
+Each entry is a value this module requires from **another** repo (or a sibling module). Needs
 are always explicit.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `capability` | string | yes | The contract name this module requires. Matched against others' `provides`. |
-| `as` | string | no | A local **alias** — reference the need's outputs as `${sprig.<as>.<output>}` instead of `${sprig.<capability>.<output>}`. Useful when a name is awkward, or a module needs two things of the same shape. |
+| `value` | string | yes | The value name this module requires. Matched by name against others' `provides`. |
 
-Reference a need's output as `${sprig.<capability-or-alias>.<output>}`. The output lives in **another
+Reference a need's output as `${sprig.<value>.<output>}`. The output lives in **another
 repo**, so any output name is accepted while authoring and validated at resolve time (against the
-provider actually chosen for that capability). A need never references a raw port — a repo owns its
+provider actually chosen for that value). A need never references a raw port — a repo owns its
 own ports and consumes finished values.
 
 ```jsonc
-"needs": [ { "capability": "api", "as": "backend" } ],
-"env":   [ { "file": ".env", "set": { "VITE_API_URL": "${sprig.backend.url}" } } ]
+"needs": [ { "value": "api" } ],
+"env":   [ { "file": ".env", "set": { "VITE_API_URL": "${sprig.api.url}" } } ]
 ```
 
 ### `modules[]` — slices of the repo
@@ -243,7 +242,7 @@ and a `db` capability (its database's host port), and owns the compose file that
 
 ### Example — consumer, no infra (`vue-web`)
 
-Provides its own dev-server `web` port; **needs** the `api` capability above, and references the
+Provides its own dev-server `web` port; **needs** the `api` value above, and references the
 finished `url` its provider derives — so it never has to know the API's port.
 
 ```json
@@ -253,7 +252,7 @@ finished `url` its provider derives — so it never has to know the API's port.
   "modules": [
     { "name": "app",
       "provides": [ { "capability": "web", "ports": { "port": true } } ],
-      "needs":    [ { "capability": "api" } ],
+      "needs":    [ { "value": "api" } ],
       "env": [
         { "file": ".env", "set": {
             "PORT": "${sprig.web.port}",
@@ -290,7 +289,7 @@ because the provider is a sibling in the *same* repo, it wires **locally** with 
 
     { "name": "web", "path": "apps/web",
       "provides": [ { "capability": "web", "ports": { "port": true } } ],
-      "needs":    [ { "capability": "mono-api" } ],
+      "needs":    [ { "value": "mono-api" } ],
       "env": [ { "file": ".env.local", "templates": [".env"], "set": {
           "VITE_PORT": "${sprig.web.port}",
           "VITE_API_URL": "${sprig.mono-api.url}"
@@ -323,8 +322,8 @@ port.
 
 ## Wiring — how needs find providers
 
-When a workspace is checked out, sprig matches each module's `needs` to a provider **by capability
-name**, in this order (nearest-wins):
+When a workspace is checked out, sprig matches each module's `needs` to a provider **by name** — a
+need's `value` against a provided `capability` of the same name — in this order (nearest-wins):
 
 1. **A sibling in the same repo.** A module whose need is provided by another module of the *same*
    repo always wins — local wiring, resolved with no map involvement.
@@ -334,7 +333,7 @@ name**, in this order (nearest-wins):
    pick one (a `wiring` entry). Until it does, that need is flagged **ambiguous**.
 4. **A gap — no provider.** If nothing in the selection provides it, a map `default` supplies a
    literal fallback (e.g. a shared staging URL); with no default, it's an **unmet need** — a hard
-   failure at checkout, with the gap list naming `repo.module needs '<capability>'`.
+   failure at checkout, with the gap list naming `repo.module needs '<value>'`.
 
 Because wiring is derived from the repos' own declarations, a monorepo is its own **local map**:
 sibling modules wire to each other, and only the needs nothing local satisfies bubble up to the map.

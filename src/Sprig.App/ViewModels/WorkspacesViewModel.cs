@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Graph;
+using Sprig.Core.Maps;
 using Sprig.Core.Pools;
-using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -33,18 +33,18 @@ public partial class WorkspacesViewModel : PageViewModel
     /// open in its own non-blocking progress window (keeps this view-model free of Avalonia window types).</summary>
     public event Action<OperationProgressViewModel>? OperationStarted;
 
-    /// <summary>False when no stacks exist — a workspace can't be created without one (upstream empty state).</summary>
-    [ObservableProperty] private bool _hasAnyStacks;
+    /// <summary>False when no maps exist — a workspace can't be created without one (upstream empty state).</summary>
+    [ObservableProperty] private bool _hasAnyMaps;
 
-    /// <summary>Empty-state shortcut: jump to Stacks and open the builder.</summary>
-    [RelayCommand] private void BuildStack() => _nav.NewStack();
+    /// <summary>Empty-state shortcut: jump to Maps and open the New-map editor.</summary>
+    [RelayCommand] private void BuildMap() => _nav.NewMap();
 
     /// <summary>Every workspace, flat — the identity set the detail pane's <see cref="Selected"/> is drawn
     /// from. The list surface renders <see cref="Pools"/> instead; both share the same item instances so
     /// selecting a row in a pool group drives this.</summary>
     public ObservableCollection<WorkspaceItemViewModel> Workspaces { get; } = [];
 
-    /// <summary>The stacks' pools — one group per stack (plus a residual "(ad-hoc)" group for any
+    /// <summary>The maps' pools — one group per map (plus a residual "(ad-hoc)" group for any
     /// pre-pool workspaces) — the grouped surface the list renders.</summary>
     public ObservableCollection<PoolGroupViewModel> Pools { get; } = [];
 
@@ -72,17 +72,20 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
     private bool _isCreating;
-    [ObservableProperty] private string? _newStack;
+    [ObservableProperty] private string? _newMap;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string? _createError;
 
-    /// <summary>The chosen stack's repos, each tickable — untick one to create a <i>partial</i>
-    /// workspace without it. Rebuilt whenever the stack selection changes.</summary>
+    /// <summary>The chosen map's repos, each tickable — untick one to create a <i>partial</i>
+    /// workspace without it (the resolver's <c>--without</c>). Rebuilt whenever the map selection changes.</summary>
     public ObservableCollection<WorkspaceRepoChoiceViewModel> NewRepos { get; } = [];
 
-    /// <summary>The stack definition behind <see cref="NewRepos"/>, needed to work out which ports a
-    /// deselection orphans. Null until a stack is picked.</summary>
-    StackDefinition? _newStackDef;
+    /// <summary>The map definition behind <see cref="NewRepos"/>. Null until a map is picked.</summary>
+    MapDefinition? _newMapDef;
+
+    /// <summary>The chosen map's repos resolved to their configs, cached so <see cref="PartialHint"/> can
+    /// project the wiring of any slice synchronously (no git). Null when the map couldn't be resolved.</summary>
+    IReadOnlyList<ResolvedRepo>? _newMapRepos;
 
     /// <summary>Only worth showing the repo checklist when there's a choice to make.</summary>
     public bool CanChooseRepos => NewRepos.Count > 1;
@@ -90,22 +93,30 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>True once at least one repo is unticked — the workspace will be partial.</summary>
     public bool IsPartialSelection => NewRepos.Any(r => !r.Included);
 
-    /// <summary>Plain-language consequence of the current deselection: which repos are left out and
-    /// which stack ports that leaves with no consumer (so they won't be provisioned). Null when the
-    /// whole stack is selected.</summary>
+    /// <summary>Plain-language consequence of the current deselection: which repos are left out, and any
+    /// needs the remaining slice can no longer satisfy (a gap to supply a default for). Null when the whole
+    /// map is selected.</summary>
     public string? PartialHint
     {
         get
         {
-            if (_newStackDef is null || !IsPartialSelection) return null;
+            if (_newMapDef is null || !IsPartialSelection) return null;
             var excluded = NewRepos.Where(r => !r.Included).Select(r => r.Name).ToList();
-            var kept = NewRepos.Where(r => r.Included).Select(r => r.Name).ToList();
+            var kept = NewRepos.Where(r => r.Included).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
             if (kept.Count == 0) return "Pick at least one repo.";
 
-            var skipped = StackSelection.OrphanedPorts(_newStackDef, kept);
             var hint = $"Partial workspace — no worktree, env or compose for {string.Join(", ", excluded)}.";
-            return skipped.Count == 0 ? hint
-                : $"{hint} Ports left with no consumer won't be provisioned: {string.Join(", ", skipped)}.";
+
+            // Project the remaining slice (pure, no git) to warn about needs the dropped repos provided.
+            if (_newMapRepos is not null)
+            {
+                var slice = _newMapRepos.Where(r => kept.Contains(r.Name)).ToList();
+                var gaps = MapGraphProjection.Project(_newMapDef, slice).Gaps
+                    .Select(g => g.Need.Capability).Distinct().ToList();
+                if (gaps.Count > 0)
+                    hint += $" Needs left unmet (supply a default): {string.Join(", ", gaps)}.";
+            }
+            return hint;
         }
     }
 
@@ -120,26 +131,30 @@ public partial class WorkspacesViewModel : PageViewModel
     /// (and so a test can too) rather than racing a fire-and-forget.</summary>
     Task _repoLoad = Task.CompletedTask;
 
-    partial void OnNewStackChanged(string? value) => _repoLoad = LoadStackReposAsync(value);
+    partial void OnNewMapChanged(string? value) => _repoLoad = LoadMapReposAsync(value);
 
-    /// <summary>Load the picked stack's repos into the checklist (all ticked by default, so the
-    /// default create is exactly what it was before partial workspaces existed).</summary>
-    async Task LoadStackReposAsync(string? stackName)
+    /// <summary>Load the picked map's repos into the checklist (all ticked by default, so the default create
+    /// is the whole map), and resolve them once off-thread so the partial hint can project any slice.</summary>
+    async Task LoadMapReposAsync(string? mapName)
     {
         NewRepos.Clear();
-        _newStackDef = null;
+        _newMapDef = null;
+        _newMapRepos = null;
         NotifyRepoChoicesChanged();
-        if (string.IsNullOrEmpty(stackName)) return;
+        if (string.IsNullOrEmpty(mapName)) return;
 
-        StackDefinition? def;
-        try { def = await AppServices.RunAsync(() => Services.Stacks.Get(stackName)); }
+        MapDefinition? def;
+        try { def = await AppServices.RunAsync(() => Services.Maps.Get(mapName)); }
         catch { def = null; }
-        // A slow load losing a race with a newer pick must not repopulate the old stack's repos.
-        if (def is null || def.Name != NewStack) return;
+        // A slow load losing a race with a newer pick must not repopulate the old map's repos.
+        if (def is null || def.Name != NewMap) return;
 
-        _newStackDef = def;
+        _newMapDef = def;
         foreach (var repo in def.Repos)
-            NewRepos.Add(new WorkspaceRepoChoiceViewModel(repo, OnRepoChoiceChanged));
+            NewRepos.Add(new WorkspaceRepoChoiceViewModel(repo.Name, OnRepoChoiceChanged));
+        // Best-effort: resolve the repos' configs so the hint can project gaps. Never blocks the form.
+        try { _newMapRepos = (await AppServices.RunAsync(() => Services.MapResolver.Resolve(mapName, null))).Repos; }
+        catch { _newMapRepos = null; }
         NotifyRepoChoicesChanged();
     }
 
@@ -206,7 +221,7 @@ public partial class WorkspacesViewModel : PageViewModel
         catch (Exception ex) { CreateError = $"couldn't open Docker Desktop: {ex.Message}"; }
     }
 
-    public ObservableCollection<string> AvailableStacks { get; } = [];
+    public ObservableCollection<string> AvailableMaps { get; } = [];
 
     bool HasSelection => Selected is not null && !Busy;
     bool NotBusy => !Busy;
@@ -217,8 +232,8 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>False when no workspaces exist at all — drives the first-run empty state.</summary>
     public bool HasWorkspaces => Workspaces.Count > 0;
 
-    /// <summary>True once there's at least one pool (stack) or residual group to show. Drives the list
-    /// surface — a stack with an empty pool still shows, since that's where Checkout lives.</summary>
+    /// <summary>True once there's at least one pool (map) or residual group to show. Drives the list
+    /// surface — a map with an empty pool still shows, since that's where Checkout lives.</summary>
     public bool HasPools => Pools.Count > 0;
 
     partial void OnSelectedChanged(WorkspaceItemViewModel? value)
@@ -256,32 +271,32 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>Gathered pool state, ready to turn into view-models on the UI thread. Built off-thread
     /// (every field is a blocking Core call) so the refresh never stalls the UI.</summary>
     sealed record PoolData(
-        IReadOnlyList<(string Stack, int MaxSlots, IReadOnlyList<InstanceRecord> Records)> Pools,
+        IReadOnlyList<(string Map, int MaxSlots, IReadOnlyList<InstanceRecord> Records)> Pools,
         IReadOnlyList<InstanceRecord> Orphans,
-        bool HasStacks);
+        bool HasMaps);
 
-    /// <summary>Read the pool of every stack, plus any workspace that belongs to no current stack.
+    /// <summary>Read the pool of every map, plus any workspace that belongs to no current map.
     /// Runs on a background thread.</summary>
     PoolData GatherPools()
     {
-        var stacks = Services.Stacks.List();
+        var maps = Services.Maps.List();
         var pools = new List<(string, int, IReadOnlyList<InstanceRecord>)>();
         var claimedByPool = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var stack in stacks.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var map in maps.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
         {
-            var status = Services.Pools.Status(stack.Name);
-            pools.Add((status.Stack, status.MaxSlots, status.Workspaces));
+            var status = Services.MapPool.Status(map.Name);
+            pools.Add((status.Map, status.MaxSlots, status.Workspaces));
             foreach (var w in status.Workspaces) claimedByPool.Add(w.Workspace);
         }
 
-        // Anything a pool didn't account for (Stack null, or a stack since deleted) still needs a home
+        // Anything a pool didn't account for (Map null, or a map since deleted) still needs a home
         // in the list — gather it into the residual group rather than dropping it silently.
         var orphans = Services.Workspaces.List()
             .Where(r => !claimedByPool.Contains(r.Workspace))
             .OrderBy(r => r.Workspace, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return new PoolData(pools, orphans, stacks.Count > 0);
+        return new PoolData(pools, orphans, maps.Count > 0);
     }
 
     /// <summary>The load currently in flight, so overlapping refresh requests coalesce onto it rather than
@@ -303,15 +318,15 @@ public partial class WorkspacesViewModel : PageViewModel
         var keep = Selected?.Name;
         var data = await AppServices.RunAsync(GatherPools);
 
-        HasAnyStacks = data.HasStacks;
+        HasAnyMaps = data.HasMaps;
         Workspaces.Clear();
         Pools.Clear();
 
-        foreach (var (stack, maxSlots, records) in data.Pools)
+        foreach (var (map, maxSlots, records) in data.Pools)
         {
             var items = records.Select(r => new WorkspaceItemViewModel(r)).ToList();
             foreach (var item in items) Workspaces.Add(item);
-            Pools.Add(new PoolGroupViewModel(stack, maxSlots, items));
+            Pools.Add(new PoolGroupViewModel(map, maxSlots, items));
         }
         if (data.Orphans.Count > 0)
         {
@@ -331,12 +346,12 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         CreateError = null;
         NewName = "";
-        NewStack = null;
+        NewMap = null;
         StartInfraOnCreate = true;
-        var names = await AppServices.RunAsync(() => Services.Stacks.List().Select(s => s.Name).ToList());
-        AvailableStacks.Clear();
-        foreach (var n in names) AvailableStacks.Add(n);
-        NewStack = AvailableStacks.FirstOrDefault();
+        var names = await AppServices.RunAsync(() => Services.Maps.List().Select(m => m.Name).ToList());
+        AvailableMaps.Clear();
+        foreach (var n in names) AvailableMaps.Add(n);
+        NewMap = AvailableMaps.FirstOrDefault();
         await _repoLoad;        // open with the repo checklist already filled in
         DockerRunning = true;   // optimistic until the probe answers
         IsCreating = true;
@@ -349,25 +364,28 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private async Task Create()
     {
-        var stack = NewStack;
+        var mapName = NewMap;
         var name = NewName.Trim();
-        if (string.IsNullOrEmpty(stack)) { CreateError = "pick a stack (define one in the Stacks tab first)"; return; }
+        if (string.IsNullOrEmpty(mapName)) { CreateError = "pick a map (define one in the Maps tab first)"; return; }
         if (string.IsNullOrEmpty(name)) { CreateError = "enter a workspace name"; return; }
 
-        // Null selection = the whole stack, which keeps a full create on exactly the path it always took.
-        var selection = IsPartialSelection
-            ? NewRepos.Where(r => r.Included).Select(r => r.Name).ToList()
+        // Null --without = the whole map, which keeps a full create on the default path. Every repo unticked
+        // is a nonsense selection — asked for before we hand anything to the resolver.
+        var included = NewRepos.Where(r => r.Included).Select(r => r.Name).ToList();
+        if (NewRepos.Count > 0 && included.Count == 0) { CreateError = "pick at least one repo"; return; }
+        var without = IsPartialSelection
+            ? NewRepos.Where(r => !r.Included).Select(r => r.Name).ToList()
             : null;
-        if (selection is { Count: 0 }) { CreateError = "pick at least one repo"; return; }
 
-        // Resolve + plan up front so pre-flight problems (bad name, duplicate, bad stack) stay in the
+        // Resolve + plan up front so pre-flight problems (bad name, duplicate, bad map) stay in the
         // inline create form; only once we have a real plan do we hand off to the progress window.
-        ResolvedStack resolved;
+        MapDefinition? map;
+        IReadOnlyList<ResolvedRepo> repos;
         IReadOnlyList<WorkspaceStep> plan;
         try
         {
-            resolved = await AppServices.RunAsync(() => Services.StackResolver.Resolve(stack, selection));
-            plan = Services.Workspaces.PlanCreate(resolved, name);
+            (map, repos) = await AppServices.RunAsync(() => Services.MapResolver.Resolve(mapName, without));
+            plan = Services.Workspaces.PlanCreateFromMap(repos, name);
         }
         catch (Exception ex) { CreateError = ex.Message; return; }
 
@@ -384,7 +402,7 @@ public partial class WorkspacesViewModel : PageViewModel
         try
         {
             var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(resolved, name, progress));
+            var record = await AppServices.RunAsync(() => Services.Workspaces.CreateFromMap(name, map, repos, progress: progress));
 
             // Optionally bring the infra up straight away. A failure here (e.g. Docker not running)
             // is a soft warning — the workspace itself was created successfully.
@@ -395,7 +413,7 @@ public partial class WorkspacesViewModel : PageViewModel
             {
                 if (!hasInfra)
                 {
-                    infraStep.Detail = "no Docker infrastructure in this stack";
+                    infraStep.Detail = "no Docker infrastructure in this map";
                     infraStep.State = WorkspaceStepState.Done;
                 }
                 else if (!await AppServices.RunAsync(() => Services.Docker.IsEngineRunning()))
@@ -461,11 +479,11 @@ public partial class WorkspacesViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(ShowHandling))]
     private bool _isCheckingOut;
 
-    /// <summary>The stack whose pool is being checked out of (fixed for the life of the overlay).</summary>
-    [ObservableProperty] private string? _checkoutStack;
+    /// <summary>The map whose pool is being checked out of (fixed for the life of the overlay).</summary>
+    [ObservableProperty] private string? _checkoutMap;
     [ObservableProperty] private string? _checkoutError;
 
-    /// <summary>The required branch name — the workspace's identity, cut across every repo in the stack.</summary>
+    /// <summary>The required branch name — the workspace's identity, cut across every repo in the map.</summary>
     [ObservableProperty] private string _checkoutBranch = "";
 
     /// <summary>The optional checkout label — a note to recognise this workspace by.</summary>
@@ -584,27 +602,27 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>Fill the picker fast: show cached-or-local refs immediately (no network), then refresh from a
     /// background fetch unless the cache is still warm. The actual checkout re-fetches before branching, so
     /// the instantly-shown list can lag slightly without affecting what you end up on.</summary>
-    async Task LoadStartPointsAsync(string stack)
+    async Task LoadStartPointsAsync(string map)
     {
         // 1) Instant: cached options if we have them, else a local (no-fetch) read — the list shows at once.
-        if (_startPointCache.TryGetValue(stack, out var cached))
+        if (_startPointCache.TryGetValue(map, out var cached))
             ApplyStartPoints(cached.Opts);
         else
         {
-            try { ApplyStartPoints(await AppServices.RunAsync(() => Services.Pools.StartPointsFor(stack, null, fetch: false))); }
+            try { ApplyStartPoints(await AppServices.RunAsync(() => Services.MapPool.StartPointsFor(map, null, fetch: false))); }
             catch { ApplyStartPoints(new StartPointOptions(null, [])); }
         }
 
         // Skip the network refresh while the cache is warm.
-        if (_startPointCache.TryGetValue(stack, out var c) && DateTimeOffset.Now - c.When < StartPointCacheTtl)
+        if (_startPointCache.TryGetValue(map, out var c) && DateTimeOffset.Now - c.When < StartPointCacheTtl)
             return;
 
         // 2) Background: fetch remotes, refresh the list, and cache the result. The spinner shows meanwhile.
         StartPointsLoading = true;
         try
         {
-            var fresh = await AppServices.RunAsync(() => Services.Pools.StartPointsFor(stack, null, fetch: true));
-            _startPointCache[stack] = (DateTimeOffset.Now, fresh);
+            var fresh = await AppServices.RunAsync(() => Services.MapPool.StartPointsFor(map, null, fetch: true));
+            _startPointCache[map] = (DateTimeOffset.Now, fresh);
             ApplyStartPoints(fresh);
         }
         catch { /* offline / no remotes — keep the instant list */ }
@@ -646,13 +664,13 @@ public partial class WorkspacesViewModel : PageViewModel
     /// The view's code-behind opens the resizable window, mirroring the progress-window pattern.</summary>
     public event Action<WorkspacesViewModel>? BranchGraphRequested;
 
-    /// <summary>Open the visual branch graph for the checkout's stack (first repo), highlighting the current
+    /// <summary>Open the visual branch graph for the checkout's map (first repo), highlighting the current
     /// branch. Selecting a branch/commit there sets the same start point the dropdown does.</summary>
     [RelayCommand]
     private async Task OpenBranchGraph()
     {
-        var stack = CheckoutStack;
-        if (stack is null || IsBranchGraphOpen) return; // already open — don't stack windows
+        var map = CheckoutMap;
+        if (map is null || IsBranchGraphOpen) return; // already open — don't stack windows
 
         BranchGraphError = null;
         GraphRows.Clear();
@@ -666,7 +684,7 @@ public partial class WorkspacesViewModel : PageViewModel
         try
         {
             var existing = CheckoutNew ? null : CheckoutTarget?.Name;
-            var (commits, current) = await AppServices.RunAsync(() => Services.Pools.CommitGraphFor(stack, existing, BranchGraphLimit));
+            var (commits, current) = await AppServices.RunAsync(() => Services.MapPool.CommitGraphFor(map, existing, BranchGraphLimit));
             var graph = CommitGraphLayout.Build(commits);
             var currentSha = current is null
                 ? null
@@ -715,14 +733,14 @@ public partial class WorkspacesViewModel : PageViewModel
         if (idx >= 0) ScrollToRowRequested?.Invoke(idx);
     }
 
-    /// <summary>Open the checkout overlay for a stack's pool. Defaults to reusing the least-recently-used
+    /// <summary>Open the checkout overlay for a map's pool. Defaults to reusing the least-recently-used
     /// free workspace (keep), or building a new one when the pool has none free — mirroring the CLI.</summary>
     [RelayCommand]
     private void Checkout(PoolGroupViewModel? group)
     {
         if (group is null || !group.IsPool || group.IsExhausted) return;
 
-        CheckoutStack = group.Stack;
+        CheckoutMap = group.Map;
         CheckoutError = null;
         CheckoutBranch = "";
         CheckoutLabel = "";
@@ -760,7 +778,7 @@ public partial class WorkspacesViewModel : PageViewModel
         OnPropertyChanged(nameof(StartPointDisplay));
 
         IsCheckingOut = true;
-        _ = LoadStartPointsAsync(group.Stack);
+        _ = LoadStartPointsAsync(group.Map);
     }
 
     [RelayCommand]
@@ -771,8 +789,8 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private async Task ConfirmCheckout()
     {
-        var stack = CheckoutStack;
-        if (stack is null) return;
+        var map = CheckoutMap;
+        if (map is null) return;
 
         var branch = CheckoutBranch.Trim();
         if (branch.Length == 0) { CheckoutError = "give this workspace a branch name"; return; }
@@ -789,7 +807,7 @@ public partial class WorkspacesViewModel : PageViewModel
         {
             try
             {
-                var conflicts = await AppServices.RunAsync(() => Services.Pools.CheckCheckout(existing, branch));
+                var conflicts = await AppServices.RunAsync(() => Services.MapPool.CheckCheckout(existing, branch));
                 if (conflicts.IsBlocked)
                 {
                     CheckoutError = $"branch '{branch}' already exists in {string.Join(", ", conflicts.Blocked)} — " +
@@ -802,11 +820,11 @@ public partial class WorkspacesViewModel : PageViewModel
 
         // Plan up front so pre-flight problems stay in the overlay; only a real plan opens the progress window.
         IReadOnlyList<WorkspaceStep> plan;
-        try { plan = await AppServices.RunAsync(() => Services.Pools.PlanCheckout(stack, existing, mode)); }
+        try { plan = await AppServices.RunAsync(() => Services.MapPool.PlanCheckout(map, existing, mode)); }
         catch (Exception ex) { CheckoutError = ex.Message; return; }
 
         var heading = existing is null
-            ? $"Checking out a new workspace from '{stack}'"
+            ? $"Checking out a new workspace from '{map}'"
             : $"Checking out '{existing}' ({ModeLabel(mode)})";
         var modal = new OperationProgressViewModel(heading);
         modal.Load(plan);
@@ -822,7 +840,7 @@ public partial class WorkspacesViewModel : PageViewModel
             var labelArg = label.Length == 0 ? null : label;
             var startPoint = SelectedStartPointItem?.Ref; // null = Default (each repo resolves its base)
             var record = await AppServices.RunAsync(() =>
-                Services.Pools.Checkout(stack, existing, branch, labelArg, mode, force: false, progress, startPoint));
+                Services.MapPool.Checkout(map, existing, branch, labelArg, mode, force: false, progress, startPoint));
 
             await RefreshCore();
             Selected = Workspaces.FirstOrDefault(w => w.Name == record.Workspace) ?? Selected;
@@ -857,7 +875,7 @@ public partial class WorkspacesViewModel : PageViewModel
         }
     }
 
-    bool CanClaim => Selected is { Free: true } && Selected.Record.Stack is not null && !Busy;
+    bool CanClaim => Selected is { Free: true } && Selected.Record.Map is not null && !Busy;
 
     /// <summary>Claim the selected free workspace straight from the detail pane: open the checkout overlay
     /// pre-targeted at this workspace (reuse, keep), so a click gives it a label and handling without
@@ -866,8 +884,8 @@ public partial class WorkspacesViewModel : PageViewModel
     private void Claim()
     {
         var item = Selected;
-        if (item is null || !item.Free || item.Record.Stack is not { } stack) return;
-        var group = Pools.FirstOrDefault(p => p.IsPool && p.Stack == stack);
+        if (item is null || !item.Free || item.Record.Map is not { } map) return;
+        var group = Pools.FirstOrDefault(p => p.IsPool && p.Map == map);
         if (group is null) return;
 
         // Reuse the pool's checkout setup, then point the reuse target at exactly this workspace.
@@ -889,7 +907,7 @@ public partial class WorkspacesViewModel : PageViewModel
         if (item is null || !item.Claimed) return;
         await Guard(async () =>
         {
-            var (_, pending) = await AppServices.RunAsync(() => Services.Pools.Release(item.Name));
+            var (_, pending) = await AppServices.RunAsync(() => Services.MapPool.Release(item.Name));
             await RefreshCore();
             Services.NotifyStoreChanged();
             // Surface (never act on) any pending work so it isn't silently forgotten before a later fresh checkout.

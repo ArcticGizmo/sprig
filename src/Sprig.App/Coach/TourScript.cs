@@ -6,12 +6,13 @@ using Sprig.Core.Demo;
 namespace Sprig.App.Coach;
 
 /// <summary>
-/// The guided tour, as a coachmark script. It walks the one-directional model over the fully-built sample —
-/// a repo declares, a stack supplies, a workspace materialises — and hands the user back to their own repos.
+/// The guided tour, as a coachmark script. It walks the model over the fully-built sample — a repo declares
+/// what it provides and needs, a map composes repos, a workspace materialises a slice — and hands the user
+/// back to their own repos.
 ///
 /// Formerly a separate top-of-window narration strip; now it's coachmarks like everything else, so each step
 /// dims the page and rings exactly what it's talking about. Opening and closing steps are whole-page (no
-/// anchor) beats; the middle steps spotlight the detail panel for repos, stacks, and the workspace.
+/// anchor) beats; the middle steps spotlight the detail panel for repos, the map, and the workspace.
 /// </summary>
 public static class TourScript
 {
@@ -22,7 +23,7 @@ public static class TourScript
     [
         new(null,
             "This is one working sprig, built for you",
-            "Two repos, one stack wiring them together, and a workspace running from it. Everything you're about to see is real — the same engine your own repos will use.")
+            "Two self-describing repos, one map composing them, and a workspace running from it. Everything you're about to see is real — the same engine your own repos will use.")
         { Prepare = () => { nav.GoHome(); return Task.CompletedTask; } },
 
         // Orient first: spotlight the actual repo in the list, so "a repo" is a thing on screen before the
@@ -33,24 +34,24 @@ public static class TourScript
         { Side = CoachSide.Right, Prepare = () => { nav.ShowFirstRepo(); return Task.CompletedTask; } },
 
         new(Anchors.RepoDetail,
-            "A repo only declares what it needs",
-            "sample-api asks for a port and a database port. It never says which numbers — that isn't its decision. A repo is a pure consumer, which is why it stays portable.")
+            "A repo describes itself",
+            "sample-api provides an api capability (its port, and a url built from it) and a db port. sample-web needs api. Each repo owns what it provides — which is why it stays portable, and composes with others by capability name.")
         { Side = CoachSide.Left, Prepare = () => { nav.ShowFirstRepo(); return Task.CompletedTask; } },
 
         // Point at where you'd go next, before actually going there.
-        new(Anchors.Nav("Stacks"),
-            "Once a repo is defined, wire it up here",
-            "A repo says what it needs but never where the values come from. That's a stack's job — it's the next stop, where you bind each repo's inputs to real ports.")
+        new(Anchors.Nav("Maps"),
+            "Compose the repos here",
+            "A map lists the repos in play. The wiring is derived: sample-web's need for api is matched to sample-api's provide — automatically, by capability name. The next stop is where that composition lives.")
         { Side = CoachSide.Right },
 
-        new(Anchors.StackDetail,
-            "The stack owns the ports and supplies every value",
-            "Three named ports, and each repo's inputs bound to them. Look at sample-web's apiUrl: it's built from api_port — the same port sample-api runs on. One value, two consumers, and neither repo knows about the other.")
-        { Side = CoachSide.Left, Prepare = () => { nav.ShowFirstStack(); return Task.CompletedTask; } },
+        new(null,
+            "The map composes them — no manual wiring",
+            "sample composes sample-api and sample-web. sample-web references ${sprig.api.url}, and the map resolves it from sample-api's provided url. One capability, matched by name, and neither repo hard-codes the other.")
+        { Prepare = () => { nav.ShowFirstMap(); return Task.CompletedTask; } },
 
         new(Anchors.Nav("Workspaces"),
             "Then bring it to life here",
-            "When you create a workspace, sprig builds an isolated copy of the whole stack — a worktree and branch per repo, its own allocated ports, its own docker infra — that you can actually run.")
+            "When you create a workspace, sprig builds an isolated slice of the map — a worktree and branch per repo, its own allocated ports, its own docker infra — that you can actually run.")
         { Side = CoachSide.Right },
 
         new(Anchors.WorkspaceDetail,

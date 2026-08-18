@@ -23,7 +23,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <Button Content="New workspace" Command="{Binding NewWorkspaceCommand}"
                             AutomationProperties.AutomationId="workspace.new"
-                            ToolTip.Tip="Ad-hoc create — lets you stand up a subset of a stack's repos. The usual path is Checkout on a pool below." />
+                            ToolTip.Tip="Ad-hoc create — lets you stand up a slice of a map's repos. The usual path is Checkout on a pool below." />
                     <Button Content="Refresh" Command="{Binding RefreshCommand}" />
                 </StackPanel>
             </Grid>
@@ -42,7 +42,7 @@
                                     <Grid ColumnDefinitions="*,Auto">
                                         <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="{Binding Stack}" FontWeight="SemiBold" FontSize="14"
+                                                <TextBlock Text="{Binding Map}" FontWeight="SemiBold" FontSize="14"
                                                            Foreground="{StaticResource TitleBrush}" />
                                                 <TextBlock Text="{Binding CapacitySummary}" FontSize="12" VerticalAlignment="Center"
                                                            Foreground="{StaticResource AccentBrush}" IsVisible="{Binding IsPool}" />
@@ -111,12 +111,12 @@
         <Border Grid.Column="1" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="8" Padding="18">
             <Panel>
-                <!-- empty: no pools at all (no stacks upstream) — point back to Stacks -->
+                <!-- empty: no pools at all (no maps upstream) — point back to Maps -->
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="440" Spacing="12"
                             IsVisible="{Binding !HasPools}">
                     <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
-                               Text="Workspaces come from a stack's pool — and you don't have a stack yet. Build one first, then check out a workspace from it." />
-                    <Button Content="Build a stack  →" Command="{Binding BuildStackCommand}"
+                               Text="Workspaces come from a map's pool — and you don't have a map yet. Compose one first, then check out a workspace from it." />
+                    <Button Content="Compose a map  →" Command="{Binding BuildMapCommand}"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" HorizontalAlignment="Center" />
                 </StackPanel>
 
@@ -141,7 +141,7 @@
                             <TextBlock Text="{Binding Selected.Name}" FontSize="20" FontWeight="SemiBold"
                                        Foreground="{StaticResource TitleBrush}" />
                             <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}">
-                                <Run Text="stack: " /><Run Text="{Binding Selected.Stack}" />
+                                <Run Text="map: " /><Run Text="{Binding Selected.Map}" />
                                 <Run Text="   status: " /><Run Text="{Binding Selected.Status}" />
                                 <Run Text="   drift: " /><Run Text="{Binding Selected.Drift, FallbackValue='—'}" />
                             </TextBlock>
@@ -339,8 +339,8 @@
                     <TextBlock Text="New workspace" FontSize="18" FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}" />
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Stack" Foreground="{StaticResource MutedBrush}" FontSize="12" />
-                        <ComboBox ItemsSource="{Binding AvailableStacks}" SelectedItem="{Binding NewStack, Mode=TwoWay}"
+                        <TextBlock Text="Map" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                        <ComboBox ItemsSource="{Binding AvailableMaps}" SelectedItem="{Binding NewMap, Mode=TwoWay}"
                                   HorizontalAlignment="Stretch" />
                     </StackPanel>
                     <!-- Partial workspace: untick a repo you don't need this time. Only shown when the
@@ -405,7 +405,7 @@
                     HorizontalAlignment="Center" VerticalAlignment="Center">
                 <StackPanel Spacing="14">
                     <TextBlock FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}">
-                        <Run Text="Checkout — " /><Run Text="{Binding CheckoutStack}" />
+                        <Run Text="Checkout — " /><Run Text="{Binding CheckoutMap}" />
                     </TextBlock>
 
                     <!-- Target: reuse a free workspace, or build a new one within capacity. -->

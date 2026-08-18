@@ -9,7 +9,6 @@ using Avalonia.Threading;
 using Sprig.App.Controls;
 using Sprig.App.ViewModels;
 using Sprig.App.Views;
-using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -42,30 +41,9 @@ internal static class HeadlessRenderer
                 // Select the first repo so the config panel renders populated.
                 if (page is ReposViewModel repos)
                     repos.Selected = repos.Repos.FirstOrDefault();
-                // Check the repos so the stack variable editor shows auto-detected vars.
-                if (page is StacksViewModel stacks)
-                {
-                    // Detail panel for an existing stack (repos / ports / inputs summary).
-                    stacks.Selected = stacks.Stacks.FirstOrDefault();
-                    Capture(vm, Path.Combine(outDir, "main_stacks_detail.png"));
-
-                    // Edit an existing stack (when nothing depends on it). The builder is its own window now.
-                    if (stacks.EditSelectedCommand.CanExecute(null))
-                    {
-                        stacks.EditSelectedCommand.Execute(null);
-                        CaptureWindow(new StackEditorWindow { DataContext = stacks }, Path.Combine(outDir, "main_stacks_edit.png"));
-                        stacks.CancelCreateCommand.Execute(null);
-                    }
-
-                    // The New-stack builder (canvas is the only surface; auto-wire so it has cables).
-                    stacks.NewStackCommand.Execute(null);
-                    stacks.NewName = "web+api";
-                    foreach (var c in stacks.RepoChoices) c.IsSelected = true;
-                    stacks.AutoWireCommand.Execute(null);
-                    CaptureWindow(new StackEditorWindow { DataContext = stacks }, Path.Combine(outDir, "main_stacks_builder_diagram.png"));
-                    // Back to a clean list before the page snapshot, so it doesn't try to reopen the builder.
-                    stacks.CancelCreateCommand.Execute(null);
-                }
+                // Select the first map so its detail panel renders populated.
+                if (page is MapsViewModel maps)
+                    maps.Selected = maps.Maps.FirstOrDefault();
                 // Populate the Settings port-checker so the snapshot shows a status result.
                 if (page is SettingsViewModel settings)
                     settings.CheckText = "8080";
@@ -95,10 +73,6 @@ internal static class HeadlessRenderer
             // states the live store can't show at once: first-run (empty) and running.
             RenderHomeStates(outDir);
 
-            // The stack wiring diagram (repo graph), from a fixed sample so it renders the same
-            // regardless of what's in the live store — and so drawing it is exercised on real Skia.
-            RenderWiringSample(outDir);
-
             // The guided setup strip, active over Home.
             var guideVm = new MainWindowViewModel(services);
             guideVm.CurrentPage = guideVm.Pages[0];
@@ -118,13 +92,10 @@ internal static class HeadlessRenderer
             // it declares. Also renders the Learn list before and after, to show the completion tick.
             unresolved += RenderRegisterRepoGuide(outDir);
 
-            // Guide 2 (modules): open the repo editor, read the module tabs and shared inputs, add a module.
+            // Guide 2 (modules): open the repo editor, read the module tabs and provides/needs, add a module.
             unresolved += RenderSplitModulesGuide(outDir);
 
-            // Guide 3, driven as a user would: open the stack builder, read the wiring, create the stack.
-            unresolved += RenderWireStackGuide(outDir);
-
-            // Guide 4: create a workspace from the stack, then see what sprig made.
+            // Guide 3: create a workspace from the map, then see what sprig made.
             unresolved += RenderRunWorkspaceGuide(outDir);
 
             // Guide 5 (drift): break a worktree, then Repair it.
@@ -273,13 +244,10 @@ internal static class HeadlessRenderer
                     Console.Error.WriteLine($"coach spike: anchor '{marks[i].Anchor}' did not resolve");
                 }
 
-                // Case 3 opens the stack builder in its own window — capture that when it's up.
-                var frameSource = (Avalonia.Controls.Window?)StackEditorWindow.Current ?? window;
-                frameSource.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
+                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
                 Pump(vm.Coach.NextCommand.ExecuteAsync(null));
             }
 
-            StackEditorWindow.Current?.Close();
             window.Close();
         }
         catch (Exception ex)
@@ -454,7 +422,7 @@ internal static class HeadlessRenderer
         try
         {
             var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RunWorkspaceId);
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.StackWired);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.MapReady);
 
             var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
             window.Show();
@@ -480,55 +448,6 @@ internal static class HeadlessRenderer
         {
             unresolved++;
             Console.Error.WriteLine($"guide 3 render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return unresolved;
-    }
-
-    /// <summary>
-    /// Render guide 2 ("Wire up a multi-repo stack") the way a user drives it: the builder-driving steps, then
-    /// the create step via "Show me" (which saves the stack and auto-advances), then the handoff. Any step
-    /// whose anchor doesn't resolve is a failure.
-    /// </summary>
-    static int RenderWireStackGuide(string outDir)
-    {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide2-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
-        try
-        {
-            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.WireStackId);
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
-
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step1");     // why a stack
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step2");     // builder + wiring
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step3");     // own ports / sharing
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step4");     // create (waiting)
-
-            // "Show me" creates the stack, which fires StoreChanged and auto-advances to the handoff.
-            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide2_step5");     // handoff
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            unresolved++;
-            Console.Error.WriteLine($"guide 2 render failed: {ex.Message}");
         }
         finally
         {
@@ -586,10 +505,10 @@ internal static class HeadlessRenderer
     }
 
     /// <summary>
-    /// Render the partial-workspace flow against the sample stack: the create form with a repo unticked
-    /// (so the checklist and the "these ports won't be provisioned" warning are both visible), then the
-    /// workspace it produces, badged partial. Uses the demo sample rather than the live store so the
-    /// repo names, ports and orphan set are the same every run.
+    /// Render the partial-workspace flow against the sample map: the create form with a repo unticked
+    /// (so the checklist and the gap/"needs left unmet" warning are both visible), then the workspace it
+    /// produces, badged partial. Uses the demo sample rather than the live store so the repo names, ports
+    /// and the resulting slice are the same every run.
     /// </summary>
     static int RenderPartialWorkspace(string outDir)
     {
@@ -598,7 +517,7 @@ internal static class HeadlessRenderer
         var failures = 0;
         try
         {
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.StackWired);
+            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.MapReady);
 
             var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
             window.Show();
@@ -647,8 +566,7 @@ internal static class HeadlessRenderer
     {
         Dispatcher.UIThread.RunJobs();
         Dispatcher.UIThread.RunJobs();
-        // The stack builder is its own window now; while it's open that's where the coachmark lives.
-        Avalonia.Controls.Window target = (Avalonia.Controls.Window?)StackEditorWindow.Current ?? window;
+        Avalonia.Controls.Window target = window;
         target.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
         if (!vm.Coach.AnchorMissing) return 0;
         Console.Error.WriteLine($"{name}: anchor '{vm.Coach.Mark?.Anchor}' did not resolve");
@@ -732,16 +650,6 @@ internal static class HeadlessRenderer
         window.Close();
     }
 
-    /// <summary>Show a prepared window, snapshot it, and close it — for surfaces that are their own window
-    /// (e.g. the stack editor) rather than a page inside the main window.</summary>
-    static void CaptureWindow(Avalonia.Controls.Window window, string path)
-    {
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-        window.CaptureRenderedFrame()?.Save(path);
-        window.Close();
-    }
-
     /// <summary>
     /// Renders Home in the states the live store can't show at once. Builds the view-model with a
     /// synthetic <see cref="SetupState"/> and never activates it, so <c>OnActivated</c> can't
@@ -770,58 +678,15 @@ internal static class HeadlessRenderer
             Path.Combine(outDir, "home_running.png"));
     }
 
-    static InstanceRecord Rec(string workspace, string stack, string status, params (string Name, int Port)[] ports)
+    static InstanceRecord Rec(string workspace, string map, string status, params (string Name, int Port)[] ports)
         => new()
         {
             Workspace = workspace,
-            Stack = stack,
+            Map = map,
             LastStatus = status,
             CreatedAt = DateTimeOffset.UtcNow,
             Ports = ports.ToDictionary(p => p.Name, p => p.Port),
         };
-
-    /// <summary>Render the repo graph for a fixed multi-repo sample (owner→consumer lines + shared chips).</summary>
-    static void RenderWiringSample(string outDir)
-    {
-        string[] repos = ["sprig-example-vue", "dotnet-api", "worker"];
-        string[] ports = ["frontend_port", "api_port", "postgres_port", "queue_port"];
-        var inputs = new Dictionary<string, IReadOnlyList<string>>
-        {
-            ["sprig-example-vue"] = ["frontend", "apiUrl"],
-            ["dotnet-api"] = ["port", "dbPort"],
-            ["worker"] = ["dbPort", "queuePort", "dbAddr"],
-        };
-        var bindings = new Dictionary<string, IReadOnlyDictionary<string, string>>
-        {
-            ["sprig-example-vue"] = new Dictionary<string, string>
-            {
-                ["frontend"] = "${sprig.ports.frontend_port}",
-                ["apiUrl"] = "http://localhost:${sprig.ports.api_port}",
-            },
-            ["dotnet-api"] = new Dictionary<string, string>
-            {
-                ["port"] = "${sprig.ports.api_port}",       // shares api_port with vue.apiUrl
-                ["dbPort"] = "${sprig.ports.postgres_port}",
-            },
-            ["worker"] = new Dictionary<string, string>
-            {
-                ["dbPort"] = "${sprig.ports.postgres_port}", // shares postgres_port with dotnet-api.dbPort
-                ["queuePort"] = "${sprig.ports.queue_port}",
-                ["dbAddr"] = "${sprig.ports.postgres_port}:${sprig.ports.queue_port}", // fan-in: two ports → one node
-            },
-        };
-
-        // Ownership overlay so the diagram shows directed owner→consumer lines, not only chips.
-        var owners = new Dictionary<string, string>
-        {
-            ["frontend_port"] = "sprig-example-vue",
-            ["api_port"] = "dotnet-api",
-            ["postgres_port"] = "dotnet-api",
-            ["queue_port"] = "worker",
-        };
-        var graph = RepoGraph.Build(repos, ports, inputs, bindings, owners);
-        CaptureControl(new RepoGraphCanvas { Graph = graph }, Path.Combine(outDir, "stacks_wiring_diagram.png"));
-    }
 
     static void CaptureControl(Control content, string path)
     {

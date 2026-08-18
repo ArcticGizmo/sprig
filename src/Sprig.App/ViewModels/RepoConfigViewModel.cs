@@ -7,7 +7,6 @@ using Sprig.Core.Config;
 
 namespace Sprig.App.ViewModels;
 
-public sealed record InputRow(string Name, string? Example, string? Description, string? AllowedPorts);
 public sealed record KvRow(string Key, string Value);
 public sealed record EnvGroup(string File, IReadOnlyList<string> Templates, IReadOnlyList<KvRow> Items)
 {
@@ -46,24 +45,21 @@ public sealed record ModuleTabView(
 }
 
 /// <summary>
-/// Read-only presentation of a repo's <c>.sprig.json</c>: the <b>inputs</b> it needs (shared across
-/// modules, shown once at the top), then one tab per <b>module</b>, each summarising where those inputs
-/// are used (env overrides, compose overrides, setup). The stack supplies the values — this view just
-/// shows what the repo consumes.
+/// Read-only presentation of a repo's <c>.sprig.json</c> (the map model): one tab per <b>module</b>, each
+/// summarising what it <b>provides</b> and <b>needs</b> and where those capabilities are used (env
+/// overrides, compose overrides, setup).
 /// </summary>
 public sealed partial class RepoConfigViewModel : ObservableObject
 {
-    RepoConfigViewModel(string name, IReadOnlyList<InputRow> inputs, IReadOnlyList<ModuleTabView> modules, string? error)
+    RepoConfigViewModel(string name, IReadOnlyList<ModuleTabView> modules, string? error)
     {
         Name = name;
-        Inputs = inputs;
         Modules = modules;
         Error = error;
         _selectedModule = modules.Count > 0 ? modules[0] : null;
     }
 
     public string Name { get; }
-    public IReadOnlyList<InputRow> Inputs { get; }
     public IReadOnlyList<ModuleTabView> Modules { get; }
     public string? Error { get; }
 
@@ -71,7 +67,6 @@ public sealed partial class RepoConfigViewModel : ObservableObject
     [ObservableProperty] private ModuleTabView? _selectedModule;
 
     public bool Ok => Error is null;
-    public bool HasInputs => Inputs.Count > 0;
     public bool HasModules => Modules.Count > 0;
 
     public static RepoConfigViewModel Load(string repoPath)
@@ -94,15 +89,11 @@ public sealed partial class RepoConfigViewModel : ObservableObject
                 m.Compose.Select(comp => new ComposeInfo(comp.File,
                     comp.Overrides.Select(o => new KvRow(string.Join(".", o.Path), o.Template)).ToList())).ToList(),
                 m.Setup.ToList())).ToList();
-            return new RepoConfigViewModel(
-                c.Name,
-                c.Inputs.Select(i => new InputRow(i.Name, i.Example, i.Description, i.AllowedPorts)).ToList(),
-                modules,
-                error: null);
+            return new RepoConfigViewModel(c.Name, modules, error: null);
         }
         catch (Exception ex)
         {
-            return new RepoConfigViewModel("", [], [], ex.Message);
+            return new RepoConfigViewModel("", [], ex.Message);
         }
     }
 }

@@ -22,7 +22,10 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     }
 
     public string Name => Record.Workspace;
-    public string Stack => Record.Stack ?? "(ad-hoc)";
+
+    /// <summary>The map this workspace's pool belongs to (its grouping key); "(ad-hoc)" for a workspace
+    /// that belongs to no map.</summary>
+    public string Map => Record.Map ?? "(ad-hoc)";
     public string ReposSummary => string.Join(", ", Record.Repos.Select(r => r.Name));
 
     // -- pool state (from InstanceRecord) --------------------------------------

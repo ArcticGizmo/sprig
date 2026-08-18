@@ -35,9 +35,10 @@ public sealed class AppServices
     public StackResolver StackResolver { get; }
 
     /// <summary>The map model (the Graph Turn): definitions + the resolver that turns a map + selection into
-    /// a checkout. Runs alongside stacks during the transition.</summary>
+    /// a checkout, and the pool lifecycle over a map's <c>MaxSlots</c> ceiling (checkout / release / status).</summary>
     public MapStore Maps { get; }
     public MapResolver MapResolver { get; }
+    public MapPoolService MapPool { get; }
 
     public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
@@ -77,8 +78,9 @@ public sealed class AppServices
         Pools = new PoolService(Stacks, instances, StackResolver, Workspaces, Paths);
         Maps = new MapStore(Paths, Repos);
         MapResolver = new MapResolver(Repos, Maps, Git, Paths);
+        MapPool = new MapPoolService(Maps, instances, MapResolver, Workspaces, Paths);
         Init = new InitInspector(Git);
-        Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Stacks, StackResolver, Workspaces);
+        Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Maps, MapResolver, Workspaces);
     }
 
     /// <summary>

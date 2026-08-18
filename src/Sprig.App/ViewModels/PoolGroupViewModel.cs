@@ -6,17 +6,17 @@ using System.Linq;
 namespace Sprig.App.ViewModels;
 
 /// <summary>
-/// One stack's pool in the Workspaces list: the stack's capacity ceiling and the live set of
+/// One map's pool in the Workspaces list: the map's capacity ceiling and the live set of
 /// workspaces standing under it. "Pool" is emergent — there's no pool object in the store, so this is
-/// derived from <c>PoolService.Status</c> each refresh. A residual group (<see cref="IsPool"/> false)
-/// gathers any ad-hoc workspaces that predate the pool model and belong to no stack; it has no capacity
+/// derived from <c>MapPoolService.Status</c> each refresh. A residual group (<see cref="IsPool"/> false)
+/// gathers any ad-hoc workspaces that predate the pool model and belong to no map; it has no capacity
 /// and no checkout.
 /// </summary>
 public sealed class PoolGroupViewModel
 {
-    public string Stack { get; }
+    public string Map { get; }
 
-    /// <summary>The stack's <c>MaxSlots</c> — the ceiling on concurrent workspaces (0 for the residual group).</summary>
+    /// <summary>The map's <c>MaxSlots</c> — the ceiling on concurrent workspaces (0 for the residual group).</summary>
     public int MaxSlots { get; }
 
     /// <summary>False for the residual "(ad-hoc)" group — it isn't a real pool, so it shows no capacity/checkout.</summary>
@@ -24,9 +24,9 @@ public sealed class PoolGroupViewModel
 
     public ObservableCollection<WorkspaceItemViewModel> Workspaces { get; } = [];
 
-    public PoolGroupViewModel(string stack, int maxSlots, IEnumerable<WorkspaceItemViewModel> items, bool isPool = true)
+    public PoolGroupViewModel(string map, int maxSlots, IEnumerable<WorkspaceItemViewModel> items, bool isPool = true)
     {
-        Stack = stack;
+        Map = map;
         MaxSlots = maxSlots;
         IsPool = isPool;
         foreach (var item in items) Workspaces.Add(item);

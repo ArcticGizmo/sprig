@@ -197,8 +197,8 @@
                             <TextBlock Text="Repos" />
                         </Border>
                         <TextBlock Text="→" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                        <Border Classes="wstep" Classes.done="{Binding Guide.State.StacksDone}">
-                            <TextBlock Text="Stacks" />
+                        <Border Classes="wstep" Classes.done="{Binding Guide.State.MapsDone}">
+                            <TextBlock Text="Maps" />
                         </Border>
                         <TextBlock Text="→" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                         <Border Classes="wstep" Classes.done="{Binding Guide.State.WorkspacesDone}">

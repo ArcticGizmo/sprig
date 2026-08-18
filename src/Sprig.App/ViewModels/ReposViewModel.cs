@@ -195,8 +195,8 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>A repo is selected, its config loaded cleanly, and we're not already editing.</summary>
     public bool CanEdit => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
 
-    /// <summary>A zero-input repo can stand up on its own (the ad-hoc create path) — no stack needed.</summary>
-    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true, HasInputs: false } && !IsEditing;
+    /// <summary>A self-describing repo can stand up on its own (the ad-hoc create path) — no map needed.</summary>
+    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
 
     /// <summary>True while the inline "name this workspace" prompt of the fast path is open.</summary>
     [ObservableProperty] private bool _isIsolating;

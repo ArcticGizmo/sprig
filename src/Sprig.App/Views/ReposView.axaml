@@ -147,30 +147,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- inputs -->
-                        <StackPanel Spacing="6" IsVisible="{Binding SelectedConfig.HasInputs}">
-                            <TextBlock Text="INPUTS (supplied by the stack)" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource MutedBrush}" />
-                            <ItemsControl ItemsSource="{Binding SelectedConfig.Inputs}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:InputRow">
-                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,1">
-                                            <TextBlock Text="{Binding Name}" FontFamily="Consolas,monospace"
-                                                       Foreground="{StaticResource FgBrush}" MinWidth="90" />
-                                            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center">
-                                                <Run Text="e.g. " /><Run Text="{Binding Example}" />
-                                            </TextBlock>
-                                            <TextBlock FontSize="11" VerticalAlignment="Center" FontFamily="Consolas,monospace"
-                                                       Foreground="{StaticResource AccentBrush}"
-                                                       IsVisible="{Binding AllowedPorts, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                <Run Text="ports " /><Run Text="{Binding AllowedPorts}" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-
                         <!-- modules -->
                         <StackPanel Spacing="12" IsVisible="{Binding SelectedConfig.HasModules}">
                             <TextBlock Text="MODULES" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" />
@@ -409,87 +385,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- inputs card (shared across every module) -->
-                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1" CornerRadius="10" Padding="18,16">
-                            <StackPanel Spacing="8" AutomationProperties.AutomationId="repo.inputs">
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Grid.Column="0" Text="INPUTS (supplied by the stack)" FontSize="11"
-                                               FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}"
-                                               VerticalAlignment="Center" />
-                                    <Button Grid.Column="1" Content="+ Add input" Command="{Binding AddInputCommand}"
-                                            FontSize="11" Padding="8,3" />
-                                </Grid>
-                                <!-- column header: labels the row fields so the rows can stay compact -->
-                                <Grid ColumnDefinitions="1.2*,0.9*,1.7*,1.1*,32" ColumnSpacing="8" Margin="2,0,0,0"
-                                      IsVisible="{Binding HasInputs}">
-                                    <TextBlock Grid.Column="0" Text="Name" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                    <!-- "Example" alone read as a default, or as a value that gets used. It is
-                                         neither: it documents the shape for whoever wires the stack. -->
-                                    <TextBlock Grid.Column="1" Text="Example shape" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                               ToolTip.Tip="Documentation only — never used as a value. Shows whoever wires the stack what to supply, e.g. 5000 or http://localhost:5000" />
-                                    <TextBlock Grid.Column="2" Text="Description" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                    <TextBlock Grid.Column="3" Text="Allowed ports" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                               ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
-                                </Grid>
-                                <ItemsControl ItemsSource="{Binding Inputs}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:InputEditRow">
-                                            <Grid ColumnDefinitions="1.2*,0.9*,1.7*,1.1*,32" ColumnSpacing="8" Margin="2,0,0,6">
-                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay}" MinWidth="0"
-                                                         PlaceholderText="name" FontFamily="Consolas,monospace" />
-                                                <TextBox Grid.Column="1" Text="{Binding Example, Mode=TwoWay}" MinWidth="0"
-                                                         PlaceholderText="5000" />
-                                                <TextBox Grid.Column="2" Text="{Binding Description, Mode=TwoWay}" MinWidth="0"
-                                                         PlaceholderText="optional" />
-                                                <!-- Advanced and almost always blank, so it hides behind a link
-                                                     until wanted (and shows itself whenever a value exists). -->
-                                                <Button Grid.Column="3" Content="restrict…" Command="{Binding RestrictCommand}"
-                                                        IsVisible="{Binding ShowRestrictLink}" FontSize="11" Padding="0"
-                                                        Background="Transparent" Foreground="{StaticResource MutedBrush}"
-                                                        HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                        ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports." />
-                                                <TextBox Grid.Column="3" Text="{Binding AllowedPorts, Mode=TwoWay}" MinWidth="0"
-                                                         IsVisible="{Binding ShowRestrictBox}"
-                                                         PlaceholderText="8100-8103" FontFamily="Consolas,monospace"
-                                                         ToolTip.Tip="Optional. Restrict this input's port to a fixed set — e.g. pre-registered Auth0 callback ports. Ranges and lists: 8100-8103, 8100,8200" />
-                                                <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}"
-                                                        Foreground="{StaticResource DangerBrush}" Padding="0" Width="32"
-                                                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <!-- quick add: inputs referenced by an override but not declared yet. Save stays
-                                     blocked until these are gone (the validator flags each), but you can declare
-                                     them as you go by clicking a chip. -->
-                                <Border IsVisible="{Binding HasMissingInputRefs}" Margin="2,2,0,0"
-                                        Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
-                                        BorderThickness="1" CornerRadius="6" Padding="10,8">
-                                    <StackPanel Spacing="6">
-                                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
-                                                   Text="Referenced by an override but not declared yet — click to add (must be resolved before saving):" />
-                                        <ItemsControl ItemsSource="{Binding MissingInputRefs}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="sys:String">
-                                                    <Button Content="{Binding StringFormat='+ {0}'}" FontFamily="Consolas,monospace"
-                                                            FontSize="11" Padding="8,3" Margin="0,0,6,6"
-                                                            Command="{Binding $parent[ItemsControl].((vm:RepoEditViewModel)DataContext).QuickAddInputCommand}"
-                                                            CommandParameter="{Binding}" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-                            </Border>
-
-                            <!-- modules card: one tab per module (its own env/compose/setup); inputs above are shared -->
+                            <!-- modules card: one tab per module (its own provides/needs/env/compose/setup) -->
                             <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="1" CornerRadius="10" Padding="18,16">
                             <StackPanel Spacing="12" AutomationProperties.AutomationId="repo.modules">

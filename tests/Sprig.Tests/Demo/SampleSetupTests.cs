@@ -2,9 +2,10 @@ using Sprig.Core.Compose;
 using Sprig.Core.Demo;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
+using Sprig.Core.Maps;
 using Sprig.Core.Ports;
 using Sprig.Core.Processes;
-using Sprig.Core.Stacks;
+using Sprig.Core.Stacks;   // RepoRegistryStore
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -12,15 +13,20 @@ namespace Sprig.Tests.Demo;
 
 /// <summary>
 /// End-to-end cover for the guided tour's seeder. This is the only test in the suite that drives
-/// repo → stack → workspace as one continuous path, using the exact fixtures a user is shown — so it
-/// doubles as the integration test for the create pipeline (docs/guided-tour-plan.md §7, §8).
+/// repo → map → workspace as one continuous path, using the exact fixtures a user is shown — so it
+/// doubles as the integration test for the map create pipeline (docs/guided-tour-plan.md §7, §8).
 ///
 /// Real git (the sample repos are really initialised and committed); fake Docker, because
-/// <see cref="WorkspaceService.Create"/> only generates compose files and never starts containers.
+/// <see cref="WorkspaceService.CreateFromMap"/> only generates compose files and never starts containers.
 /// </summary>
 [Collection("git-heavy")]
 public class SampleSetupTests
 {
+    // Port lease names the map allocates: {repo}.{capability}.{output} (see CapabilityResolver.PortName).
+    const string ApiPortLease = "sample-api.api.port";
+    const string DbPortLease = "sample-api.db.port";
+    const string WebPortLease = "sample-web.web.port";
+
     /// <summary>A demo store in a temp dir, wired exactly as the app wires the real one.</summary>
     sealed class Harness : IDisposable
     {
@@ -29,7 +35,7 @@ public class SampleSetupTests
         public SampleSetup Sample { get; }
         public WorkspaceService Workspaces { get; }
         public RepoRegistryStore Repos { get; }
-        public StackStore Stacks { get; }
+        public MapStore Maps { get; }
         public FakeDockerService Docker { get; } = new() { Available = false };
 
         public Harness()
@@ -41,11 +47,11 @@ public class SampleSetupTests
             var git = new GitService(runner);
             var instances = new InstanceStore(Paths);
             Repos = new RepoRegistryStore(Paths);
-            Stacks = new StackStore(Paths, Repos, instances);
+            Maps = new MapStore(Paths, Repos);
             Workspaces = new WorkspaceService(git, new FilePortStore(Paths), instances,
                 new EnvClobberService(), new ComposeGenerator(), Docker, Paths);
-            Sample = new SampleSetup(Paths, runner, Repos, Stacks,
-                new StackResolver(Repos, Stacks, git), Workspaces);
+            Sample = new SampleSetup(Paths, runner, Repos, Maps,
+                new MapResolver(Repos, Maps, git, Paths), Workspaces);
         }
 
         public void Dispose()
@@ -60,7 +66,7 @@ public class SampleSetupTests
     [Theory]
     [InlineData(SampleStage.RepoOnDisk)]
     [InlineData(SampleStage.ReposRegistered)]
-    [InlineData(SampleStage.StackWired)]
+    [InlineData(SampleStage.MapReady)]
     [InlineData(SampleStage.Running)]
     public void BuildTo_stops_at_the_requested_stage_and_reports_it(SampleStage stage)
     {
@@ -73,7 +79,7 @@ public class SampleSetupTests
         // Each stage is exactly the one before it plus one more thing — the ladder a guide climbs.
         Assert.True(Directory.Exists(Path.Combine(h.Sample.SampleReposDir, SampleFixtures.ApiRepo)));
         Assert.Equal(stage >= SampleStage.ReposRegistered, h.Repos.Get(SampleFixtures.ApiRepo) is not null);
-        Assert.Equal(stage >= SampleStage.StackWired, h.Stacks.Get(SampleFixtures.StackName) is not null);
+        Assert.Equal(stage >= SampleStage.MapReady, h.Maps.Get(SampleFixtures.MapName) is not null);
         Assert.Equal(stage == SampleStage.Running, h.Sample.Existing() is not null);
     }
 
@@ -91,7 +97,7 @@ public class SampleSetupTests
 
         Assert.Equal(SampleStage.RepoOnDisk, h.Sample.CurrentStage());
         Assert.Null(h.Repos.Get(SampleFixtures.ApiRepo));
-        Assert.Null(h.Stacks.Get(SampleFixtures.StackName));
+        Assert.Null(h.Maps.Get(SampleFixtures.MapName));
         Assert.Null(h.Sample.Existing());
     }
 
@@ -110,9 +116,9 @@ public class SampleSetupTests
         var record = h.Sample.Build();
 
         Assert.Equal(SampleSetup.WorkspaceName, record.Workspace);
-        Assert.Equal(SampleFixtures.StackName, record.Stack);
+        Assert.Equal(SampleFixtures.MapName, record.Map);
         Assert.Equal(2, record.Repos.Count);
-        Assert.Equal(3, record.Ports.Count);
+        Assert.Equal(3, record.Ports.Count);   // api, db, web
 
         foreach (var repo in record.Repos)
         {
@@ -120,27 +126,27 @@ public class SampleSetupTests
             Assert.Null(repo.Branch); // built = parked in detached HEAD; a branch is cut only on claim
         }
 
-        // Registered through the real registry, so the names stacks bind by are the configs' names.
+        // Registered through the real registry, so the names the map composes by are the configs' names.
         Assert.Equal(
             [SampleFixtures.ApiRepo, SampleFixtures.WebRepo],
             h.Repos.List().Select(r => r.Name));
     }
 
     [Fact]
-    public void Both_repos_receive_the_same_api_port_through_different_inputs()
+    public void The_web_repo_is_wired_to_the_api_it_needs()
     {
         using var h = new Harness();
 
         var record = h.Sample.Build();
-        var apiPort = record.Ports[SampleFixtures.ApiPort];
+        var apiPort = record.Ports[ApiPortLease];
 
-        var api = record.Repos.Single(r => r.Name == SampleFixtures.ApiRepo);
-        var web = record.Repos.Single(r => r.Name == SampleFixtures.WebRepo);
+        var api = record.Repos.Single(r => r.Name == SampleFixtures.ApiRepo).Modules.Single();
+        var web = record.Repos.Single(r => r.Name == SampleFixtures.WebRepo).Modules.Single();
 
-        // The API gets the bare number; the web app gets a URL built from it. One port, two shapes —
-        // the whole point of the tour's shared-port step.
-        Assert.Equal(apiPort.ToString(), api.Inputs["port"]);
-        Assert.Equal($"http://localhost:{apiPort}", web.Inputs["apiUrl"]);
+        // The API owns the port; the web app consumes the api capability's derived URL, built from that same
+        // port — the whole point of the tour's provides/needs wiring, matched by capability name.
+        Assert.Equal(apiPort.ToString(), api.Values["api.port"]);
+        Assert.Equal($"http://localhost:{apiPort}", web.Values["api.url"]);
     }
 
     [Fact]
@@ -149,9 +155,9 @@ public class SampleSetupTests
         using var h = new Harness();
 
         var record = h.Sample.Build();
-        var apiPort = record.Ports[SampleFixtures.ApiPort];
-        var dbPort = record.Ports[SampleFixtures.DbPort];
-        var webPort = record.Ports[SampleFixtures.WebPort];
+        var apiPort = record.Ports[ApiPortLease];
+        var dbPort = record.Ports[DbPortLease];
+        var webPort = record.Ports[WebPortLease];
 
         var apiEnv = File.ReadAllText(Path.Combine(
             record.Repos.Single(r => r.Name == SampleFixtures.ApiRepo).WorktreePath, ".env"));
@@ -163,7 +169,7 @@ public class SampleSetupTests
         Assert.Contains($"PORT={webPort}", webEnv);
         Assert.Contains($"VITE_API_URL=http://localhost:{apiPort}", webEnv);
 
-        // Seeded from .env.template, so keys the stack does NOT supply survive.
+        // Seeded from .env.template, so keys the map does NOT clobber survive.
         Assert.Contains("APP_NAME=sample-api", apiEnv);
         Assert.Contains("LOG_LEVEL=debug", apiEnv);
 
@@ -178,7 +184,7 @@ public class SampleSetupTests
         using var h = new Harness();
 
         var record = h.Sample.Build();
-        var dbPort = record.Ports[SampleFixtures.DbPort];
+        var dbPort = record.Ports[DbPortLease];
 
         var api = record.Repos.Single(r => r.Name == SampleFixtures.ApiRepo);
         var compose = Assert.Single(api.ComposePaths);

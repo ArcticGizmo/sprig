@@ -134,17 +134,17 @@
                 </Button>
                 <TextBlock Grid.Column="1" Text="→" VerticalAlignment="Center" Margin="8,0"
                            Foreground="{StaticResource MutedBrush}" />
-                <Button Grid.Column="2" Classes="tile" Command="{Binding GoToStacksCommand}">
+                <Button Grid.Column="2" Classes="tile" Command="{Binding GoToMapsCommand}">
                     <Border Classes="step"
-                            Classes.done="{Binding State.StacksDone}" Classes.next="{Binding State.StacksNext}">
+                            Classes.done="{Binding State.MapsDone}" Classes.next="{Binding State.MapsNext}">
                         <StackPanel Spacing="3">
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Stacks" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Grid.Column="0" Text="Maps" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                 <TextBlock Grid.Column="1" Text="02" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                             </Grid>
-                            <TextBlock Text="Repos wired with ports." FontSize="12"
+                            <TextBlock Text="Repos composed by capability." FontSize="12"
                                        Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                            <TextBlock Classes="count" Text="{Binding State.StacksCountLabel}" FontSize="12"
+                            <TextBlock Classes="count" Text="{Binding State.MapsCountLabel}" FontSize="12"
                                        Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
                         </StackPanel>
                     </Border>
@@ -224,7 +224,7 @@
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
                                                        Foreground="{StaticResource FgBrush}" />
                                             <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
-                                                <Run Text="{Binding Stack}" /><Run Text="   " /><Run Text="{Binding PortsSummary}" />
+                                                <Run Text="{Binding Map}" /><Run Text="   " /><Run Text="{Binding PortsSummary}" />
                                             </TextBlock>
                                         </StackPanel>
                                         <Border Grid.Column="1" Background="{StaticResource ButtonBgBrush}"
@@ -243,7 +243,7 @@
                         <TextBlock Text="Quick actions" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                         <Button Classes="qa" Content="New workspace" Command="{Binding NewWorkspaceCommand}" />
                         <Button Classes="qa" Content="Add a repo" Command="{Binding AddRepoCommand}" />
-                        <Button Classes="qa" Content="Manage stacks" Command="{Binding GoToStacksCommand}" />
+                        <Button Classes="qa" Content="Manage maps" Command="{Binding GoToMapsCommand}" />
                     </StackPanel>
                 </Border>
             </Grid>

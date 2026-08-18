@@ -1,27 +1,38 @@
 using System;
-using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Sprig.App;
 using Sprig.App.ViewModels;
-using Sprig.Core.Stacks;
+using Sprig.Core.Maps;
 using Sprig.Core.Store;
 
 namespace Sprig.Tests.App;
 
 /// <summary>
-/// The Workspaces page reframed around pools: the list groups workspaces under their stack's pool
+/// The Workspaces page reframed around pools: the list groups workspaces under their map's pool
 /// (capacity, free/claimed/degraded), and Checkout/Release drive the lifecycle. Nothing here runs a real
-/// checkout (git/docker — that's Core's <c>PoolService</c> tests); these pin what the grouped surface
+/// checkout (git/docker — that's Core's <c>MapPoolService</c> tests); these pin what the grouped surface
 /// shows and how the checkout overlay sets itself up before the user commits.
 /// </summary>
 public class PoolWorkspaceViewModelTests
 {
-    /// <summary>Register one repo and a stack "app" with the given capacity.</summary>
-    static void SeedStack(TempStore s, AppServices services, int maxSlots)
+    /// <summary>Register one repo (no git needed) and a map "app" with the given capacity.</summary>
+    static void SeedMap(TempStore s, AppServices services, int maxSlots)
     {
-        services.Repos.Add(ManagementViewModelTests.MakeRepoWithInputs(s.Root, "api", ("port", "5000")));
-        services.Stacks.Save(new StackDefinition { Name = "app", Repos = ["api"], MaxSlots = maxSlots });
+        services.Repos.Add(MakeRepo(s.Root, "api"));
+        services.Maps.Save(new MapDefinition { Name = "app", Repos = [MapRepo.Local("api")], MaxSlots = maxSlots });
+    }
+
+    /// <summary>A registered map repo: a directory with a provides-declaring .sprig.json (no git — these
+    /// tests never run a real checkout, only the grouping + overlay setup).</summary>
+    internal static string MakeRepo(string root, string name)
+    {
+        var dir = Path.Combine(root, name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"),
+            $$"""{ "schema":3, "name":"{{name}}", "modules":[ { "name":"main", "provides":[ { "capability":"{{name}}", "outputs":{ "port": { "port": true } } } ] } ] }""");
+        return dir;
     }
 
     /// <summary>Write a pool workspace record straight into the store the VM reads (same paths as AppServices).</summary>
@@ -31,7 +42,7 @@ public class PoolWorkspaceViewModelTests
         new InstanceStore(services.Paths).Save(new InstanceRecord
         {
             Workspace = name,
-            Stack = "app",
+            Map = "app",
             WorkspaceIndex = index,
             Claimed = claimed,
             Label = label,
@@ -48,18 +59,18 @@ public class PoolWorkspaceViewModelTests
     }
 
     [Fact]
-    public async Task Each_stack_is_a_pool_group_with_its_capacity_and_counts()
+    public async Task Each_map_is_a_pool_group_with_its_capacity_and_counts()
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 4);
+        SeedMap(s, services, maxSlots: 4);
         SeedWorkspace(services, "app-1", 1, claimed: true, label: "auth");
         SeedWorkspace(services, "app-2", 2, claimed: false);
 
         var vm = await LoadedVm(services);
 
         var pool = Assert.Single(vm.Pools);
-        Assert.Equal("app", pool.Stack);
+        Assert.Equal("app", pool.Map);
         Assert.True(pool.IsPool);
         Assert.Equal("1/4 in use", pool.CapacitySummary);
         Assert.Equal(1, pool.ClaimedCount);
@@ -74,7 +85,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 3);
+        SeedMap(s, services, maxSlots: 3);
 
         var vm = await LoadedVm(services);
 
@@ -91,7 +102,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 1);
+        SeedMap(s, services, maxSlots: 1);
         SeedWorkspace(services, "app-1", 1, claimed: true, label: "busy");
 
         var vm = await LoadedVm(services);
@@ -110,7 +121,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 4);
+        SeedMap(s, services, maxSlots: 4);
         SeedWorkspace(services, "app-1", 1, claimed: false, label: "old", lastUsed: DateTimeOffset.UtcNow.AddDays(-3));
         SeedWorkspace(services, "app-2", 2, claimed: false, label: "recent", lastUsed: DateTimeOffset.UtcNow.AddMinutes(-5));
 
@@ -118,7 +129,7 @@ public class PoolWorkspaceViewModelTests
         vm.CheckoutCommand.Execute(Assert.Single(vm.Pools));
 
         Assert.True(vm.IsCheckingOut);
-        Assert.Equal("app", vm.CheckoutStack);
+        Assert.Equal("app", vm.CheckoutMap);
         Assert.False(vm.CheckoutNew);
         Assert.True(vm.CheckoutReuse);
         Assert.Equal("app-1", vm.CheckoutTarget?.Name);   // freed longest ago
@@ -131,7 +142,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 2);
+        SeedMap(s, services, maxSlots: 2);
         SeedWorkspace(services, "app-1", 1, claimed: false);
 
         var vm = await LoadedVm(services);
@@ -149,7 +160,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 2);
+        SeedMap(s, services, maxSlots: 2);
 
         var vm = await LoadedVm(services);
         vm.CheckoutCommand.Execute(Assert.Single(vm.Pools));
@@ -164,7 +175,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 2);
+        SeedMap(s, services, maxSlots: 2);
 
         var vm = await LoadedVm(services);
         vm.CheckoutCommand.Execute(Assert.Single(vm.Pools));
@@ -181,7 +192,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 4);
+        SeedMap(s, services, maxSlots: 4);
         SeedWorkspace(services, "app-1", 1, claimed: true, label: "auth");
         SeedWorkspace(services, "app-2", 2, claimed: false);
 
@@ -199,7 +210,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 4);
+        SeedMap(s, services, maxSlots: 4);
         SeedWorkspace(services, "app-1", 1, claimed: true, label: "auth");
         SeedWorkspace(services, "app-2", 2, claimed: false);
 
@@ -217,7 +228,7 @@ public class PoolWorkspaceViewModelTests
     {
         using var s = new TempStore();
         var services = new AppServices(s.Root);
-        SeedStack(s, services, maxSlots: 4);
+        SeedMap(s, services, maxSlots: 4);
         SeedWorkspace(services, "app-1", 1, claimed: false, label: "old", lastUsed: DateTimeOffset.UtcNow.AddDays(-3));
         SeedWorkspace(services, "app-2", 2, claimed: false, label: "recent", lastUsed: DateTimeOffset.UtcNow.AddMinutes(-5));
 
@@ -227,7 +238,7 @@ public class PoolWorkspaceViewModelTests
         vm.ClaimCommand.Execute(null);
 
         Assert.True(vm.IsCheckingOut);
-        Assert.Equal("app", vm.CheckoutStack);
+        Assert.Equal("app", vm.CheckoutMap);
         Assert.False(vm.CheckoutNew);
         Assert.True(vm.CheckoutReuse);
         Assert.Equal("app-2", vm.CheckoutTarget?.Name);   // the selected one, not the LRU default

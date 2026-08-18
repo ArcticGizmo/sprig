@@ -30,13 +30,12 @@ public sealed record Guide(
 
 /// <summary>
 /// The guide catalog — the ladder of lessons, each introducing one concept. Ordered easiest-first:
-/// register a repo, split it into modules, wire a multi-repo stack, run a workspace, and recover from drift.
+/// register a repo, split it into modules, run a workspace, and recover from drift.
 /// </summary>
 public static class Guides
 {
     public const string RegisterRepoId = "register-repo";
     public const string SplitModulesId = "split-modules";
-    public const string WireStackId = "wire-stack";
     public const string RunWorkspaceId = "run-workspace";
     public const string RepairDriftId = "repair-drift";
 
@@ -56,18 +55,11 @@ public static class Guides
             SampleStage.ReposRegistered,
             SplitModulesSteps),
 
-        new(WireStackId,
-            "Wire up a multi-repo stack",
-            "Compose two repos into one runnable stack.",
-            "3 min",
-            SampleStage.ReposRegistered,
-            WireStackSteps),
-
         new(RunWorkspaceId,
             "Create and run a workspace",
-            "Spin up a live, isolated copy of a stack.",
+            "Spin up a live, isolated slice of a map.",
             "3 min",
-            SampleStage.StackWired,
+            SampleStage.MapReady,
             RunWorkspaceSteps),
 
         new(RepairDriftId,
@@ -99,17 +91,17 @@ public static class Guides
             },
 
             // Explanation: registration dropped us into the editor. Point at what the repo declares.
-            new(Anchors.RepoInputs,
-                "A repo declares what it needs",
-                "These are inputs and they represent what needs to be defined for the repo to be created in isolation")
+            new(Anchors.RepoModules,
+                "A repo describes itself",
+                "Each module declares what it PROVIDES (its own ports and the values built from them) and what it NEEDS from other repos. sprig derives the wiring from these — no central config to hand-maintain.")
             {
-                Side = CoachSide.Right,
+                Side = CoachSide.Left,
                 Prepare = () => { nav.EditRepo(SampleFixtures.ApiRepo); return Task.CompletedTask; },
             },
 
             new(Anchors.RepoModules,
-                "And here's where those inputs get used",
-                "For each .env, docker compose and setup command you can reference the previous inputs and they will be injected at run time.")
+                "And here's where those get used",
+                "In each .env, docker compose and setup command you reference a provide or a need as ${sprig.<capability>.<output>}, and sprig injects the resolved value at checkout time.")
             {
                 Side = CoachSide.Left,
                 Prepare = () => { nav.EditRepo(SampleFixtures.ApiRepo); return Task.CompletedTask; },
@@ -120,11 +112,11 @@ public static class Guides
     /// <summary>
     /// Guide 2: split a single repo into modules — the monorepo lesson. Starts at
     /// <see cref="SampleStage.ReposRegistered"/> (sample-api is registered, so its editor opens) and walks:
-    /// what a module is → inputs stay shared → add a second module → what that module owns → the handoff.
+    /// what a module is → each module owns its own provides/needs → add a second module → what that module
+    /// owns → the handoff.
     /// <para>Every step is an explanation that advances on Next, not a waiting step: adding a module is
     /// editor state, not a store change, and the coach only re-checks a wait on <c>StoreChanged</c>. So the
-    /// module-driving steps put the editor into each state from their <c>Prepare</c> (idempotently), the same
-    /// pattern the stack-builder guide uses for its UI-only transitions.</para>
+    /// module-driving steps put the editor into each state from their <c>Prepare</c> (idempotently).</para>
     /// </summary>
     static IReadOnlyList<CoachMark> SplitModulesSteps(Navigator nav, AppServices services)
     {
@@ -141,11 +133,11 @@ public static class Guides
                 Prepare = () => { nav.PrepareRepoEditor(SampleFixtures.ApiRepo); return Task.CompletedTask; },
             },
 
-            new(Anchors.RepoInputs,
-                "Inputs stay shared",
-                "Regardless of the number of modules, inputs remain shared across all of them.")
+            new(Anchors.RepoModules,
+                "Each module describes itself",
+                "Every module carries its own provides and needs, so a slice of a monorepo wires up on its own — a sibling module's provide satisfies a need locally, and anything unmet is supplied from the wider map.")
             {
-                Side = CoachSide.Right,
+                Side = CoachSide.Left,
                 Prepare = () => { nav.PrepareRepoEditor(SampleFixtures.ApiRepo); return Task.CompletedTask; },
             },
 
@@ -173,65 +165,11 @@ public static class Guides
     }
 
     /// <summary>
-    /// Guide 3: compose the two registered repos into one stack. Starts at <see cref="SampleStage.ReposRegistered"/>
-    /// (both repos known, no stack), and walks: why a stack → open the builder → read the auto-wiring →
-    /// create it. Only the final step waits on the user; the builder-driving steps prepare state and advance
-    /// on Next, since opening a builder is UI state, not a store change.
-    /// </summary>
-    static IReadOnlyList<CoachMark> WireStackSteps(Navigator nav, AppServices services)
-    {
-        const string StackName = "web+api";
-        // At this stage there are no stacks; the first one to appear is the one the user just built.
-        bool StackCreated() => services.Stacks.List().Count > 0;
-
-        return
-        [
-            new(Anchors.StackNew,
-                "Two repos, nothing tying them together",
-                "sample-api and sample-web are both registered, but on their own they don't know about each other. A stack composes repos into one runnable set and supplies the values each one needs. Let's build one.")
-            {
-                Side = CoachSide.Below,
-                Prepare = () => { nav.ShowStacksFresh(); return Task.CompletedTask; },
-            },
-
-            new(Anchors.StackGraph,
-                "Both repos, wired by convention",
-                "Here's the builder. Each repo is a node, and the ports it defines live in the rail on the left. Selecting the repos auto-wired every input to a port — click a repo to see and edit what fills each input. sample-api's port and dbPort, sample-web's port and apiUrl: all supplied by the stack.")
-            {
-                Side = CoachSide.Left,
-                Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
-            },
-
-            new(Anchors.StackGraph,
-                "Each repo gets its own ports — unless you say otherwise",
-                "Auto-wire gives every input a separate port, so two services never collide by accident. When you *do* want two repos to share one — the web app talking to the API's exact port — you say which repo owns it, and a line is drawn from owner to consumer. Sharing is always a deliberate choice, never a surprise.")
-            {
-                Side = CoachSide.Left,
-                Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
-            },
-
-            new(Anchors.StackCreate,
-                "Save the wiring as a stack",
-                "Rename it if you like, then Create stack to save this composition — or let me. Once it exists, any workspace can be built from it.")
-            {
-                Side = CoachSide.Left,
-                Prepare = () => { nav.PrepareStackBuilder(StackName); return Task.CompletedTask; },
-                Completed = StackCreated,
-                ShowMe = () => nav.CreateStack(),
-            },
-
-            new(Anchors.Nav("Workspaces"),
-                "That's a multi-repo stack",
-                "Two repos, composed and wired, saved as one reusable set. The last step is to run it: create a workspace, and sprig builds an isolated, live copy of the whole stack. Leave the tour whenever you like — nothing here is yours.")
-            { Side = CoachSide.Right },
-        ];
-    }
-
-    /// <summary>
-    /// Guide 4: turn a stack into a running, isolated workspace. Starts at <see cref="SampleStage.StackWired"/>
-    /// (a stack exists, nothing running) and walks: why a workspace → create it → what sprig actually made →
-    /// how you run and dispose of it. The create step waits on the user; creating a workspace is real work
-    /// (a worktree per repo), so it runs behind the same progress checklist the app always uses.
+    /// Guide 3: turn a map into a running, isolated workspace. Starts at <see cref="SampleStage.MapReady"/>
+    /// (a map composing the two repos exists, nothing running) and walks: why a workspace → create it → what
+    /// sprig actually made → how you run and dispose of it. The create step waits on the user; creating a
+    /// workspace is real work (a worktree per repo), so it runs behind the same progress checklist the app
+    /// always uses.
     /// </summary>
     static IReadOnlyList<CoachMark> RunWorkspaceSteps(Navigator nav, AppServices services)
     {
@@ -241,8 +179,8 @@ public static class Guides
         return
         [
             new(Anchors.WorkspaceNew,
-                "A stack is a plan; a workspace is the real thing",
-                "You've got a stack, but nothing's running from it yet. A workspace is a live, isolated copy of the whole stack — its own git worktrees, its own allocated ports, its own docker infra. Let's spin one up.")
+                "A map is a plan; a workspace is the real thing",
+                "You've got a map that composes the two repos, but nothing's running from it yet. A workspace is a live, isolated slice of that map — its own git worktrees, its own allocated ports, its own docker infra. Let's spin one up.")
             {
                 Side = CoachSide.Below,
                 Prepare = () => { nav.ShowWorkspacesFresh(); return Task.CompletedTask; },
@@ -250,7 +188,7 @@ public static class Guides
 
             new(Anchors.WorkspaceCreate,
                 "Create it",
-                "The stack and a name are filled in. Click Create — sprig adds a worktree per repo on its own sprig branch, allocates ports just for this workspace, and writes each worktree's .env and compose with the resolved values. Or let me.")
+                "The map and a name are filled in. Click Create — sprig adds a worktree per repo on its own sprig branch, allocates each provided port just for this workspace, and writes each worktree's .env and compose with the resolved values. Or let me.")
             {
                 Side = CoachSide.Left,
                 Prepare = () => nav.PrepareNewWorkspace(WorkspaceName),
@@ -268,7 +206,7 @@ public static class Guides
 
             new(null,
                 "That's the whole journey",
-                "A repo declares what it needs, a stack supplies it, a workspace runs it — isolated, side by side with as many others as you like. Bring its infra up and down from here, and when you're done, delete it and everything it created is cleaned up.")
+                "A repo declares what it provides and needs, a map composes them, a workspace runs a slice — isolated, side by side with as many others as you like. Bring its infra up and down from here, and when you're done, delete it and everything it created is cleaned up.")
             { Prepare = () => { nav.ShowFirstWorkspace(); return Task.CompletedTask; } },
         ];
     }

@@ -1,7 +1,9 @@
 using Sprig.Core.Config;
 using Sprig.Core.Demo;
-using Sprig.Core.Stacks;
+using Sprig.Core.Maps;
+using Sprig.Core.Stacks;   // RepoRegistryStore
 using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 
 namespace Sprig.Tests.Demo;
 
@@ -37,30 +39,40 @@ public class SampleFixtureTests
     }
 
     [Fact]
-    public void Stack_fixture_binds_every_input_both_repos_declare()
+    public void Map_fixture_composes_the_two_repos_with_no_gaps()
     {
-        var stack = SampleFixtures.Stack();
-
-        foreach (var (resource, repo) in new[]
+        // Register the samples, then project the map: web's `api` need must resolve to sample-api's provide,
+        // with no gaps or ambiguities — otherwise a checkout would report an unmet need.
+        using var store = new TempStore();
+        var registry = new RepoRegistryStore(store.Paths);
+        var repos = new List<ResolvedRepo>();
+        foreach (var (name, files) in new[]
                  {
-                     ("Sprig.Demo.api.sprig.json", SampleFixtures.ApiRepo),
-                     ("Sprig.Demo.web.sprig.json", SampleFixtures.WebRepo),
+                     (SampleFixtures.ApiRepo, SampleFixtures.ApiFiles),
+                     (SampleFixtures.WebRepo, SampleFixtures.WebFiles),
                  })
         {
-            var config = SprigConfigLoader.Parse(SampleFixtures.Read(resource), resource);
-            var bindings = stack.Bindings[repo];
-            foreach (var input in config.Inputs)
-                Assert.True(bindings.ContainsKey(input.Name),
-                    $"stack fixture does not bind {repo}.{input.Name} — create would fail at runtime");
+            var dir = Path.Combine(store.Root, "sample", name);
+            SampleFixtures.WriteTo(files, dir);
+            registry.Add(dir);
+            repos.Add(new ResolvedRepo(name, dir, SprigConfigLoader.LoadFromFile(Path.Combine(dir, ".sprig.json"))));
         }
+
+        var graph = MapGraphProjection.Project(SampleFixtures.Map(), repos);
+
+        Assert.True(graph.IsComplete, "the sample map leaves a need unmet");
+        Assert.Empty(graph.Gaps);
+        Assert.Empty(graph.Ambiguities);
+        var edge = Assert.Single(graph.Edges);
+        Assert.Equal((SampleFixtures.WebRepo, "api", SampleFixtures.ApiRepo), (edge.FromRepo, edge.Need, edge.ToRepo));
     }
 
     [Fact]
-    public void Stack_fixture_saves_through_the_real_store()
+    public void Map_fixture_saves_through_the_real_store()
     {
         using var store = new TempStore();
         var registry = new RepoRegistryStore(store.Paths);
-        var stacks = new StackStore(store.Paths, registry, new InstanceStore(store.Paths));
+        var maps = new MapStore(store.Paths, registry);
 
         // The store validates repo names against the registry, so register the samples first —
         // this is also what proves the fixture's repo names match the configs' `name` fields.
@@ -75,15 +87,11 @@ public class SampleFixtureTests
             registry.Add(dir);
         }
 
-        stacks.Save(SampleFixtures.Stack());
+        maps.Save(SampleFixtures.Map());
 
-        var saved = stacks.Get(SampleFixtures.StackName);
+        var saved = maps.Get(SampleFixtures.MapName);
         Assert.NotNull(saved);
-        Assert.Equal([SampleFixtures.ApiRepo, SampleFixtures.WebRepo], saved!.Repos);
-        // The shared port is the tour's centrepiece: one port, two consumers.
-        var share = Assert.Single(saved.Shares);
-        Assert.Equal(SampleFixtures.ApiPort, share.Port);
-        Assert.Equal(2, share.Consumers.Count);
+        Assert.Equal([SampleFixtures.ApiRepo, SampleFixtures.WebRepo], saved!.Repos.Select(r => r.Name));
     }
 
     [Fact]
@@ -101,16 +109,4 @@ public class SampleFixtureTests
         Assert.Contains("ports:", yaml);
     }
 
-    [Fact]
-    public void Port_names_the_stack_declares_are_the_ones_it_binds()
-    {
-        var stack = SampleFixtures.Stack();
-        var declared = stack.Ports.ToHashSet();
-
-        foreach (var (repo, bindings) in stack.Bindings)
-            foreach (var (input, expression) in bindings)
-                foreach (var port in PortExpressions.ReferencedPorts(expression))
-                    Assert.True(declared.Contains(port),
-                        $"{repo}.{input} references undeclared port '{port}'");
-    }
 }

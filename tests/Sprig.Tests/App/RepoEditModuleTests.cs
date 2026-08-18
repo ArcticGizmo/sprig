@@ -31,7 +31,6 @@ public class RepoEditModuleTests
 
         Assert.Equal(["web", "api"], e.Modules.Select(m => m.Name));
         Assert.Same(e.Modules[0], e.SelectedModule);
-        Assert.Single(e.Inputs);                          // inputs shared, edited once above the tabs
         Assert.Equal("apps/web", e.Modules[0].Path);
         Assert.Equal(".env.local", e.Modules[0].Env.First().File);
         Assert.Equal(["npm ci"], e.Modules[0].Setup.Select(x => x.Command));
@@ -114,24 +113,6 @@ public class RepoEditModuleTests
         Assert.Empty(e.Modules);
         Assert.Null(e.SelectedModule);
         Assert.False(e.HasModules);
-    }
-
-    [Fact]
-    public void A_reference_in_the_second_module_surfaces_as_a_shared_missing_input()
-    {
-        using var s = new TempStore();
-        var dir = Write(s, """
-            { "schema":3, "name":"mono",
-              "modules":[
-                { "name":"web" },
-                { "name":"api", "env":[ { "file":".env", "set":{ "P":"${sprig.apiPort}" } } ] } ] }
-            """);
-
-        var e = RepoEditViewModel.Load(dir);
-
-        // The hint lives once above the tabs, aggregated across every module.
-        Assert.Contains("apiPort", e.MissingInputRefs);
-        Assert.True(e.HasMissingInputRefs);
     }
 
     [Fact]

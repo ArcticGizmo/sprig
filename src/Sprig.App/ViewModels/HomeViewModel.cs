@@ -74,7 +74,7 @@ public partial class HomeViewModel : PageViewModel
         switch (State.Stage)
         {
             case SetupStage.Empty: _nav.AddRepo(); break;
-            case SetupStage.ReposReady: _nav.NewStack(); break;
+            case SetupStage.ReposReady: _nav.NewMap(); break;
             default: _nav.NewWorkspace(); break;
         }
     }
@@ -97,6 +97,6 @@ public partial class HomeViewModel : PageViewModel
 
     // Journey-rail tiles navigate to their page.
     [RelayCommand] private void GoToRepos() => _nav.GoToRepos();
-    [RelayCommand] private void GoToStacks() => _nav.GoToStacks();
+    [RelayCommand] private void GoToMaps() => _nav.GoToMaps();
     [RelayCommand] private void GoToWorkspaces() => _nav.GoToWorkspaces();
 }

@@ -32,7 +32,6 @@ public class RepoConfigViewModelTests
         var vm = RepoConfigViewModel.Load(dir);
 
         Assert.True(vm.Ok);
-        Assert.Single(vm.Inputs);                              // inputs shared, shown once above the tabs
         Assert.Equal(["web", "api"], vm.Modules.Select(m => m.Name));
         Assert.Same(vm.Modules[0], vm.SelectedModule);         // first tab selected by default
 

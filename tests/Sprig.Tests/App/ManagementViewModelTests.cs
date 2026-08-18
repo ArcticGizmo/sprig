@@ -392,6 +392,7 @@ public class ManagementViewModelTests
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Tracked, row.Status);
         Assert.True(row.ShowTrackedWarning);
+        Assert.Contains("can't override", row.StatusText);   // flattened banner text
 
         // set an override key via the overlay (the merged-env editor)
         var overlay = row.Overlay!;
@@ -410,6 +411,7 @@ public class ManagementViewModelTests
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
         Assert.True(row.ShowIgnoredOk);
+        Assert.Equal("✓ gitignored", row.StatusText);        // green banner text
         Assert.True(editor.Save());
     }
 

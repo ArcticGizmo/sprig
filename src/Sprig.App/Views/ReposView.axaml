@@ -717,61 +717,54 @@
                                             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                                                     BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
                                                 <StackPanel Spacing="6">
-                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                                        <AutoCompleteBox Grid.Column="0" MinWidth="0"
-                                                                         Text="{Binding File, Mode=TwoWay}"
-                                                                         FilterMode="None" MinimumPrefixLength="0"
-                                                                         IsTextCompletionEnabled="False"
-                                                                         Loaded="RepoPathBoxLoaded"
-                                                                         PlaceholderText=".env file (e.g. .env.local)" />
-                                                        <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
-                                                                Foreground="{StaticResource DangerBrush}" Padding="10,2" />
-                                                    </Grid>
-                                                    <!-- git-safety subtext: only gitignored files are truly safe to clobber -->
-                                                    <TextBlock IsVisible="{Binding ShowTrackedWarning}" FontSize="11" TextWrapping="Wrap"
-                                                               Foreground="{StaticResource DangerBrush}"
-                                                               Text="⚠ Tracked by git — can't override. Sprig only overrides gitignored files." />
-                                                    <TextBlock IsVisible="{Binding ShowIgnoredOk}" FontSize="11"
-                                                               Foreground="{StaticResource OkBrush}"
-                                                               Text="✓ Gitignored — safe to override." />
-                                                    <TextBlock IsVisible="{Binding ShowNotIgnoredWarning}" FontSize="11" TextWrapping="Wrap"
-                                                               Foreground="{StaticResource WarnBrush}"
-                                                               Text="{Binding NotIgnoredMessage}" />
-
-                                                    <!-- seed templates: an inset panel so it reads as its own thing, not part of the keys -->
-                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                                            BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,4,0,0">
-                                                        <StackPanel Spacing="4">
-                                                            <Grid ColumnDefinitions="*,Auto">
-                                                                <TextBlock Grid.Column="0" Text="Seed from templates (optional)" FontSize="11"
-                                                                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
-                                                                           ToolTip.Tip="The worktree's copy of this file is seeded from these before sprig's override block is injected — point at committed templates like .env.template. Leave empty to seed from the target file itself." />
-                                                                <Button Grid.Column="1" Content="+ Add template" Command="{Binding AddTemplateCommand}"
-                                                                        FontSize="11" Padding="8,3" />
-                                                            </Grid>
-                                                            <ItemsControl ItemsSource="{Binding Templates}">
-                                                                <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="vm:TemplateFileRow">
-                                                                        <StackPanel Spacing="2" Margin="0,2,0,0">
-                                                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                                                                <AutoCompleteBox Grid.Column="0" MinWidth="0" Text="{Binding Path, Mode=TwoWay}"
-                                                                                         FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
-                                                                                         Loaded="RepoPathBoxLoaded"
-                                                                                         PlaceholderText=".env.template" FontFamily="Consolas,monospace" />
-                                                                                <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
-                                                                                        Foreground="{StaticResource DangerBrush}" Padding="10,2" />
-                                                                            </Grid>
-                                                                            <TextBlock IsVisible="{Binding ShowFound}" FontSize="11"
-                                                                                       Foreground="{StaticResource OkBrush}" Text="✓ Found in the repo." />
-                                                                            <TextBlock IsVisible="{Binding ShowMissing}" FontSize="11" TextWrapping="Wrap"
-                                                                                       Foreground="{StaticResource WarnBrush}"
-                                                                                       Text="⚠ No such file in the repo — it'll be skipped when seeding." />
-                                                                        </StackPanel>
-                                                                    </DataTemplate>
-                                                                </ItemsControl.ItemTemplate>
-                                                            </ItemsControl>
-                                                        </StackPanel>
+                                                    <!-- file line, flattened: a status-coloured start banner (green = gitignored/safe,
+                                                         red = tracked or not-ignored), the git-safety text on the right, then remove. -->
+                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{Binding StatusBrush}"
+                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7"
+                                                            ToolTip.Tip="{Binding StatusTooltip}">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                                                            <AutoCompleteBox Grid.Column="0" MinWidth="0"
+                                                                             Text="{Binding File, Mode=TwoWay}"
+                                                                             FilterMode="None" MinimumPrefixLength="0"
+                                                                             IsTextCompletionEnabled="False"
+                                                                             Loaded="RepoPathBoxLoaded"
+                                                                             FontFamily="Consolas,monospace"
+                                                                             PlaceholderText=".env file (e.g. .env.local)" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{Binding StatusBrush}"
+                                                                       FontSize="11" VerticalAlignment="Center" />
+                                                            <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
+                                                                    Foreground="{StaticResource DangerBrush}" Padding="8,2" VerticalAlignment="Center"
+                                                                    ToolTip.Tip="Remove this file override" />
+                                                        </Grid>
                                                     </Border>
+
+                                                    <!-- seed templates: same flattened row, indented and prefixed '* template' so they
+                                                         clearly read as feeders of the file above, each with its own found/missing banner. -->
+                                                    <ItemsControl ItemsSource="{Binding Templates}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:TemplateFileRow">
+                                                                <Border Background="{StaticResource FormBgBrush}" BorderBrush="{Binding StatusBrush}"
+                                                                        BorderThickness="3,0,0,0" CornerRadius="4" Padding="10,7" Margin="18,0,0,6">
+                                                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                        <TextBlock Grid.Column="0" Text="● template" FontFamily="Consolas,monospace"
+                                                                                   FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                                        <AutoCompleteBox Grid.Column="1" MinWidth="0" Text="{Binding Path, Mode=TwoWay}"
+                                                                                 FilterMode="None" MinimumPrefixLength="0" IsTextCompletionEnabled="False"
+                                                                                 Loaded="RepoPathBoxLoaded"
+                                                                                 PlaceholderText=".env.template" FontFamily="Consolas,monospace" />
+                                                                        <TextBlock Grid.Column="2" Text="{Binding StatusText}" Foreground="{Binding StatusBrush}"
+                                                                                   FontSize="11" VerticalAlignment="Center" />
+                                                                        <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
+                                                                                Foreground="{StaticResource DangerBrush}" Padding="8,2" VerticalAlignment="Center"
+                                                                                ToolTip.Tip="Remove this template" />
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <Button Content="+ Add template" Command="{Binding AddTemplateCommand}"
+                                                            FontSize="11" Padding="8,3" HorizontalAlignment="Left" Margin="18,0,0,0"
+                                                            ToolTip.Tip="Seed the worktree's copy of this file from a committed template (e.g. .env.template) before sprig's override block is injected. Leave empty to seed from the target file itself." />
 
                                                     <!-- override keys: a merged view of the file + its templates, each value clickable
                                                          to override (like the compose overlay). Wrapper keeps IsVisible bound to the

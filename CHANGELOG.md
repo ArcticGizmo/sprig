@@ -31,6 +31,10 @@ stack era — recreate stack-era workspaces by hand.
   namespace at the top, and the outputs you reference under it (`${sprig.<value>.<output>}`) listed
   beneath, each showing the env/compose sites it's referenced from. A need's outputs live in the provider,
   so — unlike a provides card — they're discovered from your usage rather than declared.
+- **Flatter env overrides** — the target file and each seed template are now single lines with a
+  status-coloured start banner (green = gitignored/safe, red = tracked or not-ignored, amber = missing
+  template) and the git-safety/found state on the right, before the remove button. Templates are indented
+  and prefixed `● template` so it's obvious they feed the file above.
 - **Maps** — `maps/<name>.json` in the central store composes a slice of repos. It records only the
   deviations: `wiring` (which provider wins when several could) and `defaults` (a literal fallback for
   a need whose provider you left out), plus an optional `maxSlots` pool ceiling. Everything else is

@@ -56,6 +56,7 @@ public class RepoEditModuleTests
         Assert.Equal(".env.template", template.Path);
         Assert.True(template.ShowFound);      // found under apps/web
         Assert.False(template.ShowMissing);
+        Assert.Equal("✓ found", template.StatusText);   // flattened template banner text
     }
 
     [Fact]

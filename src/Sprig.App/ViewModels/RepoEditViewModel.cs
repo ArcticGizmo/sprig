@@ -7,6 +7,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Core.Config;
@@ -279,7 +282,7 @@ public partial class TemplateFileRow : ObservableObject
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowFound), nameof(ShowMissing))]
+    [NotifyPropertyChangedFor(nameof(ShowFound), nameof(ShowMissing), nameof(StatusBrush), nameof(StatusText))]
     private string _path = "";
 
     bool Entered => !string.IsNullOrWhiteSpace(Path);
@@ -289,7 +292,22 @@ public partial class TemplateFileRow : ObservableObject
     /// <summary>Amber ⚠: a path was entered but no such file exists (it'll be skipped when seeding).</summary>
     public bool ShowMissing => Entered && !_exists(Path);
 
+    /// <summary>The left-banner colour on the flattened template row: green when the template is found, amber
+    /// when a path is entered but missing (it's skipped, not fatal), the neutral border colour when blank.</summary>
+    public IBrush StatusBrush => !Entered ? EditBrush.Of("BorderBrush") : ShowFound ? EditBrush.Of("OkBrush") : EditBrush.Of("WarnBrush");
+
+    /// <summary>The short right-side status shown before the remove button.</summary>
+    public string StatusText => !Entered ? "" : ShowFound ? "✓ found" : "⚠ not found — skipped";
+
     [RelayCommand] private void Remove() => _remove(this);
+}
+
+/// <summary>Resolves a theme brush resource by key for view-models that colour their own rows (the repo
+/// editor's flattened env/template banners), falling back to grey when no app is running (headless tests).</summary>
+static class EditBrush
+{
+    public static IBrush Of(string key)
+        => Application.Current is { } app && app.TryFindResource(key, out var v) && v is IBrush b ? b : Brushes.Gray;
 }
 
 /// <summary>How a targeted env file relates to git — drives the override-safety subtext.</summary>
@@ -397,6 +415,35 @@ public partial class EnvFileEditRow : ObservableObject
         _ => "",
     };
 
+    /// <summary>The left-banner colour on the flattened file row: green when the target is gitignored (the one
+    /// safe case), red for a tracked or not-ignored target, the neutral border colour before a path is typed.</summary>
+    public IBrush StatusBrush => Status switch
+    {
+        EnvFileStatus.Ignored => EditBrush.Of("OkBrush"),
+        EnvFileStatus.Tracked or EnvFileStatus.NotIgnored or EnvFileStatus.NotIgnoredNew => EditBrush.Of("DangerBrush"),
+        _ => EditBrush.Of("BorderBrush"),
+    };
+
+    /// <summary>The short git-safety line shown on the right of the file row, before the remove button
+    /// (the full explanation stays in <see cref="StatusTooltip"/>).</summary>
+    public string StatusText => Status switch
+    {
+        EnvFileStatus.Ignored => "✓ gitignored",
+        EnvFileStatus.Tracked => "⚠ tracked — can't override",
+        EnvFileStatus.NotIgnored => "⚠ not gitignored",
+        EnvFileStatus.NotIgnoredNew => "⚠ not gitignored — new file",
+        _ => "",
+    };
+
+    /// <summary>The fuller git-safety explanation, surfaced as the file row's tooltip.</summary>
+    public string StatusTooltip => Status switch
+    {
+        EnvFileStatus.Ignored => "Gitignored — safe to override.",
+        EnvFileStatus.Tracked => "Tracked by git — can't override. Sprig only overrides gitignored files.",
+        EnvFileStatus.NotIgnored or EnvFileStatus.NotIgnoredNew => NotIgnoredMessage,
+        _ => "",
+    };
+
     partial void OnFileChanged(string value) => Reclassify();
 
     /// <summary>Re-evaluate git status + overlay — used when the owning module's path changes, since the
@@ -493,6 +540,9 @@ public partial class EnvFileEditRow : ObservableObject
         OnPropertyChanged(nameof(ShowIgnoredOk));
         OnPropertyChanged(nameof(ShowNotIgnoredWarning));
         OnPropertyChanged(nameof(NotIgnoredMessage));
+        OnPropertyChanged(nameof(StatusBrush));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(StatusTooltip));
     }
 
     partial void OnOverlayChanged(EnvOverlayViewModel? oldValue, EnvOverlayViewModel? newValue)

@@ -485,10 +485,11 @@ public partial class ReposViewModel : PageViewModel
                 if (runInit)
                 {
                     // Given explicit module definitions, scan each one's path; otherwise a single default
-                    // module scanning the whole repo.
+                    // module scanning the whole repo. Map-native: the proposal is provides/needs, not stack
+                    // inputs — the editor opens straight onto the capability surface.
                     var proposal = moduleSpecs is { Count: > 0 }
-                        ? Services.Init.Inspect(path, moduleSpecs)
-                        : Services.Init.Inspect(path);
+                        ? Services.Init.InspectMap(path, moduleSpecs)
+                        : Services.Init.InspectMap(path);
                     ConfigJson.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
                     // Keep the proposal's advisory notes. They explain which env keys and compose ports
                     // became inputs and why — the exact question someone asks on landing in the editor

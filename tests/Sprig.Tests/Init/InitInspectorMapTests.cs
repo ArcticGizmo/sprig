@@ -75,4 +75,39 @@ public class InitInspectorMapTests : IDisposable
         Assert.Empty(p.Config.EffectiveModules);
         Assert.Contains(p.Notes, n => n.Contains("by hand"));
     }
+
+    [Fact]
+    public void Multiple_modules_each_get_their_own_provides_scoped_to_their_path()
+    {
+        Write("apps/web/.env.local", "PORT=3000\n");
+        Write("services/api/.env.local", "PORT=5000\n");
+
+        var p = new InitInspector(_git).InspectMap(_repo,
+            [new ModuleSpec("web", "apps/web"), new ModuleSpec("api", "services/api")]);
+
+        var mods = p.Config.EffectiveModules;
+        Assert.Equal(["web", "api"], mods.Select(m => m.Name));
+
+        // Each module owns a provided capability, and its env file is stored relative to its own path.
+        var web = mods.Single(m => m.Name == "web");
+        Assert.Single(web.Provides);
+        Assert.Equal(".env.local", web.Env.Single().File);
+        Assert.Equal($"${{sprig.{web.Provides[0].Capability}.port}}", web.Env.Single().Set["PORT"]);
+
+        var api = mods.Single(m => m.Name == "api");
+        Assert.Single(api.Provides);
+        Assert.Equal(".env.local", api.Env.Single().File);
+
+        Assert.True(SprigConfigValidator.Validate(p.Config).IsValid);
+    }
+
+    [Fact]
+    public void A_named_module_with_nothing_to_detect_is_still_kept()
+    {
+        // The user asked for it explicitly — keep it so they can declare provides/needs in the editor.
+        var p = new InitInspector(_git).InspectMap(_repo, [new ModuleSpec("empty", "apps/empty")]);
+        var mod = Assert.Single(p.Config.EffectiveModules);
+        Assert.Equal("empty", mod.Name);
+        Assert.Empty(mod.Provides);
+    }
 }

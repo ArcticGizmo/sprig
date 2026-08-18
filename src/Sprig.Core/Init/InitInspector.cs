@@ -79,29 +79,48 @@ public sealed class InitInspector
     /// surfaced as a note for the author to declare by hand. Heuristic and advisory; a starting point.
     /// </summary>
     public InitProposal InspectMap(string repoRoot)
+        => InspectMapModules(repoRoot, [new ModuleSpec(SprigConfigMigration.DefaultModuleName, "")], dropEmpty: true);
+
+    /// <summary>
+    /// Multiple-modules counterpart to <see cref="InspectMap(string)"/>: scaffold each given module map-native,
+    /// scoping provides detection to its path. Capability names stay unique across the whole repo and the
+    /// review notes read as one list. Every named module is kept even when its path yields no capability — the
+    /// user asked for it, and can declare provides/needs in the editor. Falls back to the single-default
+    /// <see cref="InspectMap(string)"/> when no modules are supplied.
+    /// </summary>
+    public InitProposal InspectMap(string repoRoot, IReadOnlyList<ModuleSpec> modules)
+        => modules.Count == 0 ? InspectMap(repoRoot) : InspectMapModules(repoRoot, modules, dropEmpty: false);
+
+    InitProposal InspectMapModules(string repoRoot, IReadOnlyList<ModuleSpec> specs, bool dropEmpty)
     {
         var notes = new List<string>();
         var usedCaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var provides = new List<ProvidedCapability>();
-        var env = new List<EnvOverride>();
 
-        DetectEnvProvides(repoRoot, provides, usedCaps, env, notes);
-        var compose = DetectComposeProvides(repoRoot, provides, usedCaps, notes);
-
-        var module = new ModuleDeclaration
+        var modules = new List<ModuleDeclaration>();
+        foreach (var spec in specs)
         {
-            Name = SprigConfigMigration.DefaultModuleName, Path = "",
-            Provides = provides, Env = env, Compose = compose,
-        };
-        var hasSurface = provides.Count > 0 || env.Count > 0 || compose.Count > 0;
+            var provides = new List<ProvidedCapability>();
+            var env = new List<EnvOverride>();
+            DetectEnvProvides(repoRoot, spec.Path, provides, usedCaps, env, notes);
+            var compose = DetectComposeProvides(repoRoot, spec.Path, provides, usedCaps, notes);
+
+            var module = new ModuleDeclaration
+            {
+                Name = spec.Name, Path = spec.Path,
+                Provides = provides, Env = env, Compose = compose,
+            };
+            if (!dropEmpty || provides.Count > 0 || env.Count > 0 || compose.Count > 0)
+                modules.Add(module);
+        }
+
         var config = new SprigRepoConfig
         {
             Schema = SprigConfigLoader.SupportedSchema,
             Name = Path.GetFileName(repoRoot.TrimEnd('\\', '/')),
-            Modules = hasSurface ? [module] : [],
+            Modules = modules,
         };
 
-        if (!hasSurface)
+        if (modules.Count == 0)
             notes.Add("no ports or compose detected — declare this repo's provides/needs by hand");
         notes.Add("review the provided capabilities; add any 'needs' (services this repo consumes) by hand");
         return new InitProposal(config, notes);
@@ -110,10 +129,10 @@ public sealed class InitInspector
     /// <summary>Env detection for the map model: each bare-port key becomes its own provided capability with
     /// a single <c>port</c> output, and its value is rewritten to reference it. Same git-aware targeting as
     /// <see cref="DetectEnv"/> — only untracked files are overridden, tracked neighbours seed as templates.</summary>
-    void DetectEnvProvides(string repoRoot, List<ProvidedCapability> provides, HashSet<string> usedCaps,
-        List<EnvOverride> envOverrides, List<string> notes)
+    void DetectEnvProvides(string repoRoot, string moduleRelPath, List<ProvidedCapability> provides,
+        HashSet<string> usedCaps, List<EnvOverride> envOverrides, List<string> notes)
     {
-        var scanRoot = ScanRoot(repoRoot, "");
+        var scanRoot = ScanRoot(repoRoot, moduleRelPath);
         if (!Directory.Exists(scanRoot)) return;
         var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
         var envFiles = EnumerateEnvFiles(repoRoot, scanRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
@@ -149,8 +168,10 @@ public sealed class InitInspector
                 if (set.Count == 0) continue;
                 envOverrides.Add(new EnvOverride
                 {
-                    File = target,
-                    Templates = templates.Count > 0 ? templates : null,
+                    File = ModuleRelative(target, moduleRelPath),
+                    Templates = templates.Count > 0
+                        ? templates.Select(t => ModuleRelative(t, moduleRelPath)).ToList()
+                        : null,
                     Set = set,
                 });
             }
@@ -160,11 +181,11 @@ public sealed class InitInspector
     /// <summary>Compose detection for the map model: each service with a published port becomes a provided
     /// capability named after the service (single <c>port</c> output), and the port mapping is rewritten to
     /// reference it. container_name is still suffixed with the workspace slug.</summary>
-    List<ComposeConfig> DetectComposeProvides(string repoRoot, List<ProvidedCapability> provides,
-        HashSet<string> usedCaps, List<string> notes)
+    List<ComposeConfig> DetectComposeProvides(string repoRoot, string moduleRelPath,
+        List<ProvidedCapability> provides, HashSet<string> usedCaps, List<string> notes)
     {
         var result = new List<ComposeConfig>();
-        var scanRoot = ScanRoot(repoRoot, "");
+        var scanRoot = ScanRoot(repoRoot, moduleRelPath);
         if (!Directory.Exists(scanRoot)) return result;
 
         foreach (var file in EnumerateComposeFiles(repoRoot, scanRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
@@ -217,7 +238,7 @@ public sealed class InitInspector
                 }
 
             if (overrides.Count > 0)
-                result.Add(new ComposeConfig { File = file, Overrides = overrides });
+                result.Add(new ComposeConfig { File = ModuleRelative(file, moduleRelPath), Overrides = overrides });
         }
         return result;
     }

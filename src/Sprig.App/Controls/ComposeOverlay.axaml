@@ -124,6 +124,7 @@
                                 <TextBlock Text="REPLACE WITH" FontSize="10" Foreground="{StaticResource MutedBrush}" />
                                 <controls:SprigTokenBox Value="{Binding Draft, Mode=TwoWay}"
                                                         Variables="{Binding #Root.((vm:ComposeOverlayViewModel)DataContext).Variables}"
+                                                        OpenCapabilities="{Binding #Root.((vm:ComposeOverlayViewModel)DataContext).OpenCapabilities}"
                                                         Watermark="${sprig.workspace}" />
                               </StackPanel>
                               <TextBlock Text="{Binding Note}" Foreground="{StaticResource MutedBrush}"

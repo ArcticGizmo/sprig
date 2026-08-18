@@ -32,9 +32,14 @@ public partial class EnvOverlayViewModel : ObservableObject
     public ObservableCollection<EnvKeyViewModel> Keys { get; } = new();
     public ObservableCollection<EnvOverrideViewModel> Overrides { get; } = new();
 
-    /// <summary>The <c>${sprig.*}</c> variable names available to token editors (workspace + inputs).
-    /// A live collection owned by the repo editor, bound straight into each token's completion box.</summary>
+    /// <summary>The <c>${sprig.*}</c> variable names available to token editors (workspace + inputs +
+    /// self-provided <c>&lt;cap&gt;.&lt;out&gt;</c>). A live collection owned by the repo editor, bound straight
+    /// into each token's completion box.</summary>
     public IEnumerable<string> Variables { get; }
+
+    /// <summary>Open capability heads (needs/aliases) — a dotted reference under one of these is valid whatever
+    /// its output (that output lives in another repo). A live collection owned by the repo editor.</summary>
+    public IEnumerable<string> OpenCapabilities { get; }
 
     /// <summary>The key name being added via the "+ Add key" box (two-way bound).</summary>
     [ObservableProperty] private string _newKey = "";
@@ -51,11 +56,13 @@ public partial class EnvOverlayViewModel : ObservableObject
         IReadOnlyList<string> keys,
         IReadOnlyDictionary<string, IReadOnlyList<EnvExample>> examples,
         IReadOnlyDictionary<string, string>? seed = null,
-        IEnumerable<string>? variables = null)
+        IEnumerable<string>? variables = null,
+        IEnumerable<string>? openCapabilities = null)
     {
         _fileKeys = keys;
         _examples = examples;
         Variables = variables ?? [];
+        OpenCapabilities = openCapabilities ?? [];
 
         if (seed is not null)
             foreach (var (k, v) in seed)
@@ -66,19 +73,23 @@ public partial class EnvOverlayViewModel : ObservableObject
             if (!_fileKeys.Contains(k))
                 _customKeys.Add(k);
 
-        // Declaring/removing an input changes which references are valid — recolour when it does.
-        if (Variables is INotifyCollectionChanged live)
-            live.CollectionChanged += (_, _) => Rebuild();
+        // Declaring/removing an input, provide, or need changes which references are valid — recolour on any.
+        if (Variables is INotifyCollectionChanged liveVars)
+            liveVars.CollectionChanged += (_, _) => Rebuild();
+        if (OpenCapabilities is INotifyCollectionChanged liveCaps)
+            liveCaps.CollectionChanged += (_, _) => Rebuild();
 
         Rebuild();
     }
 
-    // True when the override template names a ${sprig.*} input that isn't a known variable — the
-    // editor renders these red (in the file view and the replacements list) instead of accent.
+    // True when the override template names a ${sprig.*} reference the repo doesn't declare — the editor
+    // renders these red (in the file view and the replacements list) instead of accent. Capability-aware:
+    // a needed capability's output (in another repo) is accepted by its head, matching the config validator.
     private bool ReferencesUnknownInput(string template)
     {
         var known = new HashSet<string>(Variables, StringComparer.Ordinal);
-        return ConfigReferences.ReferencedNames(template).Any(n => !known.Contains(n));
+        var open = new HashSet<string>(OpenCapabilities, StringComparer.Ordinal);
+        return ConfigReferences.ReferencedNames(template).Any(n => !ConfigReferences.IsReferenceKnown(n, known, open));
     }
 
     /// <summary>The current overrides, ready to persist to <see cref="Sprig.Core.Config.EnvOverride.Set"/>.

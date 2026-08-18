@@ -80,4 +80,39 @@ public class RepoEditMapTests
         Assert.Equal("fresh-db", Assert.Single(module.Needs).Capability);
         Assert.Equal("db", module.Needs[0].As);
     }
+
+    [Fact]
+    public void Reference_lists_track_provides_and_needs_as_they_are_typed()
+    {
+        using var s = new TempStore();
+        var dir = WriteConfig(s, """{ "schema": 3, "name": "live" }""");
+        var vm = RepoEditViewModel.Load(dir);
+
+        vm.AddModuleCommand.Execute(null);
+        var tab = vm.SelectedModule!;
+        tab.Name = "app";
+
+        // Typing a provide's capability + output makes ${sprig.<cap>.<out>} a known exact reference — live,
+        // with no need to reload (Workstream C).
+        tab.AddProvideCommand.Execute(null);
+        var provide = tab.Provides[0];
+        provide.Capability = "api";
+        provide.Outputs[0].Name = "port";
+        Assert.Contains("api.port", vm.SprigVariableNames);
+
+        // Renaming the output moves the known name with it (old name gone, new name present).
+        provide.Outputs[0].Name = "listen";
+        Assert.DoesNotContain("api.port", vm.SprigVariableNames);
+        Assert.Contains("api.listen", vm.SprigVariableNames);
+
+        // A need's capability + alias become open heads (any output accepted under them).
+        tab.AddNeedCommand.Execute(null);
+        tab.Needs[0].Capability = "db";
+        tab.Needs[0].As = "primary";
+        Assert.Contains("db", vm.SprigNeededCapabilities);
+        Assert.Contains("primary", vm.SprigNeededCapabilities);
+
+        // workspace is always present; churn stayed bounded (no recursion / overflow while editing).
+        Assert.Contains("workspace", vm.SprigVariableNames);
+    }
 }

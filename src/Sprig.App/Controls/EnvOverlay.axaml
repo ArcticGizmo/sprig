@@ -131,6 +131,7 @@
                             <TextBlock Text="OVERRIDE WITH" FontSize="10" Foreground="{StaticResource MutedBrush}" />
                             <controls:SprigTokenBox Value="{Binding Draft, Mode=TwoWay}"
                                                     Variables="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).Variables}"
+                                                    OpenCapabilities="{Binding #Root.((vm:EnvOverlayViewModel)DataContext).OpenCapabilities}"
                                                     Watermark="{Binding ValueWatermark}" />
                           </StackPanel>
 

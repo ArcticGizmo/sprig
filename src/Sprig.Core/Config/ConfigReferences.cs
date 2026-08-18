@@ -38,29 +38,38 @@ public static partial class ConfigReferences
     /// </summary>
     public static IReadOnlyList<string> UndeclaredReferences(SprigRepoConfig config)
     {
-        var inputs = config.Inputs.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
+        var (exact, open) = ReferenceScope(config);
+        return ReferencedPaths(config).Where(p => !IsReferenceKnown(p, exact, open)).ToList();
+    }
+
+    /// <summary>
+    /// Whether a single <c>${sprig.&lt;reference&gt;}</c> path is accepted, given a repo's
+    /// <paramref name="exactNames"/> (the names matched verbatim — <c>workspace</c>, stack-era inputs, and each
+    /// self-provided <c>&lt;capability&gt;.&lt;output&gt;</c>) and its <paramref name="openCapabilities"/> (needed
+    /// capability names + aliases, whose output is only knowable at map-resolve time so any tail is accepted).
+    /// The per-reference rule behind <see cref="UndeclaredReferences"/>, exposed so the live editor's token
+    /// colouring matches exactly what Save validates.
+    /// </summary>
+    public static bool IsReferenceKnown(string reference, ISet<string> exactNames, ISet<string> openCapabilities)
+    {
+        if (exactNames.Contains(reference)) return true;   // workspace / input / self-provided <cap>.<out>
+        var dot = reference.IndexOf('.');
+        return dot > 0 && openCapabilities.Contains(reference[..dot]);  // needed cap/alias — any output
+    }
+
+    /// <summary>The two reference sets a repo accepts: verbatim <paramref name="exact"/> names (workspace +
+    /// inputs + self-provided <c>&lt;cap&gt;.&lt;out&gt;</c>) and <paramref name="open"/> capability heads
+    /// (needs/aliases). Feeds <see cref="IsReferenceKnown"/>.</summary>
+    static (HashSet<string> Exact, HashSet<string> Open) ReferenceScope(SprigRepoConfig config)
+    {
+        var exact = new HashSet<string>(StringComparer.Ordinal) { "workspace" };
+        foreach (var i in config.Inputs)
+            exact.Add(i.Name);
         var (provided, needed) = CapabilitySurface(config);
-        var bad = new List<string>();
-        foreach (var p in ReferencedPaths(config))
-        {
-            if (p == "workspace")
-                continue;
-            var dot = p.IndexOf('.');
-            if (dot < 0)
-            {
-                if (!inputs.Contains(p))            // stack-era input, or an unknown bare name
-                    bad.Add(p);
-                continue;
-            }
-            var head = p[..dot];
-            var tail = p[(dot + 1)..];
-            if (provided.TryGetValue(head, out var outs) && outs.Contains(tail))
-                continue;                            // self/local-provided output — exact match
-            if (needed.Contains(head))
-                continue;                            // wired need/alias — output validated at resolve time
-            bad.Add(p);
-        }
-        return bad;
+        foreach (var (cap, outs) in provided)
+            foreach (var o in outs)
+                exact.Add($"{cap}.{o}");
+        return (exact, needed);
     }
 
     /// <summary>The repo's map-model surface: provided capabilities → their output names, and the set of

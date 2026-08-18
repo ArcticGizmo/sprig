@@ -26,9 +26,14 @@ public partial class ComposeOverlayViewModel : ObservableObject
     public ObservableCollection<ComposeLineViewModel> Lines { get; } = new();
     public ObservableCollection<ComposeOverrideViewModel> Overrides { get; } = new();
 
-    /// <summary>The <c>${sprig.*}</c> variable names available to token editors (workspace + inputs).
-    /// A live collection owned by the repo editor, bound straight into each token's completion box.</summary>
+    /// <summary>The <c>${sprig.*}</c> variable names available to token editors (workspace + inputs +
+    /// self-provided <c>&lt;cap&gt;.&lt;out&gt;</c>). A live collection owned by the repo editor, bound straight
+    /// into each token's completion box.</summary>
     public IEnumerable<string> Variables { get; }
+
+    /// <summary>Open capability heads (needs/aliases) — a dotted reference under one of these is valid whatever
+    /// its output (that output lives in another repo). A live collection owned by the repo editor.</summary>
+    public IEnumerable<string> OpenCapabilities { get; }
 
     public bool Parsed => _outline.Parsed;
     public string? Error => _outline.Error;
@@ -43,23 +48,28 @@ public partial class ComposeOverlayViewModel : ObservableObject
     private sealed record Entry(IReadOnlyList<string> Path, string Template);
 
     public ComposeOverlayViewModel(string composeText, IEnumerable<ComposeOverride>? seed = null,
-        IEnumerable<string>? variables = null)
+        IEnumerable<string>? variables = null, IEnumerable<string>? openCapabilities = null)
     {
         _outline = ComposeScanner.Scan(composeText);
         Variables = variables ?? [];
-        // Declaring/removing an input changes which references are valid — recolour when it does.
-        if (Variables is INotifyCollectionChanged live)
-            live.CollectionChanged += (_, _) => Rebuild();
+        OpenCapabilities = openCapabilities ?? [];
+        // Declaring/removing an input, provide, or need changes which references are valid — recolour on any.
+        if (Variables is INotifyCollectionChanged liveVars)
+            liveVars.CollectionChanged += (_, _) => Rebuild();
+        if (OpenCapabilities is INotifyCollectionChanged liveCaps)
+            liveCaps.CollectionChanged += (_, _) => Rebuild();
         SeedFrom(seed);
         Rebuild();
     }
 
-    // True when the template names a ${sprig.*} input that isn't a known variable — the editor renders
-    // these red (in the file view and the replacements list), matching the token editor's highlight.
+    // True when the template names a ${sprig.*} reference the repo doesn't declare — the editor renders these
+    // red (in the file view and the replacements list), matching the token editor's highlight. Capability-aware:
+    // a needed capability's output (in another repo) is accepted by its head, matching the config validator.
     private bool ReferencesUnknownInput(string template)
     {
         var known = new HashSet<string>(Variables, StringComparer.Ordinal);
-        return ConfigReferences.ReferencedNames(template).Any(n => !known.Contains(n));
+        var open = new HashSet<string>(OpenCapabilities, StringComparer.Ordinal);
+        return ConfigReferences.ReferencedNames(template).Any(n => !ConfigReferences.IsReferenceKnown(n, known, open));
     }
 
     /// <summary>The current overrides, ready to persist to <see cref="ComposeConfig.Overrides"/>.

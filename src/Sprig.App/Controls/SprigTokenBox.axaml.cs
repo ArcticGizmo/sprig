@@ -28,11 +28,19 @@ public partial class SprigTokenBox : UserControl
     public static readonly StyledProperty<IEnumerable?> VariablesProperty =
         AvaloniaProperty.Register<SprigTokenBox, IEnumerable?>(nameof(Variables));
 
+    public static readonly StyledProperty<IEnumerable?> OpenCapabilitiesProperty =
+        AvaloniaProperty.Register<SprigTokenBox, IEnumerable?>(nameof(OpenCapabilities));
+
     public static readonly StyledProperty<string?> WatermarkProperty =
         AvaloniaProperty.Register<SprigTokenBox, string?>(nameof(Watermark));
 
     public string? Value { get => GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
     public IEnumerable? Variables { get => GetValue(VariablesProperty); set => SetValue(VariablesProperty, value); }
+
+    /// <summary>Capability heads (needs/aliases) whose outputs live in another repo — a dotted
+    /// <c>${sprig.&lt;head&gt;.&lt;anything&gt;}</c> is coloured known when its head is one of these, since the
+    /// output is only knowable at map-resolve time (mirrors the config validator).</summary>
+    public IEnumerable? OpenCapabilities { get => GetValue(OpenCapabilitiesProperty); set => SetValue(OpenCapabilitiesProperty, value); }
     public string? Watermark { get => GetValue(WatermarkProperty); set => SetValue(WatermarkProperty, value); }
 
     private static readonly Regex TokenPattern = new(@"\$\{[^}]*\}", RegexOptions.Compiled);
@@ -68,9 +76,10 @@ public partial class SprigTokenBox : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == ValueProperty)
             RenderHighlight();
-        else if (change.Property == VariablesProperty)
+        else if (change.Property == VariablesProperty || change.Property == OpenCapabilitiesProperty)
         {
-            // Follow live edits to the variable set (inputs added/renamed above) so colours stay current.
+            // Follow live edits to the variable/capability set (inputs, provides, needs edited above) so
+            // colours stay current.
             if (change.OldValue is INotifyCollectionChanged oldCol) oldCol.CollectionChanged -= OnVariablesChanged;
             if (change.NewValue is INotifyCollectionChanged newCol) newCol.CollectionChanged += OnVariablesChanged;
             RenderHighlight();
@@ -131,6 +140,7 @@ public partial class SprigTokenBox : UserControl
 
         var value = Value ?? string.Empty;
         var known = new HashSet<string>(Names(), StringComparer.Ordinal);
+        var open = new HashSet<string>(Names(OpenCapabilities), StringComparer.Ordinal);
 
         var index = 0;
         foreach (Match match in TokenPattern.Matches(value))
@@ -138,7 +148,7 @@ public partial class SprigTokenBox : UserControl
             if (match.Index > index)
                 Highlight.Inlines.Add(new Run(value[index..match.Index]));
 
-            var brush = TokenBrush(match.Value, known);
+            var brush = TokenBrush(match.Value, known, open);
             var run = new Run(match.Value);
             if (brush is not null) { run.Foreground = brush; run.FontWeight = FontWeight.SemiBold; }
             Highlight.Inlines.Add(run);
@@ -149,13 +159,15 @@ public partial class SprigTokenBox : UserControl
             Highlight.Inlines.Add(new Run(value[index..]));
     }
 
-    /// <summary>Green/red for a <c>${sprig.*}</c> token; null (default colour) for a passthrough <c>${…}</c>.</summary>
-    private static IBrush? TokenBrush(string token, HashSet<string> known)
+    /// <summary>Green/red for a <c>${sprig.*}</c> token; null (default colour) for a passthrough <c>${…}</c>.
+    /// A dotted reference whose head is an open capability (a need/alias) is known too — its output can't be
+    /// enumerated here, so the head alone greens it, matching the config validator.</summary>
+    private static IBrush? TokenBrush(string token, HashSet<string> known, HashSet<string> open)
     {
         if (!token.StartsWith(SprigPrefix, StringComparison.Ordinal) || !token.EndsWith('}'))
             return null;
         var name = token[SprigPrefix.Length..^1].Trim();
-        return known.Contains(name) ? KnownBrush : UnknownBrush;
+        return Sprig.Core.Config.ConfigReferences.IsReferenceKnown(name, known, open) ? KnownBrush : UnknownBrush;
     }
 
     // -- completion -----------------------------------------------------------
@@ -193,11 +205,13 @@ public partial class SprigTokenBox : UserControl
         CompletionPopup.IsOpen = true;
     }
 
-    private IReadOnlyList<string> Names()
+    private IReadOnlyList<string> Names() => Names(Variables);
+
+    private static IReadOnlyList<string> Names(IEnumerable? source)
     {
         var names = new List<string>();
-        if (Variables is IEnumerable source)
-            foreach (var item in source)
+        if (source is IEnumerable items)
+            foreach (var item in items)
                 if (item is string s && !string.IsNullOrWhiteSpace(s))
                     names.Add(s);
         return names;

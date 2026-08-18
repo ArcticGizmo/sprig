@@ -45,11 +45,16 @@ not the socket**: `vite-server.port` reads as a hierarchy, while `vite-port.port
 |---|---|---|---|
 | `capability` | string | yes | The contract name — the head of every `${sprig.<capability>.<output>}` reference and the wiring key other repos' `needs` match against. Name the *service* (`vite-server`), not one of its shapes. |
 | `ports` | object | one of `ports`/`shapes` | `port-name → spec`. Real, non-colliding host ports allocated per workspace. Each spec is `true` (any host port) or `{ "allowed": "8100-8103" }` (pinned — see below). The app always exports a single port named `port`. |
-| `shapes` | object | one of `ports`/`shapes` | `shape-name → template`. Derived strings built from this capability's **own** ports (plus `${sprig.workspace}`), e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. |
+| `shapes` | object | one of `ports`/`shapes` | `shape-name → template`. Derived strings built from this capability's **own** outputs, e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. |
 
 A capability must declare at least one port **or** shape; port and shape names share one namespace
 (a name is one or the other, never both). Any output is referenced anywhere in the repo as
 `${sprig.<capability>.<output>}`.
+
+A shape is part of the provider's own contract, resolved before any wiring, so its template may
+reference **only this capability's own outputs** (its `port` and sibling shapes) or
+`${sprig.workspace}` — never another capability or a `need`; reach across capabilities in `env`/`compose`
+instead. A shape that references itself, or a cycle between shapes, is rejected.
 
 ```jsonc
 "provides": [

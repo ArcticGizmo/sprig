@@ -92,15 +92,17 @@ public partial class ShapeEditRow : ObservableObject
 /// <see cref="Shapes"/> (formulas over that port).</summary>
 public partial class ProvideEditRow : ObservableObject
 {
-    readonly Action<ProvideEditRow> _remove;
-    readonly IEnumerable<string> _variables;
-    readonly IEnumerable<string> _openCapabilities;
+    // A derived shape may reference only this capability's own outputs — never a need — so shapes get no
+    // open-capability heads at all.
+    static readonly IReadOnlyList<string> NoOpenCapabilities = [];
 
-    public ProvideEditRow(Action<ProvideEditRow> remove, IEnumerable<string> variables, IEnumerable<string> openCapabilities)
+    readonly Action<ProvideEditRow> _remove;
+
+    public ProvideEditRow(Action<ProvideEditRow> remove)
     {
         _remove = remove;
-        _variables = variables;
-        _openCapabilities = openCapabilities;
+        Shapes.CollectionChanged += OnShapesChanged;
+        RefreshOwnReferences();
     }
 
     /// <summary>The service name — name the service (<c>vite-server</c>), not one of its shapes.</summary>
@@ -111,21 +113,58 @@ public partial class ProvideEditRow : ObservableObject
 
     public ObservableCollection<ShapeEditRow> Shapes { get; } = [];
 
-    /// <summary>Keep the port and every shape's rendered token in step as the capability name is typed.</summary>
+    /// <summary>This capability's own referenceable names — <c>workspace</c>, its <c>port</c>, and its sibling
+    /// shapes. A derived shape may reference ONLY these (never another capability or a need), so this — not the
+    /// whole repo surface — feeds each shape's autocomplete + token colouring. Kept live as name/shapes change.</summary>
+    public ObservableCollection<string> OwnReferences { get; } = [];
+
+    /// <summary>Keep the port, every shape's rendered token, and the own-reference list in step as the
+    /// capability name is typed.</summary>
     partial void OnCapabilityChanged(string value)
     {
         Port.Head = value;
         foreach (var s in Shapes) s.Head = value;
+        RefreshOwnReferences();
     }
 
-    /// <summary>A fresh derived-shape row wired to this capability — carrying the repo's reference surface so
-    /// its template field autocompletes this capability's own <c>port</c> (and everything else in scope).</summary>
-    public ShapeEditRow NewShape() =>
-        new(r => Shapes.Remove(r), _variables, _openCapabilities) { Head = Capability };
+    /// <summary>A fresh derived-shape row scoped to this capability: its template autocompletes/colours only
+    /// this capability's own outputs (its port and sibling shapes) + <c>workspace</c>.</summary>
+    public ShapeEditRow NewShape() => new(r => Shapes.Remove(r), OwnReferences, NoOpenCapabilities) { Head = Capability };
 
     [RelayCommand] private void AddShape() => Shapes.Add(NewShape());
 
     [RelayCommand] private void Remove() => _remove(this);
+
+    void OnShapesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null) foreach (ShapeEditRow s in e.OldItems) s.PropertyChanged -= OnShapeFieldChanged;
+        if (e.NewItems is not null) foreach (ShapeEditRow s in e.NewItems) s.PropertyChanged += OnShapeFieldChanged;
+        RefreshOwnReferences();
+    }
+
+    void OnShapeFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ShapeEditRow.Name)) RefreshOwnReferences();
+    }
+
+    void RefreshOwnReferences()
+    {
+        var cap = Capability.Trim();
+        var wanted = new List<string> { "workspace" };
+        if (cap.Length > 0)
+        {
+            wanted.Add($"{cap}.port");
+            foreach (var s in Shapes)
+            {
+                var n = s.Name.Trim();
+                if (n.Length > 0) wanted.Add($"{cap}.{n}");
+            }
+        }
+        // Equality-guard the churn so the token boxes reacting to it can't loop back (the M8 lesson).
+        if (OwnReferences.SequenceEqual(wanted, StringComparer.Ordinal)) return;
+        OwnReferences.Clear();
+        foreach (var w in wanted) OwnReferences.Add(w);
+    }
 
     /// <summary>The reference token for an output <paramref name="name"/> under <paramref name="head"/>:
     /// <c>${sprig.head.name}</c>, with a <c>…</c> placeholder while either half is still blank.</summary>
@@ -600,9 +639,8 @@ public partial class ModuleEditTab : ObservableObject
         _owner.SprigVariableNames, _owner.SprigNeededCapabilities);
 
     // A fresh capability already carries its permanent port anchor — the user only names it and, optionally,
-    // adds derived shapes. Threads the owner's reference surface so shape templates autocomplete.
-    [RelayCommand] private void AddProvide() =>
-        Provides.Add(new ProvideEditRow(r => Provides.Remove(r), _owner.SprigVariableNames, _owner.SprigNeededCapabilities));
+    // adds derived shapes (each scoped to this capability's own outputs).
+    [RelayCommand] private void AddProvide() => Provides.Add(new ProvideEditRow(r => Provides.Remove(r)));
 
     [RelayCommand] private void AddNeed() => Needs.Add(new NeedEditRow(r => Needs.Remove(r)));
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
@@ -763,8 +801,7 @@ public partial class RepoEditViewModel : ObservableObject
             var tab = new ModuleEditTab(vm, m.Name, m.Path);
             foreach (var p in m.Provides)
             {
-                var pr = new ProvideEditRow(r => tab.Provides.Remove(r), vm.SprigVariableNames, vm.SprigNeededCapabilities)
-                    { Capability = p.Capability };
+                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability };
                 // One permanent port; adopt the allowed set from whatever port the config declared (if any).
                 if (p.Ports.Count > 0) pr.Port.Allowed = p.Ports.First().Value.Allowed ?? "";
                 foreach (var (shapeName, template) in p.Shapes)

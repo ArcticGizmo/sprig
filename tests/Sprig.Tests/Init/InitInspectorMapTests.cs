@@ -59,6 +59,36 @@ public class InitInspectorMapTests : IDisposable
     }
 
     [Fact]
+    public void A_tracked_env_file_is_left_alone_by_auto_detection()
+    {
+        // A committed .env is a shared default sprig must never clobber — auto-detection ignores it entirely.
+        Write(".env", "PORT=6010\n");
+        _git.TrackedFiles.Add(".env");
+
+        var p = InspectMap();
+
+        Assert.Empty(Provides(p));
+        Assert.Empty(Env(p));
+    }
+
+    [Fact]
+    public void Only_the_untracked_env_file_is_scanned_when_a_tracked_one_sits_beside_it()
+    {
+        Write(".env", "SHARED_PORT=6010\n");   // tracked default — not scanned, not seeded as a template
+        Write(".env.local", "PORT=7010\n");    // gitignored override — the only detection source
+        _git.TrackedFiles.Add(".env");
+
+        var p = InspectMap();
+
+        Assert.Single(Provides(p));            // only the untracked PORT became a capability
+        var env = Assert.Single(Env(p));
+        Assert.Equal(".env.local", env.File);
+        Assert.True(env.Set.ContainsKey("PORT"));
+        Assert.False(env.Set.ContainsKey("SHARED_PORT"));   // the tracked file was not scanned
+        Assert.Null(env.Templates);                          // and not attached as a template
+    }
+
+    [Fact]
     public void An_embedded_url_is_surfaced_as_a_need_note_not_a_provide()
     {
         Write(".env", "VITE_API_URL=http://localhost:4000\n");

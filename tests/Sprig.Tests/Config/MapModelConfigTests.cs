@@ -179,6 +179,54 @@ public class MapModelValidationTests
     }
 
     [Fact]
+    public void A_derived_shape_that_references_itself_is_flagged()
+    {
+        var r = Repo(Mod("a") with { Provides = [Cap("api", ("port", PortSpec.Any), ("url", "${sprig.api.url}"))] });
+        Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Message.Contains("cannot reference itself"));
+    }
+
+    [Fact]
+    public void A_cycle_between_derived_shapes_is_flagged()
+    {
+        var r = Repo(Mod("a") with
+        {
+            Provides = [Cap("api", ("port", PortSpec.Any), ("a", "${sprig.api.b}"), ("b", "${sprig.api.a}"))],
+        });
+        Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Message.Contains("circular dependency"));
+    }
+
+    [Fact]
+    public void A_derived_shape_referencing_another_capability_is_flagged()
+    {
+        var r = Repo(Mod("a") with
+        {
+            Provides =
+            [
+                Cap("db", ("port", PortSpec.Any)),
+                Cap("api", ("port", PortSpec.Any), ("bad", "${sprig.db.port}")),   // must not reach across capabilities
+            ],
+        });
+        Assert.Contains(SprigConfigValidator.Validate(r).Issues,
+            i => i.Message.Contains("may only reference this capability's own outputs"));
+    }
+
+    [Fact]
+    public void A_derived_shape_may_reference_its_own_port_and_sibling_shapes()
+    {
+        var r = Repo(Mod("a") with
+        {
+            Provides =
+            [
+                Cap("api",
+                    ("port", PortSpec.Any),
+                    ("url", "http://localhost:${sprig.api.port}"),
+                    ("health", "${sprig.api.url}/healthz")),   // sibling-shape reference, acyclic
+            ],
+        });
+        Assert.True(SprigConfigValidator.Validate(r).IsValid);
+    }
+
+    [Fact]
     public void Reference_to_self_provided_output_is_accepted()
     {
         var r = Repo(Mod("a") with

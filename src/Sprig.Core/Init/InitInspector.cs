@@ -18,10 +18,10 @@ public sealed record ModuleSpec(string Name, string Path);
 /// (auto-allocated per workspace), and rewrites the matching env/compose values to reference them.
 /// Heuristic and advisory — a starting point the user edits.
 /// <para>
-/// Env detection is git-aware: only <b>untracked</b> env files become override targets (overriding a
-/// tracked file would permanently dirty every worktree). A <b>tracked</b> env file sitting next to an
-/// untracked one — the classic committed <c>.env</c> template beside a gitignored <c>.env.local</c> —
-/// is offered as a seed <b>template</b> for that target rather than clobbered itself.
+/// Env detection is git-aware and only ever looks at <b>untracked</b> env files (the gitignored
+/// <c>.env.local</c> kind): overriding a tracked file would permanently dirty every worktree, so a
+/// tracked/committed env file is left completely alone — not scanned for ports, not offered as a
+/// template. (The <c>templates</c> seed feature still exists in the schema for hand-authored configs.)
 /// </para>
 /// </summary>
 public sealed class InitInspector
@@ -101,54 +101,50 @@ public sealed class InitInspector
     }
 
     /// <summary>Env detection for the map model: each bare-port key becomes its own provided capability with
-    /// a single <c>port</c> output, and its value is rewritten to reference it. Same git-aware targeting as
-    /// <see cref="DetectEnv"/> — only untracked files are overridden, tracked neighbours seed as templates.</summary>
+    /// a single <c>port</c> output, and its value is rewritten to reference it. Auto-detection only ever
+    /// touches <b>untracked</b> env files (the gitignored <c>.env.local</c> kind) — a tracked/committed env
+    /// file is a shared default sprig must not clobber, so it's ignored entirely rather than scanned or
+    /// seeded as a template. Hand-authored configs can still add <c>templates</c>; the guesser won't.</summary>
     void DetectEnvProvides(string repoRoot, string moduleRelPath, List<ProvidedCapability> provides,
         HashSet<string> usedCaps, List<EnvOverride> envOverrides, List<string> notes)
     {
         var scanRoot = ScanRoot(repoRoot, moduleRelPath);
         if (!Directory.Exists(scanRoot)) return;
         var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
-        var envFiles = EnumerateEnvFiles(repoRoot, scanRoot).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
 
-        foreach (var dir in envFiles.GroupBy(DirOf, StringComparer.OrdinalIgnoreCase))
+        // Untracked env files only — a tracked one is off-limits to overriding, so it never seeds detection.
+        var targets = EnumerateEnvFiles(repoRoot, scanRoot)
+            .Where(f => !tracked.Contains(f))
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var target in targets)
         {
-            var templates = dir.Where(tracked.Contains).ToList();
-            foreach (var target in dir.Where(f => !tracked.Contains(f)))
+            var abs = Path.Combine(repoRoot, target);
+            if (!File.Exists(abs)) continue;
+
+            var set = new Dictionary<string, string>();
+            foreach (var (key, value) in ParseEnv(File.ReadAllText(abs)))
             {
-                var set = new Dictionary<string, string>();
-                void Scan(string relFile)
+                if (IsBarePort(value) && !set.ContainsKey(key))
                 {
-                    var abs = Path.Combine(repoRoot, relFile);
-                    if (!File.Exists(abs)) return;
-                    foreach (var (key, value) in ParseEnv(File.ReadAllText(abs)))
+                    var cap = UniqueName(Sanitize(key), usedCaps);
+                    provides.Add(new ProvidedCapability
                     {
-                        if (IsBarePort(value) && !set.ContainsKey(key))
-                        {
-                            var cap = UniqueName(Sanitize(key), usedCaps);
-                            provides.Add(new ProvidedCapability
-                            {
-                                Capability = cap,
-                                Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any },
-                            });
-                            set[key] = $"${{sprig.{cap}.port}}";
-                        }
-                        else if (relFile == target && LooksLikeEmbeddedPort(key, value))
-                            notes.Add($"'{key}' in {relFile} looks like it consumes another service — declare a need and reference it (e.g. ${{sprig.api.url}})");
-                    }
+                        Capability = cap,
+                        Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any },
+                    });
+                    set[key] = $"${{sprig.{cap}.port}}";
                 }
-                Scan(target);
-                foreach (var t in templates) Scan(t);
-                if (set.Count == 0) continue;
-                envOverrides.Add(new EnvOverride
-                {
-                    File = ModuleRelative(target, moduleRelPath),
-                    Templates = templates.Count > 0
-                        ? templates.Select(t => ModuleRelative(t, moduleRelPath)).ToList()
-                        : null,
-                    Set = set,
-                });
+                else if (LooksLikeEmbeddedPort(key, value))
+                    notes.Add($"'{key}' in {target} looks like it consumes another service — declare a need and reference it (e.g. ${{sprig.api.url}})");
             }
+
+            if (set.Count == 0) continue;
+            envOverrides.Add(new EnvOverride
+            {
+                File = ModuleRelative(target, moduleRelPath),
+                Set = set,
+            });
         }
     }
 
@@ -285,13 +281,6 @@ public sealed class InitInspector
     /// <summary>One of the canonical compose file names (<c>docker-compose.yml</c>, <c>compose.yaml</c>, …).</summary>
     static bool IsComposeFile(string fileName)
         => ComposeNames.Contains(fileName, StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>The directory portion of a repo-relative forward-slash path (empty for the repo root).</summary>
-    static string DirOf(string relFile)
-    {
-        var slash = relFile.LastIndexOf('/');
-        return slash < 0 ? "" : relFile[..slash];
-    }
 
     // --- helpers ---
 

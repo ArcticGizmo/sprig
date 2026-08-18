@@ -116,6 +116,23 @@
                         <TextBlock IsVisible="{Binding !SelectedConfig.Ok}" Foreground="{StaticResource DangerBrush}"
                                    TextWrapping="Wrap" Text="{Binding SelectedConfig.Error}" />
 
+                        <!-- validation warning: parsed but out of date (e.g. an old-schema import). Fixable,
+                             not fatal — offer edit or delete rather than letting a checkout crash. -->
+                        <Border IsVisible="{Binding SelectedConfig.HasValidationError}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource WarnBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="⚠ This repo's configuration is out of date" FontWeight="SemiBold"
+                                           Foreground="{StaticResource WarnBrush}" />
+                                <TextBlock Text="{Binding SelectedConfig.ValidationError}" TextWrapping="Wrap"
+                                           FontSize="12" FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Edit &amp; fix" Command="{Binding BeginEditCommand}" />
+                                    <Button Content="Delete config" Command="{Binding DeleteCommand}"
+                                            Foreground="{StaticResource DangerBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Fast path: a zero-input repo can stand up on its own, no stack needed. -->
                         <Border IsVisible="{Binding CanIsolate}" Background="{StaticResource PanelBgBrush}"
                                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10"
@@ -204,7 +221,7 @@
                                             <DataTemplate x:DataType="vm:ProvideRow">
                                                 <StackPanel Spacing="2" Margin="0,0,0,6">
                                                     <TextBlock FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}">
-                                                        <Run Text="{Binding Capability}" Foreground="{StaticResource OkBrush}" FontWeight="SemiBold" /><Run Text="{Binding Type, StringFormat='  ({0})'}" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                                                        <Run Text="{Binding Capability}" Foreground="{StaticResource OkBrush}" FontWeight="SemiBold" />
                                                     </TextBlock>
                                                     <ItemsControl ItemsSource="{Binding Outputs}">
                                                         <ItemsControl.ItemTemplate>
@@ -482,7 +499,7 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Text="PROVIDES" FontSize="11" FontWeight="SemiBold"
                                                Foreground="{StaticResource OkBrush}" VerticalAlignment="Center"
-                                               ToolTip.Tip="Capabilities this module offers others — its own ports and values derived from them. Consumers reference them as ${sprig.&lt;capability&gt;.&lt;output&gt;}." />
+                                               ToolTip.Tip="Capabilities this module offers others. Each is ONE name that comes in many shapes: a port (the real resource it owns) and strings derived from it. Consumers reference a shape as ${sprig.&lt;capability&gt;.&lt;output&gt;} — so name the service (vite-server), not the socket (not vite-port)." />
                                     <Button Grid.Column="1" Content="+ Add capability" Command="{Binding AddProvideCommand}"
                                             FontSize="11" Padding="8,3" />
                                 </Grid>
@@ -490,43 +507,67 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:ProvideEditRow">
                                             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
-                                                <StackPanel Spacing="6">
-                                                    <Grid ColumnDefinitions="2*,*,Auto" ColumnSpacing="8">
-                                                        <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Capability, Mode=TwoWay}"
-                                                                 PlaceholderText="capability (e.g. orders-api)" FontFamily="Consolas,monospace" />
-                                                        <TextBox Grid.Column="1" MinWidth="0" Text="{Binding Type, Mode=TwoWay}"
-                                                                 PlaceholderText="type hint (http)" FontFamily="Consolas,monospace" />
-                                                        <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"
-                                                                Foreground="{StaticResource DangerBrush}" Padding="10,2" />
+                                                    BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,12">
+                                                <StackPanel Spacing="10">
+                                                    <!-- Header: the capability name lives INSIDE the ${sprig.…} token it heads. -->
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                                                            <TextBlock Text="${sprig." FontFamily="Consolas,monospace" FontSize="15"
+                                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                            <TextBox MinWidth="140" Text="{Binding Capability, Mode=TwoWay}"
+                                                                     FontFamily="Consolas,monospace" FontWeight="SemiBold" FontSize="15"
+                                                                     Foreground="{StaticResource OkBrush}" Background="{StaticResource FormBgBrush}"
+                                                                     BorderBrush="{StaticResource OkBrush}" BorderThickness="1" CornerRadius="6" Padding="8,3"
+                                                                     PlaceholderText="vite-server"
+                                                                     ToolTip.Tip="Name the service, not the socket — 'vite-server' reads as a hierarchy; 'vite-port' stutters into vite-port.port." />
+                                                            <TextBlock Text=".…}" FontFamily="Consolas,monospace" FontSize="15"
+                                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1" Content="✕" Command="{Binding RemoveCommand}"
+                                                                Foreground="{StaticResource DangerBrush}" Padding="10,2" VerticalAlignment="Center"
+                                                                ToolTip.Tip="Remove this capability" />
                                                     </Grid>
-                                                    <Grid ColumnDefinitions="*,Auto" Margin="12,2,0,0">
-                                                        <TextBlock Grid.Column="0" Text="outputs" FontSize="11"
-                                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                                                        <Button Grid.Column="1" Content="+ output" Command="{Binding AddOutputCommand}"
-                                                                FontSize="11" Padding="6,2" />
-                                                    </Grid>
-                                                    <ItemsControl ItemsSource="{Binding Outputs}" Margin="12,0,0,0">
+
+                                                    <!-- The anchor: the one real resource this capability owns. Always present; can't be
+                                                         renamed or removed, so the row shows the fixed ${sprig.<cap>.port} token, not a name box. -->
+                                                    <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource OkBrush}"
+                                                            BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,9">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalAlignment="Center">
+                                                            <TextBlock Grid.Column="0" Text="● PORT · allocated" FontFamily="Consolas,monospace"
+                                                                       FontSize="11" Foreground="{StaticResource OkBrush}" VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Port.Ref}" FontFamily="Consolas,monospace"
+                                                                       FontSize="13" Foreground="{StaticResource FgBrush}" VerticalAlignment="Center"
+                                                                       ToolTip.Tip="The reference a consumer types for this capability's port. Always exported." />
+                                                            <TextBox Grid.Column="2" MinWidth="190" Text="{Binding Port.Allowed, Mode=TwoWay}"
+                                                                     PlaceholderText="allowed ports (optional, e.g. 8100-8103)" FontFamily="Consolas,monospace" />
+                                                        </Grid>
+                                                    </Border>
+
+                                                    <!-- Derived shapes: each a formula over the port. Amber to set them apart from the port. -->
+                                                    <ItemsControl ItemsSource="{Binding Shapes}">
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:OutputEditRow">
-                                                                <Grid ColumnDefinitions="*,Auto,2*,Auto" ColumnSpacing="8" Margin="0,0,0,5">
-                                                                    <TextBox Grid.Column="0" MinWidth="0" Text="{Binding Name, Mode=TwoWay}"
-                                                                             PlaceholderText="output (port)" FontFamily="Consolas,monospace" />
-                                                                    <CheckBox Grid.Column="1" Content="port" IsChecked="{Binding IsPort}"
-                                                                              VerticalAlignment="Center"
-                                                                              ToolTip.Tip="An auto-allocated host port. Uncheck for a derived string built from other outputs." />
-                                                                    <TextBox Grid.Column="2" MinWidth="0" IsVisible="{Binding IsPort}"
-                                                                             Text="{Binding Allowed, Mode=TwoWay}"
-                                                                             PlaceholderText="allowed ports (optional, e.g. 8100-8103)" FontFamily="Consolas,monospace" />
-                                                                    <TextBox Grid.Column="2" MinWidth="0" IsVisible="{Binding IsDerived}"
-                                                                             Text="{Binding Template, Mode=TwoWay}"
-                                                                             PlaceholderText="http://localhost:${sprig.cap.port}" FontFamily="Consolas,monospace" />
-                                                                    <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
-                                                                            Foreground="{StaticResource DangerBrush}" Padding="8,2" />
-                                                                </Grid>
+                                                            <DataTemplate x:DataType="vm:ShapeEditRow">
+                                                                <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource WarnBrush}"
+                                                                        BorderThickness="3,0,0,0" CornerRadius="4" Padding="12,9" Margin="0,0,0,8">
+                                                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                                                                        <TextBlock Grid.Column="0" Text="● DERIVED" FontFamily="Consolas,monospace"
+                                                                                   FontSize="11" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" />
+                                                                        <TextBox Grid.Column="1" Width="110" Text="{Binding Name, Mode=TwoWay}"
+                                                                                 PlaceholderText="url" FontFamily="Consolas,monospace"
+                                                                                 ToolTip.Tip="{Binding Ref}" />
+                                                                        <TextBox Grid.Column="2" MinWidth="0" Text="{Binding Template, Mode=TwoWay}"
+                                                                                 PlaceholderText="http://localhost:${sprig.vite-server.port}" FontFamily="Consolas,monospace" />
+                                                                        <Button Grid.Column="3" Content="✕" Command="{Binding RemoveCommand}"
+                                                                                Foreground="{StaticResource DangerBrush}" Padding="8,2" />
+                                                                    </Grid>
+                                                                </Border>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
                                                     </ItemsControl>
+
+                                                    <Button Content="+ derived shape" Command="{Binding AddShapeCommand}"
+                                                            FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                                                            ToolTip.Tip="A string built from this capability's port — a url, a connection string." />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

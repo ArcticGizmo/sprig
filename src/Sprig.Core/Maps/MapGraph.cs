@@ -84,7 +84,7 @@ public static class MapGraphProjection
             foreach (var module in repo.Config.EffectiveModules)
             {
                 var provides = module.Provides
-                    .Select(p => new MapGraphProvide(p.Capability, p.Outputs.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList()))
+                    .Select(p => new MapGraphProvide(p.Capability, p.OutputNames.OrderBy(k => k, StringComparer.Ordinal).ToList()))
                     .ToList();
 
                 var needs = new List<MapGraphNeed>();

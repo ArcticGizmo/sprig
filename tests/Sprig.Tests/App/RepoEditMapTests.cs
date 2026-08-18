@@ -3,8 +3,8 @@ using Sprig.Core.Config;
 
 namespace Sprig.Tests.App;
 
-/// <summary>M8 — authoring a repo's map-model surface (provides/needs) in the repo editor: load, edit, and
-/// save a valid schema-aware .sprig.json.</summary>
+/// <summary>Authoring a repo's map-model surface (provides/needs) in the repo editor: load, edit, and save a
+/// valid v1 .sprig.json. Provides use the "one name, many shapes" editor — a port anchor + derived shapes.</summary>
 public class RepoEditMapTests
 {
     static string WriteConfig(TempStore s, string json)
@@ -21,8 +21,8 @@ public class RepoEditMapTests
         using var s = new TempStore();
         var dir = WriteConfig(s, """
             { "schema": 1, "name": "acme",
-              "provides": [ { "capability": "acme-api", "type": "http",
-                "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } } ],
+              "provides": [ { "capability": "acme-api",
+                "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
               "needs": [ { "capability": "acme-db", "as": "db" } ] }
             """);
 
@@ -31,10 +31,12 @@ public class RepoEditMapTests
 
         var provide = Assert.Single(tab.Provides);
         Assert.Equal("acme-api", provide.Capability);
-        Assert.Equal("http", provide.Type);
-        Assert.Collection(provide.Outputs,
-            o => { Assert.Equal("port", o.Name); Assert.True(o.IsPort); },
-            o => { Assert.Equal("url", o.Name); Assert.True(o.IsDerived); Assert.Contains("localhost", o.Template); });
+        Assert.Equal("port", provide.Port.Name);            // the single, permanent anchor
+        Assert.Equal("${sprig.acme-api.port}", provide.Port.Ref);   // the name lives inside the token it heads
+        var shape = Assert.Single(provide.Shapes);
+        Assert.Equal("url", shape.Name);
+        Assert.Contains("localhost", shape.Template);
+        Assert.Equal("${sprig.acme-api.url}", shape.Ref);
 
         var need = Assert.Single(tab.Needs);
         Assert.Equal("acme-db", need.Capability);
@@ -42,7 +44,8 @@ public class RepoEditMapTests
 
         var config = vm.Build();
         var module = Assert.Single(config.EffectiveModules);
-        Assert.True(module.Provides[0].Outputs["port"].IsPort);
+        Assert.True(module.Provides[0].Ports.ContainsKey("port"));
+        Assert.Equal("http://localhost:${sprig.acme-api.port}", module.Provides[0].Shapes["url"]);
         Assert.Equal("acme-db", Assert.Single(module.Needs).Capability);
         Assert.True(SprigConfigValidator.Validate(config).IsValid);
     }
@@ -61,11 +64,10 @@ public class RepoEditMapTests
         tab.AddProvideCommand.Execute(null);
         var provide = tab.Provides[0];
         provide.Capability = "fresh-api";
-        provide.Outputs[0].Name = "port";
-        provide.AddOutputCommand.Execute(null);
-        provide.Outputs[1].Name = "url";
-        provide.Outputs[1].IsPort = false;
-        provide.Outputs[1].Template = "http://localhost:${sprig.fresh-api.port}";
+        Assert.Equal("port", provide.Port.Name);            // the anchor is always present
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[0].Name = "url";
+        provide.Shapes[0].Template = "http://localhost:${sprig.fresh-api.port}";
 
         tab.AddNeedCommand.Execute(null);
         tab.Needs[0].Capability = "fresh-db";
@@ -75,10 +77,31 @@ public class RepoEditMapTests
         var reloaded = SprigConfigLoader.LoadFromFile(Path.Combine(dir, ".sprig.json"));
         var module = Assert.Single(reloaded.EffectiveModules);
         Assert.Equal("fresh-api", Assert.Single(module.Provides).Capability);
-        Assert.True(module.Provides[0].Outputs["port"].IsPort);
-        Assert.Equal("http://localhost:${sprig.fresh-api.port}", module.Provides[0].Outputs["url"].Template);
+        Assert.True(module.Provides[0].Ports.ContainsKey("port"));
+        Assert.Equal("http://localhost:${sprig.fresh-api.port}", module.Provides[0].Shapes["url"]);
         Assert.Equal("fresh-db", Assert.Single(module.Needs).Capability);
         Assert.Equal("db", module.Needs[0].As);
+    }
+
+    [Fact]
+    public void Token_preview_tracks_the_capability_name_as_it_is_typed()
+    {
+        using var s = new TempStore();
+        var dir = WriteConfig(s, """{ "schema": 1, "name": "live" }""");
+        var vm = RepoEditViewModel.Load(dir);
+
+        vm.AddModuleCommand.Execute(null);
+        var tab = vm.SelectedModule!;
+        tab.Name = "app";
+        tab.AddProvideCommand.Execute(null);
+        var provide = tab.Provides[0];
+
+        // Renaming the capability re-heads the port and every shape's rendered ${sprig.…} token, live.
+        provide.Capability = "vite-server";
+        Assert.Equal("${sprig.vite-server.port}", provide.Port.Ref);
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[0].Name = "url";
+        Assert.Equal("${sprig.vite-server.url}", provide.Shapes[0].Ref);
     }
 
     [Fact]
@@ -92,18 +115,18 @@ public class RepoEditMapTests
         var tab = vm.SelectedModule!;
         tab.Name = "app";
 
-        // Typing a provide's capability + output makes ${sprig.<cap>.<out>} a known exact reference — live,
-        // with no need to reload (Workstream C).
+        // Typing a provide's capability makes its always-present ${sprig.<cap>.port} a known exact reference —
+        // live, with no need to reload (Workstream C).
         tab.AddProvideCommand.Execute(null);
         var provide = tab.Provides[0];
         provide.Capability = "api";
-        provide.Outputs[0].Name = "port";
         Assert.Contains("api.port", vm.SprigVariableNames);
 
-        // Renaming the output moves the known name with it (old name gone, new name present).
-        provide.Outputs[0].Name = "listen";
-        Assert.DoesNotContain("api.port", vm.SprigVariableNames);
-        Assert.Contains("api.listen", vm.SprigVariableNames);
+        // Adding/naming a derived shape adds its reference too; the port anchor stays.
+        provide.AddShapeCommand.Execute(null);
+        provide.Shapes[0].Name = "url";
+        Assert.Contains("api.url", vm.SprigVariableNames);
+        Assert.Contains("api.port", vm.SprigVariableNames);
 
         // A need's capability + alias become open heads (any output accepted under them).
         tab.AddNeedCommand.Execute(null);

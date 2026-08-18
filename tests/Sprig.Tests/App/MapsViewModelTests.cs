@@ -1,10 +1,10 @@
-using Sprig.App;
+﻿using Sprig.App;
 using Sprig.App.ViewModels;
 using Sprig.Core.Maps;
 
 namespace Sprig.Tests.App;
 
-/// <summary>M8 — the Maps page lists maps and grows a workspace from a selected slice, driven entirely by
+/// <summary>M8 â€” the Maps page lists maps and grows a workspace from a selected slice, driven entirely by
 /// the repos' own provides/needs (no binding editor).</summary>
 public class MapsViewModelTests
 {
@@ -23,7 +23,7 @@ public class MapsViewModelTests
         using var store = new TempStore();
         using var repo = CommitConfig("solo", """
             { "schema": 1, "name": "solo",
-              "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ],
+              "provides": [ { "capability": "api", "ports": { "port": true } } ],
               "env": [ { "file": ".env", "set": { "PORT": "${sprig.api.port}" } } ] }
             """);
         var services = new AppServices(store.Root);
@@ -133,7 +133,7 @@ public class MapsViewModelTests
         using var web = CommitConfig("web", """{ "schema": 1, "name": "web" }""");
         using var api = CommitConfig("api", """
             { "schema": 1, "name": "api",
-              "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ] }
+              "provides": [ { "capability": "api", "ports": { "port": true } } ] }
             """);
         var services = new AppServices(store.Root);
         services.Repos.Add(web.Path);

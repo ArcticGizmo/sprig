@@ -195,8 +195,10 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>A repo is selected, its config loaded cleanly, and we're not already editing.</summary>
     public bool CanEdit => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
 
-    /// <summary>A self-describing repo can stand up on its own (the ad-hoc create path) — no map needed.</summary>
-    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
+    /// <summary>A self-describing repo can stand up on its own (the ad-hoc create path) — no map needed.
+    /// Requires a VALID config: an invalid one (e.g. an old-schema import) would only fail the checkout, so
+    /// the button is disabled and the read-only view shows a fix-or-delete warning instead.</summary>
+    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true, IsValid: true } && !IsEditing;
 
     /// <summary>True while the inline "name this workspace" prompt of the fast path is open.</summary>
     [ObservableProperty] private bool _isIsolating;

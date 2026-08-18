@@ -1,4 +1,4 @@
-using Sprig.App;
+﻿using Sprig.App;
 using Sprig.App.Controls;
 using Sprig.App.ViewModels;
 using Sprig.Core.Stacks;
@@ -6,7 +6,7 @@ using Sprig.Core.Stacks;
 namespace Sprig.Tests.App;
 
 /// <summary>
-/// VM tests over a temp central store. These exercise the VM→Core wiring for the synchronous
+/// VM tests over a temp central store. These exercise the VMâ†’Core wiring for the synchronous
 /// management flows (repos + stacks). Workspace lifecycle VMs are covered by the headless-render
 /// integration + the Core tests they delegate to.
 /// </summary>
@@ -21,7 +21,7 @@ public class ManagementViewModelTests
     }
 
     /// <summary>The editor now edits modules as tabs; these single-module tests work against the current
-    /// tab — the one a migrated config produced, or a freshly added empty one.</summary>
+    /// tab â€” the one a migrated config produced, or a freshly added empty one.</summary>
     static ModuleEditTab Mod(RepoEditViewModel e)
     {
         if (e.Modules.Count == 0)
@@ -184,7 +184,7 @@ public class ManagementViewModelTests
         File.WriteAllText(Path.Combine(dir, ".sprig.json"), """
             { "schema":1, "name":"api",
               "modules":[ { "name":"api",
-                "provides":[ { "capability":"api", "outputs": { "port": { "port": true } } } ],
+                "provides":[ { "capability":"api", "ports": { "port": true } } ],
                 "env":[ { "file":".env", "set":{ "PORT":"${sprig.api.port}" } } ] } ] }
             """);
 
@@ -237,7 +237,7 @@ public class ManagementViewModelTests
         Assert.True(vm.GitMissing);
         Assert.False(vm.GitOk);
 
-        // add a .git dir → now it reads as a git repo
+        // add a .git dir â†’ now it reads as a git repo
         Directory.CreateDirectory(Path.Combine(plain, ".git"));
         vm.NewPath = plain + " "; // change value to retrigger detection
         Assert.True(vm.PathIsGitRepo);
@@ -263,7 +263,7 @@ public class ManagementViewModelTests
         Assert.Contains(hits, h => h.EndsWith("proj-a"));
         Assert.Contains(hits, h => h.EndsWith("proj-b"));
         Assert.DoesNotContain(hits, h => h.EndsWith("other"));
-        Assert.Empty(vm.SuggestPaths("")); // nothing typed → no suggestions
+        Assert.Empty(vm.SuggestPaths("")); // nothing typed â†’ no suggestions
     }
 
     [Fact]
@@ -380,8 +380,8 @@ public class ManagementViewModelTests
         var before = File.ReadAllText(configPath);
 
         var git = new FakeGitService();
-        git.TrackedFiles.Add(".env");       // committed → off-limits
-        git.IgnoredFiles.Add(".env.local"); // gitignored → safe
+        git.TrackedFiles.Add(".env");       // committed â†’ off-limits
+        git.IgnoredFiles.Add(".env.local"); // gitignored â†’ safe
         var editor = RepoEditViewModel.Load(dir, git);
 
         var mod = Mod(editor);
@@ -405,7 +405,7 @@ public class ManagementViewModelTests
         Assert.Contains("tracked", editor.Error);
         Assert.Equal(before, File.ReadAllText(configPath)); // file untouched
 
-        // pointing at a gitignored file clears the block — the override carries across the file change
+        // pointing at a gitignored file clears the block â€” the override carries across the file change
         row.File = ".env.local";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
@@ -443,7 +443,7 @@ public class ManagementViewModelTests
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"), """{ "schema":1, "name":"api" }""");
         File.WriteAllText(Path.Combine(dir, ".env.local"), "PORT=3000\n");
-        // A non-conventional name the companion heuristics would never find — only an explicit template does.
+        // A non-conventional name the companion heuristics would never find â€” only an explicit template does.
         File.WriteAllText(Path.Combine(dir, "shared.env"), "SHARED_SECRET=\nAPI_KEY=\n");
 
         var editor = RepoEditViewModel.Load(dir);
@@ -479,18 +479,18 @@ public class ManagementViewModelTests
         mod.AddEnvFileCommand.Execute(null);
         var row = mod.Env.First();
 
-        // gitignored → safe
+        // gitignored â†’ safe
         row.File = ".env.local";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.Ignored, row.Status);
 
-        // exists but not ignored → amber warning (would surface as a worktree change)
+        // exists but not ignored â†’ amber warning (would surface as a worktree change)
         row.File = ".env.present";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.NotIgnored, row.Status);
         Assert.True(row.ShowNotIgnoredWarning);
 
-        // no matching file AND not ignored → still warned (the case naive existence detection missed)
+        // no matching file AND not ignored â†’ still warned (the case naive existence detection missed)
         row.File = ".env.ghost";
         await row.StatusReady;
         Assert.Equal(EnvFileStatus.NotIgnoredNew, row.Status);

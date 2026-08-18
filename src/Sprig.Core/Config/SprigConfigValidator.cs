@@ -100,17 +100,29 @@ public static class SprigConfigValidator
             else if (!seenCaps.Add(p.Capability))
                 issues.Add(new($"{at}.capability", $"duplicate provided capability '{p.Capability}' in this repo"));
 
-            if (p.Outputs.Count == 0)
-                issues.Add(new($"{at}.outputs", "a capability must declare at least one output"));
-            foreach (var (name, spec) in p.Outputs)
+            if (p.Ports.Count == 0 && p.Shapes.Count == 0)
+                issues.Add(new($"{at}", "a capability must declare at least one port or shape"));
+
+            // Ports and shapes share one output namespace — a name is one or the other, never both.
+            var seenOutputs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (name, spec) in p.Ports)
             {
                 if (string.IsNullOrWhiteSpace(name) || !IsIdentifier(name))
-                    issues.Add(new($"{at}.outputs", $"output name '{name}' must contain only letters, digits, '-' or '_'"));
-                if (spec.IsPort && !string.IsNullOrWhiteSpace(spec.Allowed)
+                    issues.Add(new($"{at}.ports", $"port name '{name}' must contain only letters, digits, '-' or '_'"));
+                else if (!seenOutputs.Add(name))
+                    issues.Add(new($"{at}.ports.{name}", $"duplicate output name '{name}' in this capability"));
+                if (!string.IsNullOrWhiteSpace(spec.Allowed)
                     && !Ports.PortSetSpec.TryParse(spec.Allowed, out _, out var portErr))
-                    issues.Add(new($"{at}.outputs.{name}.allowed", portErr!));
-                if (!spec.IsPort && string.IsNullOrWhiteSpace(spec.Template))
-                    issues.Add(new($"{at}.outputs.{name}", "a derived output must be a non-empty template"));
+                    issues.Add(new($"{at}.ports.{name}.allowed", portErr!));
+            }
+            foreach (var (name, template) in p.Shapes)
+            {
+                if (string.IsNullOrWhiteSpace(name) || !IsIdentifier(name))
+                    issues.Add(new($"{at}.shapes", $"shape name '{name}' must contain only letters, digits, '-' or '_'"));
+                else if (!seenOutputs.Add(name))
+                    issues.Add(new($"{at}.shapes.{name}", $"duplicate output name '{name}' in this capability"));
+                if (string.IsNullOrWhiteSpace(template))
+                    issues.Add(new($"{at}.shapes.{name}", "a derived shape must be a non-empty template"));
             }
         }
     }

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Sprig.Core.Compose;
 using Sprig.Core.Config;
 using Sprig.Core.Env;
@@ -17,8 +17,8 @@ public class WorkspaceInfraTests
         { "schema": 1, "name": "dotnet-api",
           "modules": [ { "name": "app", "path": "",
             "provides": [
-              { "capability": "api", "outputs": { "port": { "port": true } } },
-              { "capability": "postgres", "outputs": { "port": { "port": true } } } ],
+              { "capability": "api", "ports": { "port": true } },
+              { "capability": "postgres", "ports": { "port": true } } ],
             "env": [ { "file": ".env", "set": {
                 "PORT": "${sprig.api.port}",
                 "ConnectionStrings__Default": "Host=localhost;Port=${sprig.postgres.port};Database=librarydb" } } ],
@@ -214,7 +214,7 @@ public class WorkspaceInfraTests
         svc.Remove("feat-a");
         Assert.True(instances.TryLoad("feat-a")!.TeardownFailed);
 
-        // Fix the blocker and run rm again — teardown is idempotent, so the second sweep completes
+        // Fix the blocker and run rm again â€” teardown is idempotent, so the second sweep completes
         // (already-gone worktree/ports are no-ops) and the record is finally deleted.
         docker.DownFailure = null;
         svc.Remove("feat-a");

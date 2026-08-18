@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,7 +12,7 @@ namespace Sprig.Tests.App;
 /// <summary>
 /// The Workspaces page reframed around pools: the list groups workspaces under their map's pool
 /// (capacity, free/claimed/degraded), and Checkout/Release drive the lifecycle. Nothing here runs a real
-/// checkout (git/docker — that's Core's <c>MapPoolService</c> tests); these pin what the grouped surface
+/// checkout (git/docker â€” that's Core's <c>MapPoolService</c> tests); these pin what the grouped surface
 /// shows and how the checkout overlay sets itself up before the user commits.
 /// </summary>
 public class PoolWorkspaceViewModelTests
@@ -24,14 +24,14 @@ public class PoolWorkspaceViewModelTests
         services.Maps.Save(new MapDefinition { Name = "app", Repos = [MapRepo.Local("api")], MaxSlots = maxSlots });
     }
 
-    /// <summary>A registered map repo: a directory with a provides-declaring .sprig.json (no git — these
+    /// <summary>A registered map repo: a directory with a provides-declaring .sprig.json (no git â€” these
     /// tests never run a real checkout, only the grouping + overlay setup).</summary>
     internal static string MakeRepo(string root, string name)
     {
         var dir = Path.Combine(root, name);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            $$"""{ "schema":1, "name":"{{name}}", "modules":[ { "name":"main", "provides":[ { "capability":"{{name}}", "outputs":{ "port": { "port": true } } } ] } ] }""");
+            $$"""{ "schema":1, "name":"{{name}}", "modules":[ { "name":"main", "provides":[ { "capability":"{{name}}", "ports": { "port": true } } ] } ] }""");
         return dir;
     }
 
@@ -111,7 +111,7 @@ public class PoolWorkspaceViewModelTests
         Assert.True(pool.IsExhausted);
         Assert.False(pool.CanCheckout);
 
-        // Opening checkout on an exhausted pool is a no-op — the overlay never appears.
+        // Opening checkout on an exhausted pool is a no-op â€” the overlay never appears.
         vm.CheckoutCommand.Execute(pool);
         Assert.False(vm.IsCheckingOut);
     }

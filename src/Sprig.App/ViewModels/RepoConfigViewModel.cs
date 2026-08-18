@@ -15,9 +15,9 @@ public sealed record EnvGroup(string File, IReadOnlyList<string> Templates, IRea
 }
 public sealed record ComposeInfo(string File, IReadOnlyList<KvRow> Overrides);
 
-/// <summary>One capability a module provides (map model): its contract name, optional type hint, and its
-/// outputs — each shown as <c>name</c> → <c>port</c> or the derived template.</summary>
-public sealed record ProvideRow(string Capability, string? Type, IReadOnlyList<KvRow> Outputs);
+/// <summary>One capability a module provides (map model): its contract name and its outputs — each shown
+/// as <c>name</c> → <c>port</c> or the derived template.</summary>
+public sealed record ProvideRow(string Capability, IReadOnlyList<KvRow> Outputs);
 
 /// <summary>One capability a module needs (map model): the contract name and the local alias it's
 /// referenced by (only shown when it differs from the capability name).</summary>
@@ -51,22 +51,37 @@ public sealed record ModuleTabView(
 /// </summary>
 public sealed partial class RepoConfigViewModel : ObservableObject
 {
-    RepoConfigViewModel(string name, IReadOnlyList<ModuleTabView> modules, string? error)
+    RepoConfigViewModel(string name, IReadOnlyList<ModuleTabView> modules, string? error, string? validationError = null)
     {
         Name = name;
         Modules = modules;
         Error = error;
+        ValidationError = validationError;
         _selectedModule = modules.Count > 0 ? modules[0] : null;
     }
 
     public string Name { get; }
     public IReadOnlyList<ModuleTabView> Modules { get; }
+
+    /// <summary>Set when the <c>.sprig.json</c> couldn't be read/parsed at all — the config is unusable.</summary>
     public string? Error { get; }
+
+    /// <summary>Set when the config parsed but failed validation — e.g. it was written by an older sprig whose
+    /// schema this build no longer understands. The read-only view shows it as a fixable warning (edit or
+    /// delete), rather than pretending the config is fine and letting a checkout blow up downstream.</summary>
+    public string? ValidationError { get; }
 
     /// <summary>The module whose detail is shown below the tab strip.</summary>
     [ObservableProperty] private ModuleTabView? _selectedModule;
 
     public bool Ok => Error is null;
+
+    /// <summary>Parsed AND valid — the only state from which a workspace can be safely checked out.</summary>
+    public bool IsValid => Error is null && ValidationError is null;
+
+    /// <summary>True when the config parsed but is invalid — drives the fixable-warning banner.</summary>
+    public bool HasValidationError => Error is null && ValidationError is not null;
+
     public bool HasModules => Modules.Count > 0;
 
     public static RepoConfigViewModel Load(string repoPath)
@@ -78,10 +93,11 @@ public sealed partial class RepoConfigViewModel : ObservableObject
             var modules = c.EffectiveModules.Select(m => new ModuleTabView(
                 m.Name,
                 m.Path,
-                m.Provides.Select(p => new ProvideRow(p.Capability, p.Type,
-                    p.Outputs.Select(o => new KvRow(o.Key, o.Value.IsPort
-                        ? (string.IsNullOrWhiteSpace(o.Value.Allowed) ? "port" : $"port ({o.Value.Allowed})")
-                        : o.Value.Template ?? "")).ToList())).ToList(),
+                m.Provides.Select(p => new ProvideRow(p.Capability,
+                    p.Ports.Select(o => new KvRow(o.Key,
+                            string.IsNullOrWhiteSpace(o.Value.Allowed) ? "port" : $"port ({o.Value.Allowed})"))
+                        .Concat(p.Shapes.Select(s => new KvRow(s.Key, s.Value)))
+                        .ToList())).ToList(),
                 m.Needs.Select(n => new NeedRow(n.Capability, n.Alias)).ToList(),
                 m.Env.Select(e => new EnvGroup(e.File,
                     e.Templates ?? [],
@@ -89,7 +105,18 @@ public sealed partial class RepoConfigViewModel : ObservableObject
                 m.Compose.Select(comp => new ComposeInfo(comp.File,
                     comp.Overrides.Select(o => new KvRow(string.Join(".", o.Path), o.Template)).ToList())).ToList(),
                 m.Setup.ToList())).ToList();
-            return new RepoConfigViewModel(c.Name, modules, error: null);
+
+            // A config can parse yet be invalid — most commonly one written by an older sprig (e.g. the
+            // pre-"ports/shapes" `outputs` shape). Surface that as a fixable warning here rather than letting
+            // it read as fine and crash a later checkout.
+            var validation = SprigConfigValidator.Validate(c);
+            var validationError = validation.IsValid
+                ? null
+                : "This repo's .sprig.json doesn't match the current schema — it was likely written by an "
+                  + "older sprig. Open it in the editor to fix it, or delete the config and re-add the repo to "
+                  + "scaffold a fresh one.\n\n  • " + string.Join("\n  • ", validation.Issues);
+
+            return new RepoConfigViewModel(c.Name, modules, error: null, validationError);
         }
         catch (Exception ex)
         {

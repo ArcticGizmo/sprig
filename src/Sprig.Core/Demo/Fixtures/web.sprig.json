@@ -12,7 +12,7 @@
       "provides": [
         {
           "capability": "web",
-          "outputs": { "port": { "port": true } }
+          "ports": { "port": true }
         }
       ],
       "needs": [

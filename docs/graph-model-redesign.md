@@ -113,11 +113,10 @@ module (the editor shows a flat view, no tabs):
   "schema": 1,
   "name": "dotnet-api",
   "provides": [
-    { "capability": "orders-api", "type": "http",      // type is a HINT only
-      "outputs": {
-        "port": { "port": true },                       // the only real "type": an allocated port
-        "url":  "http://localhost:${sprig.orders-api.port}"   // derived string over that port
-      } }
+    { "capability": "orders-api",
+      "ports":  { "port": true },                      // the only real resource: an allocated port
+      "shapes": { "url": "http://localhost:${sprig.orders-api.port}" }  // derived string over that port
+    }
   ],
   "needs": [ { "capability": "orders-db" } ],
   "env": [ { "file": ".env", "set": {
@@ -136,8 +135,8 @@ module (the editor shows a flat view, no tabs):
   "name": "acme",
   "modules": [
     { "name": "api", "path": "apps/api",
-      "provides": [ { "capability": "acme-api", "type": "http",
-        "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } } ],
+      "provides": [ { "capability": "acme-api",
+        "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
       "needs": [ { "capability": "acme-db" } ],          // satisfied LOCALLY by the db module
       "env":   [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}",
                                             "DB": "${sprig.acme-db.connString}" } } ],
@@ -154,9 +153,9 @@ module (the editor shows a flat view, no tabs):
       "setup": [ { "run": "npm ci" } ] },
 
     { "name": "db", "path": "infra",
-      "provides": [ { "capability": "acme-db", "type": "postgres",
-        "outputs": { "port": { "port": true },
-          "connString": "Host=localhost;Port=${sprig.acme-db.port};Database=acme;Username=acme;Password=acme" } } ],
+      "provides": [ { "capability": "acme-db",
+        "ports": { "port": true },
+        "shapes": { "connString": "Host=localhost;Port=${sprig.acme-db.port};Database=acme;Username=acme;Password=acme" } } ],
       "compose": [ { "file": "docker-compose.yml", "overrides": [
         { "path": ["services","db","ports","0"], "template": "${sprig.acme-db.port}:5432" } ] } ] }
   ]
@@ -181,8 +180,8 @@ Field-by-field vs. today:
 | stack `ports[]` + `bindings[]` | *(gone)* | Wiring is derived; only deviations stored, on the map. |
 | `${sprig.<input>}` | `${sprig.<capability>.<output>}` | Flat, capability-qualified (§3.3). |
 
-`allowedPorts` (the Auth0 pinned-callback case) moves onto the provided port output:
-`"port": { "port": true, "allowed": "8100-8103" }`.
+`allowedPorts` (the Auth0 pinned-callback case) moves onto the provided port:
+`"ports": { "port": { "allowed": "8100-8103" } }` (bare `true` = any host port).
 
 ### 3.2 The map — schema 1 (multiple allowed)
 
@@ -235,7 +234,7 @@ The same algorithm runs at two levels — **within a repo** (modules) and **acro
 Given a map **M** and a selected repo set **S**:
 
 1. **Collect provides.** Gather every provided output from every module of every repo in **S**.
-   Allocate a real, non-colliding host port for each `{ "port": true }` output (per workspace,
+   Allocate a real, non-colliding host port for each provided `port` (per workspace,
    honouring `allowed`). `FilePortStore` is almost unchanged — ports are just keyed by *capability
    output* instead of *stack port name*.
 2. **Build the value space.** Resolve each provider's derived outputs (`url`, `connString`, …) over

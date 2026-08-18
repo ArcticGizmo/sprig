@@ -81,7 +81,7 @@ public static partial class ConfigReferences
             {
                 if (!provided.TryGetValue(p.Capability, out var outs))
                     provided[p.Capability] = outs = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var o in p.Outputs.Keys)
+                foreach (var o in p.OutputNames)
                     outs.Add(o);
             }
             foreach (var n in module.Needs)
@@ -102,12 +102,13 @@ public static partial class ConfigReferences
         foreach (var module in config.Modules)
             foreach (var t in EnvComposeTemplates(module.Env, module.Compose))
                 yield return t;
-        // Map-model: provided outputs' derived templates (EffectiveModules unifies top-level sugar + modules).
+        // Map-model: provided capabilities' derived-shape templates (EffectiveModules unifies top-level
+        // sugar + modules). Ports own no template — only shapes reference other outputs.
         foreach (var module in config.EffectiveModules)
             foreach (var cap in module.Provides)
-                foreach (var o in cap.Outputs.Values)
-                    if (!o.IsPort && !string.IsNullOrEmpty(o.Template))
-                        yield return o.Template!;
+                foreach (var template in cap.Shapes.Values)
+                    if (!string.IsNullOrEmpty(template))
+                        yield return template;
     }
 
     static IEnumerable<string> EnvComposeTemplates(

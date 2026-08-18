@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Sprig.App;
@@ -9,18 +9,18 @@ using Sprig.Core.Store;
 namespace Sprig.Tests.App;
 
 /// <summary>
-/// The create-workspace form's repo checklist — the UI half of partial workspaces on the map model.
+/// The create-workspace form's repo checklist â€” the UI half of partial workspaces on the map model.
 /// Nothing here creates a workspace (that's covered in Core); these pin what the form tells the user
-/// before they commit — which repos are dropped and any needs the remaining slice can no longer meet.
+/// before they commit â€” which repos are dropped and any needs the remaining slice can no longer meet.
 /// </summary>
 public class PartialWorkspaceViewModelTests
 {
-    /// <summary>web NEEDS 'api'; api PROVIDES it. A map of both. No git — the form only resolves configs.</summary>
+    /// <summary>web NEEDS 'api'; api PROVIDES it. A map of both. No git â€” the form only resolves configs.</summary>
     static void SeedWebApiMap(TempStore s, AppServices services)
     {
         services.Repos.Add(WriteRepo(s.Root, "api", """
             { "schema":1, "name":"api", "modules":[
-              { "name":"main", "provides":[ { "capability":"api", "outputs":{ "port":{"port":true} } } ] } ] }
+              { "name":"main", "provides":[ { "capability":"api", "ports": { "port": true } } ] } ] }
             """));
         services.Repos.Add(WriteRepo(s.Root, "web", """
             { "schema":1, "name":"web", "modules":[

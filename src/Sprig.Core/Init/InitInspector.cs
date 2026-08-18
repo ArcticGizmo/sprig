@@ -129,7 +129,7 @@ public sealed class InitInspector
                             provides.Add(new ProvidedCapability
                             {
                                 Capability = cap,
-                                Outputs = new Dictionary<string, OutputSpec> { ["port"] = OutputSpec.Port() },
+                                Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any },
                             });
                             set[key] = $"${{sprig.{cap}.port}}";
                         }
@@ -200,8 +200,8 @@ public sealed class InitInspector
                         var cap = UniqueName(Sanitize(svc), usedCaps);
                         provides.Add(new ProvidedCapability
                         {
-                            Capability = cap, Type = "port",
-                            Outputs = new Dictionary<string, OutputSpec> { ["port"] = OutputSpec.Port() },
+                            Capability = cap,
+                            Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any },
                         });
                         overrides.Add(new ComposeOverride
                         {

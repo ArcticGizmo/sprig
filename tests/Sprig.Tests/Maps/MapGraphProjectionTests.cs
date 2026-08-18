@@ -1,10 +1,10 @@
-using Sprig.Core.Config;
+﻿using Sprig.Core.Config;
 using Sprig.Core.Maps;
 using Sprig.Core.Workspaces;
 
 namespace Sprig.Tests.Maps;
 
-/// <summary>E1 (M9 groundwork) — the pure map-graph projection: repo/module nodes, derived provides→needs
+/// <summary>E1 (M9 groundwork) â€” the pure map-graph projection: repo/module nodes, derived providesâ†’needs
 /// edges, and each need classified resolved / ambiguous / gap. Same wiring rules as CapabilityResolver, so
 /// the canvas shows what a checkout would actually do.</summary>
 public class MapGraphProjectionTests
@@ -16,7 +16,7 @@ public class MapGraphProjectionTests
     static string Provider(string name, string cap) => $$"""
         { "schema": 1, "name": "{{name}}",
           "modules": [ { "name": "main", "provides": [
-            { "capability": "{{cap}}", "outputs": { "port": { "port": true } } } ] } ] }
+            { "capability": "{{cap}}", "ports": { "port": true } } ] } ] }
         """;
 
     static string Consumer(string name, string cap) => $$"""
@@ -49,7 +49,7 @@ public class MapGraphProjectionTests
         var mono = Repo("mono", """
             { "schema": 1, "name": "mono",
               "modules": [
-                { "name": "api", "provides": [ { "capability": "db", "outputs": { "port": { "port": true } } } ] },
+                { "name": "api", "provides": [ { "capability": "db", "ports": { "port": true } } ] },
                 { "name": "web", "needs": [ { "capability": "db" } ] } ] }
             """);
         var other = Repo("other", Provider("other", "db"));

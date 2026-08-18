@@ -34,7 +34,7 @@ public class InitInspectorMapTests : IDisposable
         var p = InspectMap();
 
         var cap = Assert.Single(Provides(p));
-        Assert.True(cap.Outputs["port"].IsPort);
+        Assert.True(cap.Ports.ContainsKey("port"));
         Assert.Equal($"${{sprig.{cap.Capability}.port}}", Env(p)[0].Set["PORT"]);
         Assert.True(SprigConfigValidator.Validate(p.Config).IsValid);
     }
@@ -51,7 +51,7 @@ public class InitInspectorMapTests : IDisposable
             """);
         var p = InspectMap();
 
-        Assert.Contains(Provides(p), c => c.Capability == "postgres" && c.Outputs["port"].IsPort);
+        Assert.Contains(Provides(p), c => c.Capability == "postgres" && c.Ports.ContainsKey("port"));
         var overrides = Assert.Single(Compose(p)).Overrides;
         Assert.Contains(overrides, o => o.Template == "${sprig.postgres.port}:5432");
         Assert.Contains(overrides, o => o.Template.Contains("db--${sprig.workspace}"));

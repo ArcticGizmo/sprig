@@ -1,4 +1,4 @@
-using Sprig.Core.Config;
+﻿using Sprig.Core.Config;
 
 namespace Sprig.Tests.Config;
 
@@ -11,7 +11,7 @@ public class ConfigReferencesTests
             {
               "schema": 1, "name": "vue",
               "modules": [ { "name": "app",
-                "provides": [ { "capability": "frontend", "outputs": { "port": { "port": true } } } ],
+                "provides": [ { "capability": "frontend", "ports": { "port": true } } ],
                 "env": [ { "file": ".env", "set": {
                     "PORT": "${sprig.frontend.port}",
                     "NAME": "app--${sprig.workspace}",

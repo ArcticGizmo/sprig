@@ -8,23 +8,33 @@ namespace Sprig.Core.Config;
 // pure-consumer `inputs`, which have been removed. See docs/graph-model-redesign.md.
 
 /// <summary>
-/// A capability a repo/module offers others: a named contract (<see cref="Capability"/>) plus its
-/// <see cref="Outputs"/> — the values consumers can reference as <c>${sprig.&lt;capability&gt;.&lt;output&gt;}</c>.
-/// The only real "type" of an output is a port (auto-allocated per workspace); everything else is a
-/// string template derived from ports. <see cref="Type"/> is a non-binding hint (e.g. <c>http</c>,
-/// <c>postgres</c>) used only for UI grouping/validation affordances.
+/// A capability a repo/module offers others: a named contract (<see cref="Capability"/>) that comes in
+/// several <b>shapes</b>. The one real resource a repo owns is a <b>port</b> (auto-allocated per
+/// workspace) — <see cref="Ports"/> — and every <see cref="Shapes"/> entry is a string <i>derived</i>
+/// from those ports (a url, a connString). Both are addressed uniformly as
+/// <c>${sprig.&lt;capability&gt;.&lt;output&gt;}</c>, where <c>&lt;output&gt;</c> is a port or a shape name.
+/// Name the <i>service</i>, not the socket: <c>vite-server.port</c> reads as a hierarchy; <c>vite-port.port</c>
+/// stutters. Every capability always exposes its <c>port</c>; shapes are optional extras.
 /// </summary>
 public sealed record ProvidedCapability
 {
     /// <summary>The contract name others match against (identifier chars only; no dots — dots delimit the
-    /// substitution path). Unique across a repo's provides.</summary>
+    /// substitution path). Unique across a repo's provides. Name the service (<c>vite-server</c>), not one
+    /// of its shapes.</summary>
     public string Capability { get; init; } = "";
 
-    /// <summary>Optional, non-binding hint about the capability's shape (e.g. <c>http</c>, <c>postgres</c>).</summary>
-    public string? Type { get; init; }
+    /// <summary>The real resources this capability owns: auto-allocated host ports, keyed by output name
+    /// (conventionally the single fixed <c>port</c>). Referenced as <c>${sprig.&lt;capability&gt;.&lt;portName&gt;}</c>.</summary>
+    public IReadOnlyDictionary<string, PortSpec> Ports { get; init; } = new Dictionary<string, PortSpec>();
 
-    /// <summary>Named outputs, keyed by output name. Each is either an allocated port or a derived string.</summary>
-    public IReadOnlyDictionary<string, OutputSpec> Outputs { get; init; } = new Dictionary<string, OutputSpec>();
+    /// <summary>Derived string shapes built over this capability's ports (a url, a connection string),
+    /// keyed by output name → template. Referenced as <c>${sprig.&lt;capability&gt;.&lt;shapeName&gt;}</c>.</summary>
+    public IReadOnlyDictionary<string, string> Shapes { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Every output name this capability exposes — its ports then its derived shapes. The two share
+    /// one namespace, so a name is a port or a shape, never both.</summary>
+    [JsonIgnore]
+    public IEnumerable<string> OutputNames => Ports.Keys.Concat(Shapes.Keys);
 }
 
 /// <summary>
@@ -47,76 +57,75 @@ public sealed record Need
 }
 
 /// <summary>
-/// A single provided output: either an allocated <b>port</b> (<c>{ "port": true, "allowed": "8100-8103" }</c>)
-/// or a derived <b>string template</b> (<c>"http://localhost:${sprig.api.port}"</c>). The JSON is a union —
-/// an object for a port, a bare string for a template — handled by <see cref="OutputSpecConverter"/>.
+/// A single provided <b>port</b> — an auto-allocated host port, optionally pinned to an
+/// <see cref="Allowed"/> set. Serialised as <c>true</c> (any host port) or <c>{ "allowed": "8100-8103" }</c>
+/// (constrained) by <see cref="PortSpecConverter"/>.
 /// </summary>
-[JsonConverter(typeof(OutputSpecConverter))]
-public sealed record OutputSpec
+[JsonConverter(typeof(PortSpecConverter))]
+public sealed record PortSpec
 {
-    /// <summary>True when this output is an auto-allocated host port.</summary>
-    public bool IsPort { get; init; }
-
-    /// <summary>For a port output, an optional restriction on which host ports it may take, as a compact
-    /// <c>PortSetSpec</c> (e.g. <c>"8100-8103"</c>). Null = the whole settings range.</summary>
+    /// <summary>An optional restriction on which host ports this may take, as a compact <c>PortSetSpec</c>
+    /// (e.g. <c>"8100-8103"</c>). Null/empty = the whole settings range.</summary>
     public string? Allowed { get; init; }
 
-    /// <summary>For a derived output, the string template (may reference sibling outputs / <c>${sprig.workspace}</c>).</summary>
-    public string? Template { get; init; }
+    /// <summary>Any host port in the settings range.</summary>
+    public static PortSpec Any { get; } = new();
 
-    public static OutputSpec Port(string? allowed = null) => new() { IsPort = true, Allowed = allowed };
-    public static OutputSpec Derived(string template) => new() { Template = template };
+    /// <summary>A port pinned to <paramref name="allowed"/> (blank/whitespace collapses to <see cref="Any"/>).</summary>
+    public static PortSpec Constrained(string? allowed) =>
+        string.IsNullOrWhiteSpace(allowed) ? Any : new PortSpec { Allowed = allowed };
 }
 
-/// <summary>Reads/writes an <see cref="OutputSpec"/>: an object <c>{ "port": true, "allowed"?: "…" }</c> is a
-/// port; a JSON string is a derived template.</summary>
-public sealed class OutputSpecConverter : JsonConverter<OutputSpec>
+/// <summary>Reads/writes a <see cref="PortSpec"/>: <c>true</c> (or a bare <c>{}</c>) is any host port; a JSON
+/// string or <c>{ "allowed": "…" }</c> object pins it to a set.</summary>
+public sealed class PortSpecConverter : JsonConverter<PortSpec>
 {
-    public override OutputSpec Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override PortSpec Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         switch (reader.TokenType)
         {
+            case JsonTokenType.True:
+            case JsonTokenType.False:
+            case JsonTokenType.Null:
+                return PortSpec.Any;
+
             case JsonTokenType.String:
-                return OutputSpec.Derived(reader.GetString() ?? "");
+                return PortSpec.Constrained(reader.GetString());
 
             case JsonTokenType.StartObject:
-                var isPort = false;
                 string? allowed = null;
                 while (reader.Read())
                 {
                     if (reader.TokenType == JsonTokenType.EndObject)
-                        return new OutputSpec { IsPort = isPort, Allowed = allowed };
+                        return PortSpec.Constrained(allowed);
                     if (reader.TokenType != JsonTokenType.PropertyName)
-                        throw new JsonException("malformed output object");
+                        throw new JsonException("malformed port object");
                     var prop = reader.GetString();
                     reader.Read();
                     switch (prop?.ToLowerInvariant())
                     {
-                        case "port": isPort = reader.TokenType == JsonTokenType.True; break;
                         case "allowed": allowed = reader.GetString(); break;
                         default: reader.Skip(); break;   // tolerate unknown keys; the validator judges
                     }
                 }
-                throw new JsonException("unterminated output object");
+                throw new JsonException("unterminated port object");
 
             default:
-                throw new JsonException("an output must be a string template or a { \"port\": true } object");
+                throw new JsonException("a port must be `true` or a { \"allowed\": \"…\" } object");
         }
     }
 
-    public override void Write(Utf8JsonWriter writer, OutputSpec value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, PortSpec value, JsonSerializerOptions options)
     {
-        if (value.IsPort)
+        if (string.IsNullOrWhiteSpace(value.Allowed))
         {
-            writer.WriteStartObject();
-            writer.WriteBoolean("port", true);
-            if (!string.IsNullOrWhiteSpace(value.Allowed))
-                writer.WriteString("allowed", value.Allowed);
-            writer.WriteEndObject();
+            writer.WriteBooleanValue(true);
         }
         else
         {
-            writer.WriteStringValue(value.Template ?? "");
+            writer.WriteStartObject();
+            writer.WriteString("allowed", value.Allowed);
+            writer.WriteEndObject();
         }
     }
 }

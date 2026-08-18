@@ -3,46 +3,48 @@ using Sprig.Core.Config;
 
 namespace Sprig.Tests.Config;
 
-// M1 — the map-model repo surface (provides/needs, capability-qualified references). These live
-// alongside the stack-era `inputs` during the transition; fixtures declare the current transitional
-// schema (3) and are flipped to v1 at M7.
+// The map-model repo surface (provides/needs, capability-qualified references) — schema v1. A provided
+// capability is ONE name that comes in many shapes: real ports it owns, plus derived strings over them.
 
-public class OutputSpecConverterTests
+public class PortSpecConverterTests
 {
     [Fact]
-    public void Port_output_round_trips_as_object()
+    public void Any_port_round_trips_as_true()
     {
-        var json = JsonSerializer.Serialize(OutputSpec.Port());
-        Assert.Equal("""{"port":true}""", json);
-        var back = JsonSerializer.Deserialize<OutputSpec>(json)!;
-        Assert.True(back.IsPort);
+        var json = JsonSerializer.Serialize(PortSpec.Any);
+        Assert.Equal("true", json);
+        var back = JsonSerializer.Deserialize<PortSpec>(json)!;
         Assert.Null(back.Allowed);
-        Assert.Null(back.Template);
     }
 
     [Fact]
-    public void Port_output_keeps_allowed_set()
+    public void Constrained_port_round_trips_as_object()
     {
-        var json = JsonSerializer.Serialize(OutputSpec.Port("8100-8103"));
-        Assert.Contains("\"allowed\":\"8100-8103\"", json);
-        var back = JsonSerializer.Deserialize<OutputSpec>(json)!;
-        Assert.True(back.IsPort);
+        var json = JsonSerializer.Serialize(PortSpec.Constrained("8100-8103"));
+        Assert.Equal("""{"allowed":"8100-8103"}""", json);
+        var back = JsonSerializer.Deserialize<PortSpec>(json)!;
         Assert.Equal("8100-8103", back.Allowed);
     }
 
     [Fact]
-    public void Derived_output_round_trips_as_string()
+    public void Bare_object_and_string_both_read_as_a_port()
     {
-        var json = JsonSerializer.Serialize(OutputSpec.Derived("http://localhost:${sprig.api.port}"));
-        Assert.Equal("\"http://localhost:${sprig.api.port}\"", json);
-        var back = JsonSerializer.Deserialize<OutputSpec>(json)!;
-        Assert.False(back.IsPort);
-        Assert.Equal("http://localhost:${sprig.api.port}", back.Template);
+        Assert.Null(JsonSerializer.Deserialize<PortSpec>("{}")!.Allowed);
+        Assert.Equal("8100-8103", JsonSerializer.Deserialize<PortSpec>("\"8100-8103\"")!.Allowed);
     }
 
     [Fact]
-    public void Non_bool_port_and_junk_shapes_are_rejected()
-        => Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<OutputSpec>("42"));
+    public void A_derived_shape_is_a_plain_string()
+    {
+        // Shapes carry no converter — they are ordinary JSON strings in the `shapes` map.
+        var shapes = JsonSerializer.Deserialize<Dictionary<string, string>>(
+            """{ "url": "http://localhost:${sprig.api.port}" }""")!;
+        Assert.Equal("http://localhost:${sprig.api.port}", shapes["url"]);
+    }
+
+    [Fact]
+    public void Junk_port_shapes_are_rejected()
+        => Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<PortSpec>("42"));
 }
 
 public class MapModelParseTests
@@ -53,17 +55,17 @@ public class MapModelParseTests
           "name": "acme",
           "modules": [
             { "name": "api", "path": "apps/api",
-              "provides": [ { "capability": "acme-api", "type": "http",
-                "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } } ],
+              "provides": [ { "capability": "acme-api",
+                "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
               "needs": [ { "capability": "acme-db", "as": "db" } ],
               "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}", "DB": "${sprig.db.connString}" } } ] },
             { "name": "web", "path": "apps/web",
               "needs": [ { "capability": "acme-api" } ],
               "env": [ { "file": ".env.local", "set": { "VITE_API": "${sprig.acme-api.url}" } } ] },
             { "name": "db", "path": "infra",
-              "provides": [ { "capability": "acme-db", "type": "postgres",
-                "outputs": { "port": { "port": true },
-                  "connString": "Host=localhost;Port=${sprig.acme-db.port};Database=acme" } } ] }
+              "provides": [ { "capability": "acme-db",
+                "ports": { "port": true },
+                "shapes": { "connString": "Host=localhost;Port=${sprig.acme-db.port};Database=acme" } } ] }
           ]
         }
         """;
@@ -77,16 +79,17 @@ public class MapModelParseTests
         var api = c.Modules[0];
         var apiCap = Assert.Single(api.Provides);
         Assert.Equal("acme-api", apiCap.Capability);
-        Assert.Equal("http", apiCap.Type);
-        Assert.True(apiCap.Outputs["port"].IsPort);
-        Assert.Equal("http://localhost:${sprig.acme-api.port}", apiCap.Outputs["url"].Template);
+        Assert.True(apiCap.Ports.ContainsKey("port"));
+        Assert.Equal("http://localhost:${sprig.acme-api.port}", apiCap.Shapes["url"]);
         var apiNeed = Assert.Single(api.Needs);
         Assert.Equal("acme-db", apiNeed.Capability);
         Assert.Equal("db", apiNeed.Alias);
 
         Assert.Equal("acme-api", Assert.Single(c.Modules[1].Needs).Capability);
-        Assert.Equal("acme-api", c.Modules[1].Needs[0].Alias);   // no alias → defaults to capability
-        Assert.Equal("acme-db", Assert.Single(c.Modules[2].Provides).Capability);
+        Assert.Equal("acme-api", c.Modules[1].Needs[0].Alias);   // no alias -> defaults to capability
+        var dbCap = Assert.Single(c.Modules[2].Provides);
+        Assert.Equal("acme-db", dbCap.Capability);
+        Assert.Contains("connString", dbCap.Shapes.Keys);
     }
 
     [Fact]
@@ -98,7 +101,7 @@ public class MapModelParseTests
     {
         var c = SprigConfigLoader.Parse("""
             { "schema": 1, "name": "solo",
-              "provides": [ { "capability": "solo-api", "outputs": { "port": { "port": true } } } ],
+              "provides": [ { "capability": "solo-api", "ports": { "port": true } } ],
               "needs": [ { "capability": "ext-db", "as": "db" } ],
               "env": [ { "file": ".env", "set": { "PORT": "${sprig.solo-api.port}", "DB": "${sprig.db.url}" } } ] }
             """);
@@ -116,8 +119,18 @@ public class MapModelValidationTests
     static SprigRepoConfig Repo(params ModuleDeclaration[] modules)
         => new() { Name = "r", Modules = modules };
 
-    static ProvidedCapability Cap(string name, params (string, OutputSpec)[] outputs)
-        => new() { Capability = name, Outputs = outputs.ToDictionary(o => o.Item1, o => o.Item2) };
+    // A capability's outputs, tuple-style: a PortSpec value becomes a port, a string becomes a derived shape.
+    static ProvidedCapability Cap(string name, params (string Name, object Spec)[] outputs)
+    {
+        var ports = new Dictionary<string, PortSpec>(StringComparer.Ordinal);
+        var shapes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (n, spec) in outputs)
+        {
+            if (spec is PortSpec p) ports[n] = p;
+            else shapes[n] = (string)spec;
+        }
+        return new() { Capability = name, Ports = ports, Shapes = shapes };
+    }
 
     static ModuleDeclaration Mod(string name) => new() { Name = name };
 
@@ -125,30 +138,44 @@ public class MapModelValidationTests
     public void Duplicate_provided_capability_across_modules_is_flagged()
     {
         var r = Repo(
-            Mod("a") with { Provides = [Cap("dup", ("port", OutputSpec.Port()))] },
-            Mod("b") with { Provides = [Cap("dup", ("port", OutputSpec.Port()))] });
+            Mod("a") with { Provides = [Cap("dup", ("port", PortSpec.Any))] },
+            Mod("b") with { Provides = [Cap("dup", ("port", PortSpec.Any))] });
         Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Message.Contains("duplicate provided capability"));
     }
 
     [Fact]
     public void Dotted_capability_name_is_flagged()
     {
-        var r = Repo(Mod("a") with { Provides = [Cap("bad.name", ("port", OutputSpec.Port()))] });
+        var r = Repo(Mod("a") with { Provides = [Cap("bad.name", ("port", PortSpec.Any))] });
         Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Path.Contains("capability"));
     }
 
     [Fact]
     public void Bad_allowed_port_spec_is_flagged()
     {
-        var r = Repo(Mod("a") with { Provides = [Cap("api", ("port", OutputSpec.Port("not-a-range")))] });
+        var r = Repo(Mod("a") with { Provides = [Cap("api", ("port", PortSpec.Constrained("not-a-range")))] });
         Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Path.Contains("allowed"));
     }
 
     [Fact]
-    public void Derived_output_with_empty_template_is_flagged()
+    public void A_capability_with_no_port_or_shape_is_flagged()
     {
-        var r = Repo(Mod("a") with { Provides = [Cap("api", ("url", new OutputSpec { Template = "" }))] });
-        Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Path.Contains("outputs"));
+        var r = Repo(Mod("a") with { Provides = [new ProvidedCapability { Capability = "empty" }] });
+        Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Message.Contains("at least one port or shape"));
+    }
+
+    [Fact]
+    public void Derived_shape_with_empty_template_is_flagged()
+    {
+        var r = Repo(Mod("a") with { Provides = [Cap("api", ("url", ""))] });
+        Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Path.Contains("shapes"));
+    }
+
+    [Fact]
+    public void A_port_and_a_shape_sharing_a_name_is_flagged()
+    {
+        var r = Repo(Mod("a") with { Provides = [Cap("api", ("port", PortSpec.Any), ("port", "http://x"))] });
+        Assert.Contains(SprigConfigValidator.Validate(r).Issues, i => i.Message.Contains("duplicate output name"));
     }
 
     [Fact]
@@ -156,7 +183,7 @@ public class MapModelValidationTests
     {
         var r = Repo(Mod("a") with
         {
-            Provides = [Cap("api", ("port", OutputSpec.Port()))],
+            Provides = [Cap("api", ("port", PortSpec.Any))],
             Env = [new() { File = ".env", Set = new Dictionary<string, string> { ["PORT"] = "${sprig.api.port}" } }],
         });
         Assert.True(SprigConfigValidator.Validate(r).IsValid);
@@ -165,7 +192,7 @@ public class MapModelValidationTests
     [Fact]
     public void Reference_to_a_needed_capability_output_is_accepted_unchecked()
     {
-        // The provider (and thus the output list) lives in another repo — the head must match a need; the
+        // The provider (and thus the output list) lives in another repo - the head must match a need; the
         // output ('connString') is validated at map-resolve time, not here.
         var r = Repo(Mod("a") with
         {
@@ -192,7 +219,7 @@ public class MapModelValidationTests
     {
         var r = Repo(Mod("a") with
         {
-            Provides = [Cap("api", ("port", OutputSpec.Port()))],
+            Provides = [Cap("api", ("port", PortSpec.Any))],
             Env = [new() { File = ".env", Set = new Dictionary<string, string> { ["X"] = "${sprig.api.host}" } }],
         });
         Assert.Contains("api.host", ConfigReferences.UndeclaredReferences(r));

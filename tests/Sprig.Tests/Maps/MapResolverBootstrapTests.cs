@@ -1,16 +1,16 @@
-using Sprig.Core.Git;
+﻿using Sprig.Core.Git;
 using Sprig.Core.Maps;
 using Sprig.Core.Processes;
 using Sprig.Core.Stacks;
 
 namespace Sprig.Tests.Maps;
 
-/// <summary>M5 — a map that references a repo by git URL bootstraps it on checkout: clone into the store's
+/// <summary>M5 â€” a map that references a repo by git URL bootstraps it on checkout: clone into the store's
 /// clones dir + register, so a shared map works on a machine that hasn't registered the repo.</summary>
 public class MapResolverBootstrapTests
 {
     const string Config =
-        """{ "schema": 1, "name": "solo", "provides": [ { "capability": "api", "outputs": { "port": { "port": true } } } ] }""";
+        """{ "schema": 1, "name": "solo", "provides": [ { "capability": "api", "ports": { "port": true } } ] }""";
 
     static TempGitRepo SourceRepo()
     {
@@ -31,7 +31,7 @@ public class MapResolverBootstrapTests
         using var source = SourceRepo();
         var registry = new RepoRegistryStore(store.Paths);
         var maps = new MapStore(store.Paths, registry);
-        // A URL-carrying repo (its source path stands in for a git URL) — not registered.
+        // A URL-carrying repo (its source path stands in for a git URL) â€” not registered.
         maps.Save(new MapDefinition { Name = "world", Repos = [new MapRepo { Name = "solo", Repo = source.Path }] });
 
         var (_, repos) = Resolver(store, registry, maps).Resolve("world");

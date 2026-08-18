@@ -1,4 +1,4 @@
-using Sprig.App.ViewModels;
+﻿using Sprig.App.ViewModels;
 
 namespace Sprig.Tests.App;
 
@@ -21,7 +21,7 @@ public class RepoConfigViewModelTests
             { "schema": 1, "name": "mono",
               "modules": [
                 { "name": "web", "path": "apps/web",
-                  "provides": [ { "capability": "port", "outputs": { "port": { "port": true } } } ],
+                  "provides": [ { "capability": "port", "ports": { "port": true } } ],
                   "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.port.port}" } } ],
                   "setup": [ "npm ci" ] },
                 { "name": "api", "path": "apps/api",
@@ -63,6 +63,28 @@ public class RepoConfigViewModelTests
         Assert.Equal("", module.Path);
         Assert.False(module.HasPath);
         Assert.True(module.HasEnv);
+    }
+
+    [Fact]
+    public void An_old_schema_config_parses_but_surfaces_a_fixable_validation_warning()
+    {
+        using var s = new TempStore();
+        // The pre-"ports/shapes" shape: a capability whose only output is the old `outputs` port. It still
+        // parses (unknown keys are ignored), leaving a capability with no port or shape — invalid, but the
+        // preview must degrade to a fixable warning, not throw.
+        var dir = WriteConfig(s, """
+            { "schema": 1, "name": "Sprig.Identity.Spa",
+              "modules": [ { "name": "app", "path": "",
+                "provides": [ { "capability": "vite-port", "outputs": { "port": { "port": true } } } ],
+                "env": [ { "file": ".env.template", "set": { "VITE_PORT": "${sprig.vite-port.port}" } } ] } ] }
+            """);
+
+        var vm = RepoConfigViewModel.Load(dir);
+
+        Assert.True(vm.Ok);                     // it parsed — not a hard read/JSON failure
+        Assert.False(vm.IsValid);               // but it's invalid, so a checkout must not be offered
+        Assert.True(vm.HasValidationError);
+        Assert.Contains("at least one port or shape", vm.ValidationError);
     }
 
     [Fact]

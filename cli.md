@@ -50,10 +50,10 @@ wired automatically with no map bindings.
 $Repo = "$env:TEMP\acme"
 New-Item -ItemType Directory -Force "$Repo\apps\api", "$Repo\apps\web" | Out-Null
 @'
-{ "schema": 3, "name": "acme", "modules": [
+{ "schema": 1, "name": "acme", "modules": [
   { "name": "api", "path": "apps/api",
     "provides": [ { "capability": "acme-api",
-      "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } } ],
+      "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } } ],
     "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}" } } ] },
   { "name": "web", "path": "apps/web",
     "needs": [ { "capability": "acme-api" } ],
@@ -148,8 +148,8 @@ Repo config (`.sprig.json`) shape in the map model:
   "schema": 3,                        // transitional; becomes 1 when stacks are retired (M7)
   "name": "acme",
   "provides": [                       // single-app sugar; a monorepo uses "modules" instead
-    { "capability": "acme-api", "type": "http",
-      "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.acme-api.port}" } }
+    { "capability": "acme-api",
+      "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.acme-api.port}" } }
   ],
   "needs": [ { "capability": "acme-db", "as": "db" } ],
   "env": [ { "file": ".env", "set": { "PORT": "${sprig.acme-api.port}", "DB": "${sprig.db.connString}" } } ]

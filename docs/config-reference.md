@@ -35,30 +35,27 @@ Each entry is a **capability** this module owns and hands to others. Capabilitie
 between repos by **name** (the contract), so a provider and a consumer only have to agree on the
 name.
 
+A capability is **one name that comes in many shapes**. It owns real **ports** (the one thing a repo
+genuinely owns — auto-allocated per workspace) and exposes **shapes**: derived strings built over
+those ports (a url, a connection string). Both are addressed uniformly as
+`${sprig.<capability>.<output>}`, where `<output>` is a port or a shape name — so **name the service,
+not the socket**: `vite-server.port` reads as a hierarchy, while `vite-port.port` stutters.
+
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `capability` | string | yes | The contract name. Referenced as `${sprig.<capability>.<output>}`; the wiring key other repos' `needs` match against. |
-| `type` | string | no | A non-binding hint (e.g. `http`, `postgres`) used only for UI grouping/affordances. Wiring never depends on it. |
-| `outputs` | object | yes | `output-name → spec`. The concrete values consumers reference. |
+| `capability` | string | yes | The contract name — the head of every `${sprig.<capability>.<output>}` reference and the wiring key other repos' `needs` match against. Name the *service* (`vite-server`), not one of its shapes. |
+| `ports` | object | one of `ports`/`shapes` | `port-name → spec`. Real, non-colliding host ports allocated per workspace. Each spec is `true` (any host port) or `{ "allowed": "8100-8103" }` (pinned — see below). The app always exports a single port named `port`. |
+| `shapes` | object | one of `ports`/`shapes` | `shape-name → template`. Derived strings built from this capability's **own** ports (plus `${sprig.workspace}`), e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. |
 
-Each **output spec** is one of two shapes:
-
-- **A port** — `{ "port": true }` (optionally pinned, see [`allowed`](#allowed--pin-a-port-to-a-fixed-set)).
-  sprig allocates a real, non-colliding host port per workspace. This is the only value a repo
-  genuinely *owns*.
-- **A derived string** — a template built from **this capability's own** port outputs (plus
-  `${sprig.workspace}`), e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. Handy for
-  handing a consumer a finished URL/connection string rather than a bare number.
-
-A provided output is referenced anywhere in the repo as `${sprig.<capability>.<output>}`.
+A capability must declare at least one port **or** shape; port and shape names share one namespace
+(a name is one or the other, never both). Any output is referenced anywhere in the repo as
+`${sprig.<capability>.<output>}`.
 
 ```jsonc
 "provides": [
-  { "capability": "api", "type": "http",
-    "outputs": {
-      "port": { "port": true },
-      "url":  "http://localhost:${sprig.api.port}"
-    } }
+  { "capability": "vite-server",
+    "ports":  { "port": true },
+    "shapes": { "url": "http://localhost:${sprig.vite-server.port}" } }
 ]
 ```
 
@@ -66,11 +63,11 @@ A provided output is referenced anywhere in the repo as `${sprig.<capability>.<o
 
 By default a provided port is drawn from the whole range configured in **Settings**. Some ports are
 special — the classic case is an Auth0 front end whose callback URLs
-(`http://localhost:<port>/callback`) must be pre-registered per port. Set `allowed` on the port
-output and sprig only ever allocates from that set:
+(`http://localhost:<port>/callback`) must be pre-registered per port. Give the port an object with an
+`allowed` set instead of bare `true`, and sprig only ever allocates from that set:
 
 ```jsonc
-"outputs": { "port": { "port": true, "allowed": "8100-8103" } }
+"ports": { "port": { "allowed": "8100-8103" } }
 ```
 
 - **Spec syntax:** a comma-separated list of single ports and inclusive ranges — `"8100-8103"`,
@@ -217,10 +214,10 @@ and a `db` capability (its database's host port), and owns the compose file that
   "modules": [
     { "name": "app",
       "provides": [
-        { "capability": "api", "type": "http",
-          "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.api.port}" } },
-        { "capability": "db", "type": "postgres",
-          "outputs": { "port": { "port": true } } }
+        { "capability": "api",
+          "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.api.port}" } },
+        { "capability": "db",
+          "ports": { "port": true } }
       ],
       "env": [
         { "file": ".env", "set": {
@@ -250,7 +247,7 @@ finished `url` its provider derives — so it never has to know the API's port.
   "name": "vue-web",
   "modules": [
     { "name": "app",
-      "provides": [ { "capability": "web", "outputs": { "port": { "port": true } } } ],
+      "provides": [ { "capability": "web", "ports": { "port": true } } ],
       "needs":    [ { "capability": "api" } ],
       "env": [
         { "file": ".env", "set": {
@@ -277,8 +274,8 @@ because the provider is a sibling in the *same* repo, it wires **locally** with 
     { "name": "api", "path": "apps/api",
       "provides": [
         { "capability": "mono-api",
-          "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.mono-api.port}" } },
-        { "capability": "db", "outputs": { "port": { "port": true } } }
+          "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.mono-api.port}" } },
+        { "capability": "db", "ports": { "port": true } }
       ],
       "env": [ { "file": ".env", "set": { "PORT": "${sprig.mono-api.port}" } } ],
       "compose": [ { "file": "docker-compose.yml", "overrides": [
@@ -287,7 +284,7 @@ because the provider is a sibling in the *same* repo, it wires **locally** with 
       "setup": [ "dotnet restore" ] },
 
     { "name": "web", "path": "apps/web",
-      "provides": [ { "capability": "web", "outputs": { "port": { "port": true } } } ],
+      "provides": [ { "capability": "web", "ports": { "port": true } } ],
       "needs":    [ { "capability": "mono-api" } ],
       "env": [ { "file": ".env.local", "templates": [".env"], "set": {
           "VITE_PORT": "${sprig.web.port}",
@@ -310,7 +307,7 @@ port.
   "name": "auth0-spa",
   "modules": [
     { "name": "app",
-      "provides": [ { "capability": "web", "outputs": { "port": { "port": true, "allowed": "8100-8103" } } } ],
+      "provides": [ { "capability": "web", "ports": { "port": { "allowed": "8100-8103" } } } ],
       "env": [ { "file": ".env", "set": { "PORT": "${sprig.web.port}" } } ]
     }
   ]
@@ -411,8 +408,7 @@ provide `api`, you'd instead add a `wiring` entry naming the winner.)
 
 When you check out (or `create`) a workspace from a map slice, sprig:
 
-1. Allocates a real, non-colliding number for each `{ "port": true }` provided output across the
-   selected repos.
+1. Allocates a real, non-colliding number for each provided `port` across the selected repos.
 2. Resolves each module's `needs` to a provider — nearest-wins sibling, then a single map-wide
    provider, then the map's `wiring`/`defaults`. An unmet need is a **hard failure** with rollback and
    the gap list.

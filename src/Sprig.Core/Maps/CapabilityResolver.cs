@@ -43,19 +43,18 @@ public static class CapabilityResolver
     /// (<c>repo</c> unique in a map, <c>capability</c> unique in a repo, <c>output</c> unique in a capability).</summary>
     public static string PortName(string repo, string capability, string output) => $"{repo}.{capability}.{output}";
 
-    /// <summary>Every port the selection needs allocated: one per <c>{ "port": true }</c> output across every
-    /// module of every selected repo (a provider needs its port to <i>run</i>, regardless of who consumes it).</summary>
+    /// <summary>Every port the selection needs allocated: one per declared <c>port</c> across every module of
+    /// every selected repo (a provider needs its port to <i>run</i>, regardless of who consumes it).</summary>
     public static IReadOnlyList<PortRequest> PortRequests(IReadOnlyList<ResolvedRepo> repos)
     {
         var requests = new List<PortRequest>();
         foreach (var repo in repos)
             foreach (var module in repo.Config.EffectiveModules)
                 foreach (var cap in module.Provides)
-                    foreach (var (output, spec) in cap.Outputs)
-                        if (spec.IsPort)
-                            requests.Add(new PortRequest(
-                                PortName(repo.Name, cap.Capability, output),
-                                string.IsNullOrWhiteSpace(spec.Allowed) ? null : PortSetSpec.Parse(spec.Allowed!)));
+                    foreach (var (output, spec) in cap.Ports)
+                        requests.Add(new PortRequest(
+                            PortName(repo.Name, cap.Capability, output),
+                            string.IsNullOrWhiteSpace(spec.Allowed) ? null : PortSetSpec.Parse(spec.Allowed!)));
         return requests;
     }
 
@@ -146,38 +145,32 @@ public static class CapabilityResolver
         unsatisfied.Add(new UnsatisfiedNeed(repo, moduleName, need.Capability));
     }
 
-    /// <summary>Resolve every provider's outputs to concrete strings: a port output is its allocated number;
-    /// a derived output is its template resolved against the capability's own outputs (+ <c>workspace</c>).</summary>
+    /// <summary>Resolve every provider's outputs to concrete strings: a port is its allocated number; a
+    /// derived shape is its template resolved against the capability's own outputs (+ <c>workspace</c>).</summary>
     static IReadOnlyDictionary<(string, string), IReadOnlyDictionary<string, string>> ResolveProviderOutputs(
         IReadOnlyList<Provider> providers, IReadOnlyDictionary<string, int> allocatedPorts, string workspace)
     {
         var result = new Dictionary<(string, string), IReadOnlyDictionary<string, string>>();
         foreach (var p in providers)
         {
-            // Self-scope: the capability's own outputs (ports as numbers, derived as raw templates) + workspace.
+            // Self-scope: the capability's own outputs (ports as numbers, shapes as raw templates) + workspace.
             var raw = new Dictionary<string, string>(StringComparer.Ordinal) { ["workspace"] = workspace };
-            foreach (var (output, spec) in p.Cap.Outputs)
+            foreach (var (output, _) in p.Cap.Ports)
             {
-                var key = $"{p.Capability}.{output}";
-                if (spec.IsPort)
-                {
-                    var lease = PortName(p.Repo, p.Capability, output);
-                    if (!allocatedPorts.TryGetValue(lease, out var number))
-                        throw new MapResolutionException($"port '{lease}' was not allocated before resolve");
-                    raw[key] = number.ToString(CultureInfo.InvariantCulture);
-                }
-                else
-                {
-                    raw[key] = spec.Template ?? "";
-                }
+                var lease = PortName(p.Repo, p.Capability, output);
+                if (!allocatedPorts.TryGetValue(lease, out var number))
+                    throw new MapResolutionException($"port '{lease}' was not allocated before resolve");
+                raw[$"{p.Capability}.{output}"] = number.ToString(CultureInfo.InvariantCulture);
             }
+            foreach (var (output, template) in p.Cap.Shapes)
+                raw[$"{p.Capability}.{output}"] = template;
 
             var source = new DictionaryVariableSource(raw);
             var outputs = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (output, spec) in p.Cap.Outputs)
-                outputs[output] = spec.IsPort
-                    ? raw[$"{p.Capability}.{output}"]
-                    : SubstitutionEngine.Resolve(spec.Template ?? "", source);
+            foreach (var (output, _) in p.Cap.Ports)
+                outputs[output] = raw[$"{p.Capability}.{output}"];
+            foreach (var (output, template) in p.Cap.Shapes)
+                outputs[output] = SubstitutionEngine.Resolve(template, source);
             result[(p.Repo, p.Capability)] = outputs;
         }
         return result;

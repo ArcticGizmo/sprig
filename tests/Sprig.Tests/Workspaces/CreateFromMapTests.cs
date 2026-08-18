@@ -1,4 +1,4 @@
-using Sprig.Core.Compose;
+﻿using Sprig.Core.Compose;
 using Sprig.Core.Config;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
@@ -11,7 +11,7 @@ using Sprig.Core.Workspaces;
 
 namespace Sprig.Tests.Workspaces;
 
-/// <summary>M4 — CreateFromMap materialises a map selection: worktrees, per-module env/compose against each
+/// <summary>M4 â€” CreateFromMap materialises a map selection: worktrees, per-module env/compose against each
 /// module's capability scope, setup, and a record carrying the map + selection. Local (sibling) wiring
 /// resolves entirely within the repo; an unmet need fails with rollback.</summary>
 public class CreateFromMapTests
@@ -23,7 +23,7 @@ public class CreateFromMapTests
           "modules": [
             { "name": "api", "path": "apps/api",
               "provides": [ { "capability": "mono-api",
-                "outputs": { "port": { "port": true }, "url": "http://localhost:${sprig.mono-api.port}" } } ],
+                "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.mono-api.port}" } } ],
               "env": [ { "file": ".env", "set": { "PORT": "${sprig.mono-api.port}" } } ],
               "compose": [ { "file": "docker-compose.yml", "overrides": [
                   { "path": ["services","api","ports","0"], "template": "${sprig.mono-api.port}:3000" } ] } ] },
@@ -87,7 +87,7 @@ public class CreateFromMapTests
         var created = svc.CreateFromMap("feat-a", null, [Resolve(repo)]);
         var port = created.Ports["mono.mono-api.port"];
 
-        // Claim cuts a branch, resets to base, and reapplies env/compose — for a map workspace that means
+        // Claim cuts a branch, resets to base, and reapplies env/compose â€” for a map workspace that means
         // rebuilding each module's scope from the stored InstanceModule values (no map re-resolution).
         var claimed = svc.Claim("feat-a", "work", fresh: false);
         var worktree = repo.SiblingWorktree("feat-a");
@@ -102,7 +102,7 @@ public class CreateFromMapTests
     {
         using var store = new TempStore();
         using var repo = new TempGitRepo();
-        // A single module that NEEDS a capability nobody provides — an unsatisfiable selection.
+        // A single module that NEEDS a capability nobody provides â€” an unsatisfiable selection.
         File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), """
             { "schema": 1, "name": "mono",
               "modules": [ { "name": "web", "path": "apps/web",

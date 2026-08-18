@@ -1,10 +1,10 @@
-using Sprig.Core.Config;
+﻿using Sprig.Core.Config;
 
 namespace Sprig.Tests.Config;
 
 public class SprigConfigLoaderTests
 {
-    // A realistic, valid single-app (flat) config — its env/compose reference only ${sprig.workspace}.
+    // A realistic, valid single-app (flat) config â€” its env/compose reference only ${sprig.workspace}.
     const string ValidJson = """
         {
           "schema": 1,
@@ -80,7 +80,7 @@ public class SprigConfigValidatorTests
             {
               "schema": 1, "name": "dotnet-api",
               "modules": [ { "name": "app", "path": "",
-                "provides": [ { "capability": "web", "outputs": { "port": { "port": true } } } ],
+                "provides": [ { "capability": "web", "ports": { "port": true } } ],
                 "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.web.port}" } } ],
                 "compose": [ { "file": "docker-compose.yml", "overrides": [
                   { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] } ] } ]
@@ -150,7 +150,7 @@ public class SprigConfigValidatorTests
             Modules =
             [
                 new ModuleDeclaration { Name = "web", Path = "apps/web",
-                    Provides = [new ProvidedCapability { Capability = "web", Outputs = new Dictionary<string, OutputSpec> { ["port"] = OutputSpec.Port() } }],
+                    Provides = [new ProvidedCapability { Capability = "web", Ports = new Dictionary<string, PortSpec> { ["port"] = PortSpec.Any } }],
                     Env = [new() { File = ".env.local", Set = new Dictionary<string, string> { ["PORT"] = "${sprig.web.port}" } }] },
                 new ModuleDeclaration { Name = "api", Path = "apps/api",
                     Setup = ["dotnet restore"] },
@@ -232,7 +232,7 @@ public class SprigConfigValidatorTests
 
 // Schema v1: there is no migration. A single-app config may write env/compose/setup at the top level
 // instead of inside a module, and SprigRepoConfig.EffectiveModules surfaces that as one implicit "app"
-// module — so every consumer sees a single module shape without the file being rewritten.
+// module â€” so every consumer sees a single module shape without the file being rewritten.
 public class FlatConfigSugarTests
 {
     const string Flat = """
@@ -251,10 +251,10 @@ public class FlatConfigSugarTests
     {
         var c = SprigConfigLoader.Parse(Flat);
 
-        // The file keeps its flat shape (no migration rewrites it) …
+        // The file keeps its flat shape (no migration rewrites it) â€¦
         Assert.Equal(1, c.Schema);
         Assert.Empty(c.Modules);
-        // … but EffectiveModules folds it into one "app" module every consumer iterates.
+        // â€¦ but EffectiveModules folds it into one "app" module every consumer iterates.
         var m = Assert.Single(c.EffectiveModules);
         Assert.Equal("app", m.Name);
         Assert.Equal("", m.Path);

@@ -15,8 +15,18 @@ public class CapabilityResolverTests
     static ModuleDeclaration Mod(string name, IReadOnlyList<ProvidedCapability>? provides = null, IReadOnlyList<Need>? needs = null)
         => new() { Name = name, Provides = provides ?? [], Needs = needs ?? [] };
 
-    static ProvidedCapability Cap(string cap, params (string, OutputSpec)[] outputs)
-        => new() { Capability = cap, Outputs = outputs.ToDictionary(o => o.Item1, o => o.Item2) };
+    // A capability's outputs, tuple-style: a PortSpec value becomes a port, a string becomes a derived shape.
+    static ProvidedCapability Cap(string cap, params (string Name, object Spec)[] outputs)
+    {
+        var ports = new Dictionary<string, PortSpec>(StringComparer.Ordinal);
+        var shapes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (n, spec) in outputs)
+        {
+            if (spec is PortSpec p) ports[n] = p;
+            else shapes[n] = (string)spec;
+        }
+        return new() { Capability = cap, Ports = ports, Shapes = shapes };
+    }
 
     static IReadOnlyDictionary<string, int> Allocate(params ResolvedRepo[] repos)
     {
@@ -34,13 +44,13 @@ public class CapabilityResolverTests
 
     // A postgres-shaped provider: a port + a connString derived from it.
     static ProvidedCapability Postgres(string cap)
-        => Cap(cap, ("port", OutputSpec.Port()),
-                    ("connString", OutputSpec.Derived($"Host=localhost;Port=${{sprig.{cap}.port}};Database=app")));
+        => Cap(cap, ("port", PortSpec.Any),
+                    ("connString", $"Host=localhost;Port=${{sprig.{cap}.port}};Database=app"));
 
     // An http-shaped provider: a port + a url derived from it.
     static ProvidedCapability Http(string cap)
-        => Cap(cap, ("port", OutputSpec.Port()),
-                    ("url", OutputSpec.Derived($"http://localhost:${{sprig.{cap}.port}}")));
+        => Cap(cap, ("port", PortSpec.Any),
+                    ("url", $"http://localhost:${{sprig.{cap}.port}}"));
 
     // ---- tests ----------------------------------------------------------------------------------
 
@@ -196,7 +206,7 @@ public class CapabilityResolverTests
     [Fact]
     public void A_ports_allowed_set_flows_into_the_request()
     {
-        var repo = Repo("a", Mod("app", provides: [Cap("api", ("port", OutputSpec.Port("8100-8103")))]));
+        var repo = Repo("a", Mod("app", provides: [Cap("api", ("port", PortSpec.Constrained("8100-8103")))]));
         var request = Assert.Single(CapabilityResolver.PortRequests([repo]));
         Assert.NotNull(request.Allowed);
         Assert.Equal([8100, 8101, 8102, 8103], request.Allowed!.OrderBy(p => p));
@@ -218,7 +228,7 @@ public class CapabilityResolverTests
     [Fact]
     public void A_self_referential_derived_output_is_a_cycle_error()
     {
-        var repo = Repo("a", Mod("app", provides: [Cap("api", ("loop", OutputSpec.Derived("${sprig.api.loop}")))]));
+        var repo = Repo("a", Mod("app", provides: [Cap("api", ("loop", "${sprig.api.loop}"))]));
         Assert.Throws<SubstitutionException>(() => CapabilityResolver.Resolve("ws", null, [repo], Allocate(repo)));
     }
 }

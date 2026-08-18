@@ -26,46 +26,90 @@ public partial class SetupCommandRow : ObservableObject
     [RelayCommand] private void Remove() => _remove(this);
 }
 
-/// <summary>One editable output of a provided capability (map model): either an allocated <b>port</b>
-/// (optionally pinned to an <see cref="Allowed"/> set) or a <b>derived</b> string <see cref="Template"/>.</summary>
-public partial class OutputEditRow : ObservableObject
+/// <summary>The single, permanent PORT of a provided capability — the one real resource a repo owns, an
+/// auto-allocated host port optionally pinned to an <see cref="Allowed"/> set. Every capability exports
+/// exactly one, always named <c>port</c>; it can't be added, removed or renamed, so it's the fixed anchor
+/// the whole <c>${sprig.&lt;cap&gt;.…}</c> hierarchy hangs off. <see cref="Ref"/> renders the exact token.</summary>
+public partial class PortEditRow : ObservableObject
 {
-    readonly Action<OutputEditRow> _remove;
-    public OutputEditRow(Action<OutputEditRow> remove) => _remove = remove;
+    /// <summary>Fixed at <c>port</c> — never editable.</summary>
+    public string Name => "port";
 
-    [ObservableProperty] private string _name = "";
-
-    /// <summary>True = an auto-allocated port; false = a derived string template.</summary>
-    [ObservableProperty] private bool _isPort = true;
-
-    /// <summary>For a port output: an optional restriction spec (e.g. <c>8100-8103</c>).</summary>
+    /// <summary>Optional restriction spec (e.g. <c>8100-8103</c>); blank = the whole settings range.</summary>
     [ObservableProperty] private string _allowed = "";
 
-    /// <summary>For a derived output: the template (e.g. <c>http://localhost:${sprig.api.port}</c>).</summary>
+    /// <summary>The owning capability name, pushed down by the parent so the row can render its full token.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _head = "";
+
+    /// <summary>The reference a consumer types for this port: <c>${sprig.&lt;head&gt;.port}</c>.</summary>
+    public string Ref => ProvideEditRow.Token(Head, Name);
+}
+
+/// <summary>One editable derived SHAPE of a provided capability (map model): a string <see cref="Template"/>
+/// built over the capability's ports (a url, a connString). <see cref="Ref"/> renders the exact
+/// <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c> a consumer types.</summary>
+public partial class ShapeEditRow : ObservableObject
+{
+    readonly Action<ShapeEditRow> _remove;
+    public ShapeEditRow(Action<ShapeEditRow> remove) => _remove = remove;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _name = "";
+
+    /// <summary>The template (e.g. <c>http://localhost:${sprig.vite-server.port}</c>).</summary>
     [ObservableProperty] private string _template = "";
 
-    public bool IsDerived => !IsPort;
-    partial void OnIsPortChanged(bool value) => OnPropertyChanged(nameof(IsDerived));
+    /// <summary>The owning capability name, pushed down by the parent (see <see cref="PortEditRow.Head"/>).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ref))]
+    private string _head = "";
+
+    /// <summary>The reference a consumer types for this shape: <c>${sprig.&lt;head&gt;.&lt;name&gt;}</c>.</summary>
+    public string Ref => ProvideEditRow.Token(Head, Name);
 
     [RelayCommand] private void Remove() => _remove(this);
 }
 
-/// <summary>One editable provided capability (map model): a contract name, an optional type hint, and its
-/// named outputs.</summary>
+/// <summary>One editable provided capability, shaped for the "one name, many shapes" editor: a contract
+/// <see cref="Capability"/> name (the head of every <c>${sprig.&lt;name&gt;.…}</c> reference), its single
+/// permanent <see cref="Port"/> (the anchor — the real resource, always exported), and its derived
+/// <see cref="Shapes"/> (formulas over that port).</summary>
 public partial class ProvideEditRow : ObservableObject
 {
     readonly Action<ProvideEditRow> _remove;
     public ProvideEditRow(Action<ProvideEditRow> remove) => _remove = remove;
 
+    /// <summary>The service name — name the service (<c>vite-server</c>), not one of its shapes.</summary>
     [ObservableProperty] private string _capability = "";
-    [ObservableProperty] private string _type = "";
 
-    public ObservableCollection<OutputEditRow> Outputs { get; } = [];
+    /// <summary>The one, always-present port anchor (fixed name <c>port</c>).</summary>
+    public PortEditRow Port { get; } = new();
 
-    [RelayCommand] private void AddOutput() =>
-        Outputs.Add(new OutputEditRow(r => Outputs.Remove(r)) { Name = "port", IsPort = true });
+    public ObservableCollection<ShapeEditRow> Shapes { get; } = [];
+
+    /// <summary>Keep the port and every shape's rendered token in step as the capability name is typed.</summary>
+    partial void OnCapabilityChanged(string value)
+    {
+        Port.Head = value;
+        foreach (var s in Shapes) s.Head = value;
+    }
+
+    [RelayCommand] private void AddShape() =>
+        Shapes.Add(new ShapeEditRow(r => Shapes.Remove(r)) { Head = Capability });
 
     [RelayCommand] private void Remove() => _remove(this);
+
+    /// <summary>The reference token for an output <paramref name="name"/> under <paramref name="head"/>:
+    /// <c>${sprig.head.name}</c>, with a <c>…</c> placeholder while either half is still blank.</summary>
+    public static string Token(string? head, string? name)
+    {
+        var h = string.IsNullOrWhiteSpace(head) ? "…" : head!.Trim();
+        var n = string.IsNullOrWhiteSpace(name) ? "…" : name!.Trim();
+        return $"${{sprig.{h}.{n}}}";
+    }
 }
 
 /// <summary>One editable needed capability (map model): the contract name and an optional local alias.</summary>
@@ -530,12 +574,9 @@ public partial class ModuleEditTab : ObservableObject
         _owner.DetectComposeOverrides,
         _owner.SprigVariableNames, _owner.SprigNeededCapabilities);
 
-    [RelayCommand] private void AddProvide()
-    {
-        var p = new ProvideEditRow(r => Provides.Remove(r));
-        p.Outputs.Add(new OutputEditRow(r => p.Outputs.Remove(r)) { Name = "port", IsPort = true });
-        Provides.Add(p);
-    }
+    // A fresh capability already carries its permanent port anchor — the user only names it and, optionally,
+    // adds derived shapes.
+    [RelayCommand] private void AddProvide() => Provides.Add(new ProvideEditRow(r => Provides.Remove(r)));
 
     [RelayCommand] private void AddNeed() => Needs.Add(new NeedEditRow(r => Needs.Remove(r)));
     [RelayCommand] private void AddEnvFile() => Env.Add(NewEnvRow());
@@ -574,24 +615,26 @@ public partial class ModuleEditTab : ObservableObject
         RaiseCapabilitySurfaceChanged();
     }
 
+    // The port anchor never moves the reference surface (its name is the fixed "port"), so only the
+    // capability rename and the derived shapes are watched.
     void SubscribeProvide(ProvideEditRow p)
     {
         p.PropertyChanged += OnProvideFieldChanged;          // Capability rename
-        p.Outputs.CollectionChanged += OnOutputsChanged;
-        foreach (var o in p.Outputs) o.PropertyChanged += OnOutputFieldChanged;
+        p.Shapes.CollectionChanged += OnOutputsChanged;
+        foreach (var s in p.Shapes) s.PropertyChanged += OnOutputFieldChanged;
     }
 
     void UnsubscribeProvide(ProvideEditRow p)
     {
         p.PropertyChanged -= OnProvideFieldChanged;
-        p.Outputs.CollectionChanged -= OnOutputsChanged;
-        foreach (var o in p.Outputs) o.PropertyChanged -= OnOutputFieldChanged;
+        p.Shapes.CollectionChanged -= OnOutputsChanged;
+        foreach (var s in p.Shapes) s.PropertyChanged -= OnOutputFieldChanged;
     }
 
     void OnOutputsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.OldItems is not null) foreach (OutputEditRow o in e.OldItems) o.PropertyChanged -= OnOutputFieldChanged;
-        if (e.NewItems is not null) foreach (OutputEditRow o in e.NewItems) o.PropertyChanged += OnOutputFieldChanged;
+        if (e.OldItems is not null) foreach (INotifyPropertyChanged o in e.OldItems) o.PropertyChanged -= OnOutputFieldChanged;
+        if (e.NewItems is not null) foreach (INotifyPropertyChanged o in e.NewItems) o.PropertyChanged += OnOutputFieldChanged;
         RaiseCapabilitySurfaceChanged();
     }
 
@@ -600,9 +643,10 @@ public partial class ModuleEditTab : ObservableObject
         if (e.PropertyName == nameof(ProvideEditRow.Capability)) RaiseCapabilitySurfaceChanged();
     }
 
+    // Only a rename of a port/shape moves the reference surface — a Head/Allowed/Template edit doesn't.
     void OnOutputFieldChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(OutputEditRow.Name)) RaiseCapabilitySurfaceChanged();
+        if (e.PropertyName == nameof(PortEditRow.Name)) RaiseCapabilitySurfaceChanged();
     }
 
     void OnNeedsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -693,14 +737,15 @@ public partial class RepoEditViewModel : ObservableObject
             var tab = new ModuleEditTab(vm, m.Name, m.Path);
             foreach (var p in m.Provides)
             {
-                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability, Type = p.Type ?? "" };
-                foreach (var (outName, spec) in p.Outputs)
-                    pr.Outputs.Add(new OutputEditRow(r => pr.Outputs.Remove(r))
+                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability };
+                // One permanent port; adopt the allowed set from whatever port the config declared (if any).
+                if (p.Ports.Count > 0) pr.Port.Allowed = p.Ports.First().Value.Allowed ?? "";
+                foreach (var (shapeName, template) in p.Shapes)
+                    pr.Shapes.Add(new ShapeEditRow(r => pr.Shapes.Remove(r))
                     {
-                        Name = outName,
-                        IsPort = spec.IsPort,
-                        Allowed = spec.Allowed ?? "",
-                        Template = spec.Template ?? "",
+                        Name = shapeName,
+                        Template = template,
+                        Head = p.Capability,
                     });
                 tab.Provides.Add(pr);
             }
@@ -800,10 +845,14 @@ public partial class RepoEditViewModel : ObservableObject
             {
                 var cap = p.Capability.Trim();
                 if (cap.Length == 0) continue;
-                foreach (var o in p.Outputs)
+                var port = $"{cap}.port";                    // the always-present anchor
+                if (!names.Contains(port)) names.Add(port);
+                foreach (var s in p.Shapes)
                 {
-                    var full = $"{cap}.{o.Name.Trim()}";
-                    if (o.Name.Trim().Length > 0 && !names.Contains(full)) names.Add(full);
+                    var nm = s.Name.Trim();
+                    if (nm.Length == 0) continue;
+                    var full = $"{cap}.{nm}";
+                    if (!names.Contains(full)) names.Add(full);
                 }
             }
             foreach (var n in tab.Needs)
@@ -968,13 +1017,12 @@ public partial class RepoEditViewModel : ObservableObject
             Provides = t.Provides.Select(p => new ProvidedCapability
             {
                 Capability = p.Capability.Trim(),
-                Type = Blank(p.Type),
-                Outputs = p.Outputs
-                    .Where(o => o.Name.Trim().Length > 0)
-                    .ToDictionary(
-                        o => o.Name.Trim(),
-                        o => o.IsPort ? OutputSpec.Port(Blank(o.Allowed)) : OutputSpec.Derived(o.Template.Trim()),
-                        StringComparer.Ordinal),
+                // Exactly one port, always named "port" — the permanent anchor.
+                Ports = new Dictionary<string, PortSpec>(StringComparer.Ordinal)
+                    { ["port"] = PortSpec.Constrained(Blank(p.Port.Allowed)) },
+                Shapes = p.Shapes
+                    .Where(s => s.Name.Trim().Length > 0)
+                    .ToDictionary(s => s.Name.Trim(), s => s.Template.Trim(), StringComparer.Ordinal),
             }).ToList(),
             Needs = t.Needs
                 .Where(n => n.Capability.Trim().Length > 0)

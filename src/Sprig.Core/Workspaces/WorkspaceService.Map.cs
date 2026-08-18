@@ -12,6 +12,34 @@ namespace Sprig.Core.Workspaces;
 /// </summary>
 public sealed partial class WorkspaceService
 {
+    /// <summary>The ordered checklist <see cref="CreateFromMap"/> works through, computed up front so a UI/CLI
+    /// can show every row before execution starts. Mirrors <see cref="PlanCreate"/> but for the map path, whose
+    /// step sequence differs: env + compose share one "Apply environment" step per repo (there is no separate
+    /// compose row). Runs the same cheap pre-flight (name + duplicate) so a bad name fails here, not mid-run.</summary>
+    public IReadOnlyList<WorkspaceStep> PlanCreateFromMap(IReadOnlyList<ResolvedRepo> repos, string workspace)
+    {
+        ValidateName(workspace);
+        if (repos.Count == 0)
+            throw new WorkspaceException("nothing to create: no repos selected");
+        if (instances.TryLoad(workspace) is not null)
+            throw new WorkspaceException($"workspace '{workspace}' already exists");
+
+        var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
+        foreach (var repo in repos)
+        {
+            steps.Add(new(CreateStepIds.Worktree(repo.Name), $"Create worktree — {repo.Name}"));
+            steps.Add(new(CreateStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
+            if (HasSetup(repo))
+            {
+                steps.Add(new(CreateStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
+                foreach (var cmd in SetupCommands(repo))
+                    steps.Add(new(CreateStepIds.SetupCommand(repo.Name, cmd.Index), cmd.Command) { SubStep = true });
+            }
+        }
+        steps.Add(new(CreateStepIds.Record, "Save workspace record"));
+        return steps;
+    }
+
     /// <summary>
     /// Create an isolated workspace from a map and a selected repo set. Rolls back on failure. An unmet
     /// need (no provider in the selection, no inline literal, no map default) is a hard failure with the

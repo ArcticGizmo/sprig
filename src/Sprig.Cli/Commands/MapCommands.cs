@@ -72,49 +72,5 @@ public sealed class MapShowCommand(CliContext cli) : Command<MapShowCommand.Sett
     }
 }
 
-[Description("Create a workspace from a map (selecting a slice of its repos)")]
-public sealed class MapCreateCommand(CliContext cli) : Command<MapCreateCommand.Settings>
-{
-    public sealed class Settings : GlobalSettings
-    {
-        [CommandArgument(0, "<workspace>")]
-        [Description("Name for the new workspace")]
-        public string Workspace { get; set; } = "";
-
-        [CommandOption("--map <name>")]
-        [Description("The map to check out from")]
-        public string Map { get; set; } = "";
-
-        [CommandOption("--without <repos>")]
-        [Description("Comma-separated repos to leave out of this workspace")]
-        public string? Without { get; set; }
-
-        [CommandOption("--from <ref>")]
-        [Description("Start point for the parked worktrees (defaults to each repo's base)")]
-        public string? From { get; set; }
-    }
-
-    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
-    {
-        if (string.IsNullOrWhiteSpace(s.Map))
-            throw new Core.Maps.MapException("a map is required: --map <name>");
-
-        var without = string.IsNullOrWhiteSpace(s.Without)
-            ? null
-            : s.Without.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var (map, repos) = cli.MapResolver.Resolve(s.Map, without);
-        var record = cli.Workspaces.CreateFromMap(s.Workspace, map, repos, startPoint: s.From);
-
-        return CliOutput.Ok(s.Json,
-            $"created '{record.Workspace}' from map '{s.Map}' ({string.Join(", ", record.SelectedRepos)})",
-            new
-            {
-                ok = true,
-                workspace = record.Workspace,
-                map = record.Map,
-                repos = record.SelectedRepos,
-                ports = record.Ports,
-            });
-    }
-}
+// Creating a workspace from a map now lives on the primary `sprig create` verb (--map), so there is no
+// separate `map create` — the `map` branch is map management (ls / show / import) only.

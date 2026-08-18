@@ -6,26 +6,26 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-// `sprig pool <sub>` — check out and manage the pooled workspaces built from a stack.
+// `sprig pool <sub>` — check out and manage the pooled workspaces built from a map.
 
-[Description("Show a stack's pool: its workspaces and how many of maxSlots are claimed")]
+[Description("Show a map's pool: its workspaces and how many of maxSlots are claimed")]
 public sealed class PoolStatusCommand(CliContext cli) : Command<PoolStatusCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<stack>")]
-        [Description("Stack name")]
-        public string Stack { get; set; } = "";
+        [CommandArgument(0, "<map>")]
+        [Description("Map name")]
+        public string Map { get; set; } = "";
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var status = cli.Pools.Status(s.Stack);
+        var status = cli.MapPool.Status(s.Map);
         if (s.Json) { CliOutput.Json(status); return 0; }
 
         var console = cli.Ansi;
         console.MarkupLine(
-            $"[bold]{Markup.Escape(status.Stack)}[/] pool  " +
+            $"[bold]{Markup.Escape(status.Map)}[/] pool  " +
             $"[dim]{status.ClaimedCount}/{status.MaxSlots} claimed[/]" +
             (status.Workspaces.Count > 0
                 ? $" [dim]({status.FreeCount} free, {status.Headroom} unbuilt)[/]"
@@ -35,7 +35,7 @@ public sealed class PoolStatusCommand(CliContext cli) : Command<PoolStatusComman
         if (status.Workspaces.Count == 0)
         {
             console.MarkupLine("[dim]no workspaces yet — check one out with[/] [bold]sprig pool checkout " +
-                $"{Markup.Escape(status.Stack)}[/]");
+                $"{Markup.Escape(status.Map)}[/]");
             return 0;
         }
 
@@ -59,17 +59,17 @@ public sealed class PoolStatusCommand(CliContext cli) : Command<PoolStatusComman
     }
 }
 
-[Description("Check out a workspace from a stack's pool (label it, choose how it's handled)")]
+[Description("Check out a workspace from a map's pool (label it, choose how it's handled)")]
 public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "[stack]")]
-        [Description("Stack to check out from (omit at a terminal to pick)")]
-        public string? Stack { get; set; }
+        [CommandArgument(0, "[map]")]
+        [Description("Map to check out from (omit at a terminal to pick)")]
+        public string? Map { get; set; }
 
         [CommandOption("--branch <name>")]
-        [Description("The branch to cut across the stack's repos (required; the workspace's identity)")]
+        [Description("The branch to cut across the map's repos (required; the workspace's identity)")]
         public string? Branch { get; set; }
 
         [CommandOption("--label <label>")]
@@ -85,7 +85,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         public bool New { get; set; }
 
         [CommandOption("--from <ref>")]
-        [Description("Start the branch from this ref (e.g. upstream/main); default is the stack's base")]
+        [Description("Start the branch from this ref (e.g. upstream/main); default is the map's base")]
         public string? From { get; set; }
 
         [CommandOption("--fresh")]
@@ -111,13 +111,13 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, s.Json, hasPrimaryInput: s.Stack is not null);
+        var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, s.Json, hasPrimaryInput: s.Map is not null);
         var console = Term.Create();
 
-        var stackName = s.Stack ?? PickStack(console, interactive);
-        if (stackName is null) { console.MarkupLine("[yellow]cancelled[/]"); return 0; }
+        var mapName = s.Map ?? PickMap(console, interactive);
+        if (mapName is null) { console.MarkupLine("[yellow]cancelled[/]"); return 0; }
 
-        var status = cli.Pools.Status(stackName);
+        var status = cli.MapPool.Status(mapName);
 
         if (ResolveTarget(console, status, s, interactive) is not { } target)
         {
@@ -139,13 +139,13 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         var branch = ResolveBranch(console, s, interactive);
         var label = ResolveLabel(console, s);
         var existing = target.IsNew ? null : target.Workspace;
-        var startPoint = ResolveStartPoint(console, s, interactive, stackName, existing);
+        var startPoint = ResolveStartPoint(console, s, interactive, mapName, existing);
 
         // Surface (do not resolve) a branch already taken on a remote — a heads-up before we cut it. A local
         // conflict is a hard block enforced by the service; this is only the softer remote case.
         if (existing is not null)
         {
-            var conflicts = cli.Pools.CheckCheckout(existing, branch);
+            var conflicts = cli.MapPool.CheckCheckout(existing, branch);
             if (conflicts.RemoteWarnings.Count > 0)
                 console.MarkupLine($"[yellow]note:[/] '{Markup.Escape(branch)}' already exists on a remote in " +
                     $"[bold]{Markup.Escape(string.Join(", ", conflicts.RemoteWarnings))}[/] — cutting a local branch of the same name.");
@@ -154,18 +154,18 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         // Machine path stays quiet and structured: no checklist, just the record.
         if (s.Json)
         {
-            CliOutput.Json(cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force, startPoint: startPoint));
+            CliOutput.Json(cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, startPoint: startPoint));
             return 0;
         }
 
         // Human path: plan up front, then drive the live checklist while the checkout runs — the same
         // feedback create gives (worktrees, dependency install, infra), for every mode.
-        console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(stackName)}[/]" +
+        console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(mapName)}[/]" +
             (startPoint is null ? "" : $" [dim](start: {Markup.Escape(startPoint)})[/]") + "…");
-        var plan = cli.Pools.PlanCheckout(stackName, existing, mode);
+        var plan = cli.MapPool.PlanCheckout(mapName, existing, mode);
         InstanceRecord record = null!;
         Checklist.Run(console, plan, progress =>
-            record = cli.Pools.Checkout(stackName, existing, branch, label, mode, s.Force, progress, startPoint));
+            record = cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, progress, startPoint));
 
         var labelSuffix = string.IsNullOrEmpty(label) ? "" : $" [dim]({Markup.Escape(label!)})[/]";
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] checked out [bold]{Markup.Escape(record.Workspace)}[/] " +
@@ -179,24 +179,24 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         return 0;
     }
 
-    string? PickStack(IAnsiConsole console, bool interactive)
+    string? PickMap(IAnsiConsole console, bool interactive)
     {
-        var all = cli.Stacks.List();
+        var all = cli.Maps.List();
         if (all.Count == 0)
-            throw new ArgumentException("no stacks defined — create one with 'sprig stack create' first");
+            throw new ArgumentException("no maps defined — author one in the app, or import it with 'sprig map import'");
         if (!interactive)
-            throw new ArgumentException("checkout requires a stack name");
-        return Term.SelectOne(console, "Check out from which [green]stack[/]? [grey](esc cancels)[/]",
+            throw new ArgumentException("checkout requires a map name");
+        return Term.SelectOne(console, "Check out from which [green]map[/]? [grey](esc cancels)[/]",
             all.Select(x => x.Name));
     }
 
-    (string? Workspace, bool IsNew)? ResolveTarget(IAnsiConsole console, PoolStatus status, Settings s, bool interactive)
+    (string? Workspace, bool IsNew)? ResolveTarget(IAnsiConsole console, MapPoolStatus status, Settings s, bool interactive)
     {
         if (s.Workspace is { } named) return (named, false); // reuse specific (the service validates it)
         if (s.New)
         {
             if (status.Headroom <= 0)
-                throw new PoolException($"pool '{status.Stack}' is full — release one before --new");
+                throw new PoolException($"pool '{status.Map}' is full — release one before --new");
             return (null, true);
         }
 
@@ -216,11 +216,11 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
             if (status.Headroom > 0) choices.Add(newChoice);
             if (choices.Count == 0)
                 throw new PoolException(
-                    $"pool '{status.Stack}' is full ({status.ClaimedCount}/{status.MaxSlots} claimed) — release one first");
+                    $"pool '{status.Map}' is full ({status.ClaimedCount}/{status.MaxSlots} claimed) — release one first");
             if (choices.Count == 1 && free.Count == 0) return (null, true); // only option is "new"
 
             var pick = Term.SelectOne(console,
-                $"Check out which [green]workspace[/] from [bold]{Markup.Escape(status.Stack)}[/]? [grey](esc cancels)[/]", choices);
+                $"Check out which [green]workspace[/] from [bold]{Markup.Escape(status.Map)}[/]? [grey](esc cancels)[/]", choices);
             if (pick is null) return null;
             return pick == newChoice ? (null, true) : (byLabel[pick], false);
         }
@@ -230,7 +230,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         if (free.Count > 0)
             return (free.OrderBy(f => f.LastUsedAt ?? DateTimeOffset.MinValue).First().Workspace, false);
         if (status.Headroom > 0) return (null, true);
-        throw new PoolException($"pool '{status.Stack}' is full — release one first");
+        throw new PoolException($"pool '{status.Map}' is full — release one first");
     }
 
     CheckoutMode? ResolveMode(IAnsiConsole console, Settings s, bool interactive, string workspace)
@@ -270,12 +270,12 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
     // The start point for the new branch. `--from` is explicit (no fetch). Interactive fetches the connected
     // remotes and offers the branches to pick — default first (the upstream-preferring base). Null = default.
     // For a fork/gitflow setup this is where you pick upstream/main over your fork's stale origin/main.
-    string? ResolveStartPoint(IAnsiConsole console, Settings s, bool interactive, string stackName, string? existing)
+    string? ResolveStartPoint(IAnsiConsole console, Settings s, bool interactive, string mapName, string? existing)
     {
         if (!string.IsNullOrWhiteSpace(s.From)) return s.From!.Trim();
-        if (!interactive) return null; // default: the stack's (upstream-preferring) base
+        if (!interactive) return null; // default: the map's (upstream-preferring) base
 
-        var options = cli.Pools.StartPointsFor(stackName, existing, fetch: true);
+        var options = cli.MapPool.StartPointsFor(mapName, existing, fetch: true);
         var defaultChoice = $"default — {options.Default ?? "base"}";
         var choices = new List<string> { defaultChoice };
         choices.AddRange(options.Candidates.Select(c => c.Ref));
@@ -307,9 +307,9 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "[stack]")]
-        [Description("Only list this stack's claimed workspaces (omit for all)")]
-        public string? Stack { get; set; }
+        [CommandArgument(0, "[map]")]
+        [Description("Only list this map's claimed workspaces (omit for all)")]
+        public string? Map { get; set; }
 
         [CommandOption("--workspace <name>")]
         [Description("Release this workspace (omit at a terminal to pick)")]
@@ -334,7 +334,7 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
             workspace = named;
         else
         {
-            var claimed = cli.Pools.ClaimedWorkspaces(s.Stack);
+            var claimed = cli.MapPool.ClaimedWorkspaces(s.Map);
             if (claimed.Count == 0)
                 return CliOutput.Ok(s.Json, "no claimed workspaces to release", new { ok = true, released = (string?)null });
             if (!interactive)
@@ -352,7 +352,7 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
             workspace = byLabel[pick];
         }
 
-        var (record, pending) = cli.Pools.Release(workspace);
+        var (record, pending) = cli.MapPool.Release(workspace);
 
         if (s.Json)
             return CliOutput.Ok(s.Json,

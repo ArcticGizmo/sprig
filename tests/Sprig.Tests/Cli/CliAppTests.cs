@@ -164,14 +164,23 @@ public sealed class CliAppTests : IDisposable
     [Fact]
     public void Ws_rejects_a_non_workspace_verb()
     {
-        // `stack` is a top-level namespace, not a workspace verb, so it's unknown under `ws`.
-        var (exit, _, err) = Run("ws", "stack");
+        // `pool` is a top-level namespace, not a workspace verb, so it's unknown under `ws`.
+        var (exit, _, err) = Run("ws", "pool");
+        Assert.Equal(1, exit);
+        Assert.Contains("Unknown command", err);
+    }
+
+    [Fact]
+    public void The_stack_namespace_is_gone()
+    {
+        // Stacks were retired (the Graph Turn) — `stack` is no longer a command.
+        var (exit, _, err) = Run("stack", "ls");
         Assert.Equal(1, exit);
         Assert.Contains("Unknown command", err);
     }
 
     [Theory]
-    [InlineData("stack", "import")]
+    [InlineData("map", "import")]
     [InlineData("repo", "add")]
     [InlineData("settings", "set")]
     public void Namespace_help_lists_its_own_subcommands(string ns, string marker)
@@ -186,11 +195,11 @@ public sealed class CliAppTests : IDisposable
     [Fact]
     public void Namespace_help_does_not_run_the_default_subcommand()
     {
-        // `stack --help` prints the branch help; it must not fall through to a subcommand.
-        var (exit, o, _) = Run("stack", "--help");
+        // `map --help` prints the branch help; it must not fall through to a subcommand.
+        var (exit, o, _) = Run("map", "--help");
         Assert.Equal(0, exit);
         Assert.Contains("COMMANDS", o);
-        Assert.DoesNotContain("no stacks defined", o);
+        Assert.DoesNotContain("no maps defined", o);
     }
 
     [Fact]
@@ -248,41 +257,53 @@ public sealed class CliAppTests : IDisposable
         Assert.Contains("\"ok\": false", o);
     }
 
+    // Seed a map (in the central store) referencing the given already-registered repos.
+    void SeedMap(string name, params string[] repos)
+        => new Sprig.Core.Maps.MapStore(_paths, new RepoRegistryStore(_paths))
+            .Save(new Sprig.Core.Maps.MapDefinition
+            {
+                Name = name,
+                Repos = repos.Select(Sprig.Core.Maps.MapRepo.Local).ToList(),
+            });
+
     [Fact]
-    public void Stack_create_derives_shares_and_rejects_a_duplicate_name()
+    public void Pool_status_of_a_fresh_map_reports_the_empty_pool()
     {
         SeedRepo("alpha");
-        SeedRepo("beta");
-        Assert.Equal(0, Run("stack", "create", "demo", "--repos", "alpha,beta", "--port", "shared",
-            "--bind", "alpha:p=${sprig.ports.shared}", "--bind", "beta:p=${sprig.ports.shared}").exit);
+        SeedMap("demo", "alpha");
 
-        var dup = Run("stack", "create", "demo", "--repos", "alpha");
-        Assert.Equal(1, dup.exit);
-        Assert.Contains("already exists", dup.err);
-
-        var show = Run("stack", "show", "demo");
-        Assert.Contains("shared port shared", show.@out); // both repos bind it → derived share
+        var (exit, o, _) = Run("pool", "status", "demo");
+        Assert.Equal(0, exit);
+        Assert.Contains("demo", o);
+        Assert.Contains("no workspaces yet", o);
     }
 
     [Fact]
-    public void Stack_edit_merges_facets_and_guards_the_missing_case()
+    public void Pool_status_of_an_unknown_map_fails()
+    {
+        var (exit, _, err) = Run("pool", "status", "ghost");
+        Assert.Equal(1, exit);
+        Assert.Contains("unknown map", err);
+    }
+
+    [Fact]
+    public void Map_ls_lists_defined_maps()
     {
         SeedRepo("alpha");
-        SeedRepo("beta");
-        Run("stack", "create", "demo", "--repos", "alpha,beta", "--port", "shared",
-            "--bind", "alpha:p=${sprig.ports.shared}", "--bind", "beta:p=${sprig.ports.shared}");
+        SeedMap("demo", "alpha");
 
-        // Repoint beta at a new port; alpha's binding is untouched, so the port is no longer shared.
-        Assert.Equal(0, Run("stack", "edit", "demo", "--port", "shared", "--port", "extra",
-            "--bind", "beta:p=${sprig.ports.extra}").exit);
+        var (exit, o, _) = Run("map", "ls");
+        Assert.Equal(0, exit);
+        Assert.Contains("demo", o);
+        Assert.Contains("alpha", o);
+    }
 
-        var show = Run("stack", "show", "demo");
-        Assert.Contains("extra", show.@out);
-        Assert.DoesNotContain("shared port shared", show.@out);
-
-        var ghost = Run("stack", "edit", "ghost");
-        Assert.Equal(1, ghost.exit);
-        Assert.Contains("unknown stack", ghost.err);
+    [Fact]
+    public void Create_without_a_map_or_repo_fails()
+    {
+        var (exit, _, err) = Run("ws", "create", "feat");
+        Assert.Equal(1, exit);
+        Assert.Contains("--map", err);
     }
 
     // `sprig path` owns the resolution (workspace → repo → module) and prints the directory; `sprig cd`

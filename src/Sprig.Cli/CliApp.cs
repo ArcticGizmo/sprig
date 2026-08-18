@@ -8,7 +8,7 @@ using Sprig.Core.Ports;
 using Sprig.Core.Processes;
 using Sprig.Core.Settings;
 using Sprig.Core.Setup;
-using Sprig.Core.Stacks;
+using Sprig.Core.Stacks;   // RepoRegistryStore lives here (kept through the stack retirement)
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 using Spectre.Console;
@@ -52,14 +52,12 @@ public static class CliApp
             new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner));
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
-        var stacks = new StackStore(paths, registry, instances, settings);
-        var resolver = new StackResolver(registry, stacks, git);
-        var pools = new PoolService(stacks, instances, resolver, workspaces, paths);
         var maps = new Core.Maps.MapStore(paths, registry);
         var mapResolver = new Core.Maps.MapResolver(registry, maps, git, paths);
+        var mapPool = new MapPoolService(maps, instances, mapResolver, workspaces, paths);
 
-        var context = new CliContext(paths, workspaces, reconciler, registry, stacks, resolver,
-            pools, maps, mapResolver, settings, git, ansi);
+        var context = new CliContext(paths, workspaces, reconciler, registry,
+            maps, mapResolver, mapPool, settings, git, ansi);
 
         // The registrar hands the one CliContext (and the console) to every command; commands are
         // constructed by reflection from there.
@@ -114,35 +112,22 @@ public static class CliApp
             repo.AddCommand<RepoRmCommand>("rm");
         });
 
-        config.AddBranch("stack", stack =>
-        {
-            stack.SetDescription("Define and manage stacks (named sets of repos wired together)");
-            stack.AddCommand<StackCreateCommand>("create");
-            stack.AddCommand<StackEditCommand>("edit");
-            stack.AddCommand<StackLsCommand>("ls");
-            stack.AddCommand<StackShowCommand>("show");
-            stack.AddCommand<StackRmCommand>("rm");
-            stack.AddCommand<StackExportCommand>("export");
-            stack.AddCommand<StackImportCommand>("import");
-        });
-
         config.AddBranch("pool", pool =>
         {
-            pool.SetDescription("Check out and manage the pooled workspaces built from a stack");
+            pool.SetDescription("Check out and manage the pooled workspaces built from a map");
             pool.AddCommand<PoolCheckoutCommand>("checkout");
             pool.AddCommand<PoolReleaseCommand>("release");
             pool.AddCommand<PoolStatusCommand>("status");
         });
 
-        // EXPERIMENTAL (the Graph Turn) — self-describing repos wired through a map. Runs alongside stacks
-        // during the transition; becomes the primary create path when stacks are retired (M7).
+        // Maps (the Graph Turn) — self-describing repos wired through a map. Maps are authored in the app;
+        // the CLI lists/shows/imports them, and checks workspaces out of their pool (see `pool`).
         config.AddBranch("map", map =>
         {
-            map.SetDescription("[experimental] Check out workspaces from a map (self-describing repos)");
+            map.SetDescription("List, show and import maps (self-describing repos wired by provides/needs)");
             map.AddCommand<MapLsCommand>("ls");
             map.AddCommand<MapShowCommand>("show");
             map.AddCommand<MapImportCommand>("import");
-            map.AddCommand<MapCreateCommand>("create");
         });
 
         config.AddBranch("settings", settings =>

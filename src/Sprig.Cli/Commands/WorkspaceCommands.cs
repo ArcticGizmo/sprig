@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sprig.Core.Docker;
 using Sprig.Core.Init;
-using Sprig.Core.Stacks;
+using Sprig.Core.Maps;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 using Spectre.Console;
@@ -16,7 +16,7 @@ namespace Sprig.Cli.Commands;
 // (open/update/init). The workspace verbs live under the `ws` branch (wired in CliApp); each command
 // takes the shared CliContext and preserves the exact --json contract the hand-rolled dispatcher shipped.
 
-[Description("Create an isolated workspace from a stack or a single repo")]
+[Description("Create an isolated workspace from a map (a slice of its repos) or a single repo")]
 public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
@@ -26,28 +26,32 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         public string? Name { get; set; }
 
         [CommandOption("-i|--interactive")]
-        [Description("Force the interactive picker (stack, repos, modules, name)")]
+        [Description("Force the interactive picker (map, repos, name)")]
         public bool Interactive { get; set; }
 
         [CommandOption("--no-interactive|--ni")]
         [Description("Never prompt — fail instead of asking (implied by --json, a pipe, or CI)")]
         public bool NoInteractive { get; set; }
 
-        [CommandOption("--stack <name>")]
-        [Description("Create from a named stack")]
-        public string? Stack { get; set; }
+        [CommandOption("--map <name>")]
+        [Description("Create from a named map")]
+        public string? Map { get; set; }
 
         [CommandOption("--repo <path>")]
         [Description("Create from a single repo path")]
         public string? Repo { get; set; }
 
         [CommandOption("--only <repos>")]
-        [Description("Partial: only these stack repos (comma-separated or repeated)")]
+        [Description("Partial: only these map repos (comma-separated or repeated)")]
         public string[] Only { get; set; } = [];
 
         [CommandOption("--without <repos>")]
-        [Description("Partial: every stack repo except these")]
+        [Description("Partial: every map repo except these")]
         public string[] Without { get; set; } = [];
+
+        [CommandOption("--from <ref>")]
+        [Description("Start the parked worktrees from this ref (defaults to each repo's base)")]
+        public string? From { get; set; }
 
         [CommandOption("--skip-infra")]
         [Description("Create only — don't start the workspace's docker infra (it starts by default)")]
@@ -65,13 +69,15 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         // A bare `create` at a terminal opens the wizard; a named/`--stack`/`--repo` create, or any
         // non-terminal run, goes straight through non-interactively. -i/--ni force the choice.
         var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, s.Json,
-            hasPrimaryInput: s.Name is not null || s.Stack is not null || s.Repo is not null);
+            hasPrimaryInput: s.Name is not null || s.Map is not null || s.Repo is not null);
 
         var console = Term.Create();
 
         // Gather the target either by asking or from the flags/positional.
-        ResolvedStack resolved;
+        MapDefinition? map;
+        IReadOnlyList<ResolvedRepo> repos;
         string name;
+        string? fromLabel;
         if (interactive)
         {
             if (Prompt(console, s) is not { } picked)
@@ -79,33 +85,38 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
                 console.MarkupLine("[yellow]cancelled[/]");
                 return 0;
             }
-            (resolved, name) = picked;
+            (map, repos, name) = picked;
+            fromLabel = map?.Name;
         }
         else
         {
             var only = CliFormat.SplitList(s.Only);
             var without = CliFormat.SplitList(s.Without);
-            if ((only.Count > 0 || without.Count > 0) && s.Stack is null)
-                throw new ArgumentException("--only/--without narrow a stack — they need --stack <name>");
+            if ((only.Count > 0 || without.Count > 0) && s.Map is null)
+                throw new ArgumentException("--only/--without narrow a map — they need --map <name>");
             name = s.Name ?? throw new ArgumentException("create requires a workspace name (or run it at a terminal to be prompted)");
-            resolved = s.Stack is not null
-                    ? cli.Resolver.Resolve(s.Stack, Selection(cli.Stacks, s.Stack, only, without))
-                : s.Repo is not null ? cli.Workspaces.ResolveSingleRepo(s.Repo)
-                : throw new ArgumentException("create requires --stack <name> or --repo <path> (or run it at a terminal to be prompted)");
+            if (s.Map is not null)
+                (map, repos) = cli.MapResolver.Resolve(s.Map, MapWithout(s.Map, only, without));
+            else if (s.Repo is not null)
+                (map, repos) = (null, cli.Workspaces.ResolveSingleRepo(s.Repo).Repos);
+            else
+                throw new ArgumentException("create requires --map <name> or --repo <path> (or run it at a terminal to be prompted)");
+            fromLabel = s.Map;
         }
 
         // Plan up front so pre-flight problems (bad name, duplicate) surface before any output, and so
         // the checklist can list every step, pending, before work starts.
-        var plan = cli.Workspaces.PlanCreate(resolved, name);
+        var plan = cli.Workspaces.PlanCreateFromMap(repos, name);
 
         // The machine path stays quiet and structured: no checklist, just the record as JSON.
-        if (s.Json) { CliOutput.Json(cli.Workspaces.Create(resolved, name)); return 0; }
+        if (s.Json) { CliOutput.Json(cli.Workspaces.CreateFromMap(name, map, repos, startPoint: s.From)); return 0; }
 
         console.MarkupLine($"[bold]Creating workspace[/] [green]{Markup.Escape(name)}[/]" +
-            (resolved.StackName is { } st ? $" [dim]from stack {Markup.Escape(st)}[/]" : ""));
+            (fromLabel is { } m ? $" [dim]from map {Markup.Escape(m)}[/]" : ""));
 
         InstanceRecord record = null!;
-        Checklist.Run(console, plan, progress => record = cli.Workspaces.Create(resolved, name, progress));
+        Checklist.Run(console, plan, progress =>
+            record = cli.Workspaces.CreateFromMap(name, map, repos, progress: progress, startPoint: s.From));
 
         RenderSummary(console, record);
 
@@ -136,85 +147,62 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         }
     }
 
-    // The `-i` flow: pick a stack, choose its repos and each repo's modules (all selected by default),
-    // then name the workspace. Repos are narrowed via the resolver; modules are narrowed by rewriting
-    // each repo's config so only the chosen ones remain in EffectiveModules.
+    // The `-i` flow: pick a map, choose its repos, then name the workspace. The repo selection becomes a
+    // `--without` list handed to the resolver, which wires the slice through the repos' own provides/needs.
     //
-    // Returns null when the whole thing is cancelled (ESC at the very first step). The steps — stack,
-    // repos, then modules per multi-module repo — are ESC-navigable: ESC steps back to the previous one
-    // (re-showing your earlier choice), recomputing anything downstream. The name comes last because
-    // TextPrompt can't be cancelled.
-    (ResolvedStack resolved, string name)? Prompt(IAnsiConsole console, Settings s)
+    // Returns null when the whole thing is cancelled (ESC at the very first step). The map and repos steps are
+    // ESC-navigable: ESC steps back to the previous one (re-showing your earlier choice). The name comes last
+    // because TextPrompt can't be cancelled.
+    (MapDefinition? map, IReadOnlyList<ResolvedRepo> repos, string name)? Prompt(IAnsiConsole console, Settings s)
     {
-        var allStacks = cli.Stacks.List();
-        if (allStacks.Count == 0)
-            throw new ArgumentException("no stacks defined — create one with 'sprig stack create' first");
-        if (s.Stack is { } preset && cli.Stacks.Get(preset) is null)
-            throw new ArgumentException($"unknown stack '{preset}'");
+        var allMaps = cli.Maps.List();
+        if (allMaps.Count == 0)
+            throw new ArgumentException("no maps defined — author one in the app, or import it with 'sprig map import'");
+        if (s.Map is { } preset && cli.Maps.Get(preset) is null)
+            throw new ArgumentException($"unknown map '{preset}'");
 
-        // A step is skipped (and not a place ESC can land) when there's no real choice: a preset/only
-        // stack, a single-repo stack.
-        var stackFixed = s.Stack is not null || allStacks.Count == 1;
-        var stackName = s.Stack ?? allStacks[0].Name;
-        List<string> repos = [];
-        ResolvedStack resolved = null!;
-        List<ResolvedRepo> moduleRepos = [];
-        var moduleSel = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        // The map step is skipped (and not a place ESC can land) when there's no real choice: a preset map,
+        // or a single defined map.
+        var mapFixed = s.Map is not null || allMaps.Count == 1;
+        var mapName = s.Map ?? allMaps[0].Name;
+        List<string>? chosenRepos = null;
 
-        const int stackStep = 0, reposStep = 1, moduleStep = 2, done = 3;
-        var step = stackFixed ? reposStep : stackStep;
-        var modIdx = 0;
+        const int mapStep = 0, reposStep = 1, done = 2;
+        var step = mapFixed ? reposStep : mapStep;
 
         while (step != done)
         {
             switch (step)
             {
-                case stackStep:
-                    if (Term.SelectOne(console, "Select a [green]stack[/]: [grey](esc cancels)[/]",
-                            allStacks.Select(x => x.Name)) is not { } picked)
+                case mapStep:
+                    if (Term.SelectOne(console, "Select a [green]map[/]: [grey](esc cancels)[/]",
+                            allMaps.Select(x => x.Name)) is not { } picked)
                         return null; // ESC at the first step → cancel the whole create
-                    if (picked != stackName) { repos = []; moduleSel.Clear(); } // new stack → reset downstream
-                    stackName = picked;
+                    if (picked != mapName) chosenRepos = null; // new map → reset the repo choice
+                    mapName = picked;
                     step = reposStep;
                     break;
 
                 case reposStep:
                 {
-                    var stack = cli.Stacks.Get(stackName)!;
-                    if (stack.Repos.Count <= 1) repos = stack.Repos.ToList();
-                    else if (Term.SelectMany(console, $"Which [green]repos[/] from [bold]{Markup.Escape(stackName)}[/]?",
-                                 stack.Repos, repos.Count > 0 ? repos : stack.Repos) is { } chosen)
-                        repos = chosen;
-                    else if (stackFixed) return null;      // ESC with no stack step to go back to → cancel
-                    else { step = stackStep; break; }      // ESC → back to the stack pick
+                    var mapRepos = cli.Maps.Get(mapName)!.Repos.Select(r => r.Name).ToList();
+                    if (mapRepos.Count <= 1) chosenRepos = mapRepos;
+                    else if (Term.SelectMany(console, $"Which [green]repos[/] from [bold]{Markup.Escape(mapName)}[/]?",
+                                 mapRepos, chosenRepos ?? mapRepos) is { } chosen)
+                        chosenRepos = chosen;
+                    else if (mapFixed) return null;   // ESC with no map step to go back to → cancel
+                    else { step = mapStep; break; }   // ESC → back to the map pick
 
-                    resolved = cli.Resolver.Resolve(stackName, repos.Count == stack.Repos.Count ? null : repos);
-                    moduleRepos = resolved.Repos.Where(r => r.Config.EffectiveModules.Count > 1).ToList();
-                    step = moduleStep;
-                    modIdx = 0;
-                    break;
-                }
-
-                case moduleStep:
-                {
-                    if (modIdx >= moduleRepos.Count) { step = done; break; }
-                    var repo = moduleRepos[modIdx];
-                    var names = repo.Config.EffectiveModules.Select(m => m.Name).ToList();
-                    var pre = moduleSel.TryGetValue(repo.Name, out var prev) ? prev : names;
-                    if (Term.SelectMany(console, $"Which [green]modules[/] of [bold]{Markup.Escape(repo.Name)}[/]?",
-                            names, pre) is { } chosen)
-                    {
-                        moduleSel[repo.Name] = chosen;
-                        modIdx++;
-                    }
-                    else if (--modIdx < 0) { step = reposStep; } // ESC before the first module → back to repos
+                    step = done;
                     break;
                 }
             }
         }
 
+        var without = ReposToWithout(mapName, chosenRepos!);
+        var (map, repos) = cli.MapResolver.Resolve(mapName, without);
         var name = PromptName(console, s.Name);
-        return (ApplyModuleSelection(resolved, moduleSel), name);
+        return (map, repos, name);
     }
 
     string PromptName(IAnsiConsole console, string? preset)
@@ -226,28 +214,6 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
                 : ValidationResult.Success());
         if (!string.IsNullOrWhiteSpace(preset)) prompt.DefaultValue(preset!);
         return console.Prompt(prompt).Trim();
-    }
-
-    // Rewrite each repo whose modules were narrowed so EffectiveModules is exactly the chosen set: put
-    // them in Modules and clear the legacy flat fields (which would otherwise synthesise a root module
-    // back in). Repos left at "all modules" pass through untouched.
-    static ResolvedStack ApplyModuleSelection(ResolvedStack resolved, IReadOnlyDictionary<string, List<string>> selection)
-    {
-        if (selection.Count == 0) return resolved;
-        var narrowed = new List<ResolvedRepo>();
-        foreach (var repo in resolved.Repos)
-        {
-            var modules = repo.Config.EffectiveModules;
-            if (!selection.TryGetValue(repo.Name, out var chosen) || chosen.Count == modules.Count)
-            {
-                narrowed.Add(repo);
-                continue;
-            }
-            var keep = new HashSet<string>(chosen, StringComparer.Ordinal);
-            var kept = modules.Where(m => keep.Contains(m.Name)).ToList();
-            narrowed.Add(repo with { Config = repo.Config with { Modules = kept, Env = null, Compose = null, Setup = null } });
-        }
-        return resolved with { Repos = narrowed };
     }
 
     // After the checklist: the actionable facts it doesn't carry — the allocated ports and where each
@@ -276,29 +242,40 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
             console.MarkupLine("[yellow]note:[/] a setup command failed — the workspace was kept; finish setup manually in the worktree.");
     }
 
-    /// <summary>Turn <c>--only</c>/<c>--without</c> into the repo subset to create (null = the whole
-    /// stack). <c>--without</c> is resolved against the stack's repo list so the two flags are
-    /// interchangeable ways of saying the same thing; naming an unknown repo is an error either way.</summary>
-    static IReadOnlyList<string>? Selection(StackStore stacks, string stackName, List<string> only, List<string> without)
+    /// <summary>Turn <c>--only</c>/<c>--without</c> into the <c>--without</c> exclusion list the map resolver
+    /// takes (null/empty = the whole map). Both lists are validated against the map's repos so a typo'd repo
+    /// fails loudly, and <c>--only</c> is expressed as "exclude everything else" so the two flags are
+    /// interchangeable ways of naming the same slice.</summary>
+    IReadOnlyList<string>? MapWithout(string mapName, List<string> only, List<string> without)
     {
         if (only.Count == 0 && without.Count == 0) return null;
-        var stack = stacks.Get(stackName) ?? throw new StackException($"unknown stack '{stackName}'");
+        var map = cli.Maps.Get(mapName) ?? throw new Core.Maps.MapException($"unknown map '{mapName}'");
+        var mapRepos = map.Repos.Select(r => r.Name).ToList();
 
-        // Validate both lists against the stack (Include does it for --only; do the same for --without
-        // so a typo'd exclusion fails loudly instead of silently keeping every repo).
-        var included = StackSelection.Include(stack, only.Count > 0 ? only : null);
-        var unknown = without.Where(r => !stack.Repos.Contains(r, StringComparer.Ordinal)).ToList();
+        var unknown = only.Concat(without).Where(r => !mapRepos.Contains(r, StringComparer.Ordinal)).ToList();
         if (unknown.Count > 0)
-            throw new StackException(
-                $"stack '{stackName}' has no repo{(unknown.Count == 1 ? "" : "s")} " +
+            throw new Core.Maps.MapException(
+                $"map '{mapName}' has no repo{(unknown.Count == 1 ? "" : "s")} " +
                 $"{string.Join(", ", unknown.Select(r => $"'{r}'"))} " +
-                $"(it has: {string.Join(", ", stack.Repos)})");
+                $"(it has: {string.Join(", ", mapRepos)})");
 
-        var drop = new HashSet<string>(without, StringComparer.Ordinal);
-        var selection = included.Where(r => !drop.Contains(r)).ToList();
-        if (selection.Count == 0)
-            throw new StackException($"that leaves no repos to create from stack '{stackName}'");
-        return selection;
+        var keep = only.Count > 0
+            ? new HashSet<string>(only, StringComparer.Ordinal)
+            : new HashSet<string>(mapRepos.Where(r => !without.Contains(r, StringComparer.Ordinal)), StringComparer.Ordinal);
+        var exclude = mapRepos.Where(r => !keep.Contains(r)).ToList();
+        if (exclude.Count == mapRepos.Count)
+            throw new Core.Maps.MapException($"that leaves no repos to create from map '{mapName}'");
+        return exclude;
+    }
+
+    // The interactive repo pick expressed as the resolver's --without list: every map repo the user didn't
+    // choose. A full selection returns null (the whole map).
+    IReadOnlyList<string>? ReposToWithout(string mapName, IReadOnlyList<string> chosen)
+    {
+        var mapRepos = cli.Maps.Get(mapName)!.Repos.Select(r => r.Name).ToList();
+        var keep = new HashSet<string>(chosen, StringComparer.Ordinal);
+        var exclude = mapRepos.Where(r => !keep.Contains(r)).ToList();
+        return exclude.Count == 0 ? null : exclude;
     }
 }
 
@@ -605,9 +582,9 @@ public sealed class RefreshCommand(CliContext cli) : Command<RefreshCommand.Sett
 
         var current = cli.Workspaces.Get(workspace)
             ?? throw new ArgumentException($"unknown workspace '{workspace}'");
-        // For a pooled workspace, resolve its stack so the refresh honours the stack overlay (e.g.
-        // stack-carried setup); an ad-hoc workspace has no stack and refreshes from its .sprig.json.
-        var resolvedRepos = current.Stack is { } st ? cli.Resolver.Resolve(st, null).Repos : null;
+        // A map/ad-hoc workspace refreshes from its own recorded config + stored module scopes — there is no
+        // separate overlay to re-resolve (the map isn't consulted after checkout).
+        IReadOnlyList<ResolvedRepo>? resolvedRepos = null;
 
         var console = Term.Create();
         console.MarkupLine($"[bold]Refreshing[/] [green]{Markup.Escape(workspace)}[/]…");

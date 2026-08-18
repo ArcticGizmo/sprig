@@ -20,11 +20,9 @@ public sealed record CliContext(
     WorkspaceService Workspaces,
     WorkspaceReconciler Reconciler,
     RepoRegistryStore Repos,
-    StackStore Stacks,
-    StackResolver Resolver,
-    PoolService Pools,
     MapStore Maps,
     MapResolver MapResolver,
+    MapPoolService MapPool,
     ISettingsStore Settings,
     IGitService Git,
     IAnsiConsole Ansi);

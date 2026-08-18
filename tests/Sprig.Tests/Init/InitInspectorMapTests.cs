@@ -89,6 +89,35 @@ public class InitInspectorMapTests : IDisposable
     }
 
     [Fact]
+    public void Sample_env_files_are_never_chosen_as_the_override_target()
+    {
+        // A gitignored real file beside committed/sample siblings — only the real one is picked.
+        Write(".env.local", "PORT=5173\n");
+        Write(".env.local.template", "PORT=5173\n");
+        Write(".env.example", "PORT=5173\n");
+
+        var p = InspectMap();
+
+        var cap = Assert.Single(Provides(p));                 // exactly one capability, from .env.local
+        var env = Assert.Single(Env(p));
+        Assert.Equal(".env.local", env.File);
+    }
+
+    [Fact]
+    public void Only_one_env_file_per_directory_is_chosen()
+    {
+        // Two runtime candidates at the same level → pick one (.env.local wins over .env), never both.
+        Write(".env", "PORT=5173\n");
+        Write(".env.local", "PORT=5173\n");
+
+        var p = InspectMap();
+
+        Assert.Single(Provides(p));                           // not two capabilities for the same port
+        var env = Assert.Single(Env(p));
+        Assert.Equal(".env.local", env.File);
+    }
+
+    [Fact]
     public void An_embedded_url_is_surfaced_as_a_need_note_not_a_provide()
     {
         Write(".env", "VITE_API_URL=http://localhost:4000\n");

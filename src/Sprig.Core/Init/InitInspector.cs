@@ -112,13 +112,21 @@ public sealed class InitInspector
         if (!Directory.Exists(scanRoot)) return;
         var tracked = new HashSet<string>(_git.ListTrackedFiles(repoRoot), StringComparer.OrdinalIgnoreCase);
 
-        // Untracked env files only — a tracked one is off-limits to overriding, so it never seeds detection.
-        var targets = EnumerateEnvFiles(repoRoot, scanRoot)
+        // Candidate override targets: untracked (a tracked/committed env is off-limits — overriding it would
+        // dirty every worktree) and never a committed sample (.env.template/.example/.sample/.dist — a seed,
+        // not a runtime file). Then pick exactly ONE per directory, so two files at the same level (e.g. .env
+        // and .env.local) never each spawn their own capability.
+        var byDir = EnumerateEnvFiles(repoRoot, scanRoot)
             .Where(f => !tracked.Contains(f))
-            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
+            .Where(f => !IsEnvSample(Path.GetFileName(f)))
+            .GroupBy(DirOf, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var target in targets)
+        foreach (var dir in byDir)
         {
+            var target = dir
+                .OrderBy(EnvTargetRank)
+                .ThenBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .First();
             var abs = Path.Combine(repoRoot, target);
             if (!File.Exists(abs)) continue;
 
@@ -277,6 +285,30 @@ public sealed class InitInspector
     static bool IsEnvFamily(string fileName)
         => fileName.Equals(".env", StringComparison.OrdinalIgnoreCase)
            || fileName.StartsWith(".env.", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A committed <b>sample</b> env file — a seed to copy, never the runtime file sprig overrides:
+    /// <c>.env.example</c>, <c>.env.template</c>, <c>.env.local.template</c>, <c>.env.sample</c>, <c>.env.dist</c>.</summary>
+    static readonly string[] SampleMarkers = ["template", "example", "sample", "dist"];
+    static bool IsEnvSample(string fileName)
+        => SampleMarkers.Any(m => fileName.Contains(m, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Preference among a directory's candidate targets: the gitignored <c>.env.local</c> convention
+    /// first, then the base <c>.env</c>, then anything else — so we override the runtime file, not a
+    /// per-environment one like <c>.env.production</c>.</summary>
+    static int EnvTargetRank(string relFile)
+    {
+        var name = Path.GetFileName(relFile);
+        if (name.Equals(".env.local", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (name.Equals(".env", StringComparison.OrdinalIgnoreCase)) return 1;
+        return 2;
+    }
+
+    /// <summary>The directory portion of a repo-relative forward-slash path (empty for the repo root).</summary>
+    static string DirOf(string relFile)
+    {
+        var slash = relFile.LastIndexOf('/');
+        return slash < 0 ? "" : relFile[..slash];
+    }
 
     /// <summary>One of the canonical compose file names (<c>docker-compose.yml</c>, <c>compose.yaml</c>, …).</summary>
     static bool IsComposeFile(string fileName)

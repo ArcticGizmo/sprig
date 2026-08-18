@@ -4,18 +4,16 @@ using Sprig.Core.Store;
 namespace Sprig.Core.Workspaces;
 
 /// <summary>
-/// The map-model create path (the Graph Turn), running alongside the stack-model
-/// <see cref="WorkspaceService.Create(ResolvedStack, string, IProgress{WorkspaceStepProgress}, string?)"/>
-/// through the transition. It resolves the selection with <see cref="CapabilityResolver"/> — per-module
-/// capability scopes instead of per-repo stack bindings — then reuses the same materialisation (worktree,
-/// env, compose, setup). Stacks are retired at M7, at which point this becomes the only create path.
+/// The map-model create path (the Graph Turn) — the one create path now that stacks are retired. It resolves
+/// the selection with <see cref="CapabilityResolver"/> — per-module capability scopes from the repos' own
+/// provides/needs — then materialises worktree, env, compose and setup.
 /// </summary>
 public sealed partial class WorkspaceService
 {
     /// <summary>The ordered checklist <see cref="CreateFromMap"/> works through, computed up front so a UI/CLI
-    /// can show every row before execution starts. Mirrors <see cref="PlanCreate"/> but for the map path, whose
-    /// step sequence differs: env + compose share one "Apply environment" step per repo (there is no separate
-    /// compose row). Runs the same cheap pre-flight (name + duplicate) so a bad name fails here, not mid-run.</summary>
+    /// can show every row before execution starts. Env + compose share one "Apply environment" step per repo
+    /// (there is no separate compose row). Runs the same cheap pre-flight (name + duplicate) so a bad name
+    /// fails here, not mid-run.</summary>
     public IReadOnlyList<WorkspaceStep> PlanCreateFromMap(IReadOnlyList<ResolvedRepo> repos, string workspace)
     {
         ValidateName(workspace);

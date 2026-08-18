@@ -19,10 +19,10 @@ public class RepoConfigViewModelTests
         using var s = new TempStore();
         var dir = WriteConfig(s, """
             { "schema": 3, "name": "mono",
-              "inputs": [ { "name": "port", "example": "6010" } ],
               "modules": [
                 { "name": "web", "path": "apps/web",
-                  "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.port}" } } ],
+                  "provides": [ { "capability": "port", "outputs": { "port": { "port": true } } } ],
+                  "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.port.port}" } } ],
                   "setup": [ "npm ci" ] },
                 { "name": "api", "path": "apps/api",
                   "compose": [ { "file": "docker-compose.yml", "overrides": [
@@ -69,7 +69,7 @@ public class RepoConfigViewModelTests
     public void A_repo_with_no_modules_has_none()
     {
         using var s = new TempStore();
-        var dir = WriteConfig(s, """{ "schema": 3, "name": "empty", "inputs": [ { "name": "p" } ] }""");
+        var dir = WriteConfig(s, """{ "schema": 3, "name": "empty" }""");
 
         var vm = RepoConfigViewModel.Load(dir);
 

@@ -4,24 +4,20 @@ namespace Sprig.Tests.Config;
 
 public class SprigConfigLoaderTests
 {
-    // A realistic, valid config: repo declares the inputs it needs; env/compose reference them.
+    // A realistic, valid schema-2 (flat) config — its env/compose reference only ${sprig.workspace}.
     const string ValidJson = """
         {
           "schema": 2,
           "name": "dotnet-api",
-          "inputs": [
-            { "name": "port", "example": "5000", "description": "web host" },
-            { "name": "dbPort", "example": "5432" }
-          ],
           "env": [
-            { "file": ".env.local", "set": { "PORT": "${sprig.port}" } }
+            { "file": ".env.local", "set": { "NAME": "app--${sprig.workspace}" } }
           ],
           "compose": [
             {
               "file": "docker-compose.yml",
               "overrides": [
                 { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-                { "path": ["services","postgres","ports","0"], "template": "${sprig.dbPort}:5432" }
+                { "path": ["services","postgres","image"], "template": "postgres--${sprig.workspace}" }
               ]
             }
           ]
@@ -32,13 +28,11 @@ public class SprigConfigLoaderTests
     public void Parses_full_valid_config()
     {
         // Parsing migrates a schema-2 file to schema 3: the flat env/compose surface is folded into a
-        // single default module; inputs stay at the repo level; the top-level lists are cleared.
+        // single default module; the top-level lists are cleared.
         var c = SprigConfigLoader.Parse(ValidJson);
 
         Assert.Equal(3, c.Schema);
         Assert.Equal("dotnet-api", c.Name);
-        Assert.Equal(["port", "dbPort"], c.Inputs.Select(i => i.Name));
-        Assert.Equal("5000", c.Inputs[0].Example);
         Assert.Null(c.Env);       // legacy top-level cleared on migration (omitted on write)
         Assert.Null(c.Compose);
 
@@ -47,10 +41,10 @@ public class SprigConfigLoaderTests
         Assert.Equal("", module.Path);
         Assert.Single(module.Env);
         Assert.Equal(".env.local", module.Env[0].File);
-        Assert.Equal("${sprig.port}", module.Env[0].Set["PORT"]);
+        Assert.Equal("app--${sprig.workspace}", module.Env[0].Set["NAME"]);
         Assert.Single(module.Compose);
         Assert.Equal(2, module.Compose[0].Overrides.Count);
-        Assert.Equal(["services", "postgres", "ports", "0"], module.Compose[0].Overrides[1].Path);
+        Assert.Equal(["services", "postgres", "image"], module.Compose[0].Overrides[1].Path);
     }
 
     [Fact]
@@ -85,11 +79,12 @@ public class SprigConfigValidatorTests
     {
         var c = SprigConfigLoader.Parse("""
             {
-              "schema": 2, "name": "dotnet-api",
-              "inputs": [ { "name": "port" }, { "name": "dbPort" } ],
-              "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.port}" } } ],
-              "compose": [ { "file": "docker-compose.yml", "overrides": [
-                { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] } ]
+              "schema": 3, "name": "dotnet-api",
+              "modules": [ { "name": "app", "path": "",
+                "provides": [ { "capability": "web", "outputs": { "port": { "port": true } } } ],
+                "env": [ { "file": ".env.local", "set": { "PORT": "${sprig.web.port}" } } ],
+                "compose": [ { "file": "docker-compose.yml", "overrides": [
+                  { "path": ["services","postgres","container_name"], "template": "x--${sprig.workspace}" } ] } ] } ]
             }
             """);
         Assert.True(SprigConfigValidator.Validate(c).IsValid);
@@ -102,23 +97,6 @@ public class SprigConfigValidatorTests
     [Fact]
     public void Empty_name_is_flagged()
         => Assert.Contains(SprigConfigValidator.Validate(new SprigRepoConfig { Name = "" }).Issues, i => i.Path == "name");
-
-    [Fact]
-    public void Duplicate_input_names_are_flagged_case_insensitively()
-    {
-        var r = SprigConfigValidator.Validate(Base() with
-        {
-            Inputs = [new() { Name = "port" }, new() { Name = "PORT" }]
-        });
-        Assert.Contains(r.Issues, i => i.Message.Contains("duplicate"));
-    }
-
-    [Fact]
-    public void Invalid_input_name_chars_are_flagged()
-    {
-        var r = SprigConfigValidator.Validate(Base() with { Inputs = [new() { Name = "has space" }] });
-        Assert.Contains(r.Issues, i => i.Path == "inputs[0].name");
-    }
 
     [Fact]
     public void Template_referencing_undeclared_input_is_flagged()
@@ -170,11 +148,11 @@ public class SprigConfigValidatorTests
     {
         var c = Base() with
         {
-            Inputs = [new() { Name = "port" }],
             Modules =
             [
                 new ModuleDeclaration { Name = "web", Path = "apps/web",
-                    Env = [new() { File = ".env.local", Set = new Dictionary<string, string> { ["PORT"] = "${sprig.port}" } }] },
+                    Provides = [new ProvidedCapability { Capability = "web", Outputs = new Dictionary<string, OutputSpec> { ["port"] = OutputSpec.Port() } }],
+                    Env = [new() { File = ".env.local", Set = new Dictionary<string, string> { ["PORT"] = "${sprig.web.port}" } }] },
                 new ModuleDeclaration { Name = "api", Path = "apps/api",
                     Setup = ["dotnet restore"] },
             ],
@@ -259,8 +237,7 @@ public class SprigConfigMigrationTests
         {
           "schema": 2,
           "name": "dotnet-api",
-          "inputs": [ { "name": "port", "example": "5000" } ],
-          "env": [ { "file": ".env", "set": { "PORT": "${sprig.port}" } } ],
+          "env": [ { "file": ".env", "set": { "NAME": "app--${sprig.workspace}" } } ],
           "compose": [ { "file": "docker-compose.yml", "overrides": [
             { "path": ["services","db","container_name"], "template": "db--${sprig.workspace}" } ] } ],
           "setup": [ "dotnet restore" ]
@@ -274,7 +251,6 @@ public class SprigConfigMigrationTests
         // Parse already migrates, so Normalize here is a no-op that also proves idempotence.
 
         Assert.Equal(3, c.Schema);
-        Assert.Equal(["port"], c.Inputs.Select(i => i.Name));   // inputs stay at the repo level
         Assert.Null(c.Env);
         Assert.Null(c.Compose);
         Assert.Null(c.Setup);

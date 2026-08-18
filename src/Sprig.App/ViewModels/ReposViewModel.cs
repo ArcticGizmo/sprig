@@ -259,7 +259,8 @@ public partial class ReposViewModel : PageViewModel
     [RelayCommand]
     private void CancelIsolate() => IsIsolating = false;
 
-    /// <summary>Create an isolated workspace directly from this repo — no stack (ad-hoc engine path).</summary>
+    /// <summary>Create an isolated workspace directly from this repo — no map, just the one repo wired by its
+    /// own provides/needs (the "isolate one repo" path).</summary>
     [RelayCommand]
     private async Task ConfirmIsolate()
     {
@@ -269,12 +270,12 @@ public partial class ReposViewModel : PageViewModel
         if (name.Length == 0) { IsolateError = "enter a workspace name"; return; }
 
         // Resolve + plan up front so pre-flight problems stay in the inline isolate form.
-        ResolvedStack resolved;
+        IReadOnlyList<ResolvedRepo> repos;
         IReadOnlyList<WorkspaceStep> plan;
         try
         {
-            resolved = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo.Path));
-            plan = Services.Workspaces.PlanCreate(resolved, name);
+            repos = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo.Path));
+            plan = Services.Workspaces.PlanCreateFromMap(repos, name);
         }
         catch (Exception ex) { IsolateError = ex.Message; return; }
 
@@ -287,7 +288,7 @@ public partial class ReposViewModel : PageViewModel
         try
         {
             var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            var record = await AppServices.RunAsync(() => Services.Workspaces.Create(resolved, name, progress));
+            var record = await AppServices.RunAsync(() => Services.Workspaces.CreateFromMap(name, null, repos, progress: progress));
             var setupFail = SetupWarning.Summarize(record);
             Status = setupFail is null
                 ? $"created workspace '{name}' — open the Workspaces tab to run or remove it"

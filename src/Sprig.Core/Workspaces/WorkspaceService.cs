@@ -5,7 +5,6 @@ using Sprig.Core.Docker;
 using Sprig.Core.Env;
 using Sprig.Core.Git;
 using Sprig.Core.Ports;
-using Sprig.Core.Stacks;
 using Sprig.Core.Store;
 using Sprig.Core.Substitution;
 
@@ -48,62 +47,19 @@ public sealed partial class WorkspaceService(
     public IReadOnlyList<InstanceRecord> List() => instances.LoadAll();
     public InstanceRecord? Get(string workspace) => instances.TryLoad(workspace);
 
-    /// <summary>Generate one isolated compose copy per overridden compose file across the repo's modules,
-    /// into the workspace's instance dir. The dest name folds in the repo, module and a slug of the source
-    /// path so two files never collide. Shared by create and refresh so the naming stays identical.</summary>
-    IReadOnlyList<string> GenerateComposeFiles(ResolvedRepo repo, string workspace, IVariableSource scope)
-    {
-        var composePaths = new List<string>();
-        foreach (var module in repo.Config.EffectiveModules)
-            foreach (var composeCfg in module.Compose)
-            {
-                var dest = Path.Combine(paths.InstanceDir(workspace),
-                    $"docker-compose.{repo.Name}.{module.Name}.{ComposeSlug(composeCfg.File)}.sprig.yml");
-                compose.GenerateToFile(
-                    Path.Combine(repo.Root, module.Path, composeCfg.File), composeCfg, scope, dest);
-                composePaths.Add(dest);
-            }
-        return composePaths;
-    }
-
-    /// <summary>Create an isolated workspace from a single ad-hoc repo. Rolls back on failure.</summary>
+    /// <summary>Create an isolated workspace from a single ad-hoc repo (the "isolate one repo" path). Resolves
+    /// the repo to a one-element selection and runs it through the map create path with no map. Rolls back on
+    /// failure.</summary>
     public InstanceRecord Create(string repoPath, string workspace,
         IProgress<WorkspaceStepProgress>? progress = null)
-        => Create(ResolveSingleRepo(repoPath), workspace, progress);
-
-    /// <summary>The ordered checklist <see cref="Create(ResolvedStack, string, IProgress{WorkspaceStepProgress})"/>
-    /// will work through, computed up front so a UI can show every row before execution starts. Runs the
-    /// same cheap pre-flight validation as create, so a bad name / duplicate workspace fails here rather
-    /// than mid-checklist.</summary>
-    public IReadOnlyList<WorkspaceStep> PlanCreate(ResolvedStack stack, string workspace)
-    {
-        ValidateCreate(stack, workspace);
-        var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
-        foreach (var repo in stack.Repos)
-        {
-            steps.Add(new(CreateStepIds.Worktree(repo.Name), $"Create worktree — {repo.Name}"));
-            steps.Add(new(CreateStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
-            if (repo.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
-                steps.Add(new(CreateStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
-            if (HasSetup(repo))
-            {
-                // A parent "Install dependencies" row with one indented sub-row per command (across all
-                // the repo's modules, in order), so each command's progress + live output is on its own line.
-                steps.Add(new(CreateStepIds.Setup(repo.Name), $"Install dependencies — {repo.Name}"));
-                foreach (var cmd in SetupCommands(repo))
-                    steps.Add(new(CreateStepIds.SetupCommand(repo.Name, cmd.Index), cmd.Command) { SubStep = true });
-            }
-        }
-        steps.Add(new(CreateStepIds.Record, "Save workspace record"));
-        return steps;
-    }
+        => CreateFromMap(workspace, null, ResolveSingleRepo(repoPath), progress: progress);
 
     /// <summary>Whether this repo has setup commands to run (and a runner to run them).</summary>
     bool HasSetup(ResolvedRepo repo) =>
         setup is not null && repo.Config.EffectiveModules.Any(m => m.Setup.Count > 0);
 
     /// <summary>The repo's setup commands flattened across its modules, in order, with a global index
-    /// (so step ids line up between <see cref="PlanCreate"/> and <see cref="RunSetup"/>) and the module's
+    /// (so step ids line up between <see cref="PlanCreateFromMap"/> and <see cref="RunSetup"/>) and the module's
     /// path/name for the working directory and grouping. Blank commands are skipped but still consume an
     /// index, so the ids are stable regardless of blanks.</summary>
     static IEnumerable<(int Index, string Command, string ModulePath, string ModuleName)> SetupCommands(ResolvedRepo repo)
@@ -146,173 +102,14 @@ public sealed partial class WorkspaceService(
         return outcomes;
     }
 
-    /// <summary>Create an isolated workspace from a resolved stack (1+ repos). Rolls back on failure.
-    /// Reports checklist progress to <paramref name="progress"/> if supplied (steps match
-    /// <see cref="PlanCreate"/>). A partial stack (see <see cref="ResolvedStack.ExcludedRepos"/>)
-    /// needs no special handling here: it arrives already narrowed, so only its repos are
-    /// materialised and only its ports are allocated.</summary>
-    public InstanceRecord Create(ResolvedStack stack, string workspace,
-        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null)
-    {
-        ValidateCreate(stack, workspace);
-
-        // Pre-compute each repo's sibling worktree path and guard against collisions.
-        var plans = new List<RepoPlan>();
-        foreach (var repo in stack.Repos)
-        {
-            var parent = Directory.GetParent(repo.Root)?.FullName
-                ?? throw new WorkspaceException($"repo '{repo.Root}' has no parent directory for a sibling worktree");
-            var dirName = Path.GetFileName(repo.Root.TrimEnd('\\', '/'));
-            var worktree = Path.Combine(parent, $"{dirName}--{workspace}");
-            if (Directory.Exists(worktree))
-                throw new WorkspaceException($"worktree path already exists: {worktree}");
-            plans.Add(new RepoPlan(repo, worktree));
-        }
-
-        var portsAcquired = false;
-        var addedWorktrees = new List<(string root, string worktree)>();
-        // The step whose real work is currently in flight, so the catch can paint the right row red.
-        var current = CreateStepIds.Ports;
-        try
-        {
-            // The stack owns the ports; allocate one real non-colliding number per named port.
-            // A repo input may pin its port to a fixed set (e.g. pre-registered Auth0 callbacks);
-            // resolve those onto the stack ports so allocation only draws from the allowed set.
-            progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Running));
-            var constraints = PortConstraintResolver.Resolve(stack.Repos, stack.Bindings, stack.Ports);
-            var requests = stack.Ports
-                .Select(p => new PortRequest(p, constraints.GetValueOrDefault(p)))
-                .ToList();
-            var allPorts = ports.Acquire(workspace, requests);
-            portsAcquired = true;
-
-            // Resolve per-repo input scopes from the stack's bindings (hard-fails on an unbound input).
-            var wired = StackWiring.Resolve(workspace, allPorts, stack.Repos, stack.Bindings);
-            progress?.Report(new(CreateStepIds.Ports, WorkspaceStepState.Done));
-
-            var repoRecords = new List<InstanceRepo>();
-            foreach (var plan in plans)
-            {
-                var repo = plan.Repo;
-                var repoScope = wired.ScopeFor(repo.Name);
-
-                // Park the workspace: add the worktree in detached HEAD at the chosen start point (default: the
-                // repo's base). A freshly-created workspace carries no branch of its own — identity is attached later at
-                // claim (git also forbids the same branch in two worktrees, so N workspaces could never all sit on
-                // main). Fetch first so the base reflects the latest remotes (a stale local origin/main was
-                // the whole point of the upstream-preferring base). The expensive warm state (env, compose,
-                // node_modules) is built below regardless of git state.
-                current = CreateStepIds.Worktree(repo.Name);
-                progress?.Report(new(current, WorkspaceStepState.Running));
-                TryQuiet(() => git.Fetch(repo.Root));
-                var start = startPoint is not null && git.RefExists(repo.Root, startPoint)
-                    ? startPoint
-                    : git.ResolveDefaultBase(repo.Root);
-                git.AddWorktreeDetached(repo.Root, plan.Worktree, start);
-                addedWorktrees.Add((repo.Root, plan.Worktree));
-                progress?.Report(new(current, WorkspaceStepState.Done));
-
-                current = CreateStepIds.Env(repo.Name);
-                progress?.Report(new(current, WorkspaceStepState.Running));
-                env.Apply(repo.Config, repo.Root, plan.Worktree, repoScope);
-                progress?.Report(new(current, WorkspaceStepState.Done));
-
-                // A repo may override several compose files across its modules; generate one isolated copy
-                // per file, named with the module + a slug of the source path so two files never collide in
-                // the instance dir (the same filename in two modules stays distinct). Each source path is
-                // resolved under its module's directory.
-                IReadOnlyList<string> composePaths = [];
-                if (repo.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
-                {
-                    current = CreateStepIds.Compose(repo.Name);
-                    progress?.Report(new(current, WorkspaceStepState.Running));
-                    composePaths = GenerateComposeFiles(repo, workspace, repoScope);
-                    progress?.Report(new(current, WorkspaceStepState.Done));
-                }
-
-                // Install the repo's dependencies in the fresh worktree. This is the last step and
-                // deliberately soft: SetupRunner never throws on a non-zero exit, so a failed install
-                // is recorded (and surfaced here as a Warning) but does NOT trip the rollback below —
-                // the worktree/env/compose are already good and worth keeping.
-                IReadOnlyList<Setup.SetupOutcome> setupOutcomes = [];
-                if (HasSetup(repo))
-                {
-                    var setupStep = CreateStepIds.Setup(repo.Name);
-                    progress?.Report(new(setupStep, WorkspaceStepState.Running));
-                    setupOutcomes = RunSetup(repo, plan.Worktree, progress);
-                    var failed = setupOutcomes.FirstOrDefault(o => !o.Success);
-                    progress?.Report(failed is null
-                        ? new(setupStep, WorkspaceStepState.Done)
-                        : new(setupStep, WorkspaceStepState.Warning, $"'{failed.Command}' exited {failed.ExitCode} — worktree kept"));
-                }
-
-                repoRecords.Add(new InstanceRepo
-                {
-                    Name = repo.Name,
-                    SourcePath = repo.Root,
-                    WorktreePath = plan.Worktree,
-                    Branch = null, // parked: detached HEAD, no branch until claimed
-                    GeneratedComposePaths = composePaths,
-                    Inputs = wired.Inputs[repo.Name],
-                    Setup = setupOutcomes,
-                });
-            }
-
-            current = CreateStepIds.Record;
-            progress?.Report(new(current, WorkspaceStepState.Running));
-            var record = new InstanceRecord
-            {
-                Workspace = workspace,
-                Stack = stack.StackName,
-                Repos = repoRecords,
-                Ports = new Dictionary<string, int>(allPorts),
-                ExcludedRepos = stack.ExcludedRepos,
-                SkippedPorts = stack.SkippedPorts,
-                LastStatus = "created",
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
-            instances.Save(record);
-            progress?.Report(new(current, WorkspaceStepState.Done));
-            return record;
-        }
-        catch (Exception ex)
-        {
-            progress?.Report(new(current, WorkspaceStepState.Error, ex.Message));
-            // Best-effort rollback across every repo materialised so far. A parked workspace carries no branch,
-            // so there's nothing to delete — just remove the worktree and its folder.
-            foreach (var (root, worktree) in addedWorktrees)
-            {
-                TryQuiet(() => git.RemoveWorktree(root, worktree));
-                WorktreeInspector.TryDeleteDirectory(worktree);
-            }
-            if (portsAcquired) TryQuiet(() => ports.Release(workspace));
-            TryQuiet(() => instances.Delete(workspace));
-            throw;
-        }
-    }
-
-    /// <summary>Shared cheap pre-flight validation for create (used by both create and its planner). A
-    /// freshly-created workspace carries no branch (it's parked detached), so there's no branch-name conflict to
-    /// guard here — that check moves to <see cref="CheckClaim"/>, run when a branch is actually cut.</summary>
-    void ValidateCreate(ResolvedStack stack, string workspace)
-    {
-        ValidateName(workspace);
-        if (stack.Repos.Count == 0)
-            throw new WorkspaceException("nothing to create: the stack has no repos");
-        if (instances.TryLoad(workspace) is not null)
-            throw new WorkspaceException($"workspace '{workspace}' already exists");
-    }
-
-    /// <summary>Resolve an ad-hoc single repo path into a one-repo stack.</summary>
-    public ResolvedStack ResolveSingleRepo(string repoPath)
+    /// <summary>Resolve an ad-hoc single repo path into a one-element selection for the map create path.</summary>
+    public IReadOnlyList<ResolvedRepo> ResolveSingleRepo(string repoPath)
     {
         if (!git.IsGitRepo(repoPath))
             throw new WorkspaceException($"'{repoPath}' is not a git repository");
         var root = git.ResolveRepoRoot(repoPath);
         var config = LoadValidConfig(root);
-        // Ad-hoc single repo: no stack, so only zero-input repos can stand up this way.
-        return new ResolvedStack(null, [new ResolvedRepo(config.Name, root, config)],
-            [], new Dictionary<string, IReadOnlyDictionary<string, string>>());
+        return [new ResolvedRepo(config.Name, root, config)];
     }
 
     sealed record RepoPlan(ResolvedRepo Repo, string Worktree);
@@ -690,48 +487,28 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>The effective config for a repo during refresh: the caller's resolved config (which carries
-    /// the stack overlay) when it lists this repo, else the committed <c>.sprig.json</c> reloaded from
-    /// source.</summary>
+    /// the caller resolved (the fresh config) when it lists this repo, else the committed <c>.sprig.json</c>
+    /// reloaded from source.</summary>
     SprigRepoConfig ConfigFor(InstanceRepo repo, IReadOnlyList<ResolvedRepo>? resolvedRepos)
         => resolvedRepos?.FirstOrDefault(r => string.Equals(r.Name, repo.Name, StringComparison.Ordinal))?.Config
             ?? LoadValidConfig(repo.SourcePath);
 
-    /// <summary>Rebuild the env/compose substitution scope for a repo from the input values the record
-    /// stores. Mirrors <see cref="StackWiring"/>'s per-repo scope: the declared inputs plus
-    /// <c>workspace</c>, which templates reference as <c>${sprig.workspace}</c>.</summary>
-    static IVariableSource ScopeFromInputs(string workspace, IReadOnlyDictionary<string, string> inputs)
-    {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["workspace"] = workspace };
-        foreach (var (key, value) in inputs) values[key] = value;
-        return new DictionaryVariableSource(values);
-    }
-
-    /// <summary>Reapply a repo's env overrides on claim/refresh, handling both scope models: a <b>map</b>
-    /// workspace resolves each module against its own stored capability scope; a stack/ad-hoc workspace uses
-    /// one repo-level input scope. Source is never mutated.</summary>
+    /// <summary>Reapply a repo's env overrides on claim/refresh: each module resolves against its own stored
+    /// capability scope (the concrete values <see cref="CreateFromMap"/> recorded per module). Source is never
+    /// mutated.</summary>
     void ApplyEnvFor(InstanceRepo repo, ResolvedRepo resolved, string workspace)
     {
-        if (repo.Modules.Count > 0)
-        {
-            var byName = resolved.Config.EffectiveModules.ToDictionary(m => m.Name, StringComparer.Ordinal);
-            foreach (var stored in repo.Modules)
-                if (byName.TryGetValue(stored.Name, out var module))
-                    env.ApplyModule(module, repo.SourcePath, repo.WorktreePath,
-                        Substitution.SprigScope.ForValues(workspace, stored.Values));
-        }
-        else
-        {
-            env.Apply(resolved.Config, repo.SourcePath, repo.WorktreePath, ScopeFromInputs(workspace, repo.Inputs));
-        }
+        var byName = resolved.Config.EffectiveModules.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        foreach (var stored in repo.Modules)
+            if (byName.TryGetValue(stored.Name, out var module))
+                env.ApplyModule(module, repo.SourcePath, repo.WorktreePath,
+                    Substitution.SprigScope.ForValues(workspace, stored.Values));
     }
 
-    /// <summary>Regenerate a repo's compose files on claim/refresh, per the same two scope models as
-    /// <see cref="ApplyEnvFor"/>. Returns the generated file paths.</summary>
+    /// <summary>Regenerate a repo's compose files on claim/refresh, each module against its stored scope
+    /// (matching <see cref="ApplyEnvFor"/>). Returns the generated file paths.</summary>
     IReadOnlyList<string> GenerateComposeFor(InstanceRepo repo, ResolvedRepo resolved, string workspace)
     {
-        if (repo.Modules.Count == 0)
-            return GenerateComposeFiles(resolved, workspace, ScopeFromInputs(workspace, repo.Inputs));
-
         var stored = repo.Modules.ToDictionary(m => m.Name, StringComparer.Ordinal);
         var composePaths = new List<string>();
         foreach (var module in resolved.Config.EffectiveModules)

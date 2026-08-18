@@ -26,13 +26,8 @@ public sealed class AppServices
     public IDockerService Docker { get; }
     public WorkspaceService Workspaces { get; }
 
-    /// <summary>The pool lifecycle over the stack's <c>MaxSlots</c> ceiling: checkout / release / status.
-    /// A thin query+allocation layer over the same <c>InstanceStore</c> the workspace list reads.</summary>
-    public PoolService Pools { get; }
     public WorkspaceReconciler Reconciler { get; }
     public RepoRegistryStore Repos { get; }
-    public StackStore Stacks { get; }
-    public StackResolver StackResolver { get; }
 
     /// <summary>The map model (the Graph Turn): definitions + the resolver that turns a map + selection into
     /// a checkout, and the pool lifecycle over a map's <c>MaxSlots</c> ceiling (checkout / release / status).</summary>
@@ -73,9 +68,6 @@ public sealed class AppServices
             new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner));
         Reconciler = new WorkspaceReconciler(Git, instances);
         Repos = new RepoRegistryStore(Paths);
-        Stacks = new StackStore(Paths, Repos, instances);
-        StackResolver = new StackResolver(Repos, Stacks, Git);
-        Pools = new PoolService(Stacks, instances, StackResolver, Workspaces, Paths);
         Maps = new MapStore(Paths, Repos);
         MapResolver = new MapResolver(Repos, Maps, Git, Paths);
         MapPool = new MapPoolService(Maps, instances, MapResolver, Workspaces, Paths);

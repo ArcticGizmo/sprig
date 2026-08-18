@@ -19,11 +19,9 @@ public class RepoEditModuleTests
     {
         using var s = new TempStore();
         var dir = Write(s, """
-            { "schema":3, "name":"mono",
-              "inputs":[ { "name":"port" } ],
-              "modules":[
+            { "schema":3, "name":"mono",              "modules":[
                 { "name":"web", "path":"apps/web",
-                  "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.port}" } } ], "setup":["npm ci"] },
+                  "env":[ { "file":".env.local", "set":{ "PORT":"${sprig.workspace}" } } ], "setup":["npm ci"] },
                 { "name":"api", "path":"apps/api", "setup":["dotnet restore"] } ] }
             """);
 
@@ -42,12 +40,10 @@ public class RepoEditModuleTests
     {
         using var s = new TempStore();
         var dir = Write(s, """
-            { "schema":3, "name":"mono",
-              "inputs":[ { "name":"port" } ],
-              "modules":[
+            { "schema":3, "name":"mono",              "modules":[
                 { "name":"web", "path":"apps/web",
                   "env":[ { "file":".env.local", "templates":[".env.template"],
-                            "set":{ "PORT":"${sprig.port}" } } ] } ] }
+                            "set":{ "PORT":"${sprig.workspace}" } } ] } ] }
             """);
         // The template lives under the module path — the existence hint must resolve it there,
         // not against the repo root.

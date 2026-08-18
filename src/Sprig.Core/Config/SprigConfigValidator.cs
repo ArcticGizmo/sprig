@@ -33,11 +33,9 @@ public static class SprigConfigValidator
         foreach (var key in config.Unknown.Keys)
             issues.Add(new(key, "unknown top-level key"));
 
-        ValidateInputs(config, issues);
-
-        // Map-model surface (schema v1): provides/needs on the repo (single-app sugar) and per module.
+        // Map-model surface: provides/needs on the repo (single-app sugar) and per module.
         // Capability names are unique across the whole repo (a duplicate is a local ambiguity nearest-wins
-        // can't resolve). Empty for a stack-era config, so this is a no-op there.
+        // can't resolve).
         var seenCaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         ValidateProvides(config.Provides, "provides", seenCaps, issues);
         ValidateNeeds(config.Needs, "needs", issues);
@@ -54,30 +52,10 @@ public static class SprigConfigValidator
 
         foreach (var reference in ConfigReferences.UndeclaredReferences(config))
             issues.Add(new("template",
-                $"references '${{sprig.{reference}}}' which is not a declared input, a provided/needed "
-                + "capability output, or 'workspace'"));
+                $"references '${{sprig.{reference}}}' which is not a provided/needed capability output "
+                + "or 'workspace'"));
 
         return new ValidationResult(issues);
-    }
-
-    static void ValidateInputs(SprigRepoConfig config, List<ValidationIssue> issues)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < config.Inputs.Count; i++)
-        {
-            var input = config.Inputs[i];
-            var at = $"inputs[{i}]";
-            if (string.IsNullOrWhiteSpace(input.Name))
-                issues.Add(new($"{at}.name", "must be a non-empty input name"));
-            else if (!IsIdentifier(input.Name))
-                issues.Add(new($"{at}.name", $"'{input.Name}' must contain only letters, digits, '-' or '_'"));
-            else if (!seen.Add(input.Name))
-                issues.Add(new($"{at}.name", $"duplicate input name '{input.Name}'"));
-
-            if (!string.IsNullOrWhiteSpace(input.AllowedPorts)
-                && !Ports.PortSetSpec.TryParse(input.AllowedPorts, out _, out var portErr))
-                issues.Add(new($"{at}.allowedPorts", portErr!));
-        }
     }
 
     static void ValidateModules(

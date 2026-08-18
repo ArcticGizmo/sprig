@@ -3,13 +3,9 @@ using System.Text.Json.Serialization;
 
 namespace Sprig.Core.Config;
 
-// The map-model surface of a repo config (schema-v1 / "The Graph Turn"). A repo — and each module
-// within it — declares what it PROVIDES to others and what it NEEDS from them, replacing the
-// stack-era pure-consumer `inputs`. See docs/graph-model-redesign.md.
-//
-// Transition note: through the stacks→maps migration these live ALONGSIDE the legacy
-// `SprigRepoConfig.Inputs`; both surfaces are optional and validated independently. The stack path
-// never reads provides/needs; the map path never reads inputs. Inputs are removed at milestone M7.
+// The map-model surface of a repo config ("The Graph Turn"). A repo — and each module within it —
+// declares what it PROVIDES to others and what it NEEDS from them. This replaced the stack-era
+// pure-consumer `inputs`, which have been removed. See docs/graph-model-redesign.md.
 
 /// <summary>
 /// A capability a repo/module offers others: a named contract (<see cref="Capability"/>) plus its

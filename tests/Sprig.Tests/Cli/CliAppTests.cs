@@ -46,7 +46,7 @@ public sealed class CliAppTests : IDisposable
         var dir = Path.Combine(_root, "repos", name);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            $$"""{ "schema": 3, "name": "{{name}}", "inputs": [], "modules": [] }""");
+            $$"""{ "schema": 3, "name": "{{name}}", "modules": [] }""");
         new RepoRegistryStore(_paths).Add(dir, name);
     }
 
@@ -67,7 +67,7 @@ public sealed class CliAppTests : IDisposable
             var modJson = string.Join(",", mods.Select(x =>
                 $$"""{ "name": "{{x.Name}}", "path": "{{x.Path}}" }"""));
             File.WriteAllText(Path.Combine(worktree, ".sprig.json"),
-                $$"""{ "schema": 3, "name": "{{name}}", "inputs": [], "modules": [{{modJson}}] }""");
+                $$"""{ "schema": 3, "name": "{{name}}", "modules": [{{modJson}}] }""");
             foreach (var mod in mods.Where(x => x.Path.Length > 0))
                 Directory.CreateDirectory(Path.Combine(worktree, mod.Path.Replace('/', Path.DirectorySeparatorChar)));
             instanceRepos.Add(new InstanceRepo { Name = name, SourcePath = worktree, WorktreePath = worktree });

@@ -56,12 +56,12 @@ public partial class HomeViewModel : PageViewModel
 
     async Task RefreshAsync()
     {
-        var (repos, stacks, records) = await AppServices.RunAsync(() =>
+        var (repos, maps, records) = await AppServices.RunAsync(() =>
             (_services.Repos.List().Count,
-             _services.Stacks.List().Count,
+             _services.Maps.List().Count,
              _services.Workspaces.List()));
 
-        State = new SetupState(repos, stacks, records.Count);
+        State = new SetupState(repos, maps, records.Count);
         Recent.Clear();
         foreach (var r in records.OrderByDescending(r => r.CreatedAt).Take(4))
             Recent.Add(new WorkspaceItemViewModel(r));

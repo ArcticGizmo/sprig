@@ -3,10 +3,9 @@ using System.Text.RegularExpressions;
 namespace Sprig.Core.Config;
 
 /// <summary>
-/// Inspects the <c>${sprig.&lt;path&gt;}</c> references a repo's templates make. A repo may only
-/// reference its own declared <see cref="InputDeclaration"/>s and <c>workspace</c>; anything else
-/// is a mistake the validator flags (repos are pure consumers — they don't know about stack
-/// ports or other repos; the stack supplies each input via bindings).
+/// Inspects the <c>${sprig.&lt;path&gt;}</c> references a repo's templates make. A repo may reference
+/// <c>workspace</c>, its own self-provided <c>&lt;capability&gt;.&lt;output&gt;</c>, or a declared need
+/// (whose output resolves at map time); anything else is a mistake the validator flags.
 /// </summary>
 public static partial class ConfigReferences
 {
@@ -32,9 +31,9 @@ public static partial class ConfigReferences
 
     /// <summary>
     /// References that resolve to nothing the repo declares — i.e. mistakes. A reference is accepted when it
-    /// is <c>workspace</c>, a stack-era declared <see cref="InputDeclaration"/> (dotless), or a map-era
-    /// <c>&lt;capability&gt;.&lt;output&gt;</c>: a self/local-provided output (checked exactly) or a needed
-    /// capability / alias (the output is only knowable at map-resolve time, so the head alone must match).
+    /// is <c>workspace</c> or a <c>&lt;capability&gt;.&lt;output&gt;</c>: a self/local-provided output (checked
+    /// exactly) or a needed capability / alias (the output is only knowable at map-resolve time, so the head
+    /// alone must match).
     /// </summary>
     public static IReadOnlyList<string> UndeclaredReferences(SprigRepoConfig config)
     {
@@ -44,7 +43,7 @@ public static partial class ConfigReferences
 
     /// <summary>
     /// Whether a single <c>${sprig.&lt;reference&gt;}</c> path is accepted, given a repo's
-    /// <paramref name="exactNames"/> (the names matched verbatim — <c>workspace</c>, stack-era inputs, and each
+    /// <paramref name="exactNames"/> (the names matched verbatim — <c>workspace</c> and each
     /// self-provided <c>&lt;capability&gt;.&lt;output&gt;</c>) and its <paramref name="openCapabilities"/> (needed
     /// capability names + aliases, whose output is only knowable at map-resolve time so any tail is accepted).
     /// The per-reference rule behind <see cref="UndeclaredReferences"/>, exposed so the live editor's token
@@ -63,8 +62,6 @@ public static partial class ConfigReferences
     static (HashSet<string> Exact, HashSet<string> Open) ReferenceScope(SprigRepoConfig config)
     {
         var exact = new HashSet<string>(StringComparer.Ordinal) { "workspace" };
-        foreach (var i in config.Inputs)
-            exact.Add(i.Name);
         var (provided, needed) = CapabilitySurface(config);
         foreach (var (cap, outs) in provided)
             foreach (var o in outs)

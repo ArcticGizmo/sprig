@@ -98,7 +98,7 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
             if (s.Map is not null)
                 (map, repos) = cli.MapResolver.Resolve(s.Map, MapWithout(s.Map, only, without));
             else if (s.Repo is not null)
-                (map, repos) = (null, cli.Workspaces.ResolveSingleRepo(s.Repo).Repos);
+                (map, repos) = (null, cli.Workspaces.ResolveSingleRepo(s.Repo));
             else
                 throw new ArgumentException("create requires --map <name> or --repo <path> (or run it at a terminal to be prompted)");
             fromLabel = s.Map;
@@ -772,7 +772,7 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
             throw new ArgumentException($"path does not exist: {root}");
 
         var inspector = new InitInspector(cli.Git);
-        var proposal = s.Map ? inspector.InspectMap(root) : inspector.Inspect(root);
+        var proposal = inspector.InspectMap(root);   // map is the only model now (--map kept as a no-op alias)
         var text = JsonSerializer.Serialize(proposal.Config, ConfigJsonOptions);
 
         // --print previews without touching disk — the one read-only path. --json pairs with it to

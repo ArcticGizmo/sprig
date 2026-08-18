@@ -157,9 +157,12 @@ public partial class RepoLineViewModel : ViewModelBase
         Name = repo.Name;
         Branch = repo.Branch ?? "";
         WorktreePath = repo.WorktreePath;
-        Inputs = repo.Inputs.Count == 0
+        // The concrete ${sprig.<cap>.<out>} values each module resolved to (ports, derived URLs, needs) —
+        // the map-model successor to the old per-repo stack inputs.
+        var values = repo.Modules.SelectMany(m => m.Values).OrderBy(p => p.Key).ToList();
+        Inputs = values.Count == 0
             ? "-"
-            : string.Join("  ", repo.Inputs.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
+            : string.Join("  ", values.Select(p => $"{p.Key}={p.Value}"));
         HasInfra = repo.ComposePaths.Count > 0;
     }
 

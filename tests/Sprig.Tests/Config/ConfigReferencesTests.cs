@@ -5,23 +5,24 @@ namespace Sprig.Tests.Config;
 public class ConfigReferencesTests
 {
     [Fact]
-    public void Undeclared_references_flag_refs_that_are_not_inputs_or_workspace()
+    public void Undeclared_references_flag_refs_that_are_not_provided_or_workspace()
     {
         var config = SprigConfigLoader.Parse("""
             {
-              "schema": 2, "name": "vue",
-              "inputs": [ { "name": "frontend", "example": "3000" } ],
-              "env": [ { "file": ".env", "set": {
-                  "PORT": "${sprig.frontend}",
-                  "NAME": "app--${sprig.workspace}",
-                  "OOPS": "${sprig.apiUrl}"
-              } } ]
+              "schema": 3, "name": "vue",
+              "modules": [ { "name": "app",
+                "provides": [ { "capability": "frontend", "outputs": { "port": { "port": true } } } ],
+                "env": [ { "file": ".env", "set": {
+                    "PORT": "${sprig.frontend.port}",
+                    "NAME": "app--${sprig.workspace}",
+                    "OOPS": "${sprig.apiUrl}"
+                } } ] } ]
             }
             """);
 
-        // frontend (declared) and workspace are fine; apiUrl is undeclared.
+        // frontend.port (self-provided) and workspace are fine; apiUrl is undeclared.
         Assert.Equal(["apiUrl"], ConfigReferences.UndeclaredReferences(config));
-        Assert.Contains("frontend", ConfigReferences.ReferencedPaths(config));
+        Assert.Contains("frontend.port", ConfigReferences.ReferencedPaths(config));
         Assert.Contains("workspace", ConfigReferences.ReferencedPaths(config));
     }
 
@@ -37,13 +38,14 @@ public class ConfigReferencesTests
     }
 
     [Fact]
-    public void Declared_inputs_are_not_flagged()
+    public void A_needed_capabilitys_output_is_accepted()
     {
         var config = SprigConfigLoader.Parse("""
-            { "schema":2, "name":"api",
-              "inputs":[ { "name":"imageTag" } ],
-              "compose": [ { "file":"docker-compose.yml", "overrides":[
-                  { "path":["services","x","image"], "template":"${sprig.imageTag}" } ] } ] }
+            { "schema":3, "name":"api",
+              "modules": [ { "name":"app",
+                "needs": [ { "capability": "db" } ],
+                "compose": [ { "file":"docker-compose.yml", "overrides":[
+                    { "path":["services","x","image"], "template":"${sprig.db.image}" } ] } ] } ] }
             """);
         Assert.Empty(ConfigReferences.UndeclaredReferences(config));
     }

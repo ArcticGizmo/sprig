@@ -13,22 +13,14 @@ public sealed record SprigRepoConfig
     /// <summary>Config schema version. Only <see cref="SprigConfigLoader.SupportedSchema"/> is understood.</summary>
     public int Schema { get; init; } = SprigConfigLoader.SupportedSchema;
 
-    /// <summary>Logical repo name (used as the stack's binding key for this repo).</summary>
+    /// <summary>Logical repo name (its registry/map key).</summary>
     public string Name { get; init; } = "";
 
     /// <summary>
-    /// The values this repo needs to run, referenced as <c>${sprig.&lt;name&gt;}</c> in its env/compose
-    /// templates. A repo is a pure consumer: the stack supplies these per-repo (see StackDefinition).
-    /// Inputs are declared once at the repo level and <b>shared across every module</b>.
-    /// </summary>
-    public IReadOnlyList<InputDeclaration> Inputs { get; init; } = [];
-
-    /// <summary>
     /// The repo's modules (schema 3+). Each module is a slice of the repo (e.g. a monorepo
-    /// subdirectory) with its own <c>.env</c> files, compose files and setup commands, sharing the
-    /// repo-level <see cref="Inputs"/>. A schema-2 file has no modules; <see cref="SprigConfigMigration"/>
-    /// lifts its flat <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/> into a single default
-    /// module on load.
+    /// subdirectory) with its own <c>.env</c> files, compose files, setup commands and provides/needs.
+    /// A schema-≤2 file has no modules; <see cref="SprigConfigMigration"/> lifts its flat
+    /// <see cref="Env"/>/<see cref="Compose"/>/<see cref="Setup"/> into a single default module on load.
     /// </summary>
     public IReadOnlyList<ModuleDeclaration> Modules { get; init; } = [];
 
@@ -99,10 +91,10 @@ public sealed record SprigRepoConfig
 }
 
 /// <summary>
-/// A slice of a repo (schema 3+): its own <c>.env</c> files, compose files and setup commands, plus an
-/// optional <see cref="Path"/> — the subdirectory the module lives in (a monorepo slice). A module's
-/// env/compose file paths resolve under <see cref="Path"/>, and its <see cref="Setup"/> runs in
-/// <c>&lt;worktree&gt;/&lt;path&gt;</c>. Inputs are not per-module — they are shared at the repo level.
+/// A slice of a repo (schema 3+): its own <c>.env</c> files, compose files, setup commands and
+/// provides/needs, plus an optional <see cref="Path"/> — the subdirectory the module lives in (a monorepo
+/// slice). A module's env/compose file paths resolve under <see cref="Path"/>, and its <see cref="Setup"/>
+/// runs in <c>&lt;worktree&gt;/&lt;path&gt;</c>.
 /// </summary>
 public sealed record ModuleDeclaration
 {
@@ -136,28 +128,6 @@ public sealed record ModuleDeclaration
     /// not roll back the workspace. Values are literal (no <c>${sprig.*}</c>).
     /// </summary>
     public IReadOnlyList<string> Setup { get; init; } = [];
-}
-
-/// <summary>
-/// A value the repo needs from the stack, referenced as <c>${sprig.&lt;name&gt;}</c>. The
-/// <see cref="Example"/> shows the shape the stack should supply (e.g. <c>5000</c> or
-/// <c>http://localhost:5000</c>) so the author knows what to bind.
-/// </summary>
-public sealed record InputDeclaration
-{
-    public string Name { get; init; } = "";
-    public string? Example { get; init; }
-    public string? Description { get; init; }
-
-    /// <summary>
-    /// Optional restriction on which host ports the stack port feeding this input may take, as a
-    /// compact spec (e.g. <c>"8100-8103"</c> or <c>"8100,8101,8200"</c>; see <c>PortSetSpec</c>).
-    /// Use it when a value is only valid for a fixed set of ports — e.g. an Auth0 front end whose
-    /// callback URLs are pre-registered per port. sprig traces the input's binding to its stack
-    /// port and only ever allocates from this set, so the set size caps how many instances can
-    /// run at once. Null/blank means unrestricted (the whole settings range).
-    /// </summary>
-    public string? AllowedPorts { get; init; }
 }
 
 /// <summary>An override applied to a single <c>.env.*</c> file: the keys in <see cref="Set"/> are clobbered.</summary>

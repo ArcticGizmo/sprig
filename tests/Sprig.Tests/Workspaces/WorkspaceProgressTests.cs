@@ -56,7 +56,7 @@ public class WorkspaceProgressTests
         Seed(repo, PlainConfig);
         var svc = Build(store);
 
-        var plan = svc.PlanCreate(svc.ResolveSingleRepo(repo.Path), "feat-a");
+        var plan = svc.PlanCreateFromMap(svc.ResolveSingleRepo(repo.Path), "feat-a");
 
         // No compose in the config and no setup runner → just ports, worktree, env, record.
         Assert.Equal(
@@ -113,7 +113,7 @@ public class WorkspaceProgressTests
         Seed(repo, ConfigWithTwoSetup);
         var svc = Build(store, new SetupRunner(new RecordingProcessRunner()));
 
-        var plan = svc.PlanCreate(svc.ResolveSingleRepo(repo.Path), "feat-a");
+        var plan = svc.PlanCreateFromMap(svc.ResolveSingleRepo(repo.Path), "feat-a");
 
         // Parent row, then one indented sub-row per command labelled with the command itself.
         Assert.Contains(plan, s => s.Id == "vue-app:setup" && !s.SubStep);

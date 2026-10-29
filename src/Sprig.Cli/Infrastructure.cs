@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Sprig.Core.Git;
 using Sprig.Core.Maps;
 using Sprig.Core.Pools;
@@ -86,6 +87,24 @@ sealed class TypeResolver(IDictionary<Type, object> instances) : ITypeResolver, 
 sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
 {
     public void Report(T value) => handler(value);
+}
+
+/// <summary>A stored record as JSON with each repo's <b>live</b> HEAD added as <c>Head</c>. The record keeps
+/// the claim branch, which git can move away from at any time, so callers that want "what is checked out now"
+/// read <c>Head</c>. Additive: every stored field is still emitted as-is.</summary>
+static class LiveJson
+{
+    public static JsonNode Record(InstanceRecord record)
+    {
+        var node = JsonSerializer.SerializeToNode(record)!.AsObject();
+        if (node["Repos"] is JsonArray repos)
+            for (var i = 0; i < record.Repos.Count && i < repos.Count; i++)
+                repos[i]!.AsObject()["Head"] = Head(WorktreeHead.Read(record.Repos[i].WorktreePath));
+        return node;
+    }
+
+    public static JsonNode? Head(WorktreeHead? head)
+        => head is null ? null : JsonSerializer.SerializeToNode(new { head.Branch, head.Commit, head.IsDetached });
 }
 
 /// <summary>Output primitives shared by the command classes. <see cref="Json"/> writes straight to stdout

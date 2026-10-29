@@ -386,6 +386,75 @@ public sealed class CliAppTests : IDisposable
     }
 
     [Fact]
+    public void Here_resolves_a_module_directory_as_json()
+    {
+        SeedWorkspace("feat", ["mono"],
+            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
+        Run("ws", "label", "feat", "Risk matrix overrides");
+        var dir = Path.Combine(_root, "worktrees", "mono--feat", "apps", "web");
+
+        var (exit, o, _) = Run("here", "--path", dir, "--json");
+        Assert.Equal(0, exit);
+        using var doc = System.Text.Json.JsonDocument.Parse(o);
+        var root = doc.RootElement;
+        Assert.Equal(1, root.GetProperty("schema").GetInt32());
+        Assert.Equal("feat", root.GetProperty("workspace").GetString());
+        Assert.Equal("mono", root.GetProperty("repo").GetString());
+        Assert.Equal("web", root.GetProperty("module").GetString());
+        Assert.Equal("Risk matrix overrides", root.GetProperty("label").GetString());
+    }
+
+    [Fact]
+    public void Here_outside_a_workspace_exits_one()
+    {
+        var (exit, _, err) = Run("here", "--path", _root);
+        Assert.Equal(1, exit);
+        Assert.Contains("not in a sprig workspace", err);
+    }
+
+    [Fact]
+    public void Label_sets_shows_and_clears()
+    {
+        SeedWorkspace("feat", "api");
+        Assert.Equal(0, Run("ws", "label", "feat", "Audit log").exit);
+        Assert.Equal("Audit log", Run("ws", "label", "feat").@out.Trim());
+
+        Assert.Equal(0, Run("ws", "label", "feat", "--clear").exit);
+        Assert.Null(new InstanceStore(_paths).TryLoad("feat")!.Label);
+    }
+
+    [Fact]
+    public void Label_rejects_text_with_clear()
+    {
+        SeedWorkspace("feat", "api");
+        var (exit, _, err) = Run("ws", "label", "feat", "x", "--clear");
+        Assert.Equal(1, exit);
+        Assert.Contains("not both", err);
+    }
+
+    [Fact]
+    public void Note_json_round_trips()
+    {
+        SeedWorkspace("feat", "api");
+        var (exit, o, _) = Run("ws", "note", "feat", "waiting on review", "--json");
+        Assert.Equal(0, exit);
+        Assert.Contains("\"note\": \"waiting on review\"", o);
+    }
+
+    [Fact]
+    public void Ls_leads_with_the_label_and_json_adds_a_live_head()
+    {
+        SeedWorkspace("feat", "api");
+        Run("ws", "label", "feat", "Audit log");
+
+        Assert.Contains("Audit log", Run("ws", "ls").@out);
+        // The seeded worktree isn't a git checkout, so its live head is unknown (null) — but the field is there.
+        using var doc = System.Text.Json.JsonDocument.Parse(Run("ws", "ls", "--json").@out);
+        var repo = doc.RootElement[0].GetProperty("Repos")[0];
+        Assert.True(repo.TryGetProperty("Head", out _));
+    }
+
+    [Fact]
     public void Path_root_keyword_selects_the_worktree_root()
     {
         SeedWorkspace("feat", ["mono"],

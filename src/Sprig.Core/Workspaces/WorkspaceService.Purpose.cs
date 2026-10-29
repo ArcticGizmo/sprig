@@ -1,0 +1,81 @@
+using Sprig.Core.Config;
+using Sprig.Core.Store;
+
+namespace Sprig.Core.Workspaces;
+
+/// <summary>Where a directory sits within Sprig's workspaces: the workspace, the repo whose worktree holds
+/// it, and the module (by name) whose directory holds it, or null at a repo root with no module there.</summary>
+public sealed record WorkspaceLocation(InstanceRecord Record, InstanceRepo Repo, string? Module);
+
+/// <summary>
+/// A workspace's <b>purpose</b> layer — the label and note its claimer owns and can change at any time — and
+/// locating a directory within the workspaces. Neither touches git or infra: purpose is metadata about the
+/// work, and git state is read live rather than stored.
+/// </summary>
+public sealed partial class WorkspaceService
+{
+    /// <summary>Set (or, with null/blank, clear) a workspace's label.</summary>
+    public InstanceRecord SetLabel(string workspace, string? label)
+        => Update(workspace, r => r with { Label = Clean(label) });
+
+    /// <summary>Set (or, with null/blank, clear) a workspace's status note.</summary>
+    public InstanceRecord SetNote(string workspace, string? note)
+        => Update(workspace, r => r with { Note = Clean(note) });
+
+    /// <summary>
+    /// Resolve a directory to the workspace, repo and module that contain it by matching it against the
+    /// recorded worktree paths — no marker file in the worktree. The deepest match wins, so a worktree nested
+    /// under another path still resolves to itself. Null when the directory is in no workspace.
+    /// </summary>
+    public WorkspaceLocation? Locate(string directory)
+    {
+        var dir = Normalise(directory);
+        WorkspaceLocation? best = null;
+        var bestLength = -1;
+        foreach (var record in instances.LoadAll())
+            foreach (var repo in record.Repos)
+            {
+                var root = Normalise(repo.WorktreePath);
+                if (!IsUnder(dir, root) || root.Length <= bestLength) continue;
+                best = new WorkspaceLocation(record, repo, ModuleAt(repo, Path.GetRelativePath(root, dir)));
+                bestLength = root.Length;
+            }
+        return best;
+    }
+
+    InstanceRecord Update(string workspace, Func<InstanceRecord, InstanceRecord> change)
+    {
+        var record = instances.TryLoad(workspace) ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        var updated = change(record);
+        instances.Save(updated);
+        return updated;
+    }
+
+    static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+    // The module whose directory holds `relative` (a path under the worktree root), deepest first. A module
+    // at the repo root ("" path) matches everything, so a single-module repo always names its module. Read
+    // from the worktree's own config, best-effort: an unreadable config just means no module.
+    static string? ModuleAt(InstanceRepo repo, string relative)
+    {
+        IReadOnlyList<ModuleDeclaration> modules;
+        try { modules = SprigConfigLoader.LoadFromFile(Path.Combine(repo.WorktreePath, ConfigFileName)).EffectiveModules; }
+        catch (SprigConfigException) { return null; }
+
+        var rel = relative == "." ? "" : relative.Replace('\\', '/');
+        return modules
+            .Where(m => m.Path.Length == 0 || rel == m.Path.TrimEnd('/') || rel.StartsWith(m.Path.TrimEnd('/') + "/", PathComparison))
+            .OrderByDescending(m => m.Path.Length)
+            .FirstOrDefault()?.Name;
+    }
+
+    static bool IsUnder(string dir, string root)
+        => string.Equals(dir, root, PathComparison)
+           || dir.StartsWith(root + Path.DirectorySeparatorChar, PathComparison);
+
+    static string Normalise(string path)
+        => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    static StringComparison PathComparison
+        => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+}

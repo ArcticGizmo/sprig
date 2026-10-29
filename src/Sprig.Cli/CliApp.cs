@@ -84,9 +84,8 @@ public static class CliApp
         }
     }
 
-    // Dispatch convention: the workspace is the primary object, so its verbs are top-level and
-    // unqualified (create/ls/info/up/…). Every other object is namespaced (repo/stack/settings). A
-    // `ws`/`workspace` branch mirrors the workspace verbs so the noun-verb form works too.
+    // Dispatch convention: every object is namespaced under its noun (ws/repo/pool/map/settings). Only the
+    // navigation and meta commands (cd/path/here/open/update/init) sit at the top level.
     static void Configure(IConfigurator config)
     {
         config.SetApplicationName("sprig");
@@ -100,6 +99,7 @@ public static class CliApp
 
         config.AddCommand<CdCommand>("cd");
         config.AddCommand<PathCommand>("path");
+        config.AddCommand<HereCommand>("here");
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
         config.AddCommand<InitCommand>("init");
@@ -145,6 +145,8 @@ public static class CliApp
             ws.AddCommand<CreateCommand>("create");
             ws.AddCommand<LsCommand>("ls");
             ws.AddCommand<InfoCommand>("info");
+            ws.AddCommand<LabelCommand>("label");
+            ws.AddCommand<NoteCommand>("note");
             ws.AddCommand<UpCommand>("up");
             ws.AddCommand<DownCommand>("down");
             ws.AddCommand<RefreshCommand>("refresh");

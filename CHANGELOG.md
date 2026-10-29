@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Workspaces say what they're for
+
+A worktree is not a branch, and a list of branch names was never a great answer to "what is everyone doing?".
+
+- **`sprig ws label` / `sprig ws note`** — set, show or `--clear` what a workspace is for and a short status line, at any time, claimed or not.
+- **`sprig here`** — resolves the current directory (or `--path`) to its workspace, repo and module, with label, note, live branches and ports. `--json` is a versioned contract (`schema: 1`) for statuslines and session monitors.
+- **`ws ls` leads with purpose** — a label (or the live branch when there isn't one), the note beneath, and a claimed/free marker for pooled workspaces.
+- **Branches are read live** — `ws ls`, `ws info` and `here` show what each worktree actually has checked out, read straight from disk with no git process, so a `git switch` inside a worktree no longer leaves sprig quietly wrong. `info` points out a worktree that has moved off its claim branch. `ws ls --json` and `ws info --json` gain a `Head` per repo.
+
 ### The Graph Turn — self-describing repos + maps (replaces stacks)
 
 sprig's model changed. A repo no longer declares only the *inputs* it consumes for a *stack* to

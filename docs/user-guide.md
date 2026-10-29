@@ -220,6 +220,22 @@ sprig path feature-x api      # just print the directory — the one for scripts
 directory instead of opening a window, so `Set-Location (sprig path feature-x)` (or `cd "$(sprig path
 feature-x)"`) drops your *current* shell into it. Add `--json` for the structured target.
 
+**Say what a workspace is for.** A workspace's label is its headline in `ws ls`, `ws info` and the app, and its note is a short status line beneath. Both can be changed at any time; with no text they print the current value.
+
+```sh
+sprig ws label feature-x "Risk matrix overrides"
+sprig ws note feature-x "waiting on review"
+sprig ws label feature-x --clear   # back to showing the live branch
+```
+
+**Find out where you are.** `sprig here` is the reverse of `sprig path`: it names the workspace, repo and module the current directory is in, with its label, note, live branches and ports. Outside a workspace it exits 1, so a statusline or prompt can stay quiet. Its `--json` carries a `schema` version and only ever gains fields.
+
+```sh
+sprig here
+sprig here --json
+sprig here --path ../api--feature-x
+```
+
 ### 4. Run the infrastructure
 
 Only for workspaces whose selected repos declare docker infra:

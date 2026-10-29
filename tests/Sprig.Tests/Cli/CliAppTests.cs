@@ -464,6 +464,15 @@ public sealed class CliAppTests : IDisposable
     }
 
     [Fact]
+    public void Switch_takes_exactly_one_mode()
+    {
+        SeedWorkspace("a", "api");
+        Assert.Contains("only one of", Run("ws", "switch", "a", "--new", "x", "--detach").err);
+        Assert.Contains("needs one of", Run("ws", "switch", "a", "--ni").err);
+        Assert.Contains("not --branch", Run("ws", "switch", "a", "--branch", "x", "--from", "main").err);
+    }
+
+    [Fact]
     public void Tag_rejects_a_bad_key()
     {
         SeedWorkspace("a", "api");

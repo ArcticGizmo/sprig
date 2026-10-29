@@ -46,6 +46,10 @@ public interface IGitService
     /// given the branch starts there; otherwise it starts at the worktree's current (detached) HEAD.</summary>
     void SwitchNewBranch(string worktreePath, string branch, string? startPoint = null);
 
+    /// <summary>In the worktree, switch to an <b>existing</b> branch: the local one when it exists, else a new
+    /// local branch tracking a remote's copy (origin first, then upstream, then any).</summary>
+    void SwitchToBranch(string worktreePath, string branch);
+
     /// <summary>Detach the worktree's HEAD to <paramref name="reference"/> — park it, leaving no branch
     /// checked out. The branch it was on (if any) is left as a ref, not deleted.</summary>
     void DetachTo(string worktreePath, string reference);

@@ -1,6 +1,6 @@
 # Orchestration primitives: purpose, tags, in-place switching and discovery
 
-**Status:** In progress on `orchestration-primitives` · step 1 done (live branch, label and note, purpose-led `ws ls` and app cards, `sprig here`, `pool checkout --detached`, `cd` window titles under Windows Terminal); step 2 done (tags, `ws ls --tag`, `ReleasedTags`); step 3 (`ws switch`) next. Builds on the Graph Turn (maps, `provides`/`needs`) and the parked-workspace model in `docs/pool-detached-model-plan.md`, and revisits that plan's choice of the branch as a workspace's identity.
+**Status:** In progress on `orchestration-primitives` · step 1 done (live branch, label and note, purpose-led `ws ls` and app cards, `sprig here`, `pool checkout --detached`, `cd` window titles under Windows Terminal); step 2 done (tags, `ws ls --tag`, `ReleasedTags`); step 3 done (`ws switch`); step 4 (URLs and probes) next. Builds on the Graph Turn (maps, `provides`/`needs`) and the parked-workspace model in `docs/pool-detached-model-plan.md`, and revisits that plan's choice of the branch as a workspace's identity.
 
 ## Why this exists
 
@@ -75,13 +75,13 @@ Sprig cannot know whether a PR has merged or is only queued, and should not try.
 ```sh
 sprig ws switch safety-3 --new SFTY-2240-audit-log --from origin/main   # cut a new branch from a ref
 sprig ws switch safety-3 --branch SFTY-2199-hotfix                      # check out an existing branch
-sprig ws switch safety-3 --detach origin/main                           # park at a ref, no branch
+sprig ws switch safety-3 --detach --from origin/main                    # park at a ref, no branch
 ```
 
 - Applies to every repo in the workspace, or to `--only <repos>`. `--from` defaults to each repo's base branch.
 - `--branch` accepts any branch git knows about, local or remote-tracking (fetched first). At a terminal with no branch given it offers a picker of known branches, filtered as you type.
 - The previous branch is left exactly where it is: not deleted, reset or pushed.
-- It refuses when a worktree has uncommitted changes, naming the files, as git would. Unpushed commits on the previous branch are reported but do not block, because the branch keeps them.
+- It refuses when a worktree has uncommitted changes, naming the repos. Every check (dirty trees, a taken or missing branch, a missing ref) runs across all repos before any worktree moves. Unpushed commits on the previous branch are reported but do not block, because the branch keeps them.
 - Git refuses to check out a branch that another worktree already has. Sprig reports which workspace holds it instead of git's raw error.
 - The claim branch becomes the new branch. The note, tags, slot and ports are unchanged, and so is an explicitly set label. A label is never filled in implicitly, so an unlabelled workspace shows the new branch straight away.
 - `.env` is regenerated and `setup` reruns, with the same soft-failure rules as checkout. Infra is left running.

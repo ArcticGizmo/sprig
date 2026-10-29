@@ -73,6 +73,25 @@ public sealed class GitService(IProcessRunner runner) : IGitService
         runner.Run("git", args, worktreePath).EnsureSuccess();
     }
 
+    public void SwitchToBranch(string worktreePath, string branch)
+    {
+        if (BranchExists(worktreePath, branch))
+        {
+            runner.Run("git", ["-C", worktreePath, "switch", branch], worktreePath).EnsureSuccess();
+            return;
+        }
+
+        // git's own guess (`git switch <name>`) refuses when several remotes carry the name, which is the
+        // normal state of a fork with origin + upstream — so pick the remote explicitly.
+        var refs = runner.Run("git", ["-C", worktreePath, "for-each-ref", "--format=%(refname:short)", $"refs/remotes/*/{branch}"], worktreePath)
+            .StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var remote = refs.FirstOrDefault(r => r.StartsWith("origin/", StringComparison.Ordinal))
+            ?? refs.FirstOrDefault(r => r.StartsWith("upstream/", StringComparison.Ordinal))
+            ?? refs.FirstOrDefault()
+            ?? throw new InvalidOperationException($"no branch '{branch}' locally or on any remote");
+        runner.Run("git", ["-C", worktreePath, "switch", "-c", branch, "--track", remote], worktreePath).EnsureSuccess();
+    }
+
     public void DetachTo(string worktreePath, string reference)
         => runner.Run("git", ["-C", worktreePath, "switch", "--detach", reference], worktreePath).EnsureSuccess();
 

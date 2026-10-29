@@ -237,6 +237,17 @@ sprig ws untag app-2 ci.run
 sprig ws ls --tag agent.session=7f3a --json   # a bare key matches any value; repeat --tag to require all
 ```
 
+**Move on to the next piece of work.** Once a change is merged (or just queued), `sprig ws switch` puts the workspace on something new without waiting for the old branch to be cleaned up. The branch it leaves is kept exactly as it is; the slot, ports, label, note and tags don't change.
+
+```sh
+sprig ws switch app-2 --new feat-y --from origin/main   # cut a new branch (default: each repo's base)
+sprig ws switch app-2 --branch hotfix-123              # check out an existing branch, local or remote
+sprig ws switch app-2 --detach --from origin/main      # park at a ref with no branch
+sprig ws switch app-2                                  # at a terminal: pick from known branches
+```
+
+It refuses if any worktree has uncommitted changes, and checks every repo before moving any. Env is reapplied and setup reruns; infra keeps running unless you pass `--fresh`, which also wipes its data volumes. `--only api,web` limits it to some repos.
+
 **Find out where you are.** `sprig here` is the reverse of `sprig path`: it names the workspace, repo and module the current directory is in, with its label, note, live branches and ports. Outside a workspace it exits 1, so a statusline or prompt can stay quiet. Its `--json` carries a `schema` version and only ever gains fields.
 
 ```sh

@@ -151,6 +151,7 @@ public static class CliApp
             ws.AddCommand<UntagCommand>("untag");
             ws.AddCommand<UpCommand>("up");
             ws.AddCommand<DownCommand>("down");
+            ws.AddCommand<SwitchCommand>("switch");
             ws.AddCommand<RefreshCommand>("refresh");
             ws.AddCommand<RestartCommand>("restart");
             ws.AddCommand<ResetCommand>("reset");

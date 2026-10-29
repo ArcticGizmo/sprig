@@ -45,6 +45,8 @@ public sealed class FakeGitService : IGitService
         => Worktrees.Add(new WorktreeInfo(worktreePath, "head", null, false, false, true));
     public void SwitchNewBranch(string worktreePath, string branch, string? startPoint = null)
         => SwitchedNewBranches.Add((worktreePath, branch, startPoint));
+    public List<(string Worktree, string Branch)> SwitchedToBranches { get; } = [];
+    public void SwitchToBranch(string worktreePath, string branch) => SwitchedToBranches.Add((worktreePath, branch));
     public void DetachTo(string worktreePath, string reference) => Detached.Add((worktreePath, reference));
     public bool HasUncommittedChanges(string worktreePath) => Dirty;
     public int CountUnpushedCommits(string worktreePath) => UnpushedCommits;

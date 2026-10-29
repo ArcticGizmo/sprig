@@ -51,14 +51,14 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
-        nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
+        nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
     private WorkspaceItemViewModel? _selected;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
         nameof(ClaimCommand), nameof(RefreshCommand), nameof(NewWorkspaceCommand),
-        nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
+        nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
     private bool _busy;
 
     [ObservableProperty] private string? _error;
@@ -952,6 +952,19 @@ public partial class WorkspacesViewModel : PageViewModel
             // and a coach step waiting on a healthy workspace advances).
             Services.NotifyStoreChanged();
         }, status: "repaired");
+    }
+
+    /// <summary>Open the selected workspace as one titled, coloured VS Code window (the same file <c>sprig code</c> writes).</summary>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void OpenWorkspaceInVsCode()
+    {
+        if (Selected is not { } item) return;
+        try
+        {
+            var file = Services.Workspaces.WriteCodeWorkspace(Services.Workspaces.Get(item.Name) ?? item.Record);
+            Process.Start(new ProcessStartInfo { FileName = "code", Arguments = $"\"{file}\"", UseShellExecute = true });
+        }
+        catch (Exception ex) { Error = ex.Message; }
     }
 
     /// <summary>Open a workspace entry point in the default browser.</summary>

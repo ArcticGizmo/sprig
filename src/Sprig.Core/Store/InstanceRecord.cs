@@ -57,6 +57,10 @@ public sealed record InstanceRecord
     /// acted on. Cleared on release.</summary>
     public IReadOnlyDictionary<string, string> Tags { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>An explicit <c>#rrggbb</c> colour for this slot; null uses the slot's palette colour
+    /// (see <see cref="Workspaces.WorkspaceColour"/>). Kept across claims.</summary>
+    public string? Colour { get; init; }
+
     /// <summary>The tags the workspace carried when it was last released, so a caller that cleaned up can
     /// still see what it released. Empty if never released with tags.</summary>
     public IReadOnlyDictionary<string, string> ReleasedTags { get; init; } = new Dictionary<string, string>();

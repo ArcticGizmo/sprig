@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Sprig.Core.Docker;
 using Sprig.Core.Git;
@@ -41,6 +42,9 @@ public partial class WorkspaceItemViewModel : ViewModelBase
 
     public string? Note => Record.Note;
     public bool HasNote => !string.IsNullOrWhiteSpace(Record.Note);
+
+    /// <summary>The slot's colour — the same one that tints its VS Code title bar, so the two can be matched up.</summary>
+    public IBrush ColourBrush => Brush.Parse(WorkspaceColour.For(Record));
 
     /// <summary>The entry points the workspace's capabilities declare as <c>open</c>.</summary>
     public IReadOnlyList<WorkspaceUrl> Urls { get; }

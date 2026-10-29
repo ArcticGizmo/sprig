@@ -35,6 +35,28 @@ public sealed class NoteCommand(CliContext cli) : Command<PurposeSettings>
         => Purpose.Run(cli, s, "note", r => r.Note, cli.Workspaces.SetNote);
 }
 
+[Description("Show or set a workspace's colour (#rrggbb), used to tint its VS Code title bar")]
+public sealed class ColourCommand(CliContext cli) : Command<PurposeSettings>
+{
+    protected override int Execute(CommandContext context, PurposeSettings s, CancellationToken cancellation)
+    {
+        if (s.Clear && s.Text is not null)
+            throw new ArgumentException("pass either a colour or --clear, not both");
+        var workspace = WorkspacePrompt.Resolve(cli, s.Workspace, s.Json);
+        if (workspace is null) return 0; // interactive cancel (ESC)
+
+        var record = !s.Clear && s.Text is null
+            ? cli.Workspaces.Get(workspace) ?? throw new ArgumentException($"unknown workspace '{workspace}'")
+            : cli.Workspaces.SetColour(workspace, s.Clear ? null : s.Text);
+        var colour = WorkspaceColour.For(record);
+        var isDefault = record.Colour is null;
+
+        if (s.Json) { CliOutput.Json(new { ok = true, workspace, colour, isDefault }); return 0; }
+        cli.Ansi.MarkupLine($"[{colour}]██[/] {colour}{(isDefault ? " [dim](the slot's default)[/]" : "")}");
+        return 0;
+    }
+}
+
 [Description("Add or change tags on a workspace (key=value, repeatable); with none, list its tags")]
 public sealed class TagCommand(CliContext cli) : Command<TagCommand.Settings>
 {

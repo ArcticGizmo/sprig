@@ -258,6 +258,8 @@ sprig ws browse app-2 web     # open one in the browser (the name is optional wh
 
 `ws info`, `sprig here` and the app's workspace detail show the same list; in the app each one is a button that opens it.
 
+**Open it in VS Code.** `sprig code app-2` opens one VS Code window with every repo in the workspace, titled with its label and with the title bar tinted in the workspace's colour. Each slot keeps the same colour across claims; `sprig ws colour app-2 #16a34a` changes it and `--clear` puts the default back. The `.code-workspace` file is written to the central store, not your repos (`--print` writes it and prints its path without opening VS Code).
+
 **Find out where you are.** `sprig here` is the reverse of `sprig path`: it names the workspace, repo and module the current directory is in, with its label, note, live branches and ports. Outside a workspace it exits 1, so a statusline or prompt can stay quiet. Its `--json` carries a `schema` version and only ever gains fields.
 
 ```sh

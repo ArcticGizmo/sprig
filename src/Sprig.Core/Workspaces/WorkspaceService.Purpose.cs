@@ -22,6 +22,51 @@ public sealed partial class WorkspaceService
     public InstanceRecord SetNote(string workspace, string? note)
         => Update(workspace, r => r with { Note = Clean(note) });
 
+    /// <summary>Set the slot's colour (<c>#rrggbb</c>), or with null go back to its palette colour.</summary>
+    public InstanceRecord SetColour(string workspace, string? colour)
+    {
+        var value = Clean(colour);
+        if (value is not null && !WorkspaceColour.IsValid(value))
+            throw new WorkspaceException($"'{value}' is not a colour — use #rrggbb (e.g. #2563eb)");
+        return Update(workspace, r => r with { Colour = value?.ToLowerInvariant() });
+    }
+
+    /// <summary>
+    /// Write a VS Code <c>.code-workspace</c> for the workspace into the central store (never the repo) and
+    /// return its path. It opens every repo's worktree as a folder, titles the window with what the workspace
+    /// is for, and tints the title bar with the slot's colour, so several open workspaces can be told apart.
+    /// Rewritten on every call, so it always carries the current label.
+    /// </summary>
+    public string WriteCodeWorkspace(InstanceRecord record)
+    {
+        var colour = WorkspaceColour.For(record);
+        var foreground = WorkspaceColour.Foreground(colour);
+        var headline = !string.IsNullOrWhiteSpace(record.Label) ? record.Label
+            : record.Repos.Select(r => Git.WorktreeHead.Read(r.WorktreePath)?.Display).FirstOrDefault(b => b is not null);
+        var title = headline is null ? record.Workspace : $"{headline} · {record.Workspace}";
+
+        var document = new
+        {
+            folders = record.Repos.Select(r => new { name = r.Name, path = r.WorktreePath }),
+            settings = new Dictionary<string, object>
+            {
+                ["window.title"] = title + "${separator}${activeEditorShort}",
+                ["workbench.colorCustomizations"] = new Dictionary<string, string>
+                {
+                    ["titleBar.activeBackground"] = colour,
+                    ["titleBar.activeForeground"] = foreground,
+                    ["titleBar.inactiveBackground"] = colour + "cc",
+                    ["titleBar.inactiveForeground"] = foreground + "99",
+                },
+            },
+        };
+
+        var path = Path.Combine(paths.InstanceDir(record.Workspace), $"{record.Workspace}.code-workspace");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(document, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return path;
+    }
+
     /// <summary>Add or overwrite tags, then remove <paramref name="remove"/> keys. Every key is validated
     /// before anything is written.</summary>
     public InstanceRecord Tag(string workspace, IReadOnlyDictionary<string, string> set, IEnumerable<string>? remove = null)

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Sprig.Core.Git;
+using Sprig.Core.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -44,6 +45,7 @@ public sealed class HereCommand(CliContext cli) : Command<HereCommand.Settings>
                 label = record.Label,
                 note = record.Note,
                 tags = record.Tags,
+                colour = WorkspaceColour.For(record),
                 claimed = record.Claimed,
                 claimedAt = record.ClaimedAt,
                 claimBranch = record.Branch,

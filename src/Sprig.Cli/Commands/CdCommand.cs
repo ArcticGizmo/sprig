@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Sprig.Core.Config;
+using Sprig.Core.Git;
 using Sprig.Core.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -289,36 +290,53 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
             return 0;
         }
 
-        var shell = LaunchWindow(t.Path, s.Shell);
+        var shell = LaunchWindow(t.Path, s.Shell, WindowTitle(t));
         cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] opened [bold]{Markup.Escape(shell)}[/] " +
             $"in a new window — [dim]{Markup.Escape(t.Path)}[/]");
         return 0;
     }
 
+    // The window title, so several open workspace terminals can be told apart: what the workspace is for (or
+    // the repo's live branch), then which workspace/repo it is.
+    string WindowTitle(TargetResolver.Target t)
+    {
+        var record = cli.Workspaces.Get(t.Workspace);
+        var repo = record?.Repos.FirstOrDefault(r => r.Name == t.Repo);
+        var headline = !string.IsNullOrWhiteSpace(record?.Label) ? record!.Label
+            : repo is null ? null
+            : WorktreeHead.Read(repo.WorktreePath)?.Display;
+        var where = record?.Repos.Count > 1 ? $"{t.Workspace}/{t.Repo}" : t.Workspace;
+        return headline is null ? where : $"{headline} · {where}";
+    }
+
     // Open a new terminal window running a shell in `dir`. Tries the best-matching shell first (the one we
     // were invoked from), then falls back to pwsh/powershell/cmd if that one won't launch. Returns the
     // display name of whichever opened.
-    static string LaunchWindow(string dir, string? shellOverride)
+    static string LaunchWindow(string dir, string? shellOverride, string title)
     {
         Win32Exception? last = null;
         foreach (var shell in ShellCandidates(shellOverride))
         {
-            try { Start(shell, dir); return Path.GetFileNameWithoutExtension(shell); }
+            try { Start(shell, dir, title); return Path.GetFileNameWithoutExtension(shell); }
             catch (Win32Exception ex) { last = ex; } // e.g. pwsh not installed → try the next candidate
         }
         throw (Exception?)last ?? new InvalidOperationException("no shell available to open a window with");
     }
 
-    static void Start(string shell, string dir)
+    static void Start(string shell, string dir, string title)
     {
         // Inside Windows Terminal, open a fresh WT window (-w new) so the emulator matches too — not a bare
-        // legacy console. If wt isn't resolvable, fall through to a plain new console window.
+        // legacy console. If wt isn't resolvable, fall through to a plain new console window. Only WT gets the
+        // title: a plain console would need a command run inside the shell to set one, and the shell's own
+        // prompt would overwrite it anyway, which --suppressApplicationTitle prevents under WT.
         if (Environment.GetEnvironmentVariable("WT_SESSION") is { Length: > 0 })
         {
             try
             {
                 var wt = new ProcessStartInfo("wt.exe") { UseShellExecute = true };
-                foreach (var arg in new[] { "-w", "new", "-d", dir, shell }) wt.ArgumentList.Add(arg);
+                // `;` separates commands on wt's command line, so a label containing one must be escaped.
+                foreach (var arg in new[] { "-w", "new", "-d", dir, "--title", title.Replace(";", "\\;"), "--suppressApplicationTitle", shell })
+                    wt.ArgumentList.Add(arg);
                 Process.Start(wt);
                 return;
             }

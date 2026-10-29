@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Sprig.Core.Docker;
+using Sprig.Core.Git;
 using Sprig.Core.Store;
 using Sprig.Core.Workspaces;
 
@@ -18,10 +19,27 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     {
         Record = record;
         Repos = record.Repos.Select(r => new RepoLineViewModel(r)).ToList();
+        LiveBranch = WorktreeHead.Summarise(Repos.Select(r => (r.Name, r.Head)));
         _status = record.LastStatus ?? "created";
     }
 
     public string Name => Record.Workspace;
+
+    /// <summary>What is checked out across the repos right now, read from disk when the list loads.</summary>
+    public string LiveBranch { get; }
+
+    /// <summary>The card title: what the workspace is for, else its live branch, else its slot name.</summary>
+    public string Headline => !string.IsNullOrWhiteSpace(Record.Label) ? Record.Label!
+        : LiveBranch.Length > 0 ? LiveBranch
+        : Name;
+
+    /// <summary>The slot name and live branch beneath the headline (the branch is left out when it is the headline).</summary>
+    public string Subtitle => string.IsNullOrWhiteSpace(Record.Label) || LiveBranch.Length == 0
+        ? Name
+        : $"{Name} · {LiveBranch}";
+
+    public string? Note => Record.Note;
+    public bool HasNote => !string.IsNullOrWhiteSpace(Record.Note);
 
     /// <summary>The map this workspace's pool belongs to (its grouping key); "(ad-hoc)" for a workspace
     /// that belongs to no map.</summary>
@@ -36,17 +54,15 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     /// <summary>Convenience inverse of <see cref="Claimed"/> for binding a "can check out" affordance.</summary>
     public bool Free => !Record.Claimed;
 
-    /// <summary>The checkout label while claimed; kept as a "last used" hint after release (null if never labelled).</summary>
+    /// <summary>What the workspace is for; kept after release as a hint to the state it holds (null if never labelled).</summary>
     public string? Label => Record.Label;
 
     /// <summary>True when a setup step failed on the last checkout/refresh — this workspace is degraded,
     /// not cleanly claimed. Drives the warning badge.</summary>
     public bool SetupFailed => Record.SetupFailed;
 
-    /// <summary>One-line state for the row: claimed (with label) or free (with the label it last carried).</summary>
-    public string StateSummary => Record.Claimed
-        ? (string.IsNullOrWhiteSpace(Record.Label) ? "claimed" : $"claimed · “{Record.Label}”")
-        : (string.IsNullOrWhiteSpace(Record.Label) ? "free" : $"free · was “{Record.Label}”");
+    /// <summary>One-word pool state for the row; the label is already the headline.</summary>
+    public string StateSummary => Record.Claimed ? "claimed" : "free";
 
     /// <summary>Relative age hint: how long ago this workspace was claimed (if in use) or freed (if released).
     /// Empty when neither timestamp is set (a freshly built, never-released workspace).</summary>
@@ -155,7 +171,8 @@ public partial class RepoLineViewModel : ViewModelBase
     public RepoLineViewModel(InstanceRepo repo)
     {
         Name = repo.Name;
-        Branch = repo.Branch ?? "";
+        Head = WorktreeHead.Read(repo.WorktreePath);
+        Branch = Head?.Display ?? repo.Branch ?? "";
         WorktreePath = repo.WorktreePath;
         // The concrete ${sprig.<cap>.<out>} values each module resolved to (ports, derived URLs, needs) —
         // the map-model successor to the old per-repo stack inputs.
@@ -167,6 +184,9 @@ public partial class RepoLineViewModel : ViewModelBase
     }
 
     public string Name { get; }
+    /// <summary>The worktree's live HEAD, or null when it can't be read (e.g. the folder is missing).</summary>
+    public WorktreeHead? Head { get; }
+    /// <summary>The live branch, falling back to the recorded claim branch when HEAD can't be read.</summary>
     public string Branch { get; }
     public string WorktreePath { get; }
     public string Inputs { get; }

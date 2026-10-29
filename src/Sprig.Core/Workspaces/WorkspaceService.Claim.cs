@@ -90,13 +90,13 @@ public sealed partial class WorkspaceService
     /// show every row before work starts. Both modes cut the branch and reapply env/compose per repo; only a
     /// <b>fresh</b> claim adds the dependency-install (setup) rows.</summary>
     public IReadOnlyList<WorkspaceStep> PlanClaim(InstanceRecord record, bool fresh,
-        IReadOnlyList<ResolvedRepo>? resolvedRepos = null)
+        IReadOnlyList<ResolvedRepo>? resolvedRepos = null, bool detached = false)
     {
         var steps = new List<WorkspaceStep>();
         foreach (var repo in record.Repos)
         {
             var resolved = new ResolvedRepo(repo.Name, repo.SourcePath, ConfigFor(repo, resolvedRepos));
-            steps.Add(new(RefreshStepIds.Claim(repo.Name), $"Create branch — {repo.Name}"));
+            steps.Add(new(RefreshStepIds.Claim(repo.Name), ClaimStepLabel(repo.Name, detached)));
             steps.Add(new(RefreshStepIds.Env(repo.Name), $"Apply environment — {repo.Name}"));
             if (resolved.Config.EffectiveModules.Any(m => m.Compose.Count > 0))
                 steps.Add(new(RefreshStepIds.Compose(repo.Name), $"Generate compose — {repo.Name}"));
@@ -110,6 +110,10 @@ public sealed partial class WorkspaceService
         steps.Add(new(RefreshStepIds.Infra, fresh ? "Restart infrastructure" : "Start infrastructure"));
         return steps;
     }
+
+    /// <summary>The per-repo claim row: cutting a branch, or parking detached at the start point.</summary>
+    public static string ClaimStepLabel(string repo, bool detached)
+        => detached ? $"Check out start point — {repo}" : $"Create branch — {repo}";
 
     /// <summary>
     /// Claim a parked/reused workspace by cutting <paramref name="branch"/> across every repo — the
@@ -128,13 +132,17 @@ public sealed partial class WorkspaceService
     /// (setup) and wipes volumes for clean runtime data.
     /// </para>
     /// <para>
+    /// A null <paramref name="branch"/> claims <b>detached</b>: each worktree is parked at the start point with
+    /// no branch of its own, for reviewing or reproducing rather than new work.
+    /// </para>
+    /// <para>
     /// TODO (circle back): <paramref name="startPoint"/> is a single ref applied to every repo. Decide
     /// whether to expose an <i>advanced</i> per-repo start point (a different branch per repo, e.g. from a
     /// remote), and how to resolve a ref that exists in some repos but not others. Not wired to CLI/UI yet —
     /// the picker (default main, else a chosen remote branch) is the immediate follow-up.
     /// </para>
     /// </summary>
-    public InstanceRecord Claim(string workspace, string branch, bool fresh, bool force = false,
+    public InstanceRecord Claim(string workspace, string? branch, bool fresh, bool force = false,
         IProgress<WorkspaceStepProgress>? progress = null, IReadOnlyList<ResolvedRepo>? resolvedRepos = null,
         string? startPoint = null)
     {
@@ -142,9 +150,12 @@ public sealed partial class WorkspaceService
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
 
-        EnsureValidBranchName(branch);
-        // Atomic pre-flight across the whole stack — create nothing until every repo is clear.
-        ThrowIfBlocked(CheckClaim(record, branch), branch);
+        if (branch is not null)
+        {
+            EnsureValidBranchName(branch);
+            // Atomic pre-flight across the whole stack — create nothing until every repo is clear.
+            ThrowIfBlocked(CheckClaim(record, branch), branch);
+        }
 
         var updatedRepos = new List<InstanceRepo>();
         foreach (var repo in record.Repos)
@@ -161,7 +172,10 @@ public sealed partial class WorkspaceService
             TryQuiet(() => git.Fetch(repo.WorktreePath));
             var chosen = startPoint is not null && git.RefExists(repo.WorktreePath, startPoint);
             var start = chosen ? startPoint! : git.ResolveDefaultBase(repo.WorktreePath);
-            git.SwitchNewBranch(repo.WorktreePath, branch);
+            // Leave whatever branch the worktree was on first (a new branch, or detached at the same commit —
+            // neither can conflict), so the reset below only ever moves this claim's HEAD.
+            if (branch is null) git.DetachTo(repo.WorktreePath, "HEAD");
+            else git.SwitchNewBranch(repo.WorktreePath, branch);
             git.ResetHard(repo.WorktreePath, start);
             progress?.Report(startPoint is not null && !chosen
                 ? new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Done, $"'{startPoint}' not in {repo.Name} — used {start}")
@@ -213,8 +227,9 @@ public sealed partial class WorkspaceService
     /// at base with env/compose/setup already done, so this only creates the branch (from the current base
     /// HEAD) and starts infra; it deliberately skips the reset/env/compose/setup that <see cref="Claim"/>
     /// does for a reused workspace, to avoid redoing work Create just finished. The branch pre-flight is the
-    /// pool's responsibility here (it runs before Create so a bad name never materialises a workspace).</summary>
-    public InstanceRecord CutBranchAndStart(string workspace, string branch,
+    /// pool's responsibility here (it runs before Create so a bad name never materialises a workspace). A null
+    /// <paramref name="branch"/> leaves the workspace parked where Create put it (a detached claim).</summary>
+    public InstanceRecord CutBranchAndStart(string workspace, string? branch,
         IProgress<WorkspaceStepProgress>? progress = null)
     {
         var record = instances.TryLoad(workspace)
@@ -224,7 +239,8 @@ public sealed partial class WorkspaceService
         foreach (var repo in record.Repos)
         {
             progress?.Report(new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Running));
-            git.SwitchNewBranch(repo.WorktreePath, branch); // workspace is parked at base — branch starts there
+            if (branch is not null)
+                git.SwitchNewBranch(repo.WorktreePath, branch); // workspace is parked at base — branch starts there
             progress?.Report(new(RefreshStepIds.Claim(repo.Name), WorkspaceStepState.Done));
             updatedRepos.Add(repo with { Branch = branch });
         }

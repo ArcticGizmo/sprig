@@ -44,7 +44,8 @@ public sealed class MapPoolService(
     /// row before work starts. A new checkout mirrors <see cref="WorkspaceService.PlanCreateFromMap"/> plus the
     /// per-repo "cut branch" rows and an infra row; a reused checkout mirrors
     /// <see cref="WorkspaceService.PlanClaim"/>.</summary>
-    public IReadOnlyList<WorkspaceStep> PlanCheckout(string mapName, string? existingWorkspace, CheckoutMode mode)
+    public IReadOnlyList<WorkspaceStep> PlanCheckout(string mapName, string? existingWorkspace, CheckoutMode mode,
+        bool detached = false)
     {
         if (existingWorkspace is null)
         {
@@ -54,14 +55,14 @@ public sealed class MapPoolService(
             var steps = workspaces.PlanCreateFromMap(repos, placeholder).ToList();
             // A new workspace is created fresh at base, so its claim is minimal: just cut the branch per repo.
             foreach (var repo in repos)
-                steps.Add(new WorkspaceStep(RefreshStepIds.Claim(repo.Name), $"Create branch — {repo.Name}"));
+                steps.Add(new WorkspaceStep(RefreshStepIds.Claim(repo.Name), WorkspaceService.ClaimStepLabel(repo.Name, detached)));
             steps.Add(new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure"));
             return steps;
         }
 
         var record = instances.TryLoad(existingWorkspace)
             ?? throw new PoolException($"'{existingWorkspace}' is not a workspace in the '{mapName}' pool");
-        return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(mapName, null).Repos);
+        return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(mapName, null).Repos, detached);
     }
 
     /// <summary>Gather the "start from" picker options for a checkout: the default ref plus the ranked candidate
@@ -120,15 +121,19 @@ public sealed class MapPoolService(
     /// <paramref name="mode"/>; when null, a brand-new parked <c>&lt;map&gt;-&lt;n&gt;</c> workspace is
     /// materialised (only under the ceiling) and claimed minimally. The branch pre-flight is atomic across every
     /// repo; a name that already exists aborts before anything is cut. Runs under a per-map lock so the
-    /// pick/allocate is atomic.
+    /// pick/allocate is atomic. A null <paramref name="branch"/> is a <b>detached</b> checkout: the workspace
+    /// is claimed parked at <paramref name="startPoint"/> (default: base) with no branch cut.
     /// </summary>
-    public InstanceRecord Checkout(string mapName, string? existingWorkspace, string branch, string? label = null,
+    public InstanceRecord Checkout(string mapName, string? existingWorkspace, string? branch, string? label = null,
         CheckoutMode mode = CheckoutMode.Keep, bool force = false,
         IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null)
     {
-        if (string.IsNullOrWhiteSpace(branch))
-            throw new PoolException("a checkout needs a branch name");
-        workspaces.EnsureValidBranchName(branch); // reject a bad name before materialising anything
+        if (branch is not null)
+        {
+            if (string.IsNullOrWhiteSpace(branch))
+                throw new PoolException("a checkout needs a branch name, or none at all for a detached checkout");
+            workspaces.EnsureValidBranchName(branch); // reject a bad name before materialising anything
+        }
         var map = maps.Get(mapName) ?? throw new MapException($"unknown map '{mapName}'");
 
         using var _ = Lock(mapName);
@@ -154,13 +159,14 @@ public sealed class MapPoolService(
 
         // Pre-flight the branch against the source repos BEFORE materialising anything, so a name conflict
         // never leaves a half-created workspace behind.
-        WorkspaceService.ThrowIfBlocked(
-            workspaces.CheckClaimAcross(repos.Select(r => (r.Name, r.Root)), branch), branch);
+        if (branch is not null)
+            WorkspaceService.ThrowIfBlocked(
+                workspaces.CheckClaimAcross(repos.Select(r => (r.Name, r.Root)), branch), branch);
 
         var index = NextIndex(mapName, members, ceiling);
         var name = $"{mapName}-{index}";
         workspaces.CreateFromMap(name, mapDef, repos, progress: progress, startPoint: startPoint); // parked, warm
-        workspaces.CutBranchAndStart(name, branch, progress);   // minimal claim: cut branch at start point + start infra
+        workspaces.CutBranchAndStart(name, branch, progress);   // minimal claim: cut branch (if any) at start point + start infra
         return MarkClaimed(name, label, index);
     }
 

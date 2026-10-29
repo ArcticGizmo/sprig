@@ -5,6 +5,21 @@ public sealed record WorktreeHead(string? Branch, string? Commit)
 {
     public bool IsDetached => Branch is null;
 
+    /// <summary>Plain one-line form: the branch, or <c>detached @ abc1234</c>.</summary>
+    public string Display => Branch ?? $"detached @ {Commit?[..Math.Min(7, Commit.Length)]}";
+
+    /// <summary>The live HEAD across several worktrees in one line: the shared value when they agree (the usual
+    /// case), else <c>repo: head</c> per repo; <c>?</c> for any that can't be read. Empty when none can be.</summary>
+    public static string Summarise(IEnumerable<(string Repo, WorktreeHead? Head)> heads)
+    {
+        var list = heads.ToList();
+        if (list.All(h => h.Head is null)) return "";
+        var shown = list.Select(h => h.Head?.Display ?? "?").ToList();
+        return shown.Distinct().Count() == 1
+            ? shown[0]
+            : string.Join(", ", list.Select((h, i) => $"{h.Repo}: {shown[i]}"));
+    }
+
     /// <summary>
     /// Read a worktree's HEAD straight from disk (<c>.git</c> → gitdir → <c>HEAD</c>) instead of running git.
     /// Listing many workspaces would otherwise spawn a git process per repo per refresh, which is slow and

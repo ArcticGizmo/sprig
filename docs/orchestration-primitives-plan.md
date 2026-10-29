@@ -1,6 +1,6 @@
 # Orchestration primitives: purpose, tags, in-place switching and discovery
 
-**Status:** In progress 2026-10-28 · step 1 started on `orchestration-primitives`: live branch, editable label and note, purpose-led `ws ls`, and `sprig here` are in; `pool checkout --detached`, terminal titles and the app card are still to do. Builds on the Graph Turn (maps, `provides`/`needs`) and the parked-workspace model in `docs/pool-detached-model-plan.md`, and revisits that plan's choice of the branch as a workspace's identity.
+**Status:** In progress on `orchestration-primitives` · step 1 done (live branch, label and note, purpose-led `ws ls` and app cards, `sprig here`, `pool checkout --detached`, `cd` window titles under Windows Terminal); step 2 (tags) next. Builds on the Graph Turn (maps, `provides`/`needs`) and the parked-workspace model in `docs/pool-detached-model-plan.md`, and revisits that plan's choice of the branch as a workspace's identity.
 
 ## Why this exists
 

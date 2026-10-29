@@ -126,8 +126,11 @@ public sealed class MapPoolService(
     /// </summary>
     public InstanceRecord Checkout(string mapName, string? existingWorkspace, string? branch, string? label = null,
         CheckoutMode mode = CheckoutMode.Keep, bool force = false,
-        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null)
+        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null,
+        IReadOnlyDictionary<string, string>? tags = null)
     {
+        tags ??= new Dictionary<string, string>();
+        foreach (var key in tags.Keys) WorkspaceTags.EnsureValidKey(key); // before anything is materialised
         if (branch is not null)
         {
             if (string.IsNullOrWhiteSpace(branch))
@@ -148,7 +151,7 @@ public sealed class MapPoolService(
                 throw new PoolException($"workspace '{existingWorkspace}' is already claimed");
 
             workspaces.Claim(target.Workspace, branch, mode == CheckoutMode.Fresh, force, progress, repos, startPoint);
-            return MarkClaimed(target.Workspace, label, target.WorkspaceIndex);
+            return MarkClaimed(target.Workspace, label, tags, target.WorkspaceIndex);
         }
 
         // Materialise a new workspace — only if there's room under the ceiling.
@@ -167,7 +170,7 @@ public sealed class MapPoolService(
         var name = $"{mapName}-{index}";
         workspaces.CreateFromMap(name, mapDef, repos, progress: progress, startPoint: startPoint); // parked, warm
         workspaces.CutBranchAndStart(name, branch, progress);   // minimal claim: cut branch (if any) at start point + start infra
-        return MarkClaimed(name, label, index);
+        return MarkClaimed(name, label, tags, index);
     }
 
     /// <summary>
@@ -186,7 +189,14 @@ public sealed class MapPoolService(
         var pending = workspaces.CollectPending(record); // report only — release never touches the working tree
         workspaces.TryStopContainers(workspace);         // free CPU/RAM; keep containers, volumes + disk intact
         var latest = instances.TryLoad(workspace) ?? record;
-        var released = latest with { Claimed = false, LastUsedAt = DateTimeOffset.UtcNow };
+        // Tags belong to the claim, so they go with it; a copy stays behind for whoever cleaned up.
+        var released = latest with
+        {
+            Claimed = false,
+            LastUsedAt = DateTimeOffset.UtcNow,
+            ReleasedTags = latest.Tags,
+            Tags = new Dictionary<string, string>(),
+        };
         instances.Save(released);
         return (released, pending);
     }
@@ -202,7 +212,7 @@ public sealed class MapPoolService(
             .ThenBy(i => i.Workspace, StringComparer.Ordinal)
             .ToList();
 
-    InstanceRecord MarkClaimed(string workspace, string? label, int? index)
+    InstanceRecord MarkClaimed(string workspace, string? label, IReadOnlyDictionary<string, string> tags, int? index)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
@@ -210,6 +220,7 @@ public sealed class MapPoolService(
         {
             Claimed = true,
             Label = label,
+            Tags = tags,
             ClaimedAt = DateTimeOffset.UtcNow,
             WorkspaceIndex = index ?? record.WorkspaceIndex,
         };

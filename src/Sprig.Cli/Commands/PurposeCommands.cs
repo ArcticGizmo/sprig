@@ -1,13 +1,14 @@
 using System.ComponentModel;
 using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-// `sprig ws label` / `sprig ws note` — the purpose layer a claimer owns. Both can run at any time (claimed or
-// not) and only ever rewrite the record: no git, no infra. With no text they print the current value, so a
-// script can read one field without parsing `info`.
+// `sprig ws label` / `note` / `tag` / `untag` — the purpose layer a claimer owns. All can run at any time
+// (claimed or not) and only ever rewrite the record: no git, no infra. With nothing to set they print the
+// current value, so a script can read one field without parsing `info`.
 
 public sealed class PurposeSettings : WorkspaceSettings
 {
@@ -34,8 +35,58 @@ public sealed class NoteCommand(CliContext cli) : Command<PurposeSettings>
         => Purpose.Run(cli, s, "note", r => r.Note, cli.Workspaces.SetNote);
 }
 
+[Description("Add or change tags on a workspace (key=value, repeatable); with none, list its tags")]
+public sealed class TagCommand(CliContext cli) : Command<TagCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "<workspace>")]
+        [Description("Workspace name")]
+        public string Workspace { get; set; } = "";
+
+        [CommandArgument(1, "[tags]")]
+        [Description("Tags to set, as <namespace>.<name>=value")]
+        public string[] Tags { get; set; } = [];
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var record = s.Tags.Length == 0
+            ? cli.Workspaces.Get(s.Workspace) ?? throw new ArgumentException($"unknown workspace '{s.Workspace}'")
+            : cli.Workspaces.Tag(s.Workspace, WorkspaceTags.ParsePairs(s.Tags));
+        return Purpose.ShowTags(s.Json, record);
+    }
+}
+
+[Description("Remove tags from a workspace by key")]
+public sealed class UntagCommand(CliContext cli) : Command<UntagCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "<workspace>")]
+        [Description("Workspace name")]
+        public string Workspace { get; set; } = "";
+
+        [CommandArgument(1, "<keys>")]
+        [Description("Tag keys to remove")]
+        public string[] Keys { get; set; } = [];
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+        => Purpose.ShowTags(s.Json, cli.Workspaces.Tag(s.Workspace, new Dictionary<string, string>(), s.Keys));
+}
+
 static class Purpose
 {
+    public static int ShowTags(bool json, InstanceRecord record)
+    {
+        if (json) { CliOutput.Json(new { ok = true, workspace = record.Workspace, tags = record.Tags }); return 0; }
+        if (record.Tags.Count == 0) { CliOutput.Muted($"'{record.Workspace}' has no tags"); return 0; }
+        foreach (var (k, v) in record.Tags.OrderBy(t => t.Key, StringComparer.Ordinal))
+            Console.WriteLine($"{k}={v}");
+        return 0;
+    }
+
     public static int Run(CliContext cli, PurposeSettings s, string field,
         Func<InstanceRecord, string?> read, Func<string, string?, InstanceRecord> write)
     {

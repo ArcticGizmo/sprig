@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Sprig.Core.Pools;
 using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -77,8 +78,12 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         public bool Detached { get; set; }
 
         [CommandOption("--label <label>")]
-        [Description("An optional label to recognise this checkout by (metadata only)")]
+        [Description("What this checkout is for — its headline in ls, info and the app")]
         public string? Label { get; set; }
+
+        [CommandOption("--tag <key=value>")]
+        [Description("Tag the claim (repeatable), e.g. --tag agent.session=7f3a; cleared on release")]
+        public string[] Tags { get; set; } = [];
 
         [CommandOption("--workspace <name>")]
         [Description("Reuse a specific unclaimed workspace")]
@@ -142,6 +147,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
 
         var branch = ResolveBranch(console, s, interactive);
         var label = ResolveLabel(console, s);
+        var tags = WorkspaceTags.ParsePairs(s.Tags);
         var existing = target.IsNew ? null : target.Workspace;
         var startPoint = ResolveStartPoint(console, s, interactive, mapName, existing);
 
@@ -158,7 +164,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         // Machine path stays quiet and structured: no checklist, just the record.
         if (s.Json)
         {
-            CliOutput.Json(cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, startPoint: startPoint));
+            CliOutput.Json(cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, startPoint: startPoint, tags: tags));
             return 0;
         }
 
@@ -169,7 +175,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         var plan = cli.MapPool.PlanCheckout(mapName, existing, mode, detached: branch is null);
         InstanceRecord record = null!;
         Checklist.Run(console, plan, progress =>
-            record = cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, progress, startPoint));
+            record = cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, progress, startPoint, tags));
 
         var labelSuffix = string.IsNullOrEmpty(label) ? "" : $" [dim]({Markup.Escape(label!)})[/]";
         var where = branch is null
@@ -372,6 +378,7 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
                     ok = true,
                     workspace = record.Workspace,
                     action = "release",
+                    releasedTags = record.ReleasedTags,
                     pending = pending.Repos
                         .Where(r => r.HasAny)
                         .Select(r => new { repo = r.Repo, dirty = r.Dirty, unpushed = r.UnpushedCommits }),

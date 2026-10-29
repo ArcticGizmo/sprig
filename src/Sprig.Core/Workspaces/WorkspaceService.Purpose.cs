@@ -8,7 +8,7 @@ namespace Sprig.Core.Workspaces;
 public sealed record WorkspaceLocation(InstanceRecord Record, InstanceRepo Repo, string? Module);
 
 /// <summary>
-/// A workspace's <b>purpose</b> layer — the label and note its claimer owns and can change at any time — and
+/// A workspace's <b>purpose</b> layer — the label, note and tags its claimer owns and can change at any time — and
 /// locating a directory within the workspaces. Neither touches git or infra: purpose is metadata about the
 /// work, and git state is read live rather than stored.
 /// </summary>
@@ -21,6 +21,28 @@ public sealed partial class WorkspaceService
     /// <summary>Set (or, with null/blank, clear) a workspace's status note.</summary>
     public InstanceRecord SetNote(string workspace, string? note)
         => Update(workspace, r => r with { Note = Clean(note) });
+
+    /// <summary>Add or overwrite tags, then remove <paramref name="remove"/> keys. Every key is validated
+    /// before anything is written.</summary>
+    public InstanceRecord Tag(string workspace, IReadOnlyDictionary<string, string> set, IEnumerable<string>? remove = null)
+    {
+        foreach (var key in set.Keys) WorkspaceTags.EnsureValidKey(key);
+        var drop = (remove ?? []).Select(WorkspaceTags.EnsureValidKey).ToList();
+        return Update(workspace, r =>
+        {
+            var tags = new Dictionary<string, string>(r.Tags, StringComparer.Ordinal);
+            foreach (var (k, v) in set) tags[k] = v;
+            foreach (var k in drop) tags.Remove(k);
+            return r with { Tags = tags };
+        });
+    }
+
+    /// <summary>Every workspace matching all of <paramref name="filters"/>, ordered by name.</summary>
+    public IReadOnlyList<InstanceRecord> List(IReadOnlyList<WorkspaceTags.Filter> filters)
+        => instances.LoadAll()
+            .Where(r => WorkspaceTags.MatchesAll(r, filters))
+            .OrderBy(r => r.Workspace, StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// Resolve a directory to the workspace, repo and module that contain it by matching it against the

@@ -42,6 +42,7 @@ public sealed class HereCommand(CliContext cli) : Command<HereCommand.Settings>
                 module,
                 label = record.Label,
                 note = record.Note,
+                tags = record.Tags,
                 claimed = record.Claimed,
                 claimedAt = record.ClaimedAt,
                 claimBranch = record.Branch,

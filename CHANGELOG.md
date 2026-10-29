@@ -17,6 +17,7 @@ A worktree is not a branch, and a list of branch names was never a great answer 
 - **Branches are read live** — `ws ls`, `ws info` and `here` show what each worktree actually has checked out, read straight from disk with no git process, so a `git switch` inside a worktree no longer leaves sprig quietly wrong. `info` points out a worktree that has moved off its claim branch. `ws ls --json` and `ws info --json` gain a `Head` per repo.
 - **The app's workspace cards lead with the label** (or the live branch), with the slot name, branch and note beneath. Repo rows show the live branch too.
 - **`pool checkout --detached`** — claim a workspace with no branch at all, parked at `--from` (or the map's base), for reviewing a PR or reproducing a bug. Release warns that commits made while detached are on no branch.
+- **Tags** — `<namespace>.<name>=value` pairs a caller puts on its claims (`pool checkout --tag`, `ws tag`, `ws untag`) and finds them again by (`ws ls --tag key[=value]`, repeat to require all). Sprig stores and filters on them and otherwise ignores them entirely. Release clears them, keeping a copy as `ReleasedTags` so whoever cleaned up can see what went. Deciding what's abandoned is the caller's job, not sprig's.
 - **`sprig cd` titles its window** with the label (or branch) and workspace under Windows Terminal, so a row of workspace terminals can be told apart.
 
 ### The Graph Turn — self-describing repos + maps (replaces stacks)

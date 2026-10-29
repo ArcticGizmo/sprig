@@ -280,16 +280,25 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
     }
 }
 
-[Description("List workspaces")]
-public sealed class LsCommand(CliContext cli) : Command<GlobalSettings>
+[Description("List workspaces (--tag filters by the claimer's tags)")]
+public sealed class LsCommand(CliContext cli) : Command<LsCommand.Settings>
 {
-    protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
+    public sealed class Settings : GlobalSettings
     {
-        var all = cli.Workspaces.List();
+        [CommandOption("--tag <key[=value]>")]
+        [Description("Only workspaces with this tag (repeat to require all); a bare key matches any value")]
+        public string[] Tags { get; set; } = [];
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var filters = s.Tags.Select(WorkspaceTags.Filter.Parse).ToList();
+        var all = cli.Workspaces.List(filters);
         if (s.Json) { CliOutput.Json(all.Select(LiveJson.Record)); return 0; }
         if (all.Count == 0)
         {
-            cli.Ansi.MarkupLine("[dim]no workspaces yet — create one with[/] [bold]sprig create <name> --repo <path>[/]");
+            if (filters.Count > 0) CliOutput.Muted("no workspaces match those tags");
+            else cli.Ansi.MarkupLine("[dim]no workspaces yet — create one with[/] [bold]sprig create <name> --repo <path>[/]");
             return 0;
         }
 
@@ -343,6 +352,8 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
             console.MarkupLine($"  [bold]{Markup.Escape(record.Label)}[/]");
         if (!string.IsNullOrWhiteSpace(record.Note))
             console.MarkupLine($"  [dim]{Markup.Escape(record.Note)}[/]");
+        if (record.Tags.Count > 0)
+            console.MarkupLine($"  [dim]tags[/] {Markup.Escape(CliFormat.Kv(record.Tags))}");
 
         if (record.TeardownFailed)
         {

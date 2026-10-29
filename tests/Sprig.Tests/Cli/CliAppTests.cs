@@ -442,6 +442,37 @@ public sealed class CliAppTests : IDisposable
     }
 
     [Fact]
+    public void Tag_untag_and_ls_filter()
+    {
+        SeedWorkspace("a", "api");
+        SeedWorkspace("b", "api");
+        Assert.Equal(0, Run("ws", "tag", "a", "agent.session=7f3a", "ci.run=12").exit);
+        Assert.Equal(0, Run("ws", "tag", "b", "agent.session=other").exit);
+
+        var mine = Run("ws", "ls", "--tag", "agent.session=7f3a", "--json").@out;
+        using (var doc = System.Text.Json.JsonDocument.Parse(mine))
+            Assert.Equal(["a"], doc.RootElement.EnumerateArray().Select(e => e.GetProperty("Workspace").GetString()));
+
+        // A bare key matches any value; repeating --tag requires all.
+        using (var doc = System.Text.Json.JsonDocument.Parse(Run("ws", "ls", "--tag", "agent.session", "--json").@out))
+            Assert.Equal(2, doc.RootElement.GetArrayLength());
+        using (var doc = System.Text.Json.JsonDocument.Parse(Run("ws", "ls", "--tag", "agent.session", "--tag", "ci.run", "--json").@out))
+            Assert.Equal(1, doc.RootElement.GetArrayLength());
+
+        Assert.Equal(0, Run("ws", "untag", "a", "ci.run").exit);
+        Assert.Equal("agent.session=7f3a", Run("ws", "tag", "a").@out.Trim());
+    }
+
+    [Fact]
+    public void Tag_rejects_a_bad_key()
+    {
+        SeedWorkspace("a", "api");
+        var (exit, _, err) = Run("ws", "tag", "a", "session=1");
+        Assert.Equal(1, exit);
+        Assert.Contains("not a valid tag key", err);
+    }
+
+    [Fact]
     public void Ls_leads_with_the_label_and_json_adds_a_live_head()
     {
         SeedWorkspace("feat", "api");

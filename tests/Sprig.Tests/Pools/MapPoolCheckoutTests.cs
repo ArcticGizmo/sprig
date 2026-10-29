@@ -108,6 +108,34 @@ public class MapPoolCheckoutTests
     }
 
     [Fact]
+    public void Tags_ride_the_claim_and_move_to_ReleasedTags_on_release()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 1);
+        var tags = new Dictionary<string, string> { ["agent.session"] = "7f3a" };
+
+        var ws = pools.Checkout("app", null, "tagged", tags: tags);
+        Assert.Equal("7f3a", ws.Tags["agent.session"]);
+
+        var (released, _) = pools.Release(ws.Workspace);
+        Assert.Empty(released.Tags);
+        Assert.Equal("7f3a", released.ReleasedTags["agent.session"]);
+    }
+
+    [Fact]
+    public void An_invalid_tag_key_is_rejected_before_materialising()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 1);
+
+        Assert.Throws<WorkspaceException>(() =>
+            pools.Checkout("app", null, "x", tags: new Dictionary<string, string> { ["Bad Key"] = "v" }));
+        Assert.Empty(pools.Status("app").Workspaces);
+    }
+
+    [Fact]
     public void Detached_checkout_claims_a_new_workspace_with_no_branch()
     {
         using var store = new TempStore();

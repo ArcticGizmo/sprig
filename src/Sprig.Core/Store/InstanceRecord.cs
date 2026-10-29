@@ -52,6 +52,15 @@ public sealed record InstanceRecord
     /// <summary>A short, editable status line beneath the label ("waiting on review"). Null when unset.</summary>
     public string? Note { get; init; }
 
+    /// <summary>The claimer's own <c>&lt;namespace&gt;.&lt;name&gt;</c> → value pairs (see <see cref="Workspaces.WorkspaceTags"/>),
+    /// so a caller can mark the workspaces it holds and find them again. Stored, shown and filtered on — never
+    /// acted on. Cleared on release.</summary>
+    public IReadOnlyDictionary<string, string> Tags { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>The tags the workspace carried when it was last released, so a caller that cleaned up can
+    /// still see what it released. Empty if never released with tags.</summary>
+    public IReadOnlyDictionary<string, string> ReleasedTags { get; init; } = new Dictionary<string, string>();
+
     /// <summary>When this workspace was last checked out; null if never claimed.</summary>
     public DateTimeOffset? ClaimedAt { get; init; }
 

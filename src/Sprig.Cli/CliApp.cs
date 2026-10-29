@@ -147,6 +147,8 @@ public static class CliApp
             ws.AddCommand<InfoCommand>("info");
             ws.AddCommand<LabelCommand>("label");
             ws.AddCommand<NoteCommand>("note");
+            ws.AddCommand<TagCommand>("tag");
+            ws.AddCommand<UntagCommand>("untag");
             ws.AddCommand<UpCommand>("up");
             ws.AddCommand<DownCommand>("down");
             ws.AddCommand<RefreshCommand>("refresh");

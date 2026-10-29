@@ -228,6 +228,15 @@ sprig ws note feature-x "waiting on review"
 sprig ws label feature-x --clear   # back to showing the live branch
 ```
 
+**Tag what you hold.** Tags are `<namespace>.<name>=value` pairs a script, agent or CI job puts on the workspaces it claims, so it can find them again and release the ones it knows it has finished with. Sprig never acts on a tag. Release clears a workspace's tags (keeping a copy as `ReleasedTags`).
+
+```sh
+sprig pool checkout app --branch feat-x --tag agent.session=7f3a
+sprig ws tag app-2 ci.run=4812
+sprig ws untag app-2 ci.run
+sprig ws ls --tag agent.session=7f3a --json   # a bare key matches any value; repeat --tag to require all
+```
+
 **Find out where you are.** `sprig here` is the reverse of `sprig path`: it names the workspace, repo and module the current directory is in, with its label, note, live branches and ports. Outside a workspace it exits 1, so a statusline or prompt can stay quiet. Its `--json` carries a `schema` version and only ever gains fields.
 
 ```sh

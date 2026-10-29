@@ -3,6 +3,7 @@
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              xmlns:views="clr-namespace:Sprig.App.Views"
+             xmlns:core="clr-namespace:Sprig.Core.Workspaces;assembly=Sprig.Core"
              x:Class="Sprig.App.Views.WorkspacesView"
              x:DataType="vm:WorkspacesViewModel">
     <Grid Margin="28,20,24,16">
@@ -71,22 +72,29 @@
                                              SelectedItem="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).Selected, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
-                                                <Grid ColumnDefinitions="Auto,*" Margin="0,3">
+                                                <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,3">
+                                                    <!-- the slot's colour, matching its VS Code title bar -->
+                                                    <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,1,8,1"
+                                                            Background="{Binding ColourBrush}" />
                                                     <!-- claimed ● / free ○ dot -->
-                                                    <TextBlock Grid.Column="0" Text="●" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                    <TextBlock Grid.Column="1" Text="●" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
                                                                IsVisible="{Binding Claimed}" Foreground="{StaticResource OkBrush}" />
-                                                    <TextBlock Grid.Column="0" Text="○" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                    <TextBlock Grid.Column="1" Text="○" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
                                                                IsVisible="{Binding Free}" Foreground="{StaticResource MutedBrush}" />
-                                                    <StackPanel Grid.Column="1" Spacing="1">
+                                                    <StackPanel Grid.Column="2" Spacing="1">
                                                         <StackPanel Orientation="Horizontal" Spacing="8">
-                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" />
+                                                            <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" FontSize="13"
+                                                                       TextTrimming="CharacterEllipsis" />
                                                             <TextBlock Text="⚠ degraded" FontSize="11" VerticalAlignment="Center"
                                                                        IsVisible="{Binding SetupFailed}" Foreground="{StaticResource WarnBrush}" />
                                                         </StackPanel>
                                                         <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}"
                                                                    TextTrimming="CharacterEllipsis">
-                                                            <Run Text="{Binding StateSummary}" /><Run Text="   " /><Run Text="{Binding AgeSummary}" />
+                                                            <Run Text="{Binding Subtitle}" /><Run Text="   " /><Run Text="{Binding StateSummary}" /><Run Text="   " /><Run Text="{Binding AgeSummary}" />
                                                         </TextBlock>
+                                                        <TextBlock IsVisible="{Binding HasNote}" Text="{Binding Note}" FontSize="11"
+                                                                   FontStyle="Italic" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{StaticResource FgBrush}" />
                                                         <TextBlock IsVisible="{Binding IsPartial}" FontSize="11" TextTrimming="CharacterEllipsis"
                                                                    Foreground="{StaticResource WarnBrush}">
                                                             <Run Text="partial · " /><Run Text="{Binding PartialSummary}" />
@@ -138,10 +146,30 @@
 
                         <!-- title + drift -->
                         <StackPanel Spacing="2">
-                            <TextBlock Text="{Binding Selected.Name}" FontSize="20" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TitleBrush}" />
+                            <TextBlock Text="{Binding Selected.Headline}" FontSize="20" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                            <TextBlock IsVisible="{Binding Selected.HasNote}" Text="{Binding Selected.Note}" FontSize="13"
+                                       FontStyle="Italic" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+                            <!-- Entry points declared with "open" — click to open in the browser. -->
+                            <ItemsControl IsVisible="{Binding Selected.HasUrls}" ItemsSource="{Binding Selected.Urls}" Margin="0,2">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="core:WorkspaceUrl">
+                                        <Button Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenUrlCommand}"
+                                                CommandParameter="{Binding}" Padding="8,3" Margin="0,0,8,4" FontSize="12"
+                                                ToolTip.Tip="{Binding Url}">
+                                            <TextBlock>
+                                                <Run Text="↗ " Foreground="{StaticResource AccentBrush}" /><Run Text="{Binding Capability}" /><Run Text="  " /><Run Text="{Binding Url}" Foreground="{StaticResource MutedBrush}" />
+                                            </TextBlock>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}">
-                                <Run Text="map: " /><Run Text="{Binding Selected.Map}" />
+                                <Run Text="{Binding Selected.Subtitle}" />
+                                <Run Text="   map: " /><Run Text="{Binding Selected.Map}" />
                                 <Run Text="   status: " /><Run Text="{Binding Selected.Status}" />
                                 <Run Text="   drift: " /><Run Text="{Binding Selected.Drift, FallbackValue='—'}" />
                             </TextBlock>
@@ -187,6 +215,8 @@
                                     IsVisible="{Binding Selected.Claimed}"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220"
                                     ToolTip.Tip="Hand this workspace back to its pool: stop its containers (nothing removed), keep all disk state. It stays free to take — reclaim it as-is anytime." />
+                            <Button Content="Open in VS Code" Command="{Binding OpenWorkspaceInVsCodeCommand}"
+                                    ToolTip.Tip="One VS Code window with every repo in this workspace, titled with its label and tinted with its colour." />
                             <Button Content="Reconcile" Command="{Binding ReconcileCommand}"
                                     ToolTip.Tip="Diagnose (read-only): check each worktree against the record." />
                             <Button Content="Repair" Command="{Binding RepairCommand}"
@@ -420,7 +450,7 @@
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
                                     <TextBlock>
-                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding StateSummary}" />
+                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding Headline}" /><Run Text="   " /><Run Text="{Binding AgeSummary}" />
                                     </TextBlock>
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>

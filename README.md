@@ -178,6 +178,8 @@ dotnet run --project src/Sprig.App    # launch the desktop app from the build ou
 dotnet run --project src/Sprig.Cli -- --help    # the CLI
 ```
 
+To try a change against small, disposable repos instead of your real ones, build the examples sandbox with `scripts\sandbox` (cmd) or `.\scripts\sandbox.ps1` (PowerShell). See [examples/README.md](examples/README.md).
+
 ## Requirements
 
 - .NET 10 SDK (to build; the installed app is self-contained and needs no runtime)

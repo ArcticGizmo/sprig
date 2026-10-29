@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Sprig.Core.Config;
+using Sprig.Core.Git;
+using Sprig.Core.Shell;
 using Sprig.Core.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -234,10 +236,11 @@ public sealed class PathCommand(CliContext cli) : Command<PathCommand.Settings>
     }
 }
 
-// `sprig cd` — open a new terminal window sitting in a workspace's repo/module directory, in the shell you
-// came from (powershell → powershell, cmd → cmd, …) and, under Windows Terminal, a fresh WT window. Resolves
+// `sprig cd` — move to a workspace's repo/module directory. Through a shell shim the shell you typed it in
+// moves in place; otherwise it opens a new terminal window there, in the shell you came from (powershell →
+// powershell, cmd → cmd, …) and, under Windows Terminal, a fresh WT window. Resolves
 // via the same TargetResolver as `sprig path`; it has no machine-output flags — scripts use `sprig path`.
-[Description("Open a new terminal window in a workspace repo/module directory")]
+[Description("Go to a workspace repo/module directory (in place with the shell shims, else a new window)")]
 public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
 {
     // Deliberately not GlobalSettings: `cd`'s job is to open a window, so it carries no --json (there is no
@@ -267,6 +270,10 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         [CommandOption("--shell <name>")]
         [Description("Shell to open (powershell|pwsh|cmd|bash|…); default: match the one you came from")]
         public string? Shell { get; set; }
+
+        [CommandOption("--window")]
+        [Description("Open a new window even when this shell could be moved in place")]
+        public bool Window { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -280,6 +287,11 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         if (target is not { } t)
             return 0; // interactive cancel (ESC): nothing to open
 
+        // Run through a shell shim (see ShellShims), the shell you typed this in can move itself, which beats
+        // a new window. Without one, or with --window, fall through to opening a window.
+        if (!s.Window && ShellShims.TryRequestCd(t.Path))
+            return 0;
+
         // Opening a window is Windows-only for now; elsewhere we can't spawn a matching terminal reliably yet
         // (that's coming), so degrade to printing the path and point at `sprig path` for scripting.
         if (!OperatingSystem.IsWindows())
@@ -289,36 +301,53 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
             return 0;
         }
 
-        var shell = LaunchWindow(t.Path, s.Shell);
+        var shell = LaunchWindow(t.Path, s.Shell, WindowTitle(t));
         cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] opened [bold]{Markup.Escape(shell)}[/] " +
             $"in a new window — [dim]{Markup.Escape(t.Path)}[/]");
         return 0;
     }
 
+    // The window title, so several open workspace terminals can be told apart: what the workspace is for (or
+    // the repo's live branch), then which workspace/repo it is.
+    string WindowTitle(TargetResolver.Target t)
+    {
+        var record = cli.Workspaces.Get(t.Workspace);
+        var repo = record?.Repos.FirstOrDefault(r => r.Name == t.Repo);
+        var headline = !string.IsNullOrWhiteSpace(record?.Label) ? record!.Label
+            : repo is null ? null
+            : WorktreeHead.Read(repo.WorktreePath)?.Display;
+        var where = record?.Repos.Count > 1 ? $"{t.Workspace}/{t.Repo}" : t.Workspace;
+        return headline is null ? where : $"{headline} · {where}";
+    }
+
     // Open a new terminal window running a shell in `dir`. Tries the best-matching shell first (the one we
     // were invoked from), then falls back to pwsh/powershell/cmd if that one won't launch. Returns the
     // display name of whichever opened.
-    static string LaunchWindow(string dir, string? shellOverride)
+    static string LaunchWindow(string dir, string? shellOverride, string title)
     {
         Win32Exception? last = null;
         foreach (var shell in ShellCandidates(shellOverride))
         {
-            try { Start(shell, dir); return Path.GetFileNameWithoutExtension(shell); }
+            try { Start(shell, dir, title); return Path.GetFileNameWithoutExtension(shell); }
             catch (Win32Exception ex) { last = ex; } // e.g. pwsh not installed → try the next candidate
         }
         throw (Exception?)last ?? new InvalidOperationException("no shell available to open a window with");
     }
 
-    static void Start(string shell, string dir)
+    static void Start(string shell, string dir, string title)
     {
         // Inside Windows Terminal, open a fresh WT window (-w new) so the emulator matches too — not a bare
-        // legacy console. If wt isn't resolvable, fall through to a plain new console window.
+        // legacy console. If wt isn't resolvable, fall through to a plain new console window. Only WT gets the
+        // title: a plain console would need a command run inside the shell to set one, and the shell's own
+        // prompt would overwrite it anyway, which --suppressApplicationTitle prevents under WT.
         if (Environment.GetEnvironmentVariable("WT_SESSION") is { Length: > 0 })
         {
             try
             {
                 var wt = new ProcessStartInfo("wt.exe") { UseShellExecute = true };
-                foreach (var arg in new[] { "-w", "new", "-d", dir, shell }) wt.ArgumentList.Add(arg);
+                // `;` separates commands on wt's command line, so a label containing one must be escaped.
+                foreach (var arg in new[] { "-w", "new", "-d", dir, "--title", title.Replace(";", "\\;"), "--suppressApplicationTitle", shell })
+                    wt.ArgumentList.Add(arg);
                 Process.Start(wt);
                 return;
             }

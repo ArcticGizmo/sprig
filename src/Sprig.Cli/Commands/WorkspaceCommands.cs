@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sprig.Core.Docker;
+using Sprig.Core.Git;
 using Sprig.Core.Init;
 using Sprig.Core.Maps;
 using Sprig.Core.Store;
@@ -279,23 +280,37 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
     }
 }
 
-[Description("List workspaces")]
-public sealed class LsCommand(CliContext cli) : Command<GlobalSettings>
+[Description("List workspaces (--tag filters by the claimer's tags)")]
+public sealed class LsCommand(CliContext cli) : Command<LsCommand.Settings>
 {
-    protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
+    public sealed class Settings : GlobalSettings
     {
-        var all = cli.Workspaces.List();
-        if (s.Json) { CliOutput.Json(all); return 0; }
+        [CommandOption("--tag <key[=value]>")]
+        [Description("Only workspaces with this tag (repeat to require all); a bare key matches any value")]
+        public string[] Tags { get; set; } = [];
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var filters = s.Tags.Select(WorkspaceTags.Filter.Parse).ToList();
+        var all = cli.Workspaces.List(filters);
+        if (s.Json) { CliOutput.Json(all.Select(LiveJson.Record)); return 0; }
         if (all.Count == 0)
         {
-            cli.Ansi.MarkupLine("[dim]no workspaces yet — create one with[/] [bold]sprig create <name> --repo <path>[/]");
+            if (filters.Count > 0) CliOutput.Muted("no workspaces match those tags");
+            else cli.Ansi.MarkupLine("[dim]no workspaces yet — create one with[/] [bold]sprig create <name> --repo <path>[/]");
             return 0;
         }
 
-        var table = CliFormat.Table("WORKSPACE", "REPOS", "PORTS", "STATUS");
+        // Purpose leads: a list of branch names says little about what each workspace is doing.
+        var table = CliFormat.Table("WORKSPACE", "PURPOSE", "BRANCH", "REPOS", "PORTS", "STATUS");
         foreach (var r in all.OrderBy(r => r.Workspace))
+        {
+            var branch = CliFormat.Heads(r.Repos.Select(x => (x.Name, WorktreeHead.Read(x.WorktreePath))).ToList());
             table.AddRow(
-                Markup.Escape(r.Workspace),
+                ClaimMarker(cli.Ansi, r) + Markup.Escape(r.Workspace),
+                CliFormat.Purpose(r, branch),
+                branch,
                 Markup.Escape(string.Join(",", r.Repos.Select(x => x.Name))),
                 Markup.Escape(CliFormat.Ports(r.Ports)),
                 // A flagged workspace is one a teardown couldn't finish — call it out here rather than
@@ -303,9 +318,14 @@ public sealed class LsCommand(CliContext cli) : Command<GlobalSettings>
                 r.TeardownFailed
                     ? $"[yellow]teardown failed[/]"
                     : Markup.Escape($"{r.LastStatus}"));
+        }
         cli.Ansi.Write(table);
         return 0;
     }
+
+    // ● claimed / ○ free for a pooled workspace; nothing for one outside a pool.
+    static string ClaimMarker(IAnsiConsole console, InstanceRecord r)
+        => r.Map is null ? "" : r.Claimed ? $"[green]{Glyph.Claimed(console)}[/] " : $"[dim]{Glyph.Free(console)}[/] ";
 }
 
 [Description("Everything about one workspace: repos, ports, drift, live containers")]
@@ -322,12 +342,24 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
         // failure here degrades to null rather than taking the whole command down.
         var containers = TryContainers(workspace);
 
-        if (s.Json) { CliOutput.Json(new { record, drift = report, containers }); return 0; }
+        if (s.Json)
+        {
+            CliOutput.Json(new { record = LiveJson.Record(record), drift = report, containers, urls = cli.Workspaces.Urls(record) });
+            return 0;
+        }
 
         var console = cli.Ansi;
         console.MarkupLine($"[bold]{Markup.Escape(record.Workspace)}[/]  " +
             $"[dim]status[/] {Markup.Escape($"{record.LastStatus}")}  " +
             $"[dim]created[/] {Markup.Escape($"{record.CreatedAt:u}")}");
+        if (!string.IsNullOrWhiteSpace(record.Label))
+            console.MarkupLine($"  [bold]{Markup.Escape(record.Label)}[/]");
+        if (!string.IsNullOrWhiteSpace(record.Note))
+            console.MarkupLine($"  [dim]{Markup.Escape(record.Note)}[/]");
+        if (record.Tags.Count > 0)
+            console.MarkupLine($"  [dim]tags[/] {Markup.Escape(CliFormat.Kv(record.Tags))}");
+        foreach (var u in cli.Workspaces.Urls(record))
+            console.MarkupLine($"  [dim]open[/] {Markup.Escape(u.Url)} [dim]({Markup.Escape(u.Capability)})[/]");
 
         if (record.TeardownFailed)
         {
@@ -355,9 +387,14 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
         foreach (var r in record.Repos)
         {
             var state = report?.Repos.FirstOrDefault(x => x.WorktreePath == r.WorktreePath)?.State;
+            var head = WorktreeHead.Read(r.WorktreePath);
+            // Flag a worktree git has moved off the claim branch, so the unpushed-work report on release
+            // (which follows the claim branch) isn't a surprise.
+            var moved = r.Branch is { Length: > 0 } claim && head is { Branch: { } live } && live != claim
+                ? $" [dim](claimed as {Markup.Escape(claim)})[/]" : "";
             repos.AddRow(
                 Markup.Escape(r.Name),
-                string.IsNullOrEmpty(r.Branch) ? "[dim]-[/]" : Markup.Escape(r.Branch),
+                CliFormat.Head(head) + moved,
                 state is { } st ? CliFormat.StateBadge(st) : "[dim]?[/]",
                 $"[dim]{Markup.Escape(r.WorktreePath)}[/]");
         }

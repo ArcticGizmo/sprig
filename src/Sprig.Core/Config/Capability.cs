@@ -31,6 +31,15 @@ public sealed record ProvidedCapability
     /// keyed by output name → template. Referenced as <c>${sprig.&lt;capability&gt;.&lt;shapeName&gt;}</c>.</summary>
     public IReadOnlyDictionary<string, string> Shapes { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>The output (usually a <c>url</c> shape) that is a browsable entry point, so <c>sprig ws urls</c>,
+    /// <c>sprig here</c> and the app can say where to go. Null when this capability isn't something you open.</summary>
+    public string? Open { get; init; }
+
+    /// <summary>A URL template Sprig may GET to report the service up or down, referencing this capability's
+    /// own outputs like a shape does (e.g. <c>${sprig.client-spa.url}/health</c>). Checked only when asked,
+    /// never polled. Null for no probe.</summary>
+    public string? Probe { get; init; }
+
     /// <summary>Every output name this capability exposes — its ports then its derived shapes. The two share
     /// one namespace, so a name is a port or a shape, never both.</summary>
     [JsonIgnore]

@@ -119,6 +119,12 @@ public partial class ProvideEditRow : ObservableObject
 
     public ObservableCollection<ShapeEditRow> Shapes { get; } = [];
 
+    /// <summary>The output that is this service's browsable entry point (e.g. <c>url</c>); blank for none.</summary>
+    [ObservableProperty] private string _open = "";
+
+    /// <summary>A URL template Sprig may GET to report the service up; blank for none.</summary>
+    [ObservableProperty] private string _probe = "";
+
     /// <summary>Keep the port token, every shape's token, each shape's autocomplete scope, and the live
     /// reference errors in step as the capability name is typed.</summary>
     partial void OnCapabilityChanged(string value)
@@ -837,7 +843,8 @@ public partial class RepoEditViewModel : ObservableObject
             var tab = new ModuleEditTab(vm, m.Name, m.Path);
             foreach (var p in m.Provides)
             {
-                var pr = new ProvideEditRow(r => tab.Provides.Remove(r)) { Capability = p.Capability };
+                var pr = new ProvideEditRow(r => tab.Provides.Remove(r))
+                    { Capability = p.Capability, Open = p.Open ?? "", Probe = p.Probe ?? "" };
                 // One permanent port; adopt the allowed set from whatever port the config declared (if any).
                 if (p.Ports.Count > 0) pr.Port.Allowed = p.Ports.First().Value.Allowed ?? "";
                 foreach (var (shapeName, template) in p.Shapes)
@@ -1123,6 +1130,8 @@ public partial class RepoEditViewModel : ObservableObject
                 Shapes = p.Shapes
                     .Where(s => s.Name.Trim().Length > 0)
                     .ToDictionary(s => s.Name.Trim(), s => s.Template.Trim(), StringComparer.Ordinal),
+                Open = Blank(p.Open),
+                Probe = Blank(p.Probe),
             }).ToList(),
             Needs = t.Needs
                 .Where(n => n.Capability.Trim().Length > 0)

@@ -7,59 +7,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### The Graph Turn — self-describing repos + maps (replaces stacks)
+---
 
-sprig's model changed. A repo no longer declares only the *inputs* it consumes for a *stack* to
-supply; instead a repo — and each module within it — **describes itself**: what it **provides**
-(its own ports, and URLs/values built from them) and what it **needs** from others. Stacks are gone,
-replaced by **maps**: an open graph of repos you take slices of, storing only the *deviations* from
-automatic wiring. Wiring is **derived by matching capability name**, so there's no central place that
-binds values in. Fresh **schema v1** for the repo config and the map; there is no migration from the
-stack era — recreate stack-era workspaces by hand.
+## [v0.7.0] - 2026-10-29
+
+Stacks are gone. Repos now describe what they **provide** and **need**, and **maps** wire slices of them together by capability name. Schema v1 starts fresh, with no migration: recreate stack-era workspaces by hand. Workspaces also finally say what they're for, rather than leaving you to decode branch names.
 
 ### Added
-- **Self-describing repos (`provides`/`needs`)** — per module, a repo declares the capabilities it
-  offers (`provides`: named `outputs` that are auto-allocated ports or strings derived from them) and
-  the capabilities it consumes (`needs`, with an optional local `as` alias). Referenced everywhere as
-  `${sprig.<capability>.<output>}`. Authored in the app's repo editor; `sprig init` infers provides
-  from detected ports. See `docs/config-reference.md`.
-- **Maps** — `maps/<name>.json` in the central store composes a slice of repos. It records only the
-  deviations: `wiring` (which provider wins when several could) and `defaults` (a literal fallback for
-  a need whose provider you left out), plus an optional `maxSlots` pool ceiling. Everything else is
-  derived from the repos' own provides/needs at checkout, so editing a map never invalidates a live
-  workspace. Multiple maps are first-class. Author them in the app (Maps page) or `sprig map import`;
-  `sprig map ls|show`.
-- **Derived wiring (nearest-wins)** — a `need` binds to a `provide` of the same capability name: a
-  sibling module first, then a single provider across the slice. More than one provider is an
-  ambiguity the map resolves; none is a gap a map default fills, else an unmet need stops the checkout
-  with the gap list. A monorepo is its own local map — siblings wire locally, unmet needs bubble up.
-- **Map-backed pooled workspaces** — `sprig pool checkout <map>` takes a bounded, reusable
-  `<map>-<n>` workspace (label it; reuse **keep**/**fresh**); `sprig pool release` hands it back;
-  `sprig pool status <map>` shows the pool. The ceiling is the map's `maxSlots` (default 5). Release
-  keeps everything on disk so a re-checkout is instant.
-- **`sprig ws refresh`** — resync a workspace's repos to their base branch, keeping installed deps (a
-  git reset, not a disk wipe). Refuses to discard un-pushed commits unless `--force`.
-- **Degraded workspaces** — a workspace whose setup failed is flagged in `pool status` and at
-  checkout, rather than being handed over as if healthy.
+- **Self-describing repos** — per-module `provides` and `needs`, referenced as `${sprig.<capability>.<output>}`.
+- **Maps** — compose a slice of repos, storing only `wiring` and `defaults`.
+- **Nearest-wins wiring** — a sibling module first, then the map; gaps listed.
+- **Pooled workspaces** — `sprig pool checkout`, `release` and `status`, capped by `maxSlots`.
+- **`sprig ws refresh`** — resync to base, keeping installed deps.
+- **Degraded workspaces** — failed setup is flagged rather than handed over as healthy.
+- **Labels and notes** — `sprig ws label` and `sprig ws note`, editable any time.
+- **`sprig here`** — which workspace, repo and module you're in. `--json` is versioned.
+- **Tags** — `ws tag`, `ws untag`, `ws ls --tag`. Sprig stores them and asks no questions.
+- **`sprig ws switch`** — onto a new branch, an existing one or a ref. The old branch is never touched (sprig can't tell if your PR merged, and won't guess).
+- **Detached checkout** — `pool checkout --detached`, for reviews and repros.
+- **Entry points** — `open` and `probe` on a capability; `ws urls [--probe]` and `ws browse`.
+- **`sprig code`** — one VS Code window per workspace, titled and colour-tinted.
+- **`sprig ws colour`** — pick a workspace's colour; each slot has a default.
+- **`sprig cd` moves your shell** — via PATH shims in PowerShell and cmd. The installer doesn't add them yet.
+- **Examples sandbox** — `scripts/sandbox` builds tiny repos to test against. Real codebases may stand down.
 
 ### Changed
-- **`sprig create` is map-based** — `--map <name>` (with `--only`/`--without` narrowing the slice) or
-  `--repo <path>` for a lone repo; the interactive wizard picks a map then its repos.
-- **Fresh schema v1** — the repo config and map both start at schema 1; stack `inputs` and the
-  schema-≤2 flat-config migration are gone. A single-app repo may still write `env`/`compose`/`setup`
-  at the top level (folded into an implicit `app` module).
-- **`sprig ws reset` → `sprig ws restart`** — the docker-infra bounce was renamed; `ws reset` stays a
-  deprecated alias for one release.
-- **Release stops, no longer tears down** — releasing a workspace runs `docker compose stop` instead
-  of `down`: containers are halted (freeing CPU/RAM) but networks and volumes stay, so reclaiming it
-  as-is only restarts the containers. (Teardown is still a separate, explicit action.)
+- **`ws ls` and app cards lead with the label** — slot, branch and note beneath.
+- **Branches read live** — `git switch` in a worktree no longer fools sprig.
+- **`sprig create` is map-based** — `--map` or `--repo`.
+- **`sprig ws reset` → `sprig ws restart`** — `reset` lingers as an alias for one release.
+- **Release stops containers** — it no longer tears down networks and volumes.
+- **`sprig cd` titles its window** under Windows Terminal.
+- **The app honours `SPRIG_STORE`**, as the CLI always has.
 
 ### Removed
-- **Stacks** — the `sprig stack` command, the stack builder/wiring canvas in the app, stack
-  definitions, shared ports, and repo `inputs` are all gone, superseded by maps + provides/needs.
+- **Stacks** — the command, the builder canvas, shared ports and repo `inputs`.
 
 ### Deprecated
-- **`sprig ws create`** — favour `sprig pool checkout`. It still works and nudges toward the pooled flow.
+- **`sprig ws create`** — use `sprig pool checkout`.
 
 ---
 

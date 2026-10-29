@@ -46,6 +46,8 @@ not the socket**: `vite-server.port` reads as a hierarchy, while `vite-port.port
 | `capability` | string | yes | The contract name — the head of every `${sprig.<capability>.<output>}` reference and the wiring key other repos' `needs` match against. Name the *service* (`vite-server`), not one of its shapes. |
 | `ports` | object | one of `ports`/`shapes` | `port-name → spec`. Real, non-colliding host ports allocated per workspace. Each spec is `true` (any host port) or `{ "allowed": "8100-8103" }` (pinned — see below). The app always exports a single port named `port`. |
 | `shapes` | object | one of `ports`/`shapes` | `shape-name → template`. Derived strings built from this capability's **own** outputs, e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. |
+| `open` | string | no | The output that is a browsable entry point (usually `url`). Listed by `sprig ws urls`, `sprig here`, `ws info` and the app; opened by `sprig ws browse`. Must name one of this capability's outputs. |
+| `probe` | string | no | A URL template sprig may GET to report the service up or down, e.g. `"${sprig.<thisCapability>.url}/health"`. Same reference rules as a shape. Checked only when asked (`sprig ws urls --probe`), never polled. Any response below 500 counts as up, since it means something is listening. |
 
 A capability must declare at least one port **or** shape; port and shape names share one namespace
 (a name is one or the other, never both). Any output is referenced anywhere in the repo as
@@ -60,7 +62,9 @@ instead. A shape that references itself, or a cycle between shapes, is rejected.
 "provides": [
   { "capability": "vite-server",
     "ports":  { "port": true },
-    "shapes": { "url": "http://localhost:${sprig.vite-server.port}" } }
+    "shapes": { "url": "http://localhost:${sprig.vite-server.port}" },
+    "open":   "url",
+    "probe":  "${sprig.vite-server.url}" }
 ]
 ```
 

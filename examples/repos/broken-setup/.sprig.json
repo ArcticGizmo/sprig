@@ -1,0 +1,14 @@
+{
+  // Exercises: a setup step that fails. The workspace is still created, but flagged degraded
+  // in `ws ls`, `pool status` and the app. `exit 3` fails under both cmd /c and sh -c.
+  "schema": 1,
+  "name": "broken-setup",
+  "modules": [
+    {
+      "name": "app",
+      "path": "",
+      "provides": [{ "capability": "flaky", "ports": { "port": true } }],
+      "setup": ["git --version", "exit 3"]
+    }
+  ]
+}

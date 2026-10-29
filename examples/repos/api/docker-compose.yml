@@ -1,0 +1,9 @@
+# Stands in for a real API: a stock nginx answering on the workspace's port, so `sprig ws up`,
+# `sprig ws urls --probe` and `sprig ws browse` have something real to talk to. sprig never edits
+# this file; it generates a per-workspace copy with the container name and host port rewritten.
+services:
+  api:
+    image: nginx:1.27-alpine
+    container_name: example-api
+    ports:
+      - "8080:80"

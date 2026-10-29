@@ -577,6 +577,20 @@
                                                     <Button Content="+ derived shape" Command="{Binding AddShapeCommand}"
                                                             FontSize="11" Padding="8,3" HorizontalAlignment="Left"
                                                             ToolTip.Tip="A string built from this capability's port — a url, a connection string." />
+
+                                                    <!-- Where to go: the output to open in a browser, and an optional health URL. -->
+                                                    <Grid ColumnDefinitions="Auto,110,Auto,*" ColumnSpacing="10" Margin="0,4,0,0">
+                                                        <TextBlock Grid.Column="0" Text="open" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource MutedBrush}" />
+                                                        <TextBox Grid.Column="1" Text="{Binding Open, Mode=TwoWay}" PlaceholderText="url"
+                                                                 FontFamily="Consolas,monospace"
+                                                                 ToolTip.Tip="The output that is a browsable entry point — shown by 'sprig ws urls', 'sprig here' and the app." />
+                                                        <TextBlock Grid.Column="2" Text="probe" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource MutedBrush}" />
+                                                        <TextBox Grid.Column="3" Text="{Binding Probe, Mode=TwoWay}"
+                                                                 PlaceholderText="${sprig.vite-server.url}/health" FontFamily="Consolas,monospace"
+                                                                 ToolTip.Tip="A URL sprig may GET to report the service up or down — only when asked, never polled." />
+                                                    </Grid>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

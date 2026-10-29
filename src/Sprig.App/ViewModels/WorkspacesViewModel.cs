@@ -51,14 +51,14 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
-        nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
+        nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
     private WorkspaceItemViewModel? _selected;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
         nameof(ClaimCommand), nameof(RefreshCommand), nameof(NewWorkspaceCommand),
-        nameof(RefreshStatusCommand), nameof(OpenDockerCommand))]
+        nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
     private bool _busy;
 
     [ObservableProperty] private string? _error;
@@ -324,7 +324,7 @@ public partial class WorkspacesViewModel : PageViewModel
 
         foreach (var (map, maxSlots, records) in data.Pools)
         {
-            var items = records.Select(r => new WorkspaceItemViewModel(r)).ToList();
+            var items = records.Select(r => new WorkspaceItemViewModel(r, Services.Workspaces.Urls(r))).ToList();
             foreach (var item in items) Workspaces.Add(item);
             Pools.Add(new PoolGroupViewModel(map, maxSlots, items));
         }
@@ -952,6 +952,28 @@ public partial class WorkspacesViewModel : PageViewModel
             // and a coach step waiting on a healthy workspace advances).
             Services.NotifyStoreChanged();
         }, status: "repaired");
+    }
+
+    /// <summary>Open the selected workspace as one titled, coloured VS Code window (the same file <c>sprig code</c> writes).</summary>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private void OpenWorkspaceInVsCode()
+    {
+        if (Selected is not { } item) return;
+        try
+        {
+            var file = Services.Workspaces.WriteCodeWorkspace(Services.Workspaces.Get(item.Name) ?? item.Record);
+            Process.Start(new ProcessStartInfo { FileName = "code", Arguments = $"\"{file}\"", UseShellExecute = true });
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    /// <summary>Open a workspace entry point in the default browser.</summary>
+    [RelayCommand]
+    private void OpenUrl(WorkspaceUrl? url)
+    {
+        if (url is null) return;
+        try { Process.Start(new ProcessStartInfo { FileName = url.Url, UseShellExecute = true }); }
+        catch (Exception ex) { Error = ex.Message; }
     }
 
     /// <summary>Open one repo's worktree folder in the OS file manager.</summary>

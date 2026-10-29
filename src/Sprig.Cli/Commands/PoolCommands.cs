@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Sprig.Core.Pools;
 using Sprig.Core.Store;
+using Sprig.Core.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -69,12 +70,20 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         public string? Map { get; set; }
 
         [CommandOption("--branch <name>")]
-        [Description("The branch to cut across the map's repos (required; the workspace's identity)")]
+        [Description("The branch to cut across the map's repos (required unless --detached)")]
         public string? Branch { get; set; }
 
+        [CommandOption("--detached")]
+        [Description("Claim with no branch, parked at --from (default: the map's base) — for review or repro")]
+        public bool Detached { get; set; }
+
         [CommandOption("--label <label>")]
-        [Description("An optional label to recognise this checkout by (metadata only)")]
+        [Description("What this checkout is for — its headline in ls, info and the app")]
         public string? Label { get; set; }
+
+        [CommandOption("--tag <key=value>")]
+        [Description("Tag the claim (repeatable), e.g. --tag agent.session=7f3a; cleared on release")]
+        public string[] Tags { get; set; } = [];
 
         [CommandOption("--workspace <name>")]
         [Description("Reuse a specific unclaimed workspace")]
@@ -138,12 +147,13 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
 
         var branch = ResolveBranch(console, s, interactive);
         var label = ResolveLabel(console, s);
+        var tags = WorkspaceTags.ParsePairs(s.Tags);
         var existing = target.IsNew ? null : target.Workspace;
         var startPoint = ResolveStartPoint(console, s, interactive, mapName, existing);
 
         // Surface (do not resolve) a branch already taken on a remote — a heads-up before we cut it. A local
         // conflict is a hard block enforced by the service; this is only the softer remote case.
-        if (existing is not null)
+        if (existing is not null && branch is not null)
         {
             var conflicts = cli.MapPool.CheckCheckout(existing, branch);
             if (conflicts.RemoteWarnings.Count > 0)
@@ -154,7 +164,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         // Machine path stays quiet and structured: no checklist, just the record.
         if (s.Json)
         {
-            CliOutput.Json(cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, startPoint: startPoint));
+            CliOutput.Json(cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, startPoint: startPoint, tags: tags));
             return 0;
         }
 
@@ -162,14 +172,17 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         // feedback create gives (worktrees, dependency install, infra), for every mode.
         console.MarkupLine($"[bold]Checking out[/] from [green]{Markup.Escape(mapName)}[/]" +
             (startPoint is null ? "" : $" [dim](start: {Markup.Escape(startPoint)})[/]") + "…");
-        var plan = cli.MapPool.PlanCheckout(mapName, existing, mode);
+        var plan = cli.MapPool.PlanCheckout(mapName, existing, mode, detached: branch is null);
         InstanceRecord record = null!;
         Checklist.Run(console, plan, progress =>
-            record = cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, progress, startPoint));
+            record = cli.MapPool.Checkout(mapName, existing, branch, label, mode, s.Force, progress, startPoint, tags));
 
         var labelSuffix = string.IsNullOrEmpty(label) ? "" : $" [dim]({Markup.Escape(label!)})[/]";
+        var where = branch is null
+            ? $"detached at [green]{Markup.Escape(startPoint ?? "base")}[/]"
+            : $"on branch [green]{Markup.Escape(branch)}[/]";
         console.MarkupLine($"[green]{Glyph.Check(console)}[/] checked out [bold]{Markup.Escape(record.Workspace)}[/] " +
-            $"on branch [green]{Markup.Escape(branch)}[/]{labelSuffix}");
+            $"{where}{labelSuffix}");
         foreach (var r in record.Repos)
             console.MarkupLine($"  [dim]{Markup.Escape(r.Name)}[/]  {Markup.Escape(r.WorktreePath)}");
         if (record.SetupFailed)
@@ -249,11 +262,14 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
         return pick == fresh ? CheckoutMode.Fresh : CheckoutMode.Keep;
     }
 
-    // The branch is the workspace's identity — required. A terminal prompts for it; a script must pass --branch.
-    string ResolveBranch(IAnsiConsole console, Settings s, bool interactive)
+    // A branch is required unless the claim is detached. A terminal prompts for it; a script must pass --branch
+    // or --detached. Null means detached.
+    string? ResolveBranch(IAnsiConsole console, Settings s, bool interactive)
     {
+        if (s.Detached)
+            return s.Branch is null ? null : throw new ArgumentException("choose only one of --branch / --detached");
         if (!string.IsNullOrWhiteSpace(s.Branch)) return s.Branch!.Trim();
-        if (!interactive) throw new ArgumentException("checkout requires --branch <name>");
+        if (!interactive) throw new ArgumentException("checkout requires --branch <name> (or --detached)");
         return console.Prompt(new TextPrompt<string>("Branch name for this workspace:")
             .Validate(n => string.IsNullOrWhiteSpace(n)
                 ? ValidationResult.Error("a branch name is required")
@@ -362,6 +378,7 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
                     ok = true,
                     workspace = record.Workspace,
                     action = "release",
+                    releasedTags = record.ReleasedTags,
                     pending = pending.Repos
                         .Where(r => r.HasAny)
                         .Select(r => new { repo = r.Repo, dirty = r.Dirty, unpushed = r.UnpushedCommits }),
@@ -371,8 +388,10 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
         // fresh checkout resets the workspace.
         if (pending.HasPending)
         {
-            console.MarkupLine($"[yellow]heads-up:[/] pending work stays on branch [green]{Markup.Escape(record.Branch ?? "-")}[/] " +
-                "(kept, not touched):");
+            console.MarkupLine(record.Branch is { } branch
+                ? $"[yellow]heads-up:[/] pending work stays on branch [green]{Markup.Escape(branch)}[/] (kept, not touched):"
+                : "[yellow]heads-up:[/] this claim was detached, so its commits are on no branch — create one " +
+                  "before the next checkout resets the worktree:");
             foreach (var r in pending.Repos.Where(r => r.HasAny))
             {
                 var bits = new List<string>();

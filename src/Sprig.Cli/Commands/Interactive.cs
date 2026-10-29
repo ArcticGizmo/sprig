@@ -345,4 +345,6 @@ static class Checklist
 static class Glyph
 {
     public static string Check(IAnsiConsole console) => console.Profile.Capabilities.Unicode ? "✔" : "+";
+    public static string Claimed(IAnsiConsole console) => console.Profile.Capabilities.Unicode ? "●" : "*";
+    public static string Free(IAnsiConsole console) => console.Profile.Capabilities.Unicode ? "○" : "-";
 }

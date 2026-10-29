@@ -37,15 +37,33 @@ public sealed record InstanceRecord
     /// to take — but not necessarily clean; how it's handled is decided at the next checkout.</summary>
     public bool Claimed { get; init; }
 
-    /// <summary>The <b>claim branch</b> — the single git branch name the user chose at claim, cut across
-    /// every repo in the stack. This is the load-bearing identity of a claimed workspace (mirrored per repo
-    /// on <see cref="InstanceRepo.Branch"/>). Null while the workspace is parked (idle workspace, worktrees in
-    /// detached HEAD with no branch of their own).</summary>
+    /// <summary>The <b>claim branch</b> — the branch Sprig last cut or checked out across the workspace's
+    /// repos (mirrored per repo on <see cref="InstanceRepo.Branch"/>). Not the workspace's identity (the slot
+    /// is) and not necessarily what is checked out now: git can move a worktree at any time, so displays read
+    /// the live branch with <see cref="Git.WorktreeHead"/>. Kept so release can report unpushed commits on it.
+    /// Null while the workspace is parked.</summary>
     public string? Branch { get; init; }
 
-    /// <summary>The free-text label the user gave this workspace at claim — <b>optional</b> metadata to
-    /// recognise it by ("auth refactor"), never load-bearing (the branch is). Null when unlabelled.</summary>
+    /// <summary>What the workspace is for ("Risk matrix overrides") — the headline wherever it is shown.
+    /// Owned by the claimer and editable at any time; never filled in implicitly, so an unlabelled workspace
+    /// shows its live branch instead. Null when unlabelled.</summary>
     public string? Label { get; init; }
+
+    /// <summary>A short, editable status line beneath the label ("waiting on review"). Null when unset.</summary>
+    public string? Note { get; init; }
+
+    /// <summary>The claimer's own <c>&lt;namespace&gt;.&lt;name&gt;</c> → value pairs (see <see cref="Workspaces.WorkspaceTags"/>),
+    /// so a caller can mark the workspaces it holds and find them again. Stored, shown and filtered on — never
+    /// acted on. Cleared on release.</summary>
+    public IReadOnlyDictionary<string, string> Tags { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>An explicit <c>#rrggbb</c> colour for this slot; null uses the slot's palette colour
+    /// (see <see cref="Workspaces.WorkspaceColour"/>). Kept across claims.</summary>
+    public string? Colour { get; init; }
+
+    /// <summary>The tags the workspace carried when it was last released, so a caller that cleaned up can
+    /// still see what it released. Empty if never released with tags.</summary>
+    public IReadOnlyDictionary<string, string> ReleasedTags { get; init; } = new Dictionary<string, string>();
 
     /// <summary>When this workspace was last checked out; null if never claimed.</summary>
     public DateTimeOffset? ClaimedAt { get; init; }

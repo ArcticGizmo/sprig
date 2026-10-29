@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "name": "edge-cases",
+  "repos": ["pinned", "broken-setup"],
+  "maxSlots": 4
+}

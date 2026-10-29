@@ -101,6 +101,24 @@ public static partial class ConfigReferences
         return issues;
     }
 
+    /// <summary>Problems with a capability's <c>probe</c> template. Like a shape, it is resolved against the
+    /// capability's own scope, so it may reference only that capability's outputs or <c>${sprig.workspace}</c>.</summary>
+    public static IReadOnlyList<string> ProbeReferenceIssues(ProvidedCapability p)
+    {
+        if (string.IsNullOrWhiteSpace(p.Probe)) return ["a probe must be a non-empty URL template"];
+        var outputs = p.OutputNames.ToHashSet(StringComparer.Ordinal);
+        var issues = new List<string>();
+        foreach (var reference in ReferencedNames(p.Probe))
+        {
+            if (reference == "workspace") continue;
+            var dot = reference.IndexOf('.');
+            if (dot <= 0 || reference[..dot] != p.Capability || !outputs.Contains(reference[(dot + 1)..]))
+                issues.Add($"a probe may only reference '{p.Capability}'s own outputs (${{sprig.{p.Capability}.<output>}}) " +
+                    $"or ${{sprig.workspace}}, not '${{sprig.{reference}}}'");
+        }
+        return issues;
+    }
+
     /// <summary>Every shape that lies on a dependency cycle (a shape that can reach itself through sibling
     /// references). Self-references are handled separately and never form an edge, so they don't appear here.</summary>
     static IReadOnlyList<string> ShapesOnACycle(Dictionary<string, HashSet<string>> deps)

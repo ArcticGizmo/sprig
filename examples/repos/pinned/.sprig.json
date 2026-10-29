@@ -1,0 +1,21 @@
+{
+  // Exercises: a port pinned to a small allowed set, as an OAuth provider's registered callback
+  // URLs would force. Three ports means a fourth simultaneous workspace can't be allocated one.
+  "schema": 1,
+  "name": "pinned",
+  "modules": [
+    {
+      "name": "app",
+      "path": "",
+      "provides": [
+        {
+          "capability": "auth-callback",
+          "ports": { "port": { "allowed": "8180-8182" } },
+          "shapes": { "url": "http://localhost:${sprig.auth-callback.port}/callback" },
+          "open": "url"
+        }
+      ],
+      "env": [{ "file": ".env", "set": { "CALLBACK_URL": "${sprig.auth-callback.url}" } }]
+    }
+  ]
+}

@@ -37,9 +37,15 @@ public interface ISprigPaths
 /// <summary>Filesystem implementation of <see cref="ISprigPaths"/>.</summary>
 public sealed class SprigPaths : ISprigPaths
 {
+    /// <param name="root">Store root. Null means <c>SPRIG_STORE</c> when it is set — so the CLI and the app can
+    /// both be pointed at a throwaway store such as the examples sandbox — else this profile's real store.</param>
     public SprigPaths(string? root = null)
-        => Root = root ?? Path.Combine(
+        => Root = root ?? EnvironmentRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProfile.DataFolderName);
+
+    /// <summary>The store root named by the <c>SPRIG_STORE</c> environment variable, or null when it is unset.</summary>
+    public static string? EnvironmentRoot
+        => Environment.GetEnvironmentVariable("SPRIG_STORE") is { } root && !string.IsNullOrWhiteSpace(root) ? root : null;
 
     /// <summary>
     /// Root of the guided tour's throwaway demo store — a sibling of the real one, never the same

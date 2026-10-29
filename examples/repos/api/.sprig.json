@@ -1,0 +1,43 @@
+{
+  // A single-module provider. Exercises: a provided port with a derived url, an entry point
+  // (`open`) and a health check (`probe`), env clobbering from a template, compose overrides,
+  // and a setup command that always succeeds.
+  "schema": 1,
+  "name": "api",
+  "modules": [
+    {
+      "name": "app",
+      "path": "",
+      "provides": [
+        {
+          "capability": "api",
+          "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.api.port}" },
+          "open": "url",
+          "probe": "${sprig.api.url}"
+        }
+      ],
+      "env": [
+        {
+          "file": ".env",
+          "templates": [".env.template"],
+          "set": {
+            "PORT": "${sprig.api.port}",
+            "PUBLIC_URL": "${sprig.api.url}",
+            "WORKSPACE": "${sprig.workspace}"
+          }
+        }
+      ],
+      "compose": [
+        {
+          "file": "docker-compose.yml",
+          "overrides": [
+            { "path": ["services", "api", "container_name"], "template": "example-api--${sprig.workspace}" },
+            { "path": ["services", "api", "ports", "0"], "template": "${sprig.api.port}:80" }
+          ]
+        }
+      ],
+      "setup": ["git --version"]
+    }
+  ]
+}

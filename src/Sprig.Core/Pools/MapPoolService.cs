@@ -44,7 +44,8 @@ public sealed class MapPoolService(
     /// row before work starts. A new checkout mirrors <see cref="WorkspaceService.PlanCreateFromMap"/> plus the
     /// per-repo "cut branch" rows and an infra row; a reused checkout mirrors
     /// <see cref="WorkspaceService.PlanClaim"/>.</summary>
-    public IReadOnlyList<WorkspaceStep> PlanCheckout(string mapName, string? existingWorkspace, CheckoutMode mode)
+    public IReadOnlyList<WorkspaceStep> PlanCheckout(string mapName, string? existingWorkspace, CheckoutMode mode,
+        bool detached = false)
     {
         if (existingWorkspace is null)
         {
@@ -54,14 +55,14 @@ public sealed class MapPoolService(
             var steps = workspaces.PlanCreateFromMap(repos, placeholder).ToList();
             // A new workspace is created fresh at base, so its claim is minimal: just cut the branch per repo.
             foreach (var repo in repos)
-                steps.Add(new WorkspaceStep(RefreshStepIds.Claim(repo.Name), $"Create branch — {repo.Name}"));
+                steps.Add(new WorkspaceStep(RefreshStepIds.Claim(repo.Name), WorkspaceService.ClaimStepLabel(repo.Name, detached)));
             steps.Add(new WorkspaceStep(RefreshStepIds.Infra, "Start infrastructure"));
             return steps;
         }
 
         var record = instances.TryLoad(existingWorkspace)
             ?? throw new PoolException($"'{existingWorkspace}' is not a workspace in the '{mapName}' pool");
-        return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(mapName, null).Repos);
+        return workspaces.PlanClaim(record, mode == CheckoutMode.Fresh, resolver.Resolve(mapName, null).Repos, detached);
     }
 
     /// <summary>Gather the "start from" picker options for a checkout: the default ref plus the ranked candidate
@@ -120,15 +121,22 @@ public sealed class MapPoolService(
     /// <paramref name="mode"/>; when null, a brand-new parked <c>&lt;map&gt;-&lt;n&gt;</c> workspace is
     /// materialised (only under the ceiling) and claimed minimally. The branch pre-flight is atomic across every
     /// repo; a name that already exists aborts before anything is cut. Runs under a per-map lock so the
-    /// pick/allocate is atomic.
+    /// pick/allocate is atomic. A null <paramref name="branch"/> is a <b>detached</b> checkout: the workspace
+    /// is claimed parked at <paramref name="startPoint"/> (default: base) with no branch cut.
     /// </summary>
-    public InstanceRecord Checkout(string mapName, string? existingWorkspace, string branch, string? label = null,
+    public InstanceRecord Checkout(string mapName, string? existingWorkspace, string? branch, string? label = null,
         CheckoutMode mode = CheckoutMode.Keep, bool force = false,
-        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null)
+        IProgress<WorkspaceStepProgress>? progress = null, string? startPoint = null,
+        IReadOnlyDictionary<string, string>? tags = null)
     {
-        if (string.IsNullOrWhiteSpace(branch))
-            throw new PoolException("a checkout needs a branch name");
-        workspaces.EnsureValidBranchName(branch); // reject a bad name before materialising anything
+        tags ??= new Dictionary<string, string>();
+        foreach (var key in tags.Keys) WorkspaceTags.EnsureValidKey(key); // before anything is materialised
+        if (branch is not null)
+        {
+            if (string.IsNullOrWhiteSpace(branch))
+                throw new PoolException("a checkout needs a branch name, or none at all for a detached checkout");
+            workspaces.EnsureValidBranchName(branch); // reject a bad name before materialising anything
+        }
         var map = maps.Get(mapName) ?? throw new MapException($"unknown map '{mapName}'");
 
         using var _ = Lock(mapName);
@@ -143,7 +151,7 @@ public sealed class MapPoolService(
                 throw new PoolException($"workspace '{existingWorkspace}' is already claimed");
 
             workspaces.Claim(target.Workspace, branch, mode == CheckoutMode.Fresh, force, progress, repos, startPoint);
-            return MarkClaimed(target.Workspace, label, target.WorkspaceIndex);
+            return MarkClaimed(target.Workspace, label, tags, target.WorkspaceIndex);
         }
 
         // Materialise a new workspace — only if there's room under the ceiling.
@@ -154,14 +162,15 @@ public sealed class MapPoolService(
 
         // Pre-flight the branch against the source repos BEFORE materialising anything, so a name conflict
         // never leaves a half-created workspace behind.
-        WorkspaceService.ThrowIfBlocked(
-            workspaces.CheckClaimAcross(repos.Select(r => (r.Name, r.Root)), branch), branch);
+        if (branch is not null)
+            WorkspaceService.ThrowIfBlocked(
+                workspaces.CheckClaimAcross(repos.Select(r => (r.Name, r.Root)), branch), branch);
 
         var index = NextIndex(mapName, members, ceiling);
         var name = $"{mapName}-{index}";
         workspaces.CreateFromMap(name, mapDef, repos, progress: progress, startPoint: startPoint); // parked, warm
-        workspaces.CutBranchAndStart(name, branch, progress);   // minimal claim: cut branch at start point + start infra
-        return MarkClaimed(name, label, index);
+        workspaces.CutBranchAndStart(name, branch, progress);   // minimal claim: cut branch (if any) at start point + start infra
+        return MarkClaimed(name, label, tags, index);
     }
 
     /// <summary>
@@ -180,7 +189,14 @@ public sealed class MapPoolService(
         var pending = workspaces.CollectPending(record); // report only — release never touches the working tree
         workspaces.TryStopContainers(workspace);         // free CPU/RAM; keep containers, volumes + disk intact
         var latest = instances.TryLoad(workspace) ?? record;
-        var released = latest with { Claimed = false, LastUsedAt = DateTimeOffset.UtcNow };
+        // Tags belong to the claim, so they go with it; a copy stays behind for whoever cleaned up.
+        var released = latest with
+        {
+            Claimed = false,
+            LastUsedAt = DateTimeOffset.UtcNow,
+            ReleasedTags = latest.Tags,
+            Tags = new Dictionary<string, string>(),
+        };
         instances.Save(released);
         return (released, pending);
     }
@@ -196,7 +212,7 @@ public sealed class MapPoolService(
             .ThenBy(i => i.Workspace, StringComparer.Ordinal)
             .ToList();
 
-    InstanceRecord MarkClaimed(string workspace, string? label, int? index)
+    InstanceRecord MarkClaimed(string workspace, string? label, IReadOnlyDictionary<string, string> tags, int? index)
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
@@ -204,6 +220,7 @@ public sealed class MapPoolService(
         {
             Claimed = true,
             Label = label,
+            Tags = tags,
             ClaimedAt = DateTimeOffset.UtcNow,
             WorkspaceIndex = index ?? record.WorkspaceIndex,
         };

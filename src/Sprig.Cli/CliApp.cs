@@ -21,13 +21,9 @@ namespace Sprig.Cli;
 /// so it is written straight to stdout, never through the markup renderer.</summary>
 public static class CliApp
 {
-    public static int Run(string[] args)
-    {
-        // SPRIG_STORE points the central store somewhere other than %LOCALAPPDATA%\sprig — useful for
-        // running against a throwaway store and the seam the CLI tests drive the dispatcher through.
-        var root = Environment.GetEnvironmentVariable("SPRIG_STORE");
-        return Run(args, new SprigPaths(string.IsNullOrWhiteSpace(root) ? null : root));
-    }
+    // SprigPaths' default root honours SPRIG_STORE, so a throwaway store (the examples sandbox) applies here
+    // and in the app alike.
+    public static int Run(string[] args) => Run(args, new SprigPaths());
 
     internal static int Run(string[] args, ISprigPaths paths)
     {
@@ -84,9 +80,8 @@ public static class CliApp
         }
     }
 
-    // Dispatch convention: the workspace is the primary object, so its verbs are top-level and
-    // unqualified (create/ls/info/up/…). Every other object is namespaced (repo/stack/settings). A
-    // `ws`/`workspace` branch mirrors the workspace verbs so the noun-verb form works too.
+    // Dispatch convention: every object is namespaced under its noun (ws/repo/pool/map/settings). Only the
+    // navigation and meta commands (cd/path/here/code/open/update/init) sit at the top level.
     static void Configure(IConfigurator config)
     {
         config.SetApplicationName("sprig");
@@ -100,6 +95,8 @@ public static class CliApp
 
         config.AddCommand<CdCommand>("cd");
         config.AddCommand<PathCommand>("path");
+        config.AddCommand<HereCommand>("here");
+        config.AddCommand<CodeCommand>("code");
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
         config.AddCommand<InitCommand>("init");
@@ -130,6 +127,12 @@ public static class CliApp
             map.AddCommand<MapImportCommand>("import");
         });
 
+        config.AddBranch("shell", shell =>
+        {
+            shell.SetDescription("Shell integration (shims that let 'sprig cd' move your shell)");
+            shell.AddCommand<ShellShimsCommand>("shims");
+        });
+
         config.AddBranch("settings", settings =>
         {
             settings.SetDescription("Port allocation policy");
@@ -145,8 +148,16 @@ public static class CliApp
             ws.AddCommand<CreateCommand>("create");
             ws.AddCommand<LsCommand>("ls");
             ws.AddCommand<InfoCommand>("info");
+            ws.AddCommand<LabelCommand>("label");
+            ws.AddCommand<NoteCommand>("note");
+            ws.AddCommand<ColourCommand>("colour").WithAlias("color");
+            ws.AddCommand<TagCommand>("tag");
+            ws.AddCommand<UntagCommand>("untag");
+            ws.AddCommand<UrlsCommand>("urls");
+            ws.AddCommand<BrowseCommand>("browse");
             ws.AddCommand<UpCommand>("up");
             ws.AddCommand<DownCommand>("down");
+            ws.AddCommand<SwitchCommand>("switch");
             ws.AddCommand<RefreshCommand>("refresh");
             ws.AddCommand<RestartCommand>("restart");
             ws.AddCommand<ResetCommand>("reset");

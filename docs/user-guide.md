@@ -216,9 +216,59 @@ sprig cd                      # pick workspace → repo → module from scratch
 sprig path feature-x api      # just print the directory — the one for scripts and shell wrappers
 ```
 
+With sprig's shell shims on PATH (`sprig shell shims --dir <folder>`, then put that folder ahead of `sprig.exe`'s), `sprig cd` moves the PowerShell or cmd window you typed it in instead of opening a new one. `--window` opens one anyway. Git Bash can't be moved this way; use `cd "$(sprig path feature-x)"`.
+
 `sprig path` is the scripting counterpart: it resolves the same workspace/repo/module but prints the
 directory instead of opening a window, so `Set-Location (sprig path feature-x)` (or `cd "$(sprig path
 feature-x)"`) drops your *current* shell into it. Add `--json` for the structured target.
+
+**Say what a workspace is for.** A workspace's label is its headline in `ws ls`, `ws info` and the app, and its note is a short status line beneath. Both can be changed at any time; with no text they print the current value.
+
+```sh
+sprig ws label feature-x "Risk matrix overrides"
+sprig ws note feature-x "waiting on review"
+sprig ws label feature-x --clear   # back to showing the live branch
+```
+
+**Tag what you hold.** Tags are `<namespace>.<name>=value` pairs a script, agent or CI job puts on the workspaces it claims, so it can find them again and release the ones it knows it has finished with. Sprig never acts on a tag. Release clears a workspace's tags (keeping a copy as `ReleasedTags`).
+
+```sh
+sprig pool checkout app --branch feat-x --tag agent.session=7f3a
+sprig ws tag app-2 ci.run=4812
+sprig ws untag app-2 ci.run
+sprig ws ls --tag agent.session=7f3a --json   # a bare key matches any value; repeat --tag to require all
+```
+
+**Move on to the next piece of work.** Once a change is merged (or just queued), `sprig ws switch` puts the workspace on something new without waiting for the old branch to be cleaned up. The branch it leaves is kept exactly as it is; the slot, ports, label, note and tags don't change.
+
+```sh
+sprig ws switch app-2 --new feat-y --from origin/main   # cut a new branch (default: each repo's base)
+sprig ws switch app-2 --branch hotfix-123              # check out an existing branch, local or remote
+sprig ws switch app-2 --detach --from origin/main      # park at a ref with no branch
+sprig ws switch app-2                                  # at a terminal: pick from known branches
+```
+
+It refuses if any worktree has uncommitted changes, and checks every repo before moving any. Env is reapplied and setup reruns; infra keeps running unless you pass `--fresh`, which also wipes its data volumes. `--only api,web` limits it to some repos.
+
+**Know where to go.** A provided capability can mark one of its outputs as an entry point with `"open": "url"`, and give a `"probe"` URL to check it's up (see the config reference). Then:
+
+```sh
+sprig ws urls app-2           # every entry point in the workspace
+sprig ws urls app-2 --probe   # ...and whether each is up right now (checked once, never polled)
+sprig ws browse app-2 web     # open one in the browser (the name is optional when there's only one)
+```
+
+`ws info`, `sprig here` and the app's workspace detail show the same list; in the app each one is a button that opens it.
+
+**Open it in VS Code.** `sprig code app-2` opens one VS Code window with every repo in the workspace, titled with its label and with the title bar tinted in the workspace's colour. Each slot keeps the same colour across claims; `sprig ws colour app-2 #16a34a` changes it and `--clear` puts the default back. The `.code-workspace` file is written to the central store, not your repos (`--print` writes it and prints its path without opening VS Code).
+
+**Find out where you are.** `sprig here` is the reverse of `sprig path`: it names the workspace, repo and module the current directory is in, with its label, note, live branches and ports. Outside a workspace it exits 1, so a statusline or prompt can stay quiet. Its `--json` carries a `schema` version and only ever gains fields.
+
+```sh
+sprig here
+sprig here --json
+sprig here --path ../api--feature-x
+```
 
 ### 4. Run the infrastructure
 

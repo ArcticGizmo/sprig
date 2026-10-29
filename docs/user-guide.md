@@ -248,6 +248,16 @@ sprig ws switch app-2                                  # at a terminal: pick fro
 
 It refuses if any worktree has uncommitted changes, and checks every repo before moving any. Env is reapplied and setup reruns; infra keeps running unless you pass `--fresh`, which also wipes its data volumes. `--only api,web` limits it to some repos.
 
+**Know where to go.** A provided capability can mark one of its outputs as an entry point with `"open": "url"`, and give a `"probe"` URL to check it's up (see the config reference). Then:
+
+```sh
+sprig ws urls app-2           # every entry point in the workspace
+sprig ws urls app-2 --probe   # ...and whether each is up right now (checked once, never polled)
+sprig ws browse app-2 web     # open one in the browser (the name is optional when there's only one)
+```
+
+`ws info`, `sprig here` and the app's workspace detail show the same list; in the app each one is a button that opens it.
+
 **Find out where you are.** `sprig here` is the reverse of `sprig path`: it names the workspace, repo and module the current directory is in, with its label, note, live branches and ports. Outside a workspace it exits 1, so a statusline or prompt can stay quiet. Its `--json` carries a `schema` version and only ever gains fields.
 
 ```sh

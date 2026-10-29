@@ -15,9 +15,10 @@ public partial class WorkspaceItemViewModel : ViewModelBase
 {
     public InstanceRecord Record { get; }
 
-    public WorkspaceItemViewModel(InstanceRecord record)
+    public WorkspaceItemViewModel(InstanceRecord record, IReadOnlyList<WorkspaceUrl>? urls = null)
     {
         Record = record;
+        Urls = urls ?? [];
         Repos = record.Repos.Select(r => new RepoLineViewModel(r)).ToList();
         LiveBranch = WorktreeHead.Summarise(Repos.Select(r => (r.Name, r.Head)));
         _status = record.LastStatus ?? "created";
@@ -40,6 +41,10 @@ public partial class WorkspaceItemViewModel : ViewModelBase
 
     public string? Note => Record.Note;
     public bool HasNote => !string.IsNullOrWhiteSpace(Record.Note);
+
+    /// <summary>The entry points the workspace's capabilities declare as <c>open</c>.</summary>
+    public IReadOnlyList<WorkspaceUrl> Urls { get; }
+    public bool HasUrls => Urls.Count > 0;
 
     /// <summary>The map this workspace's pool belongs to (its grouping key); "(ad-hoc)" for a workspace
     /// that belongs to no map.</summary>

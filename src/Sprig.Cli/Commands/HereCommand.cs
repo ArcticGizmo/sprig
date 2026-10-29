@@ -30,6 +30,7 @@ public sealed class HereCommand(CliContext cli) : Command<HereCommand.Settings>
         var location = cli.Workspaces.Locate(dir) ?? throw new ArgumentException($"not in a sprig workspace: {dir}");
         var (record, repo, module) = location;
         var heads = record.Repos.Select(r => (r.Name, Head: WorktreeHead.Read(r.WorktreePath))).ToList();
+        var urls = cli.Workspaces.Urls(record);
 
         if (s.Json)
         {
@@ -55,6 +56,7 @@ public sealed class HereCommand(CliContext cli) : Command<HereCommand.Settings>
                     path = r.WorktreePath,
                 }),
                 ports = record.Ports,
+                urls = urls.Select(u => new { repo = u.Repo, module = u.Module, capability = u.Capability, url = u.Url }),
             });
             return 0;
         }
@@ -68,6 +70,8 @@ public sealed class HereCommand(CliContext cli) : Command<HereCommand.Settings>
             $"  [dim]branch[/] {CliFormat.Head(here)}");
         if (record.Ports.Count > 0)
             console.MarkupLine($"  [dim]ports[/] {Markup.Escape(CliFormat.Ports(record.Ports))}");
+        foreach (var u in urls)
+            console.MarkupLine($"  [dim]{Markup.Escape(u.Capability)}[/] {Markup.Escape(u.Url)}");
         return 0;
     }
 }

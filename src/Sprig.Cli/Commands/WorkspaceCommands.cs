@@ -342,7 +342,11 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
         // failure here degrades to null rather than taking the whole command down.
         var containers = TryContainers(workspace);
 
-        if (s.Json) { CliOutput.Json(new { record = LiveJson.Record(record), drift = report, containers }); return 0; }
+        if (s.Json)
+        {
+            CliOutput.Json(new { record = LiveJson.Record(record), drift = report, containers, urls = cli.Workspaces.Urls(record) });
+            return 0;
+        }
 
         var console = cli.Ansi;
         console.MarkupLine($"[bold]{Markup.Escape(record.Workspace)}[/]  " +
@@ -354,6 +358,8 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
             console.MarkupLine($"  [dim]{Markup.Escape(record.Note)}[/]");
         if (record.Tags.Count > 0)
             console.MarkupLine($"  [dim]tags[/] {Markup.Escape(CliFormat.Kv(record.Tags))}");
+        foreach (var u in cli.Workspaces.Urls(record))
+            console.MarkupLine($"  [dim]open[/] {Markup.Escape(u.Url)} [dim]({Markup.Escape(u.Capability)})[/]");
 
         if (record.TeardownFailed)
         {

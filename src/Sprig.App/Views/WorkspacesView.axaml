@@ -3,6 +3,7 @@
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              xmlns:views="clr-namespace:Sprig.App.Views"
+             xmlns:core="clr-namespace:Sprig.Core.Workspaces;assembly=Sprig.Core"
              x:Class="Sprig.App.Views.WorkspacesView"
              x:DataType="vm:WorkspacesViewModel">
     <Grid Margin="28,20,24,16">
@@ -146,6 +147,23 @@
                                        Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
                             <TextBlock IsVisible="{Binding Selected.HasNote}" Text="{Binding Selected.Note}" FontSize="13"
                                        FontStyle="Italic" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+                            <!-- Entry points declared with "open" — click to open in the browser. -->
+                            <ItemsControl IsVisible="{Binding Selected.HasUrls}" ItemsSource="{Binding Selected.Urls}" Margin="0,2">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="core:WorkspaceUrl">
+                                        <Button Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenUrlCommand}"
+                                                CommandParameter="{Binding}" Padding="8,3" Margin="0,0,8,4" FontSize="12"
+                                                ToolTip.Tip="{Binding Url}">
+                                            <TextBlock>
+                                                <Run Text="↗ " Foreground="{StaticResource AccentBrush}" /><Run Text="{Binding Capability}" /><Run Text="  " /><Run Text="{Binding Url}" Foreground="{StaticResource MutedBrush}" />
+                                            </TextBlock>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}">
                                 <Run Text="{Binding Selected.Subtitle}" />
                                 <Run Text="   map: " /><Run Text="{Binding Selected.Map}" />

@@ -324,7 +324,7 @@ public partial class WorkspacesViewModel : PageViewModel
 
         foreach (var (map, maxSlots, records) in data.Pools)
         {
-            var items = records.Select(r => new WorkspaceItemViewModel(r)).ToList();
+            var items = records.Select(r => new WorkspaceItemViewModel(r, Services.Workspaces.Urls(r))).ToList();
             foreach (var item in items) Workspaces.Add(item);
             Pools.Add(new PoolGroupViewModel(map, maxSlots, items));
         }
@@ -952,6 +952,15 @@ public partial class WorkspacesViewModel : PageViewModel
             // and a coach step waiting on a healthy workspace advances).
             Services.NotifyStoreChanged();
         }, status: "repaired");
+    }
+
+    /// <summary>Open a workspace entry point in the default browser.</summary>
+    [RelayCommand]
+    private void OpenUrl(WorkspaceUrl? url)
+    {
+        if (url is null) return;
+        try { Process.Start(new ProcessStartInfo { FileName = url.Url, UseShellExecute = true }); }
+        catch (Exception ex) { Error = ex.Message; }
     }
 
     /// <summary>Open one repo's worktree folder in the OS file manager.</summary>

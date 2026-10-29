@@ -126,6 +126,12 @@ public static class SprigConfigValidator
             }
 
             ValidateShapeReferences(p, at, issues);
+
+            if (p.Open is not null && !p.OutputNames.Contains(p.Open, StringComparer.Ordinal))
+                issues.Add(new($"{at}.open", $"'{p.Open}' is not one of '{p.Capability}'s outputs ({string.Join(", ", p.OutputNames)})"));
+            if (p.Probe is not null)
+                foreach (var message in ConfigReferences.ProbeReferenceIssues(p))
+                    issues.Add(new($"{at}.probe", message));
         }
     }
 

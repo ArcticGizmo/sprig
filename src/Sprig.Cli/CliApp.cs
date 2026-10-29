@@ -21,13 +21,9 @@ namespace Sprig.Cli;
 /// so it is written straight to stdout, never through the markup renderer.</summary>
 public static class CliApp
 {
-    public static int Run(string[] args)
-    {
-        // SPRIG_STORE points the central store somewhere other than %LOCALAPPDATA%\sprig — useful for
-        // running against a throwaway store and the seam the CLI tests drive the dispatcher through.
-        var root = Environment.GetEnvironmentVariable("SPRIG_STORE");
-        return Run(args, new SprigPaths(string.IsNullOrWhiteSpace(root) ? null : root));
-    }
+    // SprigPaths' default root honours SPRIG_STORE, so a throwaway store (the examples sandbox) applies here
+    // and in the app alike.
+    public static int Run(string[] args) => Run(args, new SprigPaths());
 
     internal static int Run(string[] args, ISprigPaths paths)
     {

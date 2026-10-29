@@ -1,0 +1,30 @@
+{
+  // A consumer. Exercises: a need wired across repos by capability name (`api`, provided by the
+  // api example), an entry point with no probe, and env with no template.
+  "schema": 1,
+  "name": "web",
+  "modules": [
+    {
+      "name": "app",
+      "path": "",
+      "provides": [
+        {
+          "capability": "web",
+          "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.web.port}" },
+          "open": "url"
+        }
+      ],
+      "needs": [{ "capability": "api" }],
+      "env": [
+        {
+          "file": ".env",
+          "set": {
+            "PORT": "${sprig.web.port}",
+            "VITE_API_URL": "${sprig.api.url}"
+          }
+        }
+      ]
+    }
+  ]
+}

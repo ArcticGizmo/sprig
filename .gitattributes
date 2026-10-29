@@ -14,6 +14,7 @@
 # Scripts that must keep a specific EOL
 *.sh   text eol=lf
 *.bat  text eol=crlf
+*.cmd  text eol=crlf
 *.ps1  text eol=crlf
 
 # Binary (never touch)

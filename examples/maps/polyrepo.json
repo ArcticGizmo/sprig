@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "name": "polyrepo",
+  "repos": ["api", "web"],
+  "maxSlots": 3
+}

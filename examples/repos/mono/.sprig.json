@@ -1,0 +1,36 @@
+{
+  // A monorepo. Exercises: two modules in one repo, a need satisfied by a sibling module
+  // (nearest-wins local wiring), and `sprig here` / `sprig path` resolving a module directory.
+  "schema": 1,
+  "name": "mono",
+  "modules": [
+    {
+      "name": "web",
+      "path": "apps/web",
+      "provides": [
+        {
+          "capability": "mono-web",
+          "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.mono-web.port}" },
+          "open": "url"
+        }
+      ],
+      "needs": [{ "capability": "mono-api" }],
+      "env": [{ "file": ".env", "set": { "PORT": "${sprig.mono-web.port}", "API_URL": "${sprig.mono-api.url}" } }]
+    },
+    {
+      "name": "api",
+      "path": "apps/api",
+      "provides": [
+        {
+          "capability": "mono-api",
+          "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.mono-api.port}" },
+          "open": "url",
+          "probe": "${sprig.mono-api.url}/health"
+        }
+      ],
+      "env": [{ "file": ".env", "set": { "PORT": "${sprig.mono-api.port}" } }]
+    }
+  ]
+}

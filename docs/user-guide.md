@@ -216,6 +216,8 @@ sprig cd                      # pick workspace → repo → module from scratch
 sprig path feature-x api      # just print the directory — the one for scripts and shell wrappers
 ```
 
+With sprig's shell shims on PATH (`sprig shell shims --dir <folder>`, then put that folder ahead of `sprig.exe`'s), `sprig cd` moves the PowerShell or cmd window you typed it in instead of opening a new one. `--window` opens one anyway. Git Bash can't be moved this way; use `cd "$(sprig path feature-x)"`.
+
 `sprig path` is the scripting counterpart: it resolves the same workspace/repo/module but prints the
 directory instead of opening a window, so `Set-Location (sprig path feature-x)` (or `cd "$(sprig path
 feature-x)"`) drops your *current* shell into it. Add `--json` for the structured target.

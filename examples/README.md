@@ -4,14 +4,17 @@ Tiny repos and maps for trying sprig changes without touching a real, expensive 
 
 ## Using it
 
-The folders here are **source content, not repos sprig can use directly**: they live inside sprig's own git repo, so sprig would resolve them to sprig's root. `scripts/sandbox` copies each one out to its own small git repo in a throwaway store, gives it offline "remotes", registers it and imports the maps. It then points `SPRIG_STORE` at that store for your terminal session, so the CLI and the app (run from that terminal) both use the sandbox.
+The folders here are **source content, not repos sprig can use directly**: they live inside sprig's own git repo, so sprig would resolve them to sprig's root. `scripts/sandbox` copies each one out to its own small git repo in a throwaway store, gives it offline "remotes", registers it and imports the maps. For your terminal session it then:
+
+- points `SPRIG_STORE` at that store, so the CLI and the app (run from that terminal) both use the sandbox;
+- puts shims for this checkout's build first on PATH, so plain `sprig` is the dev build and `sprig cd` moves your shell in place instead of opening a window (see `docs/shell-shims-plan.md`).
 
 | | PowerShell | cmd |
 |---|---|---|
 | Build it (or reuse it) and switch this session to it | `.\scripts\sandbox.ps1` | `scripts\sandbox` |
 | Copy changes from `examples/` into it | `.\scripts\sandbox.ps1 -Sync` | `scripts\sandbox -Sync` |
 | Delete and rebuild | `.\scripts\sandbox.ps1 -Reset` | `scripts\sandbox -Reset` |
-| Switch this session back to your normal store | `.\scripts\sandbox.ps1 -Off` | `scripts\sandbox -Off` |
+| Switch this session back to your normal store and `sprig` | `.\scripts\sandbox.ps1 -Off` | `scripts\sandbox -Off` |
 | Delete it and switch back | `.\scripts\sandbox.ps1 -Remove` | `scripts\sandbox -Remove` |
 
 The sandbox lives in `%LOCALAPPDATA%\sprig (Sandbox)` unless you pass `-Root <dir>`. Everything sprig creates for it, worktrees and containers included, is inside that folder or stopped by `-Reset`/`-Remove`. If PowerShell refuses to run the script, your execution policy is blocking local scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.

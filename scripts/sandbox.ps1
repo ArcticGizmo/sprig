@@ -8,8 +8,9 @@
     out to its own tiny git repo under the sandbox root, gives it local bare "remotes" (so fetch, push and
     fork cases work offline), registers it in the sandbox's own store and imports examples/maps/*.
 
-    It also sets SPRIG_STORE for the current session, so `sprig` and the app (both Debug and Release) use
-    the sandbox until you run with -Off or close the terminal.
+    It also sets SPRIG_STORE for the current session, so `sprig` and the app use the sandbox, and puts shims
+    for this checkout's build first on PATH, so `sprig` is the dev build and `sprig cd` moves the shell. Both
+    last until you run with -Off or close the terminal.
 
 .PARAMETER Sync
     Copy changes from examples/ into the existing sandbox: each repo's tracked files are replaced by the
@@ -19,10 +20,10 @@
     Delete the sandbox (stopping its containers first) and build it again.
 
 .PARAMETER Remove
-    Delete the sandbox and clear SPRIG_STORE.
+    Delete the sandbox and switch this session back, as -Off does.
 
 .PARAMETER Off
-    Clear SPRIG_STORE for this session, leaving the sandbox on disk.
+    Clear SPRIG_STORE and take the shims off PATH for this session, leaving the sandbox on disk.
 
 .EXAMPLE
     ./scripts/sandbox.ps1
@@ -88,18 +89,32 @@ function Invoke-Sprig {
     Invoke-Native $script:sprig $Arguments
 }
 
+# This session's PATH without the sandbox's shim folder, so enabling twice doesn't stack it and -Off removes it.
+function Get-PathWithoutShims {
+    $shims = Join-Path $Root 'bin'
+    ($env:PATH -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ne $shims.TrimEnd('\') }) -join ';'
+}
+
 function Enable-Sandbox {
+    # Shims for this checkout's build, first on PATH for this session: plain `sprig` runs the dev build, and
+    # `sprig cd` moves this shell instead of opening a window.
+    $shims = Join-Path $Root 'bin'
+    Invoke-Sprig @('shell', 'shims', '--dir', $shims) | Out-Null
+    $env:PATH = "$shims;$(Get-PathWithoutShims)"
     $env:SPRIG_STORE = $Root
     Write-Host ''
-    Write-Host "SPRIG_STORE is set to the sandbox for this session: $Root" -ForegroundColor Green
+    Write-Host "This session now uses the sandbox: $Root" -ForegroundColor Green
+    Write-Host '  sprig is this checkout''s build, and sprig cd moves this shell'
     Write-Host '  try:   sprig map ls'
     Write-Host '         sprig pool checkout polyrepo --branch try-it --ni'
+    Write-Host '         sprig cd polyrepo-1 api'
     Write-Host '  done:  scripts/sandbox -Off   (or close the terminal)'
 }
 
 function Disable-Sandbox {
     Remove-Item Env:SPRIG_STORE -ErrorAction SilentlyContinue
-    Write-Host 'SPRIG_STORE cleared; sprig is back on your normal store.'
+    $env:PATH = Get-PathWithoutShims
+    Write-Host 'Back on your normal store and sprig.'
 }
 
 function Remove-SandboxRoot {
@@ -232,6 +247,7 @@ if ($Sync) {
 
 if (Test-Path $marker) {
     Write-Host "A sandbox already exists at $Root. Use -Sync to pull in changes from examples/, or -Reset to rebuild it."
+    $script:sprig = Get-SprigExe
     Enable-Sandbox
     return
 }

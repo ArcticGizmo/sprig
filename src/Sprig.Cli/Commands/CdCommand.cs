@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Sprig.Core.Config;
 using Sprig.Core.Git;
+using Sprig.Core.Shell;
 using Sprig.Core.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -235,10 +236,11 @@ public sealed class PathCommand(CliContext cli) : Command<PathCommand.Settings>
     }
 }
 
-// `sprig cd` — open a new terminal window sitting in a workspace's repo/module directory, in the shell you
-// came from (powershell → powershell, cmd → cmd, …) and, under Windows Terminal, a fresh WT window. Resolves
+// `sprig cd` — move to a workspace's repo/module directory. Through a shell shim the shell you typed it in
+// moves in place; otherwise it opens a new terminal window there, in the shell you came from (powershell →
+// powershell, cmd → cmd, …) and, under Windows Terminal, a fresh WT window. Resolves
 // via the same TargetResolver as `sprig path`; it has no machine-output flags — scripts use `sprig path`.
-[Description("Open a new terminal window in a workspace repo/module directory")]
+[Description("Go to a workspace repo/module directory (in place with the shell shims, else a new window)")]
 public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
 {
     // Deliberately not GlobalSettings: `cd`'s job is to open a window, so it carries no --json (there is no
@@ -268,6 +270,10 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         [CommandOption("--shell <name>")]
         [Description("Shell to open (powershell|pwsh|cmd|bash|…); default: match the one you came from")]
         public string? Shell { get; set; }
+
+        [CommandOption("--window")]
+        [Description("Open a new window even when this shell could be moved in place")]
+        public bool Window { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -280,6 +286,11 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         var target = new TargetResolver(cli).Resolve(interactive, s.Workspace, s.Repo, s.Module);
         if (target is not { } t)
             return 0; // interactive cancel (ESC): nothing to open
+
+        // Run through a shell shim (see ShellShims), the shell you typed this in can move itself, which beats
+        // a new window. Without one, or with --window, fall through to opening a window.
+        if (!s.Window && ShellShims.TryRequestCd(t.Path))
+            return 0;
 
         // Opening a window is Windows-only for now; elsewhere we can't spawn a matching terminal reliably yet
         // (that's coming), so degrade to printing the path and point at `sprig path` for scripting.

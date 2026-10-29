@@ -127,6 +127,12 @@ public static class CliApp
             map.AddCommand<MapImportCommand>("import");
         });
 
+        config.AddBranch("shell", shell =>
+        {
+            shell.SetDescription("Shell integration (shims that let 'sprig cd' move your shell)");
+            shell.AddCommand<ShellShimsCommand>("shims");
+        });
+
         config.AddBranch("settings", settings =>
         {
             settings.SetDescription("Port allocation policy");

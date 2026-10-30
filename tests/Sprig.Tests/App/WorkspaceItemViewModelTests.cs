@@ -38,6 +38,23 @@ public class WorkspaceItemViewModelTests
     }
 
     [Fact]
+    public void A_free_workspace_headlines_its_branch_and_offers_its_last_label_for_reuse()
+    {
+        using var repo = new TempGitRepo();
+        var vm = new WorkspaceItemViewModel(Record(worktree: repo.Path) with { ReleasedLabel = "Risk matrix overrides" });
+
+        Assert.Equal("main", vm.Headline);
+        Assert.Equal("Risk matrix overrides", vm.ReuseHint);
+    }
+
+    [Fact]
+    public void Reuse_hint_falls_back_to_the_headline()
+    {
+        using var repo = new TempGitRepo();
+        Assert.Equal("main", new WorkspaceItemViewModel(Record(worktree: repo.Path)).ReuseHint);
+    }
+
+    [Fact]
     public void Unreadable_worktree_falls_back_to_the_slot_name()
     {
         var vm = new WorkspaceItemViewModel(Record());

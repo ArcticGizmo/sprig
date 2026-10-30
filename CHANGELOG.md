@@ -9,6 +9,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.7.2] - 2026-10-30
+
+### Fixed
+- **Release clears the label and note** — no more inheriting "waiting on review".
+- **Free workspaces stop wearing their last label** — it's a hint in the reuse picker now.
+
+---
+
 ## [v0.7.1] - 2026-10-30
 
 ### Added

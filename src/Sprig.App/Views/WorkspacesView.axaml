@@ -450,7 +450,7 @@
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:WorkspaceItemViewModel">
                                     <TextBlock>
-                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding Headline}" /><Run Text="   " /><Run Text="{Binding AgeSummary}" />
+                                        <Run Text="{Binding Name}" /><Run Text="  ·  " /><Run Text="{Binding ReuseHint}" /><Run Text="   " /><Run Text="{Binding AgeSummary}" />
                                     </TextBlock>
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>

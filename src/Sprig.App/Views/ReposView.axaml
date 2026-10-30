@@ -97,6 +97,9 @@
                                 </DropDownButton>
                                 <Button Content="Edit" Command="{Binding BeginEditCommand}"
                                         IsVisible="{Binding CanEdit}" />
+                                <Button Content="Edit as JSON" Command="{Binding BeginEditJsonCommand}"
+                                        IsVisible="{Binding CanEditJson}"
+                                        ToolTip.Tip="Edit this virtual config as raw JSON — paste one in, or load it from a file." />
                                 <Button Content="Duplicate as virtual" Command="{Binding BeginDuplicateCommand}"
                                         IsVisible="{Binding CanDuplicate}"
                                         ToolTip.Tip="Register this checkout again under a new name with a copy of this config, kept in sprig — try a variant without touching the repo." />
@@ -853,6 +856,53 @@
                                         Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                                 <Button Content="Cancel"
                                         Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).CancelEditCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- Edit-as-JSON modal: a virtual config as raw JSON, pasted or loaded from a file. Nothing saved until Apply. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsEditingJson}" Background="#B0000000"
+                Margin="-28,-20,-24,-16">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Margin="28,20" MaxWidth="980">
+                <Grid RowDefinitions="Auto,*,Auto">
+
+                    <!-- header -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="28,22,28,14">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}">
+                                <Run Text="Edit " /><Run Text="{Binding Selected.Name}" Foreground="{StaticResource AccentBrush}" /><Run Text=" as JSON" />
+                            </TextBlock>
+                            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                                       Text="Paste a .sprig.json or load one from a file. Its name is replaced with this repo's, so a config copied from elsewhere still works here. Nothing is written until you apply." />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Load from file…" Click="LoadJsonFromFile"
+                                VerticalAlignment="Top" Margin="16,0,0,0" />
+                    </Grid>
+
+                    <!-- body -->
+                    <TextBox Grid.Row="1" Margin="28,0" Text="{Binding JsonText, Mode=TwoWay}"
+                             AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                             FontFamily="Consolas,monospace" FontSize="12" VerticalContentAlignment="Top"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+                    <!-- footer -->
+                    <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                            Padding="28,14" Margin="0,14,0,0">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                       IsVisible="{Binding JsonError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" FontSize="12"
+                                       FontFamily="Consolas,monospace" Text="{Binding JsonError}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <Button Content="Apply" Command="{Binding ApplyJsonCommand}"
+                                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                                <Button Content="Cancel" Command="{Binding CancelEditJsonCommand}" />
                             </StackPanel>
                         </Grid>
                     </Border>

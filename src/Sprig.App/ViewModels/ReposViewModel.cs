@@ -253,6 +253,8 @@ public partial class ReposViewModel : PageViewModel
         IsDuplicating = false;
         ConfirmingDelete = false;
         ConfirmingWriteToRepo = false;
+        IsEditingJson = false;
+        JsonError = null;
         SelectedConfig = value is null ? null : RepoConfigViewModel.LoadFile(value.ConfigPath);
         OnPropertyChanged(nameof(HasSelected));
         OnPropertyChanged(nameof(ShowReadOnly));
@@ -260,6 +262,7 @@ public partial class ReposViewModel : PageViewModel
         OnPropertyChanged(nameof(CanIsolate));
         OnPropertyChanged(nameof(SelectedIsVirtual));
         OnPropertyChanged(nameof(ShowCommittedActions));
+        OnPropertyChanged(nameof(CanEditJson));
     }
 
     partial void OnSelectedConfigChanged(RepoConfigViewModel? value)
@@ -276,6 +279,7 @@ public partial class ReposViewModel : PageViewModel
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanIsolate));
         OnPropertyChanged(nameof(CanDuplicate));
+        OnPropertyChanged(nameof(CanEditJson));
     }
 
     /// <summary>True while the inline "name the copy" prompt of Duplicate as virtual is open.</summary>
@@ -357,6 +361,73 @@ public partial class ReposViewModel : PageViewModel
         Status = $"wrote {target} — commit it to share the config. '{repo.Name}' stays virtual until you delete it.";
     }
 
+    /// <summary>True while the selected virtual repo's config is open as raw JSON — quicker than the form
+    /// when testing a config pasted or saved elsewhere.</summary>
+    [ObservableProperty] private bool _isEditingJson;
+    [ObservableProperty] private string _jsonText = "";
+    [ObservableProperty] private string? _jsonError;
+
+    /// <summary>Only a virtual repo's config is sprig's to overwrite. Offered even when the config won't parse,
+    /// since raw JSON is then the one way to repair it.</summary>
+    public bool CanEditJson => SelectedIsVirtual && !IsEditing && !IsEditingJson;
+
+    partial void OnIsEditingJsonChanged(bool value) => OnPropertyChanged(nameof(CanEditJson));
+
+    /// <summary>Open the selected virtual repo's config as raw JSON, read verbatim so a broken file still opens.</summary>
+    [RelayCommand]
+    private void BeginEditJson()
+    {
+        if (Selected is not { IsVirtual: true } repo) return;
+        JsonError = null;
+        try { JsonText = File.ReadAllText(repo.ConfigPath); }
+        catch (Exception ex) { JsonText = ""; JsonError = ex.Message; }
+        IsEditingJson = true;
+    }
+
+    /// <summary>Replace the JSON being edited with a file's contents. Nothing is saved until Apply.</summary>
+    public void LoadJsonFromFile(string path)
+    {
+        try
+        {
+            JsonText = File.ReadAllText(path);
+            JsonError = null;
+        }
+        catch (Exception ex) { JsonError = ex.Message; }
+    }
+
+    [RelayCommand]
+    private void CancelEditJson()
+    {
+        IsEditingJson = false;
+        JsonError = null;
+    }
+
+    /// <summary>Parse, validate and save the edited JSON over the virtual config. The name is forced to the
+    /// registry name, so a config pasted from another repo still resolves as this one.</summary>
+    [RelayCommand]
+    private void ApplyJson()
+    {
+        if (Selected is not { IsVirtual: true } repo) return;
+        SprigRepoConfig config;
+        try { config = SprigConfigLoader.Parse(JsonText) with { Name = repo.Name }; }
+        catch (SprigConfigException ex) { JsonError = ex.Message; return; }
+
+        var result = SprigConfigValidator.Validate(config);
+        if (!result.IsValid)
+        {
+            JsonError = string.Join("\n", result.Issues.Select(i => i.ToString()));
+            return;
+        }
+
+        try { SprigConfigWriter.Write(config, repo.ConfigPath); }
+        catch (Exception ex) { JsonError = ex.Message; return; }
+
+        IsEditingJson = false;
+        JsonError = null;
+        SelectedConfig = RepoConfigViewModel.LoadFile(repo.ConfigPath);
+        Status = $"saved JSON config for '{repo.Name}'";
+    }
+
     /// <summary><paramref name="baseName"/> if no repo is registered under it, else the first free
     /// <c>-2</c>, <c>-3</c>… variant.</summary>
     string UniqueRepoName(string baseName)
@@ -431,6 +502,7 @@ public partial class ReposViewModel : PageViewModel
         if (Selected is null) return;
         Error = null;
         Status = null;
+        IsEditingJson = false;
         try { Editor = RepoEditViewModel.Load(Selected.Path, Services.Git, Selected.VirtualConfigPath); }
         catch (Exception ex) { Error = ex.Message; }
     }

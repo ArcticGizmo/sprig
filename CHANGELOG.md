@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.7.5] - 2026-10-30
+
+### Added
+- **Edit as JSON** — paste or load a virtual config. Sometimes the form is the long way round.
+
+---
+
 ## [v0.7.4] - 2026-10-30
 
 ### Added

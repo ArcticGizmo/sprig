@@ -114,4 +114,21 @@ public partial class ReposView : UserControl
         if (folders.Count > 0 && folders[0].TryGetLocalPath() is { Length: > 0 } path)
             vm.NewPath = path;
     }
+
+    async void LoadJsonFromFile(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReposViewModel vm) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Load a sprig config",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("JSON") { Patterns = ["*.json"] }, FilePickerFileTypes.All],
+        });
+
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { Length: > 0 } path)
+            vm.LoadJsonFromFile(path);
+    }
 }

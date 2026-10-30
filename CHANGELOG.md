@@ -7,11 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [v0.7.1] - 2026-10-30
+
 ### Added
-- **`sprig shell install`** — redoes the installer's shim setup on demand, and tells you which PowerShell is refusing scripts and how to talk it round.
+- **`sprig shell install`** — reruns shim setup once you allow scripts.
 
 ### Changed
-- **The installer adds the `sprig cd` shims** — into `%LOCALAPPDATA%\Sprig\bin`, ahead of `sprig.exe` on PATH. PowerShell gets its own only where its execution policy would actually run it.
+- **The installer adds the `sprig cd` shims** — PowerShell and cmd move in place.
+- **PowerShell's shim needs scripts allowed** — `sprig shell install` names the culprit.
 
 ---
 

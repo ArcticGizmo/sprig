@@ -1,6 +1,6 @@
 # The Graph Turn — follow-up plan (post-M8)
 
-**Status:** Planning · picks up after the map model is functionally complete. Companion to
+**Status:** A and F–G shipped in v0.7.0 (stacks retired, schema 1). B/C unconfirmed and E (map canvas + trace) not started — tracked in `docs/next-steps-checklist.md` §3. Originally picked up after the map model was functionally complete. Companion to
 `docs/graph-turn-implementation-plan.md` (the original milestones) and `docs/graph-model-redesign.md`
 (the design). Branch `graph-turn`; commit locally only — **no push, no branch delete**. Each item ends
 `dotnet build` + `dotnet test` green.
@@ -102,7 +102,7 @@ it interactively.
 - **Trace view:** click a resolved value → highlight its provider + hop(s). The graph *is* the answer to
   "where did this come from?" — the thing lost when dataflow stopped being one-directional.
 - Logic (graph projection: nodes/edges/ambiguity/gap flags) is unit-testable now; visual correctness is
-  logged to `docs/visual-followups.md` per house practice.
+  logged to a visual follow-ups doc per house practice (the stack-era one is `docs/history/visual-followups.md`).
 
 **Done when:** a map is buildable on the canvas and a value traces to its provider.
 

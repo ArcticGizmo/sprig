@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.8.0] - 2026-10-30
+
+### Changed
+- **Claude Code plugin speaks maps** — it was still asking for stacks.
+- **`/sprig:sprig-create` → `/sprig:sprig-checkout`**, plus a new `/sprig:sprig-release`.
+- **The app's infra "Reset" is "Restart"** — matching the CLI.
+- **`sprig ws create` is no longer deprecated** — for single repos and map slices.
+- **Hints suggest commands that exist.**
+- **README and user guide catch up** — no stacks, and every workspace verb has its `ws`.
+
+### Removed
+- **`sprig ws reset`** — it outstayed its one release. Use `sprig ws restart`.
+
+---
+
 ## [v0.7.5] - 2026-10-30
 
 ### Added

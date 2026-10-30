@@ -381,11 +381,6 @@ public sealed partial class WorkspaceService(
         return true;
     }
 
-    /// <summary>Deprecated alias for <see cref="RestartInfra"/> — the CLI verb was renamed
-    /// <c>ws reset</c> → <c>ws restart</c> when <c>reset</c> came to mean the git resync. Kept so
-    /// existing callers/scripts keep working for one release.</summary>
-    public void Reset(string workspace) => RestartInfra(workspace);
-
     /// <summary>
     /// Resync a workspace's repos to their base branch and rebuild its sprig-managed state, without
     /// throwing away the expensive on-disk artifacts. Per repo: fetch, hard-reset the worktree branch

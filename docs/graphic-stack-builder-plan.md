@@ -122,7 +122,7 @@ Left rail = **ports + the `workspace` chip + the phantom "create new…"**. *(Fu
 ## Status (2026-07-25)
 
 All phases **implemented, committed, and green** (380 tests). Rendering verified via headless PNGs;
-pointer-driven interactions are logged in [`visual-followups.md`](./visual-followups.md). After the
+pointer-driven interactions are logged in [`visual-followups.md`](./history/visual-followups.md). After the
 user's live test-drive and three rounds of refinement, the form was retired (Phase 6): the canvas is
 now the only stack-building surface.
 

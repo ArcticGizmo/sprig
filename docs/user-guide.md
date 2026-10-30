@@ -124,9 +124,10 @@ any read command for machine-readable output.
 
 **Interactive by default.** Any command that needs a target — a workspace, a map, a repo — will ask
 for it when you run the command bare at a terminal, and otherwise take it from the arguments. So
-`sprig create` walks you through map → repos → name, while `sprig create feature-x --map web+api` just
-runs. The same is true of `sprig rm`, `sprig cd`/`sprig path`, and the single-workspace verbs
-(`up`/`down`/`reset`/`status`/`info`), which pick from a list when you omit the name. In a script, a
+`sprig ws create` walks you through map → repos → name, while `sprig ws create feature-x --map web+api`
+just runs. The same is true of `sprig pool checkout`, `sprig ws rm`, `sprig cd`/`sprig path`, and the
+single-workspace verbs (`up`/`down`/`restart`/`status`/`info`), which pick from a list when you omit
+the name. In a script, a
 pipe, or CI (no terminal), these stay non-interactive and fail fast instead of blocking on a prompt;
 `--ni` forces that same non-interactive behaviour even at a terminal, and `--json` implies it.
 
@@ -148,7 +149,7 @@ sprig init --repo C:\code\my-api --print    # inspect + preview a proposed confi
 sprig init --repo C:\code\my-api --register # write .sprig.json and register in one step
 ```
 
-**Virtual repos** — trying a config on a repo you can't commit to yet. `--virtual` keeps the config in sprig's store (`repo-configs/<name>.sprig.json`) instead of the repo, so nothing in the repo changes. It starts from `--from <file>`, else the repo's own `.sprig.json`, else a scaffold. Because the config isn't tied to the folder, one checkout can be registered several times under different names, one per config you want to try; use each name in a map, or `sprig create <ws> --repo <name>`. Virtual repos are badged "virtual · not committed" in the app (Repos and Workspaces) and in `repo ls`. In the app, **Edit as JSON** opens a virtual config as raw JSON: paste one in or **Load from file…**, then **Apply** to validate and save it (its `name` is replaced with the repo's registered name). When a config is ready, the app's **Write to repo** puts it in the repo as `.sprig.json` to commit. `repo rm` deletes a virtual repo's config along with the registration. Two configs of the same checkout can't share a workspace, because their worktrees would land in the same folder.
+**Virtual repos** — trying a config on a repo you can't commit to yet. `--virtual` keeps the config in sprig's store (`repo-configs/<name>.sprig.json`) instead of the repo, so nothing in the repo changes. It starts from `--from <file>`, else the repo's own `.sprig.json`, else a scaffold. Because the config isn't tied to the folder, one checkout can be registered several times under different names, one per config you want to try; use each name in a map, or `sprig ws create <ws> --repo <name>`. Virtual repos are badged "virtual · not committed" in the app (Repos and Workspaces) and in `repo ls`. In the app, **Edit as JSON** opens a virtual config as raw JSON: paste one in or **Load from file…**, then **Apply** to validate and save it (its `name` is replaced with the repo's registered name). When a config is ready, the app's **Write to repo** puts it in the repo as `.sprig.json` to commit. `repo rm` deletes a virtual repo's config along with the registration. Two configs of the same checkout can't share a workspace, because their worktrees would land in the same folder.
 
 ```sh
 sprig repo add C:\code\my-api --virtual --name api-try                  # copy of its .sprig.json, or a scaffold
@@ -180,12 +181,12 @@ sprig pool checkout web+api --branch feature-x     # take one, on a named branch
 sprig pool release --workspace web+api-1           # hand it back (docker stop; disk kept)
 ```
 
-Or create one directly:
+Or create an ad-hoc one outside the pool — for a single repo, or a slice of a map:
 
 ```sh
-sprig create                                  # at a terminal: pick map → repos → name
-sprig create feature-x --map web+api          # from a map (multi-repo)
-sprig create quick --repo C:\code\my-api      # a single repo, no map
+sprig ws create                                  # at a terminal: pick map → repos → name
+sprig ws create feature-x --map web+api          # from a map (multi-repo)
+sprig ws create quick --repo C:\code\my-api      # a single repo, no map
 ```
 
 Create prints the allocated ports and each repo's resolved values. If a repo needs a capability
@@ -196,8 +197,8 @@ Only want part of the map? Narrow it — the two flags are interchangeable, and 
 comma-separated list (or repeat the flag):
 
 ```sh
-sprig create backend-only --map web+api --without web   # everything but web
-sprig create backend-only --map web+api --only api      # the same thing, said the other way
+sprig ws create backend-only --map web+api --without web   # everything but web
+sprig ws create backend-only --map web+api --only api      # the same thing, said the other way
 ```
 
 A deselected repo is left out completely: no worktree, no `.env`, and its compose files are never
@@ -205,13 +206,13 @@ generated, so the workspace's infra is only what the kept repos declare. A need 
 dropped is filled from the map's default, or reported as a gap.
 
 ```sh
-sprig ls                      # all workspaces (repos, ports, status)
-sprig info feature-x          # one workspace, in full: repos, ports, drift, live containers
-sprig info                    # at a terminal: pick which workspace to inspect
+sprig ws ls                   # all workspaces (purpose, branch, repos, ports, status)
+sprig ws info feature-x       # one workspace, in full: repos, ports, drift, live containers
+sprig ws info                 # at a terminal: pick which workspace to inspect
 ```
 
-Every workspace verb also accepts a `ws`/`workspace` prefix, so `sprig ws ls` and `sprig ws info
-feature-x` are the same commands — handy if you prefer the noun-verb form used by `repo`/`map`.
+Workspace verbs live under `ws` (or its long form, `workspace`), the same noun-verb shape as `repo`,
+`pool` and `map`.
 
 **Jump into a workspace.** `sprig cd` opens a new terminal window already sitting in a workspace's repo
 (or a module within it):
@@ -282,23 +283,23 @@ sprig here --path ../api--feature-x
 Only for workspaces whose selected repos declare docker infra:
 
 ```sh
-sprig up feature-x            # docker compose up (isolated project sprig-feature-x)
-sprig status feature-x        # live container status only (info shows this too, plus everything else)
-sprig down feature-x          # stop; keeps volumes
-sprig down feature-x --volumes  # stop and wipe data
-sprig reset feature-x         # down then up
+sprig ws up feature-x              # docker compose up (isolated project sprig-feature-x)
+sprig ws status feature-x          # live container status only (info shows this too, plus everything else)
+sprig ws down feature-x            # stop; keeps volumes
+sprig ws down feature-x --volumes  # stop and wipe data
+sprig ws restart feature-x         # down then up
 ```
 
-Omit the workspace on any of these at a terminal (`sprig up`, `sprig status`, …) and you pick it from
-a list.
+Omit the workspace on any of these at a terminal (`sprig ws up`, `sprig ws status`, …) and you pick it
+from a list.
 
 ### 5. Tear down
 
 ```sh
-sprig rm                            # at a terminal: pick the workspace, then confirm
-sprig rm feature-x                  # at a terminal: asks to confirm before tearing down
-sprig rm feature-x --yes            # tears down infra + worktrees; keeps the claim branch
-sprig rm feature-x --yes --force    # also deletes the claim branch (loses its commits)
+sprig ws rm                            # at a terminal: pick the workspace, then confirm
+sprig ws rm feature-x                  # at a terminal: asks to confirm before tearing down
+sprig ws rm feature-x --yes            # tears down infra + worktrees; keeps the claim branch
+sprig ws rm feature-x --yes --force    # also deletes the claim branch (loses its commits)
 ```
 
 At a terminal `rm` confirms before it destroys anything (and offers to delete the branch), so `--yes`
@@ -325,10 +326,10 @@ A workspace's record is the source of truth for what *should* exist. If a worktr
 deleted by hand, or git loses track of one, the record and reality drift apart.
 
 ```sh
-sprig reconcile               # check every workspace (read-only)
-sprig reconcile feature-x     # check one
-sprig doctor                  # alias for reconcile over all workspaces
-sprig reconcile --repair      # detect AND fix drift
+sprig ws reconcile               # check every workspace (read-only)
+sprig ws reconcile feature-x     # check one
+sprig ws doctor                  # alias for reconcile over all workspaces
+sprig ws reconcile --repair      # detect AND fix drift
 ```
 
 Per-repo worktree states:

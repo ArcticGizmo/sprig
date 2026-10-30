@@ -120,7 +120,7 @@ static class WorkspacePrompt
 
         var all = cli.Workspaces.List();
         if (all.Count == 0)
-            throw new ArgumentException("no workspaces yet — create one with 'sprig create'");
+            throw new ArgumentException("no workspaces yet — check one out with 'sprig pool checkout'");
 
         return Term.SelectOne(Term.Create(), "Select a [green]workspace[/]: [grey](esc cancels)[/]",
             all.Select(w => w.Workspace).OrderBy(x => x, StringComparer.Ordinal));

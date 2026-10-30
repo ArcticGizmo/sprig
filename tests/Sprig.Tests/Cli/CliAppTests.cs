@@ -603,7 +603,7 @@ public sealed class CliAppTests : IDisposable
     [Theory]
     [InlineData("up")]
     [InlineData("down")]
-    [InlineData("reset")]
+    [InlineData("restart")]
     [InlineData("status")]
     [InlineData("info")]
     public void Single_workspace_verb_without_a_name_and_no_terminal_fails(string verb)

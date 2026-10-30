@@ -4,8 +4,8 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-// `sprig map <sub>` — EXPERIMENTAL (the Graph Turn). Check out workspaces from a map of self-describing
-// repos. Runs alongside `stack`/`pool` through the transition; becomes primary when stacks are retired (M7).
+// `sprig map <sub>` — map management only. Maps are authored in the app; workspaces come from `pool checkout`
+// (pooled) or `ws create --map` (ad-hoc), so there is no `map create`.
 
 [Description("List defined maps")]
 public sealed class MapLsCommand(CliContext cli) : Command<GlobalSettings>
@@ -71,6 +71,3 @@ public sealed class MapShowCommand(CliContext cli) : Command<MapShowCommand.Sett
         return 0;
     }
 }
-
-// Creating a workspace from a map now lives on the primary `sprig create` verb (--map), so there is no
-// separate `map create` — the `map` branch is map management (ls / show / import) only.

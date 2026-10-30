@@ -13,11 +13,11 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-// The workspace verbs (create/ls/info/up/down/reset/status/rm/reconcile) and the meta commands
+// The workspace verbs (create/ls/info/up/down/restart/refresh/status/rm/reconcile) and the meta commands
 // (open/update/init). The workspace verbs live under the `ws` branch (wired in CliApp); each command
 // takes the shared CliContext and preserves the exact --json contract the hand-rolled dispatcher shipped.
 
-[Description("Create an isolated workspace from a map (a slice of its repos) or a single repo")]
+[Description("Create an ad-hoc workspace outside a pool: a single repo, or a slice of a map's repos")]
 public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
@@ -61,13 +61,7 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        // sprig now favours pooled workspaces (bounded, reusable). `ws create` still works — the nudge
-        // goes to stderr so it never touches the stdout/--json contract scripts rely on.
-        if (!s.Json)
-            Console.Error.WriteLine(
-                "note: sprig now favours pooled workspaces — see 'sprig pool checkout'. 'ws create' still works for now.");
-
-        // A bare `create` at a terminal opens the wizard; a named/`--stack`/`--repo` create, or any
+        // A bare `create` at a terminal opens the wizard; a named/`--map`/`--repo` create, or any
         // non-terminal run, goes straight through non-interactively. -i/--ni force the choice.
         var interactive = Interactivity.Resolve(s.Interactive, s.NoInteractive, s.Json,
             hasPrimaryInput: s.Name is not null || s.Map is not null || s.Repo is not null);
@@ -130,7 +124,7 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         return 0;
     }
 
-    // Bring the freshly-created workspace's infra up. A stack with no compose files is a silent no-op; a
+    // Bring the freshly-created workspace's infra up. A workspace with no compose files is a silent no-op; a
     // start failure (e.g. Docker not running) is a soft warning — the workspace itself was created, so we
     // keep it and point at `sprig ws up` rather than failing the whole create. Mirrors the GUI create flow.
     void StartInfra(IAnsiConsole console, InstanceRecord record)
@@ -301,7 +295,8 @@ public sealed class LsCommand(CliContext cli) : Command<LsCommand.Settings>
         if (all.Count == 0)
         {
             if (filters.Count > 0) CliOutput.Muted("no workspaces match those tags");
-            else cli.Ansi.MarkupLine("[dim]no workspaces yet — create one with[/] [bold]sprig create <name> --repo <path>[/]");
+            else cli.Ansi.MarkupLine("[dim]no workspaces yet — check one out with[/] [bold]sprig pool checkout <map>[/] " +
+                "[dim]or create one with[/] [bold]sprig ws create <name> --repo <path>[/]");
             return 0;
         }
 
@@ -372,7 +367,7 @@ public sealed class InfoCommand(CliContext cli) : Command<WorkspaceSettings>
         }
         if (record.IsPartial)
         {
-            console.MarkupLine($"[yellow]partial[/]: stack '{Markup.Escape($"{record.Stack}")}' without {Markup.Escape(string.Join(", ", record.ExcludedRepos))}");
+            console.MarkupLine($"[yellow]partial[/]: map '{Markup.Escape($"{record.Map}")}' without {Markup.Escape(string.Join(", ", record.ExcludedRepos))}");
             if (record.SkippedPorts.Count > 0)
                 console.MarkupLine($"  [dim]ports not provisioned:[/] {Markup.Escape(string.Join(", ", record.SkippedPorts))}");
         }
@@ -580,23 +575,6 @@ public sealed class RestartCommand(CliContext cli) : Command<WorkspaceSettings>
     }
 }
 
-[Description("Deprecated alias of 'restart' — restart infra (down then up)")]
-public sealed class ResetCommand(CliContext cli) : Command<WorkspaceSettings>
-{
-    protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
-    {
-        var workspace = WorkspacePrompt.Resolve(cli, s.Workspace, s.Json);
-        if (workspace is null) return 0; // interactive cancel (ESC)
-        // 'reset' now means the git resync (see 'ws refresh'); infra restart moved to 'ws restart'. This
-        // stays as an alias for one release — nudge, but don't disrupt the --json contract.
-        if (!s.Json)
-            cli.Ansi.MarkupLine("[dim]note: 'ws reset' restarts infra and is now called [bold]ws restart[/]; " +
-                "for the git resync see [bold]ws refresh[/].[/]");
-        cli.Workspaces.RestartInfra(workspace);
-        return CliOutput.Ok(s.Json, $"infra restarted for '{workspace}'", new { ok = true, workspace, action = "restart" });
-    }
-}
-
 [Description("Resync a workspace's repos to their base branch (keeps installed deps)")]
 public sealed class RefreshCommand(CliContext cli) : Command<RefreshCommand.Settings>
 {
@@ -796,7 +774,7 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         public bool Register { get; set; }
 
         [CommandOption("--map")]
-        [Description("[experimental] Propose the map model (provides/needs) instead of stack inputs")]
+        [Description("No effect: proposals always use provides/needs. Accepted so existing scripts still parse")]
         public bool Map { get; set; }
     }
 
@@ -851,7 +829,7 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
             CliOutput.Success($"registered '{registered}'");
         else
             cli.Ansi.MarkupLine($"[dim]next:[/] [bold]sprig repo add \"{Markup.Escape(root)}\"[/]   " +
-                $"[dim](then add it to a stack, or: sprig create <name> --repo \"{Markup.Escape(root)}\")[/]");
+                $"[dim](then add it to a map, or: sprig ws create <name> --repo \"{Markup.Escape(root)}\")[/]");
         return 0;
     }
 }

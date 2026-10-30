@@ -1,5 +1,7 @@
 # CLI structure review
 
+**Status:** Acted on in v0.5.0–v0.6.0 (`--json` everywhere, strict parsing, `settings`, `templates` retired, CLI tests in `tests/Sprig.Tests/Cli`). The stack findings are moot since stacks were removed in v0.7.0. Kept as history.
+
 A review pass over the `sprig` CLI (`src/Sprig.Cli`) now that the feature set is
 stable, plus the plan for tightening it. The CLI is a single dispatcher —
 `CliApp.Run` — over `Sprig.Core`, running in parallel to the desktop app as a

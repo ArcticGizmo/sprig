@@ -65,7 +65,7 @@ public sealed class AppServices
         Ports = ports;
         var instances = new InstanceStore(Paths);
         Workspaces = new WorkspaceService(Git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner));
+            new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner), Settings);
         Reconciler = new WorkspaceReconciler(Git, instances);
         Repos = new RepoRegistryStore(Paths);
         Maps = new MapStore(Paths, Repos);

@@ -100,6 +100,17 @@
                 </StackPanel>
             </Border>
 
+            <!-- Worktree layout -->
+            <Border Classes="panel">
+                <StackPanel Spacing="10">
+                    <TextBlock Classes="phead" Text="WORKTREES" />
+                    <CheckBox IsChecked="{Binding UseClaudeWorktrees}"
+                              Content="Use Claude Code's worktree folder" Foreground="{StaticResource FgBrush}" />
+                    <TextBlock Classes="help"
+                               Text="New workspaces put each worktree in &lt;repo&gt;/.claude/worktrees/&lt;workspace&gt;, where a Claude Code session can enter and switch between them, with a shortcut at the usual &lt;repo&gt;--&lt;workspace&gt; path. Existing workspaces keep their layout." />
+                </StackPanel>
+            </Border>
+
             <!-- Changelog -->
             <Border Classes="panel">
                 <StackPanel Spacing="10">

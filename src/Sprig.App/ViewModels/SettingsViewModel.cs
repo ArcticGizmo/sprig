@@ -35,6 +35,9 @@ public partial class SettingsViewModel : PageViewModel
     [ObservableProperty] private bool _showChangelogOnUpdate;
     bool _loadingSettings;
 
+    // --- Worktree layout ---
+    [ObservableProperty] private bool _useClaudeWorktrees;
+
     // --- "Ports in use" list ---
     public ObservableCollection<PortUsageItem> Leases { get; } = new();
     [ObservableProperty] private bool _hasLeases;
@@ -106,6 +109,7 @@ public partial class SettingsViewModel : PageViewModel
 
         _loadingSettings = true;
         ShowChangelogOnUpdate = s.ShowChangelogOnUpdate;
+        UseClaudeWorktrees = s.WorktreeLayout == WorktreeLayout.Claude;
         _loadingSettings = false;
 
         RefreshLeases();
@@ -117,6 +121,15 @@ public partial class SettingsViewModel : PageViewModel
         if (_loadingSettings) return;
         var s = _services.Settings.Get();
         s.ShowChangelogOnUpdate = value;
+        _services.Settings.Save(s);
+    }
+
+    // Persists immediately, like the changelog toggle; it only affects workspaces created from now on.
+    partial void OnUseClaudeWorktreesChanged(bool value)
+    {
+        if (_loadingSettings) return;
+        var s = _services.Settings.Get();
+        s.WorktreeLayout = value ? WorktreeLayout.Claude : WorktreeLayout.Sibling;
         _services.Settings.Save(s);
     }
 
@@ -147,12 +160,11 @@ public partial class SettingsViewModel : PageViewModel
             return;
         }
 
-        var settings = new SprigSettings
-        {
-            PortRangeStart = start,
-            PortRangeEndExclusive = endInclusive + 1,
-            RestrictedPorts = restricted,
-        };
+        // Start from what's stored so the settings this form doesn't edit are kept.
+        var settings = _services.Settings.Get();
+        settings.PortRangeStart = start;
+        settings.PortRangeEndExclusive = endInclusive + 1;
+        settings.RestrictedPorts = restricted;
 
         try
         {

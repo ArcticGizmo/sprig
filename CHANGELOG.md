@@ -9,6 +9,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.7.3] - 2026-10-30
+
+### Added
+- **Claude Code worktree layout** — `--worktree-layout claude` nests worktrees in `.claude/worktrees`.
+- **Sibling path kept as a junction** — for muscle memory.
+- **`reconcile` checks the junction** — rebuilds it; never touches a real folder.
+
+### Fixed
+- **Saving ports keeps your other settings** — the changelog toggle had been quietly reverting.
+- **`init` ignores nested checkouts** — a worktree inside the repo isn't more repo.
+
+---
+
 ## [v0.7.2] - 2026-10-30
 
 ### Fixed

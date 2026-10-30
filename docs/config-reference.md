@@ -439,13 +439,26 @@ repo. Both the app and the CLI read them, so allocation behaves the same either 
 | `portRangeStart` | int | `8000` | First port sprig may allocate to a workspace (inclusive). |
 | `portRangeEndExclusive` | int | `9000` | One past the last allocatable port (exclusive) — so the default range is `8000–8999`. |
 | `restrictedPorts` | int[] | `[]` | Ports never allocated, even inside the range (deduped + sorted on save). |
+| `worktreeLayout` | `"Sibling"` \| `"Claude"` | `"Sibling"` | Where new workspaces put their worktrees. See below. |
 
 ```json
 {
   "portRangeStart": 8000,
   "portRangeEndExclusive": 9000,
-  "restrictedPorts": [8080, 8443]
+  "restrictedPorts": [8080, 8443],
+  "worktreeLayout": "Claude"
 }
 ```
 
 Changes apply to **new** allocations; workspaces that already hold ports keep them.
+
+### `worktreeLayout` — where worktrees live
+
+- **`Sibling`** (default): `<repo>--<workspace>`, beside the repo.
+- **`Claude`**: `<repo>/.claude/worktrees/<workspace>`, the folder Claude Code keeps its own worktrees in, so a Claude session can enter a workspace and move between them. A junction at `<repo>--<workspace>` points at it, so the familiar path still works.
+
+Set it with `sprig settings set --worktree-layout sibling|claude` or the app's **Settings → Worktrees** toggle. It applies to workspaces created afterwards; existing workspaces keep the layout they were created with.
+
+Under `Claude`, the nested path is the real worktree, and `sprig path`, `cd`, `code`, setup and compose all use it. The junction exists for navigating by hand. Sprig adds `.claude/worktrees/` to the source repo's `.git/info/exclude` (never to a tracked `.gitignore`), removes the junction before the worktree on teardown, and never deletes through it. `sprig reconcile` reports a missing, dangling or mis-aimed junction and `--repair` fixes it, but anything at that path that isn't a link is left alone.
+
+Because the worktree now sits inside the repo, tools that walk the main checkout without honouring `.gitignore` will see it: a repo-root project globbing `**/*.cs`, a root `tsconfig` including `**/*`, a Docker build context of `.` without a `.dockerignore`, and file watchers. Claude Code's own worktrees have the same property.

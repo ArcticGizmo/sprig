@@ -60,21 +60,21 @@ public sealed partial class WorkspaceService
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
 
-        // Pre-compute each repo's sibling worktree path and guard against collisions (as the stack path does).
+        // Pre-compute each repo's worktree (and link) path and guard against collisions before anything is made.
+        var layout = Layout;
         var plans = new List<RepoPlan>();
         foreach (var repo in repos)
         {
-            var parent = Directory.GetParent(repo.Root)?.FullName
-                ?? throw new WorkspaceException($"repo '{repo.Root}' has no parent directory for a sibling worktree");
-            var dirName = Path.GetFileName(repo.Root.TrimEnd('\\', '/'));
-            var worktree = Path.Combine(parent, $"{dirName}--{workspace}");
-            if (Directory.Exists(worktree))
+            var (worktree, link) = WorktreePaths.For(repo.Root, workspace, layout);
+            if (DirectoryLink.Occupied(worktree))
                 throw new WorkspaceException($"worktree path already exists: {worktree}");
-            plans.Add(new RepoPlan(repo, worktree));
+            if (link is not null && DirectoryLink.Occupied(link))
+                throw new WorkspaceException($"path for the worktree's shortcut already exists: {link}");
+            plans.Add(new RepoPlan(repo, worktree, link));
         }
 
         var portsAcquired = false;
-        var addedWorktrees = new List<(string root, string worktree)>();
+        var addedWorktrees = new List<(string root, string worktree, string? link)>();
         var current = CreateStepIds.Ports;
         try
         {
@@ -104,8 +104,12 @@ public sealed partial class WorkspaceService
                     ? startPoint
                     : git.ResolveDefaultBase(repo.Root);
                 git.AddWorktreeDetached(repo.Root, plan.Worktree, start);
-                addedWorktrees.Add((repo.Root, plan.Worktree));
-                progress?.Report(new(current, WorkspaceStepState.Done));
+                addedWorktrees.Add((repo.Root, plan.Worktree, plan.Link));
+                var linkProblem = plan.Link is null ? null : TryLinkWorktree(repo.Root, plan.Worktree, plan.Link);
+                var linkPath = linkProblem is null ? plan.Link : null;
+                progress?.Report(linkProblem is null
+                    ? new(current, WorkspaceStepState.Done)
+                    : new(current, WorkspaceStepState.Warning, linkProblem));
 
                 // Env + compose per module, each against its own capability scope. The scope's concrete
                 // values are recorded (InstanceModule) so claim/refresh can rebuild them without the map.
@@ -146,6 +150,7 @@ public sealed partial class WorkspaceService
                     Name = repo.Name,
                     SourcePath = repo.Root,
                     WorktreePath = plan.Worktree,
+                    LinkPath = linkPath,
                     Branch = null,
                     GeneratedComposePaths = composePaths,
                     Modules = moduleScopes,
@@ -172,8 +177,9 @@ public sealed partial class WorkspaceService
         catch (Exception ex)
         {
             progress?.Report(new(current, WorkspaceStepState.Error, ex.Message));
-            foreach (var (root, worktree) in addedWorktrees)
+            foreach (var (root, worktree, link) in addedWorktrees)
             {
+                if (link is not null) TryQuiet(() => DirectoryLink.Remove(link));
                 TryQuiet(() => git.RemoveWorktree(root, worktree));
                 WorktreeInspector.TryDeleteDirectory(worktree);
             }

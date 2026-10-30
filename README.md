@@ -159,7 +159,7 @@ several).
 | Location                                         | Contents                                                                                                                      |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Source repo** (tracked)                        | `.sprig.json` only — the single file sprig adds to your repo                                                                  |
-| **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files (per module, under its `path`); dies with the worktree                                                |
+| **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files (per module, under its `path`); dies with the worktree. With `worktreeLayout: Claude` the worktree lives in `<repo>/.claude/worktrees/<workspace>` and the sibling path is a junction to it |
 | **Central store** `%LOCALAPPDATA%\sprig`         | repo registry, stack definitions, per-workspace records, allocated ports, generated compose files, user settings (port range) |
 
 ## Docs

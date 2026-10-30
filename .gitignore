@@ -22,3 +22,6 @@ Thumbs.db
 
 # AI screenshots
 captures/
+
+# Claude Code worktrees
+.claude/worktrees/

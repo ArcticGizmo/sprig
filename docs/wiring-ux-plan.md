@@ -20,7 +20,7 @@ document argues the wiring stage feels like repeated work because most of it is 
   simply deserialises with `Shares = []`; on load it is normalised (shares back-filled from bindings)
   and re-saved as schema 2. No manual migration step for the user.
 - **All logic is unit-tested as it lands. Visual verification is deferred** to
-  [`visual-followups.md`](./visual-followups.md) (the requester is away; only the canvas and a few
+  [`visual-followups.md`](./history/visual-followups.md) (the requester is away; only the canvas and a few
   overlay tweaks need eyeballing).
 
 ## Invariant that keeps `Shares` honest

@@ -15,8 +15,11 @@ so you can work on several things in parallel without them stepping on each othe
 repos are never mutated; everything sprig generates lives in a central store or in the
 throwaway worktree.
 
-- **Isolated worktrees** — each workspace gets a `<repo>--<workspace>` worktree on a fresh
-  `sprig--<workspace>` branch, off your current `HEAD`. Your main checkout is untouched.
+- **Isolated worktrees** — each workspace gets a `<repo>--<workspace>` worktree on the branch you
+  name at checkout, cut from each repo's base. Your main checkout is untouched.
+- **Pooled, labelled workspaces** — a map backs a bounded pool of reusable workspaces. Check one out
+  with a branch and a label saying what it's for, release it when you're done, and the next checkout
+  reuses it warm.
 - **Non-colliding ports** — each repo owns its ports and they're allocated per workspace, so two
   workspaces of the same map run side by side without port clashes.
 - **Isolated docker infra** — sprig generates a per-workspace compose file (project name
@@ -96,21 +99,19 @@ Wiring is derived, not declared: a `need` is matched to a `provide` of the same 
 provider is an ambiguity the map resolves; none is a gap a map default fills, or an unmet need that
 stops the checkout with an explanation.
 
-Every value originates in the stack and flows one way into a repo. A repo never produces values
-for another repo — the stack wires them together. **Inputs are shared across a repo's modules**, so a
-port declared once can be referenced from `apps/web` and `apps/api` alike; only the env/compose/setup
-differ per module.
+A repo owns only its own ports. A consumer never sees a provider's port; it reads the finished value
+the provider derives (`${sprig.api.url}`), so each workspace's front end talks to that workspace's own
+API.
 
 ## Quick start (desktop app)
 
 1. **Repos** → *Add repo*, point it at a git repo. If it has no `.sprig.json`, sprig asks whether it's
-   one module or many; for a monorepo, name each module and its subdirectory, and sprig autodetects the
-   ports/env each one needs.
-2. **Stacks** → build a stack that wires the repos together (drag repos, ports and cables on the canvas,
-   or let *Auto-wire* map inputs to ports by convention).
-3. **Workspaces** → *Create*, name it, optionally deselect repos you don't need, and sprig lays down the
-   worktrees, branches, allocated ports, env files and compose files.
-4. Bring the docker infra up from the workspace's detail view, work, then tear it down.
+   one module or many; for a monorepo, name each module and its subdirectory, and sprig proposes what
+   each one provides and needs. Not ready to commit a config? Add it as a virtual repo.
+2. **Maps** → *New map*, pick the repos that belong together. Wiring is derived from their provides/needs.
+3. **Workspaces** → check one out from the map, name its branch and label it, and sprig lays down the
+   worktrees, allocated ports, env files and compose files.
+4. Bring the docker infra up from the workspace's detail view, work, then release it back to the pool.
 
 ## Quick start (CLI)
 
@@ -124,31 +125,35 @@ Then:
 sprig repo add C:\code\my-frontend
 sprig repo add C:\code\my-api
 
-# 2. Define a stack that wires them together
-sprig stack create web+api --repos my-frontend,my-api \
-  --port api_port \
-  --bind my-api:port=${sprig.ports.api_port} \
-  --bind my-frontend:apiUrl=http://localhost:${sprig.ports.api_port}
+# 2. Import a map that composes them (or author it on the app's Maps page)
+#    { "schema": 1, "name": "web+api", "repos": ["my-frontend", "my-api"] }
+sprig map import web+api.json
 
-# 3. Create an isolated workspace from the stack
-sprig create feature-x --stack web+api      # worktrees + branches + allocated ports
-sprig create api-only --stack web+api --without my-frontend   # partial: just the repos you need
+# 3. Check a workspace out of the map's pool, on a branch, saying what it's for
+sprig pool checkout web+api --branch feature-x --label "Risk matrix overrides"
 
-# 4. Bring its docker infra up, work, then tear it down
-sprig up feature-x
-sprig down feature-x                          # keeps volumes; add --volumes to wipe
-sprig rm feature-x --yes                      # tears down; add --force to also delete the branch
+# 4. Bring its docker infra up, work, then hand it back
+sprig ws up web+api-1
+sprig ws urls web+api-1                       # the entry points, e.g. http://localhost:8103
+sprig pool release --workspace web+api-1      # stops containers; worktrees, deps and branch stay
+
+# Outside a pool: a single repo, or a slice of a map
+sprig ws create quick --repo C:\code\my-api
+sprig ws create api-only --map web+api --without my-frontend
+sprig ws rm api-only --yes                    # tears down; add --force to also delete the branch
 ```
 
 Those commands spell everything out, but you rarely have to. Run a command bare at a terminal —
-`sprig create`, `sprig rm`, `sprig up`, `sprig info`, … — and it walks you through the choices;
-give it the arguments (or run it in a script, a pipe, or CI) and it goes straight through without
-prompting. `--ni` forces the non-interactive path, `--json` (on any read command) gives machine
-output, and `sprig rm feature-x` at a terminal just asks to confirm rather than needing `--yes`.
+`sprig pool checkout`, `sprig ws rm`, `sprig ws up`, `sprig ws info`, … — and it walks you through the
+choices; give it the arguments (or run it in a script, a pipe, or CI) and it goes straight through
+without prompting. `--ni` forces the non-interactive path, `--json` (on any read command) gives machine
+output, and `sprig ws rm api-only` at a terminal just asks to confirm rather than needing `--yes`.
 
-Jump into a workspace: `sprig cd feature-x` opens a new terminal already sitting in the repo (pick the
-repo/module interactively, or name them), while `sprig path feature-x` just prints the directory — the
-one to use in scripts, e.g. `Set-Location (sprig path feature-x)`.
+Jump into a workspace: `sprig cd web+api-1` opens a new terminal already sitting in the repo (pick the
+repo/module interactively, or name them), while `sprig path web+api-1` just prints the directory — the
+one to use in scripts, e.g. `Set-Location (sprig path web+api-1)`. From inside one, `sprig here` says
+which workspace you're in and what it's for. Using Claude Code? The [plugin](plugins/sprig) drives all of
+this from a session.
 
 Don't have a `.sprig.json` yet? `sprig init --repo C:\code\my-api --print` inspects the repo and
 proposes one (a single default module; the app's *Add repo* flow is the way to split a monorepo into
@@ -159,12 +164,13 @@ several).
 | Location                                         | Contents                                                                                                                      |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Source repo** (tracked)                        | `.sprig.json` only — the single file sprig adds to your repo                                                                  |
-| **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files (per module, under its `path`); dies with the worktree. With `worktreeLayout: Claude` the worktree lives in `<repo>/.claude/worktrees/<workspace>` and the sibling path is a junction to it |
-| **Central store** `%LOCALAPPDATA%\sprig`         | repo registry, stack definitions, per-workspace records, allocated ports, generated compose files, user settings (port range) |
+| **Worktree** `<repo>--<workspace>` (sibling dir) | clobbered `.env.*` files (per module, under its `path`); dies with the worktree. With `worktreeLayout: claude` the worktree lives in `<repo>/.claude/worktrees/<workspace>` and the sibling path is a junction to it |
+| **Central store** `%LOCALAPPDATA%\sprig`         | repo registry, virtual repo configs, maps, per-workspace records, allocated ports, generated compose files, user settings |
 
 ## Docs
 
-- **[Configuration reference](docs/config-reference.md)** — the `.sprig.json` (schema 3, modules) and stack schemas.
+- **[Configuration reference](docs/config-reference.md)** — the `.sprig.json` (schema 1: modules, provides, needs) and map schemas.
+- **[Pooled workflow](docs/pooled-workflow.md)** — checking out, releasing and reusing workspaces.
 - **[User guide](docs/user-guide.md)** — end-to-end walkthrough for the UI and the CLI.
 - **[Packaging & updates](docs/packaging.md)** — building the installer, the checksum manifest, and the update flow.
 - **[Changelog](CHANGELOG.md)** — what changed, release by release.

@@ -97,7 +97,7 @@ public class WorkspaceInfraTests
         Assert.Contains(("sprig-feat-a", false), docker.Downs);
 
         docker.Ups.Clear();
-        svc.Reset("feat-a");
+        svc.RestartInfra("feat-a");
         Assert.Contains("sprig-feat-a", docker.Ups);
     }
 

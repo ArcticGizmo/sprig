@@ -3,8 +3,7 @@
 A plan for a **Claude Code plugin** that helps developers *configure*, *create*, and *tear down*
 sprig workspaces from inside an agentic coding session, driving the existing `sprig` CLI.
 
-> Status: planning. Nothing here is built yet. Plugin mechanics below are confirmed against the
-> current Claude Code plugin docs (linked at the end); the sprig integration contract is settled.
+> Status: shipped in v0.6.2 against the stack model, then moved onto maps, pools and the orchestration primitives in plugin v0.2.0 (`plugins/sprig`). The stack-era commands below are history; the plugin itself is the current reference.
 >
 > One thing the docs make explicit and that shapes this plan: **flat `commands/*.md` slash commands
 > are now the legacy surface — `skills/` is the preferred layout for new plugins.** That's why the

@@ -49,13 +49,13 @@ public partial class WorkspacesViewModel : PageViewModel
     public ObservableCollection<PoolGroupViewModel> Pools { get; } = [];
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
+    [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(RestartCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
         nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
     private WorkspaceItemViewModel? _selected;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(ResetCommand),
+    [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(RestartCommand),
         nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
         nameof(ClaimCommand), nameof(RefreshCommand), nameof(NewWorkspaceCommand),
         nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
@@ -924,7 +924,7 @@ public partial class WorkspacesViewModel : PageViewModel
     private Task Down() => Lifecycle(ws => Services.Workspaces.Down(ws), "infra down");
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
-    private Task Reset() => Lifecycle(ws => Services.Workspaces.Reset(ws), "infra reset");
+    private Task Restart() => Lifecycle(ws => Services.Workspaces.RestartInfra(ws), "infra restarted");
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private async Task Reconcile()

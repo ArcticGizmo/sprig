@@ -99,7 +99,7 @@ sealed class TargetResolver(CliContext cli)
         var records = cli.Workspaces.List();
         if (records.Count == 0)
         {
-            console.MarkupLine("[yellow]no workspaces yet — create one with 'sprig create'[/]");
+            console.MarkupLine("[yellow]no workspaces yet — check one out with 'sprig pool checkout'[/]");
             return null;
         }
 

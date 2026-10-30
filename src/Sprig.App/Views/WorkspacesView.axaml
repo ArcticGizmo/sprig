@@ -268,7 +268,7 @@
                                                           ToolTip.Tip="docker compose up — start this workspace's infra." />
                                                 <MenuItem Header="Down" Command="{Binding DownCommand}"
                                                           ToolTip.Tip="docker compose down — stop and remove this workspace's containers (volumes kept)." />
-                                                <MenuItem Header="Reset" Command="{Binding ResetCommand}"
+                                                <MenuItem Header="Restart" Command="{Binding RestartCommand}"
                                                           ToolTip.Tip="Restart the infra (down then up); volumes are kept." />
                                                 <MenuItem Header="Open in Docker" Command="{Binding OpenDockerCommand}"
                                                           ToolTip.Tip="Open Docker Desktop to inspect this workspace's sprig-&lt;name&gt; project." />

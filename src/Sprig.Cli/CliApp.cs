@@ -142,7 +142,7 @@ public static class CliApp
         }).WithAlias("config");
 
         // `ws`/`workspace <verb>` — the workspace is scoped under its own noun so the top level stays
-        // uncluttered (repo/stack/settings + the meta commands). This is the only home for these verbs.
+        // uncluttered (repo/pool/map/settings + the meta commands). This is the only home for these verbs.
         config.AddBranch("ws", ws =>
         {
             ws.SetDescription("Create and manage workspaces (create, up, down, status, rm, ...)");
@@ -161,7 +161,6 @@ public static class CliApp
             ws.AddCommand<SwitchCommand>("switch");
             ws.AddCommand<RefreshCommand>("refresh");
             ws.AddCommand<RestartCommand>("restart");
-            ws.AddCommand<ResetCommand>("reset");
             ws.AddCommand<StatusCommand>("status");
             ws.AddCommand<RmCommand>("rm").WithAlias("remove");
             ws.AddCommand<ReconcileCommand>("reconcile").WithAlias("doctor");

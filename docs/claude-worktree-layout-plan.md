@@ -1,6 +1,6 @@
 # Claude worktree layout
 
-**Status:** In progress on `worktree-layout`. Picks up the "worktree location" item deferred in `docs/orchestration-primitives-plan.md`, narrowed to the one layout that has a concrete consumer: Claude Code.
+**Status:** Shipped in v0.7.3. Picks up the "worktree location" item deferred in `docs/orchestration-primitives-plan.md`, narrowed to the one layout that has a concrete consumer: Claude Code.
 
 ## Why this exists
 

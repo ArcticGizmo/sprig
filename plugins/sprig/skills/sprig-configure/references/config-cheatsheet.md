@@ -1,148 +1,164 @@
 # sprig config cheatsheet
 
-Condensed from the sprig `docs/config-reference.md`. Two surfaces; data flows **stack → repo**.
+Condensed from sprig's `docs/config-reference.md`. Two surfaces: the repo's `.sprig.json` (self-describing) and a central map (composition plus deviations).
 
-## `.sprig.json` (repo config, schema 3) — the CONSUMER
+## `.sprig.json` (repo config, schema 1)
 
-Committed in the repo. The only file sprig adds to a source tree. Unknown top-level keys are rejected.
+The only file sprig adds to a source tree. Unknown top-level keys are rejected.
 
 | Field | Type | Req | Meaning |
 |---|---|---|---|
-| `schema` | int | yes | `3` |
-| `name` | string | yes | Logical repo name; the stack's binding key for this repo |
-| `inputs` | array | no | Values this repo needs. Declared **once**, shared across every module. `${sprig.<name>}` |
-| `modules` | array | no | Slices of the repo, each with its own `env`/`compose`/`setup` and optional `path` |
+| `schema` | int | yes | `1` |
+| `name` | string | yes | Logical repo name; its identity in the registry and in maps |
+| `modules` | array | no | Slices of the repo, each with its own `provides`/`needs`/`env`/`compose`/`setup` and optional `path` |
 
-### `inputs[]`
-| Field | Req | Meaning |
-|---|---|---|
-| `name` | yes | Referenced as `${sprig.<name>}` |
-| `example` | no | Shape the stack should supply (`5000`, `http://localhost:5000`) |
-| `description` | no | Human hint |
-| `allowedPorts` | no | Pin the feeding port to a set: `"8100-8103"`, `"8100,8101,8200"`, `"8100-8103,8200"` |
-
-Every declared input **must** be bound by any stack that uses the repo (else hard failure at create).
-`allowedPorts` must trace to exactly one `${sprig.ports.<name>}`; two inputs on the same port must agree.
+**Single-app sugar:** a one-slice repo may put `provides`, `needs`, `env`, `compose` and `setup` at the top level; sprig folds them into one module named `app` at the repo root.
 
 ### `modules[]`
 | Field | Req | Meaning |
 |---|---|---|
 | `name` | yes | Unique within the repo; letters/digits/`-`/`_` |
 | `path` | no | Subdir the module lives in (`apps/web`); env/compose resolve under it, setup runs in it. Omit for repo root |
+| `provides` | no | Capabilities this module offers |
+| `needs` | no | Capabilities this module consumes |
 | `env` | no | `.env.*` files to clobber (relative to `path`) |
 | `compose` | no | Docker compose override declarations (relative to `path`) |
-| `setup` | no | `string[]` commands run in the module's dir after create |
+| `setup` | no | `string[]` commands run in the module's dir after checkout |
+
+### `provides[]`
+| Field | Req | Meaning |
+|---|---|---|
+| `capability` | yes | Contract name other repos' `needs` match. Name the service (`api`), not a socket |
+| `ports` | one of ports/shapes | `name → true` or `name → { "allowed": "8100-8103" }`. Real host ports allocated per workspace |
+| `shapes` | one of ports/shapes | `name → template` built only from this capability's own outputs or `${sprig.workspace}` |
+| `open` | no | The output that's a browsable entry point (usually `url`); listed by `ws urls`, opened by `ws browse` |
+| `probe` | no | URL template GET'd by `ws urls --probe`; < 500 counts as up |
+
+Port and shape names share one namespace. Every output is `${sprig.<capability>.<output>}`.
+
+### `needs[]`
+| Field | Req | Meaning |
+|---|---|---|
+| `capability` | yes | The capability required from another repo or a sibling module |
+| `as` | no | Local alias: reference as `${sprig.<as>.<output>}` |
+
+A need's outputs live in the provider, so any output name is accepted while authoring and checked at checkout.
 
 ### `env[]`
 | Field | Meaning |
 |---|---|
 | `file` | The `.env.*` file to seed + clobber (relative to `path`) |
-| `templates` | Optional file(s) to seed the worktree copy from (use when the real file is gitignored — seed from `.env.template`) |
-| `set` | `KEY: template` pairs; templates may use `${sprig.<input>}` / `${sprig.workspace}` |
+| `templates` | Optional file(s) to seed from when the real file is gitignored (`.env.template`). Target file wins, then templates in order; dedup by key |
+| `set` | `KEY: template` pairs |
 
-sprig seeds from the source repo then injects a marker-delimited block at top+bottom so its values win.
-The source repo is never touched.
+sprig seeds the worktree copy, then injects a marker-delimited block at top and bottom so its values win. The source repo is never touched.
 
 ### `compose[]`
 | Field | Meaning |
 |---|---|
-| `file` | Compose file (relative to `path`); effective path (`path`+`file`) unique across the repo |
+| `file` | Compose file (relative to `path`); `path`+`file` unique across the repo |
 | `overrides[].path` | YAML path segments, e.g. `["services","postgres","ports","0"]` |
-| `overrides[].template` | Value to place there (a `${sprig...}` template) |
+| `overrides[].template` | Value to place there |
 
 ### `setup[]`
-Ordered commands run in the module's dir (`<worktree>/<path>`) after worktree→env→compose. Via the
-platform shell (`cmd /c` on Windows). First non-zero exit stops the rest. **No `${sprig.*}` expansion.**
-On failure: a **soft warning**, the workspace is kept (unlike env/compose failures, which roll back).
+Ordered commands run in `<worktree>/<path>` via the platform shell (`cmd /c` on Windows). First non-zero exit stops the rest. **No `${sprig.*}` expansion.** A failure is a soft warning: the workspace is kept and flagged degraded.
 
-### Templates
-Only `${sprig.<input>}` (a declared input) and `${sprig.workspace}` (the workspace slug) are valid.
+### Template references
+- `${sprig.<capability>.<output>}` — an output of a capability the module provides (exact name), or any output of a capability it needs.
+- `${sprig.workspace}` — the workspace slug (for `container_name` suffixes).
+
+### Wiring (nearest wins)
+1. A sibling module in the same repo that provides it.
+2. Exactly one selected repo that provides it.
+3. More than one provider → **ambiguous** until the map's `wiring` picks one.
+4. No provider → the map's `defaults`, else an **unmet need** (checkout fails and rolls back).
 
 ---
 
-## Stack (schema 2) — the PRODUCER
+## Map (schema 1)
 
-Central store (`%LOCALAPPDATA%\sprig\stacks\<name>.json`), never in a repo.
+Central store (`%LOCALAPPDATA%\sprig\maps\<name>.json`), never in a repo. Import with `sprig map import <file>`.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema` | int | `2` |
+| `schema` | int | `1` |
 | `name` | string | `^[A-Za-z0-9._+-]+$` |
-| `repos` | string[] | Repos by **registry name**; each must exist in the registry |
-| `ports` | string[] | Named ports the stack owns; each → a real non-colliding number per workspace |
-| `bindings` | object | `bindings[repo][input] = expression` |
-| `shares` | array | Ports consumed by 2+ repos (auto-derived; don't hand-edit) |
-
-- Reference a port from a binding as `${sprig.ports.<name>}`.
-- A binding is a **literal** or a **template** over `${sprig.ports.<name>}` / `${sprig.workspace}`.
-- **Sharing a value between repos = point both bindings at the same port.**
-- Same-named inputs in different repos are independent.
+| `repos` | array | Registry names, or `{ "name": …, "repo": "<git-url>" }` to clone on a machine that lacks it |
+| `wiring` | object | `wiring[repo][capability] = providerCapability` — only when >1 provider |
+| `defaults` | object | `defaults[repo][capability][output] = literal` — a need with no provider selected |
+| `maxSlots` | int | Pool ceiling; default 5 |
 
 ---
 
 ## Worked examples
 
-### Single-app, no infra
+### Provider with infra (`postgres-api`)
 ```json
 {
-  "schema": 3,
-  "name": "sprig-example-vue",
-  "inputs": [
-    { "name": "frontend", "example": "3000", "description": "Vite dev host port" },
-    { "name": "apiUrl",   "example": "http://localhost:4000", "description": "backend base URL" }
-  ],
-  "modules": [
-    { "name": "app", "env": [
-      { "file": ".env", "set": { "PORT": "${sprig.frontend}", "VITE_API_URL": "${sprig.apiUrl}" } }
-    ] }
-  ]
-}
-```
-
-### Consumer with infra
-```json
-{
-  "schema": 3,
-  "name": "dotnet-api",
-  "inputs": [
-    { "name": "port",   "example": "5000", "description": "ASP.NET host port" },
-    { "name": "dbPort", "example": "5432", "description": "postgres host port" }
-  ],
+  "schema": 1,
+  "name": "postgres-api",
   "modules": [
     { "name": "app",
+      "provides": [
+        { "capability": "api",
+          "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.api.port}" },
+          "open": "url",
+          "probe": "${sprig.api.url}/health" },
+        { "capability": "db", "ports": { "port": true } }
+      ],
       "env": [ { "file": ".env", "set": {
-        "PORT": "${sprig.port}",
-        "ConnectionStrings__Default": "Host=localhost;Port=${sprig.dbPort};Database=librarydb;Username=library;Password=library_pass"
+        "PORT": "${sprig.api.port}",
+        "ConnectionStrings__Default": "Host=localhost;Port=${sprig.db.port};Database=librarydb;Username=library;Password=library_pass"
       } } ],
       "compose": [ { "file": "docker-compose.yml", "overrides": [
         { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-        { "path": ["services","postgres","ports","0"],       "template": "${sprig.dbPort}:5432" }
+        { "path": ["services","postgres","ports","0"],       "template": "${sprig.db.port}:5432" }
       ] } ]
     }
   ]
 }
 ```
 
-### Monorepo (web + api in one repo)
+### Consumer, no infra (`vue-web`)
 ```json
 {
-  "schema": 3,
-  "name": "sprig-example-mono",
-  "inputs": [
-    { "name": "webPort", "example": "3000" },
-    { "name": "apiPort", "example": "5000" },
-    { "name": "dbPort",  "example": "5432" }
-  ],
+  "schema": 1,
+  "name": "vue-web",
   "modules": [
-    { "name": "web", "path": "apps/web",
-      "env": [ { "file": ".env.local", "templates": [".env"], "set": {
-        "VITE_PORT": "${sprig.webPort}", "VITE_API_URL": "http://localhost:${sprig.apiPort}" } } ],
-      "setup": [ "npm ci" ] },
+    { "name": "app",
+      "provides": [ { "capability": "web", "ports": { "port": true },
+                      "shapes": { "url": "http://localhost:${sprig.web.port}" }, "open": "url" } ],
+      "needs":    [ { "capability": "api" } ],
+      "env": [ { "file": ".env", "set": { "PORT": "${sprig.web.port}", "VITE_API_URL": "${sprig.api.url}" } } ],
+      "setup": [ "npm ci" ]
+    }
+  ]
+}
+```
+
+### Monorepo (web + api in one repo, wired locally)
+```json
+{
+  "schema": 1,
+  "name": "acme-mono",
+  "modules": [
     { "name": "api", "path": "apps/api",
-      "env": [ { "file": ".env", "set": { "PORT": "${sprig.apiPort}" } } ],
+      "provides": [
+        { "capability": "mono-api", "ports": { "port": true },
+          "shapes": { "url": "http://localhost:${sprig.mono-api.port}" } },
+        { "capability": "db", "ports": { "port": true } }
+      ],
+      "env": [ { "file": ".env", "set": { "PORT": "${sprig.mono-api.port}" } } ],
       "compose": [ { "file": "docker-compose.yml", "overrides": [
-        { "path": ["services","postgres","ports","0"], "template": "${sprig.dbPort}:5432" } ] } ],
-      "setup": [ "dotnet restore" ] }
+        { "path": ["services","postgres","ports","0"], "template": "${sprig.db.port}:5432" } ] } ],
+      "setup": [ "dotnet restore" ] },
+    { "name": "web", "path": "apps/web",
+      "provides": [ { "capability": "web", "ports": { "port": true } } ],
+      "needs":    [ { "capability": "mono-api" } ],
+      "env": [ { "file": ".env.local", "templates": [".env"], "set": {
+        "VITE_PORT": "${sprig.web.port}", "VITE_API_URL": "${sprig.mono-api.url}" } } ],
+      "setup": [ "npm ci" ] }
   ]
 }
 ```
@@ -150,36 +166,25 @@ Central store (`%LOCALAPPDATA%\sprig\stacks\<name>.json`), never in a repo.
 ### Auth0 front end with pinned callback ports
 ```json
 {
-  "schema": 3,
+  "schema": 1,
   "name": "auth0-spa",
-  "inputs": [
-    { "name": "frontend", "example": "3000", "allowedPorts": "8100-8103",
-      "description": "Vite dev host port — must be a registered Auth0 callback port" }
-  ],
-  "modules": [
-    { "name": "app", "env": [ { "file": ".env", "set": { "PORT": "${sprig.frontend}" } } ] }
-  ]
+  "provides": [ { "capability": "web", "ports": { "port": { "allowed": "8100-8103" } } } ],
+  "env": [ { "file": ".env", "set": { "PORT": "${sprig.web.port}" } } ]
 }
 ```
+At most four workspaces can hold the port at once; checkout fails clearly when the set is exhausted.
 
-### Stack: two repos sharing a port (web+api)
-`api_port` is consumed by both — the frontend's `apiUrl` points at the API's `port`.
+### Map: two repos, auto-wired
+```json
+{ "schema": 1, "name": "web+api", "repos": ["vue-web", "postgres-api"], "maxSlots": 4 }
+```
+
+### Map: front end alone, against staging
 ```json
 {
   "schema": 1,
-  "name": "web+api",
-  "repos": ["sprig-example-vue", "dotnet-api"],
-  "ports": ["frontend_port", "api_port", "postgres_port"],
-  "bindings": {
-    "sprig-example-vue": {
-      "frontend": "${sprig.ports.frontend_port}",
-      "apiUrl":   "http://localhost:${sprig.ports.api_port}"
-    },
-    "dotnet-api": {
-      "port":   "${sprig.ports.api_port}",
-      "dbPort": "${sprig.ports.postgres_port}"
-    }
-  }
+  "name": "web-standalone",
+  "repos": ["vue-web"],
+  "defaults": { "vue-web": { "api": { "url": "https://staging.acme.dev" } } }
 }
 ```
-(`shares` is derived automatically for `api_port`. A schema-1 stack is migrated to schema 2 on load.)

@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.7.4] - 2026-10-30
+
+### Added
+- **Virtual repos** — the config lives in sprig. Try before you commit.
+- **One checkout, many configs** — register it under several names.
+- **"virtual · not committed" badges** — on repos and their workspaces.
+- **Write to repo** — a finished config becomes a `.sprig.json`.
+
+### Changed
+- **Workspace variables, one per line** — selectable, and no longer said twice.
+- **Install shrinks from 109 MB to 87 MB** — it stopped packing what sprig never calls.
+- **`sprig.exe` is a single file** — brings its own runtime. No slower for it.
+
+---
+
 ## [v0.7.3] - 2026-10-30
 
 ### Added

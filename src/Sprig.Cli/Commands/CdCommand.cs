@@ -159,11 +159,12 @@ sealed class TargetResolver(CliContext cli)
             : (ModulePath(repo.WorktreePath, subModules.First(m => m.Name == pick)), pick);
     }
 
-    // A repo's declared modules, loaded from the worktree's committed .sprig.json. Best-effort: a repo
-    // whose config can't be read still resolves to its root, so navigation never depends on a parseable config.
+    // A repo's declared modules, loaded from the worktree's committed .sprig.json (or a virtual repo's sprig-held
+    // one). Best-effort: a repo whose config can't be read still resolves to its root, so navigation never
+    // depends on a parseable config.
     static IReadOnlyList<ModuleDeclaration> ModulesOf(InstanceRepo repo)
     {
-        try { return SprigConfigLoader.LoadFromFile(Path.Combine(repo.WorktreePath, ".sprig.json")).EffectiveModules; }
+        try { return SprigConfigLoader.LoadFromFile(repo.WorktreeConfigPath).EffectiveModules; }
         catch (SprigConfigException) { return []; }
     }
 

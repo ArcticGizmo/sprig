@@ -123,6 +123,16 @@ public sealed record InstanceRepo
     /// workspace — machine-named, never renamed when a branch is claimed.</summary>
     public required string WorktreePath { get; init; }
 
+    /// <summary>The sprig-held config this repo was built from when it's a virtual repo; null when its config
+    /// is the <c>.sprig.json</c> committed to the repo. Claim, refresh and the worktree-side readers load this
+    /// file instead, because the worktree has no config of its own.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? VirtualConfigPath { get; init; }
+
+    /// <summary>The config file to read for this worktree's modules and entry points.</summary>
+    [JsonIgnore]
+    public string WorktreeConfigPath => VirtualConfigPath ?? Path.Combine(WorktreePath, ".sprig.json");
+
     /// <summary>The junction at the sibling path that points at a nested <see cref="WorktreePath"/>, so the
     /// worktree can still be reached beside the repo. Null for a sibling-layout worktree, or when the link
     /// couldn't be made. Teardown removes it before the worktree, and never follows it.</summary>

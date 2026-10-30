@@ -26,8 +26,11 @@ vpk pack --packId Sprig --packVersion 0.1.0 --packDir ./publish \
   --mainExe sprig-gui.exe --packTitle Sprig --icon src/Sprig.App/Assets/sprig.ico -o ./feed
 ```
 
-They share an identical .NET runtime and `Sprig.Core.dll`, so the second publish overwrites those with
-the same bytes and adds the CLI's own files (`sprig.exe`, `sprig.dll`, `sprig.runtimeconfig.json`).
+They don't share a runtime. The GUI publishes **trimmed** (`TrimMode=partial`: the framework and Avalonia are pruned to what's reachable; sprig's own assemblies are kept whole because they rely on reflection), so its runtime holds only what the GUI calls. The CLI publishes as a **trimmed single file** with its own runtime inside, so it neither depends on nor overwrites the GUI's. The CLI is also **ReadyToRun**: trimming throws away the framework's precompiled code, which cost every `sprig` command about 230 ms of JIT at startup, and the shell shims make the CLI interactive. The settings live in the two csproj files, so a local publish matches CI.
+
+Where the ~87 MB goes: `sprig.exe` ~36 MB (single file, includes its runtime), native graphics (Skia, HarfBuzz, ANGLE) ~18 MB, the GUI's .NET runtime core ~8 MB, Avalonia ~7 MB, trimmed class libraries ~6 MB, debugger and dump support (`mscordaccore`, `mscordbi`, `Microsoft.DiaSymReader`) ~6 MB, sprig's own code ~1 MB. Before trimming it was 109 MB, mostly framework assemblies sprig never touched (`System.Private.Xml`, `System.Data.Common`, `Microsoft.VisualBasic.Core`…).
+
+Smoke-test a trimmed publish before releasing: `sprig-gui render <dir>` drives every view, the demo sample's worktree/env/compose paths and the XAML bindings. A trimming break shows up there as a missing-member exception.
 `--mainExe` stays `sprig-gui.exe` — that's the app Velopack launches and makes a shortcut for; `sprig.exe`
 just rides along in the package and is put on PATH by an install hook (see [Install](#install)).
 

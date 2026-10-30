@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Core.Config;
 using Sprig.Core.Init;
 using Sprig.Core.Stacks;
 using Sprig.Core.Workspaces;
@@ -91,6 +92,18 @@ public partial class ReposViewModel : PageViewModel
 
     /// <summary>Plain-language explanation of what "Add" will do for the entered path.</summary>
     [ObservableProperty] private string _detectHint = "";
+
+    /// <summary>Keep the new repo's config in sprig instead of writing a <c>.sprig.json</c> into it — for trying
+    /// a config out on a repo you can't (or don't want to) commit to yet.</summary>
+    [ObservableProperty] private bool _addAsVirtual;
+
+    /// <summary>The registry name for a virtual repo. Needed because one checkout can be registered several
+    /// times, so the folder name alone can't identify it.</summary>
+    [ObservableProperty] private string _newName = "";
+
+    /// <summary>The name last suggested for <see cref="NewName"/>, so a changed folder re-suggests only when the
+    /// user hasn't typed their own.</summary>
+    string _suggestedName = "";
 
     /// <summary>Whether the user chose "multiple modules" for a repo with no <c>.sprig.json</c> yet.
     /// False = a single default module scanning the whole repo.</summary>
@@ -210,9 +223,19 @@ public partial class ReposViewModel : PageViewModel
 
     /// <summary>Adapts the modal's primary button to what the path actually needs — either way it
     /// opens the editor afterwards, so the label says so.</summary>
-    public string AddButtonLabel => PathHasConfig ? "Load & edit"
+    public string AddButtonLabel => PathHasConfig ? (AddAsVirtual ? "Copy config & edit" : "Load & edit")
         : MultiModule ? "Create modules & edit"
         : "Create & edit";
+
+    /// <summary>The selected repo's config lives in sprig rather than the repo.</summary>
+    public bool SelectedIsVirtual => Selected?.IsVirtual == true;
+
+    /// <summary>Unregister and delete-config are separate actions only for a committed config; a virtual repo's
+    /// config has nowhere else to live, so it gets a single delete.</summary>
+    public bool ShowCommittedActions => HasSelected && !SelectedIsVirtual;
+
+    /// <summary>Copying the config into a new virtual repo needs a config that loaded.</summary>
+    public bool CanDuplicate => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
 
     /// <summary>A path has been entered — drives the git-status highlight in the modal.</summary>
     public bool PathEntered => !string.IsNullOrWhiteSpace(NewPath);
@@ -227,18 +250,23 @@ public partial class ReposViewModel : PageViewModel
     {
         Editor = null; // leave edit mode when switching repos
         IsIsolating = false;
+        IsDuplicating = false;
         ConfirmingDelete = false;
-        SelectedConfig = value is null ? null : RepoConfigViewModel.Load(value.Path);
+        ConfirmingWriteToRepo = false;
+        SelectedConfig = value is null ? null : RepoConfigViewModel.LoadFile(value.ConfigPath);
         OnPropertyChanged(nameof(HasSelected));
         OnPropertyChanged(nameof(ShowReadOnly));
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanIsolate));
+        OnPropertyChanged(nameof(SelectedIsVirtual));
+        OnPropertyChanged(nameof(ShowCommittedActions));
     }
 
     partial void OnSelectedConfigChanged(RepoConfigViewModel? value)
     {
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanIsolate));
+        OnPropertyChanged(nameof(CanDuplicate));
     }
 
     partial void OnEditorChanged(RepoEditViewModel? value)
@@ -247,6 +275,96 @@ public partial class ReposViewModel : PageViewModel
         OnPropertyChanged(nameof(ShowReadOnly));
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanIsolate));
+        OnPropertyChanged(nameof(CanDuplicate));
+    }
+
+    /// <summary>True while the inline "name the copy" prompt of Duplicate as virtual is open.</summary>
+    [ObservableProperty] private bool _isDuplicating;
+    [ObservableProperty] private string _duplicateName = "";
+    [ObservableProperty] private string? _duplicateError;
+
+    /// <summary>Open the name prompt for copying the selected repo's config into a new virtual repo — the way to
+    /// try several configs of one checkout side by side.</summary>
+    [RelayCommand]
+    private void BeginDuplicate()
+    {
+        if (Selected is null) return;
+        DuplicateError = null;
+        DuplicateName = UniqueRepoName(Selected.Name);
+        IsDuplicating = true;
+    }
+
+    [RelayCommand]
+    private void CancelDuplicate() => IsDuplicating = false;
+
+    [RelayCommand]
+    private void ConfirmDuplicate()
+    {
+        var source = Selected;
+        if (source is null) return;
+        RegisteredRepo copy;
+        try
+        {
+            var config = SprigConfigLoader.LoadFromFile(source.ConfigPath);
+            copy = Services.Repos.AddVirtual(source.Path, DuplicateName, config);
+        }
+        catch (Exception ex) { DuplicateError = ex.Message; return; }
+
+        IsDuplicating = false;
+        Reload();
+        Services.NotifyStoreChanged();
+        Selected = Repos.FirstOrDefault(r => r.Name == copy.Name);
+        if (Selected is not null) BeginEdit();
+        Status = $"created virtual repo '{copy.Name}' from '{source.Name}' — editing its configuration";
+    }
+
+    /// <summary>True while the overwrite confirm for Write to repo is showing (the repo already has a config).</summary>
+    [ObservableProperty] private bool _confirmingWriteToRepo;
+
+    /// <summary>Write the selected virtual repo's config into the repo as <c>.sprig.json</c>, ready to commit.
+    /// Asks first when that would replace the repo's existing config.</summary>
+    [RelayCommand]
+    private void WriteToRepo()
+    {
+        if (Selected is not { IsVirtual: true } repo) return;
+        if (File.Exists(Path.Combine(repo.Path, ".sprig.json"))) { ConfirmingWriteToRepo = true; return; }
+        WriteVirtualConfigToRepo(repo);
+    }
+
+    [RelayCommand]
+    private void ConfirmWriteToRepo()
+    {
+        ConfirmingWriteToRepo = false;
+        if (Selected is { IsVirtual: true } repo) WriteVirtualConfigToRepo(repo);
+    }
+
+    [RelayCommand]
+    private void CancelWriteToRepo() => ConfirmingWriteToRepo = false;
+
+    void WriteVirtualConfigToRepo(RegisteredRepo repo)
+    {
+        var target = Path.Combine(repo.Path, ".sprig.json");
+        try
+        {
+            // The committed config names the repo itself, not this variant of it, so keep the name the repo
+            // already goes by (or its folder's) rather than the virtual one.
+            var name = File.Exists(target) ? SprigConfigLoader.LoadFromFile(target).Name : "";
+            if (string.IsNullOrWhiteSpace(name)) name = Path.GetFileName(repo.Path.TrimEnd('\\', '/'));
+            var config = SprigConfigLoader.LoadFromFile(repo.ConfigPath);
+            SprigConfigWriter.Write(config with { Name = name }, target);
+        }
+        catch (Exception ex) { Error = ex.Message; return; }
+        Status = $"wrote {target} — commit it to share the config. '{repo.Name}' stays virtual until you delete it.";
+    }
+
+    /// <summary><paramref name="baseName"/> if no repo is registered under it, else the first free
+    /// <c>-2</c>, <c>-3</c>… variant.</summary>
+    string UniqueRepoName(string baseName)
+    {
+        var taken = Services.Repos.List().Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        if (!taken.Contains(baseName)) return baseName;
+        for (var i = 2; ; i++)
+            if (!taken.Contains($"{baseName}-{i}")) return $"{baseName}-{i}";
     }
 
     /// <summary>Open the inline "name this workspace" prompt for the single-repo fast path.</summary>
@@ -276,7 +394,7 @@ public partial class ReposViewModel : PageViewModel
         IReadOnlyList<WorkspaceStep> plan;
         try
         {
-            repos = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo.Path));
+            repos = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo));
             plan = Services.Workspaces.PlanCreateFromMap(repos, name);
         }
         catch (Exception ex) { IsolateError = ex.Message; return; }
@@ -313,7 +431,7 @@ public partial class ReposViewModel : PageViewModel
         if (Selected is null) return;
         Error = null;
         Status = null;
-        try { Editor = RepoEditViewModel.Load(Selected.Path, Services.Git); }
+        try { Editor = RepoEditViewModel.Load(Selected.Path, Services.Git, Selected.VirtualConfigPath); }
         catch (Exception ex) { Error = ex.Message; }
     }
 
@@ -329,7 +447,7 @@ public partial class ReposViewModel : PageViewModel
         var name = Editor.Name;
         Editor = null;
         // Reload the read-only view so the saved values show immediately.
-        SelectedConfig = Selected is null ? null : RepoConfigViewModel.Load(Selected.Path);
+        SelectedConfig = Selected is null ? null : RepoConfigViewModel.LoadFile(Selected.ConfigPath);
         Status = $"saved changes to '{name}'";
     }
 
@@ -368,9 +486,36 @@ public partial class ReposViewModel : PageViewModel
 
         PathHasConfig = hasConfig;
         PathIsGitRepo = isGit;
-        DetectHint = hasConfig
-            ? "Found a .sprig.json here — it'll be loaded so you can review and edit it."
-            : "No .sprig.json here — sprig will scaffold one from the repo, then open it for editing.";
+        if (AddAsVirtual) SuggestName();
+        UpdateDetectHint();
+    }
+
+    partial void OnAddAsVirtualChanged(bool value)
+    {
+        if (value) SuggestName();
+        UpdateDetectHint();
+        OnPropertyChanged(nameof(AddButtonLabel));
+    }
+
+    void UpdateDetectHint()
+    {
+        if (NewPath.Trim().Length == 0) { DetectHint = ""; return; }
+        DetectHint = (PathHasConfig, AddAsVirtual) switch
+        {
+            (true, false) => "Found a .sprig.json here — it'll be loaded so you can review and edit it.",
+            (false, false) => "No .sprig.json here — sprig will scaffold one from the repo, then open it for editing.",
+            (true, true) => "Found a .sprig.json here — sprig copies it as a starting point and keeps the copy itself. Nothing in the repo changes.",
+            (false, true) => "No .sprig.json here — sprig scaffolds one and keeps it itself. Nothing is written to the repo.",
+        };
+    }
+
+    /// <summary>Suggest a free registry name from the folder, unless the user has typed their own.</summary>
+    void SuggestName()
+    {
+        if (NewName.Length > 0 && NewName != _suggestedName) return;
+        var folder = Path.GetFileName(NewPath.Trim().TrimEnd('\\', '/'));
+        _suggestedName = folder.Length == 0 ? "" : UniqueRepoName(folder);
+        NewName = _suggestedName;
     }
 
     /// <summary>
@@ -434,6 +579,8 @@ public partial class ReposViewModel : PageViewModel
         Status = null;
         MultiModule = false;
         ModuleSpecs.Clear();
+        AddAsVirtual = false;
+        NewName = _suggestedName = "";
         IsAdding = true;
     }
 
@@ -479,12 +626,15 @@ public partial class ReposViewModel : PageViewModel
         var path = NewPath.Trim();
         if (string.IsNullOrEmpty(path)) { Error = "enter a repo path"; return; }
 
+        var asVirtual = AddAsVirtual;
+        var name = NewName.Trim();
         Busy = true; Error = null; Status = null;
         try
         {
             IReadOnlyList<string> notes = [];
             var added = await AppServices.RunAsync(() =>
             {
+                SprigRepoConfig? scaffolded = null;
                 if (runInit)
                 {
                     // Given explicit module definitions, scan each one's path; otherwise a single default
@@ -493,18 +643,24 @@ public partial class ReposViewModel : PageViewModel
                     var proposal = moduleSpecs is { Count: > 0 }
                         ? Services.Init.InspectMap(path, moduleSpecs)
                         : Services.Init.InspectMap(path);
-                    ConfigJson.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
+                    scaffolded = proposal.Config;
+                    if (!asVirtual) SprigConfigWriter.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
                     // Keep the proposal's advisory notes. They explain which env keys and compose ports
                     // became inputs and why — the exact question someone asks on landing in the editor
                     // for the first time. The CLI has always printed these; the app used to bin them.
                     notes = proposal.Notes;
                 }
-                return Services.Repos.Add(path);
+                return asVirtual
+                    ? Services.Repos.AddVirtual(path, name,
+                        scaffolded ?? SprigConfigLoader.LoadFromFile(Path.Combine(path, ".sprig.json")))
+                    : Services.Repos.Add(path);
             });
             NewPath = "";
             IsAdding = false;
             MultiModule = false;
             ModuleSpecs.Clear();
+            AddAsVirtual = false;
+            NewName = _suggestedName = "";
             Reload();
             Services.NotifyStoreChanged();
 
@@ -565,6 +721,8 @@ public partial class ReposViewModel : PageViewModel
     private void Remove()
     {
         if (Selected is null) return;
+        // Unregistering a virtual repo deletes its only copy of the config, so it always goes via the confirm.
+        if (Selected.IsVirtual) { ConfirmingDelete = true; return; }
         Services.Repos.Remove(Selected.Name);
         Status = $"unregistered '{Selected.Name}'";
         Reload();
@@ -593,6 +751,15 @@ public partial class ReposViewModel : PageViewModel
         ConfirmingDelete = false;
 
         var name = Selected.Name;
+        if (Selected.IsVirtual)
+        {
+            Services.Repos.Remove(name);   // takes the sprig-held config with it; the repo itself is untouched
+            Status = $"deleted virtual repo '{name}' and its config";
+            Reload();
+            Services.NotifyStoreChanged();
+            return;
+        }
+
         var configPath = Path.Combine(Selected.Path, ".sprig.json");
         try
         {

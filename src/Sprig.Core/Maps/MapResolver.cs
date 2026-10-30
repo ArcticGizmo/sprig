@@ -27,13 +27,13 @@ public sealed class MapResolver(RepoRegistryStore registry, MapStore maps, IGitS
 
             var reg = registry.Get(entry.Name) ?? Bootstrap(entry);
 
-            var config = SprigConfigLoader.LoadFromFile(Path.Combine(reg.Path, WorkspaceService.ConfigFileName));
+            var config = SprigConfigLoader.LoadFromFile(reg.ConfigPath);
             var validation = SprigConfigValidator.Validate(config);
             if (!validation.IsValid)
-                throw new MapException($"repo '{entry.Name}' has an invalid .sprig.json:\n  " +
+                throw new MapException($"repo '{entry.Name}' has an invalid {(reg.IsVirtual ? "virtual config" : ".sprig.json")}:\n  " +
                     string.Join("\n  ", validation.Issues));
 
-            repos.Add(new ResolvedRepo(entry.Name, reg.Path, config));
+            repos.Add(new ResolvedRepo(entry.Name, reg.Path, config, reg.VirtualConfigPath));
         }
 
         if (repos.Count == 0)

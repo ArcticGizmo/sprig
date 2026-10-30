@@ -130,7 +130,7 @@ public sealed partial class WorkspaceService
     static string? ModuleAt(InstanceRepo repo, string relative)
     {
         IReadOnlyList<ModuleDeclaration> modules;
-        try { modules = SprigConfigLoader.LoadFromFile(Path.Combine(repo.WorktreePath, ConfigFileName)).EffectiveModules; }
+        try { modules = SprigConfigLoader.LoadFromFile(repo.WorktreeConfigPath).EffectiveModules; }
         catch (SprigConfigException) { return null; }
 
         var rel = relative == "." ? "" : relative.Replace('\\', '/');

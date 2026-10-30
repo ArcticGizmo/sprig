@@ -788,9 +788,10 @@ public partial class RepoEditViewModel : ObservableObject
     /// that don't pass one — then a file is only ever "tracked" (set-based) or "not ignored".</summary>
     IGitService? _git;
 
-    RepoEditViewModel(string repoPath)
+    RepoEditViewModel(string repoPath, string configPath)
     {
         RepoPath = repoPath;
+        ConfigPath = configPath;
         // A module's provides/needs are the ${sprig.*} reference surface — track each module so the token
         // box's variable + capability lists stay current across every module as they're edited.
         Modules.CollectionChanged += OnModulesChanged;
@@ -798,6 +799,10 @@ public partial class RepoEditViewModel : ObservableObject
     }
 
     public string RepoPath { get; }
+
+    /// <summary>Where the config is read from and saved to: the repo's <c>.sprig.json</c>, or sprig's copy for a
+    /// virtual repo. Env and compose files still resolve against <see cref="RepoPath"/> either way.</summary>
+    public string ConfigPath { get; }
 
     /// <summary>The variables a repo template may reference verbatim — <c>workspace</c> and each self-provided
     /// <c>&lt;capability&gt;.&lt;output&gt;</c>. Drives <c>${sprig.*}</c> autocomplete and the invalid-reference
@@ -824,10 +829,10 @@ public partial class RepoEditViewModel : ObservableObject
 
     [ObservableProperty] private string? _error;
 
-    public static RepoEditViewModel Load(string repoPath, IGitService? git = null)
+    public static RepoEditViewModel Load(string repoPath, IGitService? git = null, string? virtualConfigPath = null)
     {
-        var vm = new RepoEditViewModel(repoPath);
-        var c = SprigConfigLoader.LoadFromFile(Path.Combine(repoPath, ".sprig.json"));
+        var vm = new RepoEditViewModel(repoPath, virtualConfigPath ?? Path.Combine(repoPath, ".sprig.json"));
+        var c = SprigConfigLoader.LoadFromFile(vm.ConfigPath);
 
         vm._schema = c.Schema;
         vm.Name = c.Name;
@@ -1188,7 +1193,7 @@ public partial class RepoEditViewModel : ObservableObject
             return false;
         }
 
-        try { ConfigJson.Write(config, Path.Combine(RepoPath, ".sprig.json")); }
+        try { SprigConfigWriter.Write(config, ConfigPath); }
         catch (Exception ex) { Error = ex.Message; return false; }
 
         Error = null;

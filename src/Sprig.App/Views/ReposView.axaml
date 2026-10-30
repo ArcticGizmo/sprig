@@ -38,7 +38,14 @@
                              per-port anchors. Resolved by the same visual-tree walk as any chrome anchor. -->
                         <StackPanel Spacing="2" Margin="2,6"
                                     AutomationProperties.AutomationId="{Binding Name, StringFormat='repo.row:{0}'}">
-                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <Border IsVisible="{Binding IsVirtual}" CornerRadius="4" Padding="6,0"
+                                        BorderBrush="{StaticResource WarnBrush}" BorderThickness="1" VerticalAlignment="Center"
+                                        ToolTip.Tip="Virtual repo: its config lives in sprig, not committed to the repo.">
+                                    <TextBlock Text="virtual" FontSize="10" Foreground="{StaticResource WarnBrush}" />
+                                </Border>
+                            </StackPanel>
                             <TextBlock Text="{Binding Path}" FontSize="11" Foreground="{StaticResource MutedBrush}"
                                        TextTrimming="CharacterEllipsis" />
                         </StackPanel>
@@ -71,13 +78,14 @@
 
                 <ScrollViewer IsVisible="{Binding ShowReadOnly}" AutomationProperties.AutomationId="repo.detail">
                     <StackPanel Spacing="16">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" Spacing="2">
+                        <StackPanel Spacing="10">
+                            <StackPanel Spacing="2">
                                 <TextBlock Text="Configuration" FontSize="16" FontWeight="SemiBold"
                                            Foreground="{StaticResource TitleBrush}" />
                                 <TextBlock Text="{Binding SelectedConfig.Name}" Foreground="{StaticResource AccentBrush}" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                            <!-- Wraps rather than sharing a row with the title: a committed repo carries five actions. -->
+                            <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
                                 <DropDownButton Content="Open in…" IsVisible="{Binding HasSelected}">
                                     <DropDownButton.Flyout>
                                         <MenuFlyout>
@@ -89,24 +97,74 @@
                                 </DropDownButton>
                                 <Button Content="Edit" Command="{Binding BeginEditCommand}"
                                         IsVisible="{Binding CanEdit}" />
+                                <Button Content="Duplicate as virtual" Command="{Binding BeginDuplicateCommand}"
+                                        IsVisible="{Binding CanDuplicate}"
+                                        ToolTip.Tip="Register this checkout again under a new name with a copy of this config, kept in sprig — try a variant without touching the repo." />
                                 <Button Content="Unregister" Command="{Binding RemoveCommand}"
-                                        Foreground="{StaticResource DangerBrush}" IsVisible="{Binding HasSelected}"
+                                        Foreground="{StaticResource DangerBrush}" IsVisible="{Binding ShowCommittedActions}"
                                         ToolTip.Tip="Remove this repo from sprig's registry. The .sprig.json on disk is left untouched." />
                                 <Button Content="Delete config" Command="{Binding DeleteCommand}"
-                                        Foreground="{StaticResource DangerBrush}" IsVisible="{Binding HasSelected}"
+                                        Foreground="{StaticResource DangerBrush}" IsVisible="{Binding ShowCommittedActions}"
                                         ToolTip.Tip="Delete the .sprig.json from the repo and unregister it — a full reset." />
+                                <Button Content="Delete" Command="{Binding DeleteCommand}"
+                                        Foreground="{StaticResource DangerBrush}" IsVisible="{Binding SelectedIsVirtual}"
+                                        ToolTip.Tip="Unregister this virtual repo and delete its config from sprig. The repo is untouched." />
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <!-- virtual repo: the config lives in sprig, so nothing a teammate pulls will have it -->
+                        <Border IsVisible="{Binding SelectedIsVirtual}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource WarnBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Virtual repo · config not committed" FontWeight="SemiBold"
+                                           Foreground="{StaticResource WarnBrush}" />
+                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource FgBrush}"
+                                           Text="This config is kept by sprig, not in the repo. Workspaces built from it use it as-is, and nothing in the repo changes. When it's ready, write it into the repo and commit it." />
+                                <SelectableTextBlock Text="{Binding Selected.VirtualConfigPath}" FontSize="11"
+                                                     FontFamily="Consolas,monospace" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                <Button Content="Write to repo as .sprig.json" Command="{Binding WriteToRepoCommand}"
+                                        HorizontalAlignment="Left" />
+                                <StackPanel Spacing="8" IsVisible="{Binding ConfirmingWriteToRepo}">
+                                    <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" FontSize="12"
+                                               Text="The repo already has a .sprig.json. Replace it with this config? The repo's name in it is kept." />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Replace .sprig.json" Command="{Binding ConfirmWriteToRepoCommand}"
+                                                Foreground="{StaticResource DangerBrush}" />
+                                        <Button Content="Cancel" Command="{Binding CancelWriteToRepoCommand}" />
+                                    </StackPanel>
+                                </StackPanel>
                             </StackPanel>
-                        </Grid>
+                        </Border>
+
+                        <!-- duplicate-as-virtual name prompt -->
+                        <Border IsVisible="{Binding IsDuplicating}" Background="{StaticResource PanelBgBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Name the virtual copy" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                <TextBox Text="{Binding DuplicateName}" FontFamily="Consolas,monospace" />
+                                <TextBlock IsVisible="{Binding DuplicateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                           Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Text="{Binding DuplicateError}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Create &amp; edit" Command="{Binding ConfirmDuplicateCommand}"
+                                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
+                                    <Button Content="Cancel" Command="{Binding CancelDuplicateCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <!-- delete-config confirm bar: destructive, so it removes the file on disk -->
                         <Border IsVisible="{Binding ConfirmingDelete}" Background="{StaticResource PanelBgBrush}"
                                 BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
                             <StackPanel Spacing="10">
-                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
+                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" IsVisible="{Binding !SelectedIsVirtual}"
                                            Text="Delete this repo's .sprig.json from disk and unregister it? This resets the repo's sprig state — re-add it later to scaffold a fresh config. Existing workspaces are unaffected." />
+                                <TextBlock Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" IsVisible="{Binding SelectedIsVirtual}"
+                                           Text="Delete this virtual repo? Its config only exists in sprig, so this can't be undone. The repo is untouched, and existing workspaces keep running, but they can't be refreshed or re-checked-out from it." />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Content="Delete .sprig.json" Command="{Binding ConfirmDeleteCommand}"
-                                            Foreground="{StaticResource DangerBrush}" />
+                                            Foreground="{StaticResource DangerBrush}" IsVisible="{Binding !SelectedIsVirtual}" />
+                                    <Button Content="Delete virtual repo" Command="{Binding ConfirmDeleteCommand}"
+                                            Foreground="{StaticResource DangerBrush}" IsVisible="{Binding SelectedIsVirtual}" />
                                     <Button Content="Cancel" Command="{Binding CancelDeleteCommand}" />
                                 </StackPanel>
                             </StackPanel>
@@ -833,6 +891,18 @@
                     </Border>
                     <TextBlock IsVisible="{Binding GitOk}" Foreground="{StaticResource OkBrush}" FontSize="12"
                                Text="✓ Git repository detected." />
+
+                    <!-- virtual: the config stays in sprig, so the repo needn't be touched (or committed to) -->
+                    <StackPanel Spacing="6">
+                        <CheckBox IsChecked="{Binding AddAsVirtual, Mode=TwoWay}"
+                                  Content="Keep the config in sprig (virtual — nothing written to the repo)"
+                                  ToolTip.Tip="For trying a config out before it's committed. You can register one repo several times this way, each with its own config." />
+                        <StackPanel Spacing="4" IsVisible="{Binding AddAsVirtual}">
+                            <TextBlock Text="Name" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+                            <TextBox Text="{Binding NewName, Mode=TwoWay}" PlaceholderText="api-try-1"
+                                     FontFamily="Consolas,monospace" />
+                        </StackPanel>
+                    </StackPanel>
 
                     <TextBlock IsVisible="{Binding DetectHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap"

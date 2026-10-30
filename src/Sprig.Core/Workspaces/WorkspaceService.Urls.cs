@@ -24,7 +24,7 @@ public sealed partial class WorkspaceService
         foreach (var repo in record.Repos)
         {
             IReadOnlyList<ModuleDeclaration> modules;
-            try { modules = SprigConfigLoader.LoadFromFile(Path.Combine(repo.WorktreePath, ConfigFileName)).EffectiveModules; }
+            try { modules = SprigConfigLoader.LoadFromFile(repo.WorktreeConfigPath).EffectiveModules; }
             catch (SprigConfigException) { continue; }
 
             var stored = repo.Modules.ToDictionary(m => m.Name, StringComparer.Ordinal);

@@ -148,6 +148,13 @@ sprig init --repo C:\code\my-api --print    # inspect + preview a proposed confi
 sprig init --repo C:\code\my-api --register # write .sprig.json and register in one step
 ```
 
+**Virtual repos** — trying a config on a repo you can't commit to yet. `--virtual` keeps the config in sprig's store (`repo-configs/<name>.sprig.json`) instead of the repo, so nothing in the repo changes. It starts from `--from <file>`, else the repo's own `.sprig.json`, else a scaffold. Because the config isn't tied to the folder, one checkout can be registered several times under different names, one per config you want to try; use each name in a map, or `sprig create <ws> --repo <name>`. Virtual repos are badged "virtual · not committed" in the app (Repos and Workspaces) and in `repo ls`. When a config is ready, the app's **Write to repo** puts it in the repo as `.sprig.json` to commit. `repo rm` deletes a virtual repo's config along with the registration. Two configs of the same checkout can't share a workspace, because their worktrees would land in the same folder.
+
+```sh
+sprig repo add C:\code\my-api --virtual --name api-try                  # copy of its .sprig.json, or a scaffold
+sprig repo add C:\code\my-api --virtual --name api-alt --from alt.json  # a second config of the same checkout
+```
+
 ### 2. Compose a map
 
 Maps are authored in the app's **Maps** page (or shared as a file and imported). The CLI lists,

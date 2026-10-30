@@ -46,10 +46,12 @@ public sealed record InstanceRecord
 
     /// <summary>What the workspace is for ("Risk matrix overrides") — the headline wherever it is shown.
     /// Owned by the claimer and editable at any time; never filled in implicitly, so an unlabelled workspace
-    /// shows its live branch instead. Null when unlabelled.</summary>
+    /// shows its live branch instead. Belongs to the claim, so release moves it to <see cref="ReleasedLabel"/>.
+    /// Null when unlabelled.</summary>
     public string? Label { get; init; }
 
-    /// <summary>A short, editable status line beneath the label ("waiting on review"). Null when unset.</summary>
+    /// <summary>A short, editable status line beneath the label ("waiting on review"). Belongs to the claim:
+    /// cleared on release and on every new claim, so the next claimer never inherits it. Null when unset.</summary>
     public string? Note { get; init; }
 
     /// <summary>The claimer's own <c>&lt;namespace&gt;.&lt;name&gt;</c> → value pairs (see <see cref="Workspaces.WorkspaceTags"/>),
@@ -64,6 +66,14 @@ public sealed record InstanceRecord
     /// <summary>The tags the workspace carried when it was last released, so a caller that cleaned up can
     /// still see what it released. Empty if never released with tags.</summary>
     public IReadOnlyDictionary<string, string> ReleasedTags { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>The label the workspace carried when it was last released. Shown when picking a free
+    /// workspace to reuse, as a hint to the state it was left in. Null if it had none.</summary>
+    public string? ReleasedLabel { get; init; }
+
+    /// <summary>The note the workspace carried when it was last released, kept for the same reason as
+    /// <see cref="ReleasedTags"/>. Null if it had none.</summary>
+    public string? ReleasedNote { get; init; }
 
     /// <summary>When this workspace was last checked out; null if never claimed.</summary>
     public DateTimeOffset? ClaimedAt { get; init; }

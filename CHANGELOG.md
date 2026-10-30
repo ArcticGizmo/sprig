@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Release clears the workspace label and note** — the next claimer no longer inherits "waiting on review".
+- **Free workspaces stop wearing their last label** — it moves to the reuse picker, where it's a hint, not a claim.
+
 ---
 
 ## [v0.7.1] - 2026-10-30

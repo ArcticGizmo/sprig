@@ -63,8 +63,9 @@ public partial class WorkspaceItemViewModel : ViewModelBase
     /// <summary>Convenience inverse of <see cref="Claimed"/> for binding a "can check out" affordance.</summary>
     public bool Free => !Record.Claimed;
 
-    /// <summary>What the workspace is for; kept after release as a hint to the state it holds (null if never labelled).</summary>
-    public string? Label => Record.Label;
+    /// <summary>How a free workspace reads when picking one to reuse: what it was last used for, as a hint to
+    /// the state it holds, else its headline.</summary>
+    public string ReuseHint => !Record.Claimed && !string.IsNullOrWhiteSpace(Record.ReleasedLabel) ? Record.ReleasedLabel! : Headline;
 
     /// <summary>True when a setup step failed on the last checkout/refresh — this workspace is degraded,
     /// not cleanly claimed. Drives the warning badge.</summary>

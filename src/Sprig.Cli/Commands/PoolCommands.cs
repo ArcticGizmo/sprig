@@ -45,12 +45,18 @@ public sealed class PoolStatusCommand(CliContext cli) : Command<PoolStatusComman
             table.AddRow(
                 Markup.Escape(w.Workspace),
                 StateCell(w),
-                Markup.Escape(w.Label ?? "-"),
+                LabelCell(w),
                 Markup.Escape(w.LastUsedAt?.ToString("u") ?? "-"),
                 Markup.Escape(CliFormat.Ports(w.Ports)));
         console.Write(table);
         return 0;
     }
+
+    // A free workspace shows its last label dimmed: a hint to the state it was left in, not what it is for now.
+    static string LabelCell(InstanceRecord w)
+        => w.Label is { } label ? Markup.Escape(label)
+            : !w.Claimed && w.ReleasedLabel is { } last ? $"[dim]{Markup.Escape(last)}[/]"
+            : "-";
 
     // claimed / free, flagged degraded when the last setup run failed.
     static string StateCell(InstanceRecord w)
@@ -303,7 +309,7 @@ public sealed class PoolCheckoutCommand(CliContext cli) : Command<PoolCheckoutCo
     // you can pick the leftover state you want (e.g. "the one that already has product-X built").
     static string DescribeFree(InstanceRecord w)
     {
-        var label = string.IsNullOrEmpty(w.Label) ? "unused" : w.Label!;
+        var label = w.ReleasedLabel ?? w.Label ?? "unused";
         var when = w.LastUsedAt is { } t ? $", freed {Ago(t)}" : "";
         return $"{w.Workspace}  ({label}{when})";
     }
@@ -378,6 +384,8 @@ public sealed class PoolReleaseCommand(CliContext cli) : Command<PoolReleaseComm
                     ok = true,
                     workspace = record.Workspace,
                     action = "release",
+                    releasedLabel = record.ReleasedLabel,
+                    releasedNote = record.ReleasedNote,
                     releasedTags = record.ReleasedTags,
                     pending = pending.Repos
                         .Where(r => r.HasAny)

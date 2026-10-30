@@ -124,6 +124,30 @@ public class MapPoolCheckoutTests
     }
 
     [Fact]
+    public void Label_and_note_go_with_the_claim_and_the_next_claimer_starts_without_them()
+    {
+        using var store = new TempStore();
+        using var repo = new TempGitRepo();
+        var pools = Build(repo, store, maxSlots: 1);
+        var instances = new InstanceStore(store.Paths);
+
+        var ws = pools.Checkout("app", null, "first", label: "Audit log");
+        instances.Save(instances.TryLoad(ws.Workspace)! with { Note = "waiting on review" });
+
+        var (released, _) = pools.Release(ws.Workspace);
+        Assert.Null(released.Label);
+        Assert.Null(released.Note);
+        Assert.Equal("Audit log", released.ReleasedLabel);
+        Assert.Equal("waiting on review", released.ReleasedNote);
+
+        // Even a free record that somehow still holds a label and note doesn't pass them on.
+        instances.Save(released with { Label = "stale", Note = "stale" });
+        var reclaimed = pools.Checkout("app", existingWorkspace: ws.Workspace, "second");
+        Assert.Null(reclaimed.Label);
+        Assert.Null(reclaimed.Note);
+    }
+
+    [Fact]
     public void An_invalid_tag_key_is_rejected_before_materialising()
     {
         using var store = new TempStore();

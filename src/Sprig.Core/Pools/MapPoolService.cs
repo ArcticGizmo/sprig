@@ -189,11 +189,16 @@ public sealed class MapPoolService(
         var pending = workspaces.CollectPending(record); // report only — release never touches the working tree
         workspaces.TryStopContainers(workspace);         // free CPU/RAM; keep containers, volumes + disk intact
         var latest = instances.TryLoad(workspace) ?? record;
-        // Tags belong to the claim, so they go with it; a copy stays behind for whoever cleaned up.
+        // The label, note and tags belong to the claim, so they go with it; a copy stays behind for whoever
+        // cleaned up, and the label doubles as a hint to the state the next claimer would inherit.
         var released = latest with
         {
             Claimed = false,
             LastUsedAt = DateTimeOffset.UtcNow,
+            ReleasedLabel = latest.Label,
+            Label = null,
+            ReleasedNote = latest.Note,
+            Note = null,
             ReleasedTags = latest.Tags,
             Tags = new Dictionary<string, string>(),
         };
@@ -216,10 +221,12 @@ public sealed class MapPoolService(
     {
         var record = instances.TryLoad(workspace)
             ?? throw new WorkspaceException($"unknown workspace '{workspace}'");
+        // A new claim starts with no note, whatever the record held while it sat free.
         var claimed = record with
         {
             Claimed = true,
             Label = label,
+            Note = null,
             Tags = tags,
             ClaimedAt = DateTimeOffset.UtcNow,
             WorkspaceIndex = index ?? record.WorkspaceIndex,

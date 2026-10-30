@@ -185,15 +185,21 @@ public partial class RepoLineViewModel : ViewModelBase
         Branch = Head?.Display ?? repo.Branch ?? "";
         WorktreePath = repo.WorktreePath;
         // The concrete ${sprig.<cap>.<out>} values each module resolved to (ports, derived URLs, needs) —
-        // the map-model successor to the old per-repo stack inputs.
-        var values = repo.Modules.SelectMany(m => m.Values).OrderBy(p => p.Key).ToList();
-        Inputs = values.Count == 0
-            ? "-"
-            : string.Join("  ", values.Select(p => $"{p.Key}={p.Value}"));
+        // One per line so the block reads (and copies out) like a .env file. Modules wired to the same
+        // capability resolve identical pairs, so those collapse to one line.
+        var values = repo.Modules.SelectMany(m => m.Values)
+            .Select(p => $"{p.Key}={p.Value}")
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        Inputs = values.Count == 0 ? "-" : string.Join(Environment.NewLine, values);
         HasInfra = repo.ComposePaths.Count > 0;
+        IsVirtual = repo.VirtualConfigPath is not null;
     }
 
     public string Name { get; }
+    /// <summary>Built from a virtual repo, so its config isn't committed anywhere a teammate could see it.</summary>
+    public bool IsVirtual { get; }
     /// <summary>The worktree's live HEAD, or null when it can't be read (e.g. the folder is missing).</summary>
     public WorktreeHead? Head { get; }
     /// <summary>The live branch, falling back to the recorded claim branch when HEAD can't be read.</summary>

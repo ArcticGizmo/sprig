@@ -322,13 +322,19 @@
                                                                Foreground="{StaticResource TitleBrush}" />
                                                     <TextBlock Text="{Binding Branch}" FontSize="11"
                                                                Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                                    <Border IsVisible="{Binding IsVirtual}" CornerRadius="4" Padding="6,1"
+                                                            BorderBrush="{StaticResource WarnBrush}" BorderThickness="1" VerticalAlignment="Center"
+                                                            ToolTip.Tip="Built from a virtual repo: its config lives in sprig and isn't committed to the repo.">
+                                                        <TextBlock Text="virtual · not committed" FontSize="10" Foreground="{StaticResource WarnBrush}" />
+                                                    </Border>
                                                     <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
                                                                IsVisible="{Binding StateHealthy}" Foreground="{StaticResource OkBrush}" />
                                                     <TextBlock Text="{Binding StateLabel}" FontSize="11" VerticalAlignment="Center"
                                                                IsVisible="{Binding StateProblem}" Foreground="{StaticResource DangerBrush}" />
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
-                                                           Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" />
+                                                <SelectableTextBlock Text="{Binding Inputs}" FontFamily="Consolas,monospace" FontSize="12"
+                                                                     Foreground="{StaticResource FgBrush}" TextWrapping="Wrap"
+                                                                     LineHeight="18" Margin="0,4" />
                                                 <TextBlock Text="{Binding WorktreePath}" FontSize="11"
                                                            Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
                                             </StackPanel>

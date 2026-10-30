@@ -24,6 +24,11 @@ public interface ISprigPaths
     string ClonePath(string name);
     /// <summary>The known-repos registry file.</summary>
     string ReposFile { get; }
+    /// <summary>Directory holding the configs of virtual repos: registrations whose config lives in sprig
+    /// rather than committed to the repo, so one checkout can be registered under several configs.</summary>
+    string RepoConfigsDir { get; }
+    /// <summary>The config file backing a named virtual repo.</summary>
+    string RepoConfigFile(string name);
     /// <summary>The port-allocation store file.</summary>
     string PortsFile { get; }
     /// <summary>The user-settings file.</summary>
@@ -62,6 +67,8 @@ public sealed class SprigPaths : ISprigPaths
     public string ClonesDir => Path.Combine(Root, "repos");
     public string ClonePath(string name) => Path.Combine(ClonesDir, name);
     public string ReposFile => Path.Combine(Root, "repos.json");
+    public string RepoConfigsDir => Path.Combine(Root, "repo-configs");
+    public string RepoConfigFile(string name) => Path.Combine(RepoConfigsDir, name + ".sprig.json");
     public string PortsFile => Path.Combine(Root, "ports.json");
     public string SettingsFile => Path.Combine(Root, "settings.json");
     public string InstanceDir(string workspace) => Path.Combine(InstancesDir, workspace);

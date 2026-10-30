@@ -84,9 +84,11 @@ public sealed partial class RepoConfigViewModel : ObservableObject
 
     public bool HasModules => Modules.Count > 0;
 
-    public static RepoConfigViewModel Load(string repoPath)
+    public static RepoConfigViewModel Load(string repoPath) => LoadFile(Path.Combine(repoPath, ".sprig.json"));
+
+    /// <summary>Load from an explicit config file — a virtual repo's lives in sprig's store, not the repo.</summary>
+    public static RepoConfigViewModel LoadFile(string configPath)
     {
-        var configPath = Path.Combine(repoPath, ".sprig.json");
         try
         {
             var c = SprigConfigLoader.LoadFromFile(configPath);

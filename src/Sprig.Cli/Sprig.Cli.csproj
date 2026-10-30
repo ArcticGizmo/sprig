@@ -30,4 +30,19 @@
     <Company>Sprig</Company>
   </PropertyGroup>
 
+  <!-- Publish-only: sprig.exe ships in the same folder as the GUI, whose runtime is trimmed to what the
+       GUI uses. A single file carries its own trimmed runtime, so it neither depends on nor overwrites
+       the GUI's. Trimming strips the framework's precompiled code, which costs every command ~230ms of
+       JIT at startup; ReadyToRun puts it back (~17MB) because the shell shims make the CLI interactive.
+       Partial trim, STJ reflection and the quiet analyzer for the same reasons as Sprig.App. -->
+  <PropertyGroup>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
 </Project>

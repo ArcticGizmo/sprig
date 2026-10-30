@@ -39,7 +39,7 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
         public string? Map { get; set; }
 
         [CommandOption("--repo <path>")]
-        [Description("Create from a single repo path")]
+        [Description("Create from a single repo path, or a virtual repo's name")]
         public string? Repo { get; set; }
 
         [CommandOption("--only <repos>")]
@@ -99,7 +99,10 @@ public sealed class CreateCommand(CliContext cli) : Command<CreateCommand.Settin
             if (s.Map is not null)
                 (map, repos) = cli.MapResolver.Resolve(s.Map, MapWithout(s.Map, only, without));
             else if (s.Repo is not null)
-                (map, repos) = (null, cli.Workspaces.ResolveSingleRepo(s.Repo));
+                // A virtual repo has no config in its folder, so it can only be named, not pointed at.
+                (map, repos) = (null, cli.Repos.Get(s.Repo) is { IsVirtual: true } virtualRepo
+                    ? cli.Workspaces.ResolveSingleRepo(virtualRepo)
+                    : cli.Workspaces.ResolveSingleRepo(s.Repo));
             else
                 throw new ArgumentException("create requires --map <name> or --repo <path> (or run it at a terminal to be prompted)");
             fromLabel = s.Map;
@@ -797,13 +800,6 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         public bool Map { get; set; }
     }
 
-    static readonly JsonSerializerOptions ConfigJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
         var repo = s.Repo ?? s.RepoArg ?? Environment.CurrentDirectory;
@@ -814,7 +810,7 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
 
         var inspector = new InitInspector(cli.Git);
         var proposal = inspector.InspectMap(root);   // map is the only model now (--map kept as a no-op alias)
-        var text = JsonSerializer.Serialize(proposal.Config, ConfigJsonOptions);
+        var text = Sprig.Core.Config.SprigConfigWriter.Serialize(proposal.Config);
 
         // --print previews without touching disk — the one read-only path. --json pairs with it to
         // get the proposal as a machine object; without --print, --json reports the write instead.

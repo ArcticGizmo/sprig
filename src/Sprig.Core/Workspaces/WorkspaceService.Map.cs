@@ -10,6 +10,19 @@ namespace Sprig.Core.Workspaces;
 /// </summary>
 public sealed partial class WorkspaceService
 {
+    /// <summary>Virtual repos let one checkout be registered under several configs, but a workspace's worktree
+    /// path comes from the checkout's folder, so two of them in one workspace would land on the same folder.</summary>
+    static void RejectSharedCheckouts(IReadOnlyList<ResolvedRepo> repos)
+    {
+        var shared = repos
+            .GroupBy(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r.Root)), StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(g => g.Count() > 1);
+        if (shared is not null)
+            throw new WorkspaceException(
+                $"{string.Join(" and ", shared.Select(r => $"'{r.Name}'"))} are the same checkout ({shared.Key}) — " +
+                "a workspace can hold only one config of a repo");
+    }
+
     /// <summary>The ordered checklist <see cref="CreateFromMap"/> works through, computed up front so a UI/CLI
     /// can show every row before execution starts. Env + compose share one "Apply environment" step per repo
     /// (there is no separate compose row). Runs the same cheap pre-flight (name + duplicate) so a bad name
@@ -21,6 +34,7 @@ public sealed partial class WorkspaceService
             throw new WorkspaceException("nothing to create: no repos selected");
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
+        RejectSharedCheckouts(repos);
 
         var steps = new List<WorkspaceStep> { new(CreateStepIds.Ports, "Allocate ports") };
         foreach (var repo in repos)
@@ -59,6 +73,7 @@ public sealed partial class WorkspaceService
             throw new WorkspaceException("nothing to create: no repos selected");
         if (instances.TryLoad(workspace) is not null)
             throw new WorkspaceException($"workspace '{workspace}' already exists");
+        RejectSharedCheckouts(repos);
 
         // Pre-compute each repo's worktree (and link) path and guard against collisions before anything is made.
         var layout = Layout;
@@ -150,6 +165,7 @@ public sealed partial class WorkspaceService
                     Name = repo.Name,
                     SourcePath = repo.Root,
                     WorktreePath = plan.Worktree,
+                    VirtualConfigPath = repo.VirtualConfigPath,
                     LinkPath = linkPath,
                     Branch = null,
                     GeneratedComposePaths = composePaths,

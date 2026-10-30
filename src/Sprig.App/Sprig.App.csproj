@@ -10,10 +10,24 @@
     <Product>Sprig</Product>
     <Company>Sprig</Company>
     <Description>Worktree + infrastructure isolation for any git repo.</Description>
-    <Version>0.7.3</Version>
+    <Version>0.7.4</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\sprig.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Publish-only size settings: the untrimmed self-contained runtime is most of the install. Partial
+       mode trims just the framework and trim-annotated libraries (Avalonia), keeping sprig's own
+       assemblies whole so ViewLocator's Type.GetType and the reflection-based JSON/YAML models still
+       work. Trimming switches STJ's reflection serializer off by default; sprig relies on it. The analyzer
+       would flag that reflection on every build even though partial mode keeps it safe, so it's left to
+       the publish-time trimmer to report. -->
+  <PropertyGroup>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>

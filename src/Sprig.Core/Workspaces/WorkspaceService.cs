@@ -113,6 +113,17 @@ public sealed partial class WorkspaceService(
         return [new ResolvedRepo(config.Name, root, config)];
     }
 
+    /// <summary>Resolve a registered repo for the single-repo create path. A virtual repo runs on sprig's copy
+    /// of its config, under its registered name; any other goes through <see cref="ResolveSingleRepo(string)"/>.</summary>
+    public IReadOnlyList<ResolvedRepo> ResolveSingleRepo(Stacks.RegisteredRepo repo)
+    {
+        if (repo.VirtualConfigPath is not { } virtualConfig)
+            return ResolveSingleRepo(repo.Path);
+        if (!git.IsGitRepo(repo.Path))
+            throw new WorkspaceException($"'{repo.Path}' is not a git repository");
+        return [new ResolvedRepo(repo.Name, git.ResolveRepoRoot(repo.Path), LoadValidConfigFile(virtualConfig), virtualConfig)];
+    }
+
     sealed record RepoPlan(ResolvedRepo Repo, string Worktree, string? Link);
 
     Settings.WorktreeLayout Layout => settings?.Get().WorktreeLayout ?? Settings.WorktreeLayout.Sibling;
@@ -513,10 +524,10 @@ public sealed partial class WorkspaceService(
 
     /// <summary>The effective config for a repo during refresh: the caller's resolved config (which carries
     /// the caller resolved (the fresh config) when it lists this repo, else the committed <c>.sprig.json</c>
-    /// reloaded from source.</summary>
+    /// reloaded from source — or, for a virtual repo, sprig's copy, so edits to it apply on the next refresh.</summary>
     SprigRepoConfig ConfigFor(InstanceRepo repo, IReadOnlyList<ResolvedRepo>? resolvedRepos)
         => resolvedRepos?.FirstOrDefault(r => string.Equals(r.Name, repo.Name, StringComparison.Ordinal))?.Config
-            ?? LoadValidConfig(repo.SourcePath);
+            ?? LoadValidConfigFile(repo.VirtualConfigPath ?? Path.Combine(repo.SourcePath, ConfigFileName));
 
     /// <summary>Reapply a repo's env overrides on claim/refresh: each module resolves against its own stored
     /// capability scope (the concrete values <see cref="CreateFromMap"/> recorded per module). Source is never
@@ -575,13 +586,15 @@ public sealed partial class WorkspaceService(
         return record;
     }
 
-    SprigRepoConfig LoadValidConfig(string repoRoot)
+    SprigRepoConfig LoadValidConfig(string repoRoot) => LoadValidConfigFile(Path.Combine(repoRoot, ConfigFileName));
+
+    static SprigRepoConfig LoadValidConfigFile(string configPath)
     {
-        var config = SprigConfigLoader.LoadFromFile(Path.Combine(repoRoot, ConfigFileName));
+        var config = SprigConfigLoader.LoadFromFile(configPath);
         var validation = SprigConfigValidator.Validate(config);
         if (!validation.IsValid)
             throw new WorkspaceException(
-                "invalid .sprig.json:\n  " + string.Join("\n  ", validation.Issues));
+                $"invalid config at {configPath}:\n  " + string.Join("\n  ", validation.Issues));
         return config;
     }
 

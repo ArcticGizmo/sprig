@@ -59,6 +59,21 @@ public class InitInspectorMapTests : IDisposable
     }
 
     [Fact]
+    public void Files_inside_a_nested_worktree_are_not_proposed()
+    {
+        // A worktree under .claude/worktrees is a full copy of the repo; proposing its files would double up.
+        Write(".claude/worktrees/feat/.git", "gitdir: elsewhere\n");
+        Write(".claude/worktrees/feat/.env", "PORT=6010\n");
+        Write(".claude/worktrees/feat/docker-compose.yml", "services:\n  db:\n    ports:\n      - \"6050:5432\"\n");
+
+        var p = InspectMap();
+
+        Assert.Empty(Provides(p));
+        Assert.Empty(Env(p));
+        Assert.Empty(Compose(p));
+    }
+
+    [Fact]
     public void A_committed_port_with_nowhere_gitignored_to_override_is_left_alone_with_a_note()
     {
         // Port lives in a committed .env, and .env.local is NOT gitignored — there's nowhere safe to write,

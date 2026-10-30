@@ -26,7 +26,8 @@ public sealed partial class WorkspaceService(
     ComposeGenerator compose,
     IDockerService docker,
     ISprigPaths paths,
-    Setup.SetupRunner? setup = null)
+    Setup.SetupRunner? setup = null,
+    Settings.ISettingsStore? settings = null)
 {
     public const string ConfigFileName = ".sprig.json";
     public const string GeneratedComposeName = "docker-compose.sprig.yml";
@@ -112,7 +113,27 @@ public sealed partial class WorkspaceService(
         return [new ResolvedRepo(config.Name, root, config)];
     }
 
-    sealed record RepoPlan(ResolvedRepo Repo, string Worktree);
+    sealed record RepoPlan(ResolvedRepo Repo, string Worktree, string? Link);
+
+    Settings.WorktreeLayout Layout => settings?.Get().WorktreeLayout ?? Settings.WorktreeLayout.Sibling;
+
+    /// <summary>Make the sibling link to a nested worktree, hiding the nested folder from the source repo's
+    /// git first. Returns null on success, else why the link wasn't made — a missing shortcut never costs the
+    /// workspace.</summary>
+    string? TryLinkWorktree(string repoRoot, string worktree, string link)
+    {
+        if (!git.IsIgnored(repoRoot, $"{WorktreePaths.ClaudeWorktreesDir}/{Path.GetFileName(worktree)}"))
+            GitExclude.Ensure(repoRoot, $"{WorktreePaths.ClaudeWorktreesDir}/");
+        try
+        {
+            DirectoryLink.Create(link, worktree);
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            return $"worktree created, but the shortcut at {link} couldn't be made: {ex.Message}";
+        }
+    }
 
     /// <summary>The ordered checklist <see cref="Remove(string, bool, IProgress{WorkspaceStepProgress})"/>
     /// will work through for the given record, computed up front so a UI can show every row before
@@ -185,6 +206,10 @@ public sealed partial class WorkspaceService(
 
             Step(progress, RemoveStepIds.Worktree(repo.Name), issues, $"remove worktree ({repo.Name})", () =>
             {
+                // The link goes first, and only if it still is one, so nothing below can reach the worktree
+                // through it and a real directory someone put in its place survives.
+                if (repo.LinkPath is not null) DirectoryLink.Remove(repo.LinkPath);
+
                 var state = WorktreeInspector.Classify(git, repo.SourcePath, repo.WorktreePath);
                 switch (state)
                 {

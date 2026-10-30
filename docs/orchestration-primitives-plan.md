@@ -152,7 +152,7 @@ Nothing in the table requires Sprig to know what a session, ticket or PR is.
 ## Deferred
 
 - **Shared providers with per-workspace namespaces.** Deriving a vhost or database name per workspace on a broker or server every workspace shares, with `provision`/`deprovision` commands. Needs more refinement, including where provisioning credentials come from and whether template expansion in commands is acceptable when `setup` deliberately has none.
-- **Worktree location as a template.** A setting for where worktrees live, including Claude Code's `{repo}/.claude/worktrees/{ws}` layout, optionally with an NTFS junction at today's sibling path for navigation. Needs care: the real path must stay canonical, `ws rm` must remove a junction without following it, and the main checkout's ignores, watchers and Docker build contexts must exclude the nested folder.
+- **Worktree location as a template.** The Claude Code layout is now being built on its own; see `docs/claude-worktree-layout-plan.md`. A general template is still deferred until something else needs one.
 - **A machine-wide running budget and reclaiming idle infra.** Capping how many workspaces have infra running and stopping idle ones. Depends on settling whether Sprig has any say in how things are run, which it ideally does not.
 
 ## Explicitly out of scope

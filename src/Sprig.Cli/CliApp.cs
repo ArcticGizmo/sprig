@@ -45,7 +45,7 @@ public static class CliApp
         var ports = new FilePortStore(paths, settings);
         var instances = new InstanceStore(paths);
         var workspaces = new WorkspaceService(git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner));
+            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner), settings);
         var reconciler = new WorkspaceReconciler(git, instances);
         var registry = new RepoRegistryStore(paths);
         var maps = new Core.Maps.MapStore(paths, registry);

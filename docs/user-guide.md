@@ -304,10 +304,11 @@ Teardown walks each layer independently and idempotently, so an interrupted tear
 sprig settings                                   # show the port range and restricted ports
 sprig settings set --start 8000 --end 9000       # the range sprig allocates from (end exclusive)
 sprig settings set --restrict 8500 --unrestrict 8600   # never/again allocate specific ports
+sprig settings set --worktree-layout claude      # new worktrees under <repo>/.claude/worktrees
 ```
 
-The same port-allocation policy the app's **Settings** screen edits; `--start`/`--end` set the
-range, `--restrict`/`--unrestrict` add and remove individual ports.
+The same policy the app's **Settings** screen edits; `--start`/`--end` set the
+range, `--restrict`/`--unrestrict` add and remove individual ports, and `--worktree-layout` picks where new worktrees go: `sibling` (`<repo>--<ws>`, the default) or `claude` (`<repo>/.claude/worktrees/<ws>`, where Claude Code can enter them, with a junction at the sibling path). See [`worktreeLayout`](config-reference.md#worktreelayout--where-worktrees-live).
 
 ---
 

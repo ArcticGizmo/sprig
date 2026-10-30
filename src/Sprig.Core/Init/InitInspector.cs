@@ -271,12 +271,20 @@ public sealed class InitInspector
             try { subs = Directory.EnumerateDirectories(dir); }
             catch { return; }
             foreach (var sub in subs)
-                if (!ExcludedDirs.Contains(Path.GetFileName(sub)))
+                if (!ExcludedDirs.Contains(Path.GetFileName(sub)) && !IsNestedCheckout(sub))
                     Walk(sub, depth + 1);
         }
 
         Walk(scanRoot, 0);
         return results;
+    }
+
+    // A directory with its own `.git` is another checkout (a nested worktree under .claude/worktrees, a
+    // vendored repo), and its files belong to that checkout, not this repo.
+    static bool IsNestedCheckout(string dir)
+    {
+        var dotGit = Path.Combine(dir, ".git");
+        return File.Exists(dotGit) || Directory.Exists(dotGit);
     }
 
     /// <summary>Repo-relative paths of every <c>.env</c>-family file under <paramref name="scanRoot"/>.</summary>

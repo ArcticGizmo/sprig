@@ -38,6 +38,17 @@ static class CliFormat
         _ => $"[dim]{state}[/]",
     };
 
+    /// <summary>A coloured badge for a worktree shortcut's state, in the same palette as <see cref="StateBadge"/>.</summary>
+    public static string LinkBadge(LinkState state) => state switch
+    {
+        LinkState.Ok => "[green]ok[/]",
+        LinkState.Missing => "[yellow]missing[/]",
+        LinkState.WrongTarget => "[yellow]points elsewhere[/]",
+        LinkState.Dangling => "[yellow]dangling[/]",
+        LinkState.Blocked => "[red]blocked by a real folder[/]",
+        _ => "[dim]none[/]",
+    };
+
     /// <summary>A worktree's live HEAD as markup: the branch, <c>detached @ abc1234</c>, or a dim <c>?</c> when
     /// it can't be read.</summary>
     public static string Head(WorktreeHead? head) => head switch

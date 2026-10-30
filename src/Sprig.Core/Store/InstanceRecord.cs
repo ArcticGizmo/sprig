@@ -118,9 +118,15 @@ public sealed record InstanceRepo
     public required string Name { get; init; }
     /// <summary>The source repo whose worktree this is.</summary>
     public required string SourcePath { get; init; }
-    /// <summary>The sibling worktree path (<c>&lt;repo&gt;--&lt;workspace&gt;</c>). Stable for the life of the
+    /// <summary>The real worktree path: <c>&lt;repo&gt;--&lt;workspace&gt;</c> beside the repo, or
+    /// <c>&lt;repo&gt;/.claude/worktrees/&lt;workspace&gt;</c> under the Claude layout. Stable for the life of the
     /// workspace — machine-named, never renamed when a branch is claimed.</summary>
     public required string WorktreePath { get; init; }
+
+    /// <summary>The junction at the sibling path that points at a nested <see cref="WorktreePath"/>, so the
+    /// worktree can still be reached beside the repo. Null for a sibling-layout worktree, or when the link
+    /// couldn't be made. Teardown removes it before the worktree, and never follows it.</summary>
+    public string? LinkPath { get; init; }
     /// <summary>The branch checked out in this repo's worktree: the workspace's claim branch when claimed,
     /// <c>null</c> while parked (the worktree sits in detached HEAD with no branch of its own).</summary>
     public string? Branch { get; init; }

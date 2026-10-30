@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Sprig.Core.Settings;
 
 /// <summary>
@@ -40,6 +42,13 @@ public sealed class SprigSettings
     /// </summary>
     public string? DismissedUpdateVersion { get; set; }
 
+    /// <summary>
+    /// Where new workspaces put their worktrees. <see cref="WorktreeLayout.Claude"/> nests them under
+    /// <c>&lt;repo&gt;/.claude/worktrees</c> so a Claude Code session can enter and move between them, with a
+    /// junction at the sibling path for navigation. Existing workspaces keep the layout they were created with.
+    /// </summary>
+    public WorktreeLayout WorktreeLayout { get; set; } = WorktreeLayout.Sibling;
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -55,5 +64,16 @@ public sealed class SprigSettings
         LastSeenVersion = LastSeenVersion,
         CompletedGuides = new List<string>(CompletedGuides),
         DismissedUpdateVersion = DismissedUpdateVersion,
+        WorktreeLayout = WorktreeLayout,
     };
+}
+
+/// <summary>Where a new workspace's worktrees live (see <see cref="SprigSettings.WorktreeLayout"/>).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<WorktreeLayout>))]
+public enum WorktreeLayout
+{
+    /// <summary>Beside the repo: <c>&lt;repo&gt;--&lt;workspace&gt;</c>.</summary>
+    Sibling,
+    /// <summary>Under <c>&lt;repo&gt;/.claude/worktrees/&lt;workspace&gt;</c>, with a junction at the sibling path.</summary>
+    Claude,
 }

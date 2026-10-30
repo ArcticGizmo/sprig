@@ -701,8 +701,12 @@ public sealed class ReconcileCommand(CliContext cli) : Command<ReconcileCommand.
                 var flag = report.IsHealthy ? "[green]healthy[/]" : report.HasDrift ? "[yellow]drift[/]" : "[dim]gone[/]";
                 console.MarkupLine($"{flag} [bold]{Markup.Escape(report.Workspace)}[/]");
                 foreach (var repo in report.Repos)
+                {
                     console.MarkupLine($"    {Markup.Escape(repo.RepoName)}  {CliFormat.StateBadge(repo.State)}  " +
                         $"[dim]{Markup.Escape(repo.WorktreePath)}[/]");
+                    if (repo.LinkPath is not null)
+                        console.MarkupLine($"      shortcut  {CliFormat.LinkBadge(repo.Link)}  [dim]{Markup.Escape(repo.LinkPath)}[/]");
+                }
             }
 
         if (repairs is not null)

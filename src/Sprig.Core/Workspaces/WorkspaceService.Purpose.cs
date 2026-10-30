@@ -92,7 +92,9 @@ public sealed partial class WorkspaceService
     /// <summary>
     /// Resolve a directory to the workspace, repo and module that contain it by matching it against the
     /// recorded worktree paths — no marker file in the worktree. The deepest match wins, so a worktree nested
-    /// under another path still resolves to itself. Null when the directory is in no workspace.
+    /// under another path still resolves to itself. A directory reached through a worktree's link counts too,
+    /// since a shell keeps the path it was given rather than resolving the junction. Null when the directory is
+    /// in no workspace.
     /// </summary>
     public WorkspaceLocation? Locate(string directory)
     {
@@ -101,12 +103,14 @@ public sealed partial class WorkspaceService
         var bestLength = -1;
         foreach (var record in instances.LoadAll())
             foreach (var repo in record.Repos)
-            {
-                var root = Normalise(repo.WorktreePath);
-                if (!IsUnder(dir, root) || root.Length <= bestLength) continue;
-                best = new WorkspaceLocation(record, repo, ModuleAt(repo, Path.GetRelativePath(root, dir)));
-                bestLength = root.Length;
-            }
+                foreach (var path in new[] { repo.WorktreePath, repo.LinkPath })
+                {
+                    if (path is null) continue;
+                    var root = Normalise(path);
+                    if (!IsUnder(dir, root) || root.Length <= bestLength) continue;
+                    best = new WorkspaceLocation(record, repo, ModuleAt(repo, Path.GetRelativePath(root, dir)));
+                    bestLength = root.Length;
+                }
         return best;
     }
 

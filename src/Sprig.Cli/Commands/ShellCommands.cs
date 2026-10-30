@@ -39,3 +39,71 @@ public sealed class ShellShimsCommand(CliContext cli) : Command<ShellShimsComman
         return 0;
     }
 }
+
+// `sprig shell install` — what the installer does on install and update, on demand. Its use is after allowing
+// PowerShell scripts: the installer leaves sprig.ps1 out where they're blocked, and would otherwise only look
+// again at the next update. It reports each shell's policy so a person can see which one is in the way.
+[Description("Rewrite the installed shims and PATH entries, adding sprig.ps1 if PowerShell now allows it")]
+public sealed class ShellInstallCommand(CliContext cli) : Command<ShellInstallCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings;
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("shell install is Windows-only");
+        var cliDir = Path.GetDirectoryName(Environment.ProcessPath)
+            ?? throw new InvalidOperationException("can't tell where sprig.exe is");
+        if (!ShellInstall.IsInstalled(cliDir))
+            throw new InvalidOperationException(
+                "shell install looks after an installed sprig; for a build of your own, use 'sprig shell shims --dir <folder>'");
+
+        var result = ShellInstall.Ensure(cliDir);
+        var powerShell = result.Shims.Any(f => Path.GetFileName(f) == "sprig.ps1");
+
+        if (s.Json)
+        {
+            CliOutput.Json(new
+            {
+                ok = result.ShimError is null,
+                dir = result.ShimDirectory,
+                files = result.Shims,
+                powerShell,
+                policies = result.Policies.Select(p => new { shell = p.Shell, policy = p.Policy, runsLocalScripts = p.RunsLocalScripts }),
+                pathChanged = result.PathChanged,
+                error = result.ShimError,
+            });
+            return result.ShimError is null ? 0 : 1;
+        }
+
+        if (result.ShimError is { } error)
+        {
+            cli.Ansi.MarkupLine($"[red]couldn't write the shims:[/] {Markup.Escape(error)}");
+            cli.Ansi.MarkupLine("  [dim]sprig.exe is still on PATH; 'sprig cd' will open a window instead of moving your shell[/]");
+            return 1;
+        }
+
+        CliOutput.Success($"shims ready in {result.ShimDirectory}");
+        foreach (var p in result.Policies)
+        {
+            var mark = p.RunsLocalScripts ? $"[green]{Glyph.Check(cli.Ansi)}[/]" : "[yellow]![/]";
+            var policy = p.Policy.Length > 0 ? p.Policy : "unknown (didn't answer in time)";
+            cli.Ansi.MarkupLine($"  {mark} {Markup.Escape(p.Shell)}  [dim]{Markup.Escape(policy)}[/]");
+        }
+
+        if (powerShell)
+            cli.Ansi.MarkupLine("  'sprig cd' moves PowerShell and cmd in place.");
+        else
+        {
+            cli.Ansi.MarkupLine("  [yellow]sprig.ps1 left out:[/] 'sprig cd' moves cmd in place, but opens a window from PowerShell.");
+            cli.Ansi.MarkupLine("  To change that, allow local scripts in each shell marked [yellow]![/], then run 'sprig shell install' again:");
+            foreach (var shell in result.Policies.Where(p => !p.RunsLocalScripts)
+                         .Select(p => Path.GetFileNameWithoutExtension(p.Shell)).Distinct(StringComparer.OrdinalIgnoreCase))
+                cli.Ansi.MarkupLine($"    [bold]{Markup.Escape(shell)} -NoProfile -Command \"Set-ExecutionPolicy -Scope CurrentUser RemoteSigned\"[/]");
+            cli.Ansi.MarkupLine("  [dim]A policy set by your organisation takes precedence, and Set-ExecutionPolicy will say so.[/]");
+        }
+
+        if (result.PathChanged)
+            cli.Ansi.MarkupLine("  [dim]PATH changed: open a new terminal to pick it up[/]");
+        return 0;
+    }
+}

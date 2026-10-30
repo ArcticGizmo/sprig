@@ -1,6 +1,6 @@
 # Shell shims: `sprig cd` that moves your shell
 
-**Status:** 2026-10-29 · the exe side, the shims, `sprig shell shims` and the sandbox's dev install are built on `shell-shims`. The installer change (step 4) is not started.
+**Status:** 2026-10-29 · all four steps are built: the exe side, the shims, `sprig shell shims`, the sandbox's dev install and the installer.
 
 ## Why
 
@@ -38,11 +38,15 @@ The cmd shim follows hob's adapter: everything is decided under `setlocal`, and 
 1. **Exe side.** Done: `ShellShims.TryRequestCd`, used by `sprig cd`, plus `--window`.
 2. **Shims and tests.** Done: `ShellShims.Write`, and `sprig shell shims --dir <dir> [--exe <path>]` to write them.
 3. **Dev install.** Done: `scripts/sandbox` writes shims for the Debug build into `<sandbox>\bin` and puts that folder first on PATH for the session, so `sprig` is the checkout's build and `sprig cd` moves the shell. `-Off` takes it off again.
-4. **Installer.** Not started:
-   - Write the shims to a folder of their own on install and update, for example `%LOCALAPPDATA%\Sprig\bin`, pointing at `current\sprig.exe`, which is stable across updates.
-   - Have `PathRegistration` put that folder on the user PATH **instead of** `current`, and remove the old `current` entry from existing installs. While both are on PATH, whichever comes first wins.
-   - Write `sprig.ps1` only when local scripts can run in every installed PowerShell. Windows PowerShell 5.1 and PowerShell 7 keep separate policies, and a blocked `.ps1` breaks `sprig` in that shell entirely. Without it, PowerShell runs `sprig.cmd` in a throwaway cmd, the move isn't offered, and `sprig cd` opens a window as today.
-   - Remove the folder and its PATH entry on uninstall.
+4. **Installer.** Done, in `Sprig.Core/Shell/ShellInstall.cs` and `ScriptPolicy.cs`, run by the Velopack hooks and by `sprig shell install`:
+   - On install and update, the shims are written to `%LOCALAPPDATA%\Sprig\bin`, pointing at `current\sprig.exe`, which is stable across updates. A shim whose content hasn't changed is not rewritten, because cmd reads a batch file while running it and `sprig update` may be running through `sprig.cmd`.
+   - `PathRegistration` puts `bin` on the user PATH **just ahead of** `current`, not instead of it. Shells search PATH folder by folder, so they reach a shim first. Programs that start `sprig` without a shell (.NET `Process.Start`, Node `execFile`, Python `subprocess`) only look for an `.exe`, so they skip `bin` and still find `current`. Removing `current` would have broken every such caller.
+   - `sprig.ps1` is written only when every installed PowerShell (Windows PowerShell, plus each `pwsh.exe` on PATH or under `Program Files\PowerShell`) reports RemoteSigned, Unrestricted or Bypass. Each one is asked for its effective policy rather than Sprig working out the precedence across Group Policy, the registry and `powershell.config.json` itself. The shells are asked in parallel, within 10s in total. Without the script, PowerShell runs `sprig.cmd` in a throwaway cmd, the move isn't offered, and `sprig cd` opens a window. Each update checks again, so a policy change takes effect at the next one.
+   - If the shims can't be written, only `current` goes on PATH, so `sprig` still works.
+   - Uninstall takes both entries off PATH and deletes `bin`.
+5. **Opting in after install.** Done. A small exe can't stand in for `sprig.ps1`: no process can change its parent's directory, short of injecting code into it. So where scripts are blocked, the way forward is for the user to allow them:
+   - `sprig shell install` does what the installer does, on demand, and lists each PowerShell's policy with the `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` command for each blocked one. It refuses outside an installed `current` folder, so a dev build never edits PATH.
+   - From PowerShell without `sprig.ps1`, sprig runs through `sprig.cmd` in a cmd started with `/c`. `sprig cd` looks past that cmd to the PowerShell that started it, so the new window is PowerShell rather than cmd. It recognises the throwaway cmd because a lasting one always gets a directives file from the shim. It then prints a one-line tip pointing at `sprig shell install`.
 
 ## Known costs
 

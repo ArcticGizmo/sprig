@@ -1,6 +1,6 @@
 using Avalonia;
-using Sprig.App.Install;
 using Sprig.App.Rendering;
+using Sprig.Core.Shell;
 using Velopack;
 
 namespace Sprig.App;
@@ -15,16 +15,18 @@ internal static class Program
         var velopack = VelopackApp.Build();
 
         // The FastCallback hooks fire during install/update/uninstall to keep the bundled CLI
-        // (sprig.exe) on the user PATH: add it on install, re-assert on update (cheap insurance if it
-        // was ever lost), and take it off again on uninstall. Each must finish within Velopack's
-        // 15-30s budget — a single PATH edit is well inside it. The hooks (and the PATH edit) are
-        // Windows-only; the guard both matches that and keeps the platform analyzer happy.
+        // (sprig.exe) and its shell shims on the user PATH: add them on install, re-assert on update
+        // (cheap insurance if they were ever lost), and take them off again on uninstall. Each must
+        // finish within Velopack's 15-30s budget; the slowest step, asking PowerShell for its script
+        // policy, is capped at 10s. The hooks run sprig-gui.exe from Velopack's "current" folder, which
+        // is also where sprig.exe lands, so AppContext.BaseDirectory is the CLI's folder. The hooks (and
+        // the PATH edit) are Windows-only; the guard both matches that and keeps the platform analyzer happy.
         if (OperatingSystem.IsWindows())
         {
             velopack
-                .OnAfterInstallFastCallback(_ => PathRegistration.Ensure())
-                .OnAfterUpdateFastCallback(_ => PathRegistration.Ensure())
-                .OnBeforeUninstallFastCallback(_ => PathRegistration.Remove());
+                .OnAfterInstallFastCallback(_ => ShellInstall.Ensure(AppContext.BaseDirectory))
+                .OnAfterUpdateFastCallback(_ => ShellInstall.Ensure(AppContext.BaseDirectory))
+                .OnBeforeUninstallFastCallback(_ => ShellInstall.Remove(AppContext.BaseDirectory));
         }
 
         velopack.Run();

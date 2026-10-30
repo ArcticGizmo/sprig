@@ -32,23 +32,29 @@ public static class ShellShims
         return true;
     }
 
-    /// <summary>Write the three shims for <paramref name="exePath"/> into <paramref name="directory"/>, returning
-    /// their paths. Rewriting is harmless, so callers can do it on every install or update.</summary>
-    public static IReadOnlyList<string> Write(string directory, string exePath)
+    /// <summary>Write the shims for <paramref name="exePath"/> into <paramref name="directory"/>, returning their
+    /// paths. Safe to repeat on every install or update. With <paramref name="powerShell"/> false,
+    /// <c>sprig.ps1</c> is left out (and removed if present): where scripts are blocked PowerShell fails on it
+    /// outright rather than falling back to <c>sprig.cmd</c>.</summary>
+    public static IReadOnlyList<string> Write(string directory, string exePath, bool powerShell = true)
     {
         Directory.CreateDirectory(directory);
-        var files = new (string Name, string Content, Encoding Encoding)[]
-        {
-            // A BOM so Windows PowerShell 5.1 reads a non-ASCII path in the script as UTF-8, not the ANSI codepage.
-            ("sprig.ps1", PowerShell(exePath), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)),
-            ("sprig.cmd", Cmd(exePath), new UTF8Encoding(false)),
-            ("sprig", Bash(exePath), new UTF8Encoding(false)),
-        };
+        var files = new List<(string Name, string Content, Encoding Encoding)>();
+        // A BOM so Windows PowerShell 5.1 reads a non-ASCII path in the script as UTF-8, not the ANSI codepage.
+        if (powerShell) files.Add(("sprig.ps1", PowerShell(exePath), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)));
+        else File.Delete(Path.Combine(directory, "sprig.ps1"));
+        files.Add(("sprig.cmd", Cmd(exePath), new UTF8Encoding(false)));
+        files.Add(("sprig", Bash(exePath), new UTF8Encoding(false)));
+
         var written = new List<string>();
         foreach (var (name, content, encoding) in files)
         {
             var path = Path.Combine(directory, name);
-            File.WriteAllText(path, content, encoding);
+            // cmd reads a batch file as it runs it, so rewriting sprig.cmd under a `sprig update` that is
+            // running through it could garble the rest of that run. Unchanged files are left alone.
+            var bytes = encoding.GetPreamble().Concat(encoding.GetBytes(content)).ToArray();
+            if (!File.Exists(path) || !File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes))
+                File.WriteAllBytes(path, bytes);
             written.Add(path);
         }
         return written;

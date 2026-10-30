@@ -216,7 +216,7 @@ sprig cd                      # pick workspace → repo → module from scratch
 sprig path feature-x api      # just print the directory — the one for scripts and shell wrappers
 ```
 
-With sprig's shell shims on PATH (`sprig shell shims --dir <folder>`, then put that folder ahead of `sprig.exe`'s), `sprig cd` moves the PowerShell or cmd window you typed it in instead of opening a new one. `--window` opens one anyway. Git Bash can't be moved this way; use `cd "$(sprig path feature-x)"`.
+The installer puts sprig's shell shims on PATH, so `sprig cd` moves the PowerShell or cmd window you typed it in instead of opening a new one. PowerShell needs an execution policy that runs local scripts (RemoteSigned is enough); where it's blocked, `sprig cd` opens a window from PowerShell instead. `sprig shell install` shows each PowerShell's policy and the command to allow scripts, and adds the PowerShell shim once they're allowed. For a build you run yourself, `sprig shell shims --dir <folder>` writes them, and you put that folder ahead of `sprig.exe`'s on PATH. `--window` opens one anyway. Git Bash can't be moved this way; use `cd "$(sprig path feature-x)"`.
 
 `sprig path` is the scripting counterpart: it resolves the same workspace/repo/module but prints the
 directory instead of opening a window, so `Set-Location (sprig path feature-x)` (or `cd "$(sprig path

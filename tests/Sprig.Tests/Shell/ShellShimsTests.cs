@@ -42,6 +42,36 @@ public class ShellShimsContentTests
         Assert.Equal(["sprig.ps1", "sprig.cmd", "sprig"], files.Select(Path.GetFileName));
         Assert.All(files, f => Assert.True(File.Exists(f)));
     }
+
+    [Fact]
+    public void Write_without_PowerShell_leaves_out_the_script_and_removes_an_old_one()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "bin");
+        ShellShims.Write(dir, @"C:\s\sprig.exe");
+
+        var files = ShellShims.Write(dir, @"C:\s\sprig.exe", powerShell: false);
+
+        Assert.Equal(["sprig.cmd", "sprig"], files.Select(Path.GetFileName));
+        Assert.False(File.Exists(Path.Combine(dir, "sprig.ps1")));
+    }
+
+    [Fact]
+    public void Write_leaves_an_unchanged_shim_alone_and_replaces_a_changed_one()
+    {
+        using var s = new TempStore();
+        var dir = Path.Combine(s.Root, "bin");
+        var cmd = Path.Combine(dir, "sprig.cmd");
+        ShellShims.Write(dir, @"C:\s\sprig.exe");
+        var old = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(cmd, old);
+
+        ShellShims.Write(dir, @"C:\s\sprig.exe");
+        Assert.Equal(old, File.GetLastWriteTimeUtc(cmd));
+
+        ShellShims.Write(dir, @"C:\t\sprig.exe");
+        Assert.Contains(@"C:\t\sprig.exe", File.ReadAllText(cmd));
+    }
 }
 
 /// <summary>The exe's half of the contract. The variable is process-wide, so this runs apart from the rest.</summary>
@@ -131,11 +161,12 @@ public sealed class ShellShimsEndToEndTests : IDisposable
         return Run("cmd.exe", ["/d", "/k", script]);
     }
 
-    string Run(string exe, string[] args)
+    string Run(string exe, string[] args, string? path = null)
     {
         var info = new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, WorkingDirectory = _root };
         foreach (var a in args) info.ArgumentList.Add(a);
         info.Environment["SPRIG_STORE"] = Path.Combine(_root, "store");
+        if (path is not null) info.Environment["PATH"] = path;
         using var p = Process.Start(info)!;
         var output = p.StandardOutput.ReadToEndAsync();
         _ = p.StandardError.ReadToEndAsync();
@@ -196,6 +227,33 @@ public sealed class ShellShimsEndToEndTests : IDisposable
         var output = InLastingCmd($"call \"{_fakeShims}\\sprig.cmd\" /d /c \"\"{_emit}\" \"{Line("valid", "cd " + Environment.SystemDirectory)}\"\"", "echo now=\"%CD%\"");
         // cmd reports the folder's on-disk casing (System32), .NET its own (system32).
         Assert.Contains($"now=\"{Environment.SystemDirectory}\"", output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The installed layout: the shims' folder ahead of the one holding sprig.exe. Shells must reach a shim;
+    // a program starting `sprig` without a shell must still reach the exe.
+    [Fact]
+    public void With_the_shims_first_on_PATH_shells_run_a_shim_and_programs_run_the_exe()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var path = string.Join(';', _fakeShims, AppContext.BaseDirectory.TrimEnd('\\'), Environment.SystemDirectory,
+            Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0"));
+        var probe = Path.Combine(_root, "probe.cmd");
+        File.WriteAllText(probe, "@if defined SPRIG_SHELL_DIRECTIVES (echo via-shim) else (echo via-exe)\r\n");
+
+        var script = Path.Combine(_root, "order.cmd");
+        File.WriteAllText(script, $"@echo off\r\nsprig /d /c \"{probe}\"\r\nexit\r\n");
+        Assert.Contains("via-shim", Run("cmd.exe", ["/d", "/k", script], path));
+
+        var ps = string.Join("; ",
+            "'source=' + (Get-Command sprig).Source",
+            "$p = [Diagnostics.Process]::Start([Diagnostics.ProcessStartInfo]@{ FileName = 'sprig'; Arguments = '--help'; UseShellExecute = $false; RedirectStandardOutput = $true })",
+            "$null = $p.StandardOutput.ReadToEnd(); $p.WaitForExit()",
+            "'started=' + $p.ExitCode");
+        var output = Run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], path);
+
+        Assert.Contains($"source={_fakeShims}\\sprig.", output, StringComparison.OrdinalIgnoreCase);
+        // Process.Start won't run a .cmd or .ps1 by bare name, so a clean start means it found sprig.exe.
+        Assert.Contains("started=0", output);
     }
 
     [Fact]

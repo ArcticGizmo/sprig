@@ -131,6 +131,7 @@ public static class CliApp
         {
             shell.SetDescription("Shell integration (shims that let 'sprig cd' move your shell)");
             shell.AddCommand<ShellShimsCommand>("shims");
+            shell.AddCommand<ShellInstallCommand>("install");
         });
 
         config.AddBranch("settings", settings =>

@@ -94,13 +94,18 @@ shortcuts. `--silent` installs without UI. Uninstall via `%LocalAppData%\Sprig\U
 ### The bundled CLI and PATH
 
 The package ships two executables: `sprig-gui.exe` (the app) and `sprig.exe` (the CLI). An install-time
-Velopack hook adds the install directory (`%LocalAppData%\Sprig\current`, where both exes live) to the
-**user** PATH, so `sprig` is runnable from any newly opened terminal — no admin, machine PATH untouched.
-The uninstall hook removes that entry again. Because `Environment.SetEnvironmentVariable(..., User)`
+Velopack hook writes the shell shims (see [shell-shims-plan.md](shell-shims-plan.md)) to
+`%LocalAppData%\Sprig\bin` and adds that folder, then the install directory (`%LocalAppData%\Sprig\current`,
+where both exes live), to the **user** PATH. So `sprig` is runnable from any newly opened terminal, and
+`sprig cd` moves PowerShell and cmd in place, with no admin rights and the machine PATH untouched.
+`sprig.ps1` is left out where PowerShell's execution policy would block it; after allowing scripts,
+`sprig shell install` adds it without waiting for the next update. The uninstall hook removes both
+entries and the shims again. The logic lives in `Sprig.Core/Shell/ShellInstall.cs`, shared by the hooks
+and that command. Because `Environment.SetEnvironmentVariable(..., User)`
 broadcasts `WM_SETTINGCHANGE`, freshly launched terminals see it immediately; already-open ones need a
 restart. The hooks live in `Program.Main` (`OnAfterInstallFastCallback` / `OnAfterUpdateFastCallback` /
-`OnBeforeUninstallFastCallback`) and delegate to `Sprig.App/Install/PathRegistration.cs`. Adding is
-idempotent, so the re-assert on update is harmless if the entry is already there.
+`OnBeforeUninstallFastCallback`). Adding is idempotent, so the re-assert on update is harmless if the
+entries are already there.
 
 ## Update notifications
 

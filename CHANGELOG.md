@@ -9,6 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.7.1] - 2026-10-30
+
+### Added
+- **`sprig shell install`** — reruns shim setup once you allow scripts.
+
+### Changed
+- **The installer adds the `sprig cd` shims** — PowerShell and cmd move in place.
+- **PowerShell's shim needs scripts allowed** — `sprig shell install` names the culprit.
+
+---
+
 ## [v0.7.0] - 2026-10-29
 
 Stacks are gone. Repos now describe what they **provide** and **need**, and **maps** wire slices of them together by capability name. Schema v1 starts fresh, with no migration: recreate stack-era workspaces by hand. Workspaces also finally say what they're for, rather than leaving you to decode branch names.

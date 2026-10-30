@@ -301,10 +301,23 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
             return 0;
         }
 
-        var shell = LaunchWindow(t.Path, s.Shell, WindowTitle(t));
+        var calling = CallingShell();
+        var shell = LaunchWindow(t.Path, s.Shell, calling?.Path, WindowTitle(t));
         cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] opened [bold]{Markup.Escape(shell)}[/] " +
             $"in a new window — [dim]{Markup.Escape(t.Path)}[/]");
+        if (calling is { ThroughCmdShim: true } c && IsPowerShell(c.Path) && PowerShellShimMissing())
+            cli.Ansi.MarkupLine("[dim]tip: 'sprig cd' can move this PowerShell window instead; 'sprig shell install' says how[/]");
         return 0;
+    }
+
+    static bool IsPowerShell(string path) => Path.GetFileName(path).ToLowerInvariant() is "powershell.exe" or "pwsh.exe";
+
+    // Only an installed sprig has a shims folder that 'sprig shell install' can add sprig.ps1 to.
+    static bool PowerShellShimMissing()
+    {
+        var cliDir = Path.GetDirectoryName(Environment.ProcessPath);
+        return cliDir is not null && ShellInstall.IsInstalled(cliDir)
+            && !File.Exists(Path.Combine(ShellInstall.ShimDirectory(cliDir), "sprig.ps1"));
     }
 
     // The window title, so several open workspace terminals can be told apart: what the workspace is for (or
@@ -323,10 +336,10 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
     // Open a new terminal window running a shell in `dir`. Tries the best-matching shell first (the one we
     // were invoked from), then falls back to pwsh/powershell/cmd if that one won't launch. Returns the
     // display name of whichever opened.
-    static string LaunchWindow(string dir, string? shellOverride, string title)
+    static string LaunchWindow(string dir, string? shellOverride, string? callingShell, string title)
     {
         Win32Exception? last = null;
-        foreach (var shell in ShellCandidates(shellOverride))
+        foreach (var shell in ShellCandidates(shellOverride, callingShell))
         {
             try { Start(shell, dir, title); return Path.GetFileNameWithoutExtension(shell); }
             catch (Win32Exception ex) { last = ex; } // e.g. pwsh not installed → try the next candidate
@@ -359,12 +372,12 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
 
     // Candidate shells, best first: an explicit --shell, else the shell we were launched from (when it's a
     // known one), then pwsh/powershell/cmd as universal fallbacks.
-    static IEnumerable<string> ShellCandidates(string? shellOverride)
+    static IEnumerable<string> ShellCandidates(string? shellOverride, string? callingShell)
     {
         if (shellOverride is { } o)
             yield return ResolveShellName(o);
-        else if (ParentProcessPath() is { } parent && KnownShells.Contains(Path.GetFileName(parent)))
-            yield return parent;
+        else if (callingShell is { } calling)
+            yield return calling;
 
         if (Which("pwsh.exe") is { } pwsh) yield return pwsh;
         if (Which("powershell.exe") is { } ps) yield return ps;
@@ -395,24 +408,41 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         return null;
     }
 
-    // The full path of the process that started us — the shell, when run from a prompt — via the PPID from
-    // NtQueryInformationProcess. Best-effort: any failure (non-Windows, access denied, exited parent) is
-    // swallowed and the shell-matching just falls back to a default.
-    static string? ParentProcessPath()
+    readonly record struct Calling(string Path, bool ThroughCmdShim);
+
+    // The known shell sprig was typed in, when it can be told. Usually that's the parent process. But from
+    // PowerShell without sprig.ps1, sprig runs through sprig.cmd in a cmd started with /c just for it, and
+    // the user is in the shell that started that cmd. A shim offers a cmd the user is actually sitting in a
+    // directives file, so a cmd parent without one is the throwaway kind. Best-effort: any failure
+    // (non-Windows, access denied, exited parent) is swallowed and the shell-matching falls back to a default.
+    static Calling? CallingShell()
     {
         if (!OperatingSystem.IsWindows()) return null;
         try
         {
             using var self = Process.GetCurrentProcess();
-            var info = new ProcessBasicInformation();
-            if (NtQueryInformationProcess(self.Handle, 0, ref info, Marshal.SizeOf(info), out _) != 0)
-                return null;
-            var ppid = info.InheritedFromUniqueProcessId.ToInt32();
-            if (ppid <= 0) return null;
-            using var parent = Process.GetProcessById(ppid);
-            return parent.MainModule?.FileName;
+            using var parent = ParentOf(self);
+            if (parent?.MainModule?.FileName is not { } path) return null;
+            if (string.Equals(Path.GetFileName(path), "cmd.exe", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ShellShims.DirectivesVariable)))
+            {
+                using var grandparent = ParentOf(parent);
+                if (grandparent?.MainModule?.FileName is { } outer && KnownShells.Contains(Path.GetFileName(outer)))
+                    return new Calling(outer, ThroughCmdShim: true);
+            }
+            return KnownShells.Contains(Path.GetFileName(path)) ? new Calling(path, ThroughCmdShim: false) : null;
         }
         catch { return null; }
+    }
+
+    // The process that started `child`, via the PPID from NtQueryInformationProcess.
+    static Process? ParentOf(Process child)
+    {
+        var info = new ProcessBasicInformation();
+        if (NtQueryInformationProcess(child.Handle, 0, ref info, Marshal.SizeOf(info), out _) != 0)
+            return null;
+        var ppid = info.InheritedFromUniqueProcessId.ToInt32();
+        return ppid <= 0 ? null : Process.GetProcessById(ppid);
     }
 
     [StructLayout(LayoutKind.Sequential)]

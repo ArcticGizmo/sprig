@@ -104,10 +104,14 @@ public static class MapGraphProjection
         return new MapGraph(nodes, edges);
     }
 
+    /// <summary>The capability a repo's need is matched against: the map's wiring bridge when it has one,
+    /// else the need's own name.</summary>
+    public static string TargetCapability(MapDefinition? map, string repo, string need)
+        => Lookup2(map?.Wiring, repo, need) ?? need;
+
     static MapGraphNeed Classify(string repo, Need need, MapDefinition? map, ILookup<string, Provider> byCapability)
     {
-        // A map may bridge a generic need to a specific provider capability (need name != provider name).
-        var target = Lookup2(map?.Wiring, repo, need.Capability) ?? need.Capability;
+        var target = TargetCapability(map, repo, need.Capability);
         var candidates = byCapability[target].ToList();
 
         // Nearest-wins: a provider in the same repo beats any other.

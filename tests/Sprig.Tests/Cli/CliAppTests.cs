@@ -286,6 +286,106 @@ public sealed class CliAppTests : IDisposable
         Assert.Contains("unknown map", err);
     }
 
+    void SeedRepoConfig(string name, string json)
+    {
+        var dir = Path.Combine(_root, "repos", name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".sprig.json"), json);
+        new RepoRegistryStore(_paths).Add(dir, name);
+    }
+
+    void SeedHubAndGap()
+    {
+        SeedRepoConfig("auth", """
+            { "schema": 1, "name": "auth",
+              "provides": [ { "capability": "auth-api", "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.auth-api.port}" } } ] }
+            """);
+        SeedRepoConfig("billing", """
+            { "schema": 1, "name": "billing",
+              "needs": [ { "capability": "auth-api" }, { "capability": "payments" } ],
+              "env": [ { "file": ".env", "set": { "AUTH_URL": "${sprig.auth-api.url}", "PAY_URL": "${sprig.payments.url}", "MAIL_HOST": "localhost:1025" } } ] }
+            """);
+        SeedRepoConfig("catalog", """
+            { "schema": 1, "name": "catalog", "needs": [ { "capability": "auth-api" } ] }
+            """);
+        SeedMap("store", "auth", "billing", "catalog");
+    }
+
+    [Fact]
+    public void Map_show_reports_hubs_gaps_fixed_values_and_the_fix()
+    {
+        SeedHubAndGap();
+
+        var (exit, o, _) = Run("map", "show", "store");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("1 need can't be met", o);
+        Assert.Contains("payments", o);
+        Assert.Contains("unmet", o);
+        Assert.Contains("auth › app", o);
+        Assert.Contains("2 modules", o);
+        Assert.Contains("MAIL_HOST = localhost:1025", o);
+        Assert.Contains("sprig map default store billing payments url=<value>", o);
+    }
+
+    [Fact]
+    public void Map_check_fails_until_the_gap_has_a_constant()
+    {
+        SeedHubAndGap();
+
+        var (exit, o, _) = Run("map", "check", "store");
+        Assert.Equal(1, exit);
+        Assert.Contains("payments", o);
+
+        var (setExit, _, setErr) = Run("map", "default", "store", "billing", "payments", "url=https://pay.sandbox.test");
+        Assert.True(setExit == 0, setErr);
+
+        var (after, o2, _) = Run("map", "check", "store");
+        Assert.Equal(0, after);
+        Assert.Contains("every need is met", o2);
+    }
+
+    [Fact]
+    public void Map_check_json_names_the_state_of_each_need()
+    {
+        SeedHubAndGap();
+
+        var (exit, o, _) = Run("map", "check", "store", "--json");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("\"ok\": false", o);
+        Assert.Contains("\"State\": \"gap\"", o);
+        Assert.Contains("\"State\": \"wired\"", o);
+    }
+
+    [Fact]
+    public void Map_wire_settles_two_providers_and_rm_removes_it()
+    {
+        SeedRepoConfig("a", """{ "schema": 1, "name": "a", "provides": [ { "capability": "cache", "ports": { "port": true } } ] }""");
+        SeedRepoConfig("b", """{ "schema": 1, "name": "b", "provides": [ { "capability": "cache", "ports": { "port": true } } ] }""");
+        SeedRepoConfig("web", """{ "schema": 1, "name": "web", "needs": [ { "capability": "cache" } ] }""");
+        SeedMap("m", "a", "b", "web");
+
+        var (before, o, _) = Run("map", "check", "m");
+        Assert.Equal(1, before);
+        Assert.Contains("sprig map wire m web cache a/cache", o);
+
+        Assert.Equal(0, Run("map", "wire", "m", "web", "cache", "b/cache").exit);
+        Assert.Equal(0, Run("map", "check", "m").exit);
+
+        Assert.Equal(0, Run("map", "wire", "m", "web", "cache", "--rm").exit);
+        Assert.Equal(1, Run("map", "check", "m").exit);
+    }
+
+    [Fact]
+    public void Map_default_rejects_a_value_without_an_output_name()
+    {
+        SeedHubAndGap();
+        var (exit, _, err) = Run("map", "default", "store", "billing", "payments", "https://pay.sandbox.test");
+        Assert.Equal(1, exit);
+        Assert.Contains("output=value", err);
+    }
+
     [Fact]
     public void Map_ls_lists_defined_maps()
     {

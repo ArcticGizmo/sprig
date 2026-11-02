@@ -201,6 +201,13 @@ public class MapInspectorTests
             result.FixedValues.Select(f => (f.Key, f.Kind)));
     }
 
+    [Theory]
+    [InlineData("amqp://admin:secret@localhost:5672", "amqp://admin:•••@localhost:5672")]
+    [InlineData("Host=localhost:5432;Password=secret;Database=app", "Host=localhost:5432;Password=•••;Database=app")]
+    [InlineData("localhost:1025", "localhost:1025")]
+    public void A_fixed_values_display_form_masks_passwords(string value, string shown)
+        => Assert.Equal(shown, new FixedValue("r", "m", ".env", "K", value, FixedKind.Address).DisplayValue);
+
     [Fact]
     public void Unregistered_and_unreadable_repos_are_problems_not_exceptions()
     {

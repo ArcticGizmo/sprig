@@ -83,7 +83,18 @@ public enum FixedKind
 
 /// <summary>A value a module's config sets literally where a per-workspace value could collide: every
 /// workspace of the map gets the same address or port.</summary>
-public sealed record FixedValue(string Repo, string Module, string File, string Key, string Value, FixedKind Kind);
+public sealed partial record FixedValue(string Repo, string Module, string File, string Key, string Value, FixedKind Kind)
+{
+    /// <summary><see cref="Value"/> with any password masked (URL credentials, <c>Password=</c> settings),
+    /// for showing on screen. <see cref="Value"/> stays exact, since a conversion writes it back.</summary>
+    public string DisplayValue => PasswordSetting().Replace(UrlPassword().Replace(Value, "$1•••@"), "$1•••");
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(://[^:/@\s]+:)[^@/\s]+@")]
+    private static partial System.Text.RegularExpressions.Regex UrlPassword();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?i)((?:password|pwd)\s*=\s*)[^;]*")]
+    private static partial System.Text.RegularExpressions.Regex PasswordSetting();
+}
 
 /// <summary>A map repo that can't take part in the wiring as things stand.</summary>
 public sealed record RepoProblem(string Repo, string Message);

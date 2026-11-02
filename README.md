@@ -184,6 +184,8 @@ dotnet run --project src/Sprig.App    # launch the desktop app from the build ou
 dotnet run --project src/Sprig.Cli -- --help    # the CLI
 ```
 
+On Windows, `cli <args>` from the repo root (`.\cli <args>` in PowerShell) rebuilds the CLI and runs it with your arguments, e.g. `.\cli ws ls`. It runs the exe without a shell shim, so `cli cd` opens a new window instead of moving the one you're in.
+
 To try a change against small, disposable repos instead of your real ones, build the examples sandbox with `scripts\sandbox` (cmd) or `.\scripts\sandbox.ps1` (PowerShell). See [examples/README.md](examples/README.md).
 
 ## Requirements

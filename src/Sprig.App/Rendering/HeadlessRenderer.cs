@@ -51,6 +51,7 @@ internal static class HeadlessRenderer
             }
             Shot("wiring_canvas.png", null);
             Shot("wiring_canvas_hub_selected.png", Maps.MapGraphLayout.ModuleId("auth", "app"));
+            RenderMapsPage(outDir);
             Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
             return 0;
         }
@@ -58,6 +59,59 @@ internal static class HeadlessRenderer
         {
             Console.Error.WriteLine($"headless render failed: {ex}");
             return 1;
+        }
+    }
+
+    /// <summary>The Maps page over <see cref="WiringExample"/> in a throwaway store: at rest, with the shared
+    /// service selected, as a ledger, and after setting a constant and converting a fixed value.</summary>
+    static void RenderMapsPage(string outDir)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sprig-wiring-render-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var services = new AppServices(root);
+            foreach (var repo in WiringExample.Repos)
+            {
+                var dir = Path.Combine(root, "repos", repo.Name);
+                Sprig.Core.Config.SprigConfigWriter.Write(repo.Config, Path.Combine(dir, ".sprig.json"));
+                services.Repos.Add(dir);
+            }
+            // The template the help-site hint is read from.
+            Directory.CreateDirectory(Path.Combine(root, "repos", "shop", "apps", "web"));
+            File.WriteAllText(Path.Combine(root, "repos", "shop", "apps", "web", ".env.template"), "VITE_HELP_URL=http://localhost:4000/\n");
+            services.Maps.Save(WiringExample.Map);
+
+            var vm = new MainWindowViewModel(services);
+            var maps = vm.Pages.OfType<MapsViewModel>().Single();
+            vm.CurrentPage = maps;
+            maps.Selected = maps.Maps.Single(m => m.Name == WiringExample.Map.Name);
+
+            void Shot(string name)
+            {
+                var window = new MainWindow { DataContext = vm, Width = 1500, Height = 1500 };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name));
+                window.Close();
+            }
+
+            Shot("maps_wiring.png");
+            maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.ModuleId("shop", "api");
+            Shot("maps_wiring_ambiguous_selected.png");
+            maps.Wiring.ShowLedger = true;
+            Shot("maps_wiring_ledger.png");
+            maps.Wiring.ShowLedger = false;
+
+            var gap = maps.Wiring.Inspection!.Gaps.Single(n => n.Capability == "help-site");
+            maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.GapId(gap);
+            maps.Wiring.SelectedNeeds.Single().SetConstantCommand.Execute(null);
+            maps.Wiring.FixedValues.Single().ConvertCommand.Execute(null);
+            Shot("maps_wiring_after_fixes.png");
+            if (maps.Wiring.Error is { } error) Console.Error.WriteLine($"wiring fix failed: {error}");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* best-effort temp cleanup */ }
         }
     }
 

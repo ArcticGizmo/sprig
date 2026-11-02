@@ -43,9 +43,13 @@ public sealed partial class MapsViewModel : PageViewModel
 
     public bool HasMaps => Maps.Count > 0;
 
+    /// <summary>How the selected map's needs are wired, and the fixes for what isn't.</summary>
+    public MapWiringViewModel Wiring { get; }
+
     public MapsViewModel(AppServices services)
     {
         _services = services;
+        Wiring = new MapWiringViewModel(services);
         Reload();
     }
 
@@ -65,6 +69,7 @@ public sealed partial class MapsViewModel : PageViewModel
     partial void OnSelectedChanged(MapDefinition? value)
     {
         RepoChoices.Clear();
+        Wiring.Load(value?.Name);
         if (value is null) return;
         foreach (var repo in value.Repos)
             RepoChoices.Add(new MapRepoChoice(repo.Name));

@@ -12,30 +12,123 @@ namespace Sprig.App.Controls;
 
 /// <summary>
 /// Draws a <see cref="MapGraphLayout"/>: repo boxes, module nodes listing what they provide, placeholders
-/// for unmet needs and map constants, and the edges between them. Clicking a node (or moving with the arrow
-/// keys) selects it and fades everything not directly connected, which keeps a busy hub readable.
+/// for unmet needs and map constants, and the edges between them. It is a viewport onto the graph: drag to
+/// move around it, Ctrl+scroll to zoom at the pointer (a plain scroll is left to the page). Clicking a node
+/// (or moving with the arrow keys) selects it and fades everything not directly connected, which keeps a
+/// busy hub readable.
 /// </summary>
 public sealed class MapWiringCanvas : Control
 {
+    public const double MinZoom = 0.25, MaxZoom = 2;
+
     public static readonly StyledProperty<MapGraphLayout?> GraphProperty =
         AvaloniaProperty.Register<MapWiringCanvas, MapGraphLayout?>(nameof(Graph));
     public static readonly StyledProperty<string?> SelectedIdProperty =
         AvaloniaProperty.Register<MapWiringCanvas, string?>(nameof(SelectedId), defaultBindingMode: BindingMode.TwoWay);
     public static readonly StyledProperty<double> ZoomProperty =
-        AvaloniaProperty.Register<MapWiringCanvas, double>(nameof(Zoom), 1.0);
+        AvaloniaProperty.Register<MapWiringCanvas, double>(nameof(Zoom), 1.0, defaultBindingMode: BindingMode.TwoWay);
+    /// <summary>Identifies what the graph is of (the map's name). When it changes, the next graph is fitted
+    /// to the view; a redraw of the same map keeps where the user had moved to.</summary>
+    public static readonly StyledProperty<string?> FitKeyProperty =
+        AvaloniaProperty.Register<MapWiringCanvas, string?>(nameof(FitKey));
 
     public MapGraphLayout? Graph { get => GetValue(GraphProperty); set => SetValue(GraphProperty, value); }
     public string? SelectedId { get => GetValue(SelectedIdProperty); set => SetValue(SelectedIdProperty, value); }
     public double Zoom { get => GetValue(ZoomProperty); set => SetValue(ZoomProperty, value); }
+    public string? FitKey { get => GetValue(FitKeyProperty); set => SetValue(FitKeyProperty, value); }
+
+    /// <summary>Where the graph's origin sits in the control, in control pixels.</summary>
+    public Vector Pan { get; private set; }
 
     string? _hover;
+    string? _fittedKey;
+    bool _fitPending;
+    Point? _zoomAnchor;
+    Point? _pressAt;
+    Vector _panAtPress;
+    bool _dragging;
 
     static MapWiringCanvas()
     {
         AffectsRender<MapWiringCanvas>(GraphProperty, SelectedIdProperty, ZoomProperty);
-        AffectsMeasure<MapWiringCanvas>(GraphProperty, ZoomProperty);
         FocusableProperty.OverrideDefaultValue<MapWiringCanvas>(true);
+        ClipToBoundsProperty.OverrideDefaultValue<MapWiringCanvas>(true);
     }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == ZoomProperty && change.OldValue is double before && change.NewValue is double after && before > 0)
+        {
+            // Zoom about the pointer for Ctrl+scroll, else about the middle of the view, so what the user was
+            // looking at stays put.
+            var anchor = _zoomAnchor ?? new Point(Bounds.Width / 2, Bounds.Height / 2);
+            Pan = (Vector)anchor - ((Vector)anchor - Pan) * (after / before);
+        }
+        else if (change.Property == GraphProperty && FitKey != _fittedKey)
+        {
+            _fitPending = true;
+            InvalidateArrange();
+        }
+        else if (change.Property == SelectedIdProperty)
+        {
+            BringIntoView(change.NewValue as string);
+        }
+    }
+
+    protected override Size MeasureOverride(Size availableSize) => new(
+        double.IsInfinity(availableSize.Width) ? 0 : availableSize.Width,
+        double.IsInfinity(availableSize.Height) ? 0 : availableSize.Height);
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var size = base.ArrangeOverride(finalSize);
+        if (_fitPending && finalSize.Width > 0 && finalSize.Height > 0)
+        {
+            _fitPending = false;
+            _fittedKey = FitKey;
+            Fit(finalSize, whole: false);
+        }
+        return size;
+    }
+
+    /// <summary>Fit the whole graph into the view, centred.</summary>
+    public void FitToView() => Fit(Bounds.Size, whole: true);
+
+    // A map opening for the first time is fitted, but not below a readable size: a tall graph then starts at
+    // its top, and the user drags down to the rest.
+    void Fit(Size view, bool whole)
+    {
+        if (Graph is not { Size.Width: > 0 } g || view.Width <= 0 || view.Height <= 0) return;
+        var zoom = Math.Min(1, Math.Min(view.Width / g.Size.Width, view.Height / g.Size.Height));
+        zoom = Math.Clamp(Math.Round(zoom, 2), whole ? MinZoom : 0.6, MaxZoom);
+        SetZoomQuietly(zoom);
+        var (w, h) = (g.Size.Width * zoom, g.Size.Height * zoom);
+        Pan = new Vector((view.Width - w) / 2, h <= view.Height ? (view.Height - h) / 2 : 0);
+        InvalidateVisual();
+    }
+
+    void SetZoomQuietly(double zoom)
+    {
+        var pan = Pan;
+        Zoom = zoom;
+        Pan = pan;
+    }
+
+    // Arrow-key selection can land on a node outside the view; move just enough to show it.
+    void BringIntoView(string? id)
+    {
+        if (id is null || Graph?.Nodes.FirstOrDefault(n => n.Id == id) is not { } node || Bounds.Width <= 0) return;
+        var r = new Rect(node.Bounds.TopLeft * Zoom + Pan, node.Bounds.Size * Zoom);
+        var view = new Rect(Bounds.Size).Deflate(16);
+        var dx = r.Left < view.Left ? view.Left - r.Left : r.Right > view.Right ? Math.Max(view.Right - r.Right, view.Left - r.Left) : 0;
+        var dy = r.Top < view.Top ? view.Top - r.Top : r.Bottom > view.Bottom ? Math.Max(view.Bottom - r.Bottom, view.Top - r.Top) : 0;
+        if (dx == 0 && dy == 0) return;
+        Pan += new Vector(dx, dy);
+        InvalidateVisual();
+    }
+
+    Point ToGraph(Point p) => new((p.X - Pan.X) / Zoom, (p.Y - Pan.Y) / Zoom);
 
     // The app's dark palette (App.axaml), plus the tints the canvas layers over it.
     static readonly Color Accent = Color.Parse("#60A5FA"), Danger = Color.Parse("#F87171"), Warn = Color.Parse("#FBBF24"),
@@ -48,25 +141,81 @@ public sealed class MapWiringCanvas : Control
     static readonly Typeface Mono = new("Cascadia Mono, Consolas, Menlo, monospace");
     Typeface Sans(FontWeight weight) => new(TextElement.GetFontFamily(this), FontStyle.Normal, weight);
 
-    protected override Size MeasureOverride(Size availableSize)
-        => Graph is { } g ? new Size(g.Size.Width * Zoom, g.Size.Height * Zoom) : default;
-
     /// <summary>The node under a point in this control's coordinates, if any.</summary>
     public GraphNode? NodeAt(Point point)
     {
         if (Graph is not { } g || Zoom <= 0) return null;
-        var p = new Point(point.X / Zoom, point.Y / Zoom);
+        var p = ToGraph(point);
         return g.Nodes.LastOrDefault(n => n.Bounds.Contains(p));
+    }
+
+    // A press becomes a drag once the pointer has moved this far; anything shorter is a click.
+    const double DragThreshold = 4;
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        _pressAt = e.GetPosition(this);
+        _panAtPress = Pan;
+        _dragging = false;
+        e.Pointer.Capture(this);
+        Focus();
+        e.Handled = true;
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        var id = NodeAt(e.GetPosition(this))?.Id;
+        var at = e.GetPosition(this);
+        if (_pressAt is { } start)
+        {
+            var moved = at - start;
+            if (!_dragging && Math.Abs(moved.X) + Math.Abs(moved.Y) < DragThreshold) return;
+            _dragging = true;
+            Cursor = new Cursor(StandardCursorType.SizeAll);
+            Pan = _panAtPress + moved;
+            InvalidateVisual();
+            return;
+        }
+        var id = NodeAt(at)?.Id;
         if (id == _hover) return;
         _hover = id;
         Cursor = id is null ? Cursor.Default : new Cursor(StandardCursorType.Hand);
         InvalidateVisual();
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (_pressAt is not { } start) return;
+        if (!_dragging)
+        {
+            var id = NodeAt(start)?.Id;
+            SelectedId = id is not null && id == SelectedId ? null : id;
+        }
+        _pressAt = null;
+        _dragging = false;
+        e.Pointer.Capture(null);
+        Cursor = NodeAt(e.GetPosition(this)) is null ? Cursor.Default : new Cursor(StandardCursorType.Hand);
+        e.Handled = true;
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _pressAt = null;
+        _dragging = false;
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.Delta.Y == 0) return;
+        _zoomAnchor = e.GetPosition(this);
+        try { Zoom = Math.Clamp(Math.Round(Zoom * (e.Delta.Y > 0 ? 1.1 : 1 / 1.1), 2), MinZoom, MaxZoom); }
+        finally { _zoomAnchor = null; }
+        e.Handled = true;
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -75,16 +224,6 @@ public sealed class MapWiringCanvas : Control
         if (_hover is null) return;
         _hover = null;
         InvalidateVisual();
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        var id = NodeAt(e.GetPosition(this))?.Id;
-        SelectedId = id is not null && id == SelectedId ? null : id;
-        Focus();
-        e.Handled = true;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -127,7 +266,7 @@ public sealed class MapWiringCanvas : Control
         bool Dim(string id) => selected is not null && !near.Contains(id);
         bool DimEdge(GraphEdge e) => selected is not null && e.From != selected && e.To != selected;
 
-        using (context.PushTransform(Matrix.CreateScale(Zoom, Zoom)))
+        using (context.PushTransform(Matrix.CreateScale(Zoom, Zoom) * Matrix.CreateTranslation(Pan)))
         {
             foreach (var c in g.Clusters) DrawCluster(context, c);
             foreach (var e in g.Edges) using (context.PushOpacity(DimEdge(e) ? 0.16 : 1)) DrawEdge(context, e);

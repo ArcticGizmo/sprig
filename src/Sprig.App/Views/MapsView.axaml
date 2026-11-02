@@ -23,7 +23,7 @@
         <Style Selector="TextBlock.mono">
             <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
         </Style>
-        <!-- Status pills: blue wired, red unmet, amber ambiguous, violet constant, grey own use/unused. -->
+        <!-- Status pills: blue wired, red unmet, amber ambiguous or fixed, violet constant, grey own use/unused. -->
         <Style Selector="Border.pill">
             <Setter Property="CornerRadius" Value="9" />
             <Setter Property="Padding" Value="8,1" />
@@ -37,8 +37,8 @@
         </Style>
         <Style Selector="Border.pill.gap"><Setter Property="Background" Value="#24F87171" /></Style>
         <Style Selector="Border.pill.gap > TextBlock"><Setter Property="Foreground" Value="{StaticResource DangerBrush}" /></Style>
-        <Style Selector="Border.pill.ambiguous"><Setter Property="Background" Value="#24FBBF24" /></Style>
-        <Style Selector="Border.pill.ambiguous > TextBlock"><Setter Property="Foreground" Value="{StaticResource WarnBrush}" /></Style>
+        <Style Selector="Border.pill.ambiguous, Border.pill.fixed"><Setter Property="Background" Value="#24FBBF24" /></Style>
+        <Style Selector="Border.pill.ambiguous > TextBlock, Border.pill.fixed > TextBlock"><Setter Property="Foreground" Value="{StaticResource WarnBrush}" /></Style>
         <Style Selector="Border.pill.constant"><Setter Property="Background" Value="#26A78BFA" /></Style>
         <Style Selector="Border.pill.constant > TextBlock"><Setter Property="Foreground" Value="{StaticResource ConstantBrush}" /></Style>
         <Style Selector="Border.pill.quiet"><Setter Property="Background" Value="#14FFFFFF" /></Style>
@@ -55,7 +55,7 @@
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="10" />
+            <Setter Property="Padding" Value="12,10" />
         </Style>
         <Style Selector="ToggleButton.tab">
             <Setter Property="Background" Value="Transparent" />
@@ -202,23 +202,24 @@
                                           Command="{Binding Wiring.ShowLedgerViewCommand}" />
                         </StackPanel>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" IsVisible="{Binding Wiring.ShowGraph}">
+                            <TextBlock Text="Drag to move · Ctrl+scroll to zoom · click a node to focus it" FontSize="11"
+                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <Button Content="−" Command="{Binding Wiring.ZoomOutCommand}" Padding="10,2" ToolTip.Tip="Zoom out" />
-                            <Button Content="100%" Command="{Binding Wiring.ZoomResetCommand}" Padding="8,2" />
+                            <Button Content="{Binding Wiring.ZoomText}" Command="{Binding Wiring.ZoomResetCommand}" Padding="8,2"
+                                    MinWidth="56" ToolTip.Tip="Back to 100%" />
                             <Button Content="+" Command="{Binding Wiring.ZoomInCommand}" Padding="10,2" ToolTip.Tip="Zoom in" />
-                            <Button Content="Fit" Click="FitClicked" Padding="8,2" ToolTip.Tip="Fit the graph to the width" />
+                            <Button Content="Fit" Click="FitClicked" Padding="8,2" ToolTip.Tip="Show the whole graph" />
                         </StackPanel>
                     </Grid>
 
                     <StackPanel Spacing="8" IsVisible="{Binding Wiring.ShowGraph}">
                         <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1" CornerRadius="8" Height="520" ClipToBounds="True">
+                                BorderThickness="1" CornerRadius="8" Height="540" ClipToBounds="True">
                             <Panel>
-                                <ScrollViewer x:Name="GraphScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                    <controls:MapWiringCanvas x:Name="Canvas" Graph="{Binding Wiring.Layout}"
-                                                              SelectedId="{Binding Wiring.SelectedNodeId}"
-                                                              Zoom="{Binding Wiring.Zoom}"
-                                                              HorizontalAlignment="Center" VerticalAlignment="Top" />
-                                </ScrollViewer>
+                                <controls:MapWiringCanvas x:Name="Canvas" Graph="{Binding Wiring.Layout}"
+                                                          SelectedId="{Binding Wiring.SelectedNodeId}"
+                                                          Zoom="{Binding Wiring.Zoom}"
+                                                          FitKey="{Binding Wiring.MapName}" />
                                 <TextBlock Text="None of this map's repos can be read yet, so there's nothing to draw."
                                            IsVisible="{Binding !Wiring.HasNodes}" Foreground="{StaticResource MutedBrush}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -285,88 +286,114 @@
                         </StackPanel>
                     </Border>
 
-                    <Grid ColumnDefinitions="3*,2*" ColumnSpacing="12">
-                        <!-- the selected node: what it provides, what it needs, and the fixes -->
-                        <Border Grid.Column="0" Classes="card" VerticalAlignment="Top">
-                            <Panel>
-                                <TextBlock IsVisible="{Binding !Wiring.HasSelection}" TextWrapping="Wrap" FontSize="12"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           Text="Select a module, or a red placeholder, to see how it's wired and what would fix it." />
-                                <StackPanel Spacing="10" IsVisible="{Binding Wiring.HasSelection}">
-                                    <TextBlock Classes="eyebrow" Text="{Binding Wiring.SelectionKind}" />
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Text="{Binding Wiring.SelectionTitle}" FontSize="16" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
-                                        <TextBlock Classes="mono" Text="{Binding Wiring.SelectionSubtitle}" FontSize="11.5"
-                                                   Foreground="{StaticResource MutedBrush}" />
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding Wiring.SelectionNote}" TextWrapping="Wrap" FontSize="12.5"
-                                               IsVisible="{Binding Wiring.SelectionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <!-- VARIABLES: every need and every fixed env value, one list; a row expands to its fixes -->
+                    <Border Classes="card">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="eyebrow" Text="VARIABLES" />
+                                    <TextBlock Text="{Binding Wiring.VariablesTitle}" FontSize="16" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                                    <TextBlock Classes="mono" Text="{Binding Wiring.SelectionSubtitle}" FontSize="11.5"
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="Show all" Command="{Binding Wiring.ClearSelectionCommand}"
+                                        IsVisible="{Binding Wiring.IsFiltered}" VerticalAlignment="Top" />
+                            </Grid>
+                            <TextBlock Text="{Binding Wiring.SelectionNote}" TextWrapping="Wrap" FontSize="12.5"
+                                       IsVisible="{Binding Wiring.SelectionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-                                    <TextBlock Classes="eyebrow" Text="PROVIDES" IsVisible="{Binding Wiring.HasSelectedProvides}" />
-                                    <ItemsControl ItemsSource="{Binding Wiring.SelectedProvides}" IsVisible="{Binding Wiring.HasSelectedProvides}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:WiringProvideRow">
-                                                <StackPanel Spacing="2" Margin="0,0,0,8">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Classes="mono" Text="{Binding Capability}" FontSize="12.5"
-                                                                   Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                                                        <Border Classes="pill" Classes.quiet="{Binding IsQuiet}">
-                                                            <TextBlock Text="{Binding UseLabel}" />
-                                                        </Border>
-                                                    </StackPanel>
-                                                    <TextBlock Text="{Binding Constant}" FontSize="12" Foreground="{StaticResource ConstantBrush}"
-                                                               TextWrapping="Wrap" IsVisible="{Binding IsConstant}" />
-                                                    <TextBlock Text="{Binding UseDetail}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                            <StackPanel Spacing="6" IsVisible="{Binding Wiring.HasSelectedProvides}">
+                                <TextBlock Classes="eyebrow" Text="PROVIDES" />
+                                <ItemsControl ItemsSource="{Binding Wiring.SelectedProvides}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:WiringProvideRow">
+                                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4" ToolTip.Tip="{Binding Tip}">
+                                                <TextBlock Classes="mono" Text="{Binding Capability}" FontSize="12" VerticalAlignment="Center" />
+                                                <Border Classes="pill" Classes.quiet="{Binding IsQuiet}" Classes.constant="{Binding IsConstant}">
+                                                    <TextBlock Text="{Binding UseLabel}" />
+                                                </Border>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
 
-                                    <TextBlock Classes="eyebrow" Text="NEEDS" IsVisible="{Binding Wiring.HasSelectedNeeds}" />
-                                    <ItemsControl ItemsSource="{Binding Wiring.SelectedNeeds}" IsVisible="{Binding Wiring.HasSelectedNeeds}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:WiringNeedRow">
-                                                <StackPanel Spacing="4" Margin="0,0,0,10">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Classes="mono" Text="{Binding Capability}" FontSize="12.5"
-                                                                   Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                                                        <Border Classes="pill" Classes.gap="{Binding IsGap}" Classes.ambiguous="{Binding IsAmbiguous}"
+                            <TextBlock IsVisible="{Binding !Wiring.HasVariables}" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                       Text="Nothing here needs anything from the map." />
+                            <StackPanel Grid.IsSharedSizeScope="True" IsVisible="{Binding Wiring.HasVariables}">
+                                <Grid Background="{StaticResource FormBgBrush}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="22" />
+                                        <ColumnDefinition Width="2*" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="module" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="status" />
+                                        <ColumnDefinition Width="3*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="1" Classes="eyebrow" Text="VARIABLE" Margin="0,7" />
+                                    <TextBlock Grid.Column="2" Classes="eyebrow" Text="MODULE" Margin="12,7" IsVisible="{Binding Wiring.ShowModuleColumn}" />
+                                    <TextBlock Grid.Column="3" Classes="eyebrow" Text="STATUS" Margin="12,7" />
+                                    <TextBlock Grid.Column="4" Classes="eyebrow" Text="VALUE" Margin="12,7" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Wiring.Variables}">
+                                    <ItemsControl.DataTemplates>
+                                        <DataTemplate DataType="vm:WiringNeedRow">
+                                            <StackPanel>
+                                                <Button Classes="ledger-row" Command="{Binding ToggleCommand}" Padding="0,7">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="22" />
+                                                            <ColumnDefinition Width="2*" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="module" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="status" />
+                                                            <ColumnDefinition Width="3*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Panel Grid.Column="0" HorizontalAlignment="Center">
+                                                            <TextBlock Text="▸" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !IsExpanded}" />
+                                                            <TextBlock Text="▾" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsExpanded}" />
+                                                        </Panel>
+                                                        <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Name}" FontSize="12.5"
+                                                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Module}" FontSize="11.5" Margin="12,0"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   IsVisible="{Binding $parent[UserControl].((vm:MapsViewModel)DataContext).Wiring.ShowModuleColumn}" />
+                                                        <Border Grid.Column="3" Classes="pill" Margin="12,0" HorizontalAlignment="Left"
+                                                                Classes.gap="{Binding IsGap}" Classes.ambiguous="{Binding IsAmbiguous}"
                                                                 Classes.constant="{Binding IsConstant}">
                                                             <TextBlock Text="{Binding Status}" />
                                                         </Border>
-                                                    </StackPanel>
-                                                    <TextBlock Text="{Binding Detail}" FontSize="12" TextWrapping="Wrap" />
-                                                    <TextBlock Text="{Binding UsedIn}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="4" Classes="mono" Text="{Binding Value}" FontSize="12" Margin="12,0,8,0"
+                                                                   TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </Button>
+                                                <Border Classes="fix" IsVisible="{Binding IsExpanded}" Margin="22,4,0,10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock Text="{Binding UsedIn}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
 
-                                                    <!-- unmet: wire to a lookalike, or set a value on the map -->
-                                                    <StackPanel Spacing="6" IsVisible="{Binding IsGap}" Margin="0,4,0,0">
-                                                        <Border Classes="fix" IsVisible="{Binding HasSimilar}">
-                                                            <StackPanel Spacing="6">
+                                                        <!-- unmet: wire to a lookalike, or set a value on the map -->
+                                                        <StackPanel Spacing="8" IsVisible="{Binding IsGap}">
+                                                            <StackPanel Spacing="6" IsVisible="{Binding HasSimilar}">
                                                                 <TextBlock Text="{Binding SimilarText}" FontSize="12" TextWrapping="Wrap" />
                                                                 <Button Content="{Binding WireSimilarLabel}" Command="{Binding WireSimilarCommand}"
                                                                         Background="{StaticResource AccentBrush}" Foreground="#0B1220" />
                                                             </StackPanel>
-                                                        </Border>
-                                                        <Border Classes="fix">
-                                                            <StackPanel Spacing="6">
-                                                                <TextBlock Text="Set a value on the map, for when it runs outside this map" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                                                <Grid ColumnDefinitions="90,*,Auto" ColumnSpacing="6">
-                                                                    <TextBox Grid.Column="0" Text="{Binding Output}" Classes="mono" FontSize="12" PlaceholderText="output" />
-                                                                    <TextBox Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12" PlaceholderText="http://localhost:…" />
-                                                                    <Button Grid.Column="2" Content="Use this value" Command="{Binding SetConstantCommand}" />
-                                                                </Grid>
-                                                                <TextBlock Text="{Binding HintSource}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
-                                                                           TextWrapping="Wrap" IsVisible="{Binding HasHint}" />
-                                                            </StackPanel>
-                                                        </Border>
-                                                        <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                                                   Text="Or add the repo that provides it to this map with Edit, above." />
-                                                    </StackPanel>
+                                                            <TextBlock Text="Or set its value on the map:" FontSize="12" IsVisible="{Binding HasSimilar}" />
+                                                            <Grid ColumnDefinitions="90,*,Auto" ColumnSpacing="6">
+                                                                <TextBox Grid.Column="0" Text="{Binding NewOutput}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12" PlaceholderText="output" />
+                                                                <TextBox Grid.Column="1" Text="{Binding NewValue}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12" PlaceholderText="http://localhost:…" />
+                                                                <Button Grid.Column="2" Content="Set on the map" Command="{Binding SetConstantCommand}" />
+                                                            </Grid>
+                                                            <TextBlock Text="{Binding HintSource}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                                                       TextWrapping="Wrap" IsVisible="{Binding HasHint}" />
+                                                            <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                                                       Text="Or add the repo that provides it to this map with Edit, above." />
+                                                        </StackPanel>
 
-                                                    <!-- two providers: name the one that wins -->
-                                                    <Border Classes="fix" IsVisible="{Binding IsAmbiguous}" Margin="0,4,0,0">
-                                                        <StackPanel Spacing="6">
+                                                        <!-- two providers: name the one that wins -->
+                                                        <StackPanel Spacing="6" IsVisible="{Binding IsAmbiguous}">
                                                             <TextBlock Text="Pick the provider. The map records it as a wiring entry; no repo changes." FontSize="12" TextWrapping="Wrap" />
                                                             <ItemsControl ItemsSource="{Binding Providers}">
                                                                 <ItemsControl.ItemsPanel>
@@ -379,18 +406,16 @@
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>
                                                         </StackPanel>
-                                                    </Border>
 
-                                                    <!-- a constant set on the map: change or remove it -->
-                                                    <Border Classes="fix" IsVisible="{Binding IsConstant}" Margin="0,4,0,0">
-                                                        <StackPanel Spacing="6">
+                                                        <!-- a constant set on the map: change or remove it -->
+                                                        <StackPanel Spacing="6" IsVisible="{Binding IsConstant}">
                                                             <ItemsControl ItemsSource="{Binding Constants}">
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate x:DataType="vm:ConstantValueRow">
                                                                         <Grid ColumnDefinitions="90,*" ColumnSpacing="6" Margin="0,0,0,4">
                                                                             <TextBlock Grid.Column="0" Classes="mono" Text="{Binding Output}" FontSize="12"
                                                                                        VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
-                                                                            <TextBox Grid.Column="1" Classes="mono" Text="{Binding Value}" FontSize="12" />
+                                                                            <TextBox Grid.Column="1" Text="{Binding Value}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12" />
                                                                         </Grid>
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
@@ -401,57 +426,62 @@
                                                                         Foreground="{StaticResource DangerBrush}" />
                                                             </StackPanel>
                                                         </StackPanel>
-                                                    </Border>
 
-                                                    <Button Content="Remove this wiring entry" Command="{Binding UnwireCommand}"
-                                                            IsVisible="{Binding IsWiredByEntry}" Margin="0,4,0,0" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Panel>
-                        </Border>
-
-                        <!-- env values that pin a local address or port -->
-                        <Border Grid.Column="1" Classes="card" VerticalAlignment="Top">
-                            <StackPanel Spacing="10">
-                                <TextBlock Classes="eyebrow" Text="FIXED VALUES IN ENV" />
-                                <TextBlock IsVisible="{Binding !Wiring.HasFixedValues}" FontSize="12" TextWrapping="Wrap"
-                                           Foreground="{StaticResource MutedBrush}"
-                                           Text="No env value pins a local address or port. Everything goes through needs." />
-                                <ItemsControl ItemsSource="{Binding Wiring.FixedValues}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:FixedValueRow">
-                                            <StackPanel Spacing="4" Margin="0,0,0,12">
-                                                <TextBlock Classes="mono" Text="{Binding Setting}" FontSize="12"
-                                                           Foreground="{StaticResource WarnBrush}" TextWrapping="Wrap" />
-                                                <TextBlock Classes="mono" Text="{Binding Where}" FontSize="11"
-                                                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                                                <TextBlock Text="{Binding Advice}" FontSize="12" TextWrapping="Wrap" />
-                                                <Border Classes="fix" IsVisible="{Binding CanConvert}">
-                                                    <StackPanel Spacing="6">
-                                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-                                                            <StackPanel Grid.Column="0" Spacing="2">
-                                                                <TextBlock Classes="eyebrow" Text="NEED" />
-                                                                <TextBox Classes="mono" Text="{Binding Capability}" FontSize="12" />
-                                                            </StackPanel>
-                                                            <StackPanel Grid.Column="1" Spacing="2">
-                                                                <TextBlock Classes="eyebrow" Text="OUTPUT" />
-                                                                <TextBox Classes="mono" Text="{Binding Output}" FontSize="12" />
-                                                            </StackPanel>
-                                                        </Grid>
-                                                        <Button Content="Make it a need" Command="{Binding ConvertCommand}"
-                                                                ToolTip.Tip="Declares the need in the repo's config, points the env key at it, and sets today's value on the map" />
+                                                        <Button Content="Remove this wiring entry" Command="{Binding UnwireCommand}"
+                                                                IsVisible="{Binding IsWiredByEntry}" />
                                                     </StackPanel>
                                                 </Border>
                                             </StackPanel>
                                         </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
+
+                                        <DataTemplate DataType="vm:FixedValueRow">
+                                            <StackPanel>
+                                                <Button Classes="ledger-row" Command="{Binding ToggleCommand}" Padding="0,7">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="22" />
+                                                            <ColumnDefinition Width="2*" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="module" />
+                                                            <ColumnDefinition Width="Auto" SharedSizeGroup="status" />
+                                                            <ColumnDefinition Width="3*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Panel Grid.Column="0" HorizontalAlignment="Center">
+                                                            <TextBlock Text="▸" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !IsExpanded}" />
+                                                            <TextBlock Text="▾" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsExpanded}" />
+                                                        </Panel>
+                                                        <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Name}" FontSize="12.5"
+                                                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                                                        <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Module}" FontSize="11.5" Margin="12,0"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   IsVisible="{Binding $parent[UserControl].((vm:MapsViewModel)DataContext).Wiring.ShowModuleColumn}" />
+                                                        <Border Grid.Column="3" Classes="pill fixed" Margin="12,0" HorizontalAlignment="Left">
+                                                            <TextBlock Text="{Binding Status}" />
+                                                        </Border>
+                                                        <TextBlock Grid.Column="4" Classes="mono" Text="{Binding Value}" FontSize="12" Margin="12,0,8,0"
+                                                                   TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </Button>
+                                                <Border Classes="fix" IsVisible="{Binding IsExpanded}" Margin="22,4,0,10">
+                                                    <StackPanel Spacing="8">
+                                                        <TextBlock Text="{Binding UsedIn}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding Advice}" FontSize="12" TextWrapping="Wrap" />
+                                                        <Grid ColumnDefinitions="Auto,160,Auto,120,Auto" ColumnSpacing="6" IsVisible="{Binding CanConvert}">
+                                                            <TextBlock Grid.Column="0" Text="need" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
+                                                            <TextBox Grid.Column="1" Text="{Binding Capability}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12" />
+                                                            <TextBlock Grid.Column="2" Text="output" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
+                                                            <TextBox Grid.Column="3" Text="{Binding Output}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12" />
+                                                            <Button Grid.Column="4" Content="Make it a need" Command="{Binding ConvertCommand}"
+                                                                    ToolTip.Tip="Declares the need in the repo's config, points the env key at it, and sets today's value on the map" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.DataTemplates>
                                 </ItemsControl>
                             </StackPanel>
-                        </Border>
-                    </Grid>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <StackPanel Spacing="8">

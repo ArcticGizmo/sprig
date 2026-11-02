@@ -9,9 +9,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **The Maps page draws the wiring** — modules above what they rely on, shared services badged, unmet needs in red. Checkout's error message is no longer the first to know.
-- **Fixes on the spot** — set a value (often pre-filled from the env template), wire a near-miss name, pick between two providers, all from the selected node.
+- **The graph is a canvas** — drag to move, Ctrl+scroll to zoom. No scrollbars were harmed.
+- **One list of variables** — wired, constant, fixed in env or missing, they're all variables; only where the value comes from differs. Expand a row to fix it: set a value (often pre-filled from the env template), wire a near-miss name, or pick between two providers.
 - **Constants you can see** — values set on the map and values a module provides show as such, in violet.
-- **Fixed values in env** — `localhost:1025` and friends get flagged, and one click turns them into a need with today's value kept.
+- **Fixed in env** — `localhost:1025` and friends get flagged in the same list, and one click turns them into a need with today's value kept.
 - **`sprig map check`** exits 1 when a checkout would stop, and says what to run. `map default` and `map wire` run it.
 - **`cli.cmd`** builds and runs the dev CLI from the repo root.
 

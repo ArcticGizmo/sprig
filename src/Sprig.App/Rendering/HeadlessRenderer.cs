@@ -96,16 +96,19 @@ internal static class HeadlessRenderer
             }
 
             Shot("maps_wiring.png");
+            maps.Wiring.SelectedNodeId = null;
+            maps.Wiring.Variables.OfType<FixedValueRow>().Single().IsExpanded = true;
+            Shot("maps_wiring_all_variables.png");
             maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.ModuleId("shop", "api");
-            Shot("maps_wiring_ambiguous_selected.png");
+            maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "cache").IsExpanded = true;
+            Shot("maps_wiring_module_selected.png");
             maps.Wiring.ShowLedger = true;
             Shot("maps_wiring_ledger.png");
             maps.Wiring.ShowLedger = false;
 
-            var gap = maps.Wiring.Inspection!.Gaps.Single(n => n.Capability == "help-site");
-            maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.GapId(gap);
-            maps.Wiring.SelectedNeeds.Single().SetConstantCommand.Execute(null);
-            maps.Wiring.FixedValues.Single().ConvertCommand.Execute(null);
+            maps.Wiring.SelectedNodeId = null;
+            maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "help-site").SetConstantCommand.Execute(null);
+            maps.Wiring.Variables.OfType<FixedValueRow>().Single().ConvertCommand.Execute(null);
             Shot("maps_wiring_after_fixes.png");
             if (maps.Wiring.Error is { } error) Console.Error.WriteLine($"wiring fix failed: {error}");
         }

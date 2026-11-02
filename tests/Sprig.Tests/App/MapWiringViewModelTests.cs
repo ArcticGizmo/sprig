@@ -26,8 +26,10 @@ public class MapWiringViewModelTests
         return (store, services, new MapsViewModel(services));
     }
 
+    static WiringNeedRow Need(MapWiringViewModel wiring, string name) => wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == name);
+
     [Fact]
-    public void Selecting_a_map_shows_what_blocks_checkout_and_selects_the_first_unmet_need()
+    public void Selecting_a_map_shows_what_blocks_checkout_and_opens_the_first_unmet_need()
     {
         var (store, _, maps) = Storefront();
         using var _ = store;
@@ -36,30 +38,79 @@ public class MapWiringViewModelTests
         Assert.False(wiring.IsReady);
         Assert.StartsWith("3 needs can't be met", wiring.Headline);
         Assert.Equal(3, wiring.Blockers.Count);
+        Assert.Contains("1 fixed in env", wiring.Counts);
         Assert.Contains("most relied on: auth › app (3 modules)", wiring.Counts);
         Assert.StartsWith("G:", wiring.SelectedNodeId);
-        Assert.Equal("Unmet need", wiring.SelectionKind);
-        Assert.Single(wiring.FixedValues);
-        Assert.Equal(["needs a value", "needs a value", "pick one"], wiring.Ledger.Take(3).Select(r => r.Status));
+        Assert.True(wiring.IsFiltered);
+        Assert.True(Assert.Single(wiring.Variables).IsExpanded);
     }
 
     [Fact]
-    public void Setting_a_value_from_the_hint_turns_the_gap_into_a_constant_and_keeps_it_selected()
+    public void With_nothing_selected_every_need_and_fixed_value_is_one_list_problems_first()
+    {
+        var (store, _, maps) = Storefront();
+        using var _ = store;
+        var wiring = maps.Wiring;
+
+        wiring.ClearSelectionCommand.Execute(null);
+
+        Assert.Equal("All variables", wiring.VariablesTitle);
+        Assert.True(wiring.ShowModuleColumn);
+        var inspection = wiring.Inspection!;
+        Assert.Equal(inspection.Needs.Count() + inspection.FixedValues.Count, wiring.Variables.Count);
+        Assert.Equal(["needs a value", "needs a value", "pick one", "fixed in env", "constant"],
+            wiring.Variables.Take(5).Select(r => r.Status));
+        var fixedRow = Assert.IsType<FixedValueRow>(wiring.Variables[3]);
+        Assert.Equal(("MAIL_HOST", "localhost:1025", "shop › api"), (fixedRow.Name, fixedRow.Value, fixedRow.Module));
+    }
+
+    [Fact]
+    public void Selecting_a_module_narrows_the_list_to_its_needs_and_fixed_values()
+    {
+        var (store, _, maps) = Storefront();
+        using var _ = store;
+        var wiring = maps.Wiring;
+
+        wiring.SelectedNodeId = MapGraphLayout.ModuleId("shop", "api");
+
+        Assert.False(wiring.ShowModuleColumn);
+        Assert.Equal(["cache", "MAIL_HOST", "auth-api", "billing-api", "catalog-api"], wiring.Variables.Select(r => r.Name));
+        Assert.Equal("shop-api", Assert.Single(wiring.SelectedProvides).Capability);
+    }
+
+    [Fact]
+    public void Setting_a_value_from_the_hint_turns_the_gap_into_a_constant_and_keeps_it_open()
     {
         var (store, services, maps) = Storefront();
         using var _ = store;
         var wiring = maps.Wiring;
         wiring.SelectedNodeId = "G:shop/web/help-site";
-        var need = wiring.SelectedNeeds.Single();
-        Assert.Equal(("url", "http://localhost:4000"), (need.Output, need.Value));
+        var need = Need(wiring, "help-site");
+        Assert.Equal(("url", "http://localhost:4000"), (need.NewOutput, need.NewValue));
 
         need.SetConstantCommand.Execute(null);
 
         Assert.Null(wiring.Error);
         Assert.Equal("D:shop/web/help-site", wiring.SelectedNodeId);
-        Assert.Equal("Constant set on the map", wiring.SelectionKind);
+        var after = Need(wiring, "help-site");
+        Assert.True(after.IsConstant);
+        Assert.True(after.IsExpanded);
         Assert.Equal("http://localhost:4000", services.Maps.Get("storefront")!.Defaults["shop"]["help-site"]["url"]);
         Assert.StartsWith("2 needs", wiring.Headline);
+    }
+
+    [Fact]
+    public void A_fix_from_the_whole_map_list_keeps_the_whole_list()
+    {
+        var (store, _, maps) = Storefront();
+        using var _ = store;
+        var wiring = maps.Wiring;
+        wiring.ClearSelectionCommand.Execute(null);
+
+        Need(wiring, "help-site").SetConstantCommand.Execute(null);
+
+        Assert.Null(wiring.SelectedNodeId);
+        Assert.Equal("All variables", wiring.VariablesTitle);
     }
 
     [Fact]
@@ -70,7 +121,7 @@ public class MapWiringViewModelTests
         var wiring = maps.Wiring;
         wiring.SelectedNodeId = "D:billing/app/payments-gateway";
 
-        wiring.SelectedNeeds.Single().RemoveConstantCommand.Execute(null);
+        Need(wiring, "payments-gateway").RemoveConstantCommand.Execute(null);
 
         Assert.Equal("G:billing/app/payments-gateway", wiring.SelectedNodeId);
         Assert.Empty(services.Maps.Get("storefront")!.Defaults);
@@ -83,13 +134,13 @@ public class MapWiringViewModelTests
         using var _ = store;
         var wiring = maps.Wiring;
         wiring.SelectedNodeId = MapGraphLayout.ModuleId("shop", "api");
-        var cache = wiring.SelectedNeeds.Single(n => n.Capability == "cache");
 
-        cache.Providers.Single(p => p.Label == "Use billing").PickCommand.Execute(null);
+        Need(wiring, "cache").Providers.Single(p => p.Label == "Use billing").PickCommand.Execute(null);
 
         Assert.Equal("billing/cache", services.Maps.Get("storefront")!.Wiring["shop"]["cache"]);
         Assert.Empty(wiring.Inspection!.Ambiguities);
-        var wired = wiring.SelectedNeeds.Single(n => n.Capability == "cache");
+        Assert.Equal(MapGraphLayout.ModuleId("shop", "api"), wiring.SelectedNodeId);
+        var wired = Need(wiring, "cache");
         Assert.True(wired.IsWiredByEntry);
 
         wired.UnwireCommand.Execute(null);
@@ -104,26 +155,28 @@ public class MapWiringViewModelTests
         var wiring = maps.Wiring;
         wiring.SelectedNodeId = "G:admin/app/auth_api";
 
-        wiring.SelectedNeeds.Single().WireSimilarCommand.Execute(null);
+        Need(wiring, "auth_api").WireSimilarCommand.Execute(null);
 
         Assert.DoesNotContain(wiring.Inspection!.Gaps, n => n.Repo == "admin");
-        Assert.Equal(MapGraphLayout.ModuleId("admin", "app"), wiring.SelectedNodeId);
     }
 
     [Fact]
-    public void Converting_a_fixed_value_edits_the_repo_config_and_selects_the_new_constant()
+    public void Converting_a_fixed_value_edits_the_repo_config_and_the_row_becomes_a_constant()
     {
         var (store, _, maps) = Storefront();
         using var _ = store;
         var wiring = maps.Wiring;
-        var row = wiring.FixedValues.Single();
+        wiring.ClearSelectionCommand.Execute(null);
+        var row = wiring.Variables.OfType<FixedValueRow>().Single();
         Assert.Equal(("mail", "address"), (row.Capability, row.Output));
 
         row.ConvertCommand.Execute(null);
 
         Assert.Null(wiring.Error);
-        Assert.Empty(wiring.FixedValues);
-        Assert.Equal("D:shop/api/mail", wiring.SelectedNodeId);
+        Assert.Empty(wiring.Variables.OfType<FixedValueRow>());
+        var mail = Need(wiring, "mail");
+        Assert.True(mail.IsConstant);
+        Assert.True(mail.IsExpanded);
         var config = SprigConfigLoader.LoadFromFile(Path.Combine(store.Root, "repos", "shop", ".sprig.json"));
         Assert.Equal("${sprig.mail.address}", config.Modules.Single(m => m.Name == "api").Env.Single().Set["MAIL_HOST"]);
     }
@@ -135,8 +188,8 @@ public class MapWiringViewModelTests
         using var _ = store;
         var wiring = maps.Wiring;
         wiring.SelectedNodeId = "G:shop/web/help-site";
-        var need = wiring.SelectedNeeds.Single();
-        need.Value = "  ";
+        var need = Need(wiring, "help-site");
+        need.NewValue = "  ";
 
         need.SetConstantCommand.Execute(null);
 

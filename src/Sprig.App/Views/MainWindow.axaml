@@ -78,7 +78,8 @@
 
         <!-- Left nav -->
         <Border Grid.Column="0" Background="{StaticResource PanelBgBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0"
+                IsEnabled="{Binding !Updater.IsActive}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="18,20,18,18">
                     <StackPanel Orientation="Horizontal" Spacing="10">
@@ -163,7 +164,7 @@
         </Border>
 
         <!-- Content -->
-        <DockPanel Grid.Column="1" LastChildFill="True">
+        <DockPanel Grid.Column="1" LastChildFill="True" IsEnabled="{Binding !Updater.IsActive}">
             <!-- Sandbox banner. Persistent and unmissable: everything on screen while this shows is a
                  throwaway sample, and the user must never mistake it for their own setup. Neutral copy so it
                  reads true in both the tour (fully built) and a guide (built only part-way). -->
@@ -232,5 +233,27 @@
              a page control, or a shape drawn inside the wiring canvas. AnchorRoot is set in code-behind. -->
         <coach:CoachOverlay x:Name="Coachmarks" Grid.Column="0" Grid.ColumnSpan="2"
                             DataContext="{Binding Coach}" />
+
+        <!-- Update overlay: dims and blocks the whole window from the "update" click until Velopack takes the
+             process over, so nothing can be changed mid-install. Above the coachmarks, which it outranks. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="100" Background="#B3060A12"
+                IsVisible="{Binding Updater.IsActive}">
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" Width="420"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Image x:Name="UpdateLogoImage" Width="26" Height="26" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Updater.Heading}" FontSize="17" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Foreground="{StaticResource TitleBrush}" />
+                    </StackPanel>
+                    <ProgressBar Height="6" Minimum="0" Maximum="100"
+                                 Value="{Binding Updater.Percent}"
+                                 IsIndeterminate="{Binding Updater.IsIndeterminate}" />
+                    <TextBlock Text="{Binding Updater.Detail}" FontSize="13" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedBrush}" />
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </Window>

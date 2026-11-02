@@ -88,16 +88,28 @@ public static class UpdateChecker
     }
 
     /// <summary>
-    /// Downloads and installs the update described by <paramref name="result"/>, then restarts the
-    /// app. Only valid when <see cref="UpdateCheckResult.Availability"/> is
-    /// <see cref="UpdateAvailability.Available"/>. Does not return on success (the process restarts).
+    /// Downloads the update described by <paramref name="result"/>. Only valid when
+    /// <see cref="UpdateCheckResult.Availability"/> is <see cref="UpdateAvailability.Available"/>.
     /// </summary>
-    public static async Task ApplyAsync(UpdateCheckResult result)
+    /// <param name="progress">Download percentage (0–100). Raised on a background thread.</param>
+    public static async Task DownloadAsync(UpdateCheckResult result, Action<int>? progress = null)
     {
         if (result is not { Availability: UpdateAvailability.Available, Manager: { } manager, Info: { } info })
             return;
 
-        await manager.DownloadUpdatesAsync(info).ConfigureAwait(false);
+        await manager.DownloadUpdatesAsync(info, progress: progress).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Hands a downloaded update to Velopack, which installs it and restarts the app. Kept separate from
+    /// <see cref="DownloadAsync"/> so the UI can show its "installing" state before the process exits.
+    /// Does not return on success.
+    /// </summary>
+    public static void ApplyAndRestart(UpdateCheckResult result)
+    {
+        if (result is not { Availability: UpdateAvailability.Available, Manager: { } manager, Info: { } info })
+            return;
+
         manager.ApplyUpdatesAndRestart(info.TargetFullRelease);
     }
 

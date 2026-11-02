@@ -9,6 +9,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.8.2] - 2026-11-02
+
+### Changed
+- **Updating greys out the window** — progress shown centre stage. No more wondering if the click took.
+
+---
+
 ## [v0.8.1] - 2026-11-02
 
 ### Added

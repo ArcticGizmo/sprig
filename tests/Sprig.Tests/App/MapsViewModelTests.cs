@@ -1,11 +1,11 @@
 ﻿using Sprig.App;
+using Sprig.App.Maps;
 using Sprig.App.ViewModels;
 using Sprig.Core.Maps;
 
 namespace Sprig.Tests.App;
 
-/// <summary>M8 â€” the Maps page lists maps and grows a workspace from a selected slice, driven entirely by
-/// the repos' own provides/needs (no binding editor).</summary>
+/// <summary>The Maps page: maps are named here and composed on their wiring graph.</summary>
 public class MapsViewModelTests
 {
     static TempGitRepo CommitConfig(string name, string json)
@@ -18,7 +18,7 @@ public class MapsViewModelTests
     }
 
     [Fact]
-    public async Task Lists_maps_and_creates_a_workspace_from_the_selection()
+    public void Lists_maps_and_shows_the_first_ones_wiring()
     {
         using var store = new TempStore();
         using var repo = CommitConfig("solo", """
@@ -31,40 +31,15 @@ public class MapsViewModelTests
         services.Maps.Save(new MapDefinition { Name = "dev", Repos = [MapRepo.Local("solo")] });
 
         var vm = new MapsViewModel(services);
+
         Assert.True(vm.HasMaps);
         Assert.Equal("dev", vm.Selected!.Name);
-        Assert.Equal("solo", Assert.Single(vm.RepoChoices).Name);
-
-        vm.NewWorkspaceName = "feat";
-        await vm.CreateWorkspaceCommand.ExecuteAsync(null);
-
-        Assert.False(vm.StatusIsError);
-        Assert.Equal("dev", services.Workspaces.Get("feat")!.Map);
+        Assert.Equal("dev", vm.Wiring.MapName);
+        Assert.True(vm.Wiring.IsReady);
     }
 
     [Fact]
-    public async Task An_unmet_need_surfaces_as_an_error_status_and_creates_nothing()
-    {
-        using var store = new TempStore();
-        using var repo = CommitConfig("solo", """
-            { "schema": 1, "name": "solo",
-              "needs": [ { "capability": "ghost" } ],
-              "env": [ { "file": ".env", "set": { "X": "${sprig.ghost.url}" } } ] }
-            """);
-        var services = new AppServices(store.Root);
-        services.Repos.Add(repo.Path);
-        services.Maps.Save(new MapDefinition { Name = "dev", Repos = [MapRepo.Local("solo")] });
-
-        var vm = new MapsViewModel(services) { NewWorkspaceName = "feat" };
-        await vm.CreateWorkspaceCommand.ExecuteAsync(null);
-
-        Assert.True(vm.StatusIsError);
-        Assert.Contains("ghost", vm.Status!);
-        Assert.Null(services.Workspaces.Get("feat"));
-    }
-
-    [Fact]
-    public void New_map_composes_and_saves_from_selected_registered_repos()
+    public void A_new_map_is_named_then_opens_empty_with_every_registered_repo_ready_to_add()
     {
         using var store = new TempStore();
         using var a = CommitConfig("alpha", """{ "schema": 1, "name": "alpha" }""");
@@ -75,76 +50,92 @@ public class MapsViewModelTests
 
         var vm = new MapsViewModel(services);
         vm.NewMapCommand.Execute(null);
-        Assert.True(vm.IsEditing);
-        Assert.Equal(["alpha", "beta"], vm.EditRepos.Select(r => r.Name));   // every registered repo, unchecked
+        Assert.True(vm.IsNaming);
+        vm.NewMapName = "world";
+        vm.CreateMapCommand.Execute(null);
 
-        vm.EditName = "world";
-        vm.EditRepos.Single(r => r.Name == "alpha").IsSelected = true;
-        vm.SaveMapCommand.Execute(null);
-
-        Assert.False(vm.IsEditing);
-        Assert.Null(vm.EditError);
-        var saved = services.Maps.Get("world")!;
-        Assert.Equal(["alpha"], saved.Repos.Select(r => r.Name));
+        Assert.False(vm.IsNaming);
         Assert.Equal("world", vm.Selected!.Name);
+        Assert.True(vm.Wiring.IsEmpty);
+        Assert.Equal(["alpha", "beta"], vm.Wiring.AvailableRepos);
     }
 
     [Fact]
-    public void Editing_a_map_updates_its_repos_and_a_rename_removes_the_old()
+    public void Adding_a_repo_from_the_graph_saves_it_and_updates_the_list()
+    {
+        using var store = new TempStore();
+        using var a = CommitConfig("alpha", """
+            { "schema": 1, "name": "alpha", "provides": [ { "capability": "api", "ports": { "port": true } } ] }
+            """);
+        var services = new AppServices(store.Root);
+        services.Repos.Add(a.Path);
+        services.Maps.Save(new MapDefinition { Name = "world" });
+        var vm = new MapsViewModel(services);
+
+        vm.Wiring.AddRepoCommand.Execute("alpha");
+
+        Assert.Equal(["alpha"], services.Maps.Get("world")!.Repos.Select(r => r.Name));
+        Assert.Equal(["alpha"], vm.Selected!.Repos.Select(r => r.Name));
+        Assert.Empty(vm.Wiring.AvailableRepos);
+        Assert.Contains(vm.Wiring.Layout!.Nodes, n => n.Id == MapGraphLayout.ModuleId("alpha", "app"));
+
+        vm.Wiring.SelectedNodeId = MapGraphLayout.ModuleId("alpha", "app");
+        Assert.Equal("alpha", vm.Wiring.SelectedRepo);
+        vm.Wiring.RemoveRepoCommand.Execute("alpha");
+        Assert.Empty(services.Maps.Get("world")!.Repos);
+        Assert.True(vm.Wiring.IsEmpty);
+    }
+
+    [Fact]
+    public void Renaming_keeps_everything_about_the_map_and_removes_the_old_name()
     {
         using var store = new TempStore();
         using var a = CommitConfig("alpha", """{ "schema": 1, "name": "alpha" }""");
         var services = new AppServices(store.Root);
         services.Repos.Add(a.Path);
-        services.Maps.Save(new MapDefinition { Name = "old", Repos = [MapRepo.Local("alpha")] });
+        services.Maps.Save(new MapDefinition
+        {
+            Name = "old",
+            Repos = [MapRepo.Local("alpha")],
+            MaxSlots = 3,
+            Constants = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
+            {
+                ["alpha"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
+                {
+                    ["payments"] = new Dictionary<string, string> { ["url"] = "https://pay.sandbox.test" },
+                },
+            },
+        });
 
         var vm = new MapsViewModel(services);
-        vm.EditSelectedCommand.Execute(null);
-        Assert.Equal("old", vm.EditName);
-        Assert.True(vm.EditRepos.Single(r => r.Name == "alpha").IsSelected);   // membership reflected
+        vm.BeginRenameCommand.Execute(null);
+        vm.RenameText = "renamed";
+        vm.SaveRenameCommand.Execute(null);
 
-        vm.EditName = "renamed";
-        vm.SaveMapCommand.Execute(null);
-
-        Assert.Null(services.Maps.Get("old"));            // old file removed on rename
-        Assert.NotNull(services.Maps.Get("renamed"));
+        Assert.Null(services.Maps.Get("old"));
+        var renamed = services.Maps.Get("renamed")!;
+        Assert.Equal(3, renamed.MaxSlots);
+        Assert.Equal("https://pay.sandbox.test", renamed.Constants["alpha"]["payments"]["url"]);
+        Assert.Equal("renamed", vm.Selected!.Name);
     }
 
     [Fact]
-    public void Saving_an_invalid_map_surfaces_the_error_inline()
+    public void A_bad_or_taken_name_is_shown_and_nothing_is_saved()
     {
         using var store = new TempStore();
         var services = new AppServices(store.Root);
-
+        services.Maps.Save(new MapDefinition { Name = "taken" });
         var vm = new MapsViewModel(services);
+
         vm.NewMapCommand.Execute(null);
-        vm.EditName = "empty";                            // no repos selected
-        vm.SaveMapCommand.Execute(null);
+        vm.NewMapName = "bad name!";
+        vm.CreateMapCommand.Execute(null);
+        Assert.True(vm.IsNaming);
+        Assert.NotNull(vm.NameError);
 
-        Assert.True(vm.IsEditing);                        // stays open
-        Assert.NotNull(vm.EditError);
-        Assert.Empty(services.Maps.List());
-    }
-
-    [Fact]
-    public async Task Deselecting_a_repo_leaves_it_out_of_the_checkout()
-    {
-        using var store = new TempStore();
-        using var web = CommitConfig("web", """{ "schema": 1, "name": "web" }""");
-        using var api = CommitConfig("api", """
-            { "schema": 1, "name": "api",
-              "provides": [ { "capability": "api", "ports": { "port": true } } ] }
-            """);
-        var services = new AppServices(store.Root);
-        services.Repos.Add(web.Path);
-        services.Repos.Add(api.Path);
-        services.Maps.Save(new MapDefinition { Name = "dev", Repos = [MapRepo.Local("web"), MapRepo.Local("api")] });
-
-        var vm = new MapsViewModel(services) { NewWorkspaceName = "slice" };
-        vm.RepoChoices.Single(c => c.Name == "api").IsSelected = false;   // web only
-        await vm.CreateWorkspaceCommand.ExecuteAsync(null);
-
-        Assert.False(vm.StatusIsError);
-        Assert.Equal(["web"], services.Workspaces.Get("slice")!.SelectedRepos);
+        vm.NewMapName = "taken";
+        vm.CreateMapCommand.Execute(null);
+        Assert.Contains("already exists", vm.NameError);
+        Assert.Single(services.Maps.List());
     }
 }

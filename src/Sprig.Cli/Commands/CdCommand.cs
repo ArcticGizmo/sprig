@@ -23,7 +23,10 @@ namespace Sprig.Cli.Commands;
 /// path. A resolved-but-missing worktree throws — navigation never silently points at a drifted tree.</summary>
 sealed class TargetResolver(CliContext cli)
 {
-    public readonly record struct Target(string Path, string Workspace, string Repo, string Module);
+    public readonly record struct Target(string Path, string Workspace, string Repo, string Module, string? Label);
+
+    static string? LabelOf(InstanceRecord record)
+        => string.IsNullOrWhiteSpace(record.Label) ? null : record.Label.Trim();
 
     /// <summary>Resolve to a target, or null when an interactive pick is cancelled (ESC). Throws on a bad
     /// argument (unknown workspace/repo/module, missing terminal for <c>-i</c>) or a missing worktree. When
@@ -48,7 +51,7 @@ sealed class TargetResolver(CliContext cli)
 
         var repo = PickRepo(record, repoName);
         var (path, module) = PickModule(repo, moduleName);
-        return new Target(path, record.Workspace, repo.Name, module);
+        return new Target(path, record.Workspace, repo.Name, module, LabelOf(record));
     }
 
     static InstanceRepo PickRepo(InstanceRecord record, string? name)
@@ -108,9 +111,8 @@ sealed class TargetResolver(CliContext cli)
             workspace = cli.Workspaces.Get(preset) ?? throw new ArgumentException($"unknown workspace '{preset}'");
         else if (records.Count == 1)
             workspace = records[0];
-        else if (Term.SelectOne(console, "Select a [green]workspace[/]: [grey](esc cancels)[/]",
-                     records.Select(r => r.Workspace).OrderBy(x => x, StringComparer.Ordinal)) is { } pick)
-            workspace = cli.Workspaces.Get(pick)!;
+        else if (PickWorkspaceInteractive(console, records) is { } pick)
+            workspace = pick;
         else
             return Cancelled(console);
 
@@ -124,7 +126,24 @@ sealed class TargetResolver(CliContext cli)
             : PickModuleInteractive(console, repo);
         if (module is null) return Cancelled(console);
 
-        return new Target(module.Value.Path, workspace.Workspace, repo.Name, module.Value.Module);
+        return new Target(module.Value.Path, workspace.Workspace, repo.Name, module.Value.Module, LabelOf(workspace));
+    }
+
+    // Pool workspace names say nothing about what they're for, so the label rides alongside each one. The
+    // prompt renders choices as markup, hence the escaping and the map back to the record.
+    static InstanceRecord? PickWorkspaceInteractive(IAnsiConsole console, IReadOnlyList<InstanceRecord> records)
+    {
+        var byChoice = new Dictionary<string, InstanceRecord>(StringComparer.Ordinal);
+        foreach (var r in records.OrderBy(r => r.Workspace, StringComparer.Ordinal))
+        {
+            var choice = LabelOf(r) is { } label
+                ? $"{Markup.Escape(r.Workspace)}  [dim]{Markup.Escape(label)}[/]"
+                : Markup.Escape(r.Workspace);
+            byChoice[choice] = r;
+        }
+        return Term.SelectOne(console, "Select a [green]workspace[/]: [grey](esc cancels)[/]", byChoice.Keys) is { } pick
+            ? byChoice[pick]
+            : null;
     }
 
     InstanceRepo? PickRepoInteractive(IAnsiConsole console, InstanceRecord record, string? preset)
@@ -134,7 +153,8 @@ sealed class TargetResolver(CliContext cli)
 
         // Which workspace this pick is for — the workspace may have been auto-chosen (a lone one) or passed
         // as an argument, so the user might never have seen its name before the repo list appears.
-        console.MarkupLine($"[bold]Workspace[/] [green]{Markup.Escape(record.Workspace)}[/]");
+        var label = LabelOf(record) is { } l ? $" [dim]{Markup.Escape(l)}[/]" : "";
+        console.MarkupLine($"[bold]Workspace[/] [green]{Markup.Escape(record.Workspace)}[/]{label}");
         return Term.SelectOne(console, "Which [green]repo[/]? [grey](esc cancels)[/]",
                 record.Repos.Select(r => r.Name).OrderBy(x => x, StringComparer.Ordinal)) is { } pick
             ? PickRepo(record, pick)
@@ -291,7 +311,12 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
         // Run through a shell shim (see ShellShims), the shell you typed this in can move itself, which beats
         // a new window. Without one, or with --window, fall through to opening a window.
         if (!s.Window && ShellShims.TryRequestCd(t.Path))
+        {
+            // A reminder of what this workspace is for, since the prompt only shows a pool-style path.
+            if (t.Label is { } label)
+                cli.Ansi.MarkupLine($"[green]→[/] [bold]{Markup.Escape(label)}[/] [dim]· {Markup.Escape(Where(t))}[/]");
             return 0;
+        }
 
         // Opening a window is Windows-only for now; elsewhere we can't spawn a matching terminal reliably yet
         // (that's coming), so degrade to printing the path and point at `sprig path` for scripting.
@@ -304,7 +329,8 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
 
         var calling = CallingShell();
         var shell = LaunchWindow(t.Path, s.Shell, calling?.Path, WindowTitle(t));
-        cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] opened [bold]{Markup.Escape(shell)}[/] " +
+        var labelled = t.Label is { } l ? $" for [bold]{Markup.Escape(l)}[/]" : "";
+        cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] opened [bold]{Markup.Escape(shell)}[/]{labelled} " +
             $"in a new window — [dim]{Markup.Escape(t.Path)}[/]");
         if (calling is { ThroughCmdShim: true } c && IsPowerShell(c.Path) && PowerShellShimMissing())
             cli.Ansi.MarkupLine("[dim]tip: 'sprig cd' can move this PowerShell window instead; 'sprig shell install' says how[/]");
@@ -325,14 +351,14 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
     // the repo's live branch), then which workspace/repo it is.
     string WindowTitle(TargetResolver.Target t)
     {
-        var record = cli.Workspaces.Get(t.Workspace);
-        var repo = record?.Repos.FirstOrDefault(r => r.Name == t.Repo);
-        var headline = !string.IsNullOrWhiteSpace(record?.Label) ? record!.Label
-            : repo is null ? null
-            : WorktreeHead.Read(repo.WorktreePath)?.Display;
-        var where = record?.Repos.Count > 1 ? $"{t.Workspace}/{t.Repo}" : t.Workspace;
-        return headline is null ? where : $"{headline} · {where}";
+        var repo = cli.Workspaces.Get(t.Workspace)?.Repos.FirstOrDefault(r => r.Name == t.Repo);
+        var headline = t.Label ?? (repo is null ? null : WorktreeHead.Read(repo.WorktreePath)?.Display);
+        return headline is null ? Where(t) : $"{headline} · {Where(t)}";
     }
+
+    // Which workspace/repo a target is; the repo is only worth naming when the workspace has several.
+    string Where(TargetResolver.Target t)
+        => cli.Workspaces.Get(t.Workspace)?.Repos.Count > 1 ? $"{t.Workspace}/{t.Repo}" : t.Workspace;
 
     // Open a new terminal window running a shell in `dir`. Tries the best-matching shell first (the one we
     // were invoked from), then falls back to pwsh/powershell/cmd if that one won't launch. Returns the

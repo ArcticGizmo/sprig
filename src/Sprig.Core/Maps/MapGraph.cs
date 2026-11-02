@@ -19,6 +19,8 @@ public sealed record MapGraphProvide(string Capability, IReadOnlyList<string> Ou
 
 /// <summary>One need on a module node: how it resolved, the chosen provider (when Resolved to a real
 /// provider), and the candidate provider repos (when Ambiguous).</summary>
+/// <param name="FromDefault">Filled by a value the map supplies: a constant, or a fallback default.</param>
+/// <param name="FromConstant">Filled by one of the map's constants, which win over any provider.</param>
 public sealed record MapGraphNeed(
     string Capability,
     string Alias,
@@ -26,7 +28,8 @@ public sealed record MapGraphNeed(
     string? ProviderRepo,
     string? ProviderCapability,
     bool FromDefault,
-    IReadOnlyList<string> Candidates);
+    IReadOnlyList<string> Candidates,
+    bool FromConstant = false);
 
 /// <summary>A module within a repo node: its provides and needs (with their wiring status).</summary>
 public sealed record MapGraphModule(
@@ -104,14 +107,23 @@ public static class MapGraphProjection
         return new MapGraph(nodes, edges);
     }
 
+    /// <summary>What a repo's need is matched against: the map's wiring entry when it has one, else the
+    /// need's own name.</summary>
+    public static WiringTarget Target(MapDefinition? map, string repo, string need)
+        => Lookup2(map?.Wiring, repo, need) is { } wired ? WiringTarget.Parse(wired) : new WiringTarget(null, need);
+
     static MapGraphNeed Classify(string repo, Need need, MapDefinition? map, ILookup<string, Provider> byCapability)
     {
-        // A map may bridge a generic need to a specific provider capability (need name != provider name).
-        var target = Lookup2(map?.Wiring, repo, need.Capability) ?? need.Capability;
-        var candidates = byCapability[target].ToList();
+        // A constant is the map's decision for this need, so nothing else is consulted.
+        if (Lookup3(map?.Constants, repo, need.Capability) is not null)
+            return new MapGraphNeed(need.Capability, need.Alias, WireStatus.Resolved, null, null, true, [], FromConstant: true);
 
-        // Nearest-wins: a provider in the same repo beats any other.
-        var sibling = candidates.FirstOrDefault(p => p.Repo == repo);
+        var wiring = Target(map, repo, need.Capability);
+        var target = wiring.Capability;
+        var candidates = byCapability[target].Where(p => wiring.Repo is null || p.Repo == wiring.Repo).ToList();
+
+        // Nearest-wins: a provider in the same repo beats any other, unless the map named the repo.
+        var sibling = wiring.Repo is null ? candidates.FirstOrDefault(p => p.Repo == repo) : null;
         if (sibling is not null)
             return Resolved(need, sibling, fromDefault: false);
 

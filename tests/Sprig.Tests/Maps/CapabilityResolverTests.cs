@@ -115,6 +115,85 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void Map_wiring_that_names_a_repo_picks_between_two_providers_of_the_same_capability()
+    {
+        var a = Repo("a", Mod("app", provides: [Http("dup")]));
+        var b = Repo("b", Mod("app", provides: [Http("dup")]));
+        var c = Repo("c", Mod("app", needs: [new Need { Capability = "dup" }]));
+        var ports = Allocate(a, b, c);
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("a"), MapRepo.Local("b"), MapRepo.Local("c")],
+            Wiring = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["c"] = new Dictionary<string, string> { ["dup"] = "b/dup" },
+            },
+        };
+
+        var rw = CapabilityResolver.Resolve("ws", map, [a, b, c], ports);
+
+        Assert.Equal($"http://localhost:{ports["b.dup.port"]}", Resolve(rw.Modules.Single(m => m.Repo == "c"), "dup.url"));
+    }
+
+    [Fact]
+    public void Map_wiring_that_names_a_repo_overrides_a_same_repo_sibling()
+    {
+        var app = Repo("app",
+            Mod("svc", provides: [Http("svc")]),
+            Mod("consumer", needs: [new Need { Capability = "svc" }]));
+        var other = Repo("other", Mod("svc", provides: [Http("svc")]));
+        var ports = Allocate(app, other);
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("app"), MapRepo.Local("other")],
+            Wiring = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["app"] = new Dictionary<string, string> { ["svc"] = "other/svc" },
+            },
+        };
+
+        var rw = CapabilityResolver.Resolve("ws", map, [app, other], ports);
+
+        Assert.Equal($"http://localhost:{ports["other.svc.port"]}", Resolve(Module(rw, "consumer"), "svc.url"));
+    }
+
+    [Fact]
+    public void A_map_constant_wins_over_a_provider_of_the_same_capability()
+    {
+        var web = Repo("web", Mod("app", needs: [new Need { Capability = "api" }]));
+        var api = Repo("api", Mod("app", provides: [Http("api")]));
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("web"), MapRepo.Local("api")],
+            Constants = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
+            {
+                ["web"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
+                {
+                    ["api"] = new Dictionary<string, string> { ["url"] = "https://staging.example.test" },
+                },
+            },
+        };
+
+        var rw = CapabilityResolver.Resolve("ws", map, [web, api], Allocate(web, api));
+
+        Assert.Equal("https://staging.example.test", Resolve(rw.Modules.Single(m => m.Repo == "web"), "api.url"));
+    }
+
+    [Fact]
+    public void The_ambiguity_error_shows_the_wiring_entry_that_settles_it()
+    {
+        var a = Repo("a", Mod("app", provides: [Http("dup")]));
+        var b = Repo("b", Mod("app", provides: [Http("dup")]));
+        var c = Repo("c", Mod("app", needs: [new Need { Capability = "dup" }]));
+
+        var ex = Assert.Throws<MapResolutionException>(() => CapabilityResolver.Resolve("ws", null, [a, b, c], Allocate(a, b, c)));
+        Assert.Contains("\"dup\": \"a/dup\"", ex.Message);
+    }
+
+    [Fact]
     public void Map_wiring_bridges_a_generically_named_need_to_a_specific_provider()
     {
         var web = Repo("web", Mod("app", needs: [new Need { Capability = "backend" }]));

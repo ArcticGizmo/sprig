@@ -9,6 +9,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.8.1] - 2026-11-02
+
+### Added
+- **The Maps page draws the wiring** — unmet needs in red. Checkout is no longer the first to know.
+- **The graph is a canvas** — drag to pan, Ctrl+scroll to zoom. No scrollbars were harmed.
+- **Maps are composed on the graph** — New map, then Add repo. Checkboxes retired.
+- **One list of variables** — expand a row to link it or pin it.
+- **Map constants** — beat any provider, shown in violet. Set with `sprig map constant`.
+- **Hard-coded values flagged** — `localhost:1025` becomes a need in one click.
+- **`sprig map check`** — exits 1 when a checkout would stop, and says why.
+
+### Changed
+- **`sprig cd` shows the workspace label** — `pool-03` stops being a mystery.
+- **`sprig map show` reports the wiring** — rather than reciting the file.
+- **Map wiring can name the repo** — `"billing/cache"` settles a tie. The error's suggested fix now works.
+
+### Removed
+- **Checking out from the Maps page** — the Workspaces page does it.
+
+### Fixed
+- **Editing a map in the app kept only name and repos** — wiring and constants now survive.
+
+---
+
 ## [v0.8.0] - 2026-10-30
 
 ### Changed

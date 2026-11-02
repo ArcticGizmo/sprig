@@ -121,9 +121,13 @@ public static class CliApp
         // the CLI lists/shows/imports them, and checks workspaces out of their pool (see `pool`).
         config.AddBranch("map", map =>
         {
-            map.SetDescription("List, show and import maps (self-describing repos wired by provides/needs)");
+            map.SetDescription("List, show, check and import maps (self-describing repos wired by provides/needs)");
             map.AddCommand<MapLsCommand>("ls");
             map.AddCommand<MapShowCommand>("show");
+            map.AddCommand<MapCheckCommand>("check");
+            map.AddCommand<MapConstantCommand>("constant");
+            map.AddCommand<MapDefaultCommand>("default");
+            map.AddCommand<MapWireCommand>("wire");
             map.AddCommand<MapImportCommand>("import");
         });
 

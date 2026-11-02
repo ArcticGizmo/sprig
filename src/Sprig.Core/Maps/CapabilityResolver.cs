@@ -109,12 +109,22 @@ public static class CapabilityResolver
     {
         var alias = need.Alias;
 
-        // A map may bridge a generic need to a specific provider capability (need name != provider name).
-        var target = Lookup2(map?.Wiring, repo, need.Capability) ?? need.Capability;
-        var candidates = byCapability[target].ToList();
+        // A constant is the map's decision for this need, so it wins over any provider.
+        if (Lookup3(map?.Constants, repo, need.Capability) is { } constant)
+        {
+            foreach (var (output, literal) in constant)
+                values[$"{alias}.{output}"] = literal;
+            return;
+        }
 
-        // Nearest-wins: a provider in the same repo beats any other; otherwise a single map-wide provider.
-        var chosen = candidates.FirstOrDefault(p => p.Repo == repo);
+        // A map may bridge a need to another capability name, and may name the providing repo.
+        var wiring = MapGraphProjection.Target(map, repo, need.Capability);
+        var target = wiring.Capability;
+        var candidates = byCapability[target].Where(p => wiring.Repo is null || p.Repo == wiring.Repo).ToList();
+
+        // Nearest-wins: a provider in the same repo beats any other, unless the map named the repo;
+        // otherwise a single map-wide provider.
+        var chosen = wiring.Repo is null ? candidates.FirstOrDefault(p => p.Repo == repo) : null;
         if (chosen is null)
         {
             var others = candidates;
@@ -123,7 +133,8 @@ public static class CapabilityResolver
             else if (others.Count > 1)
                 throw new MapResolutionException(
                     $"{repo}.{moduleName} needs '{need.Capability}', but {others.Count} repos provide '{target}' " +
-                    $"({string.Join(", ", others.Select(o => o.Repo))}). Add a map wiring entry to pick one.");
+                    $"({string.Join(", ", others.Select(o => o.Repo))}). Pick one in the map's wiring, e.g. " +
+                    $"\"wiring\": {{ \"{repo}\": {{ \"{need.Capability}\": \"{others[0].Repo}/{target}\" }} }}.");
         }
 
         if (chosen is not null)
@@ -185,9 +196,6 @@ public static class CapabilityResolver
                     providers.Add(new Provider(repo.Name, cap.Capability, module, cap));
         return providers;
     }
-
-    static string? Lookup2(IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? outer, string a, string b)
-        => outer is not null && outer.TryGetValue(a, out var inner) && inner.TryGetValue(b, out var v) ? v : null;
 
     static IReadOnlyDictionary<string, string>? Lookup3(
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>? outer, string a, string b)

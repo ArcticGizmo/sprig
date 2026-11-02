@@ -45,7 +45,7 @@ not the socket**: `vite-server.port` reads as a hierarchy, while `vite-port.port
 |---|---|---|---|
 | `capability` | string | yes | The contract name — the head of every `${sprig.<capability>.<output>}` reference and the wiring key other repos' `needs` match against. Name the *service* (`vite-server`), not one of its shapes. |
 | `ports` | object | one of `ports`/`shapes` | `port-name → spec`. Real, non-colliding host ports allocated per workspace. Each spec is `true` (any host port) or `{ "allowed": "8100-8103" }` (pinned — see below). The app always exports a single port named `port`. |
-| `shapes` | object | one of `ports`/`shapes` | `shape-name → template`. Derived strings built from this capability's **own** outputs, e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. |
+| `shapes` | object | one of `ports`/`shapes` | `shape-name → template`. Derived strings built from this capability's **own** outputs, e.g. `"url": "http://localhost:${sprig.<thisCapability>.port}"`. A capability with no port and only literal shapes (`"shapes": { "realm": "storefront-dev" }`) is a **constant**: every module that needs it gets the same value in every workspace, and the Maps view marks it with ◆. |
 | `open` | string | no | The output that is a browsable entry point (usually `url`). Listed by `sprig ws urls`, `sprig here`, `ws info` and the app; opened by `sprig ws browse`. Must name one of this capability's outputs. |
 | `probe` | string | no | A URL template sprig may GET to report the service up or down, e.g. `"${sprig.<thisCapability>.url}/health"`. Same reference rules as a shape. Checked only when asked (`sprig ws urls --probe`), never polled. Any response below 500 counts as up, since it means something is listening. |
 
@@ -359,8 +359,9 @@ inside a repo. Authored in the app's **Maps** page, or imported with `sprig map 
 | `schema` | int | Schema version. Currently `1`. |
 | `name` | string | Map name. Must match `^[A-Za-z0-9._+-]+$`. |
 | `repos` | array | The repos in the map. Each entry is a bare **registry name** (`"acme"`), or an object `{ "name": …, "repo": <git-url> }`. |
-| `wiring` | object | `wiring[repo][capability] = providerCapability` — disambiguation, only needed when more than one selected repo provides a capability a repo needs. |
-| `defaults` | object | `defaults[repo][capability][output] = literal` — a manual fallback for a need whose provider isn't in the current selection, so a partial checkout resolves instead of reporting a gap. |
+| `wiring` | object | `wiring[repo][capability] = providerCapability` bridges a need to a provide with a different name. `wiring[repo][capability] = "providerRepo/providerCapability"` also names the repo that wins, which is how to settle two repos providing the same capability; it overrides the usual same-repo-first rule. The provider repo must be in the map. |
+| `constants` | object | `constants[repo][capability][output] = literal` — the map's decision for a need: it always takes these values, even when a repo in the checkout provides the capability. Checked before `wiring`. |
+| `defaults` | object | `defaults[repo][capability][output] = literal` — a manual fallback for a need whose provider isn't in the current selection, so a partial checkout resolves instead of reporting a gap. A provider in the checkout always wins over a default. |
 | `maxSlots` | int | Optional pool ceiling — the max warm workspaces of this map. Defaults to **5** when unset. |
 
 ### `repos[]` — names, and portable URLs
@@ -408,8 +409,39 @@ has no provider in the selection. Rather than fail, the map supplies a finished 
 }
 ```
 
-`vue-web`'s `${sprig.api.url}` now resolves to the staging URL. (When more than one repo could
-provide `api`, you'd instead add a `wiring` entry naming the winner.)
+`vue-web`'s `${sprig.api.url}` now resolves to the staging URL. A default only applies while nothing in the selection provides the need; check the backend out too and its real `api` wins.
+
+### Example — a constant that overrides a provider
+
+`worker` needs `queue`, and `rabbit` provides it, but this map should point every workspace at a shared broker instead. A constant wins over the provider:
+
+```json
+{
+  "schema": 1,
+  "name": "shared-broker",
+  "repos": ["worker", "rabbit"],
+  "constants": {
+    "worker": { "queue": { "url": "amqp://broker.example.test:5672" } }
+  }
+}
+```
+
+Remove the constant and `worker` goes back to `rabbit`'s queue.
+
+### Example — two repos provide the same capability
+
+`billing` and `catalog` both provide `cache`, and `shop` needs it. Checkout can't guess, so the map names the winner:
+
+```json
+{
+  "schema": 1,
+  "name": "storefront",
+  "repos": ["shop", "billing", "catalog"],
+  "wiring": {
+    "shop": { "cache": "billing/cache" }
+  }
+}
+```
 
 ---
 

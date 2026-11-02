@@ -23,9 +23,10 @@ public sealed record MapDefinition
     public IReadOnlyList<MapRepo> Repos { get; init; } = [];
 
     /// <summary>
-    /// Disambiguation: <c>Wiring[repo][capability] = providerCapability</c>. Only needed when more than one
-    /// selected repo provides a capability a repo needs — pick which one wins. Keyed by repo + capability
-    /// (module granularity is added only if a real collision ever appears).
+    /// Disambiguation: <c>Wiring[repo][capability] = providerCapability</c>, or
+    /// <c>"providerRepo/providerCapability"</c> to name the repo that wins when several provide the same
+    /// capability (see <see cref="WiringTarget"/>). Keyed by repo + capability (module granularity is added
+    /// only if a real collision ever appears).
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Wiring { get; init; }
         = new Dictionary<string, IReadOnlyDictionary<string, string>>();
@@ -38,9 +39,51 @@ public sealed record MapDefinition
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Defaults { get; init; }
         = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>();
 
+    /// <summary>
+    /// Overrides: <c>Constants[repo][capability][output] = literal</c>. Unlike <see cref="Defaults"/>, a
+    /// constant always wins, even when a repo in the selection provides the capability — the map has decided
+    /// this need takes a fixed value. Takes precedence over wiring and providers.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Constants { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>();
+
     /// <summary>Optional pool ceiling — the max warm workspaces of this map (replaces the stack's maxSlots).
     /// Null means pooling is unbounded/unconfigured for this map.</summary>
     public int? MaxSlots { get; init; }
+
+    /// <summary>This map over a new repo list. Entries already in the map keep their git URL; wiring,
+    /// defaults and constants survive except where they concern a repo that left the map.</summary>
+    public MapDefinition WithRepos(IEnumerable<string> names)
+    {
+        var repos = names.Select(n => Repos.FirstOrDefault(r => r.Name == n) ?? MapRepo.Local(n)).ToList();
+        var kept = repos.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        bool Stays(string target) => WiringTarget.Parse(target).Repo is not { } provider || kept.Contains(provider);
+
+        var wiring = Wiring.Where(w => kept.Contains(w.Key))
+            .Select(w => (w.Key, Needs: (IReadOnlyDictionary<string, string>)w.Value.Where(n => Stays(n.Value))
+                .ToDictionary(n => n.Key, n => n.Value, StringComparer.Ordinal)))
+            .Where(w => w.Needs.Count > 0)
+            .ToDictionary(w => w.Key, w => w.Needs, StringComparer.Ordinal);
+        var defaults = Defaults.Where(d => kept.Contains(d.Key)).ToDictionary(d => d.Key, d => d.Value, StringComparer.Ordinal);
+        var constants = Constants.Where(d => kept.Contains(d.Key)).ToDictionary(d => d.Key, d => d.Value, StringComparer.Ordinal);
+        return this with { Repos = repos, Wiring = wiring, Defaults = defaults, Constants = constants };
+    }
+}
+
+/// <summary>
+/// A wiring value: the capability a need is matched against, optionally pinned to the repo that provides
+/// it (<c>"billing/cache"</c>). A bare capability bridges names only, so it can't choose between two repos
+/// that provide the same name; the repo form can. Neither repo nor capability names may contain <c>/</c>.
+/// </summary>
+public readonly record struct WiringTarget(string? Repo, string Capability)
+{
+    public static WiringTarget Parse(string value)
+    {
+        var slash = value.IndexOf('/');
+        return slash > 0 ? new(value[..slash], value[(slash + 1)..]) : new(null, value);
+    }
+
+    public override string ToString() => Repo is null ? Capability : $"{Repo}/{Capability}";
 }
 
 /// <summary>

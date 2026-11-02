@@ -15,6 +15,7 @@ public partial class MainWindow : Window
         // The nav logo is a native Avalonia vector (Avalonia rasterises it through Skia), so it stays
         // crisp at any size/DPI. Built from data generated out of sprig.svg — see SprigLogo.
         LogoImage.Source = SprigLogo.Create();
+        UpdateLogoImage.Source = SprigLogo.Create();
         DataContextChanged += OnDataContextChanged;
         // Anchors are resolved against the window's own content, so a coachmark can point at anything in it.
         Coachmarks.AnchorRoot = this;

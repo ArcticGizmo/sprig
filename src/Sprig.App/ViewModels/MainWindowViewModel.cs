@@ -67,6 +67,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The last update check's result — held so "Update now" can install it without re-checking.</summary>
     UpdateCheckResult? _updateResult;
 
+    /// <summary>Runs an install and drives the full-window progress overlay, whichever button started it.</summary>
+    public UpdateInstaller Updater { get; } = new();
+
     /// <summary>
     /// Whether the update entry (in the left nav, above Settings) should be on screen: there's a notice
     /// to show, and we're not inside a guided experience. The tour and every lesson run on the demo store
@@ -118,7 +121,7 @@ public partial class MainWindowViewModel : ViewModelBase
         nav.SetGuideEntry(guide => EnterGuideCommand.Execute(guide));
 
         Learn = new LearnViewModel(services, nav);
-        About = new AboutViewModel();
+        About = new AboutViewModel(Updater);
 
         // Settings + About are navigable (so they get active-state highlighting) but live in the
         // bottom nav slot rather than the workflow list, so they're not in NavItems.
@@ -181,14 +184,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task UpdateNow()
     {
         if (_updateResult is not { Availability: UpdateAvailability.Available }) return;
-        try
-        {
-            await UpdateChecker.ApplyAsync(_updateResult);
-        }
-        catch
-        {
+        if (!await Updater.InstallAsync(_updateResult))
             UpdateNotice = "Update failed to install — try again from the About page.";
-        }
     }
 
     partial void OnUpdateNoticeChanged(string? value) => OnPropertyChanged(nameof(ShowUpdateNotice));

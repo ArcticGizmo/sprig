@@ -32,6 +32,10 @@ public partial class AboutViewModel : PageViewModel
     /// <summary>Result of the last check — held so <see cref="ApplyUpdateCommand"/> can install it.</summary>
     UpdateCheckResult? _lastCheck;
 
+    readonly UpdateInstaller _installer;
+
+    public AboutViewModel(UpdateInstaller? installer = null) => _installer = installer ?? new UpdateInstaller();
+
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _updateStatus = "";
 
@@ -74,17 +78,11 @@ public partial class AboutViewModel : PageViewModel
             return;
 
         IsBusy = true;
-        UpdateStatus = $"Downloading version {_lastCheck.AvailableVersion}…";
-        try
-        {
-            // On success the app downloads, installs, and restarts — this does not return.
-            await UpdateChecker.ApplyAsync(_lastCheck);
-        }
-        catch
-        {
+        UpdateStatus = "";
+        // On success the app restarts, so this only returns when the install failed.
+        if (!await _installer.InstallAsync(_lastCheck))
             UpdateStatus = "Update failed to install — try again later.";
-            IsBusy = false;
-        }
+        IsBusy = false;
     }
 
     bool NotBusy => !IsBusy;

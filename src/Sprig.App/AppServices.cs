@@ -35,6 +35,10 @@ public sealed class AppServices
     public MapResolver MapResolver { get; }
     public MapPoolService MapPool { get; }
 
+    /// <summary>The Maps page's wiring view: what a map's checkout would do, and the fixes it offers.</summary>
+    public MapInspector MapInspector { get; }
+    public MapEditor MapEditor { get; }
+
     public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
     public IPortStore Ports { get; }
@@ -71,6 +75,8 @@ public sealed class AppServices
         Maps = new MapStore(Paths, Repos);
         MapResolver = new MapResolver(Repos, Maps, Git, Paths);
         MapPool = new MapPoolService(Maps, instances, MapResolver, Workspaces, Paths);
+        MapInspector = new MapInspector(Repos, Maps);
+        MapEditor = new MapEditor(Maps, Repos);
         Init = new InitInspector(Git);
         Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Maps, MapResolver, Workspaces);
     }

@@ -111,6 +111,52 @@ public class MapsViewModelTests
     }
 
     [Fact]
+    public void Editing_a_map_keeps_its_wiring_constants_pool_size_and_unlisted_repos()
+    {
+        using var store = new TempStore();
+        using var a = CommitConfig("alpha", """{ "schema": 1, "name": "alpha" }""");
+        using var b = CommitConfig("beta", """{ "schema": 1, "name": "beta" }""");
+        var services = new AppServices(store.Root);
+        services.Repos.Add(a.Path);
+        services.Repos.Add(b.Path);
+        services.Maps.Save(new MapDefinition
+        {
+            Name = "dev",
+            Repos = [MapRepo.Local("alpha"), MapRepo.Local("beta"), new MapRepo { Name = "remote", Repo = "https://example.test/remote.git" }],
+            Wiring = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["alpha"] = new Dictionary<string, string> { ["cache"] = "beta/cache", ["api"] = "remote-api" },
+            },
+            Defaults = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
+            {
+                ["alpha"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
+                {
+                    ["payments"] = new Dictionary<string, string> { ["url"] = "https://pay.sandbox.test" },
+                },
+                ["beta"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
+                {
+                    ["mail"] = new Dictionary<string, string> { ["address"] = "localhost:1025" },
+                },
+            },
+            MaxSlots = 3,
+        });
+
+        var vm = new MapsViewModel(services);
+        vm.EditSelectedCommand.Execute(null);
+        vm.EditRepos.Single(r => r.Name == "beta").IsSelected = false;
+        vm.SaveMapCommand.Execute(null);
+
+        Assert.Null(vm.EditError);
+        var saved = services.Maps.Get("dev")!;
+        Assert.Equal(["remote", "alpha"], saved.Repos.Select(r => r.Name));
+        Assert.Equal("https://example.test/remote.git", saved.Repos[0].Repo);
+        Assert.Equal(3, saved.MaxSlots);
+        Assert.Equal("https://pay.sandbox.test", saved.Defaults["alpha"]["payments"]["url"]);
+        Assert.False(saved.Defaults.ContainsKey("beta"));                          // beta left, so its constants go
+        Assert.Equal(["api"], saved.Wiring["alpha"].Keys);                        // the entry naming beta goes too
+    }
+
+    [Fact]
     public void Saving_an_invalid_map_surfaces_the_error_inline()
     {
         using var store = new TempStore();

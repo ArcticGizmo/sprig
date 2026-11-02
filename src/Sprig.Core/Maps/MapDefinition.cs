@@ -42,6 +42,23 @@ public sealed record MapDefinition
     /// <summary>Optional pool ceiling — the max warm workspaces of this map (replaces the stack's maxSlots).
     /// Null means pooling is unbounded/unconfigured for this map.</summary>
     public int? MaxSlots { get; init; }
+
+    /// <summary>This map over a new repo list. Entries already in the map keep their git URL; wiring and
+    /// defaults survive except where they concern a repo that left the map.</summary>
+    public MapDefinition WithRepos(IEnumerable<string> names)
+    {
+        var repos = names.Select(n => Repos.FirstOrDefault(r => r.Name == n) ?? MapRepo.Local(n)).ToList();
+        var kept = repos.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        bool Stays(string target) => WiringTarget.Parse(target).Repo is not { } provider || kept.Contains(provider);
+
+        var wiring = Wiring.Where(w => kept.Contains(w.Key))
+            .Select(w => (w.Key, Needs: (IReadOnlyDictionary<string, string>)w.Value.Where(n => Stays(n.Value))
+                .ToDictionary(n => n.Key, n => n.Value, StringComparer.Ordinal)))
+            .Where(w => w.Needs.Count > 0)
+            .ToDictionary(w => w.Key, w => w.Needs, StringComparer.Ordinal);
+        var defaults = Defaults.Where(d => kept.Contains(d.Key)).ToDictionary(d => d.Key, d => d.Value, StringComparer.Ordinal);
+        return this with { Repos = repos, Wiring = wiring, Defaults = defaults };
+    }
 }
 
 /// <summary>

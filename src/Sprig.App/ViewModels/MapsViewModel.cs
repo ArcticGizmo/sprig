@@ -106,16 +106,22 @@ public sealed partial class MapsViewModel : PageViewModel
         EditError = null;
     }
 
-    /// <summary>Persist the map being authored. On a rename the old file is removed. Validation errors
-    /// (bad name, no repos, an unregistered repo) surface inline rather than throwing.</summary>
+    /// <summary>Persist the map being authored. On a rename the old file is removed. An edit keeps the map's
+    /// wiring, constants, pool size and repo URLs, and any repo the editor can't list because it isn't
+    /// registered here. Validation errors (bad name, no repos, an unregistered repo) surface inline.</summary>
     [RelayCommand]
     private void SaveMap()
     {
         var name = EditName.Trim();
-        var repos = EditRepos.Where(c => c.IsSelected).Select(c => MapRepo.Local(c.Name)).ToList();
+        var listed = EditRepos.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
+        var existing = _editingOriginal is { } original ? _services.Maps.Get(original) : null;
+        var names = (existing?.Repos.Where(r => !listed.Contains(r.Name)).Select(r => r.Name) ?? [])
+            .Concat(EditRepos.Where(c => c.IsSelected).Select(c => c.Name))
+            .ToList();
+        var map = (existing ?? new MapDefinition()).WithRepos(names) with { Name = name };
         try
         {
-            _services.Maps.Save(new MapDefinition { Name = name, Repos = repos });
+            _services.Maps.Save(map);
             if (_editingOriginal is { } old && !string.Equals(old, name, System.StringComparison.Ordinal))
                 _services.Maps.Remove(old);
             _services.NotifyStoreChanged();

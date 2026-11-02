@@ -106,10 +106,19 @@ internal static class HeadlessRenderer
             Shot("maps_wiring_ledger.png");
             maps.Wiring.ShowLedger = false;
 
+            maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.ModuleId("billing", "app");
+            maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "auth-api").IsExpanded = true;
+            Shot("maps_wiring_variable_source.png");
+
             maps.Wiring.SelectedNodeId = null;
             maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "help-site").SetConstantCommand.Execute(null);
             maps.Wiring.Variables.OfType<FixedValueRow>().Single().ConvertCommand.Execute(null);
             Shot("maps_wiring_after_fixes.png");
+
+            maps.NewMapCommand.Execute(null);
+            maps.NewMapName = "draft";
+            maps.CreateMapCommand.Execute(null);
+            Shot("maps_new_map_empty.png");
             if (maps.Wiring.Error is { } error) Console.Error.WriteLine($"wiring fix failed: {error}");
         }
         finally

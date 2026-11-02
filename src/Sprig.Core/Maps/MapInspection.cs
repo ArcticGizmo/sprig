@@ -9,8 +9,10 @@ public enum NeedState
     Ambiguous,
     /// <summary>No provider and no map default, so checkout can't proceed.</summary>
     Gap,
-    /// <summary>No provider, but the map supplies constant values for it.</summary>
+    /// <summary>No provider, but the map's fallback default supplies values for it.</summary>
     Default,
+    /// <summary>The map's constant supplies values for it, whether or not a repo provides it.</summary>
+    Constant,
 }
 
 /// <summary>Who relies on a provided capability.</summary>
@@ -35,6 +37,10 @@ public sealed record ProviderRef(string Repo, string Module, string Capability);
 /// <summary>A likely value for one output of an unmet need, recovered from a module's env files.</summary>
 public sealed record ValueHint(string Output, string Value, string Source);
 
+/// <param name="Values">The map-supplied values when <see cref="State"/> is <see cref="NeedState.Constant"/>
+/// or <see cref="NeedState.Default"/>.</param>
+/// <param name="Outputs">The outputs the module's templates read from this need (<c>url</c>, <c>port</c>…),
+/// so a constant can be offered with the right names.</param>
 public sealed record NeedInfo(
     string Repo,
     string Module,
@@ -43,10 +49,15 @@ public sealed record NeedInfo(
     NeedState State,
     string Target,
     IReadOnlyList<ProviderRef> Providers,
-    IReadOnlyDictionary<string, string>? DefaultValues,
+    IReadOnlyDictionary<string, string>? Values,
     IReadOnlyList<TemplateUse> Uses,
     ProviderRef? Similar,
-    IReadOnlyList<ValueHint> Hints);
+    IReadOnlyList<ValueHint> Hints,
+    IReadOnlyList<string> Outputs)
+{
+    /// <summary>The map gives it a value of its own: a constant, or a fallback default.</summary>
+    public bool IsMapValue => State is NeedState.Constant or NeedState.Default;
+}
 
 public sealed record ProvideInfo(
     string Repo,
@@ -115,7 +126,8 @@ public sealed record MapInspection(
 
     public IReadOnlyList<NeedInfo> Gaps => Needs.Where(n => n.State == NeedState.Gap).ToList();
     public IReadOnlyList<NeedInfo> Ambiguities => Needs.Where(n => n.State == NeedState.Ambiguous).ToList();
-    public IReadOnlyList<NeedInfo> Defaulted => Needs.Where(n => n.State == NeedState.Default).ToList();
+    /// <summary>Needs the map gives a value of its own, by constant or fallback default.</summary>
+    public IReadOnlyList<NeedInfo> Defaulted => Needs.Where(n => n.IsMapValue).ToList();
 
     /// <summary>Modules two or more others rely on, most relied on first.</summary>
     public IReadOnlyList<ModuleInfo> Hubs => Modules.Where(m => m.ReliedOnBy >= 2)

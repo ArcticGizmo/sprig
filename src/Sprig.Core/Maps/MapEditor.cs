@@ -18,14 +18,7 @@ public sealed partial class MapEditor(MapStore maps, RepoRegistryStore registry)
         var map = Load(mapName);
         RequireRepo(map, repo);
         RequireName(capability, "capability");
-        if (values.Count == 0)
-            throw new MapException("give at least one output and its value, e.g. url=https://staging.example.test");
-        foreach (var (output, value) in values)
-        {
-            RequireName(output, "output");
-            if (string.IsNullOrWhiteSpace(value))
-                throw new MapException($"the value for '{output}' is empty");
-        }
+        RequireValues(values);
 
         var defaults = Copy(map.Defaults);
         if (!defaults.TryGetValue(repo, out var caps)) defaults[repo] = caps = new(StringComparer.Ordinal);
@@ -41,6 +34,78 @@ public sealed partial class MapEditor(MapStore maps, RepoRegistryStore registry)
             throw new MapException($"map '{mapName}' has no constant for {repo}'s '{capability}'");
         if (caps.Count == 0) defaults.Remove(repo);
         return Save(map with { Defaults = Freeze(defaults) });
+    }
+
+    /// <summary>Give <paramref name="repo"/>'s <paramref name="capability"/> need a constant: these values win
+    /// over any provider, so the need takes them whatever the map contains.</summary>
+    public MapDefinition SetConstant(string mapName, string repo, string capability, IReadOnlyDictionary<string, string> values)
+    {
+        var map = Load(mapName);
+        RequireRepo(map, repo);
+        RequireName(capability, "capability");
+        RequireValues(values);
+        var constants = Copy(map.Constants);
+        if (!constants.TryGetValue(repo, out var caps)) constants[repo] = caps = new(StringComparer.Ordinal);
+        caps[capability] = new Dictionary<string, string>(values, StringComparer.Ordinal);
+        return Save(map with { Constants = Freeze(constants) });
+    }
+
+    public MapDefinition RemoveConstant(string mapName, string repo, string capability)
+    {
+        var map = Load(mapName);
+        var constants = Copy(map.Constants);
+        if (!constants.TryGetValue(repo, out var caps) || !caps.Remove(capability))
+            throw new MapException($"map '{mapName}' has no constant for {repo}'s '{capability}'");
+        if (caps.Count == 0) constants.Remove(repo);
+        return Save(map with { Constants = Freeze(constants) });
+    }
+
+    /// <summary>Link <paramref name="repo"/>'s <paramref name="need"/> to one provider, whatever either is
+    /// called, and drop any constant the need had so the provider's value takes effect.</summary>
+    public MapDefinition Link(string mapName, string repo, string need, string providerRepo, string providerCapability)
+    {
+        var map = Load(mapName);
+        RequireRepo(map, repo);
+        RequireRepo(map, providerRepo);
+        RequireName(need, "need");
+        RequireName(providerCapability, "capability");
+
+        var constants = Copy(map.Constants);
+        if (constants.TryGetValue(repo, out var caps) && caps.Remove(need) && caps.Count == 0) constants.Remove(repo);
+        return Save(map with
+        {
+            Constants = Freeze(constants),
+            Wiring = WithWiring(map.Wiring, repo, need, new WiringTarget(providerRepo, providerCapability).ToString()),
+        });
+    }
+
+    static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> WithWiring(
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> wiring, string repo, string need, string? target)
+    {
+        var copy = wiring.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value), StringComparer.Ordinal);
+        if (!copy.TryGetValue(repo, out var needs)) copy[repo] = needs = new(StringComparer.Ordinal);
+        if (target is null) needs.Remove(need);
+        else needs[need] = target;
+        if (needs.Count == 0) copy.Remove(repo);
+        return copy.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value, StringComparer.Ordinal);
+    }
+
+    /// <summary>Put a registered repo (or a repo by git URL) into the map.</summary>
+    public MapDefinition AddRepo(string mapName, string repo)
+    {
+        var map = Load(mapName);
+        if (map.Repos.Any(r => r.Name == repo))
+            throw new MapException($"map '{mapName}' already includes '{repo}'");
+        return Save(map.WithRepos(map.Repos.Select(r => r.Name).Append(repo)));
+    }
+
+    /// <summary>Take a repo out of the map, with the wiring, defaults and constants that concern it.</summary>
+    public MapDefinition RemoveRepo(string mapName, string repo)
+    {
+        var map = Load(mapName);
+        if (!map.Repos.Any(r => r.Name == repo))
+            throw new MapException($"map '{mapName}' doesn't include '{repo}'");
+        return Save(map.WithRepos(map.Repos.Select(r => r.Name).Where(n => n != repo)));
     }
 
     /// <summary>Wire <paramref name="repo"/>'s <paramref name="need"/> to <paramref name="target"/>: a
@@ -94,10 +159,11 @@ public sealed partial class MapEditor(MapStore maps, RepoRegistryStore registry)
         SprigConfigWriter.Write(updated, reg.ConfigPath);
         try
         {
-            var defaults = Copy(map.Defaults);
-            if (!defaults.TryGetValue(fixedValue.Repo, out var caps)) defaults[fixedValue.Repo] = caps = new(StringComparer.Ordinal);
+            // A constant rather than a fallback: today's value holds even if a repo later provides this name.
+            var constants = Copy(map.Constants);
+            if (!constants.TryGetValue(fixedValue.Repo, out var caps)) constants[fixedValue.Repo] = caps = new(StringComparer.Ordinal);
             caps[capability] = new Dictionary<string, string>(StringComparer.Ordinal) { [output] = fixedValue.Value };
-            return Save(map with { Defaults = Freeze(defaults) });
+            return Save(map with { Constants = Freeze(constants) });
         }
         catch
         {
@@ -169,6 +235,18 @@ public sealed partial class MapEditor(MapStore maps, RepoRegistryStore registry)
     {
         if (!map.Repos.Any(r => r.Name == repo))
             throw new MapException($"map '{map.Name}' doesn't include repo '{repo}'");
+    }
+
+    static void RequireValues(IReadOnlyDictionary<string, string> values)
+    {
+        if (values.Count == 0)
+            throw new MapException("give at least one output and its value, e.g. url=https://staging.example.test");
+        foreach (var (output, value) in values)
+        {
+            RequireName(output, "output");
+            if (string.IsNullOrWhiteSpace(value))
+                throw new MapException($"the value for '{output}' is empty");
+        }
     }
 
     static void RequireName(string name, string what)

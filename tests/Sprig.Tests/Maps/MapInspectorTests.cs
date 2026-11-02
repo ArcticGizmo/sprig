@@ -126,8 +126,33 @@ public class MapInspectorTests
         var result = MapInspector.Inspect(map, [Repo("billing", Consumer("billing", "payments"))]);
 
         var need = Assert.Single(result.Defaulted);
-        Assert.Equal("https://pay.sandbox.test", need.DefaultValues!["url"]);
+        Assert.Equal(NeedState.Default, need.State);
+        Assert.Equal("https://pay.sandbox.test", need.Values!["url"]);
+        Assert.Equal(["url"], need.Outputs);
         Assert.True(result.IsReady);
+    }
+
+    [Fact]
+    public void A_map_constant_overrides_a_provider_and_a_fallback_does_not()
+    {
+        static IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Value(string url) =>
+            new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
+            {
+                ["billing"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
+                {
+                    ["payments"] = new Dictionary<string, string> { ["url"] = url },
+                },
+            };
+        ResolvedRepo[] repos = [Repo("pay", Provider("pay", "payments")), Repo("billing", Consumer("billing", "payments"))];
+
+        var fallback = MapInspector.Inspect(Map("pay", "billing") with { Defaults = Value("https://fallback.test") }, repos);
+        Assert.Equal(NeedState.Wired, fallback.Needs.Single().State);
+
+        var constant = MapInspector.Inspect(Map("pay", "billing") with { Constants = Value("https://pinned.test") }, repos);
+        var need = constant.Needs.Single();
+        Assert.Equal(NeedState.Constant, need.State);
+        Assert.Equal("https://pinned.test", need.Values!["url"]);
+        Assert.Empty(constant.FindModule("pay", "app")!.Provides.Single().Consumers);
     }
 
     [Fact]

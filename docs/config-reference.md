@@ -360,7 +360,8 @@ inside a repo. Authored in the app's **Maps** page, or imported with `sprig map 
 | `name` | string | Map name. Must match `^[A-Za-z0-9._+-]+$`. |
 | `repos` | array | The repos in the map. Each entry is a bare **registry name** (`"acme"`), or an object `{ "name": …, "repo": <git-url> }`. |
 | `wiring` | object | `wiring[repo][capability] = providerCapability` bridges a need to a provide with a different name. `wiring[repo][capability] = "providerRepo/providerCapability"` also names the repo that wins, which is how to settle two repos providing the same capability; it overrides the usual same-repo-first rule. The provider repo must be in the map. |
-| `defaults` | object | `defaults[repo][capability][output] = literal` — a manual fallback for a need whose provider isn't in the current selection, so a partial checkout resolves instead of reporting a gap. |
+| `constants` | object | `constants[repo][capability][output] = literal` — the map's decision for a need: it always takes these values, even when a repo in the checkout provides the capability. Checked before `wiring`. |
+| `defaults` | object | `defaults[repo][capability][output] = literal` — a manual fallback for a need whose provider isn't in the current selection, so a partial checkout resolves instead of reporting a gap. A provider in the checkout always wins over a default. |
 | `maxSlots` | int | Optional pool ceiling — the max warm workspaces of this map. Defaults to **5** when unset. |
 
 ### `repos[]` — names, and portable URLs
@@ -409,6 +410,23 @@ has no provider in the selection. Rather than fail, the map supplies a finished 
 ```
 
 `vue-web`'s `${sprig.api.url}` now resolves to the staging URL. A default only applies while nothing in the selection provides the need; check the backend out too and its real `api` wins.
+
+### Example — a constant that overrides a provider
+
+`worker` needs `queue`, and `rabbit` provides it, but this map should point every workspace at a shared broker instead. A constant wins over the provider:
+
+```json
+{
+  "schema": 1,
+  "name": "shared-broker",
+  "repos": ["worker", "rabbit"],
+  "constants": {
+    "worker": { "queue": { "url": "amqp://broker.example.test:5672" } }
+  }
+}
+```
+
+Remove the constant and `worker` goes back to `rabbit`'s queue.
 
 ### Example — two repos provide the same capability
 

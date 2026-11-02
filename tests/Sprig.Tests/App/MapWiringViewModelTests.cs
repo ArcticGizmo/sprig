@@ -58,7 +58,7 @@ public class MapWiringViewModelTests
         Assert.True(wiring.ShowModuleColumn);
         var inspection = wiring.Inspection!;
         Assert.Equal(inspection.Needs.Count() + inspection.FixedValues.Count, wiring.Variables.Count);
-        Assert.Equal(["needs a value", "needs a value", "pick one", "fixed in env", "constant"],
+        Assert.Equal(["needs a value", "needs a value", "pick one", "fixed in env", "fallback"],
             wiring.Variables.Take(5).Select(r => r.Status));
         var fixedRow = Assert.IsType<FixedValueRow>(wiring.Variables[3]);
         Assert.Equal(("MAIL_HOST", "localhost:1025", "shop › api"), (fixedRow.Name, fixedRow.Value, fixedRow.Module));
@@ -95,8 +95,52 @@ public class MapWiringViewModelTests
         var after = Need(wiring, "help-site");
         Assert.True(after.IsConstant);
         Assert.True(after.IsExpanded);
-        Assert.Equal("http://localhost:4000", services.Maps.Get("storefront")!.Defaults["shop"]["help-site"]["url"]);
+        Assert.Equal("http://localhost:4000", services.Maps.Get("storefront")!.Constants["shop"]["help-site"]["url"]);
         Assert.StartsWith("2 needs", wiring.Headline);
+    }
+
+    [Fact]
+    public void A_wired_variable_can_be_given_a_constant_and_linked_back_again()
+    {
+        var (store, services, maps) = Storefront();
+        using var _ = store;
+        var wiring = maps.Wiring;
+        wiring.SelectedNodeId = MapGraphLayout.ModuleId("billing", "app");
+        var authApi = Need(wiring, "auth-api");
+        Assert.True(authApi.IsWired);
+        Assert.Equal("auth-api", authApi.LinkTarget!.Capability);
+        Assert.Equal("url", authApi.NewOutput);   // the output billing's env reads
+
+        authApi.NewValue = "https://auth.staging.test";
+        authApi.SetConstantCommand.Execute(null);
+        var pinned = Need(wiring, "auth-api");
+        Assert.Equal(("constant", "url = https://auth.staging.test"), (pinned.Status, pinned.Value));
+        Assert.Equal(MapGraphLayout.ModuleId("billing", "app"), wiring.SelectedNodeId);
+
+        pinned.LinkTarget = pinned.LinkTargets.Single(t => t.Capability == "auth-api");
+        pinned.LinkCommand.Execute(null);
+        Assert.True(Need(wiring, "auth-api").IsWired);
+        Assert.Empty(services.Maps.Get("storefront")!.Constants);
+    }
+
+    [Fact]
+    public void A_variable_can_be_linked_to_a_provide_with_a_different_name()
+    {
+        var (store, services, maps) = Storefront();
+        using var _ = store;
+        var wiring = maps.Wiring;
+        wiring.SelectedNodeId = "G:shop/web/help-site";
+        var help = Need(wiring, "help-site");
+        Assert.DoesNotContain(help.LinkTargets, t => t.Repo == "shop" && t.Module == "web");   // not its own provides
+
+        help.LinkTarget = help.LinkTargets.Single(t => t.Capability == "catalog-api");
+        help.LinkCommand.Execute(null);
+
+        Assert.Equal("catalog/catalog-api", services.Maps.Get("storefront")!.Wiring["shop"]["help-site"]);
+        var linked = Need(wiring, "help-site");
+        Assert.Equal("from catalog › app as catalog-api", linked.Value);
+        Assert.True(linked.IsWiredByEntry);
+        Assert.False(linked.LinkCommand.CanExecute(null));   // already linked to what's selected
     }
 
     [Fact]
@@ -114,16 +158,18 @@ public class MapWiringViewModelTests
     }
 
     [Fact]
-    public void Removing_a_constant_brings_the_gap_back()
+    public void Removing_a_fallback_brings_the_gap_back_on_its_module()
     {
         var (store, services, maps) = Storefront();
         using var _ = store;
         var wiring = maps.Wiring;
         wiring.SelectedNodeId = "D:billing/app/payments-gateway";
+        Assert.True(Need(wiring, "payments-gateway").IsFallback);
 
         Need(wiring, "payments-gateway").RemoveConstantCommand.Execute(null);
 
-        Assert.Equal("G:billing/app/payments-gateway", wiring.SelectedNodeId);
+        Assert.Equal(MapGraphLayout.ModuleId("billing", "app"), wiring.SelectedNodeId);
+        Assert.True(Need(wiring, "payments-gateway").IsGap);
         Assert.Empty(services.Maps.Get("storefront")!.Defaults);
     }
 
@@ -194,7 +240,7 @@ public class MapWiringViewModelTests
         need.SetConstantCommand.Execute(null);
 
         Assert.Contains("empty", wiring.Error);
-        Assert.False(services.Maps.Get("storefront")!.Defaults.ContainsKey("shop"));
+        Assert.Empty(services.Maps.Get("storefront")!.Constants);
     }
 
     [Theory]

@@ -61,8 +61,6 @@ public sealed partial class MapStore(ISprigPaths paths, RepoRegistryStore regist
     {
         if (string.IsNullOrWhiteSpace(map.Name) || !NamePattern().IsMatch(map.Name))
             throw new MapException($"invalid map name '{map.Name}' (use letters, digits, '.', '-', '_', '+')");
-        if (map.Repos.Count == 0)
-            throw new MapException("a map must reference at least one repo");
         if (map.MaxSlots is { } slots and < 1)
             throw new MapException($"map '{map.Name}' needs a pool size of at least 1 (maxSlots was {slots})");
 
@@ -97,6 +95,9 @@ public sealed partial class MapStore(ISprigPaths paths, RepoRegistryStore regist
         foreach (var repo in map.Defaults.Keys)
             if (!repos.Contains(repo))
                 throw new MapException($"map '{map.Name}' has defaults for repo '{repo}', which the map doesn't include");
+        foreach (var repo in map.Constants.Keys)
+            if (!repos.Contains(repo))
+                throw new MapException($"map '{map.Name}' has constants for repo '{repo}', which the map doesn't include");
     }
 
     // Map names are filenames (allow '+' like stacks), not git branches.

@@ -325,7 +325,7 @@ public sealed class CliAppTests : IDisposable
         Assert.Contains("auth › app", o);
         Assert.Contains("2 modules", o);
         Assert.Contains("MAIL_HOST = localhost:1025", o);
-        Assert.Contains("sprig map default store billing payments url=<value>", o);
+        Assert.Contains("sprig map constant store billing payments url=<value>", o);
     }
 
     [Fact]

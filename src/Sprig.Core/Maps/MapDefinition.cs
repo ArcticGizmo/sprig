@@ -39,12 +39,20 @@ public sealed record MapDefinition
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Defaults { get; init; }
         = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>();
 
+    /// <summary>
+    /// Overrides: <c>Constants[repo][capability][output] = literal</c>. Unlike <see cref="Defaults"/>, a
+    /// constant always wins, even when a repo in the selection provides the capability — the map has decided
+    /// this need takes a fixed value. Takes precedence over wiring and providers.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>> Constants { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>();
+
     /// <summary>Optional pool ceiling — the max warm workspaces of this map (replaces the stack's maxSlots).
     /// Null means pooling is unbounded/unconfigured for this map.</summary>
     public int? MaxSlots { get; init; }
 
-    /// <summary>This map over a new repo list. Entries already in the map keep their git URL; wiring and
-    /// defaults survive except where they concern a repo that left the map.</summary>
+    /// <summary>This map over a new repo list. Entries already in the map keep their git URL; wiring,
+    /// defaults and constants survive except where they concern a repo that left the map.</summary>
     public MapDefinition WithRepos(IEnumerable<string> names)
     {
         var repos = names.Select(n => Repos.FirstOrDefault(r => r.Name == n) ?? MapRepo.Local(n)).ToList();
@@ -57,7 +65,8 @@ public sealed record MapDefinition
             .Where(w => w.Needs.Count > 0)
             .ToDictionary(w => w.Key, w => w.Needs, StringComparer.Ordinal);
         var defaults = Defaults.Where(d => kept.Contains(d.Key)).ToDictionary(d => d.Key, d => d.Value, StringComparer.Ordinal);
-        return this with { Repos = repos, Wiring = wiring, Defaults = defaults };
+        var constants = Constants.Where(d => kept.Contains(d.Key)).ToDictionary(d => d.Key, d => d.Value, StringComparer.Ordinal);
+        return this with { Repos = repos, Wiring = wiring, Defaults = defaults, Constants = constants };
     }
 }
 

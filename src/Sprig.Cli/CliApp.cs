@@ -125,6 +125,7 @@ public static class CliApp
             map.AddCommand<MapLsCommand>("ls");
             map.AddCommand<MapShowCommand>("show");
             map.AddCommand<MapCheckCommand>("check");
+            map.AddCommand<MapConstantCommand>("constant");
             map.AddCommand<MapDefaultCommand>("default");
             map.AddCommand<MapWireCommand>("wire");
             map.AddCommand<MapImportCommand>("import");

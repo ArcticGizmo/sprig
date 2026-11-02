@@ -68,19 +68,17 @@ files and setup commands. A single-app repo has one module; a monorepo has sever
   treats that as one implicit `app` module.
 
 ### Maps
-- **New map** — name it (validated live — path-safe characters only), and tick the repos to include.
-  That's usually all a map needs: wiring is derived from the repos' provides/needs by capability name.
+- **New map** asks for a name (path-safe characters only) and opens the map as an empty graph. **Add repo**, above the graph, puts a registered repo on it; its modules appear wired to whatever is already there, by capability name. That's usually all a map needs. To take a repo out, select one of its modules and use **Remove … from map** in Variables; a repo sprig can't read has a **Remove from map** button in the summary.
 - Selecting a map opens with a summary of whether a checkout would go through, and if not, each thing that stops it: a need nothing provides, a need two repos provide, or a repo sprig can't read. Below it, counts of what's wired, constant and fixed, and the module most others rely on.
 - **Graph** draws the wiring. Each module is a node listing what it provides, and sits above what it relies on, so a service several modules share shows up as one node with arrows coming in and a "needed by N" badge. A repo with several modules is a box around them. Arrows point from the module that needs something to the one that provides it: blue when wired, amber when two repos provide it, red into a placeholder when nothing does, dotted amber from a placeholder to a provide with a near-miss name. Constants are violet: a dashed node for a value set on the map, ◆ for a value a module provides. A hollow dot marks a provide only its own repo uses. Drag the graph to move around it and Ctrl+scroll to zoom at the pointer, or use **−**, **+**, the zoom level (click it for 100%) and **Fit**. Click a node (or use the arrow keys) to fade everything not connected to it.
 - **Ledger** lists every capability with who provides it, who needs it and its status, problems first.
-- **Variables** lists every variable the map's modules use, problems first, whatever gives it its value: wired from a provider, a constant set on the map, a value fixed in env, or nothing yet. Selecting a node narrows it to that module (**Show all** widens it again). Expand a row for where it's used and the fixes that suit it:
-  - unmet: **set its value on the map** (sprig suggests one when the module's env template shows what the value used to be), or **wire it** to a provide with a near-miss name, or add the providing repo with **Edit**;
-  - two providers: **Use** one of them, which records `repo/capability` in the map's wiring;
-  - a constant set on the map: change it, or remove it;
-  - wired through a wiring entry: remove the entry;
-  - **fixed in env**, a setting that pins a local address or port (`localhost:1025`, `RABBITMQ_PORT=8512`) that every workspace shares: **Make it a need** declares the need in the repo's config, points the env key at it, and sets today's value on the map, so nothing changes at runtime but it becomes a constant like any other. Passwords in these values are masked.
-- **Edit** and **Delete** sit beside the map's name. Editing a map is always safe: a map is resolved at checkout, so changing it never invalidates a workspace you already built, and an edit keeps the map's wiring, constants and pool size.
-- **Check out a workspace** takes a slice of the map into a live workspace (see Workspaces).
+- **Variables** lists every variable the map's modules use, problems first, whatever gives it its value: wired from a provider, a constant set on the map, a value fixed in env, or nothing yet. Selecting a node narrows it to that module (**Show all** widens it again). Expand a row to choose where its value comes from:
+  - **From a provider**: pick any provide in the map and **Link**. The names don't have to match, so a `queue` need can take `rabbit`'s value. Linking replaces a constant; **Unlink** goes back to matching by name.
+  - **Or a constant**: an output and a value, **Set constant**. A constant always wins, even when a repo provides the variable, so a wired variable can be pinned and later linked back. On a constant row, change its value or **Remove constant** to return to the provider. sprig suggests a value when the module's env template shows what it used to be.
+  - Shortcuts appear when they fit: **Link to …** for a provide with a near-miss name, **Use …** to pick between two repos providing the same thing.
+  - A **fallback** row is a `defaults` entry from the map file: used only while nothing in the checkout provides the variable.
+  - **fixed in env**, a setting that pins a local address or port (`localhost:1025`, `RABBITMQ_PORT=8512`) that every workspace shares: **Make it a need** declares the need in the repo's config, points the env key at it, and sets today's value as a constant, so nothing changes at runtime but it shows up like any other variable. Passwords in these values are masked.
+- **Rename** and **Delete** sit beside the map's name. Changing a map is always safe: a map is resolved at checkout, so it never invalidates a workspace you already built. Workspaces are checked out from the Workspaces page.
 
 ### Workspaces
 - **New workspace / check out**: pick a map, name the workspace, and take a slice. sprig makes the
@@ -167,8 +165,9 @@ Maps are authored in the app's **Maps** page (or shared as a file and imported).
 sprig map ls                        # list maps and their repos
 sprig map show web+api              # how every need is wired, shared services, constants, fixed values
 sprig map check web+api             # exits 1 when a checkout would stop, with the command that fixes each blocker
-sprig map default web+api web payments url=https://pay.sandbox.test   # set a constant for web's 'payments' need
-sprig map default web+api web payments --rm                           # remove it
+sprig map constant web+api web payments url=https://pay.sandbox.test  # web's 'payments' always takes this value
+sprig map constant web+api web payments --rm                          # remove it, back to its provider
+sprig map default web+api web payments url=https://pay.sandbox.test   # a fallback, used only when nothing provides it
 sprig map wire web+api shop cache billing/cache                       # pick billing's cache over another repo's
 sprig map wire web+api shop cache --rm                                # remove the wiring entry
 sprig map import C:\tmp\web+api.json  # validate + save a shared map

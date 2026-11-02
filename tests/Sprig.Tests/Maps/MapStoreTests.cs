@@ -134,12 +134,38 @@ public class MapStoreTests
     }
 
     [Fact]
-    public void Empty_repos_and_bad_name_and_zero_slots_are_rejected()
+    public void A_map_with_no_repos_yet_is_saved_so_it_can_be_composed_on_its_graph()
+    {
+        var (store, _, maps) = Fresh();
+        using var _ = store;
+        maps.Save(new MapDefinition { Name = "draft" });
+        Assert.Empty(maps.Get("draft")!.Repos);
+    }
+
+    [Fact]
+    public void Constants_for_an_absent_repo_are_rejected()
     {
         var (store, registry, maps) = Fresh();
         using var _ = store;
         Register(store, registry, "acme");
-        Assert.Throws<MapException>(() => maps.Save(new MapDefinition { Name = "m", Repos = [] }));
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("acme")],
+            Constants = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
+            {
+                ["absent"] = new Dictionary<string, IReadOnlyDictionary<string, string>>(),
+            },
+        };
+        Assert.Throws<MapException>(() => maps.Save(map));
+    }
+
+    [Fact]
+    public void Bad_name_and_zero_slots_are_rejected()
+    {
+        var (store, registry, maps) = Fresh();
+        using var _ = store;
+        Register(store, registry, "acme");
         Assert.Throws<MapException>(() => maps.Save(new MapDefinition { Name = "bad name!", Repos = [MapRepo.Local("acme")] }));
         Assert.Throws<MapException>(() => maps.Save(new MapDefinition { Name = "m", Repos = [MapRepo.Local("acme")], MaxSlots = 0 }));
     }

@@ -67,7 +67,8 @@ sprig map import <file.json> --json   # validates against the registry, then sav
 sprig map show <name> --json          # each need's state, consumers, hubs, fixed values, suggested fixes; raw record under "map"
 sprig map check <name> --json         # same report; exits 1 when a checkout would stop
 sprig map ls --json
-sprig map default <map> <repo> <capability> <output>=<value> --json   # set a constant for a need nothing provides
+sprig map constant <map> <repo> <capability> <output>=<value> --json  # the need always takes this value, even over a provider
+sprig map default <map> <repo> <capability> <output>=<value> --json   # a fallback, used only when nothing provides the need
 sprig map wire <map> <repo> <need> <providerRepo>/<capability> --json  # pick between two providers
 ```
 
@@ -89,7 +90,7 @@ Write the file somewhere temporary (not in a repo). Minimal shape:
 
 Run `sprig map check <map> --json` first: it lists every blocker and a `fixes` command for each.
 
-- **Unmet need** (`repo.module needs '<capability>'`): nothing selected provides it. Either add the providing repo to the map, set a constant with `sprig map default <map> <repo> <capability> <output>=<value>`, or fix a typo in the capability name on either side. When the report gives a `Similar` provide, `sprig map wire <map> <repo> <need> <similar>` bridges the names without touching either repo. Its `Hints` hold the value the module's env template used before sprig wired it.
+- **Unmet need** (`repo.module needs '<capability>'`): nothing selected provides it. Either add the providing repo to the map, set a constant with `sprig map constant <map> <repo> <capability> <output>=<value>`, or fix a typo in the capability name on either side. When the report gives a `Similar` provide, `sprig map wire <map> <repo> <need> <similar>` bridges the names without touching either repo. Its `Hints` hold the value the module's env template used before sprig wired it.
 - **Ambiguous need** (more than one provider): `sprig map wire <map> <repo> <need> <providerRepo>/<capability>` names the winner.
 
 Then hand back to `sprig-workspace` to retry the checkout.

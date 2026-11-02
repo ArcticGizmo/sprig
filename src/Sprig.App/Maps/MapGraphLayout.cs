@@ -99,6 +99,7 @@ public sealed record MapGraphLayout(IReadOnlyList<GraphNode> Nodes, IReadOnlyLis
                         Link(from, ModuleId(p.Repo, p.Module), need.State == NeedState.Wired ? GraphEdgeKind.Wired : GraphEdgeKind.Ambiguous, label);
                     break;
                 case NeedState.Default:
+                case NeedState.Constant:
                     Add(DefaultId(need), GraphMetrics.PlaceholderSize(need), GraphNodeKind.Default, null, need, false);
                     Link(from, DefaultId(need), GraphEdgeKind.Default, need.Capability);
                     break;
@@ -228,8 +229,8 @@ public static class GraphMetrics
         return new Size(Math.Ceiling(width), HeaderHeight + Math.Max(1, m.Provides.Count) * RowHeight + BottomPad);
     }
 
-    public static string PlaceholderSubtitle(NeedInfo n) => n.State == NeedState.Default
-        ? string.Join(", ", n.DefaultValues!.Select(v => $"{v.Key} = {v.Value}"))
+    public static string PlaceholderSubtitle(NeedInfo n) => n.IsMapValue
+        ? string.Join(", ", n.Values!.Select(v => $"{v.Key} = {v.Value}"))
         : "nothing provides this";
 
     public static string? PlaceholderNote(NeedInfo n) => n.Similar is { } s ? $"similar: {s.Capability}" : null;

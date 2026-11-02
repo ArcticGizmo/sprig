@@ -19,10 +19,16 @@ namespace Sprig.App.ViewModels;
 public sealed partial class MapWiringViewModel : ObservableObject
 {
     readonly AppServices _services;
+    readonly Action? _changed;
     string? _mapName;
     readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
 
-    public MapWiringViewModel(AppServices services) => _services = services;
+    /// <param name="changed">Told after every edit this view saves, so the page can refresh its map list.</param>
+    public MapWiringViewModel(AppServices services, Action? changed = null)
+    {
+        _services = services;
+        _changed = changed;
+    }
 
     [ObservableProperty] private MapInspection? _inspection;
     [ObservableProperty] private MapGraphLayout? _layout;
@@ -40,16 +46,29 @@ public sealed partial class MapWiringViewModel : ObservableObject
     [ObservableProperty] private string? _selectionNote;
 
     public ObservableCollection<string> Blockers { get; } = [];
+    public ObservableCollection<UnreadableRepoRow> UnreadableRepos { get; } = [];
     public ObservableCollection<WiringLedgerRow> Ledger { get; } = [];
     public ObservableCollection<WiringProvideRow> SelectedProvides { get; } = [];
+
+    /// <summary>Registered repos the map doesn't include yet, for Add repo.</summary>
+    public ObservableCollection<string> AvailableRepos { get; } = [];
 
     /// <summary>The variables in view: <see cref="WiringNeedRow"/>s and <see cref="FixedValueRow"/>s, problems first.</summary>
     public ObservableCollection<WiringVariableRow> Variables { get; } = [];
 
+    /// <summary>Every provide in the map, which any variable can be linked to whatever its name.</summary>
+    public IReadOnlyList<LinkTarget> LinkTargets { get; private set; } = [];
+
+    /// <summary>The repo of the selected module, which can be taken out of the map.</summary>
+    [ObservableProperty] private string? _selectedRepo;
+
     public string? MapName => _mapName;
     public bool HasMap => Inspection is not null;
+    public bool IsEmpty => Inspection is { Map.Repos.Count: 0 };
     public bool HasNodes => Layout is { Nodes.Count: > 0 };
+    public bool HasAvailableRepos => AvailableRepos.Count > 0;
     public bool HasBlockers => Blockers.Count > 0;
+    public bool HasUnreadableRepos => UnreadableRepos.Count > 0;
     public bool HasSelectedProvides => SelectedProvides.Count > 0;
     public bool HasVariables => Variables.Count > 0;
     public bool IsFiltered => SelectedNodeId is not null && Layout?.Nodes.Any(n => n.Id == SelectedNodeId) == true;
@@ -69,6 +88,20 @@ public sealed partial class MapWiringViewModel : ObservableObject
     [RelayCommand] private void ZoomReset() => Zoom = 1;
     [RelayCommand] private void SelectNode(string? id) => SelectedNodeId = id;
     [RelayCommand] private void ClearSelection() => SelectedNodeId = null;
+
+    [RelayCommand]
+    private void AddRepo(string? repo)
+    {
+        if (string.IsNullOrWhiteSpace(repo)) return;
+        Apply(() => _services.MapEditor.AddRepo(_mapName!, repo), SelectedNodeId, null);
+    }
+
+    [RelayCommand]
+    private void RemoveRepo(string? repo)
+    {
+        if (string.IsNullOrWhiteSpace(repo)) return;
+        Apply(() => _services.MapEditor.RemoveRepo(_mapName!, repo), null, null);
+    }
 
     /// <summary>Show <paramref name="mapName"/>'s wiring, picking the first thing that needs attention.</summary>
     public void Load(string? mapName)
@@ -136,18 +169,28 @@ public sealed partial class MapWiringViewModel : ObservableObject
     void Rebuild()
     {
         Blockers.Clear();
+        UnreadableRepos.Clear();
         Ledger.Clear();
+        AvailableRepos.Clear();
         if (Inspection is { } i)
         {
             var blocked = i.Gaps.Count + i.Ambiguities.Count;
-            IsReady = i.IsReady;
-            Headline = i.IsReady
+            IsReady = i.IsReady && i.Map.Repos.Count > 0;
+            Headline = i.Map.Repos.Count == 0
+                ? "This map has no repos yet. Add one with Add repo, above the graph."
+                : i.IsReady
                 ? "Every need is met. A checkout of this map will go through."
                 : blocked > 0
                     ? $"{blocked} {(blocked == 1 ? "need" : "needs")} can't be met. Checkout stops until each gets a value or a provider."
                     : $"{i.Problems.Count} {(i.Problems.Count == 1 ? "repo" : "repos")} can't be read, so checkout would stop.";
 
-            foreach (var p in i.Problems) Blockers.Add($"{p.Repo} {p.Message}.");
+            foreach (var p in i.Problems) UnreadableRepos.Add(new UnreadableRepoRow(this, p));
+            var inMap = i.Map.Repos.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+            foreach (var repo in _services.Repos.List().Select(r => r.Name).Where(n => !inMap.Contains(n)).OrderBy(n => n, StringComparer.Ordinal))
+                AvailableRepos.Add(repo);
+            LinkTargets = i.Provides
+                .Select(p => new LinkTarget(p.Repo, p.Module, p.Capability))
+                .OrderBy(t => t.Label, StringComparer.Ordinal).ToList();
             foreach (var n in i.Gaps)
                 Blockers.Add($"{n.Repo} › {n.Module} needs {n.Capability}, and nothing in this map provides it."
                     + (n.Similar is { } s ? $" {s.Capability} has a similar name." : ""));
@@ -171,10 +214,15 @@ public sealed partial class MapWiringViewModel : ObservableObject
             IsReady = false;
             Headline = "";
             Counts = "";
+            LinkTargets = [];
         }
         OnPropertyChanged(nameof(HasMap));
+        OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(HasNodes));
         OnPropertyChanged(nameof(HasBlockers));
+        OnPropertyChanged(nameof(HasUnreadableRepos));
+        OnPropertyChanged(nameof(HasAvailableRepos));
+        OnPropertyChanged(nameof(LinkTargets));
     }
 
     void BuildVariables()
@@ -182,6 +230,7 @@ public sealed partial class MapWiringViewModel : ObservableObject
         SelectedProvides.Clear();
         Variables.Clear();
         SelectionSubtitle = SelectionNote = null;
+        SelectedRepo = null;
         VariablesTitle = "";
 
         if (Inspection is { } i)
@@ -193,6 +242,7 @@ public sealed partial class MapWiringViewModel : ObservableObject
             {
                 VariablesTitle = $"{m.Repo} › {m.Module}";
                 SelectionSubtitle = m.Path.Length == 0 ? "repo root" : m.Path;
+                SelectedRepo = m.Repo;
                 if (m.ReliedOnBy >= 2) SelectionNote = $"{m.ReliedOnBy} other modules rely on this one.";
                 foreach (var p in m.Provides) SelectedProvides.Add(new WiringProvideRow(p));
                 needs = m.Needs;
@@ -202,9 +252,12 @@ public sealed partial class MapWiringViewModel : ObservableObject
             {
                 VariablesTitle = need.Capability;
                 SelectionSubtitle = $"needed by {need.Repo} › {need.Module}";
-                SelectionNote = need.State == NeedState.Default
-                    ? $"Nothing in this map provides {need.Capability}, so the map gives this value to every workspace. If a repo that provides it joins the map, that provider wins."
-                    : $"Nothing in this map provides {need.Capability} and the map sets no value for it, so checkout stops here.";
+                SelectionNote = need.State switch
+                {
+                    NeedState.Constant => $"The map gives {need.Capability} this constant in every workspace, whatever repos provide.",
+                    NeedState.Default => $"Nothing in this checkout provides {need.Capability}, so the map's fallback fills it. A repo that provides it would win.",
+                    _ => $"Nothing in this map provides {need.Capability} and the map sets no value for it, so checkout stops here.",
+                };
                 needs = [need];
                 fixedValues = [];
             }
@@ -214,7 +267,7 @@ public sealed partial class MapWiringViewModel : ObservableObject
                 SelectionSubtitle = "Select a module in the graph to narrow this list.";
             }
 
-            var rows = needs.Select(n => (WiringVariableRow)new WiringNeedRow(this, n))
+            var rows = needs.Select(n => (WiringVariableRow)new WiringNeedRow(this, n, LinkTargets))
                 .Concat(fixedValues.Select(f => new FixedValueRow(this, f)))
                 .OrderBy(r => r.Rank).ThenBy(r => r.Module, StringComparer.Ordinal).ThenBy(r => r.Name, StringComparer.Ordinal);
             foreach (var row in rows)
@@ -246,6 +299,7 @@ public sealed partial class MapWiringViewModel : ObservableObject
             if (expand is not null) _expanded.Add(expand);
             _services.NotifyStoreChanged();
             Refresh(keepSelection: true, select);
+            _changed?.Invoke();
         }
         catch (Exception ex)
         {
@@ -262,16 +316,27 @@ public sealed partial class MapWiringViewModel : ObservableObject
         _ => placeholder,
     };
 
+    /// <summary>Give the need a constant. A row that already holds a fallback edits that fallback instead.</summary>
     internal void SetConstant(NeedInfo need, IReadOnlyDictionary<string, string> values)
-        => Apply(() => _services.MapEditor.SetDefault(_mapName!, need.Repo, need.Capability, values),
+        => Apply(() =>
+            {
+                if (need.State == NeedState.Default) _services.MapEditor.SetDefault(_mapName!, need.Repo, need.Capability, values);
+                else _services.MapEditor.SetConstant(_mapName!, need.Repo, need.Capability, values);
+            },
             Follow(need, MapGraphLayout.DefaultId(need)), WiringNeedRow.KeyFor(need));
 
+    // Without its value the need may now be wired or unmet, so land on its module, which shows either.
     internal void RemoveConstant(NeedInfo need)
-        => Apply(() => _services.MapEditor.RemoveDefault(_mapName!, need.Repo, need.Capability),
-            Follow(need, MapGraphLayout.GapId(need)), WiringNeedRow.KeyFor(need));
+        => Apply(() =>
+            {
+                if (need.State == NeedState.Default) _services.MapEditor.RemoveDefault(_mapName!, need.Repo, need.Capability);
+                else _services.MapEditor.RemoveConstant(_mapName!, need.Repo, need.Capability);
+            },
+            Follow(need, MapGraphLayout.ModuleId(need.Repo, need.Module)), WiringNeedRow.KeyFor(need));
 
-    internal void Wire(NeedInfo need, string target)
-        => Apply(() => _services.MapEditor.SetWiring(_mapName!, need.Repo, need.Capability, target),
+    /// <summary>Take the need's value from one provider, whatever either is called; replaces any constant.</summary>
+    internal void Link(NeedInfo need, LinkTarget target)
+        => Apply(() => _services.MapEditor.Link(_mapName!, need.Repo, need.Capability, target.Repo, target.Capability),
             Follow(need, MapGraphLayout.ModuleId(need.Repo, need.Module)), WiringNeedRow.KeyFor(need));
 
     internal void Unwire(NeedInfo need)
@@ -314,7 +379,7 @@ public sealed record WiringLedgerRow(string Capability, string ProvidedBy, strin
                 .OrderBy(Rank).ToList();
             var kind = kinds.FirstOrDefault() ?? "unused";
             var gap = needs.FirstOrDefault(n => n.State == NeedState.Gap);
-            var constant = needs.FirstOrDefault(n => n.State == NeedState.Default);
+            var constant = needs.FirstOrDefault(n => n.IsMapValue);
             var node = gap is not null ? MapGraphLayout.GapId(gap)
                 : constant is not null ? MapGraphLayout.DefaultId(constant)
                 : provides.FirstOrDefault() is { } p ? MapGraphLayout.ModuleId(p.Repo, p.Module)
@@ -386,17 +451,22 @@ public sealed partial class WiringNeedRow : WiringVariableRow
 {
     public NeedInfo Need { get; }
 
-    public WiringNeedRow(MapWiringViewModel owner, NeedInfo need) : base(owner)
+    public WiringNeedRow(MapWiringViewModel owner, NeedInfo need, IReadOnlyList<LinkTarget> linkTargets) : base(owner)
     {
         Need = need;
         var hint = need.Hints.FirstOrDefault();
-        _newOutput = hint?.Output ?? "url";
+        _newOutput = hint?.Output ?? need.Outputs.FirstOrDefault() ?? "url";
         _newValue = hint?.Value ?? "";
-        foreach (var (k, v) in need.DefaultValues ?? new Dictionary<string, string>())
+        foreach (var (k, v) in need.Values ?? new Dictionary<string, string>())
             Constants.Add(new ConstantValueRow(k, v));
         Providers = need.State == NeedState.Ambiguous
             ? need.Providers.Select(p => new ProviderChoice(this, p)).ToList()
             : [];
+        // A module doesn't link to its own provides: a need on yourself is no need.
+        LinkTargets = linkTargets.Where(t => !(t.Repo == need.Repo && t.Module == need.Module)).ToList();
+        var current = need.State == NeedState.Wired ? need.Providers[0] : need.Similar;
+        _linkTarget = current is null ? null
+            : LinkTargets.FirstOrDefault(t => t.Repo == current.Repo && t.Capability == current.Capability);
     }
 
     public static string KeyFor(NeedInfo n) => KeyFor($"{n.Repo}/{n.Module}/{n.Capability}");
@@ -404,27 +474,30 @@ public sealed partial class WiringNeedRow : WiringVariableRow
 
     public static string Kind(NeedState state) => state switch
     {
-        NeedState.Gap => "gap", NeedState.Ambiguous => "ambiguous", NeedState.Default => "constant", _ => "wired",
+        NeedState.Gap => "gap", NeedState.Ambiguous => "ambiguous", NeedState.Constant or NeedState.Default => "constant", _ => "wired",
     };
 
     public override string Key => KeyFor(Need);
     public override string Name => Need.Capability;
     public override string Module => $"{Need.Repo} › {Need.Module}";
-    public override int Rank => Need.State switch { NeedState.Gap => 0, NeedState.Ambiguous => 1, NeedState.Default => 3, _ => 4 };
+    public override int Rank => Need.State switch { NeedState.Gap => 0, NeedState.Ambiguous => 1, NeedState.Constant or NeedState.Default => 3, _ => 4 };
     public override bool IsGap => Need.State == NeedState.Gap;
     public override bool IsAmbiguous => Need.State == NeedState.Ambiguous;
-    public override bool IsConstant => Need.State == NeedState.Default;
+    public override bool IsConstant => Need.IsMapValue;
+    public bool IsFallback => Need.State == NeedState.Default;
+    public bool IsWired => Need.State == NeedState.Wired;
 
     public override string Status => Need.State switch
     {
-        NeedState.Gap => "needs a value", NeedState.Ambiguous => "pick one", NeedState.Default => "constant", _ => "wired",
+        NeedState.Gap => "needs a value", NeedState.Ambiguous => "pick one", NeedState.Constant => "constant",
+        NeedState.Default => "fallback", _ => "wired",
     };
 
     public override string Value => Need.State switch
     {
         NeedState.Wired => $"from {Need.Providers[0].Repo} › {Need.Providers[0].Module}"
-            + (Need.Target != Need.Capability ? $" as {Need.Target}" : ""),
-        NeedState.Default => string.Join(", ", Need.DefaultValues!.Select(v => $"{v.Key} = {v.Value}")),
+            + (Need.Target != Need.Capability ? $" as {WiringTarget.Parse(Need.Target).Capability}" : ""),
+        NeedState.Constant or NeedState.Default => string.Join(", ", Need.Values!.Select(v => $"{v.Key} = {v.Value}")),
         NeedState.Ambiguous => string.Join(" or ", Need.Providers.Select(p => p.Repo)),
         _ => "nothing provides it" + (Need.Similar is { } s ? $" · similar: {s.Capability}" : ""),
     };
@@ -432,23 +505,44 @@ public sealed partial class WiringNeedRow : WiringVariableRow
     public override string UsedIn => Need.Uses.Count == 0 ? "Not referenced in env or compose."
         : "Used in " + string.Join(", ", Need.Uses.Select(u => $"{u.Key} ({u.File})")) + ".";
 
+    public string? FallbackNote => IsFallback
+        ? "A fallback: used only while nothing in the checkout provides it. Link it or set a constant to decide its value outright."
+        : null;
+
     public bool IsWiredByEntry => Need.State == NeedState.Wired && Need.Target != Need.Capability;
 
     public bool HasSimilar => Need.Similar is not null;
     public string? SimilarText => Need.Similar is { } s
-        ? $"{s.Repo} › {s.Module} provides {s.Capability}. Wiring this need to it adds a map entry; no repo changes."
+        ? $"{s.Repo} › {s.Module} provides {s.Capability}, a similar name."
         : null;
-    public string? WireSimilarLabel => Need.Similar is { } s ? $"Wire it to {s.Capability}" : null;
+    public string? WireSimilarLabel => Need.Similar is { } s ? $"Link to {s.Capability}" : null;
 
     public string? HintSource => Need.Hints.FirstOrDefault() is { } h ? $"Suggested from {h.Source}." : null;
-    public bool HasHint => Need.Hints.Count > 0;
+    public bool HasHint => Need.Hints.Count > 0 && !Need.IsMapValue;
 
-    /// <summary>The output and value typed in to set a constant for an unmet need.</summary>
+    /// <summary>Every provide in the map but this module's own, to take the value from.</summary>
+    public IReadOnlyList<LinkTarget> LinkTargets { get; }
+    public bool HasLinkTargets => LinkTargets.Count > 0;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(LinkCommand))]
+    private LinkTarget? _linkTarget;
+
+    /// <summary>The output and value typed in to give the need a constant.</summary>
     [ObservableProperty] private string _newOutput;
     [ObservableProperty] private string _newValue;
 
     public ObservableCollection<ConstantValueRow> Constants { get; } = [];
     public IReadOnlyList<ProviderChoice> Providers { get; }
+
+    bool CanLink => LinkTarget is not null
+        && !(IsWired && Need.Providers[0].Repo == LinkTarget.Repo && Need.Providers[0].Capability == LinkTarget.Capability);
+
+    [RelayCommand(CanExecute = nameof(CanLink))]
+    private void Link()
+    {
+        if (LinkTarget is { } target) Owner.Link(Need, target);
+    }
 
     [RelayCommand]
     private void SetConstant() => Owner.SetConstant(Need, new Dictionary<string, string> { [NewOutput.Trim()] = NewValue.Trim() });
@@ -456,7 +550,7 @@ public sealed partial class WiringNeedRow : WiringVariableRow
     [RelayCommand]
     private void WireSimilar()
     {
-        if (Need.Similar is { } s) Owner.Wire(Need, s.Capability);
+        if (Need.Similar is { } s) Owner.Link(Need, new LinkTarget(s.Repo, s.Module, s.Capability));
     }
 
     [RelayCommand]
@@ -468,7 +562,24 @@ public sealed partial class WiringNeedRow : WiringVariableRow
     [RelayCommand]
     private void Unwire() => Owner.Unwire(Need);
 
-    internal void Pick(ProviderRef provider) => Owner.Wire(Need, $"{provider.Repo}/{provider.Capability}");
+    internal void Pick(ProviderRef provider) => Owner.Link(Need, new LinkTarget(provider.Repo, provider.Module, provider.Capability));
+}
+
+/// <summary>A provide a variable can take its value from.</summary>
+public sealed record LinkTarget(string Repo, string Module, string Capability)
+{
+    public string Label => $"{Capability}  ·  {Repo} › {Module}";
+    public override string ToString() => Label;
+}
+
+/// <summary>A map repo that can't be read, which can be taken out of the map.</summary>
+public sealed partial class UnreadableRepoRow(MapWiringViewModel owner, RepoProblem problem)
+{
+    public string Repo => problem.Repo;
+    public string Message => problem.Message;
+
+    [RelayCommand]
+    private void Remove() => owner.RemoveRepoCommand.Execute(problem.Repo);
 }
 
 public sealed partial class ConstantValueRow(string output, string value) : ObservableObject

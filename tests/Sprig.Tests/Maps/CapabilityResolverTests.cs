@@ -160,6 +160,29 @@ public class CapabilityResolverTests
     }
 
     [Fact]
+    public void A_map_constant_wins_over_a_provider_of_the_same_capability()
+    {
+        var web = Repo("web", Mod("app", needs: [new Need { Capability = "api" }]));
+        var api = Repo("api", Mod("app", provides: [Http("api")]));
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("web"), MapRepo.Local("api")],
+            Constants = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>>
+            {
+                ["web"] = new Dictionary<string, IReadOnlyDictionary<string, string>>
+                {
+                    ["api"] = new Dictionary<string, string> { ["url"] = "https://staging.example.test" },
+                },
+            },
+        };
+
+        var rw = CapabilityResolver.Resolve("ws", map, [web, api], Allocate(web, api));
+
+        Assert.Equal("https://staging.example.test", Resolve(rw.Modules.Single(m => m.Repo == "web"), "api.url"));
+    }
+
+    [Fact]
     public void The_ambiguity_error_shows_the_wiring_entry_that_settles_it()
     {
         var a = Repo("a", Mod("app", provides: [Http("dup")]));

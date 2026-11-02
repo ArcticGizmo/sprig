@@ -109,6 +109,14 @@ public static class CapabilityResolver
     {
         var alias = need.Alias;
 
+        // A constant is the map's decision for this need, so it wins over any provider.
+        if (Lookup3(map?.Constants, repo, need.Capability) is { } constant)
+        {
+            foreach (var (output, literal) in constant)
+                values[$"{alias}.{output}"] = literal;
+            return;
+        }
+
         // A map may bridge a need to another capability name, and may name the providing repo.
         var wiring = MapGraphProjection.Target(map, repo, need.Capability);
         var target = wiring.Capability;

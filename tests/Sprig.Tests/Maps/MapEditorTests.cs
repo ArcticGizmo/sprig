@@ -101,11 +101,11 @@ public class MapEditorTests
         Assert.Equal("mail", config.Needs.Single().Capability);
         Assert.Equal("${sprig.mail.address}", config.Env!.Single().Set["MAIL_HOST"]);
         Assert.Equal("x", config.Env!.Single().Set["OTHER"]);
-        Assert.Equal("localhost:1025", f.Maps.Get("m")!.Defaults["shop"]["mail"]["address"]);
+        Assert.Equal("localhost:1025", f.Maps.Get("m")!.Constants["shop"]["mail"]["address"]);
 
         var after = new MapInspector(f.Registry, f.Maps).Inspect("m");
         Assert.Empty(after.FixedValues);
-        Assert.Equal(NeedState.Default, after.Needs.Single().State);
+        Assert.Equal(NeedState.Constant, after.Needs.Single().State);
     }
 
     [Fact]
@@ -146,6 +146,72 @@ public class MapEditorTests
         Assert.Throws<MapException>(() => f.Editor.ConvertFixedValue("m", stale, "mail", "address"));
         Assert.Equal(json, File.ReadAllText(Path.Combine(dir, ".sprig.json")));
         Assert.Empty(f.Maps.Get("m")!.Defaults);
+    }
+
+    static string Provides(string name, string cap) => $$"""
+        { "schema": 1, "name": "{{name}}", "provides": [ { "capability": "{{cap}}", "ports": { "port": true } } ] }
+        """;
+
+    static string Needs(string name, string cap) => $$"""
+        { "schema": 1, "name": "{{name}}", "needs": [ { "capability": "{{cap}}" } ] }
+        """;
+
+    [Fact]
+    public void A_constant_overrides_the_provider_and_linking_switches_back_under_a_different_name()
+    {
+        using var f = new Fixture();
+        f.Register("queue", Provides("queue", "rabbit"));
+        f.Register("worker", Needs("worker", "mq"));
+        f.Maps.Save(new MapDefinition { Name = "m", Repos = [MapRepo.Local("queue"), MapRepo.Local("worker")] });
+        NeedState State() => new MapInspector(f.Registry, f.Maps).Inspect("m").Needs.Single().State;
+        Assert.Equal(NeedState.Gap, State());
+
+        f.Editor.Link("m", "worker", "mq", "queue", "rabbit");
+        Assert.Equal(NeedState.Wired, State());
+        Assert.Equal("queue/rabbit", f.Maps.Get("m")!.Wiring["worker"]["mq"]);
+
+        f.Editor.SetConstant("m", "worker", "mq", new Dictionary<string, string> { ["port"] = "5672" });
+        Assert.Equal(NeedState.Constant, State());
+
+        f.Editor.Link("m", "worker", "mq", "queue", "rabbit");
+        Assert.Equal(NeedState.Wired, State());
+        Assert.Empty(f.Maps.Get("m")!.Constants);
+    }
+
+    [Fact]
+    public void Removing_a_constant_hands_the_need_back_to_its_provider()
+    {
+        using var f = new Fixture();
+        f.Register("queue", Provides("queue", "mq"));
+        f.Register("worker", Needs("worker", "mq"));
+        f.Maps.Save(new MapDefinition { Name = "m", Repos = [MapRepo.Local("queue"), MapRepo.Local("worker")] });
+        f.Editor.SetConstant("m", "worker", "mq", new Dictionary<string, string> { ["port"] = "5672" });
+
+        f.Editor.RemoveConstant("m", "worker", "mq");
+
+        Assert.Equal(NeedState.Wired, new MapInspector(f.Registry, f.Maps).Inspect("m").Needs.Single().State);
+    }
+
+    [Fact]
+    public void Adds_and_removes_repos_and_removing_one_drops_what_concerns_it()
+    {
+        using var f = new Fixture();
+        f.Register("queue", Provides("queue", "mq"));
+        f.Register("worker", Needs("worker", "mq"));
+        f.Maps.Save(new MapDefinition { Name = "m" });
+
+        f.Editor.AddRepo("m", "worker");
+        f.Editor.AddRepo("m", "queue");
+        Assert.Throws<MapException>(() => f.Editor.AddRepo("m", "queue"));
+        f.Editor.Link("m", "worker", "mq", "queue", "mq");
+        f.Editor.SetConstant("m", "queue", "other", new Dictionary<string, string> { ["x"] = "1" });
+
+        f.Editor.RemoveRepo("m", "queue");
+
+        var map = f.Maps.Get("m")!;
+        Assert.Equal(["worker"], map.Repos.Select(r => r.Name));
+        Assert.Empty(map.Wiring);
+        Assert.Empty(map.Constants);
     }
 
     [Fact]

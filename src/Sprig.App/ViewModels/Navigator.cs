@@ -120,13 +120,13 @@ public sealed class Navigator
     public void GoToWorkspaces() => Go(_workspaces);
     public void GoToSettings() => Go(_settings);
 
-    /// <summary>Show the Maps page with no editor open, so the "New map" button is on screen.</summary>
+    /// <summary>Show the Maps page with no naming or renaming open, so the "New map" button is on screen.</summary>
     public void ShowMapsFresh()
     {
         if (_maps is null) return;
         Go(_maps);
-        if (_maps.IsEditing && _maps.CancelEditCommand.CanExecute(null))
-            _maps.CancelEditCommand.Execute(null);
+        if (_maps.IsNaming) _maps.CancelNewMapCommand.Execute(null);
+        if (_maps.IsRenaming) _maps.CancelRenameCommand.Execute(null);
     }
 
     /// <summary>Show the Workspaces page with no create form open, so "New workspace" is on screen.</summary>

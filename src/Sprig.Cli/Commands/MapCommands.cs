@@ -77,36 +77,40 @@ public sealed class MapCheckCommand(CliContext cli) : Command<MapNameSettings>
     }
 }
 
-[Description("Set or remove the constant a map gives a need when nothing in the map provides it")]
-public sealed class MapDefaultCommand(CliContext cli) : Command<MapDefaultCommand.Settings>
+public sealed class MapValueSettings : MapNameSettings
 {
-    public sealed class Settings : MapNameSettings
-    {
-        [CommandArgument(1, "<repo>")]
-        [Description("The repo whose need gets the constant")]
-        public string Repo { get; set; } = "";
+    [CommandArgument(1, "<repo>")]
+    [Description("The repo whose need gets the value")]
+    public string Repo { get; set; } = "";
 
-        [CommandArgument(2, "<capability>")]
-        [Description("The need's capability name")]
-        public string Capability { get; set; } = "";
+    [CommandArgument(2, "<capability>")]
+    [Description("The need's capability name")]
+    public string Capability { get; set; } = "";
 
-        [CommandArgument(3, "[values]")]
-        [Description("One or more output=value pairs, e.g. url=https://staging.example.test")]
-        public string[] Values { get; set; } = [];
+    [CommandArgument(3, "[values]")]
+    [Description("One or more output=value pairs, e.g. url=https://staging.example.test")]
+    public string[] Values { get; set; } = [];
 
-        [CommandOption("--rm")]
-        [Description("Remove the constant instead")]
-        public bool Remove { get; set; }
-    }
+    [CommandOption("--rm")]
+    [Description("Remove it instead")]
+    public bool Remove { get; set; }
+}
 
-    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+/// <summary><c>map constant</c> and <c>map default</c> take the same arguments and differ only in which of
+/// the map's value sets they write.</summary>
+public abstract class MapValueCommand(CliContext cli, string what) : Command<MapValueSettings>
+{
+    protected abstract void Set(MapEditor editor, MapValueSettings s, IReadOnlyDictionary<string, string> values);
+    protected abstract void Remove(MapEditor editor, MapValueSettings s);
+
+    protected override int Execute(CommandContext context, MapValueSettings s, CancellationToken cancellation)
     {
         var editor = new MapEditor(cli.Maps, cli.Repos);
         if (s.Remove)
         {
             if (s.Values.Length > 0) throw new ArgumentException("--rm takes no values");
-            editor.RemoveDefault(s.Map, s.Repo, s.Capability);
-            return CliOutput.Ok(s.Json, $"removed the constant for {s.Repo}'s '{s.Capability}' from map '{s.Map}'",
+            Remove(editor, s);
+            return CliOutput.Ok(s.Json, $"removed the {what} for {s.Repo}'s '{s.Capability}' from map '{s.Map}'",
                 new { ok = true, map = s.Map, repo = s.Repo, capability = s.Capability, removed = true });
         }
 
@@ -118,11 +122,27 @@ public sealed class MapDefaultCommand(CliContext cli) : Command<MapDefaultComman
             if (eq <= 0) throw new ArgumentException($"'{pair}' isn't output=value");
             values[pair[..eq].Trim()] = pair[(eq + 1)..];
         }
-        editor.SetDefault(s.Map, s.Repo, s.Capability, values);
+        Set(editor, s, values);
         return CliOutput.Ok(s.Json,
-            $"map '{s.Map}' gives {s.Repo}'s '{s.Capability}' {string.Join(", ", values.Select(v => $"{v.Key} = {v.Value}"))}",
+            $"map '{s.Map}' gives {s.Repo}'s '{s.Capability}' {string.Join(", ", values.Select(v => $"{v.Key} = {v.Value}"))} as a {what}",
             new { ok = true, map = s.Map, repo = s.Repo, capability = s.Capability, values });
     }
+}
+
+[Description("Set or remove a constant for a need: it wins over any repo that provides it")]
+public sealed class MapConstantCommand(CliContext cli) : MapValueCommand(cli, "constant")
+{
+    protected override void Set(MapEditor editor, MapValueSettings s, IReadOnlyDictionary<string, string> values)
+        => editor.SetConstant(s.Map, s.Repo, s.Capability, values);
+    protected override void Remove(MapEditor editor, MapValueSettings s) => editor.RemoveConstant(s.Map, s.Repo, s.Capability);
+}
+
+[Description("Set or remove a fallback for a need, used only when nothing in the checkout provides it")]
+public sealed class MapDefaultCommand(CliContext cli) : MapValueCommand(cli, "fallback")
+{
+    protected override void Set(MapEditor editor, MapValueSettings s, IReadOnlyDictionary<string, string> values)
+        => editor.SetDefault(s.Map, s.Repo, s.Capability, values);
+    protected override void Remove(MapEditor editor, MapValueSettings s) => editor.RemoveDefault(s.Map, s.Repo, s.Capability);
 }
 
 [Description("Wire a repo's need to a capability, or to repo/capability to pick between providers")]
@@ -248,21 +268,22 @@ static class MapReport
         foreach (var n in i.Gaps)
             fixes.Add(n.Similar is { } similar
                 ? $"sprig map wire {map} {Quote(n.Repo)} {n.Capability} {similar.Capability}"
-                : $"sprig map default {map} {Quote(n.Repo)} {n.Capability} " + (n.Hints.Count > 0
+                : $"sprig map constant {map} {Quote(n.Repo)} {n.Capability} " + (n.Hints.Count > 0
                     ? string.Join(" ", n.Hints.Select(h => Quote($"{h.Output}={h.Value}")))
-                    : "url=<value>"));
+                    : $"{n.Outputs.FirstOrDefault() ?? "url"}=<value>"));
         return fixes;
     }
 
     static string Quote(string s) => s.Any(c => char.IsWhiteSpace(c) || c is '"' or '\'' or '&' or '|' or '<' or '>') ? $"\"{s}\"" : s;
 
-    static int Rank(NeedState s) => s switch { NeedState.Gap => 0, NeedState.Ambiguous => 1, NeedState.Default => 2, _ => 3 };
+    static int Rank(NeedState s) => s switch { NeedState.Gap => 0, NeedState.Ambiguous => 1, NeedState.Constant or NeedState.Default => 2, _ => 3 };
 
     static string Status(NeedState s) => s switch
     {
         NeedState.Gap => "[red]unmet[/]",
         NeedState.Ambiguous => "[yellow]ambiguous[/]",
-        NeedState.Default => "[mediumpurple1]constant[/]",
+        NeedState.Constant => "[mediumpurple1]constant[/]",
+        NeedState.Default => "[mediumpurple1]fallback[/]",
         _ => "[blue]wired[/]",
     };
 
@@ -270,7 +291,8 @@ static class MapReport
     {
         NeedState.Wired => Markup.Escape($"{n.Providers[0].Repo} › {n.Providers[0].Module}")
             + (n.Target != n.Capability ? $" [dim]via {Markup.Escape(n.Target)}[/]" : ""),
-        NeedState.Default => $"[mediumpurple1]{Markup.Escape(Pairs(n.DefaultValues!))}[/] [dim]set on the map[/]",
+        NeedState.Constant => $"[mediumpurple1]{Markup.Escape(Pairs(n.Values!))}[/] [dim]set on the map[/]",
+        NeedState.Default => $"[mediumpurple1]{Markup.Escape(Pairs(n.Values!))}[/] [dim]fallback set on the map[/]",
         NeedState.Ambiguous => Markup.Escape(string.Join(" and ", n.Providers.Select(p => p.Repo))) + " [dim]both provide it[/]",
         _ => "[dim]nothing provides it[/]"
             + (n.Similar is { } s ? $" [yellow]· similar: {Markup.Escape($"{s.Capability} ({s.Repo})")}[/]" : "")

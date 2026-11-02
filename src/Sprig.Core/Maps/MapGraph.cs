@@ -19,6 +19,8 @@ public sealed record MapGraphProvide(string Capability, IReadOnlyList<string> Ou
 
 /// <summary>One need on a module node: how it resolved, the chosen provider (when Resolved to a real
 /// provider), and the candidate provider repos (when Ambiguous).</summary>
+/// <param name="FromDefault">Filled by a value the map supplies: a constant, or a fallback default.</param>
+/// <param name="FromConstant">Filled by one of the map's constants, which win over any provider.</param>
 public sealed record MapGraphNeed(
     string Capability,
     string Alias,
@@ -26,7 +28,8 @@ public sealed record MapGraphNeed(
     string? ProviderRepo,
     string? ProviderCapability,
     bool FromDefault,
-    IReadOnlyList<string> Candidates);
+    IReadOnlyList<string> Candidates,
+    bool FromConstant = false);
 
 /// <summary>A module within a repo node: its provides and needs (with their wiring status).</summary>
 public sealed record MapGraphModule(
@@ -111,6 +114,10 @@ public static class MapGraphProjection
 
     static MapGraphNeed Classify(string repo, Need need, MapDefinition? map, ILookup<string, Provider> byCapability)
     {
+        // A constant is the map's decision for this need, so nothing else is consulted.
+        if (Lookup3(map?.Constants, repo, need.Capability) is not null)
+            return new MapGraphNeed(need.Capability, need.Alias, WireStatus.Resolved, null, null, true, [], FromConstant: true);
+
         var wiring = Target(map, repo, need.Capability);
         var target = wiring.Capability;
         var candidates = byCapability[target].Where(p => wiring.Repo is null || p.Repo == wiring.Repo).ToList();

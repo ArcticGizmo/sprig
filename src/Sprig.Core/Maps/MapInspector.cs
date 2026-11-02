@@ -86,18 +86,26 @@ public sealed partial class MapInspector(RepoRegistryStore registry, MapStore ma
                 {
                     var (state, providers) = wired switch
                     {
-                        { Status: WireStatus.Resolved, FromDefault: true } => (NeedState.Default, (IReadOnlyList<ProviderRef>)[]),
+                        { Status: WireStatus.Resolved, FromConstant: true } => (NeedState.Constant, (IReadOnlyList<ProviderRef>)[]),
+                        { Status: WireStatus.Resolved, FromDefault: true } => (NeedState.Default, []),
                         { Status: WireStatus.Resolved } => (NeedState.Wired, [Ref(wired.ProviderRepo!, wired.ProviderCapability!)]),
                         { Status: WireStatus.Ambiguous } => (NeedState.Ambiguous, wired.Candidates.Select(r => Ref(r, wired.ProviderCapability!)).ToList()),
                         _ => (NeedState.Gap, []),
                     };
                     var target = MapGraphProjection.Target(map, repo.Name, need.Capability);
-                    var defaults = state == NeedState.Default ? Lookup(map.Defaults, repo.Name, need.Capability) : null;
-                    var uses = refs.Where(r => r.Head == need.Alias).Select(r => r.Use).Distinct().ToList();
+                    var values = state switch
+                    {
+                        NeedState.Constant => Lookup(map.Constants, repo.Name, need.Capability),
+                        NeedState.Default => Lookup(map.Defaults, repo.Name, need.Capability),
+                        _ => null,
+                    };
+                    var mine = refs.Where(r => r.Head == need.Alias).ToList();
+                    var uses = mine.Select(r => r.Use).Distinct().ToList();
+                    var outputs = mine.Select(r => r.Output).Distinct(StringComparer.Ordinal).ToList();
                     var similar = state == NeedState.Gap ? NearestName(need.Capability, target.Capability, allProvides) : null;
-                    var hints = state is NeedState.Gap or NeedState.Default ? Hints(repo, module, need.Alias) : [];
+                    var hints = state is NeedState.Wired or NeedState.Ambiguous ? [] : Hints(repo, module, need.Alias);
                     list.Add(new NeedInfo(repo.Name, module.Name, need.Capability, need.Alias, state, target.ToString(),
-                        providers, defaults, uses, similar, hints));
+                        providers, values, uses, similar, hints, outputs));
                 }
             }
 

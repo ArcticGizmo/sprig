@@ -7,27 +7,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [v0.8.1] - 2026-11-02
+
 ### Added
-- **The Maps page draws the wiring** — modules above what they rely on, shared services badged, unmet needs in red. Checkout's error message is no longer the first to know.
-- **The graph is a canvas** — drag to move, Ctrl+scroll to zoom. No scrollbars were harmed.
-- **One list of variables** — wired, constant, fixed in env or missing, they're all variables; only where the value comes from differs. Expand a row to choose: link it to any provider in the map, whatever either is called, or give it a constant.
-- **Constants that win** — a map's new `constants` beat any provider, so a wired variable can be pinned and unpinned. `defaults` stay as fallbacks. `sprig map constant` sets them from the CLI.
-- **Maps are composed on the graph** — New map asks for a name and opens an empty graph; Add repo puts repos on it. Checkboxes retired.
-- **Constants you can see** — values set on the map and values a module provides show as such, in violet.
-- **Fixed in env** — `localhost:1025` and friends get flagged in the same list, and one click turns them into a need with today's value kept.
-- **`sprig map check`** exits 1 when a checkout would stop, and says what to run. `map default` and `map wire` run it.
-- **`cli.cmd`** builds and runs the dev CLI from the repo root.
+- **The Maps page draws the wiring** — unmet needs in red. Checkout is no longer the first to know.
+- **The graph is a canvas** — drag to pan, Ctrl+scroll to zoom. No scrollbars were harmed.
+- **Maps are composed on the graph** — New map, then Add repo. Checkboxes retired.
+- **One list of variables** — expand a row to link it or pin it.
+- **Map constants** — beat any provider, shown in violet. Set with `sprig map constant`.
+- **Hard-coded values flagged** — `localhost:1025` becomes a need in one click.
+- **`sprig map check`** — exits 1 when a checkout would stop, and says why.
 
 ### Changed
-- **`sprig cd` says what the workspace is for** — its label shows in the picker and when you land, so `pool-03` stops being a mystery.
-- **`sprig map show`** reports how every need is wired rather than reciting the file. `--json` keeps the raw record under `map`.
-- **Map wiring can name the repo** — `"billing/cache"` settles two repos providing the same thing. The old error suggested a fix that couldn't work; it now suggests one that does.
+- **`sprig cd` shows the workspace label** — `pool-03` stops being a mystery.
+- **`sprig map show` reports the wiring** — rather than reciting the file.
+- **Map wiring can name the repo** — `"billing/cache"` settles a tie. The error's suggested fix now works.
 
 ### Removed
-- **Checking out from the Maps page** — the Workspaces page does it, with the same slicing.
+- **Checking out from the Maps page** — the Workspaces page does it.
 
 ### Fixed
-- **Editing a map in the app kept only its name and repos** — wiring, constants, pool size and repo URLs went with it. They stay now.
+- **Editing a map in the app kept only name and repos** — wiring and constants now survive.
 
 ---
 

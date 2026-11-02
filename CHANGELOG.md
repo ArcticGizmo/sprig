@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **`sprig cd` says what the workspace is for** — its label shows in the picker and when you land, so `pool-03` stops being a mystery.
+
 ---
 
 ## [v0.8.0] - 2026-10-30

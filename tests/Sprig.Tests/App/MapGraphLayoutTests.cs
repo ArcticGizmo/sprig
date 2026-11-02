@@ -72,6 +72,10 @@ public class MapGraphLayoutTests
     {
         var shopApi = MapGraphLayout.ModuleId("shop", "api");
         Assert.Equal(2, Layout.Edges.Count(e => e.From == shopApi && e.Kind == GraphEdgeKind.Ambiguous));
+        // The wired need to the same module keeps an edge of its own.
+        var toCatalog = Layout.Edges.Where(e => e.From == shopApi && e.To == MapGraphLayout.ModuleId("catalog", "app")).ToList();
+        Assert.Equal([(GraphEdgeKind.Wired, "catalog-api"), (GraphEdgeKind.Ambiguous, "cache")],
+            toCatalog.Select(e => (e.Kind, e.Labels.Single())).OrderBy(x => x.Kind));
 
         var gap = WiringExample.Inspect().Gaps.Single(n => n.Repo == "admin");
         var similar = Layout.Edges.Single(e => e.Kind == GraphEdgeKind.Similar);

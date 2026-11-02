@@ -39,6 +39,8 @@
         <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
         <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
         <SolidColorBrush x:Key="DangerBrush" Color="#F87171" />
+        <!-- A constant value: one a map sets for a need, or a module provides with no port. -->
+        <SolidColorBrush x:Key="ConstantBrush" Color="#A78BFA" />
         <SolidColorBrush x:Key="DevBrush" Color="#FF5FB0" />
     </Application.Resources>
 </Application>

@@ -35,6 +35,10 @@ internal static class Program
         if (args.Length > 0 && args[0] == "render")
             return HeadlessRenderer.RenderAll(args.Length > 1 ? args[1] : ".");
 
+        // `sprig-gui render-wiring <dir>` renders just the Maps wiring view, over an invented example map.
+        if (args.Length > 0 && args[0] == "render-wiring")
+            return HeadlessRenderer.RenderWiring(args.Length > 1 ? args[1] : ".");
+
         // `sprig-gui check-update` runs the notify-only update check and prints the result — a
         // headless probe of the same path the UI uses on launch (honours SPRIG_UPDATE_FEED).
         if (args.Length > 0 && args[0] == "check-update")

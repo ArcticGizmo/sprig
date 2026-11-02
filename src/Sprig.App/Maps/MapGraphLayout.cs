@@ -77,13 +77,14 @@ public sealed record MapGraphLayout(IReadOnlyList<GraphNode> Nodes, IReadOnlyLis
             graph.RootCluster.AddChild(cluster);
         }
 
-        var edges = new Dictionary<(string From, string To), (GraphEdgeKind Kind, List<string> Labels)>();
+        // One edge per pair and kind, so a wired need and an ambiguous one between the same modules keep
+        // their own colours; needs of the same kind share an edge and list their capabilities on it.
+        var edges = new Dictionary<(string From, string To, GraphEdgeKind Kind), List<string>>();
         void Link(string from, string to, GraphEdgeKind kind, string label)
         {
             if (from == to) return;
-            if (!edges.TryGetValue((from, to), out var e)) edges[(from, to)] = e = (kind, []);
-            if (Rank(kind) < Rank(e.Kind)) edges[(from, to)] = e = (kind, e.Labels);
-            if (!e.Labels.Contains(label)) e.Labels.Add(label);
+            if (!edges.TryGetValue((from, to, kind), out var labels)) edges[(from, to, kind)] = labels = [];
+            if (!labels.Contains(label)) labels.Add(label);
         }
 
         foreach (var need in inspection.Needs)
@@ -112,7 +113,7 @@ public sealed record MapGraphLayout(IReadOnlyList<GraphNode> Nodes, IReadOnlyLis
 
         var msaglEdges = new List<(Edge Edge, string From, string To, GraphEdgeKind Kind, List<string> Labels)>();
         var proxies = new HashSet<(Node, Node)>();
-        foreach (var ((from, to), (kind, labels)) in edges)
+        foreach (var ((from, to, kind), labels) in edges)
         {
             if (!nodes.ContainsKey(from) || !nodes.ContainsKey(to)) continue;
             var (source, target) = (nodes[from].Node, nodes[to].Node);
@@ -174,11 +175,6 @@ public sealed record MapGraphLayout(IReadOnlyList<GraphNode> Nodes, IReadOnlyLis
     static readonly object RootKey = new();
 
     static Cluster? Box(Node node) => node.ClusterParent is { UserData: string } box ? box : null;
-
-    static int Rank(GraphEdgeKind kind) => kind switch
-    {
-        GraphEdgeKind.Gap => 0, GraphEdgeKind.Ambiguous => 1, GraphEdgeKind.Similar => 2, GraphEdgeKind.Default => 3, _ => 4,
-    };
 
     static IEnumerable<MsaglPoint> Sample(ICurve? curve)
     {

@@ -21,16 +21,52 @@ namespace Sprig.App.Rendering;
 /// </summary>
 internal static class HeadlessRenderer
 {
+    static void SetUpHeadless() => AppBuilder.Configure<App>()
+        .UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+        .WithInterFont()
+        .SetupWithoutStarting();
+
+    /// <summary>Render the Maps wiring view over <see cref="WiringExample"/>: the canvas alone, at rest and
+    /// with the shared service selected.</summary>
+    public static int RenderWiring(string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        try
+        {
+            SetUpHeadless();
+            var layout = Maps.MapGraphLayout.Compute(WiringExample.Inspect());
+            void Shot(string name, string? selected)
+            {
+                var canvas = new MapWiringCanvas { Graph = layout, SelectedId = selected };
+                var window = new Window
+                {
+                    Width = layout.Size.Width, Height = layout.Size.Height,
+                    Background = new SolidColorBrush(Color.Parse("#181820")), Content = canvas,
+                };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name));
+                window.Close();
+            }
+            Shot("wiring_canvas.png", null);
+            Shot("wiring_canvas_hub_selected.png", Maps.MapGraphLayout.ModuleId("auth", "app"));
+            Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
+        }
+    }
+
     public static int RenderAll(string outDir)
     {
         Directory.CreateDirectory(outDir);
         try
         {
-            AppBuilder.Configure<App>()
-                .UseSkia()
-                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
-                .WithInterFont()
-                .SetupWithoutStarting();
+            SetUpHeadless();
 
             var services = new AppServices();
             var vm = new MainWindowViewModel(services);

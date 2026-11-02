@@ -81,9 +81,19 @@ public sealed partial class MapStore(ISprigPaths paths, RepoRegistryStore regist
         // Wiring/defaults may only name repos the map includes. (Capability-level checks need the repo
         // configs and so happen at resolve time — see CapabilityResolver, M3.)
         var repos = new HashSet<string>(map.Repos.Select(r => r.Name), StringComparer.Ordinal);
-        foreach (var repo in map.Wiring.Keys)
+        foreach (var (repo, needs) in map.Wiring)
+        {
             if (!repos.Contains(repo))
                 throw new MapException($"map '{map.Name}' wires repo '{repo}', which the map doesn't include");
+            foreach (var (need, value) in needs)
+            {
+                var target = WiringTarget.Parse(value ?? "");
+                if (string.IsNullOrWhiteSpace(target.Capability))
+                    throw new MapException($"map '{map.Name}' wires {repo}'s '{need}' to nothing — give a capability, or a repo/capability");
+                if (target.Repo is { } provider && !repos.Contains(provider))
+                    throw new MapException($"map '{map.Name}' wires {repo}'s '{need}' to repo '{provider}', which the map doesn't include");
+            }
+        }
         foreach (var repo in map.Defaults.Keys)
             if (!repos.Contains(repo))
                 throw new MapException($"map '{map.Name}' has defaults for repo '{repo}', which the map doesn't include");

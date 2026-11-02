@@ -23,9 +23,10 @@ public sealed record MapDefinition
     public IReadOnlyList<MapRepo> Repos { get; init; } = [];
 
     /// <summary>
-    /// Disambiguation: <c>Wiring[repo][capability] = providerCapability</c>. Only needed when more than one
-    /// selected repo provides a capability a repo needs — pick which one wins. Keyed by repo + capability
-    /// (module granularity is added only if a real collision ever appears).
+    /// Disambiguation: <c>Wiring[repo][capability] = providerCapability</c>, or
+    /// <c>"providerRepo/providerCapability"</c> to name the repo that wins when several provide the same
+    /// capability (see <see cref="WiringTarget"/>). Keyed by repo + capability (module granularity is added
+    /// only if a real collision ever appears).
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Wiring { get; init; }
         = new Dictionary<string, IReadOnlyDictionary<string, string>>();
@@ -41,6 +42,22 @@ public sealed record MapDefinition
     /// <summary>Optional pool ceiling — the max warm workspaces of this map (replaces the stack's maxSlots).
     /// Null means pooling is unbounded/unconfigured for this map.</summary>
     public int? MaxSlots { get; init; }
+}
+
+/// <summary>
+/// A wiring value: the capability a need is matched against, optionally pinned to the repo that provides
+/// it (<c>"billing/cache"</c>). A bare capability bridges names only, so it can't choose between two repos
+/// that provide the same name; the repo form can. Neither repo nor capability names may contain <c>/</c>.
+/// </summary>
+public readonly record struct WiringTarget(string? Repo, string Capability)
+{
+    public static WiringTarget Parse(string value)
+    {
+        var slash = value.IndexOf('/');
+        return slash > 0 ? new(value[..slash], value[(slash + 1)..]) : new(null, value);
+    }
+
+    public override string ToString() => Repo is null ? Capability : $"{Repo}/{Capability}";
 }
 
 /// <summary>

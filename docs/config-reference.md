@@ -359,7 +359,7 @@ inside a repo. Authored in the app's **Maps** page, or imported with `sprig map 
 | `schema` | int | Schema version. Currently `1`. |
 | `name` | string | Map name. Must match `^[A-Za-z0-9._+-]+$`. |
 | `repos` | array | The repos in the map. Each entry is a bare **registry name** (`"acme"`), or an object `{ "name": …, "repo": <git-url> }`. |
-| `wiring` | object | `wiring[repo][capability] = providerCapability` — disambiguation, only needed when more than one selected repo provides a capability a repo needs. |
+| `wiring` | object | `wiring[repo][capability] = providerCapability` bridges a need to a provide with a different name. `wiring[repo][capability] = "providerRepo/providerCapability"` also names the repo that wins, which is how to settle two repos providing the same capability; it overrides the usual same-repo-first rule. The provider repo must be in the map. |
 | `defaults` | object | `defaults[repo][capability][output] = literal` — a manual fallback for a need whose provider isn't in the current selection, so a partial checkout resolves instead of reporting a gap. |
 | `maxSlots` | int | Optional pool ceiling — the max warm workspaces of this map. Defaults to **5** when unset. |
 
@@ -408,8 +408,22 @@ has no provider in the selection. Rather than fail, the map supplies a finished 
 }
 ```
 
-`vue-web`'s `${sprig.api.url}` now resolves to the staging URL. (When more than one repo could
-provide `api`, you'd instead add a `wiring` entry naming the winner.)
+`vue-web`'s `${sprig.api.url}` now resolves to the staging URL. A default only applies while nothing in the selection provides the need; check the backend out too and its real `api` wins.
+
+### Example — two repos provide the same capability
+
+`billing` and `catalog` both provide `cache`, and `shop` needs it. Checkout can't guess, so the map names the winner:
+
+```json
+{
+  "schema": 1,
+  "name": "storefront",
+  "repos": ["shop", "billing", "catalog"],
+  "wiring": {
+    "shop": { "cache": "billing/cache" }
+  }
+}
+```
 
 ---
 

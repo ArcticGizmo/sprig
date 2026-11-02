@@ -91,12 +91,12 @@ public sealed partial class MapInspector(RepoRegistryStore registry, MapStore ma
                         { Status: WireStatus.Ambiguous } => (NeedState.Ambiguous, wired.Candidates.Select(r => Ref(r, wired.ProviderCapability!)).ToList()),
                         _ => (NeedState.Gap, []),
                     };
-                    var target = MapGraphProjection.TargetCapability(map, repo.Name, need.Capability);
+                    var target = MapGraphProjection.Target(map, repo.Name, need.Capability);
                     var defaults = state == NeedState.Default ? Lookup(map.Defaults, repo.Name, need.Capability) : null;
                     var uses = refs.Where(r => r.Head == need.Alias).Select(r => r.Use).Distinct().ToList();
-                    var similar = state == NeedState.Gap ? NearestName(need.Capability, target, allProvides) : null;
+                    var similar = state == NeedState.Gap ? NearestName(need.Capability, target.Capability, allProvides) : null;
                     var hints = state is NeedState.Gap or NeedState.Default ? Hints(repo, module, need.Alias) : [];
-                    list.Add(new NeedInfo(repo.Name, module.Name, need.Capability, need.Alias, state, target,
+                    list.Add(new NeedInfo(repo.Name, module.Name, need.Capability, need.Alias, state, target.ToString(),
                         providers, defaults, uses, similar, hints));
                 }
             }

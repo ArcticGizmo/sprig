@@ -111,6 +111,29 @@ public class MapStoreTests
     }
 
     [Fact]
+    public void Wiring_may_name_a_providing_repo_the_map_includes_but_no_other()
+    {
+        var (store, registry, maps) = Fresh();
+        using var _ = store;
+        Register(store, registry, "acme");
+        Register(store, registry, "billing");
+        MapDefinition Wired(string value) => new()
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("acme"), MapRepo.Local("billing")],
+            Wiring = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["acme"] = new Dictionary<string, string> { ["cache"] = value },
+            },
+        };
+
+        maps.Save(Wired("billing/cache"));
+        Assert.Equal("billing/cache", maps.Get("m")!.Wiring["acme"]["cache"]);
+        Assert.Contains("'elsewhere'", Assert.Throws<MapException>(() => maps.Save(Wired("elsewhere/cache"))).Message);
+        Assert.Throws<MapException>(() => maps.Save(Wired("billing/")));
+    }
+
+    [Fact]
     public void Empty_repos_and_bad_name_and_zero_slots_are_rejected()
     {
         var (store, registry, maps) = Fresh();

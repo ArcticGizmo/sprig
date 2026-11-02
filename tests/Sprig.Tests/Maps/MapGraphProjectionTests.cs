@@ -97,6 +97,43 @@ public class MapGraphProjectionTests
     }
 
     [Fact]
+    public void A_wiring_entry_naming_a_repo_settles_two_providers_of_the_same_capability()
+    {
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("a"), MapRepo.Local("b"), MapRepo.Local("web")],
+            Wiring = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["web"] = new Dictionary<string, string> { ["db"] = "b/db" },
+            },
+        };
+        var graph = MapGraphProjection.Project(map,
+            [Repo("a", Provider("a", "db")), Repo("b", Provider("b", "db")), Repo("web", Consumer("web", "db"))]);
+
+        var need = graph.Nodes.Single(n => n.Repo == "web").Modules.Single().Needs.Single();
+        Assert.Equal((WireStatus.Resolved, "b"), (need.Status, need.ProviderRepo));
+        Assert.Empty(graph.Ambiguities);
+    }
+
+    [Fact]
+    public void A_wiring_entry_naming_a_repo_that_lacks_the_capability_is_a_gap()
+    {
+        var map = new MapDefinition
+        {
+            Name = "m",
+            Repos = [MapRepo.Local("a"), MapRepo.Local("web")],
+            Wiring = new Dictionary<string, IReadOnlyDictionary<string, string>>
+            {
+                ["web"] = new Dictionary<string, string> { ["db"] = "web/db" },
+            },
+        };
+        var graph = MapGraphProjection.Project(map, [Repo("a", Provider("a", "db")), Repo("web", Consumer("web", "db"))]);
+
+        Assert.Single(graph.Gaps);
+    }
+
+    [Fact]
     public void A_need_with_no_provider_is_a_gap()
     {
         var graph = MapGraphProjection.Project(null, [Repo("web", Consumer("web", "db"))]);

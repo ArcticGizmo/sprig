@@ -104,18 +104,19 @@ public static class MapGraphProjection
         return new MapGraph(nodes, edges);
     }
 
-    /// <summary>The capability a repo's need is matched against: the map's wiring bridge when it has one,
-    /// else the need's own name.</summary>
-    public static string TargetCapability(MapDefinition? map, string repo, string need)
-        => Lookup2(map?.Wiring, repo, need) ?? need;
+    /// <summary>What a repo's need is matched against: the map's wiring entry when it has one, else the
+    /// need's own name.</summary>
+    public static WiringTarget Target(MapDefinition? map, string repo, string need)
+        => Lookup2(map?.Wiring, repo, need) is { } wired ? WiringTarget.Parse(wired) : new WiringTarget(null, need);
 
     static MapGraphNeed Classify(string repo, Need need, MapDefinition? map, ILookup<string, Provider> byCapability)
     {
-        var target = TargetCapability(map, repo, need.Capability);
-        var candidates = byCapability[target].ToList();
+        var wiring = Target(map, repo, need.Capability);
+        var target = wiring.Capability;
+        var candidates = byCapability[target].Where(p => wiring.Repo is null || p.Repo == wiring.Repo).ToList();
 
-        // Nearest-wins: a provider in the same repo beats any other.
-        var sibling = candidates.FirstOrDefault(p => p.Repo == repo);
+        // Nearest-wins: a provider in the same repo beats any other, unless the map named the repo.
+        var sibling = wiring.Repo is null ? candidates.FirstOrDefault(p => p.Repo == repo) : null;
         if (sibling is not null)
             return Resolved(need, sibling, fromDefault: false);
 

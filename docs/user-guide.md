@@ -70,13 +70,16 @@ files and setup commands. A single-app repo has one module; a monorepo has sever
 ### Maps
 - **New map** — name it (validated live — path-safe characters only), and tick the repos to include.
   That's usually all a map needs: wiring is derived from the repos' provides/needs by capability name.
-- The map preview shows each repo's **provides / needs** and how they wire — and surfaces the two
-  things a map exists to resolve: **ambiguities** (a need more than one repo could provide — pick the
-  winner) and **gaps** (a need no included repo provides — supply a default value, or add the
-  provider).
-- Selecting a map shows its repos, wiring and defaults, with **Edit** and **Delete**. Editing a map is
-  always safe — a map is resolved at checkout, so changing it never invalidates a workspace you already
-  built.
+- Selecting a map opens with a summary of whether a checkout would go through, and if not, each thing that stops it: a need nothing provides, a need two repos provide, or a repo sprig can't read. Below it, counts of what's wired, constant and fixed, and the module most others rely on.
+- **Graph** draws the wiring. Each module is a node listing what it provides, and sits above what it relies on, so a service several modules share shows up as one node with arrows coming in and a "needed by N" badge. A repo with several modules is a box around them. Arrows point from the module that needs something to the one that provides it: blue when wired, amber when two repos provide it, red into a placeholder when nothing does, dotted amber from a placeholder to a provide with a near-miss name. Constants are violet: a dashed node for a value set on the map, ◆ for a value a module provides. A hollow dot marks a provide only its own repo uses. Click a node (or use the arrow keys) to fade everything not connected to it; zoom with **−**, **+**, **100%** and **Fit**.
+- **Ledger** lists every capability with who provides it, who needs it and its status, problems first.
+- The card under the graph explains the selected node and fixes it in place:
+  - an unmet need: **set a value on the map** (sprig suggests one when the module's env template shows what the value used to be), or **wire it** to a provide with a near-miss name, or add the providing repo with **Edit**;
+  - a need two repos provide: **Use** one of them, which records `repo/capability` in the map's wiring;
+  - a constant set on the map: change it, or remove it;
+  - a need wired through a wiring entry: remove the entry.
+- **Fixed values in env** lists settings that pin a local address or port (`localhost:1025`, `RABBITMQ_PORT=8512`), which every workspace shares. **Make it a need** declares the need in the repo's config, points the env key at it, and sets today's value on the map, so nothing changes at runtime but the value shows on the graph. Passwords in these values are masked.
+- **Edit** and **Delete** sit beside the map's name. Editing a map is always safe: a map is resolved at checkout, so changing it never invalidates a workspace you already built, and an edit keeps the map's wiring, constants and pool size.
 - **Check out a workspace** takes a slice of the map into a live workspace (see Workspaces).
 
 ### Workspaces
@@ -158,18 +161,22 @@ sprig repo add C:\code\my-api --virtual --name api-alt --from alt.json  # a seco
 
 ### 2. Compose a map
 
-Maps are authored in the app's **Maps** page (or shared as a file and imported). The CLI lists,
-shows and imports them:
+Maps are authored in the app's **Maps** page (or shared as a file and imported). The CLI lists, shows, checks and imports them, and applies the same fixes the app does:
 
 ```sh
 sprig map ls                        # list maps and their repos
-sprig map show web+api              # dump one map (add --json for the raw record)
+sprig map show web+api              # how every need is wired, shared services, constants, fixed values
+sprig map check web+api             # exits 1 when a checkout would stop, with the command that fixes each blocker
+sprig map default web+api web payments url=https://pay.sandbox.test   # set a constant for web's 'payments' need
+sprig map default web+api web payments --rm                           # remove it
+sprig map wire web+api shop cache billing/cache                       # pick billing's cache over another repo's
+sprig map wire web+api shop cache --rm                                # remove the wiring entry
 sprig map import C:\tmp\web+api.json  # validate + save a shared map
 ```
 
-A map that just composes repos which wire cleanly by capability name needs nothing but its repo list.
-Ambiguities (more than one provider) and gaps (no provider) are resolved with `wiring` / `defaults`
-entries — see the [configuration reference](config-reference.md#map--mapsnamejson).
+`map show --json` and `map check --json` print the whole report: each need's state, each provide's consumers, hubs, fixed values, problems and the suggested fixes, with the raw map record under `map`.
+
+A map that just composes repos which wire cleanly by capability name needs nothing but its repo list. Ambiguities (more than one provider) and gaps (no provider) are resolved with `wiring` / `defaults` entries; see the [configuration reference](config-reference.md#map--mapsnamejson).
 
 ### 3. Check out / create a workspace
 

@@ -64,9 +64,14 @@ Maps are authored in the app's **Maps** page, or written as JSON and imported:
 
 ```bash
 sprig map import <file.json> --json   # validates against the registry, then saves
-sprig map show <name> --json
+sprig map show <name> --json          # each need's state, consumers, hubs, fixed values, suggested fixes; raw record under "map"
+sprig map check <name> --json         # same report; exits 1 when a checkout would stop
 sprig map ls --json
+sprig map default <map> <repo> <capability> <output>=<value> --json   # set a constant for a need nothing provides
+sprig map wire <map> <repo> <need> <providerRepo>/<capability> --json  # pick between two providers
 ```
+
+After importing or changing a map, run `sprig map check <name> --json` and fix anything it reports before checking out. Its `fixes` list holds the exact commands.
 
 Write the file somewhere temporary (not in a repo). Minimal shape:
 
@@ -75,17 +80,19 @@ Write the file somewhere temporary (not in a repo). Minimal shape:
 ```
 
 - **Start with just `repos`.** Most maps need nothing else: each need is met by the one selected repo that provides it, or by a sibling module in the same repo.
-- **`wiring`** only when two or more selected repos provide the same capability: `wiring[repo][capability] = providerCapability`.
+- **`wiring`** only when two or more selected repos provide the same capability: `wiring[repo][capability] = "providerRepo/capability"` names the winner. A bare `providerCapability` bridges a need to a provide with a different name.
 - **`defaults`** only for a need whose provider isn't in the map: `defaults[repo][capability][output] = literal` (e.g. a shared staging URL).
 - **`maxSlots`** caps the pool (default 5).
 - A repo entry can be `{ "name": "billing", "repo": "<git-url>" }` so a shared map clones repos a machine doesn't have.
 
 ## C. Fix a checkout that failed on wiring
 
-- **Unmet need** (`repo.module needs '<capability>'`): nothing selected provides it. Either add the providing repo to the map, add a `defaults` entry with a literal value, or fix a typo in the capability name on either side.
-- **Ambiguous need** (more than one provider): add a `wiring` entry naming the winner.
+Run `sprig map check <map> --json` first: it lists every blocker and a `fixes` command for each.
 
-Re-import the map, then hand back to `sprig-workspace` to retry the checkout.
+- **Unmet need** (`repo.module needs '<capability>'`): nothing selected provides it. Either add the providing repo to the map, set a constant with `sprig map default <map> <repo> <capability> <output>=<value>`, or fix a typo in the capability name on either side. When the report gives a `Similar` provide, `sprig map wire <map> <repo> <need> <similar>` bridges the names without touching either repo. Its `Hints` hold the value the module's env template used before sprig wired it.
+- **Ambiguous need** (more than one provider): `sprig map wire <map> <repo> <need> <providerRepo>/<capability>` names the winner.
+
+Then hand back to `sprig-workspace` to retry the checkout.
 
 ## D. Machine settings (optional)
 

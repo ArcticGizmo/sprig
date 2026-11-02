@@ -1,6 +1,6 @@
 # Map wiring view — plan
 
-**Status:** 2026-11-02 · in progress on `map-needs-visibility` · mock-up: [docs/artefacts/map-wiring.html](artefacts/map-wiring.html)
+**Status:** 2026-11-02 · all eight checkpoints built on `map-needs-visibility`, awaiting hands-on testing · mock-up: [docs/artefacts/map-wiring.html](artefacts/map-wiring.html) · render: `sprig-gui render-wiring <dir>`
 
 ## Goal
 

@@ -7,8 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **The Maps page draws the wiring** — modules above what they rely on, shared services badged, unmet needs in red. Checkout's error message is no longer the first to know.
+- **Fixes on the spot** — set a value (often pre-filled from the env template), wire a near-miss name, pick between two providers, all from the selected node.
+- **Constants you can see** — values set on the map and values a module provides show as such, in violet.
+- **Fixed values in env** — `localhost:1025` and friends get flagged, and one click turns them into a need with today's value kept.
+- **`sprig map check`** exits 1 when a checkout would stop, and says what to run. `map default` and `map wire` run it.
+- **`cli.cmd`** builds and runs the dev CLI from the repo root.
+
 ### Changed
 - **`sprig cd` says what the workspace is for** — its label shows in the picker and when you land, so `pool-03` stops being a mystery.
+- **`sprig map show`** reports how every need is wired rather than reciting the file. `--json` keeps the raw record under `map`.
+- **Map wiring can name the repo** — `"billing/cache"` settles two repos providing the same thing. The old error suggested a fix that couldn't work; it now suggests one that does.
+
+### Fixed
+- **Editing a map in the app kept only its name and repos** — wiring, constants, pool size and repo URLs went with it. They stay now.
 
 ---
 

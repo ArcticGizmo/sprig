@@ -84,7 +84,7 @@ Central store (`%LOCALAPPDATA%\sprig\maps\<name>.json`), never in a repo. Import
 | `schema` | int | `1` |
 | `name` | string | `^[A-Za-z0-9._+-]+$` |
 | `repos` | array | Registry names, or `{ "name": …, "repo": "<git-url>" }` to clone on a machine that lacks it |
-| `wiring` | object | `wiring[repo][capability] = providerCapability` — only when >1 provider |
+| `wiring` | object | `wiring[repo][capability] = "providerRepo/capability"` picks the winner when >1 provider; a bare `providerCapability` bridges to a different name |
 | `defaults` | object | `defaults[repo][capability][output] = literal` — a need with no provider selected |
 | `maxSlots` | int | Pool ceiling; default 5 |
 

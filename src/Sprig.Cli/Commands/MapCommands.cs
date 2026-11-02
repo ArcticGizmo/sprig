@@ -180,6 +180,7 @@ static class MapReport
         ok,
         name = i.Map.Name,
         ready = i.IsReady,
+        map = i.Map,
         repos = i.Map.Repos.Select(r => r.Name),
         problems = i.Problems,
         needs = i.Needs,

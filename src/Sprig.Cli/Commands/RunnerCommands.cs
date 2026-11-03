@@ -14,11 +14,15 @@ public class AppsSettings : SproutSettings
     public string[] Apps { get; set; } = [];
 }
 
-[Description("Start a sprout's apps in the background sprig host, and wait until each is ready")]
+[Description("Start a sprout's apps and jobs in the background sprig host, in dependency order, and wait until each is ready")]
 public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings>
 {
     public sealed class Settings : AppsSettings
     {
+        [CommandOption("--group <name>")]
+        [Description("Start one of the trellis's groups (and what its apps depend on)")]
+        public string? Group { get; set; }
+
         [CommandOption("--no-wait")]
         [Description("Return once the apps are starting, without waiting for them to be ready")]
         public bool NoWait { get; set; }
@@ -28,34 +32,43 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     {
         var record = cli.Sprouts.Get(s.Trellis, s.Sprout) ?? throw new InvalidOperationException($"{s.Trellis} has no sprout named '{s.Sprout}'");
         var plan = cli.Sprouts.LastPlan(s.Trellis, s.Sprout) ?? throw new InvalidOperationException($"{s.Trellis}/{s.Sprout} hasn't come up yet; run sprig up first");
-        var specs = RunnerSpecs.For(record, plan, s.Apps.Length > 0 ? s.Apps : null);
+        if (record.State != Sprig.Engine.Sprouts.SproutState.Up)
+            throw new InvalidOperationException($"{record.Key} is {record.State.ToString().ToLowerInvariant()}; bring its infra up first: sprig up {s.Trellis} --sprout {s.Sprout}");
 
-        foreach (var spec in specs)
+        IReadOnlyCollection<string>? names = s.Apps.Length > 0 ? s.Apps : null;
+        if (s.Group is { } group)
         {
-            var answer = cli.Host.Send(new HostRequest("start", spec));
-            if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? $"the host wouldn't start {spec.Name}");
+            if (names is not null) throw new InvalidOperationException("name apps or a group, not both");
+            names = plan.Groups.FirstOrDefault(g => g.Name == group)?.Apps
+                ?? throw new InvalidOperationException($"{s.Trellis} has no group '{group}'; it has {string.Join(", ", plan.Groups.Select(g => g.Name))}");
         }
+        var specs = RunnerSpecs.For(record, plan, names);
+        // Apps named outright start afresh; everything else, including what they depend on, is left alone if it's going.
+        var restart = s.Apps.Length > 0 ? RunnerSpecs.Resolve(record, plan, s.Apps) : [];
+
+        var answer = cli.Host.Send(new HostRequest("start", specs, Restart: restart));
+        if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
         if (s.NoWait)
             return CliOutput.Ok(s.Json, $"starting {specs.Count} apps", new { ok = true, apps = specs.Select(x => x.Name) });
 
-        var names = specs.Select(x => x.Name).ToHashSet();
+        var watched = specs.Select(x => x.Name).ToHashSet();
         var seen = new Dictionary<string, RunnerState>();
         var clock = Stopwatch.StartNew();
         IReadOnlyList<RunnerStatus> mine = [];
         while (!cancellation.IsCancellationRequested)
         {
-            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Sprout == record.Key && names.Contains(r.Name)).ToArray();
+            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Sprout == record.Key && watched.Contains(r.Name)).ToArray();
             foreach (var r in mine.Where(r => !seen.TryGetValue(r.Name, out var was) || was != r.State))
             {
                 seen[r.Name] = r.State;
                 if (!s.Json) Report(r);
             }
-            if (mine.All(r => r.State is not (RunnerState.Building or RunnerState.Starting))) break;
+            if (mine.All(r => r.State.Satisfies() || r.State.IsSettled())) break;
             if (clock.Elapsed > TimeSpan.FromMinutes(5)) break;
             Thread.Sleep(300);
         }
 
-        var failed = mine.Where(r => r.State != RunnerState.Ready).ToArray();
+        var failed = mine.Where(r => !r.State.Satisfies()).ToArray();
         if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, runners = mine });
         else if (failed.Length > 0)
             foreach (var r in failed) cli.Ansi.MarkupLine($"[dim]  log: {Markup.Escape(r.LogFile)}[/]");
@@ -67,7 +80,10 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         var (colour, text) = r.State switch
         {
             RunnerState.Building => ("blue", "building"),
+            RunnerState.Waiting => ("blue", "waiting for what it depends on"),
             RunnerState.Starting => ("blue", "starting"),
+            RunnerState.Running => ("blue", "running"),
+            RunnerState.Completed => ("green", "finished"),
             RunnerState.Ready => ("green", r.Port is { } p ? $"ready on http://localhost:{p}" : "running"),
             RunnerState.Exited => ("red", $"exited with code {r.Exit}"),
             RunnerState.Failed => ("red", r.Error ?? "failed"),
@@ -110,6 +126,7 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
             table.AddRow(Markup.Escape(r.Sprout), Markup.Escape(r.Name), r.State switch
                 {
                     RunnerState.Ready => "[green]ready[/]",
+                    RunnerState.Completed => "[green]finished[/]",
                     RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",
                     _ => r.State.ToString().ToLowerInvariant(),
                 },
@@ -160,7 +177,7 @@ public sealed class HostStatusCommand(CliContext cli) : Command<GlobalSettings>
     {
         var answer = cli.Host.TrySend(new HostRequest("ping"));
         if (answer is null) return CliOutput.Ok(s.Json, "the sprig host isn't running; it starts when something needs it", new { ok = true, running = false });
-        var alive = answer.Runners?.Count(r => r.State is RunnerState.Building or RunnerState.Starting or RunnerState.Ready) ?? 0;
+        var alive = answer.Runners?.Count(r => r.State.IsAlive()) ?? 0;
         return CliOutput.Ok(s.Json, $"the sprig host is running (pid {answer.Pid}, v{answer.Version}) with {alive} apps",
             new { ok = true, running = true, pid = answer.Pid, version = answer.Version, apps = alive });
     }

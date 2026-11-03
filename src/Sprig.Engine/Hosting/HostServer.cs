@@ -70,7 +70,7 @@ public sealed class HostServer(ISprigPaths paths, TimeSpan idle)
             {
                 "ping" => new HostResponse(true, Pid: Environment.ProcessId, Version: Version, Runners: _supervisor.List()),
                 "list" => new HostResponse(true, Runners: _supervisor.List()),
-                "start" when request.Spec is { } spec => new HostResponse(true, Runners: [_supervisor.Start(spec)]),
+                "start" when request.Specs is { } specs => new HostResponse(true, Runners: _supervisor.Start(specs, request.Restart ?? [])),
                 "stop" when request.Sprout is { } sprout => new HostResponse(_supervisor.Stop(sprout, request.Name), Runners: _supervisor.List(),
                     Error: null),
                 "shutdown" => Shutdown(),

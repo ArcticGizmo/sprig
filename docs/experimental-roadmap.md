@@ -253,7 +253,14 @@ Also in M4:
 - Nothing was blocked on this machine. Whether CrowdStrike or Defender raised alerts that don't block is a question for SecOps' consoles.
 - **Found:** a host started the ordinary way inherited the CLI's stdout, so `sprig start | tail` hung until the host exited. It's now shell-executed, so it inherits no handles.
 - **Found:** with no launch profile, ASP.NET runs as Production, so runners set `ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT` to Development unless the app sets them.
-- **Still to do in M5:** `WaitFor` ordering and `repo.Job`/`After` (migrations), graceful stop before kill, readiness by HTTP or a log line, restart policy, starting groups, `sprig up --run`, the app's log pane and runner list, and the IDE handoff (stop one runner, keep its port leased).
+
+**Ordering and jobs (done 2026-11-03):**
+- `repo.DotNetJob(...)` and `repo.Job(...)` declare one-off commands. There's no separate `After`: `WaitFor` means "ready" for an app, "finished with code 0" for a job, and "healthy" for infra (already true after `up`).
+- The planner gives each app a `DependsOn`: what it waits for (a loop there is an error), plus apps whose urls or ports reach it through its values, added only when that doesn't close a loop. So `web` starts after the APIs it imports without saying so, and two services that call each other start in declaration order.
+- The host does the ordering: builds run up front (one per repo at a time), then each runner waits for its dependencies. A failed job or app fails what waits for it, with the reason. `sprig start <trellis> <sprout> [apps] [--group g]` brings what they depend on. Apps named outright restart, and everything else already going is left alone.
+- Node apps in a fresh worktree get `npm ci --ignore-scripts` (or `npm install --ignore-scripts` without a lockfile) as their build step.
+- **Run against the testbed:** `sprig start storefront feat-a` installed and built everything and ran `migrate`, then started `catalog-api`, then `orders-api`, then `web` (after both APIs) and `mobile`, all ready in 23 s. Stopping `catalog-api` and running it by hand with `dotnet run` from the worktree put it back on its leased port with the sprout's values. `orders-api` placed an order through it, and the email reached Mailpit.
+- **Still to do in M5:** graceful stop before kill, readiness by HTTP or a log line, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host).
 
 ### M6: Review and decide (about 2 weeks)
 

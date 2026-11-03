@@ -3,7 +3,8 @@ using Sprig.Model;
 
 namespace Sprig;
 
-/// <summary>Something sprig can wait for before starting another app.</summary>
+/// <summary>Something sprig can wait for before starting another app: an app until it's ready, a job until it has
+/// finished successfully, infra until it's healthy.</summary>
 public interface IResource
 {
     string Name { get; }
@@ -101,7 +102,7 @@ public sealed class AppResource : IResource
     /// <inheritdoc cref="Run(Expr)"/>
     public AppResource Run([InterpolatedStringHandlerArgument] ExprHandler command) => Run(command.ToExpr());
 
-    /// <summary>Start only once these are ready.</summary>
+    /// <summary>Start only once these are ready: apps answering on their port, jobs finished successfully.</summary>
     public AppResource WaitFor(params IResource[] resources)
     {
         _waitFor.AddRange(resources.Select(r => r.Name));
@@ -111,7 +112,59 @@ public sealed class AppResource : IResource
     string PrimaryEndpoint => _primaryEndpoint
         ?? throw new InvalidOperationException($"app '{Name}' has no endpoint yet; call .Http() before using its Port or Url");
 
-    internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(), _outputs.ToArray());
+    internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(), _outputs.ToArray(), Job: false);
+}
+
+/// <summary>A one-off command, such as migrations, that runs to completion each time its sprout's apps start. Apps that
+/// <see cref="AppResource.WaitFor"/> it start only after it exits with code 0.</summary>
+public sealed class JobResource : IResource
+{
+    readonly string _kind;
+    readonly string _path;
+    readonly SourceLocation _location;
+    readonly List<EnvModel> _env = [];
+    readonly List<string> _waitFor = [];
+    string? _run;
+
+    internal JobResource(string name, string kind, string path, SourceLocation location)
+    {
+        Name = name;
+        _kind = kind;
+        _path = path;
+        _location = location;
+    }
+
+    public string Name { get; }
+
+    /// <summary>Set an env var on the job's process.</summary>
+    public JobResource Env(string key, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _env.Add(new EnvModel(key, value.ToTemplate(), null, new SourceLocation(file, line)));
+        return this;
+    }
+
+    /// <inheritdoc cref="Env(string, Expr, string, int)"/>
+    public JobResource Env(string key, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => Env(key, value.ToExpr(), file, line);
+
+    /// <summary>The command to run. Defaults to the job kind's usual command.</summary>
+    public JobResource Run(Expr command)
+    {
+        _run = command.ToTemplate();
+        return this;
+    }
+
+    /// <inheritdoc cref="Run(Expr)"/>
+    public JobResource Run([InterpolatedStringHandlerArgument] ExprHandler command) => Run(command.ToExpr());
+
+    /// <summary>Run only once these are ready.</summary>
+    public JobResource WaitFor(params IResource[] resources)
+    {
+        _waitFor.AddRange(resources.Select(r => r.Name));
+        return this;
+    }
+
+    internal AppModel Build() => new(Name, _kind, _path, _location, [], _env.ToArray(), _run, _waitFor.ToArray(), [], Job: true);
 }
 
 /// <summary>Where an app's env vars are written for running it by hand. Paths are relative to the app's path. Each file

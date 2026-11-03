@@ -3,22 +3,49 @@ using Sprig.Engine.Sprouts;
 
 namespace Sprig.Engine.Hosting;
 
-/// <summary>Turns a sprout's apps into what the host runs: the command for the app's kind, its folder in the sprout,
-/// its process env vars, and the port that says it's ready.</summary>
+/// <summary>Turns a sprout's apps and jobs into what the host runs: the command for each kind, its folder in the
+/// sprout, its process env vars, the port that says it's ready, and what it waits for.</summary>
 public static class RunnerSpecs
 {
-    /// <param name="apps">Only these apps (as <c>name</c> or <c>repo/name</c>); null for all of them.</param>
-    public static IReadOnlyList<RunnerSpec> For(SproutRecord record, Plan plan, IReadOnlyCollection<string>? apps = null)
+    /// <summary>
+    /// The runners for <paramref name="names"/> (as <c>name</c> or <c>owner/name</c>; null for every app and job) plus
+    /// everything they depend on, dependencies first.
+    /// </summary>
+    public static IReadOnlyList<RunnerSpec> For(SproutRecord record, Plan plan, IReadOnlyCollection<string>? names = null)
+        => Closure(plan, Resolve(record, plan, names)).Select(app => For(record, plan, app)).ToArray();
+
+    /// <summary>The apps <paramref name="names"/> pick out, by their <see cref="PlannedApp.Key"/>.</summary>
+    public static IReadOnlyList<string> Resolve(SproutRecord record, Plan plan, IReadOnlyCollection<string>? names)
     {
-        var chosen = plan.Apps.Where(a => apps is null || apps.Contains(a.Name) || apps.Contains($"{a.Owner}/{a.Name}")).ToArray();
-        if (apps is not null)
+        if (names is null) return plan.Apps.Select(a => a.Key).ToArray();
+        var keys = new List<string>();
+        foreach (var name in names)
         {
-            var unknown = apps.Where(n => !plan.Apps.Any(a => a.Name == n || $"{a.Owner}/{a.Name}" == n)).ToArray();
-            if (unknown.Length > 0)
-                throw new InvalidOperationException($"{record.Trellis} has no app {string.Join(", ", unknown.Select(u => $"'{u}'"))}; " +
-                    $"it has {string.Join(", ", plan.Apps.Select(a => $"{a.Owner}/{a.Name}"))}");
+            var matches = plan.Apps.Where(a => a.Key == name || a.Name == name).ToArray();
+            keys.Add(matches.Length switch
+            {
+                1 => matches[0].Key,
+                0 => throw new InvalidOperationException($"{record.Trellis} has no app '{name}'; it has {string.Join(", ", plan.Apps.Select(a => a.Key))}"),
+                _ => throw new InvalidOperationException($"'{name}' is in more than one repo; name it as <repo>/{name}"),
+            });
         }
-        return chosen.Select(app => For(record, plan, app)).ToArray();
+        return keys;
+    }
+
+    static IEnumerable<PlannedApp> Closure(Plan plan, IReadOnlyList<string> keys)
+    {
+        var byKey = plan.Apps.ToDictionary(a => a.Key, StringComparer.Ordinal);
+        var ordered = new List<PlannedApp>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in keys) Visit(key);
+        return ordered;
+
+        void Visit(string key)
+        {
+            if (!seen.Add(key) || !byKey.TryGetValue(key, out var app)) return;
+            foreach (var dependency in app.DependsOn ?? []) Visit(dependency);
+            ordered.Add(app);
+        }
     }
 
     static RunnerSpec For(SproutRecord record, Plan plan, PlannedApp app)
@@ -27,7 +54,7 @@ public static class RunnerSpecs
         var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
         var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in app.Env.Where(e => e.File is null)) env[e.Key] = e.Value.Value ?? "";
-        var port = plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name)?.Port;
+        var port = app.Job ? null : plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name)?.Port;
 
         CommandSpec? build = null;
         CommandSpec command;
@@ -48,7 +75,13 @@ public static class RunnerSpecs
         else
             throw new InvalidOperationException($"'{app.Name}' has no Run command, so sprig doesn't know how to start it");
 
-        return new RunnerSpec(record.Key, $"{app.Owner}/{app.Name}", command, dir, env, build, build is null ? null : repo.Dir, port);
+        // A fresh worktree has no node_modules (git ignores it). Install scripts stay off: they're where malicious
+        // packages run their code.
+        if (app.Kind == "node" && !Directory.Exists(Path.Combine(dir, "node_modules")) && File.Exists(Path.Combine(dir, "package.json")))
+            build = Shell(File.Exists(Path.Combine(dir, "package-lock.json")) ? "npm ci --ignore-scripts" : "npm install --ignore-scripts");
+
+        return new RunnerSpec(record.Key, app.Key, command, dir, env, build, build is null ? null : repo.Dir, port,
+            app.DependsOn ?? [], app.Job);
     }
 
     /// <summary>A command line as the user would type it, through the platform's shell (npm and friends are scripts).</summary>

@@ -14,6 +14,7 @@ public static class Repo
 public sealed class RepoBuilder : DefinitionBuilder
 {
     readonly List<AppResource> _apps = [];
+    readonly List<JobResource> _jobs = [];
     readonly List<ComposeFileResource> _compose = [];
     readonly List<ImportModel> _imports = [];
     readonly List<ExportModel> _exports = [];
@@ -31,6 +32,14 @@ public sealed class RepoBuilder : DefinitionBuilder
     /// <summary>Any other app. Give it a <see cref="AppResource.Run(Expr)"/> command.</summary>
     public AppResource App(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => AddApp(name, "app", path, file, line);
+
+    /// <summary>A .NET one-off command (migrations, seeding), run with <c>dotnet run</c> from <paramref name="path"/>.</summary>
+    public JobResource DotNetJob(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => AddJob(name, "dotnet", path, file, line);
+
+    /// <summary>Any other one-off command. Give it a <see cref="JobResource.Run(Expr)"/> command.</summary>
+    public JobResource Job(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => AddJob(name, "app", path, file, line);
 
     /// <summary>A compose file the repo already has. Name its services to give them sprig-allocated ports, and set
     /// any other value in it with <see cref="ComposeFileResource.Set(string, Expr, string, int)"/>.</summary>
@@ -65,7 +74,7 @@ public sealed class RepoBuilder : DefinitionBuilder
         SdkVersion: Sdk.Version,
         Location: Location,
         Containers: Containers.Select(c => c.Build()).ToArray(),
-        Apps: _apps.Select(a => a.Build()).ToArray(),
+        Apps: [.. _apps.Select(a => a.Build()), .. _jobs.Select(j => j.Build())],
         ComposeFiles: _compose.Select(c => c.Build()).ToArray(),
         Imports: _imports.ToArray(),
         Exports: _exports.ToArray());
@@ -75,5 +84,12 @@ public sealed class RepoBuilder : DefinitionBuilder
         var app = new AppResource(name, kind, path, new SourceLocation(file, line));
         _apps.Add(app);
         return app;
+    }
+
+    JobResource AddJob(string name, string kind, string path, string file, int line)
+    {
+        var job = new JobResource(name, kind, path, new SourceLocation(file, line));
+        _jobs.Add(job);
+        return job;
     }
 }

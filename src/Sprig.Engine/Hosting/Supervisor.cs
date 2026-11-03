@@ -16,22 +16,41 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
     readonly ConcurrentDictionary<(string Sprout, string Name), Runner> _runners = new();
     readonly ConcurrentDictionary<string, SemaphoreSlim> _buildLocks = new(StringComparer.OrdinalIgnoreCase);
 
-    public bool AnyAlive => _runners.Values.Any(r => r.Alive);
+    public bool AnyAlive => _runners.Values.Any(r => r.Status.State.IsAlive());
 
     public IReadOnlyList<RunnerStatus> List() => _runners.Values.Select(r => r.Status).OrderBy(s => s.Sprout).ThenBy(s => s.Name).ToArray();
 
-    /// <summary>Start a runner, replacing one of the same name. Returns at once; the build and start carry on in the
-    /// background and show in <see cref="List"/>.</summary>
-    public RunnerStatus Start(RunnerSpec spec)
+    /// <summary>
+    /// Have <paramref name="specs"/> going. A runner named in <paramref name="restart"/> starts afresh; any other starts
+    /// only when it isn't already going or (for a job) finished, so starting one app doesn't bounce what it depends on.
+    /// Returns at once; builds, waits and starts carry on in the background and show in <see cref="List"/>.
+    /// </summary>
+    public IReadOnlyList<RunnerStatus> Start(IReadOnlyList<RunnerSpec> specs, IReadOnlyCollection<string> restart)
     {
-        var key = (spec.Sprout, spec.Name);
-        if (_runners.TryRemove(key, out var old)) old.Stop();
-        var runner = new Runner(spec, HostProtocol.LogFile(paths, spec.Sprout, spec.Name),
-            spec.BuildKey is { } k ? _buildLocks.GetOrAdd(k, _ => new SemaphoreSlim(1, 1)) : null);
-        _runners[key] = runner;
-        _ = Task.Run(runner.RunAsync);
-        return runner.Status;
+        lock (_startGate)
+        {
+            var started = new List<RunnerStatus>();
+            foreach (var spec in specs)
+            {
+                var key = (spec.Sprout, spec.Name);
+                if (_runners.TryGetValue(key, out var existing))
+                {
+                    var keep = !restart.Contains(spec.Name) && (existing.Status.State.IsAlive() || existing.Status.State == RunnerState.Completed);
+                    if (keep) continue;
+                    existing.Stop();
+                }
+                var runner = new Runner(spec, HostProtocol.LogFile(paths, spec.Sprout, spec.Name),
+                    spec.BuildKey is { } k ? _buildLocks.GetOrAdd(k, _ => new SemaphoreSlim(1, 1)) : null,
+                    name => _runners.TryGetValue((spec.Sprout, name), out var r) ? r.Status : null);
+                _runners[key] = runner;
+                started.Add(runner.Status);
+            }
+            foreach (var status in started) _ = Task.Run(_runners[(status.Sprout, status.Name)].RunAsync);
+            return started;
+        }
     }
+
+    readonly Lock _startGate = new();
 
     /// <summary>Stop one app, which stays listed as stopped; or, with no <paramref name="name"/>, the whole sprout,
     /// whose runners are then forgotten (it's going down or away).</summary>
@@ -52,7 +71,8 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
         foreach (var runner in _runners.Values) runner.Stop();
     }
 
-    sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock)
+    /// <param name="peer">Another runner of the same sprout, by name, for waiting on.</param>
+    sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer)
     {
         readonly JobObject _job = new();
         readonly Lock _gate = new();
@@ -62,7 +82,36 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
 
         public RunnerStatus Status { get; private set; } = new(spec.Sprout, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
 
-        public bool Alive => Status.State is RunnerState.Building or RunnerState.Starting or RunnerState.Ready;
+        /// <summary>Null once everything it waits for is ready; otherwise why it can't start.</summary>
+        async Task<string?> WaitForDependenciesAsync()
+        {
+            var names = spec.WaitFor ?? [];
+            if (names.Count == 0) return null;
+            Set(RunnerState.Waiting);
+            Write($"sprig: waiting for {string.Join(", ", names)}");
+            while (!_stopping)
+            {
+                var pending = new List<string>();
+                foreach (var name in names)
+                {
+                    var other = peer(name);
+                    if (other is null) return $"waits for {name}, which isn't running";
+                    if (other.State.Satisfies()) continue;
+                    if (other.State.IsSettled()) return $"waits for {name}, which {Describe(other)}";
+                    pending.Add(name);
+                }
+                if (pending.Count == 0) return null;
+                await Task.Delay(250);
+            }
+            return "stopped while waiting";
+        }
+
+        static string Describe(RunnerStatus other) => other.State switch
+        {
+            RunnerState.Exited or RunnerState.Failed when other.Exit is { } code => $"exited with code {code}",
+            RunnerState.Failed => $"failed ({other.Error})",
+            _ => $"is {other.State.ToString().ToLowerInvariant()}",
+        };
 
         public async Task RunAsync()
         {
@@ -86,17 +135,32 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
                     }
                 }
 
+                if (await WaitForDependenciesAsync() is { } blocked)
+                {
+                    if (!_stopping) Set(RunnerState.Failed, error: blocked);
+                    Write($"sprig: {blocked}");
+                    return;
+                }
+                if (_stopping) return;
+
                 Write($"sprig: starting {spec.Command}");
                 var process = Launch(spec.Command);
                 _process = process;
-                Set(RunnerState.Starting, pid: process.Id);
-                if (spec.Port is { } port) _ = WatchReadyAsync(process, port);
-                else Set(RunnerState.Ready, pid: process.Id);
+                if (spec.Job) Set(RunnerState.Running, pid: process.Id);
+                else
+                {
+                    Set(RunnerState.Starting, pid: process.Id);
+                    if (spec.Port is { } port) _ = WatchReadyAsync(process, port);
+                    else Set(RunnerState.Ready, pid: process.Id);
+                }
 
                 await process.WaitForExitAsync();
                 var exit = process.ExitCode;
                 Write($"sprig: exited with code {exit}");
-                if (!_stopping) Set(RunnerState.Exited, exit: exit);
+                if (_stopping) return;
+                if (!spec.Job) Set(RunnerState.Exited, exit: exit);
+                else if (exit == 0) Set(RunnerState.Completed, exit: exit);
+                else Set(RunnerState.Failed, exit: exit, error: $"exited with code {exit}");
             }
             catch (Exception e)
             {

@@ -62,7 +62,7 @@ public sealed class HostTests : IDisposable
         var spec = new RunnerSpec("storefront/feat-x", "shop/api", Wait(30), _store.Root,
             new Dictionary<string, string> { ["GREETING"] = "sprig" }, Port: port);
 
-        Assert.True(_client.Send(new HostRequest("start", spec)).Ok);
+        Assert.True(_client.Send(new HostRequest("start", [spec])).Ok);
         var ready = Await("shop/api", r => r.State == RunnerState.Ready);
         Await("shop/api", r => ReadShared(r.LogFile).Contains("hello from sprig"));
 
@@ -75,16 +75,53 @@ public sealed class HostTests : IDisposable
     [Fact]
     public void A_failed_build_stops_the_app_from_starting_and_stopping_a_sprout_forgets_it()
     {
-        var fail = OperatingSystem.IsWindows() ? new CommandSpec("cmd.exe", ["/d", "/c", "exit 3"]) : new CommandSpec("/bin/sh", ["-c", "exit 3"]);
-        var spec = new RunnerSpec("storefront/feat-x", "shop/web", Wait(30), _store.Root, new Dictionary<string, string>(), Build: fail, BuildKey: "shop");
+        var spec = new RunnerSpec("storefront/feat-x", "shop/web", Wait(30), _store.Root, new Dictionary<string, string>(), Build: Exit(3), BuildKey: "shop");
 
-        _client.Send(new HostRequest("start", spec));
+        _client.Send(new HostRequest("start", [spec]));
 
         var failed = Await("shop/web", r => r.State == RunnerState.Failed);
         Assert.Equal("the build exited with code 3", failed.Error);
 
         _client.Send(new HostRequest("stop", Sprout: "storefront/feat-x"));
         Assert.Empty(_client.Send(new HostRequest("list")).Runners!);
+    }
+
+    static CommandSpec Exit(int code) => OperatingSystem.IsWindows()
+        ? new CommandSpec("cmd.exe", ["/d", "/c", $"exit {code}"])
+        : new CommandSpec("/bin/sh", ["-c", $"exit {code}"]);
+
+    RunnerSpec Spec(string name, CommandSpec command, bool job = false, params string[] waitFor)
+        => new("storefront/feat-x", name, command, _store.Root, new Dictionary<string, string> { ["GREETING"] = name }, WaitFor: waitFor, Job: job);
+
+    [Fact]
+    public void An_app_waits_for_its_job_to_finish_and_starting_it_again_leaves_what_is_going_alone()
+    {
+        var specs = new[] { Spec("shop/migrate", Exit(0), job: true), Spec("shop/api", Wait(30), waitFor: "shop/migrate") };
+
+        _client.Send(new HostRequest("start", specs));
+
+        Assert.Equal(RunnerState.Completed, Await("shop/migrate", r => r.State.IsSettled()).State);
+        var api = Await("shop/api", r => r.State == RunnerState.Ready);
+        Assert.Contains("waiting for shop/migrate", ReadShared(api.LogFile));
+
+        var again = _client.Send(new HostRequest("start", specs)).Runners!;
+        Assert.Empty(again);
+        Assert.Equal(api.Pid, Await("shop/api", _ => true).Pid);
+
+        var restarted = _client.Send(new HostRequest("start", specs, Restart: ["shop/api"])).Runners!;
+        Assert.Equal("shop/api", Assert.Single(restarted).Name);
+    }
+
+    [Fact]
+    public void A_failed_job_keeps_what_waits_for_it_from_starting()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/migrate", Exit(4), job: true), Spec("shop/api", Wait(30), waitFor: "shop/migrate")]));
+
+        Assert.Equal("exited with code 4", Await("shop/migrate", r => r.State.IsSettled()).Error);
+        var api = Await("shop/api", r => r.State.IsSettled());
+        Assert.Equal(RunnerState.Failed, api.State);
+        Assert.Equal("waits for shop/migrate, which exited with code 4", api.Error);
+        Assert.Null(api.Pid);
     }
 
     [Fact]
@@ -130,5 +167,24 @@ public class RunnerSpecsTests
 
         var e = Assert.Throws<InvalidOperationException>(() => RunnerSpecs.For(record, plan, ["nope"]));
         Assert.Contains("no app 'nope'", e.Message);
+    }
+
+    [Fact]
+    public void Starting_one_app_brings_what_it_depends_on_first()
+    {
+        var repo = new SproutRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);
+        var record = new SproutRecord("storefront", @"C:\tb\sf.trellis.cs", "local", null, "stable", [repo], [], [], SproutState.Up,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        PlannedApp App(string name, bool job = false, params string[] dependsOn)
+            => new("shop", "../shop", name, "app", ".", [], new PlannedValue("x", "x", []), [], [], job, dependsOn);
+        var plan = new Plan("storefront", "local", "stable", null, [],
+            [App("web", false, "shop/api"), App("api", false, "shop/migrate"), App("migrate", true), App("admin")], [], [], [], []);
+
+        var specs = RunnerSpecs.For(record, plan, ["web"]);
+
+        Assert.Equal(["shop/migrate", "shop/api", "shop/web"], specs.Select(s => s.Name));
+        Assert.True(specs[0].Job);
+        Assert.Equal(["shop/migrate"], specs[1].WaitFor);
+        Assert.Null(specs[0].Port);
     }
 }

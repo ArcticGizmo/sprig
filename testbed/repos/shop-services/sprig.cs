@@ -12,6 +12,11 @@ var rabbit = compose.Service("rabbitmq").Endpoint("amqp", 5672).Endpoint("ui", 1
 
 var smtp = repo.Import<Url>("mail-smtp");                 // the trellis supplies the mail server
 
+// Runs to completion each time the apps start; the APIs wait for it to succeed.
+var migrate = repo.DotNetJob("migrate", "tools/Migrate")
+    .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
+    .WaitFor(pg);
+
 // Urls rather than ASPNETCORE_URLS: appsettings.json sets "urls", and only the unprefixed env var outranks it.
 var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
     .Http(urlEnv: "Urls")
@@ -19,7 +24,7 @@ var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
     .Env("Redis__Url", $"localhost:{redis.Port}")
     .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
     .Output(EnvOutput.LaunchSettings())                   // dotnet run and IDEs read it; .gitignore covers it
-    .WaitFor(pg, redis, rabbit);
+    .WaitFor(pg, redis, rabbit, migrate);
 
 var orders = repo.DotNet("orders-api", "src/Orders.Api")
     .Http(urlEnv: "Urls")
@@ -28,7 +33,7 @@ var orders = repo.DotNet("orders-api", "src/Orders.Api")
     .Env("Smtp__Url", smtp)
     .Env("Catalog__Url", catalog.Url)                     // a sibling in this repo: no import needed
     .Output(EnvOutput.AppSettings("appsettings.Local.json")) // Program.cs loads it; .gitignore covers it
-    .WaitFor(pg, rabbit, catalog);
+    .WaitFor(pg, rabbit, migrate, catalog);
 
 repo.Export<Url>("catalog-url", catalog.Url);
 repo.Export<Url>("orders-url", orders.Url);

@@ -40,6 +40,9 @@ public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, So
 
 /// <param name="RepoPath">The repo, as the trellis names it.</param>
 /// <param name="Outputs">Files that also get the app's process env vars.</param>
+/// <param name="Job">Runs to completion rather than staying up.</param>
+/// <param name="DependsOn">Apps and jobs (as <c>owner/name</c>) to have ready first: the ones it waits for, plus apps
+/// whose urls or ports reach it through its values, unless that would make a loop.</param>
 public sealed record PlannedApp(
     string Owner,
     string RepoPath,
@@ -49,7 +52,12 @@ public sealed record PlannedApp(
     IReadOnlyList<PlannedEnv> Env,
     PlannedValue? Run,
     IReadOnlyList<string> WaitFor,
-    IReadOnlyList<EnvOutputModel> Outputs);
+    IReadOnlyList<EnvOutputModel> Outputs,
+    bool Job = false,
+    IReadOnlyList<string>? DependsOn = null)
+{
+    public string Key => $"{Owner}/{Name}";
+}
 
 /// <summary>A host port mapped to a port inside a container.</summary>
 public sealed record PlannedMapping(string Endpoint, int? Host, int Target)

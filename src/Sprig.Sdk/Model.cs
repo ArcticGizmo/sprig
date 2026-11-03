@@ -50,6 +50,7 @@ public sealed record TrellisModel(
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
 
 /// <param name="Outputs">Files that also receive the app's process env vars, for running it by hand or from an IDE.</param>
+/// <param name="Job">A one-off command (such as migrations) that runs to completion, rather than an app that keeps running.</param>
 public sealed record AppModel(
     string Name,
     string Kind,
@@ -59,7 +60,8 @@ public sealed record AppModel(
     IReadOnlyList<EnvModel> Env,
     string? Run,
     IReadOnlyList<string> WaitFor,
-    IReadOnlyList<EnvOutputModel> Outputs);
+    IReadOnlyList<EnvOutputModel> Outputs,
+    bool Job);
 
 /// <summary>A file, under the app's path, that gets the app's process env vars written into it.</summary>
 /// <param name="Kind"><c>dotenv</c>, <c>launchSettings</c> or <c>appSettings</c>.</param>

@@ -234,7 +234,7 @@ static class PlanPrinter
         foreach (var app in plan.Apps)
         {
             var table = new Table().Border(TableBorder.Rounded)
-                .Title($"[bold]{Markup.Escape(app.Owner)} / {Markup.Escape(app.Name)}[/] [dim]({Markup.Escape(app.Kind)}, {Markup.Escape(app.Path)})[/]")
+                .Title($"[bold]{Markup.Escape(app.Owner)} / {Markup.Escape(app.Name)}[/] [dim]({Markup.Escape(app.Kind)}{(app.Job ? " job" : "")}, {Markup.Escape(app.Path)})[/]")
                 .AddColumns("Setting", "Value", "Comes from");
             foreach (var env in app.Env)
             {
@@ -243,6 +243,9 @@ static class PlanPrinter
             }
             if (app.Run is { } run) table.AddRow(new Markup("[dim]run[/]"), Value(run), Via(run));
             if (app.WaitFor.Count > 0) table.AddRow(new Markup("[dim]waits for[/]"), new SpectreText(string.Join(", ", app.WaitFor)), new SpectreText(""));
+            var implied = (app.DependsOn ?? []).Where(d => !app.WaitFor.Any(w => d == $"{app.Owner}/{w}")).ToArray();
+            if (implied.Length > 0)
+                table.AddRow(new Markup("[dim]starts after[/]"), new SpectreText(string.Join(", ", implied)), new SpectreText("its values point at them", new Style(Color.Grey)));
             if (app.Outputs.Count > 0)
                 table.AddRow(new Markup("[dim]env vars also go to[/]"), new SpectreText(string.Join(", ", app.Outputs.Select(o => o.File))), new SpectreText(""));
             console.Write(table);

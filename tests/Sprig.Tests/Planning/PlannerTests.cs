@@ -29,6 +29,64 @@ public class PlannerTests
             => Planner.Build(change(new PlanInput(Trellis.BuildTrellis(), _repos, "feat-x", Settings, new HashSet<int>())));
     }
 
+    static IReadOnlyList<string> DependsOn(Plan plan, string app) => plan.Apps.Single(a => a.Name == app).DependsOn!;
+
+    [Fact]
+    public void Apps_start_after_what_they_wait_for_and_after_apps_their_values_point_at()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var pg = repo.Postgres("pg");
+            var migrate = repo.DotNetJob("migrate", "tools/Migrate").Env("Db", pg.Database("catalog")).WaitFor(pg);
+            var catalog = repo.DotNet("catalog-api", ".").Http(urlEnv: "Urls").WaitFor(pg, migrate);
+            repo.Export<Url>("catalog-url", catalog.Url);
+        });
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("catalog-url")));
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.True(plan.Apps.Single(a => a.Name == "migrate").Job);
+        Assert.Empty(DependsOn(plan, "migrate"));
+        Assert.Equal(["shop-services/migrate"], DependsOn(plan, "catalog-api"));
+        Assert.Equal(["shop-services/catalog-api"], DependsOn(plan, "web"));
+        Assert.DoesNotContain(plan.Ports, p => p.Resource == "migrate");
+    }
+
+    [Fact]
+    public void Two_apps_that_call_each_other_start_in_order_instead_of_waiting_forever()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            var a = repo.Node("a", ".").Http();
+            var b = repo.Node("b", ".").Http();
+            a.Env("B", b.Url);
+            b.Env("A", a.Url);
+        });
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal(["r/b"], DependsOn(plan, "a"));
+        Assert.Empty(DependsOn(plan, "b"));
+    }
+
+    [Fact]
+    public void Apps_that_wait_for_each_other_are_an_error()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            var a = repo.Node("a", ".").Http();
+            var b = repo.Node("b", ".").Http().WaitFor(a);
+            a.WaitFor(b);
+        });
+
+        Assert.Contains("r/a → r/b → r/a wait for each other", Assert.Single(f.Plan().Problems).Message);
+    }
+
     [Fact]
     public void A_sprout_keeps_its_leased_ports_and_only_new_endpoints_get_new_ones()
     {

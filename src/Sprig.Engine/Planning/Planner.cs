@@ -78,7 +78,7 @@ public static class Planner
 
             return new Plan(
                 input.Trellis.Name, input.Sprout, input.Trellis.PortPolicy, input.Trellis.Worktrees?.From,
-                _ports, apps, containers, compose, groups, _problems);
+                _ports, Order(apps), containers, compose, groups, _problems);
         }
 
         // ---- scopes and names ----
@@ -101,7 +101,7 @@ public static class Planner
                 seenNames[repo.Name] = reference.Path;
 
                 var scope = new Scope(repo.Name, reference.Path, repo);
-                foreach (var app in repo.Apps) AddResource(scope, app.Name, "app", app.Location, app.Endpoints);
+                foreach (var app in repo.Apps) AddResource(scope, app.Name, app.Job ? "job" : "app", app.Location, app.Endpoints);
                 foreach (var c in repo.Containers) AddResource(scope, c.Name, "container", c.Location, c.Endpoints);
                 foreach (var file in repo.ComposeFiles)
                     foreach (var service in file.Services) AddResource(scope, service.Name, "compose service", service.Location, service.Endpoints);
@@ -179,12 +179,79 @@ public static class Planner
             if (app.Outputs.Count > 0 && !app.Env.Any(e => e.File is null))
                 Warn($"'{app.Name}' has outputs but no env vars to write into them", app.Location);
 
-            return new PlannedApp(
-                scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path,
-                app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location)).ToArray(),
-                app.Run is null ? null : Resolve(scope, app.Run, app.Location),
-                app.WaitFor,
-                app.Outputs);
+            _referenced = [];
+            var env = app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location)).ToArray();
+            var run = app.Run is null ? null : Resolve(scope, app.Run, app.Location);
+            var key = $"{scope.Owner}/{app.Name}";
+            _referencedBy[key] = _referenced;
+            _referenced = null;
+            _locations[key] = app.Location;
+
+            var waitsFor = app.WaitFor
+                .Where(w => scope.Resources.TryGetValue(w, out var r) && r.Kind is "app" or "job")
+                .Select(w => $"{scope.Owner}/{w}")
+                .ToArray();
+            return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor, app.Outputs,
+                app.Job, waitsFor);
+        }
+
+        // Apps whose endpoints the app being planned reaches through its values; null outside PlanApp.
+        HashSet<string>? _referenced;
+        readonly Dictionary<string, HashSet<string>> _referencedBy = new(StringComparer.Ordinal);
+        readonly Dictionary<string, SourceLocation> _locations = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Each app's <see cref="PlannedApp.DependsOn"/>: what it waits for (a loop there is an error), then the apps its
+        /// values point at, each added only when it doesn't close a loop. Two services that call each other then start
+        /// in declaration order rather than waiting on each other forever.
+        /// </summary>
+        IReadOnlyList<PlannedApp> Order(List<PlannedApp> apps)
+        {
+            var edges = apps.ToDictionary(a => a.Key, a => a.DependsOn!.ToList(), StringComparer.Ordinal);
+            if (FindLoop(edges) is { } loop)
+                Problem($"{string.Join(" → ", loop)} wait for each other, so none of them could start", _locations[loop[0]]);
+            else
+            {
+                foreach (var app in apps)
+                    foreach (var target in _referencedBy[app.Key].Where(t => t != app.Key && edges.ContainsKey(t)).Order(StringComparer.Ordinal))
+                        if (!edges[app.Key].Contains(target) && !Reaches(edges, target, app.Key)) edges[app.Key].Add(target);
+            }
+            return apps.Select(a => a with { DependsOn = edges[a.Key] }).ToArray();
+        }
+
+        static bool Reaches(Dictionary<string, List<string>> edges, string from, string to)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var stack = new Stack<string>([from]);
+            while (stack.TryPop(out var node))
+            {
+                if (node == to) return true;
+                if (!seen.Add(node)) continue;
+                foreach (var next in edges.GetValueOrDefault(node) ?? []) stack.Push(next);
+            }
+            return false;
+        }
+
+        static List<string>? FindLoop(Dictionary<string, List<string>> edges)
+        {
+            var state = new Dictionary<string, int>(StringComparer.Ordinal);
+            var path = new List<string>();
+            foreach (var start in edges.Keys)
+                if (Visit(start) is { } loop) return loop;
+            return null;
+
+            List<string>? Visit(string node)
+            {
+                if (state.GetValueOrDefault(node) == 2) return null;
+                if (state.GetValueOrDefault(node) == 1) return [.. path.SkipWhile(p => p != node), node];
+                state[node] = 1;
+                path.Add(node);
+                foreach (var next in edges.GetValueOrDefault(node) ?? [])
+                    if (Visit(next) is { } loop) return loop;
+                path.RemoveAt(path.Count - 1);
+                state[node] = 2;
+                return null;
+            }
         }
 
         PlannedContainer PlanContainer(Scope scope, ContainerModel c)
@@ -341,6 +408,7 @@ public static class Planner
                 return null;
             }
             if (endpoint.Port is not { } port) return null; // allocation already reported why
+            if (resource.Kind == "app") _referenced?.Add($"{scope.Owner}/{resourceName}");
 
             var label = $"{resourceName}.{endpointName} port {port}";
             if (what == "port") return (port.ToString(), [label]);

@@ -1,14 +1,17 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Hosting;
 
 /// <summary>
 /// Runs apps for the host: build (one at a time per repo), wait for dependencies, start in a job, log every line to a
-/// file in the store, and call an app ready once its port accepts connections. Stopping asks politely (Ctrl+C) and
+/// file in the store, and call an app ready once its checks pass (a log line, a health url, or else its port). An app
+/// with a restart policy starts again, with backoff, when it exits on its own. Stopping asks politely (Ctrl+C) and
 /// kills only what's still running after <see cref="Grace"/>. Everything it starts dies with it, because each runner's
 /// job closes when the host does.
 /// </summary>
@@ -84,12 +87,54 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         // The shells sprig starts apps through, and the console host Windows gives each one; neither is the app.
         static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase) { "cmd", "conhost", "sh" };
 
+        static readonly HttpClient Http = new(new SocketsHttpHandler
+        {
+            UseProxy = false,
+            AllowAutoRedirect = true,
+            ConnectCallback = ConnectLoopbackAsync,
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(2),
+        };
+
+        /// <summary>
+        /// Each loopback address in turn, briefly. An app may bind only one of them, and on Windows a refused connection
+        /// takes about two seconds to fail, which would use up a whole health request on the wrong address.
+        /// </summary>
+        static async ValueTask<Stream> ConnectLoopbackAsync(SocketsHttpConnectionContext context, CancellationToken token)
+        {
+            var endpoint = context.DnsEndPoint;
+            IPAddress[] addresses = endpoint.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                ? [IPAddress.Loopback, IPAddress.IPv6Loopback]
+                : await Dns.GetHostAddressesAsync(endpoint.Host, token);
+            foreach (var address in addresses)
+            {
+                var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    timeout.CancelAfter(TimeSpan.FromMilliseconds(500));
+                    await socket.ConnectAsync(address, endpoint.Port, timeout.Token);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch (Exception e) when (e is SocketException or OperationCanceledException)
+                {
+                    socket.Dispose();
+                    token.ThrowIfCancellationRequested();
+                }
+            }
+            throw new HttpRequestException($"nothing answered on {endpoint.Host}:{endpoint.Port}");
+        }
+
         readonly JobObject _job = new();
         readonly Lock _gate = new();
         readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource _stopAsked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly Regex? _readyLog = spec.ReadyLog is { } pattern ? new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1)) : null;
         StreamWriter? _log;
         Process? _process;
         Task? _stopping;
+        int _restarts;
 
         public RunnerStatus Status { get; private set; } = new(spec.Sprout, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
 
@@ -125,26 +170,52 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     Write($"sprig: {blocked}");
                     return;
                 }
-                if (Stopping) return;
 
-                Write($"sprig: starting {spec.Command}");
-                var process = Launch(spec.Command);
-                _process = process;
-                if (spec.Job) Set(RunnerState.Running, pid: process.Id);
-                else
+                var inARow = 0;
+                while (!Stopping)
                 {
-                    Set(RunnerState.Starting, pid: process.Id);
-                    if (spec.Port is { } port) _ = WatchReadyAsync(process, port);
-                    else Set(RunnerState.Ready, pid: process.Id);
-                }
+                    Write($"sprig: starting {spec.Command}");
+                    var clock = Stopwatch.StartNew();
+                    var logMatched = _readyLog is null ? null : new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    if (Launch(spec.Command, logMatched) is not { } process) return;
+                    if (spec.Job) Set(RunnerState.Running, pid: process.Id);
+                    else
+                    {
+                        Set(RunnerState.Starting, pid: process.Id);
+                        _ = WatchReadyAsync(process, logMatched?.Task);
+                    }
 
-                await process.WaitForExitAsync();
-                var exit = process.ExitCode;
-                Write($"sprig: exited with code {exit}");
-                if (Stopping) return;
-                if (!spec.Job) Set(RunnerState.Exited, exit: exit);
-                else if (exit == 0) Set(RunnerState.Completed, exit: exit);
-                else Set(RunnerState.Failed, exit: exit, error: $"exited with code {exit}");
+                    await process.WaitForExitAsync();
+                    var exit = process.ExitCode;
+                    Write($"sprig: exited with code {exit}");
+                    if (Stopping) return;
+                    if (spec.Job && exit == 0)
+                    {
+                        Set(RunnerState.Completed, exit: exit);
+                        return;
+                    }
+
+                    if (clock.Elapsed >= RestartSpec.Settled) inARow = 0;
+                    var again = spec.Restart is { } policy && inARow < policy.Max && (exit != 0 || (policy.Always && !spec.Job));
+                    if (!again)
+                    {
+                        var after = inARow == 0 ? "" : $" after {inARow} {(spec.Job ? "retries" : "restarts")}";
+                        if (!spec.Job) Set(RunnerState.Exited, exit: exit, error: after.Length > 0 ? $"exited with code {exit}{after}" : null);
+                        else Set(RunnerState.Failed, exit: exit, error: $"exited with code {exit}{after}");
+                        return;
+                    }
+
+                    inARow++;
+                    _restarts++;
+                    var wait = RestartSpec.Backoff(inARow);
+                    var when = $"restarting in {wait.TotalSeconds:0}s ({inARow} of {spec.Restart!.Max})";
+                    Write($"sprig: {when}");
+                    Set(RunnerState.Restarting, exit: exit, error: $"exited with code {exit}; {when}");
+                    // A child the last run left behind (a server outliving its cmd wrapper) would hold the port. Once a
+                    // stop has begun the job is its to end (and close).
+                    lock (_gate) if (!Stopping) _job.Terminate(process);
+                    await Task.WhenAny(Task.Delay(wait), _stopAsked.Task);
+                }
             }
             catch (Exception e)
             {
@@ -177,11 +248,37 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 // Marked before the stop request returns, so whoever asked sees Stopping on its next look, never a
                 // stale Ready it would take for "already done".
                 Status = Status with { State = RunnerState.Stopping, Since = DateTimeOffset.UtcNow };
+                _stopAsked.TrySetResult();
                 return _stopping = Task.Run(() => StopCoreAsync(grace, wasRunning));
             }
         }
 
         async Task StopCoreAsync(TimeSpan grace, bool wasRunning)
+        {
+            string? note = null;
+            try
+            {
+                note = await AskToStopAsync(grace, wasRunning);
+            }
+            catch (Exception e)
+            {
+                // Nothing awaits this task's exceptions, so one left here would keep the runner Stopping forever.
+                note = $"stopping went wrong ({e.GetType().Name}: {e.Message}), so it was ended";
+                Write($"sprig: {note}\n{e}");
+            }
+            _job.Terminate(_process);
+            Set(RunnerState.Stopped, force: true, error: note);
+            _job.Dispose();
+            lock (_gate)
+            {
+                _log?.Dispose();
+                _log = null;
+            }
+            _ended.TrySetResult();
+        }
+
+        /// <summary>Ctrl+C, then wait for the app to go. Null when it went in time; otherwise what happened.</summary>
+        async Task<string?> AskToStopAsync(TimeSpan grace, bool wasRunning)
         {
             string? note = null;
             if (wasRunning)
@@ -213,15 +310,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 }
                 else Write($"sprig: stopped in {clock.Elapsed.TotalSeconds:0.0}s");
             }
-            _job.Terminate(_process);
-            Set(RunnerState.Stopped, force: true, error: note);
-            _job.Dispose();
-            lock (_gate)
-            {
-                _log?.Dispose();
-                _log = null;
-            }
-            _ended.TrySetResult();
+            return note;
         }
 
         /// <summary>True while anything but a shell or console host is left in the job: those wait on a prompt
@@ -237,7 +326,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     using var p = Process.GetProcessById(id);
                     if (!Wrappers.Contains(p.ProcessName)) return true;
                 }
-                catch (ArgumentException) { /* exited between the two calls */ }
+                catch (Exception e) when (e is ArgumentException or InvalidOperationException) { /* it exited meanwhile */ }
             }
             return false;
         }
@@ -252,7 +341,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     using var p = Process.GetProcessById(id);
                     name = p.ProcessName;
                 }
-                catch (ArgumentException) { continue; }
+                catch (Exception e) when (e is ArgumentException or InvalidOperationException) { continue; }
                 yield return $"{name} {id}";
             }
         }
@@ -290,14 +379,16 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
 
         async Task<int> RunToEndAsync(CommandSpec command)
         {
-            var process = Launch(command);
-            _process = process;
+            if (Launch(command) is not { } process) return -1;
             await process.WaitForExitAsync();
             _process = null;
             return process.ExitCode;
         }
 
-        Process Launch(CommandSpec command)
+        /// <summary>Null when a stop got in first. Starting under the gate means a stop either sees this process and
+        /// signals it, or is seen here and nothing starts.</summary>
+        /// <param name="logMatched">Completed by the first line of output that matches the ready pattern.</param>
+        Process? Launch(CommandSpec command, TaskCompletionSource? logMatched = null)
         {
             var psi = new ProcessStartInfo(command.File)
             {
@@ -315,17 +406,92 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             foreach (var (key, value) in spec.Env) psi.Environment[key] = value;
 
             var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-            process.OutputDataReceived += (_, e) => { if (e.Data is not null) Write(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) Write(e.Data); };
-            process.Start();
-            _job.Add(process);
+            process.OutputDataReceived += (_, e) => Output(e.Data, logMatched);
+            process.ErrorDataReceived += (_, e) => Output(e.Data, logMatched);
+            lock (_gate)
+            {
+                if (Stopping) return null;
+                process.Start();
+                _job.Add(process);
+                _process = process;
+            }
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             return process;
         }
 
-        /// <summary>Ready once the port accepts a connection, checked against the loopback addresses an app might bind.</summary>
-        async Task WatchReadyAsync(Process process, int port)
+        void Output(string? line, TaskCompletionSource? logMatched)
+        {
+            if (line is null) return;
+            Write(line);
+            if (logMatched is null || logMatched.Task.IsCompleted) return;
+            try
+            {
+                if (_readyLog!.IsMatch(Ansi.Replace(line, ""))) logMatched.TrySetResult();
+            }
+            catch (RegexMatchTimeoutException) { /* a pathological pattern; this line doesn't count */ }
+        }
+
+        static readonly Regex Ansi = new(@"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Ready once every check it has passes: a matching log line, each health url answering with a success status.
+        /// With neither, once its port accepts a connection; with no port either, straight away. A check that's still
+        /// waiting when the process exits (or is replaced by a restart) leaves it as it is.
+        /// </summary>
+        async Task WatchReadyAsync(Process process, Task? logMatched)
+        {
+            var checks = new List<Task<bool>>();
+            if (logMatched is not null) checks.Add(WaitForLogAsync(process, logMatched));
+            foreach (var url in spec.HealthUrls ?? []) checks.Add(WaitForHealthAsync(process, url));
+            if (checks.Count == 0 && spec.Port is { } port) checks.Add(WaitForPortAsync(process, port));
+
+            var passed = await Task.WhenAll(checks);
+            if (passed.Any(p => !p)) return;
+            lock (_gate)
+            {
+                // Under the gate, so an exit noticed just before can't be overwritten by a late Ready.
+                if (process.HasExited || !ReferenceEquals(_process, process)) return;
+                if (checks.Count > 1) Write("sprig: ready");
+                Set(RunnerState.Ready, pid: process.Id);
+            }
+        }
+
+        async Task<bool> WaitForLogAsync(Process process, Task logMatched)
+        {
+            await Task.WhenAny(logMatched, process.WaitForExitAsync());
+            if (!logMatched.IsCompleted) return false;
+            Write($"sprig: ready: a line matched {spec.ReadyLog}");
+            return true;
+        }
+
+        /// <summary>Connection errors are expected while the app starts, so only status codes are logged, and only
+        /// when they change.</summary>
+        async Task<bool> WaitForHealthAsync(Process process, string url)
+        {
+            int? last = null;
+            while (!process.HasExited && !Stopping)
+            {
+                try
+                {
+                    using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                    var code = (int)response.StatusCode;
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Write($"sprig: ready: {url} answered {code}");
+                        return true;
+                    }
+                    if (code != last) Write($"sprig: {url} answered {code}; waiting for a success status");
+                    last = code;
+                }
+                catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { }
+                await Task.Delay(500);
+            }
+            return false;
+        }
+
+        /// <summary>Checked against the loopback addresses an app might bind.</summary>
+        async Task<bool> WaitForPortAsync(Process process, int port)
         {
             while (!process.HasExited && !Stopping)
             {
@@ -337,13 +503,13 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                         using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
                         await client.ConnectAsync(host, port, timeout.Token);
                         Write($"sprig: ready on port {port}");
-                        Set(RunnerState.Ready, pid: process.Id);
-                        return;
+                        return true;
                     }
                     catch (Exception e) when (e is SocketException or OperationCanceledException) { }
                 }
                 await Task.Delay(250);
             }
+            return false;
         }
 
         /// <param name="force">Only stopping may change the state once a stop has begun.</param>
@@ -352,7 +518,10 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             lock (_gate)
             {
                 if (Stopping && !force) return;
-                Status = Status with { State = state, Pid = pid ?? Status.Pid, Exit = exit, Error = error, Since = DateTimeOffset.UtcNow };
+                Status = Status with
+                {
+                    State = state, Pid = pid ?? Status.Pid, Exit = exit, Error = error, Since = DateTimeOffset.UtcNow, Restarts = _restarts,
+                };
             }
         }
 

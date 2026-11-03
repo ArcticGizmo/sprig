@@ -246,6 +246,13 @@ static class PlanPrinter
             var implied = (app.DependsOn ?? []).Where(d => !app.WaitFor.Any(w => d == $"{app.Owner}/{w}")).ToArray();
             if (implied.Length > 0)
                 table.AddRow(new Markup("[dim]starts after[/]"), new SpectreText(string.Join(", ", implied)), new SpectreText("its values point at them", new Style(Color.Grey)));
+            var ready = (app.Health ?? []).Select(h => $"{h.Endpoint} answers {h.Path}")
+                .Concat(app.ReadyLog is { } log ? [$"a log line matches {log}"] : []).ToArray();
+            if (ready.Length > 0) table.AddRow(new Markup("[dim]ready when[/]"), new SpectreText(string.Join(" and ", ready)), new SpectreText(""));
+            if (app.Restart is { } restart)
+                table.AddRow(new Markup($"[dim]{(app.Job ? "retries" : "restarts")}[/]"),
+                    new SpectreText(app.Job || restart.Policy != "always" ? $"after a failure, up to {restart.Max} in a row" : $"after any exit, up to {restart.Max} in a row"),
+                    new SpectreText(""));
             if (app.Outputs.Count > 0)
                 table.AddRow(new Markup("[dim]env vars also go to[/]"), new SpectreText(string.Join(", ", app.Outputs.Select(o => o.File))), new SpectreText(""));
             console.Write(table);

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Text;
 using System.Text.Json;
 using Sprig.Engine.Store;
 
@@ -9,7 +10,8 @@ namespace Sprig.Engine.Hosting;
 /// it, so they see and control the same runners.</summary>
 public sealed class HostClient(ISprigPaths paths)
 {
-    /// <summary>The host's answer, or null when no host is running for this store.</summary>
+    /// <summary>The host's answer, or null when no host is running for this store (or it was shutting down and
+    /// dropped the connection unanswered).</summary>
     public HostResponse? TrySend(HostRequest request, TimeSpan? timeout = null)
     {
         using var pipe = new NamedPipeClientStream(".", HostProtocol.PipeName(paths), PipeDirection.InOut,
@@ -17,11 +19,17 @@ public sealed class HostClient(ISprigPaths paths)
         try { pipe.Connect((int)(timeout ?? TimeSpan.FromMilliseconds(500)).TotalMilliseconds); }
         catch (TimeoutException) { return null; }
 
-        using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
-        using var reader = new StreamReader(pipe, leaveOpen: true);
-        writer.WriteLine(JsonSerializer.Serialize(request, HostProtocol.Json));
-        var line = reader.ReadLine() ?? throw new IOException("the sprig host closed the connection without answering");
-        return JsonSerializer.Deserialize<HostResponse>(line, HostProtocol.Json);
+        string? line;
+        try
+        {
+            // Written straight to the pipe rather than through a StreamWriter: disposing one flushes, and after a
+            // shutdown the host has already answered and closed its end, so that flush would throw.
+            pipe.Write(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, HostProtocol.Json) + "\n"));
+            using var reader = new StreamReader(pipe, leaveOpen: true);
+            line = reader.ReadLine();
+        }
+        catch (IOException) { return null; }
+        return line is null ? null : JsonSerializer.Deserialize<HostResponse>(line, HostProtocol.Json);
     }
 
     /// <summary>

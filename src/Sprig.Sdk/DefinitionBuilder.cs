@@ -70,7 +70,7 @@ public static class Sdk
 {
     /// <summary>The model's shape. Raised whenever <see cref="ModelJsonContext"/>'s records change, so the engine can
     /// refuse (and never cache) a model it would misread.</summary>
-    public const int Schema = 3;
+    public const int Schema = 4;
 
     public static string Version { get; } =
         typeof(Sdk).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]

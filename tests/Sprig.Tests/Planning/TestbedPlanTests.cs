@@ -70,6 +70,12 @@ public sealed class TestbedPlanTests : IDisposable
 
         Assert.Equal(["shop-mobile/mobile", "shop-services/catalog-api"], plan.Groups.Single(g => g.Name == "mobile").Apps);
         Assert.Equal("main", plan.WorktreesFrom);
+
+        var catalog = plan.Apps.Single(a => a.Name == "catalog-api");
+        Assert.Equal(new PlannedHealth("http", "/health"), Assert.Single(catalog.Health!));
+        Assert.Equal(("onFailure", 5), (catalog.Restart!.Policy, catalog.Restart.Max));
+        Assert.Equal(3, plan.Apps.Single(a => a.Name == "migrate").Restart!.Max);
+        Assert.Equal(@"ready in \d+", plan.Apps.Single(a => a.Name == "mobile").ReadyLog);
     }
 
     [Fact]

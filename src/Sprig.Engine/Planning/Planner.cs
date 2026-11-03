@@ -192,7 +192,47 @@ public static class Planner
                 .Select(w => $"{scope.Owner}/{w}")
                 .ToArray();
             return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor, app.Outputs,
-                app.Job, waitsFor);
+                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app));
+        }
+
+        IReadOnlyList<PlannedHealth> PlanHealth(AppModel app)
+        {
+            var health = new List<PlannedHealth>();
+            foreach (var endpoint in app.Endpoints.Where(e => e.Health is not null))
+            {
+                if (!endpoint.Health!.StartsWith('/') || !Uri.TryCreate("http://localhost" + endpoint.Health, UriKind.Absolute, out _))
+                    Problem($"'{app.Name}' has a health path '{endpoint.Health}' on {endpoint.Name}; it must be a path starting with /, e.g. /health", endpoint.Location);
+                else if (endpoint.Scheme != "http")
+                    Problem($"'{app.Name}' has a health path on {endpoint.Name}, which isn't an HTTP endpoint", endpoint.Location);
+                else health.Add(new PlannedHealth(endpoint.Name, endpoint.Health));
+            }
+            return health;
+        }
+
+        string? PlanReadyLog(AppModel app)
+        {
+            if (app.ReadyLog is not { } pattern) return null;
+            try
+            {
+                _ = new System.Text.RegularExpressions.Regex(pattern);
+                return pattern;
+            }
+            catch (ArgumentException e)
+            {
+                Problem($"'{app.Name}' waits for a log line matching '{pattern}', which isn't a valid regular expression: {e.Message}", app.Location);
+                return null;
+            }
+        }
+
+        RestartModel? PlanRestart(AppModel app)
+        {
+            if (app.Restart is not { } restart) return null;
+            if (restart.Policy is not ("onFailure" or "always"))
+                Problem($"'{app.Name}' has an unknown restart policy '{restart.Policy}'", restart.Location);
+            else if (restart.Max < 1)
+                Problem($"'{app.Name}' restarts at most {restart.Max} times; give it at least 1, or leave restarting out", restart.Location);
+            else return restart;
+            return null;
         }
 
         // Apps whose endpoints the app being planned reaches through its values; null outside PlanApp.

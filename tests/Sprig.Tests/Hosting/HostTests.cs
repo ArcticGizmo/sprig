@@ -40,6 +40,7 @@ public sealed class HostTests : IDisposable
     /// <summary>The host keeps a running app's log open for writing, so it's read the way <c>sprig logs</c> reads it.</summary>
     static string ReadShared(string file)
     {
+        if (!File.Exists(file)) return "";
         using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         return new StreamReader(stream).ReadToEnd();
     }
@@ -72,7 +73,7 @@ public sealed class HostTests : IDisposable
         var stopped = Assert.Single(_client.StopAndWait("storefront/feat-x", "shop/api"));
 
         Assert.Equal(RunnerState.Stopped, stopped.State);
-        Assert.Null(stopped.Error);
+        Assert.True(stopped.Error is null, $"{stopped.Error}\n{ReadShared(ready.LogFile)}");
         Assert.Throws<ArgumentException>(() => Process.GetProcessById(ready.Pid!.Value));
         var log = ReadShared(ready.LogFile);
         Assert.Contains("sprig: sent Ctrl+C", log);
@@ -152,6 +153,137 @@ public sealed class HostTests : IDisposable
     [Fact]
     public async Task A_second_host_for_the_same_store_steps_aside()
         => Assert.Equal(2, await new HostServer(_store.Paths, TimeSpan.FromMinutes(1)).RunAsync());
+
+    /// <summary>Prints <paramref name="line"/> after about <paramref name="after"/> seconds, then keeps running.</summary>
+    static CommandSpec PrintLater(string line, int after) => OperatingSystem.IsWindows()
+        ? new CommandSpec("cmd.exe", ["/d", "/c", $"ping -n {after + 1} 127.0.0.1 > nul & echo {line} & ping -n 30 127.0.0.1 > nul"])
+        : new CommandSpec("/bin/sh", ["-c", $"sleep {after}; echo {line}; sleep 30"]);
+
+    [Fact]
+    public void An_app_with_a_log_pattern_is_ready_only_once_a_line_matches_even_with_its_port_open()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var spec = Spec("shop/web", PrintLater("VITE ready in 312 ms", after: 3)) with { Port = port, ReadyLog = @"ready in \d+" };
+
+        _client.Send(new HostRequest("start", [spec]));
+
+        Await("shop/web", r => r.State == RunnerState.Starting);
+        Thread.Sleep(1000);
+        Assert.Equal(RunnerState.Starting, Await("shop/web", _ => true).State);
+        var ready = Await("shop/web", r => r.State == RunnerState.Ready);
+        Assert.Contains(@"sprig: ready: a line matched ready in \d+", ReadShared(ready.LogFile));
+    }
+
+    [Fact]
+    public void An_app_with_a_health_url_is_ready_only_once_it_answers_with_success()
+    {
+        using var health = new HealthServer(503);
+        var spec = Spec("shop/api", Wait(30)) with { Port = health.Port, HealthUrls = [$"http://localhost:{health.Port}/health"] };
+
+        _client.Send(new HostRequest("start", [spec]));
+
+        var waiting = Await("shop/api", r => ReadShared(r.LogFile).Contains("answered 503"));
+        Assert.Equal(RunnerState.Starting, waiting.State);
+        health.Status = 200;
+        var ready = Await("shop/api", r => r.State == RunnerState.Ready);
+        Assert.Contains($"sprig: ready: http://localhost:{health.Port}/health answered 200", ReadShared(ready.LogFile));
+    }
+
+    [Fact]
+    public void An_app_that_keeps_failing_is_restarted_with_backoff_then_left_exited()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/api", Exit(3)) with { Restart = new RestartSpec(Always: false, Max: 2) }]));
+
+        Assert.Equal("exited with code 3; restarting in 1s (1 of 2)", Await("shop/api", r => r.State == RunnerState.Restarting).Error);
+        var exited = Await("shop/api", r => r.State == RunnerState.Exited);
+
+        Assert.Equal("exited with code 3 after 2 restarts", exited.Error);
+        Assert.Equal(2, exited.Restarts);
+        Assert.Equal(3, ReadShared(exited.LogFile).Split("sprig: starting").Length - 1);
+    }
+
+    [Fact]
+    public void A_job_that_fails_once_is_retried_and_what_waits_for_it_then_starts()
+    {
+        // Unquoted: .NET escapes quotes in arguments as \", which cmd doesn't understand. The store path has no spaces.
+        var marker = Path.Combine(_store.Root, "tried-once");
+        Assert.DoesNotContain(' ', marker);
+        var flaky = OperatingSystem.IsWindows()
+            ? new CommandSpec("cmd.exe", ["/d", "/c", $"if exist {marker} (exit 0) else (type nul > {marker} & exit 5)"])
+            : new CommandSpec("/bin/sh", ["-c", $"if [ -e '{marker}' ]; then exit 0; else touch '{marker}'; exit 5; fi"]);
+        var specs = new[]
+        {
+            Spec("shop/migrate", flaky, job: true) with { Restart = new RestartSpec(Always: false, Max: 3) },
+            Spec("shop/api", Wait(30), waitFor: "shop/migrate"),
+        };
+
+        _client.Send(new HostRequest("start", specs));
+
+        var migrate = Await("shop/migrate", r => r.State.IsSettled());
+        Assert.Equal(RunnerState.Completed, migrate.State);
+        Assert.Equal(1, migrate.Restarts);
+        Await("shop/api", r => r.State == RunnerState.Ready);
+    }
+
+    [Fact]
+    public void Stopping_an_app_while_it_waits_to_restart_keeps_it_stopped()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/api", Exit(1)) with { Restart = new RestartSpec(Always: true, Max: 5) }]));
+        Await("shop/api", r => r.State == RunnerState.Restarting);
+
+        var stopped = Assert.Single(_client.StopAndWait("storefront/feat-x", "shop/api"));
+        Thread.Sleep(2500);
+
+        Assert.Equal(RunnerState.Stopped, stopped.State);
+        var now = Await("shop/api", _ => true);
+        Assert.Equal(RunnerState.Stopped, now.State);
+        Assert.Equal(1, ReadShared(now.LogFile).Split("sprig: starting").Length - 1);
+    }
+
+    /// <summary>Answers every request with <see cref="Status"/>, which a test can change while it runs.</summary>
+    sealed class HealthServer : IDisposable
+    {
+        readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        readonly CancellationTokenSource _stop = new();
+
+        public HealthServer(int status)
+        {
+            Status = status;
+            _listener.Start();
+            _ = Task.Run(ServeAsync);
+        }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public volatile int Status;
+
+        async Task ServeAsync()
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                try
+                {
+                    using var client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                    var stream = client.GetStream();
+                    var reader = new StreamReader(stream);
+                    while (!string.IsNullOrEmpty(await reader.ReadLineAsync(_stop.Token))) { }
+                    var reply = $"HTTP/1.1 {Status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(reply), _stop.Token);
+                }
+                catch (OperationCanceledException) { return; }
+                catch (IOException) { }
+                catch (SocketException) { }
+            }
+        }
+
+        public void Dispose()
+        {
+            _stop.Cancel();
+            _listener.Stop();
+        }
+    }
 }
 
 public class RunnerSpecsTests
@@ -168,7 +300,8 @@ public class RunnerSpecsTests
         var plan = new Plan("storefront", "x", "stable", "main",
             [new PlannedPort("shop-services", "api", "http", 8001, null, null)],
             [
-                new PlannedApp("shop-services", "../shop-services", "api", "dotnet", "src/Api", [Env("Urls", "http://localhost:8001"), Env("A", "1", ".env.local")], null, [], []),
+                new PlannedApp("shop-services", "../shop-services", "api", "dotnet", "src/Api", [Env("Urls", "http://localhost:8001"), Env("A", "1", ".env.local")], null, [], [],
+                    Health: [new PlannedHealth("http", "/health")], Restart: new RestartModel("always", 2, At)),
                 new PlannedApp("shop-services", "../shop-services", "web", "node", "web", [], null, [], []),
                 new PlannedApp("shop-services", "../shop-services", "tool", "app", ".", [], new PlannedValue("go run .", "go run .", []), [], []),
             ],
@@ -186,6 +319,9 @@ public class RunnerSpecsTests
         Assert.False(api.Env.ContainsKey("A"));
         Assert.Equal(8001, api.Port);
         Assert.Equal("storefront/x", api.Sprout);
+        Assert.Equal(["http://localhost:8001/health"], api.HealthUrls);
+        Assert.Equal(new RestartSpec(Always: true, Max: 2), api.Restart);
+        Assert.Null(specs.Single(s => s.Name == "shop-services/web").Restart);
 
         Assert.EndsWith("npm run dev", specs.Single(s => s.Name == "shop-services/web").Command.ToString());
         Assert.EndsWith("go run .", specs.Single(s => s.Name == "shop-services/tool").Command.ToString());

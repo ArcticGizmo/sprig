@@ -43,6 +43,9 @@ public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, So
 /// <param name="Job">Runs to completion rather than staying up.</param>
 /// <param name="DependsOn">Apps and jobs (as <c>owner/name</c>) to have ready first: the ones it waits for, plus apps
 /// whose urls or ports reach it through its values, unless that would make a loop.</param>
+/// <param name="Health">HTTP paths that must answer with a success status before it's ready.</param>
+/// <param name="ReadyLog">A regular expression a line of its output must match before it's ready.</param>
+/// <param name="Restart">Whether, and how often, to start it again after it exits on its own.</param>
 public sealed record PlannedApp(
     string Owner,
     string RepoPath,
@@ -54,10 +57,16 @@ public sealed record PlannedApp(
     IReadOnlyList<string> WaitFor,
     IReadOnlyList<EnvOutputModel> Outputs,
     bool Job = false,
-    IReadOnlyList<string>? DependsOn = null)
+    IReadOnlyList<string>? DependsOn = null,
+    IReadOnlyList<PlannedHealth>? Health = null,
+    string? ReadyLog = null,
+    RestartModel? Restart = null)
 {
     public string Key => $"{Owner}/{Name}";
 }
+
+/// <summary>A path on one of an app's endpoints that answers with a success status once the app is ready.</summary>
+public sealed record PlannedHealth(string Endpoint, string Path);
 
 /// <summary>A host port mapped to a port inside a container.</summary>
 public sealed record PlannedMapping(string Endpoint, int? Host, int Target)

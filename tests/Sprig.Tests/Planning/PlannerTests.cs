@@ -74,6 +74,48 @@ public class PlannerTests
     }
 
     [Fact]
+    public void Readiness_checks_and_restart_policies_carry_into_the_plan()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            repo.DotNet("api", ".").Http(health: "/health").Http("admin", health: "/ready").Restart(RestartPolicy.Always, max: 2);
+            repo.Node("web", ".").Http().ReadyOnLog("ready in");
+            repo.Job("seed", ".").Retry();
+            repo.Node("plain", ".").Http().Restart(RestartPolicy.Never);
+        });
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        var api = plan.Apps.Single(a => a.Name == "api");
+        Assert.Equal([new PlannedHealth("http", "/health"), new PlannedHealth("admin", "/ready")], api.Health);
+        Assert.Equal(("always", 2), (api.Restart!.Policy, api.Restart.Max));
+        Assert.Equal("ready in", plan.Apps.Single(a => a.Name == "web").ReadyLog);
+        Assert.Equal(("onFailure", 3), (plan.Apps.Single(a => a.Name == "seed").Restart!.Policy, plan.Apps.Single(a => a.Name == "seed").Restart!.Max));
+        Assert.Null(plan.Apps.Single(a => a.Name == "plain").Restart);
+    }
+
+    [Fact]
+    public void A_bad_health_path_log_pattern_or_restart_count_is_an_error()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            repo.Node("a", ".").Http(health: "health");
+            repo.Node("b", ".").Http().ReadyOnLog("ready (in");
+            repo.Node("c", ".").Http().Restart(max: 0);
+        });
+
+        var problems = f.Plan().Problems.Select(p => p.Message).ToArray();
+
+        Assert.Equal(3, problems.Length);
+        Assert.Contains(problems, m => m.Contains("'a' has a health path 'health'") && m.Contains("starting with /"));
+        Assert.Contains(problems, m => m.Contains("'b' waits for a log line matching 'ready (in'") && m.Contains("isn't a valid regular expression"));
+        Assert.Contains(problems, m => m.Contains("'c' restarts at most 0 times"));
+    }
+
+    [Fact]
     public void Apps_that_wait_for_each_other_are_an_error()
     {
         var f = new Fixture();

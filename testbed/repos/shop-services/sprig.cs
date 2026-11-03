@@ -12,14 +12,18 @@ var rabbit = compose.Service("rabbitmq").Endpoint("amqp", 5672).Endpoint("ui", 1
 
 var smtp = repo.Import<Url>("mail-smtp");                 // the trellis supplies the mail server
 
-// Runs to completion each time the apps start; the APIs wait for it to succeed.
+// Runs to completion each time the apps start; the APIs wait for it to succeed. Retried, since Postgres can still be
+// settling in the first second after it reports healthy.
 var migrate = repo.DotNetJob("migrate", "tools/Migrate")
     .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
-    .WaitFor(pg);
+    .WaitFor(pg)
+    .Retry(max: 3);
 
 // Urls rather than ASPNETCORE_URLS: appsettings.json sets "urls", and only the unprefixed env var outranks it.
+// Ready once /health answers, rather than as soon as Kestrel opens the port.
 var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
-    .Http(urlEnv: "Urls")
+    .Http(urlEnv: "Urls", health: "/health")
+    .Restart(RestartPolicy.OnFailure)
     .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
     .Env("Redis__Url", $"localhost:{redis.Port}")
     .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
@@ -27,7 +31,8 @@ var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
     .WaitFor(pg, redis, rabbit, migrate);
 
 var orders = repo.DotNet("orders-api", "src/Orders.Api")
-    .Http(urlEnv: "Urls")
+    .Http(urlEnv: "Urls", health: "/health")
+    .Restart(RestartPolicy.OnFailure)
     .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=orders;Username=shop;Password=shop")
     .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
     .Env("Smtp__Url", smtp)

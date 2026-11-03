@@ -85,7 +85,8 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
             RunnerState.Running => ("blue", "running"),
             RunnerState.Completed => ("green", "finished"),
             RunnerState.Ready => ("green", r.Port is { } p ? $"ready on http://localhost:{p}" : "running"),
-            RunnerState.Exited => ("red", $"exited with code {r.Exit}"),
+            RunnerState.Exited => ("red", r.Error ?? $"exited with code {r.Exit}"),
+            RunnerState.Restarting => ("yellow", r.Error ?? "restarting"),
             RunnerState.Failed => ("red", r.Error ?? "failed"),
             _ => ("dim", r.State.ToString().ToLowerInvariant()),
         };
@@ -139,9 +140,10 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
                     RunnerState.Ready => "[green]ready[/]",
                     RunnerState.Completed => "[green]finished[/]",
                     RunnerState.Stopped when r.Error is { } note => $"stopped [yellow]{Markup.Escape(note)}[/]",
+                    RunnerState.Restarting => $"[yellow]restarting[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
                     RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",
                     _ => r.State.ToString().ToLowerInvariant(),
-                },
+                } + (r.Restarts > 0 && r.State != RunnerState.Restarting ? $" [dim](restarted {r.Restarts}×)[/]" : ""),
                 r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "", r.Since.LocalDateTime.ToString("T"));
         cli.Ansi.Write(table);
         return 0;

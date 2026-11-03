@@ -49,11 +49,13 @@ public sealed class AppResource : IResource
     /// <param name="portEnv">An env var to receive the port, e.g. <c>"PORT"</c>.</param>
     /// <param name="urlEnv">An env var to receive the url. For ASP.NET Core use <c>"Urls"</c>: it outranks a <c>urls</c>
     /// setting in appsettings.json, which <c>ASPNETCORE_URLS</c> doesn't.</param>
+    /// <param name="health">A path, e.g. <c>"/health"</c>, that answers with a success status once the app is ready.
+    /// Without one, the app is ready as soon as its port accepts connections.</param>
     public AppResource Http(string name = "http", string? pin = null, string? portEnv = null, string? urlEnv = null,
-        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        string? health = null, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
         var location = new SourceLocation(file, line);
-        _endpoints.Add(new EndpointModel(name, null, pin, "http", location));
+        _endpoints.Add(new EndpointModel(name, null, pin, "http", location, health));
         _primaryEndpoint ??= name;
         if (portEnv is not null) _env.Add(new EnvModel(portEnv, new PortRef(Name, name).ToTemplate(), null, location));
         if (urlEnv is not null) _env.Add(new EnvModel(urlEnv, UrlOf(name).ToTemplate(), null, location));
@@ -109,10 +111,57 @@ public sealed class AppResource : IResource
         return this;
     }
 
+    /// <summary>The app is ready once a line of its output matches <paramref name="pattern"/>, a regular expression
+    /// (e.g. <c>"Now listening on"</c>). Colour codes are removed before matching. With an HTTP health path as well,
+    /// both have to pass.</summary>
+    public AppResource ReadyOnLog(string pattern)
+    {
+        _readyLog = pattern;
+        return this;
+    }
+
+    /// <summary>Start the app again when it exits without being asked to, waiting longer after each try (1 s, 2 s,
+    /// 4 s, up to 30 s). A stop you ask for never restarts it.</summary>
+    /// <param name="max">Restarts in a row before sprig gives up. A run that lasted a minute starts the count again.</param>
+    public AppResource Restart(RestartPolicy policy = RestartPolicy.OnFailure, int max = 5,
+        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _restart = RestartPolicies.Model(policy, max, new SourceLocation(file, line));
+        return this;
+    }
+
+    string? _readyLog;
+    RestartModel? _restart;
+
     string PrimaryEndpoint => _primaryEndpoint
         ?? throw new InvalidOperationException($"app '{Name}' has no endpoint yet; call .Http() before using its Port or Url");
 
-    internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(), _outputs.ToArray(), Job: false);
+    internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(),
+        _outputs.ToArray(), Job: false, _readyLog, _restart);
+}
+
+/// <summary>When sprig starts an app again after it exits on its own.</summary>
+public enum RestartPolicy
+{
+    /// <summary>Leave it exited.</summary>
+    Never,
+
+    /// <summary>Only after a non-zero exit code.</summary>
+    OnFailure,
+
+    /// <summary>After any exit. For a job, the same as <see cref="OnFailure"/>: a job that succeeded is done.</summary>
+    Always,
+}
+
+static class RestartPolicies
+{
+    internal static RestartModel? Model(RestartPolicy policy, int max, SourceLocation location) => policy switch
+    {
+        RestartPolicy.Never => null,
+        RestartPolicy.OnFailure => new RestartModel("onFailure", max, location),
+        RestartPolicy.Always => new RestartModel("always", max, location),
+        _ => throw new ArgumentOutOfRangeException(nameof(policy)),
+    };
 }
 
 /// <summary>A one-off command, such as migrations, that runs to completion each time its sprout's apps start. Apps that
@@ -164,7 +213,19 @@ public sealed class JobResource : IResource
         return this;
     }
 
-    internal AppModel Build() => new(Name, _kind, _path, _location, [], _env.ToArray(), _run, _waitFor.ToArray(), [], Job: true);
+    /// <summary>Run it again after a non-zero exit, waiting longer after each try (1 s, 2 s, 4 s, up to 30 s). What
+    /// waits for the job keeps waiting until it succeeds or the tries run out.</summary>
+    /// <param name="max">Retries before sprig gives up and fails what waits for it.</param>
+    public JobResource Retry(int max = 3, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _restart = RestartPolicies.Model(RestartPolicy.OnFailure, max, new SourceLocation(file, line));
+        return this;
+    }
+
+    RestartModel? _restart;
+
+    internal AppModel Build() => new(Name, _kind, _path, _location, [], _env.ToArray(), _run, _waitFor.ToArray(), [], Job: true,
+        Restart: _restart);
 }
 
 /// <summary>Where an app's env vars are written for running it by hand. Paths are relative to the app's path. Each file

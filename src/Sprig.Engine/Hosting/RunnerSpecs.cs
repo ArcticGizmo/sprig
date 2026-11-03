@@ -80,8 +80,15 @@ public static class RunnerSpecs
         if (app.Kind == "node" && !Directory.Exists(Path.Combine(dir, "node_modules")) && File.Exists(Path.Combine(dir, "package.json")))
             build = Shell(File.Exists(Path.Combine(dir, "package-lock.json")) ? "npm ci --ignore-scripts" : "npm install --ignore-scripts");
 
+        var health = (app.Health ?? [])
+            .Select(h => plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name && p.Endpoint == h.Endpoint)?.Port is { } p
+                ? $"http://localhost:{p}{h.Path}"
+                : throw new InvalidOperationException($"'{app.Key}' checks {h.Path} on {h.Endpoint}, which has no port"))
+            .ToArray();
+        var restart = app.Restart is { } r ? new RestartSpec(r.Policy == "always", r.Max) : null;
+
         return new RunnerSpec(record.Key, app.Key, command, dir, env, build, build is null ? null : repo.Dir, port,
-            app.DependsOn ?? [], app.Job);
+            app.DependsOn ?? [], app.Job, health.Length > 0 ? health : null, app.ReadyLog, restart);
     }
 
     /// <summary>A command line as the user would type it, through the platform's shell (npm and friends are scripts).</summary>

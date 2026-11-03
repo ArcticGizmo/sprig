@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 to M4 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M5 next.
+Branch: `experimental`. Started 2026-11-03. Status: M0 to M4 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M5 (runners) mostly done.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -270,7 +270,15 @@ Also in M4:
   - The host is attached to the app's console while it signals, so it gets the Ctrl+C too. A handler protects it (the null "ignore" flag would be inherited by its apps). The handler must be added on every attach, since one from an earlier console doesn't protect it in the next, and never removed, since Ctrl+C can arrive late.
   - npm and vite are `.cmd` batch files, so `cmd` answers Ctrl+C with "Terminate batch job (Y/N)?"; the host writes "Y" to the app's stdin after a second.
   - Stopping is marked before the request returns, or a quick status check could read a stale "ready" as done.
-- **Still to do in M5:** readiness by HTTP or a log line, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host).
+
+**Readiness and restarts (done 2026-11-03):**
+- **Readiness:** `.Http(health: "/health")` makes an app ready once that path answers with a success status, and `.ReadyOnLog(pattern)` once a line of its output matches a regular expression (colour codes removed first). With both, both must pass; with neither, the open port still decides. The planner rejects a path that doesn't start with `/` and a pattern that doesn't compile. The health check skips any proxy and tries `127.0.0.1` and `::1` with short timeouts each, because on Windows a refused connection takes about 2 s, which would use up a whole request on the wrong address. Only status codes are logged while it waits (connection errors are normal during startup), and only when they change.
+- **Restarts:** `.Restart(RestartPolicy.OnFailure | Always, max: 5)` on an app and `.Retry(max: 3)` on a job. Waits 1 s, 2 s, 4 s and so on up to 30 s between tries, and a run that lasted a minute starts the count again. While it waits, the runner is `Restarting` (alive, not settled), so what depends on it keeps waiting instead of failing. A stop you ask for, including one during the wait, never restarts it. Anything the last run left in its job is ended first, so a stray child can't hold the port. `sprig ps` shows "(restarted 2×)".
+- Model schema 4 (`EndpointModel.Health`, `AppModel.ReadyLog` and `Restart`).
+- **On the testbed:** both APIs became ready through `/health`, mobile through Vite's `ready in 312 ms` line, and web through its port. Killing `catalog-api`'s app process brought it back in 1 s, ready through `/health` again, and `sprig stop` afterwards left everything stopped.
+- **Found:** a process can exit between `Process.GetProcessById` and reading its name, which throws `InvalidOperationException`, not `ArgumentException`. Only the latter was caught, and the exception escaped the fire-and-forget stop task, leaving the runner `Stopping` for good. Both are caught now, and a stop that throws anyway still ends the job and reports why.
+- **Found:** `HostClient.TrySend` threw "Pipe is broken" when it reached a host that was shutting down, because disposing its `StreamWriter` flushed into the closed pipe. It writes to the pipe directly now and treats a dropped connection as no host.
+- **Still to do in M5:** `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host).
 
 ### M6: Review and decide (about 2 weeks)
 

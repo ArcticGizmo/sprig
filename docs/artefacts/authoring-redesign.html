@@ -1,0 +1,550 @@
+<title>Sprig Authoring Rethink</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column (problem → five options → Aspire → recommendation). Each option carries
+   an app-styled mock-up so the reader judges the flow, not a description of it. Dark-first, like sprig's app. */
+:root {
+  --bg: #16161d; --panel: #1f1f2a; --panel-2: #262634; --fg: #e1e1eb; --title: #f5f5fa; --muted: #8c8ca0;
+  --border: #2d2d3c; --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --danger: #f87171; --def: #a78bfa; --dev: #ff5fb0;
+  --accent-bg: rgba(96,165,250,.13); --ok-bg: rgba(74,222,128,.11); --warn-bg: rgba(251,191,36,.12);
+  --danger-bg: rgba(248,113,113,.12); --def-bg: rgba(167,139,250,.14); --row: rgba(255,255,255,.04);
+  --code: #121219;
+  --sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #f3f3f7; --panel: #ffffff; --panel-2: #eeeef5; --fg: #23232f; --title: #12121a; --muted: #5d5d72;
+  --border: #d9d9e4; --accent: #2563eb; --ok: #15803d; --warn: #b45309; --danger: #dc2626; --def: #7c3aed; --dev: #c0267a;
+  --accent-bg: rgba(37,99,235,.09); --ok-bg: rgba(21,128,61,.09); --warn-bg: rgba(180,83,9,.10);
+  --danger-bg: rgba(220,38,38,.08); --def-bg: rgba(124,58,237,.09); --row: rgba(20,20,40,.04);
+  --code: #f7f7fb;
+  color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #f3f3f7; --panel: #ffffff; --panel-2: #eeeef5; --fg: #23232f; --title: #12121a; --muted: #5d5d72;
+  --border: #d9d9e4; --accent: #2563eb; --ok: #15803d; --warn: #b45309; --danger: #dc2626; --def: #7c3aed; --dev: #c0267a;
+  --accent-bg: rgba(37,99,235,.09); --ok-bg: rgba(21,128,61,.09); --warn-bg: rgba(180,83,9,.10);
+  --danger-bg: rgba(220,38,38,.08); --def-bg: rgba(124,58,237,.09); --row: rgba(20,20,40,.04);
+  --code: #f7f7fb;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 56px; }
+section { display: grid; gap: 20px; min-width: 0; }
+code, .mono { font-family: var(--mono); font-size: .85em; }
+h1, h2, h3 { color: var(--title); text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: clamp(30px, 4.4vw, 44px); font-weight: 700; letter-spacing: -.02em; }
+h2 { font-size: 24px; font-weight: 650; letter-spacing: -.01em; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; }
+.prose { display: grid; gap: 12px; max-width: 68ch; }
+.eyebrow { font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { font-size: 17px; max-width: 64ch; }
+.muted { color: var(--muted); }
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+
+/* --- the anatomy of one variable --- */
+.anatomy { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.repo-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.repo-card h3 { display: flex; gap: 8px; align-items: baseline; }
+.repo-card h3 small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 10px; border-radius: 8px; background: var(--row); }
+.step b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-family: var(--mono); }
+.step .where { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.step code { display: block; overflow-x: auto; white-space: nowrap; color: var(--fg); }
+.tally { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 16px 18px; border: 1px dashed var(--border); border-radius: 12px; }
+.tally div { display: grid; }
+.tally strong { font-size: 26px; color: var(--title); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tally span { font-size: 12.5px; color: var(--muted); }
+
+/* --- option blocks --- */
+.option { display: grid; gap: 18px; padding-top: 28px; border-top: 1px solid var(--border); }
+.opt-head { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: baseline; }
+.opt-letter { font-family: var(--mono); font-size: 13px; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 7px; }
+.pill { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.danger { background: var(--danger-bg); color: var(--danger); }
+.pill.def { background: var(--def-bg); color: var(--def); }
+.pill.acc { background: var(--accent-bg); color: var(--accent); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.pc { display: grid; gap: 6px; align-content: start; }
+.pc ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.pc h4 { margin: 0; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.pc.pro h4 { color: var(--ok); }
+.pc.con h4 { color: var(--warn); }
+
+/* --- app mock frame --- */
+.mock { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; min-width: 0; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.mock-bar .ttl { font-weight: 600; color: var(--title); }
+.mock-bar .sp { flex: 1; }
+.btn { font: inherit; font-size: 12.5px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs span { padding: 9px 12px; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs span.on { color: var(--title); border-bottom-color: var(--accent); }
+.scroll { overflow-x: auto; }
+table.sheet { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 760px; }
+.sheet th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+.sheet td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.sheet tr.grp td { background: var(--row); font-size: 11.5px; color: var(--muted); font-family: var(--mono); padding-block: 6px; }
+.sheet td.key { font-family: var(--mono); color: var(--title); white-space: nowrap; }
+.sheet td.old { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+.sheet td.res { font-family: var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.src { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--border); white-space: nowrap; }
+.src i { font-style: normal; font-family: var(--mono); font-size: 11px; }
+.src.port { color: var(--ok); border-color: var(--ok); }
+.src.link { color: var(--accent); border-color: var(--accent); }
+.src.tpl { color: var(--fg); }
+.src.const { color: var(--def); border-color: var(--def); }
+.src.leave { color: var(--muted); border-style: dashed; }
+.src.sugg { color: var(--warn); border-color: var(--warn); border-style: dashed; }
+tr.open td { background: var(--accent-bg); }
+.picker { padding: 14px 16px 16px; display: grid; gap: 10px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.picker-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.picker-opts .src.on { background: var(--accent-bg); }
+.picker-list { display: grid; gap: 4px; font-family: var(--mono); font-size: 12.5px; }
+.picker-list div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; border-radius: 6px; }
+.picker-list div.hit { background: var(--accent-bg); color: var(--title); }
+.picker-list span { color: var(--muted); font-family: var(--sans); font-size: 12px; }
+.mock-foot { padding: 12px 16px; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.mock-foot b { color: var(--fg); font-weight: 600; }
+
+/* review list (option B) */
+.review { display: grid; }
+.rv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; padding: 12px 16px; border-bottom: 1px solid var(--border); align-items: center; }
+.rv .line { font-family: var(--mono); font-size: 12.5px; overflow-x: auto; white-space: nowrap; }
+.rv .arrow { color: var(--accent); }
+.rv .why { font-size: 12.5px; color: var(--muted); }
+.rv .acts { display: flex; gap: 6px; }
+
+/* code */
+.code { background: var(--code); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; min-width: 0; }
+.code .fn { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.code pre { margin: 0; padding: 14px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: var(--fg); }
+.c-k { color: var(--accent); } .c-s { color: var(--ok); } .c-c { color: var(--muted); font-style: italic; } .c-p { color: var(--def); } .c-w { color: var(--warn); }
+
+/* comparison table */
+table.cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 820px; }
+.cmp th, .cmp td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.cmp th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.cmp td:first-child { font-weight: 600; color: var(--title); white-space: nowrap; }
+.cmp tr.today td { color: var(--muted); }
+.cmp tr.pick td { background: var(--accent-bg); }
+.y { color: var(--ok); } .n { color: var(--danger); } .p { color: var(--warn); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+
+/* aspire */
+.callout { border: 1px solid var(--warn); background: var(--warn-bg); border-radius: 12px; padding: 16px 18px; display: grid; gap: 8px; max-width: 80ch; }
+.callout strong { color: var(--title); }
+.levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.level { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.level.rec { border-color: var(--accent); }
+.level ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+
+/* recommendation */
+.rec-list { display: grid; gap: 12px; counter-reset: r; max-width: 80ch; }
+.rec-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; }
+.rec-item::before { counter-increment: r; content: counter(r); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--accent-bg); color: var(--accent); font-family: var(--mono); font-weight: 600; font-size: 13px; }
+.rec-item div { display: grid; gap: 4px; }
+.sources { font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
+.sources a { color: var(--accent); }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Sprig · design exploration · Nov 2026</span>
+  <h1>Author the variable, not the plumbing</h1>
+  <p class="lede">Wiring one value between two repos today takes five edits across four editor sections. A real repo has a dozen or more of these values. This page looks at five ways to cut that down, and at whether Aspire should do the heavy lifting instead.</p>
+  <div class="meta"><span class="tag">Examples use neutral names: shop, catalog, billing</span><span class="tag">Aspire facts checked against 13.2–13.6 docs and the 2026→27 roadmap</span></div>
+</header>
+
+<!-- ============ PROBLEM ============ -->
+<section>
+  <span class="eyebrow">The problem</span>
+  <h2>One variable, five edits, two repos</h2>
+  <div class="prose">
+    <p>Say the <code>shop</code> front end needs <code>VITE_API_URL</code> to point at its workspace's own <code>catalog</code> API. In the current model you go through these steps:</p>
+  </div>
+  <div class="anatomy">
+    <div class="repo-card">
+      <h3>catalog <small>repo editor · module api</small></h3>
+      <div class="step"><b>1</b><div><span class="where">Provides</span><code>capability: catalog · ports: { port: true }</code></div></div>
+      <div class="step"><b>2</b><div><span class="where">Provides → derived</span><code>url = http://localhost:${sprig.catalog.port}</code></div></div>
+      <div class="step"><b>3</b><div><span class="where">Env overrides · .env</span><code>PORT = ${sprig.catalog.port}</code></div></div>
+    </div>
+    <div class="repo-card">
+      <h3>shop <small>repo editor · module web</small></h3>
+      <div class="step"><b>4</b><div><span class="where">Needs</span><code>capability: catalog</code></div></div>
+      <div class="step"><b>5</b><div><span class="where">Env overrides · .env.local</span><code>VITE_API_URL = ${sprig.catalog.url}</code></div></div>
+      <p class="muted" style="font-size:13px">A Docker port adds a sixth edit: a compose override addressed by YAML path segments, <code>["services","postgres","ports","0"]</code>.</p>
+    </div>
+  </div>
+  <div class="tally">
+    <div><strong>5</strong><span>edits for one value</span></div>
+    <div><strong>4</strong><span>editor sections visited</span></div>
+    <div><strong>3</strong><span>times you type the name <code>catalog</code></span></div>
+    <div><strong>~40</strong><span>form rows for a 12-variable module</span></div>
+  </div>
+  <div class="prose">
+    <p>The capability model is sound. Matching by name, nearest-wins, and maps that only store deviations all hold up. The friction is in <strong>authoring order</strong>. The editor asks you to think in capabilities first (provides, then needs, then env rows that reference them). But you start from the env file you already have: <em>this key should get that value</em>. Steps 1, 2 and 4 carry no information the env row doesn't already imply.</p>
+    <p>So the question for every option below: <strong>can the user author only the env row and have provides and needs fall out of it?</strong></p>
+  </div>
+</section>
+
+<!-- ============ OPTION A ============ -->
+<section class="option">
+  <div class="opt-head"><span class="opt-letter">A</span><h2>A variables sheet per repo</h2><span class="pill ok">Low risk</span><span class="pill acc">Same file format</span></div>
+  <div class="prose">
+    <p>Replace the PROVIDES / NEEDS / ENV / COMPOSE sections with one table: every env key and compose value the module touches, one row each. Each row has a <strong>source</strong>, and choosing a source writes the provides and needs for you. Choosing <em>New port</em> creates the provide. Choosing <em>catalog.url</em> creates the need. Provides and needs become a read-only summary.</p>
+  </div>
+  <div class="mock" role="img" aria-label="Mock-up of the repo variables sheet">
+    <div class="mock-bar"><span class="ttl">shop</span><span class="muted" style="font-size:13px">Variables · 9 rows · 1 suggestion</span><span class="sp"></span><button class="btn" type="button">Show .sprig.json</button><button class="btn primary" type="button">Save</button></div>
+    <div class="tabs"><span class="on">web · apps/web</span><span>worker · apps/worker</span><span>+ module</span></div>
+    <div class="scroll">
+      <table class="sheet">
+        <thead><tr><th>Key</th><th>In the file today</th><th>Source</th><th>In workspace shop-2</th></tr></thead>
+        <tbody>
+          <tr class="grp"><td colspan="4">.env.local · seeded from .env.template</td></tr>
+          <tr><td class="key">PORT</td><td class="old">5173</td><td><span class="src port"><i>＋</i> New port · web · 8100–8103</span></td><td class="res">8101</td></tr>
+          <tr class="open"><td class="key">VITE_API_URL</td><td class="old">http://localhost:5000</td><td><span class="src link"><i>←</i> catalog.url</span></td><td class="res">http://localhost:8342</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="picker">
+      <div class="picker-opts">
+        <span class="src port"><i>＋</i> New port</span>
+        <span class="src link on"><i>←</i> From another repo</span>
+        <span class="src tpl"><i>ƒ</i> Built from…</span>
+        <span class="src const"><i>◆</i> Constant</span>
+        <span class="src leave">Leave as is</span>
+      </div>
+      <div class="picker-list">
+        <div class="hit">catalog.url <span>catalog · api — port 5000 matches the value in the file</span></div>
+        <div>billing.url <span>billing · app</span></div>
+        <div>catalog.db <span>catalog · api</span></div>
+      </div>
+    </div>
+    <div class="scroll">
+      <table class="sheet">
+        <tbody>
+          <tr><td class="key">VITE_BILLING_URL</td><td class="old">http://localhost:5100</td><td><span class="src link"><i>←</i> billing.url</span></td><td class="res">http://localhost:8343</td></tr>
+          <tr><td class="key">VITE_AUTH_CALLBACK</td><td class="old">http://localhost:5173/callback</td><td><span class="src tpl"><i>ƒ</i> {web.url}/callback</span></td><td class="res">http://localhost:8101/callback</td></tr>
+          <tr><td class="key">VITE_REALM</td><td class="old">storefront-dev</td><td><span class="src const"><i>◆</i> Constant</span></td><td class="res">storefront-dev</td></tr>
+          <tr><td class="key">SMTP_PORT</td><td class="old">1025</td><td><span class="src sugg"><i>?</i> mail.smtp? · Accept</span></td><td class="res muted">1025 (shared)</td></tr>
+          <tr><td class="key">VITE_SENTRY_DSN</td><td class="old muted">—</td><td><span class="src leave">Leave as is</span></td><td class="res muted">—</td></tr>
+          <tr class="grp"><td colspan="4">docker-compose.yml</td></tr>
+          <tr><td class="key">redis · ports[0]</td><td class="old">6379:6379</td><td><span class="src port"><i>＋</i> New port · cache → {cache.port}:6379</span></td><td class="res">8344:6379</td></tr>
+          <tr><td class="key">redis · container_name</td><td class="old">shop_redis</td><td><span class="src tpl"><i>ƒ</i> shop_redis--{workspace}</span></td><td class="res">shop_redis--shop-2</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="mock-foot"><span>Derived: <b>provides</b> web, cache</span><span><b>needs</b> catalog, billing</span><span>Wiring <b>VITE_API_URL</b> took 1 click.</span></div>
+  </div>
+  <div class="two">
+    <div class="pc pro"><h4>For</h4><ul>
+      <li>Starts from what the user has open: the env file.</li>
+      <li>One edit per variable. Provides and needs are never typed by hand.</li>
+      <li>The "in workspace" column previews the resolved value before checkout.</li>
+      <li>Compose rows read as <code>redis · ports[0]</code>, not path-segment arrays.</li>
+      <li>No schema change. It writes the same <code>.sprig.json</code>.</li>
+    </ul></div>
+    <div class="pc con"><h4>Against</h4><ul>
+      <li>A provide that nothing in its own repo uses (a pure export) needs a home. Keep a small "Exports" panel.</li>
+      <li>Shapes such as <code>url</code> still have to be defined somewhere. The sheet can offer "make this a shape other repos can use" on any templated row.</li>
+      <li>A large rewrite of the editor in <code>ReposView.axaml</code>.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ============ OPTION B ============ -->
+<section class="option">
+  <div class="opt-head"><span class="opt-letter">B</span><h2>Infer the wiring, then review it</h2><span class="pill ok">Low risk</span><span class="pill acc">Pairs with A</span></div>
+  <div class="prose">
+    <p>Add-repo already scans each repo for port-shaped values. Run the same scan <strong>across all repos on a map</strong> and match values. When <code>shop</code> has <code>VITE_API_URL=http://localhost:5000</code> and <code>catalog</code> has <code>PORT=5000</code>, the link is almost certain. Authoring becomes approving a list of links.</p>
+  </div>
+  <div class="mock" role="img" aria-label="Mock-up of the cross-repo suggestions review">
+    <div class="mock-bar"><span class="ttl">storefront map · Suggested wiring</span><span class="muted" style="font-size:13px">9 links found across 4 repos</span><span class="sp"></span><button class="btn" type="button">Reject all</button><button class="btn primary" type="button">Accept 7 sure ones</button></div>
+    <div class="review">
+      <div class="rv"><div><div class="line">shop · VITE_API_URL <span class="arrow">→</span> catalog · PORT <span class="pill ok">sure</span></div><div class="why">Same port, 5000. Creates catalog.url and a catalog need on shop.</div></div><div class="acts"><button class="btn" type="button">Skip</button><button class="btn primary" type="button">Accept</button></div></div>
+      <div class="rv"><div><div class="line">shop · VITE_BILLING_URL <span class="arrow">→</span> billing · ASPNETCORE_URLS <span class="pill ok">sure</span></div><div class="why">Same port, 5100, inside a URL.</div></div><div class="acts"><button class="btn" type="button">Skip</button><button class="btn primary" type="button">Accept</button></div></div>
+      <div class="rv"><div><div class="line">billing · ConnectionStrings__Db <span class="arrow">→</span> billing · compose postgres 5433:5432 <span class="pill ok">sure</span></div><div class="why">Host port of a compose service in the same repo. Becomes a new port, db.</div></div><div class="acts"><button class="btn" type="button">Skip</button><button class="btn primary" type="button">Accept</button></div></div>
+      <div class="rv"><div><div class="line">worker · AMQP_URL <span class="arrow">→</span> catalog · compose rabbitmq 5672 <span class="pill warn">maybe</span> <span class="pill warn">or billing · compose rabbitmq</span></div><div class="why">Two repos run RabbitMQ on 5672. Pick one; it becomes a map wiring entry.</div></div><div class="acts"><button class="btn" type="button">Choose…</button></div></div>
+      <div class="rv"><div><div class="line">shop · SMTP_PORT=1025 <span class="arrow">→</span> <span class="muted">nothing on the map</span> <span class="pill def">shared</span></div><div class="why">Nothing provides 1025. Keep it shared as a constant, or add the mail repo.</div></div><div class="acts"><button class="btn" type="button">Make constant</button></div></div>
+    </div>
+  </div>
+  <div class="two">
+    <div class="pc pro"><h4>For</h4><ul>
+      <li>For a large existing repo, most of the 12 variables are wired in one pass.</li>
+      <li>Uses information sprig already has: env files, templates, compose port maps.</li>
+      <li>Each accepted row writes ordinary config. Nothing new to learn.</li>
+    </ul></div>
+    <div class="pc con"><h4>Against</h4><ul>
+      <li>Only works where the committed files carry real local values. A blank <code>.env.template</code> gives nothing to match.</li>
+      <li>Port collisions in the source files (two repos defaulting to 5000) make false matches. Those must stay "maybe", never auto-accepted.</li>
+      <li>Helps the first setup most. Later edits still go through A.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ============ OPTION C ============ -->
+<section class="option">
+  <div class="opt-head"><span class="opt-letter">C</span><h2>A flatter file: schema 2</h2><span class="pill warn">Migration</span><span class="pill acc">Helps CLI and agents</span></div>
+  <div class="prose">
+    <p>For people who edit <code>.sprig.json</code> by hand, or have Claude edit it. Key the file by env file and variable. Drop the <code>${sprig.}</code> prefix. Infer needs from references. Write compose paths as dotted strings. The model underneath is the same, so schema 1 files migrate mechanically and the sheet in A reads and writes either.</p>
+  </div>
+  <div class="two">
+    <div class="code"><div class="fn"><span>catalog/.sprig.json · schema 1</span><span>27 lines</span></div><pre>{
+  <span class="c-k">"schema"</span>: 1, <span class="c-k">"name"</span>: <span class="c-s">"catalog"</span>,
+  <span class="c-k">"modules"</span>: [{
+    <span class="c-k">"name"</span>: <span class="c-s">"api"</span>, <span class="c-k">"path"</span>: <span class="c-s">"apps/api"</span>,
+    <span class="c-k">"provides"</span>: [
+      { <span class="c-k">"capability"</span>: <span class="c-s">"catalog"</span>,
+        <span class="c-k">"ports"</span>: { <span class="c-k">"port"</span>: true },
+        <span class="c-k">"shapes"</span>: { <span class="c-k">"url"</span>:
+          <span class="c-s">"http://localhost:${sprig.catalog.port}"</span> },
+        <span class="c-k">"open"</span>: <span class="c-s">"url"</span> },
+      { <span class="c-k">"capability"</span>: <span class="c-s">"db"</span>,
+        <span class="c-k">"ports"</span>: { <span class="c-k">"port"</span>: true } }
+    ],
+    <span class="c-k">"needs"</span>: [ { <span class="c-k">"capability"</span>: <span class="c-s">"billing"</span> } ],
+    <span class="c-k">"env"</span>: [{ <span class="c-k">"file"</span>: <span class="c-s">".env"</span>, <span class="c-k">"set"</span>: {
+      <span class="c-k">"PORT"</span>: <span class="c-s">"${sprig.catalog.port}"</span>,
+      <span class="c-k">"BILLING_URL"</span>: <span class="c-s">"${sprig.billing.url}"</span>,
+      <span class="c-k">"Db"</span>: <span class="c-s">"Host=localhost;Port=${sprig.db.port}"</span>
+    } }],
+    <span class="c-k">"compose"</span>: [{ <span class="c-k">"file"</span>: <span class="c-s">"docker-compose.yml"</span>,
+      <span class="c-k">"overrides"</span>: [{
+        <span class="c-k">"path"</span>: [<span class="c-s">"services"</span>,<span class="c-s">"postgres"</span>,<span class="c-s">"ports"</span>,<span class="c-s">"0"</span>],
+        <span class="c-k">"template"</span>: <span class="c-s">"${sprig.db.port}:5432"</span> }]
+    }]
+  }]
+}</pre></div>
+    <div class="code"><div class="fn"><span>catalog/.sprig.json · schema 2</span><span>15 lines</span></div><pre>{
+  <span class="c-k">"schema"</span>: 2, <span class="c-k">"name"</span>: <span class="c-s">"catalog"</span>,
+  <span class="c-k">"api"</span>: {
+    <span class="c-k">"path"</span>: <span class="c-s">"apps/api"</span>,
+    <span class="c-k">"ports"</span>:   { <span class="c-k">"http"</span>: true, <span class="c-k">"db"</span>: true },
+    <span class="c-k">"exports"</span>: { <span class="c-k">"catalog"</span>: { <span class="c-k">"url"</span>: <span class="c-s">"http://localhost:{http}"</span> } },
+    <span class="c-k">".env"</span>: {
+      <span class="c-k">"PORT"</span>:        <span class="c-s">"{http}"</span>,
+      <span class="c-k">"BILLING_URL"</span>: <span class="c-s">"{billing.url}"</span>,  <span class="c-c">// need inferred</span>
+      <span class="c-k">"Db"</span>:          <span class="c-s">"Host=localhost;Port={db}"</span>
+    },
+    <span class="c-k">"docker-compose.yml"</span>: {
+      <span class="c-k">"services.postgres.ports[0]"</span>: <span class="c-s">"{db}:5432"</span>
+    }
+  }
+}</pre></div>
+  </div>
+  <div class="two">
+    <div class="pc pro"><h4>For</h4><ul>
+      <li>Roughly half the lines. One line per variable.</li>
+      <li>Reads top to bottom like the env file it controls.</li>
+      <li>Easier for Claude and the plugin to write correctly. Fewer names to keep in sync.</li>
+      <li>Same resolver. Only the loader and validator change.</li>
+    </ul></div>
+    <div class="pc con"><h4>Against</h4><ul>
+      <li>Two schemas to support for a while, with an automatic upgrade.</li>
+      <li>Using file names as keys mixes namespaces. Reserve <code>path</code>, <code>ports</code>, <code>exports</code>, <code>setup</code>, and require a file key to contain a dot.</li>
+      <li>On its own it doesn't help GUI users. It pairs with A.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ============ OPTION D ============ -->
+<section class="option">
+  <div class="opt-head"><span class="opt-letter">D</span><h2>Annotate the files in place</h2><span class="pill warn">Breaks the one-file rule</span></div>
+  <div class="prose">
+    <p>Put the binding next to the value it controls, as a comment in the committed template or as a compose <code>x-</code> extension field. No config file to cross-reference, and the binding shows up in the same PR diff as the value.</p>
+  </div>
+  <div class="two">
+    <div class="code"><div class="fn"><span>apps/web/.env.template</span></div><pre><span class="c-k">PORT</span>=5173                            <span class="c-c"># sprig: port web 8100-8103</span>
+<span class="c-k">VITE_API_URL</span>=http://localhost:5000     <span class="c-c"># sprig: catalog.url</span>
+<span class="c-k">VITE_BILLING_URL</span>=http://localhost:5100 <span class="c-c"># sprig: billing.url</span>
+<span class="c-k">VITE_REALM</span>=storefront-dev</pre></div>
+    <div class="code"><div class="fn"><span>docker-compose.yml</span></div><pre><span class="c-k">services</span>:
+  <span class="c-k">redis</span>:
+    <span class="c-k">image</span>: redis:7
+    <span class="c-k">ports</span>: [<span class="c-s">"6379:6379"</span>]
+    <span class="c-p">x-sprig</span>:
+      <span class="c-k">ports[0]</span>: <span class="c-s">"{cache.port}:6379"</span></pre></div>
+  </div>
+  <div class="two">
+    <div class="pc pro"><h4>For</h4><ul>
+      <li>Nothing to cross-reference. The binding sits on the line it changes.</li>
+      <li>Compose ignores <code>x-</code> fields, so the file stays valid.</li>
+    </ul></div>
+    <div class="pc con"><h4>Against</h4><ul>
+      <li>Ends "<code>.sprig.json</code> is the only file sprig adds". Teams that object to tool noise will object more.</li>
+      <li>Many repos never commit an env file, so the comments have nowhere to go.</li>
+      <li>Parsing comments is fragile, and the GUI would have to rewrite other people's files.</li>
+      <li>Virtual repos can't use it at all.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ============ OPTION E ============ -->
+<section class="option">
+  <div class="opt-head"><span class="opt-letter">E</span><h2>Config as code, Aspire style</h2><span class="pill danger">High cost</span></div>
+  <div class="prose">
+    <p>A <code>sprig.ts</code> (or <code>sprig.cs</code>) in each repo that sprig runs to get the model. You get loops, helpers, typed references and refactoring, which are useful for a repo with 30 near-identical variables.</p>
+  </div>
+  <div class="code"><div class="fn"><span>catalog/sprig.ts</span></div><pre><span class="c-k">import</span> { repo } <span class="c-k">from</span> <span class="c-s">"@sprig/config"</span>;
+
+<span class="c-k">export default</span> repo(<span class="c-s">"catalog"</span>, r =&gt; {
+  <span class="c-k">const</span> api  = r.module(<span class="c-s">"api"</span>, { path: <span class="c-s">"apps/api"</span> });
+  <span class="c-k">const</span> http = api.port(<span class="c-s">"http"</span>);
+  <span class="c-k">const</span> db   = api.port(<span class="c-s">"db"</span>);
+  <span class="c-k">const</span> billing = api.need(<span class="c-s">"billing"</span>);           <span class="c-c">// typed handle, checked at resolve</span>
+
+  api.export(<span class="c-s">"catalog"</span>, { url: r.fmt<span class="c-s">`http://localhost:${http}`</span> });
+  api.env(<span class="c-s">".env"</span>, {
+    PORT: http,
+    BILLING_URL: billing.url,
+    Db: r.fmt<span class="c-s">`Host=localhost;Port=${db}`</span>,
+  });
+  api.compose(<span class="c-s">"docker-compose.yml"</span>).set(<span class="c-s">"services.postgres.ports[0]"</span>, r.fmt<span class="c-s">`${db}:5432`</span>);
+});</pre></div>
+  <div class="two">
+    <div class="pc pro"><h4>For</h4><ul>
+      <li>Scales to very large repos: loops, shared helpers, find-references.</li>
+      <li>Familiar to anyone who has used an Aspire AppHost.</li>
+    </ul></div>
+    <div class="pc con"><h4>Against</h4><ul>
+      <li><strong>Sprig would run repo code at checkout.</strong> Config is pure data today. Running code turns a pooled checkout into executing whatever is on that branch.</li>
+      <li>Needs Node or .NET on the machine just to read config, which the CLI avoids today.</li>
+      <li>The GUI can't edit code and write it back. Repos, Maps and the add-repo scan would all go read-only.</li>
+      <li>Code wants direct object references across repos. That drifts toward the central orchestrator sprig avoids on purpose.</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- ============ COMPARISON ============ -->
+<section>
+  <span class="eyebrow">Side by side</span>
+  <h2>What each option costs</h2>
+  <div class="tablewrap">
+    <table class="cmp">
+      <thead><tr><th>Option</th><th>Edits to wire one value</th><th>.sprig.json stays the only file</th><th>GUI and file stay in sync</th><th>No runtime needed to read config</th><th>Build size</th></tr></thead>
+      <tbody>
+        <tr class="today"><td>Today</td><td>5 in 4 sections</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td>—</td></tr>
+        <tr class="pick"><td>A · Variables sheet</td><td>1 pick</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td>Medium</td></tr>
+        <tr class="pick"><td>B · Infer and review</td><td>0–1 (approve)</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td>Medium</td></tr>
+        <tr class="pick"><td>C · Schema 2</td><td>1 line</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td>Small–medium</td></tr>
+        <tr><td>D · Annotate in place</td><td>1 comment</td><td class="n">No</td><td class="p">Partly</td><td class="y">Yes</td><td>Medium</td></tr>
+        <tr><td>E · Config as code</td><td>1 line</td><td class="n">No</td><td class="n">No (read-only)</td><td class="n">No</td><td>Large</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ ASPIRE ============ -->
+<section>
+  <span class="eyebrow">Should Aspire do the heavy lifting?</span>
+  <h2>Aspire has closed part of the gap</h2>
+  <div class="callout">
+    <p><strong>What changed since sprig's last comparison (Aug 2026):</strong> Aspire 13.2 added <code>aspire run --isolated</code> for running several copies of one AppHost at once, explicitly for git worktrees and parallel agents. TypeScript AppHosts went GA in 13.4, with Python, Go, Java and Rust hosts available too. The 2026→27 roadmap lists <em>multi-repo</em> apps and <em>launch groups</em> ("start only what you need"). "Aspire runs one instance at a time" is no longer true.</p>
+  </div>
+  <div class="tablewrap">
+    <table class="cmp">
+      <thead><tr><th>Need</th><th>Sprig</th><th>Aspire, Nov 2026</th></tr></thead>
+      <tbody>
+        <tr><td>Parallel copies of the same system</td><td class="y">Yes, per workspace</td><td class="y">Yes, <code>--isolated</code> (13.2)</td></tr>
+        <tr><td>Creates worktrees, branches, pooled reuse, labels</td><td class="y">Yes</td><td class="n">No. Runs inside a worktree you already made</td></tr>
+        <tr><td>Stable ports per workspace, pinned sets (Auth0 callbacks)</td><td class="y">Yes, leased in the ledger</td><td class="p">Random each run in isolated mode</td></tr>
+        <tr><td>Separate Docker containers and volumes per copy</td><td class="y">Yes, compose project per workspace</td><td class="p">Not documented. Only ports and user secrets are mentioned</td></tr>
+        <tr><td>Reuses the repo's existing compose files</td><td class="y">Yes, overrides them</td><td class="n">Containers are modelled in the AppHost</td></tr>
+        <tr><td>Apps run from your IDE with values in .env</td><td class="y">Yes</td><td class="n">Aspire launches the processes and injects env</td></tr>
+        <tr><td>Multiple repos in one system</td><td class="y">Yes, maps</td><td class="p">Roadmap</td></tr>
+        <tr><td>Take a slice of the system</td><td class="y">Yes, <code>--only</code> / <code>--without</code></td><td class="p">Roadmap ("launch groups")</td></tr>
+        <tr><td>Config without running code</td><td class="y">Yes, JSON</td><td class="n">No, the AppHost is a program</td></tr>
+        <tr><td>Dashboard, logs, traces, health</td><td class="n">No (URL probe only)</td><td class="y">Yes, the main feature</td></tr>
+        <tr><td>Deploy to the cloud</td><td class="n">Out of scope</td><td class="y">Yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-top:8px">Three ways to integrate</h3>
+  <div class="levels">
+    <div class="level rec">
+      <div class="opt-head"><h3>1 · Live alongside it</h3><span class="pill ok">Recommended</span></div>
+      <p>Sprig handles the workspace. If a repo has an AppHost, Aspire runs what's inside it.</p>
+      <ul>
+        <li>Detect <code>apphost.cs</code>, <code>apphost.ts</code> or an AppHost project at add-repo and mark the module.</li>
+        <li>Pass sprig's leased ports in as AppHost parameters, so ports stay stable and pinned sets still work.</li>
+        <li>Add <code>sprig ws run</code> → <code>aspire run --isolated</code> in that worktree.</li>
+        <li>Sprig keeps worktrees, branches, pool and cross-repo wiring.</li>
+      </ul>
+      <p class="muted" style="font-size:13px">Small. Speaks to the ".NET shop" question directly.</p>
+    </div>
+    <div class="level">
+      <div class="opt-head"><h3>2 · Import an AppHost</h3><span class="pill warn">Fragile</span></div>
+      <p>Read an AppHost's resource model to fill in a <code>.sprig.json</code>.</p>
+      <ul>
+        <li>The JSON manifest is the only export. Docs now keep it mainly for <code>azd</code> and point new work at <code>aspire publish</code>.</li>
+        <li>Needs the AppHost to build and run, which brings back E's problem of running code.</li>
+        <li>Expressions like <code>{api.bindings.http.url}</code> do map well onto <code>{catalog.url}</code>.</li>
+      </ul>
+      <p class="muted" style="font-size:13px">Medium. Worth a spike only if 1 gets real use.</p>
+    </div>
+    <div class="level">
+      <div class="opt-head"><h3>3 · Rebuild on Aspire</h3><span class="pill danger">Not now</span></div>
+      <p>Sprig becomes a worktree and pool manager around <code>aspire run --isolated</code>, and the AppHost does the wiring.</p>
+      <ul>
+        <li>Every map would need an AppHost program. That's the central orchestrator sprig chose not to require.</li>
+        <li>Loses non-Aspire repos, IDE-launched apps, .env output, stable and pinned ports, and existing compose files.</li>
+        <li>Multi-repo and slices are still roadmap items in Aspire.</li>
+      </ul>
+      <p class="muted" style="font-size:13px">Revisit if Aspire ships multi-repo and launch groups and documents volume isolation.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RECOMMENDATION ============ -->
+<section>
+  <span class="eyebrow">Recommendation</span>
+  <h2>Fix the authoring order, and live alongside Aspire</h2>
+  <div class="rec-list">
+    <div class="rec-item"><div><h3>Build A, the variables sheet, first</h3><p>The biggest drop in friction for no format change. Provides and needs become output, not input. Keep a small Exports panel for shapes other repos consume.</p></div></div>
+    <div class="rec-item"><div><h3>Feed B into it</h3><p>Value-matched suggestions show up as amber rows in the sheet and as a one-time review when a repo joins a map. Never auto-accept a "maybe".</p></div></div>
+    <div class="rec-item"><div><h3>Design C alongside, and ship it once the sheet is stable</h3><p>Schema 2 is the sheet's serialised form. Shipping both from one design keeps the GUI and the file describing the same thing. Add an automatic upgrade from schema 1.</p></div></div>
+    <div class="rec-item"><div><h3>Add Aspire level 1</h3><p>Detect an AppHost and run it with <code>--isolated</code>, using sprig's leased ports. This turns "why not just Aspire?" into "use both". Sprig handles the workspace; Aspire handles running and observing it.</p></div></div>
+    <div class="rec-item"><div><h3>Leave D and E out</h3><p>Both break properties sprig depends on: one file, pure data, and a GUI that can write what it reads. Revisit E only if very large repos still struggle after C.</p></div></div>
+  </div>
+  <div class="prose">
+    <p class="muted">Open question before building level 1: does Aspire's isolated mode separate container volumes? If it doesn't, two isolated runs share a database. That's the strongest remaining reason for sprig to own the compose side.</p>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Sources</span>
+  <div class="sources">
+    <a href="https://devblogs.microsoft.com/aspire/aspire-isolated-mode-parallel-development/">Aspire blog: isolated mode for parallel development (Apr 2026)</a>
+    <a href="https://aspire.dev/reference/cli/commands/aspire-run.md">aspire.dev: aspire run command reference</a>
+    <a href="https://github.com/microsoft/aspire/discussions/18581">Aspire roadmap 2026 → 2027 (GitHub discussion)</a>
+    <a href="https://github.com/microsoft/aspire/wiki/13.5-Change-log">Aspire 13.5 change log</a>
+    <a href="https://aspire.dev/deployment/manifest-format">aspire.dev: deployment manifest format</a>
+    <span>Sprig model: docs/config-reference.md, docs/user-guide.md, src/Sprig.App/Views/ReposView.axaml</span>
+  </div>
+</section>
+
+</div>

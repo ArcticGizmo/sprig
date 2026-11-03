@@ -1,14 +1,23 @@
 # Handover: experimental branch
 
-Written 2026-11-03 at the end of the session that did M4. Read this first, then [experimental-roadmap.md](experimental-roadmap.md).
+Written 2026-11-03 at the end of the session that did M4 and most of M5. Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
 
 ## Where things stand
 
-- Branch `experimental`. Nothing pushed. `main` is untouched.
-- M0 to M4 are done. **M5 (runners) is next.**
-- All tests pass (`dotnet test sprig.slnx`, about 90 s; integration tests compile real definitions with `dotnet run`, and the sprout tests make real git repos in `%TEMP%`).
+- Branch `experimental`, pushed to `origin/experimental` (tracking). Latest commit `c260536`. `main` is untouched.
+- M0 to M4 are done. **M5 (runners) is mostly done**; what's left is listed under "Next" below.
+- 154 tests pass (`dotnet test sprig.slnx`, about 60 s). Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
 - Warnings are errors repo-wide (`Directory.Build.props`). Build with normal verbosity: `-v q` hides warnings.
 - Version is `0.100.0-exp`. **Never tag from this branch**: the release workflow publishes on any `v*` tag. Don't use the `bump-version` or `release-next-version` skills here.
+- The user asked to commit, push and continue as each piece lands.
+
+## Next
+
+1. **Readiness beyond an open port:** an HTTP health path (`.Http(health: "/health")` or similar) and "a line in the log" (a regex). Both are engine-only, in `Supervisor.WatchReadyAsync`, and need SDK and model fields (bump `Sdk.Schema` to 4).
+2. **Restart policy:** for example `.Restart(RestartPolicy.OnFailure)`, with backoff and a cap. Don't restart after a stop that was asked for.
+3. **`sprig up --run`:** `up`, then `start`, then follow every app's log interleaved with a coloured `name |` prefix, like `docker compose up`. Ctrl+C should probably stop the apps (decide, or ask the user).
+4. **App runner list and log pane:** the Sprouts page shows each runner's state from the host (`HostClient` is already on `AppServices.Host`), with start and stop buttons and a log pane (follow, ANSI colour, search, virtualised). Verify with headless renders and view-model tests; the user does hand testing later.
+5. Then M6 (review against Aspire). The open question at the end of this file needs an answer before then.
 
 ## Decisions already made (don't reopen)
 
@@ -17,13 +26,14 @@ Written 2026-11-03 at the end of the session that did M4. Read this first, then 
 | Authoring | C# file-based apps. Each repo has a `sprig.cs` (`Repo.Describe`); a trellis file `<name>.trellis.cs` (`Trellis.Describe`) joins repos. |
 | Names | **Trellis** (the file joining repos) and **sprout** (one running copy). Not "system", "composition", "map" or "workspace". |
 | Trellis location | Any folder, registered once with `sprig trellis add <file>`. |
-| Editing | External IDE first (IntelliSense confirmed in VS Code/Rider via `#:package Sprig.Sdk`). The in-app editor works but needs style polish (in Later). |
-| Infra | Code presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), and a repo's own compose file is allowed (`repo.ComposeFile(...).Service(...).Endpoint(...).Health(...)`, `.Set(path, value)`). |
-| Env values | `.env` files first. Language-specific outputs are opt-in per app: `.Output(EnvOutput.LaunchSettings())`, `EnvOutput.AppSettings(file)`, `EnvOutput.DotEnv(file)`. |
-| Files sprig writes | **The repo opts in.** A target must be a file the app reads and the repo's `.gitignore` covers. Tracked or not-ignored targets are refused (by `plan` and before `up` creates anything) with what to add. Sprig never adds ignore rules itself, so no `info/exclude`: it's shared by every worktree and hides the problem. Keep this for every new output. |
+| Editing | External IDE first. The in-app editor works but needs style polish (in Later). |
+| Infra | Code presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`, each with a health check), and a repo's own compose file (`repo.ComposeFile(...).Service(...).Endpoint(...).Health(...)`, `.Set(path, value)`). |
+| Env values | `.env` files first. Language-specific outputs are opt-in per app: `.Output(EnvOutput.LaunchSettings())`, `EnvOutput.AppSettings(file)`, `EnvOutput.DotEnv(file)` (defaults to `.env.local`). |
+| Files sprig writes | **The repo opts in.** A target must be a file the app reads and the repo's `.gitignore` covers. Tracked or not-ignored targets are refused (by `plan` and before `up` creates anything), with what to add. Sprig never adds ignore rules itself, so no `info/exclude`: every worktree shares it and it hides the problem. Keep this for every new output. |
 | Unnamed compose services | Left out of sprouts, with a warning from `sprig plan` (services behind a compose profile don't count). |
-| Run experience | Log pane per runner in the app (M5). Telemetry later. |
-| Who runs apps | **A background `sprig-host`**, one per store, started on demand by the CLI or app, over a current-user-only named pipe. Apps outlive the CLI and the window; each runner is in a Job Object, so a dying host takes its apps with it. |
+| Who runs apps | **A background `sprig-host`**, one per store, started on demand by the CLI or app, over a current-user-only named pipe. It exits after 10 idle minutes. Apps outlive the CLI and the window; each runner is in a Job Object, so a dying host takes its apps with it. |
+| Ordering | `WaitFor` means ready for an app, finished with code 0 for a job, and healthy for infra. There's no separate `After`. Apps also start after apps their values point at, unless that closes a loop. |
+| Stopping | Ctrl+C to the app's console, then end the job after 10 s if a real program is still running. |
 | UI testing | The user tests the UI by hand only once most of the structure is done. Verify with headless renders and view-model tests meanwhile; don't ask them to try pages. |
 | Store | `%LOCALAPPDATA%\sprig-exp` (`sprig-exp (Dev)` for Debug). Never the released app's `sprig` folder; a test guards it. |
 
@@ -32,62 +42,76 @@ Written 2026-11-03 at the end of the session that did M4. Read this first, then 
 ```
 repo/sprig.cs ──┐                         dotnet run, scrubbed env, time limit,
 repo/sprig.cs ──┼─ DefinitionRunner ──►  trusted by SHA-256 of content, cached by sha + SDK version + schema
-x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (RepoModel | TrellisModel), schema 2
+x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (RepoModel | TrellisModel), schema 3
                          │
                   TrellisLoader (Engine/Trellises) — evaluates trellis + repos in parallel; RepoDirs; ComposeFiles()
                          │
-                  Planner (Engine/Planning) — scopes, imports/exports, ports (kept leases first), {templates}
-                         │
-                  SproutService (Engine/Sprouts) — Up / Down / Remove / List / LastPlan
-                     ├─ GitClient (Engine/Git): worktrees, IsTracked, IsIgnored (CheckFiles uses both)
-                     ├─ PortLeases: <store>/ports.json under a lock file, keyed "<trellis>/<sprout>" → "<owner>/<resource>.<endpoint>"
+                  Planner (Engine/Planning) — scopes, imports/exports, ports (kept leases first), {templates},
+                         │                    PlannedApp.DependsOn (WaitFor + value-implied, loop-free)
+                  SproutService (Engine/Sprouts) — Up / Down / Remove / List / LastPlan / CheckFiles
+                     ├─ GitClient (Engine/Git): worktrees, IsTracked, IsIgnored
+                     ├─ PortLeases: <store>/ports.json under a lock file, "<trellis>/<sprout>" → "<owner>/<resource>.<endpoint>"
                      ├─ EnvFiles: dotenv marker blocks (top and bottom), launch profile, appsettings keys; each removable
                      ├─ ComposeYaml: ForContainers (code presets) and ForSprout (a repo's file, trimmed and re-ported)
                      ├─ DockerCompose: up --wait, down [--volumes]
-                     └─ SproutStore: <store>/sprouts/<trellis>/<sprout>/{sprout.json, plan.json, *.compose.yml}
+                     ├─ SproutStore: <store>/sprouts/<trellis>/<sprout>/{sprout.json, plan.json, *.compose.yml}
+                     └─ HostClient.StopAndWait before down/rm
 
-RunnerSpecs (plan → what to run) ──► HostClient ══ named pipe ══► sprig-host (src/Sprig.Host)
-                                                                    HostServer → Supervisor → Runner per app
-                                                                    (build per repo, Job Object, log to <store>/logs, ready on port)
+RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ named pipe ══► sprig-host (src/Sprig.Host)
+                                                       HostServer → Supervisor → Runner per app/job:
+                                                       wait for previous copy → build (lock per repo) → wait for deps
+                                                       → start in a JobObject → ready on port / job exit 0
+                                                       stop: ConsoleSignal Ctrl+C → "Y" to cmd → kill after 10 s
+                                                       logs: <store>/logs/<trellis>/<sprout>/<repo>/<app>.log
 ```
 
-- **Projects:** `Sprig.Sdk` (what definitions reference; `Model.cs` is the contract, `Sdk.Schema` its version), `Sprig.Engine`, `Sprig.LanguageHost`, `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`.
-- **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up`, `down`, `rm`, `sprouts`, `env`, `start`, `stop`, `ps`, `logs`, `host status|stop`.
-- **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, up/stop/remove), `OperationProgressWindow` fed by `SproutEvent`s.
-- **A sprout's record** says exactly what `up` did (worktrees, whether it made the branch, files and whether it created them, compose projects), and `down`/`rm` undo only that.
-- **Port leases:** stable keeps a sprout's ports until `rm`; random gets fresh ones on each `up` from down. A sprout that's up doesn't count its own listening ports as busy.
+- **Projects:** `Sprig.Sdk` (what definitions reference; `Model.cs` is the contract, `Sdk.Schema` its version), `Sprig.Engine`, `Sprig.Host` (`sprig-host`, a WinExe), `Sprig.LanguageHost`, `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`. The CLI and app reference the two host exes with `ReferenceOutputAssembly="false"` and find them beside themselves or in the repo's `bin`.
+- **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up`, `down`, `rm`, `sprouts`, `env`, `start [apps] [--group g] [--no-wait]`, `stop [apps]`, `ps`, `logs <app> [-n]`, `host status|stop`.
+- **Host protocol** (`Engine/Hosting/HostProtocol.cs`): one JSON line each way per connection. Ops are `ping`, `list`, `start` (specs, plus a `restart` list), `stop` (sprout, optional name) and `shutdown`. `start` only (re)starts what isn't already going, except names in `restart`. Stopping a whole sprout forgets its runners once they've stopped.
+- **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, up/stop/remove), `OperationProgressWindow` fed by `SproutEvent`s. The app doesn't show runners yet (Next, item 4).
+- **A sprout's record** says exactly what `up` did, and `down`/`rm` undo only that. `down` and `rm` stop the sprout's apps first.
 
 ## Testbed
 
-- Templates in `testbed/repos/{shop-services,shop-web,shop-mobile}` plus `testbed/storefront.trellis.cs` (worktrees) and `testbed/services.trellis.cs` (the monorepo in place).
-- `catalog-api` gets its values from a launch profile and `orders-api` from `appsettings.Local.json`, which its `Program.cs` loads. Both are in `shop-services/.gitignore`.
-- `pwsh -File scripts/testbed.ps1 [-Path <dir>] [-Force] [-UsePackage]` builds real git repos (default `../sprig-testbed`). Use `C:\Users\JonHowell\AppData\Local\Temp\sprig-tb-m4` or similar for throwaway ones.
-- Try it with a throwaway store: `$env:SPRIG_STORE='...'; sprig trellis add <tb>/storefront.trellis.cs --trust; sprig up storefront --sprout feat-a; sprig up storefront --sprout feat-b`. Then `dotnet run` in each worktree's `src/Catalog.Api` and open `/config`.
-- Each app has a config page (`/config` on the APIs, a Config tab on the front ends) showing each value, its source and whether its target answers. That's how M5 should prove wiring.
-- Headless renders, no screen capture: `sprig-gui render-sprouts <page.png> <progress.png>` (uses `SPRIG_STORE`), `render-trellises`, `render-editor`.
+- Templates in `testbed/repos/{shop-services,shop-web,shop-mobile}`, plus `testbed/storefront.trellis.cs` (worktrees) and `testbed/services.trellis.cs` (the monorepo in place).
+- `shop-services` has a `migrate` job (`repo.DotNetJob`) that both APIs wait for. `catalog-api` gets its values from a launch profile; `orders-api` gets them from `appsettings.Local.json`, which its `Program.cs` loads. Both files are in `shop-services/.gitignore`.
+- `pwsh -File scripts/testbed.ps1 [-Path <dir>] [-Force] [-UsePackage]` builds real git repos. The throwaway ones used this session are at `C:\Users\JonHowell\AppData\Local\Temp\sprig-tb-m4`, with a store at `C:\Users\JonHowell\AppData\Local\Temp\sprig-store-m4`.
+- The full loop with a throwaway store (`$env:SPRIG_STORE`): `sprig trellis add <tb>/storefront.trellis.cs --trust`, `sprig up storefront --sprout feat-a`, `sprig start storefront feat-a` (everything ready in about 23 s, in dependency order), then `sprig stop`/`down`/`rm`.
+- Each app has a config page (`/config` on the APIs, a Config tab on the front ends) showing each value, its source and whether its target answers.
+- Headless renders, no screen capture: `sprig-gui render-sprouts <page.png> <progress.png>` (uses `SPRIG_STORE`), `render-trellises`, `render-editor`. Save them to `captures/`.
 
 ## Gotchas found the hard way
 
-- **ASP.NET Core urls:** a `urls` key in `appsettings.json` beats `ASPNETCORE_URLS`. Give .NET apps their url in `Urls` (`.Http(urlEnv: "Urls")`); the launch profile's `applicationUrl` follows it.
-- **Parallel `dotnet run` in one worktree** races on shared projects' `obj` (CS2012). Runners build once per repo (a lock per repo folder), then run with `--no-build --no-launch-profile`.
-- **Starting a background process from the CLI:** start it with shell-execute, or it inherits the CLI's stdout and anything piping the CLI's output hangs until the background process exits.
+- **Ctrl+C on Windows** (`Engine/Hosting/ConsoleSignal.cs` and `Supervisor.StopCoreAsync`); read these before changing anything there:
+  - Clear the inherited "ignore Ctrl+C" flag at host start (`ConsoleSignal.Prepare`), or apps inherit it and never stop gently.
+  - The host is attached to the app's console while signalling, so it gets the Ctrl+C too. Add its handler on **every** attach (one from an earlier console doesn't protect it in the next) and **never remove** it (Ctrl+C can arrive late). Getting this wrong kills the host, and every app with it.
+  - npm and vite are `.cmd` batch files: `cmd` asks "Terminate batch job (Y/N)?" and waits. The host writes "Y" to stdin after a second.
+  - Mark a runner as stopping before the stop request returns, or a quick status check reads a stale "ready" as done.
+  - Never run the host in-process in tests: attaching to an app's console takes the test runner's console away.
+- **Starting a background process from the CLI:** use shell-execute (`HostClient.Launch`), or it inherits the CLI's stdout and anything piping the CLI's output hangs until the background process exits.
 - **The host holds each app's log open**, so read logs with `FileShare.ReadWrite` (`File.ReadAllText` fails).
-- **Ctrl+C on Windows** (all in `ConsoleSignal` and `Supervisor.StopCoreAsync`):
-  - Clear the inherited "ignore Ctrl+C" flag at host start.
-  - Add the host's own handler on every attach, and never remove it.
-  - Answer cmd's "Terminate batch job" with "Y" on stdin.
-  - Never run the host in-process in tests: attaching to an app's console would take the test runner's console away. The host tests start the real `sprig-host`.
+- **.NET apps under runners:** `dotnet run --no-build --no-launch-profile` (the app's own profile would override sprig's values), with `ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT=Development` unless the app sets them. Builds go one at a time per repo, and a restart rebuilds only after the old copy has gone (Windows locks a running app's files).
+- **ASP.NET Core urls:** a `urls` key in `appsettings.json` beats `ASPNETCORE_URLS`. Give .NET apps their url in `Urls` (`.Http(urlEnv: "Urls")`).
+- **Fresh worktrees have no `node_modules`.** Node runners install first with `npm ci --ignore-scripts`.
 - **Windows 8.3 short paths:** `%TEMP%` here is `C:\Users\JONHOW~1\…`. Vite returns 403 from such a path. Always pass paths through `Engine/Store/LongPath.Of`.
 - **This machine already runs containers** on 5432, 8004–8006, 8012–8014 and others, and the released sprig leaves `sprig-feature-*` volumes. Never stop or remove containers or volumes you didn't start; sprout projects are all `sprig-<trellis>-<sprout>[-<repo>]`.
-- **Compose without health checks:** `--wait` only means "running". Postgres and friends need a check (presets have one; repo compose services take `.Health(...)`).
-- **Avalonia styles:** a local `Foreground` beats a class style, so state colours (`.up`, `.bad`) must come from styles, never a local value on the same element.
+- **Compose without health checks:** `--wait` only means "running". Postgres and friends need a check.
+- **Model changes:** bump `Sdk.Schema`. The definition cache key includes it, and `DefinitionRunnerTests` reads it rather than hardcoding it.
+- **Avalonia styles:** a local `Foreground` beats a class style, so state colours (`.up`, `.bad`) must come from styles.
 - **`grep -r` + `sed -i` across `src/` hits `bin/` binaries.** Exclude build output.
-- **Stopping processes:** the harness blocks `taskkill /PID …`. Use `Stop-Process` and walk children with `Get-CimInstance Win32_Process`.
+- **Stopping processes by hand:** the harness blocks `taskkill /PID …`. Use `Stop-Process` and walk children with `Get-CimInstance Win32_Process`.
 - **The SDK's `Sprig.Text` value type shadows `Spectre.Console.Text`** inside `Sprig.*` namespaces; the CLI aliases it as `SpectreText`.
-- **A referenced exe project** copies a bare `.exe` stub into referencing projects; `LanguageHostClient` only accepts a host with its `.dll` beside it.
+- **A referenced exe project** copies a bare `.exe` stub into referencing projects; the host locators only accept an exe with its `.dll` beside it.
 - File-based apps default to Native AOT settings, so the SDK uses source-generated JSON (`ModelJsonContext`, polymorphic on `kind`).
 - Roslyn needs the `FileBasedProgram` parse feature or every `#:` line is an error.
 - Front-end packages are pinned to releases at least two weeks old. Install with `npm ci --ignore-scripts`.
+
+## Loose ends (known, not yet done)
+
+- **EDR:** nothing was blocked on this machine, but whether CrowdStrike or Defender raised non-blocking alerts for the host (process trees, console attach, Ctrl+C) is a question for SecOps. Worth asking before going much further.
+- **Untested paths:** the host's 10-minute idle exit, and every non-Windows path (stops fall back to killing the tree, with no SIGINT yet).
+- `sprig host status` reports version `1.0.0`, because `Sprig.Host` has no version set.
+- Repos used with an early M4 build may still have lines under "# files sprig writes for sprouts" in `.git/info/exclude`; they're safe to delete.
 
 ## User conventions to keep
 
@@ -95,10 +119,8 @@ RunnerSpecs (plan → what to run) ──► HostClient ══ named pipe ══
 - Ask before taking screenshots of non-desktop UI. Desktop captures and headless renders go in `captures/{timestamp}-{reason}.png` and are never deleted.
 - No private repo or project names in docs, artefacts or examples. Use the testbed names (shop, catalog, orders).
 - Code comments explain why, never what the code used to do. Markdown has no hard-wrapped sentences.
-- Commit messages end with the `Co-Authored-By` line. Commit when asked; the user said to commit milestone work as it lands.
+- Commit messages end with the `Co-Authored-By` line.
 
-## M5 in short (see the roadmap for the full list)
+## Open question (before M6)
 
-Done so far: `sprig-host`, Job Objects, per-repo builds, port readiness, logs, `sprig start|stop|ps|logs`, jobs (`repo.DotNetJob`), `WaitFor` and value-implied ordering (`PlannedApp.DependsOn`), groups, npm installs in fresh worktrees, the IDE handoff (proved on the testbed), and a graceful stop (Ctrl+C to the app's console, killed after 10 s; see `ConsoleSignal` before touching it). Model schema is 3. Next: HTTP and log-line readiness, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host). Done when one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then web and mobile.
-
-Open question for M5 or later: a sprout evaluates its repos' definitions from their main checkouts, not its worktrees, because trust is per path. Evaluating worktrees needs a rule for how approval carries over (for example, trust by content hash within a registered repo's worktrees).
+A sprout evaluates its repos' definitions from their main checkouts, not its worktrees, because trust is per path. So a branch that changes `sprig.cs` isn't reflected until it's merged. Evaluating worktrees needs a rule for how approval carries over, for example trusting by content hash within a registered repo's worktrees.

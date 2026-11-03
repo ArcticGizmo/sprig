@@ -1,5 +1,7 @@
+using Sprig.Engine.Definitions;
 using Sprig.Engine.Settings;
 using Sprig.Engine.Store;
+using Sprig.Engine.Trellises;
 
 namespace Sprig.App;
 
@@ -11,12 +13,20 @@ public sealed class AppServices
 {
     public ISprigPaths Paths { get; }
     public ISettingsStore Settings { get; }
+    public ITrustStore Trust { get; }
+    public DefinitionRunner Definitions { get; }
+    public TrellisRegistry Trellises { get; }
+    public TrellisLoader Loader { get; }
 
     /// <param name="root">Store root; null means this profile's store.</param>
     public AppServices(string? root = null)
     {
         Paths = new SprigPaths(root);
         Settings = new FileSettingsStore(Paths);
+        Trust = new FileTrustStore(Paths);
+        Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
+        Trellises = new TrellisRegistry(Paths);
+        Loader = new TrellisLoader(Definitions);
     }
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);

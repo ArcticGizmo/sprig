@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0, M1 and M2 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M3 next.
+Branch: `experimental`. Started 2026-11-03. Status: M0 to M3 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M4 next.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -192,7 +192,7 @@ Each app has `/health` and a **config page** showing every value it received and
 - Compose host ports are overridable (`PG_PORT` and so on), because a Postgres already ran on 5432 here. Sprig's compose generation (M4) should expect existing infra on default ports.
 - Vite refuses to serve a project whose path contains a Windows 8.3 short name (`%TEMP%` is often one). Sprig must expand paths to their long form before starting apps or writing worktrees (M4, M5).
 
-### M3: Primitives for variables, sharing and infra links (about 3–4 weeks)
+### M3: Primitives for variables, sharing and infra links ✅ done 2026-11-03
 
 - **SDK:** `Repo`, `Trellis`, app kinds (`DotNet`, `Node`, generic `App`), `Port` and `Http`, `Export`/`Import`, `Literal`/`Secret`, `EnvFile` targets, `Container` with presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), `ComposeFile` with overrides, `Group`, policies.
 - **Engine:** evaluate definitions (trusted, cached), join, resolve references, validate. Errors cite the file and line.
@@ -201,6 +201,12 @@ Each app has `/health` and a **config page** showing every value it received and
 - Add `sprig.cs` files to the test system.
 
 **Done when:** `sprig plan storefront` is correct for all four apps, and resolution has tests for automatic binding, ambiguity, missing imports, pinned ports and compose overrides.
+
+**Outcome:** met. `sprig plan storefront` resolves every value for all four apps with no problems, in 3.8 s first time and 0.55 s from the cache. Planner tests cover each case above plus type mismatches, private names per repo, trellis-owned infra, groups and unused bindings; an integration test plans the real testbed definitions.
+
+- **Changed from the plan:** the app's Trellises page shows a *wiring* list (which app gets which value from which repo) instead of a drawn graph. The old graph controls were built for the old model; bringing a graph back is under Later.
+- **Not yet in the SDK:** one-off jobs (`repo.Job`, for `Migrate`) arrive with runners in M5.
+- **For M4:** .NET apps read process env vars, which only a runner (M5) can set. For M4's by-hand runs, sprig needs to put .NET values somewhere `dotnet run` reads: a generated `launchSettings.json` profile in the worktree is the likely answer. Compose services a repo doesn't name in its `sprig.cs` keep their file's fixed ports, so they'd clash between sprouts; M4 should warn about them (the testbed's Mailpit moved to a `standalone` profile for this reason).
 
 ### M4: Worktree and infra up in one step (about 3 weeks)
 
@@ -234,7 +240,7 @@ Each app has `/health` and a **config page** showing every value it received and
 - **In-app editor polish:** the M1 editor works but needs style refinement (completion popup, highlighting, problems list) before it becomes a real feature. Also stop the language host after a few idle minutes.
 - **Smarter worktree branching and refresh:** pooled warm sprouts, refresh from base, rebasing a sprout.
 - **Telemetry:** the standalone Aspire dashboard per sprout, receiving OpenTelemetry (OTLP) data.
-- **Live graph:** node state colours, and click a node to see its logs.
+- **Live graph:** a drawn graph of the trellis (the Maps graph on `main`, adapted), then node state colours and click a node to see its logs.
 - **More languages:** a TypeScript SDK that emits the same `model.json`.
 - **Shared trellises:** cloning a team's trellis repo and registering it in one step.
 

@@ -1,0 +1,321 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:controls="clr-namespace:Sprig.App.Controls"
+             x:Class="Sprig.App.Views.TrellisesView"
+             x:DataType="vm:TrellisesViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+        </Style>
+        <Style Selector="TextBlock.via">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+        <Style Selector="TextBlock.bad">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="Border.row">
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="0,6" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="320,*">
+
+        <!-- Registered trellises -->
+        <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="20,24,16,16">
+                <StackPanel DockPanel.Dock="Top" Spacing="10">
+                    <TextBlock Text="Trellises" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="A trellis is a C# file that puts repos together. Add one from any folder." />
+                    <controls:PathBox Path="{Binding NewPath}" FileSuffix=".trellis.cs" PickerTitle="Choose a trellis file"
+                                      Placeholder="path/to/storefront.trellis.cs" />
+                    <Button Content="Add trellis" Command="{Binding AddCommand}" HorizontalAlignment="Left"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    <TextBlock Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{StaticResource OkBrush}" Classes.bad="{Binding AddFailed}"
+                               IsVisible="{Binding AddMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,0" />
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Top" Margin="0,12,0,0" FontSize="12.5" TextWrapping="Wrap"
+                           Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
+                           Text="None yet. The testbed has one: run scripts/testbed.ps1, then add storefront.trellis.cs from the folder it builds." />
+
+                <ListBox ItemsSource="{Binding Trellises}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,8,0,0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TrellisItem">
+                            <StackPanel Spacing="2" Margin="0,2">
+                                <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                <TextBlock Text="{Binding Folder}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="File missing" FontSize="11.5" Foreground="{StaticResource DangerBrush}" IsVisible="{Binding Missing}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- The selected trellis's plan -->
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="28,24,28,28" Spacing="18" MaxWidth="1100" HorizontalAlignment="Stretch">
+
+                <TextBlock IsVisible="{Binding !HasSelection}" Margin="0,40,0,0" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                           Text="Select a trellis to see what a sprout of it would get." HorizontalAlignment="Center" />
+
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasSelection}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Selected.Name}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Text="{Binding Selected.DisplayPath}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Plan again" Command="{Binding ReplanCommand}" VerticalAlignment="Top"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                    <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}" CommandParameter="{Binding Selected}"
+                            VerticalAlignment="Top" Background="Transparent" Foreground="{StaticResource DangerBrush}"
+                            BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
+                </Grid>
+
+                <StackPanel Spacing="8" IsVisible="{Binding IsBusy}">
+                    <ProgressBar IsIndeterminate="True" Height="4" />
+                    <TextBlock Text="{Binding BusyText}" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                </StackPanel>
+
+                <!-- Approval before anything runs -->
+                <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" IsVisible="{Binding HasPendingTrust}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="phead" Text="APPROVE BEFORE RUNNING" Foreground="{StaticResource WarnBrush}" />
+                        <TextBlock FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                   Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them. Approval covers this exact content; any change asks again." />
+                        <ItemsControl ItemsSource="{Binding PendingTrust}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PendingTrustItem">
+                                    <StackPanel Margin="0,3" Spacing="1">
+                                        <TextBlock Classes="cell mono" Text="{Binding Path}" />
+                                        <TextBlock Classes="cell via" Text="{Binding Why}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Approve and run" Command="{Binding ApproveAllCommand}" HorizontalAlignment="Left"
+                                Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Problems that stopped the plan -->
+                <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding HasLoadProblems}">
+                    <StackPanel Spacing="8">
+                        <TextBlock Classes="phead" Text="COULDN'T PLAN" Foreground="{StaticResource DangerBrush}" />
+                        <ItemsControl ItemsSource="{Binding LoadProblems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ProblemRow">
+                                    <StackPanel Margin="0,3" Spacing="1">
+                                        <TextBlock Classes="cell via mono" Text="{Binding Where}" />
+                                        <TextBlock Classes="cell mono" Text="{Binding Message}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- The plan -->
+                <StackPanel Spacing="18" IsVisible="{Binding Plan, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <TextBlock Text="{Binding Plan.Summary}" FontSize="13" Foreground="{StaticResource FgBrush}" />
+
+                    <Border Classes="panel" IsVisible="{Binding Plan.HasProblems}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="PROBLEMS" />
+                            <ItemsControl ItemsSource="{Binding Plan.Problems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ProblemRow">
+                                        <Grid ColumnDefinitions="70,*" Margin="0,3">
+                                            <TextBlock Classes="cell" Text="{Binding Severity}" Foreground="{StaticResource WarnBrush}"
+                                                       Classes.bad="{Binding IsError}" />
+                                            <StackPanel Grid.Column="1" Spacing="1">
+                                                <TextBlock Classes="cell" Text="{Binding Message}" />
+                                                <TextBlock Classes="cell via mono" Text="{Binding Where}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="panel" IsVisible="{Binding Plan.HasWiring}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="WIRING BETWEEN REPOS" />
+                            <ItemsControl ItemsSource="{Binding Plan.Wiring}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:WiringRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="200,190,30,*">
+                                                <TextBlock Classes="cell" Text="{Binding Consumer}" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Key}" />
+                                                <TextBlock Grid.Column="2" Classes="cell" Text="←" Foreground="{StaticResource AccentBrush}" />
+                                                <StackPanel Grid.Column="3" Spacing="1">
+                                                    <TextBlock Classes="cell" Text="{Binding Provider}" />
+                                                    <TextBlock Classes="cell via mono" Text="{Binding Value}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="panel">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="PORTS (A PREVIEW; LEASED WHEN A SPROUT COMES UP)" />
+                            <ItemsControl ItemsSource="{Binding Plan.Ports}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:PortRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="160,160,100,80,*">
+                                                <TextBlock Classes="cell via" Text="{Binding Owner}" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Resource}" />
+                                                <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Endpoint}" />
+                                                <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding Port}" FontWeight="SemiBold"
+                                                           Classes.bad="{Binding Failed}" />
+                                                <TextBlock Grid.Column="4" Classes="cell via" Text="{Binding Pin, StringFormat='pin {0}'}"
+                                                           IsVisible="{Binding Pin, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding Plan.Apps}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Spacing="18" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AppSection">
+                                <Border Classes="panel">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                        <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                        <ItemsControl ItemsSource="{Binding Rows}" Margin="0,6,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:SettingRow">
+                                                    <Border Classes="row">
+                                                        <Grid ColumnDefinitions="230,*">
+                                                            <StackPanel Spacing="1">
+                                                                <TextBlock Classes="cell mono" Text="{Binding Key}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding File}" IsVisible="{Binding HasFile}" />
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Column="1" Spacing="1">
+                                                                <TextBlock Classes="cell mono" Text="{Binding Value}" Classes.bad="{Binding Unresolved}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding Via}" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Classes="panel" IsVisible="{Binding Plan.HasContainers}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="CONTAINERS SPRIG ADDS" />
+                            <ItemsControl ItemsSource="{Binding Plan.Containers}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ContainerRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="140,110,200,*">
+                                                <TextBlock Classes="cell via" Text="{Binding Owner}" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Image}" />
+                                                <StackPanel Grid.Column="3" Spacing="1">
+                                                    <TextBlock Classes="cell mono" Text="{Binding Ports}" />
+                                                    <TextBlock Classes="cell via" Text="{Binding Volumes}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding Plan.Compose}" IsVisible="{Binding Plan.HasCompose}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AppSection">
+                                <Border Classes="panel">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                        <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                        <ItemsControl ItemsSource="{Binding Rows}" Margin="0,6,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:SettingRow">
+                                                    <Border Classes="row">
+                                                        <Grid ColumnDefinitions="230,*">
+                                                            <TextBlock Classes="cell mono" Text="{Binding Key}" />
+                                                            <StackPanel Grid.Column="1" Spacing="1">
+                                                                <TextBlock Classes="cell mono" Text="{Binding Value}" Classes.bad="{Binding Unresolved}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding Via}" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Classes="panel" IsVisible="{Binding Plan.HasGroups}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="GROUPS" />
+                            <ItemsControl ItemsSource="{Binding Plan.Groups}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:GroupRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="120,*">
+                                                <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Apps}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

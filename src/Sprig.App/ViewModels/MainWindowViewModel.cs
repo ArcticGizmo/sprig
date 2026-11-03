@@ -16,7 +16,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<object> NavItems { get; }
 
     public HomeViewModel Home { get; }
-    public ComingSoonViewModel Trellises { get; }
+    public TrellisesViewModel Trellises { get; }
     public ComingSoonViewModel Sprouts { get; }
     public EditorSpikeViewModel EditorSpike { get; }
     public SettingsViewModel Settings { get; }
@@ -44,11 +44,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
     {
         Home = new HomeViewModel();
-        Trellises = new ComingSoonViewModel(
-            title: "Trellises",
-            heading: "Describe how your repos grow together",
-            body: "A trellis is a C# file that puts repos together: which ones run, how their values connect, and whether they get worktrees and which ports. Each repo describes itself in a sprig.cs file, and the trellis joins them.",
-            milestone: "M3");
+        Trellises = new TrellisesViewModel(services);
         Sprouts = new ComingSoonViewModel(
             title: "Sprouts",
             heading: "Bring a trellis up in one step",

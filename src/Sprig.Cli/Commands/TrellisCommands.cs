@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.RegularExpressions;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Store;
@@ -205,7 +204,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
     }
 }
 
-static partial class PlanPrinter
+static class PlanPrinter
 {
     public static void Print(IAnsiConsole console, Plan plan, string root)
     {
@@ -278,7 +277,7 @@ static partial class PlanPrinter
         }
     }
 
-    static SpectreText Value(PlannedValue v) => v.Value is null ? new SpectreText("unresolved", new Style(Color.Red)) : new SpectreText(Mask(v.Value));
+    static SpectreText Value(PlannedValue v) => v.Value is null ? new SpectreText("unresolved", new Style(Color.Red)) : new SpectreText(ValueMask.Apply(v.Value));
 
     static SpectreText Via(PlannedValue v) => new(string.Join(" → ", v.Via), new Style(Color.Grey));
 
@@ -287,13 +286,4 @@ static partial class PlanPrinter
         var relative = Path.GetRelativePath(root, file);
         return relative.StartsWith("..", StringComparison.Ordinal) && Path.IsPathRooted(file) ? file : relative;
     }
-
-    /// <summary>Passwords in connection strings and URLs aren't printed; <c>--json</c> carries the real values.</summary>
-    static string Mask(string value) => UrlCredentials().Replace(Password().Replace(value, "$1***"), "$1$2:***@");
-
-    [GeneratedRegex(@"((?:^|;)\s*Password\s*=\s*)[^;]*", RegexOptions.IgnoreCase)]
-    private static partial Regex Password();
-
-    [GeneratedRegex(@"(\w+://)([^:/@]+):[^@/]*@")]
-    private static partial Regex UrlCredentials();
 }

@@ -68,6 +68,54 @@ internal static class HeadlessRenderer
         }
     }
 
+    /// <summary>The Trellises page planning <paramref name="trellisFile"/>, in a throwaway store where the trellis and
+    /// its repos' definitions are approved up front (this is a dev tool, not a user path).</summary>
+    public static int RenderTrellises(string outFile, string trellisFile)
+    {
+        var store = Path.Combine(Path.GetTempPath(), "sprig-render-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
+
+            var services = new AppServices(store);
+            var root = Path.GetDirectoryName(Path.GetFullPath(trellisFile))!;
+            foreach (var file in Directory.EnumerateFiles(root, "*.trellis.cs")
+                         .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.cs")).Where(File.Exists)))
+                services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
+            services.Trellises.Add("storefront", trellisFile);
+
+            var vm = new MainWindowViewModel(services, checkForUpdates: false);
+            vm.NavigateCommand.Execute(vm.Trellises);
+            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1000 };
+            window.Show();
+
+            var clock = Stopwatch.StartNew();
+            Pump(TimeSpan.FromMilliseconds(300));
+            while ((vm.Trellises.IsBusy || vm.Trellises.Plan is null) && !vm.Trellises.HasLoadProblems && clock.Elapsed < TimeSpan.FromSeconds(60))
+                Pump(TimeSpan.FromMilliseconds(100));
+            Pump(TimeSpan.FromMilliseconds(500));
+
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
+            window.CaptureRenderedFrame()?.Save(outFile);
+            window.Close();
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (plan: {vm.Trellises.Plan is not null}, problems: {vm.Trellises.LoadProblems.Count}, took {clock.Elapsed.TotalSeconds:0.0}s)");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
+        }
+        finally
+        {
+            try { Directory.Delete(store, recursive: true); } catch { /* temp store */ }
+        }
+    }
+
     static void Pump(TimeSpan duration)
     {
         var until = DateTime.UtcNow + duration;

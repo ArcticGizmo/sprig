@@ -7,5 +7,5 @@ public sealed class ComingSoonViewModel(string title, string heading, string bod
     public string Heading { get; } = heading;
     public string Body { get; } = body;
     public string Milestone { get; } = milestone;
-    public string MilestoneLabel => $"ARRIVES IN {milestone}";
+    public string MilestoneLabel => $"ARRIVES IN {Milestone}";
 }

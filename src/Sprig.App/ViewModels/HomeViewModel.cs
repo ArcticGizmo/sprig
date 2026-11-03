@@ -11,9 +11,9 @@ public sealed class HomeViewModel : PageViewModel
     public IReadOnlyList<MilestoneItem> Milestones { get; } =
     [
         new("M0", "Reset the branch", "A clean skeleton that builds, keeping the app shell.", MilestoneStatus.Done),
-        new("M1", "Spike C# authoring", "Prove sprig.cs definitions are secure, stable, EDR-friendly and editable.", MilestoneStatus.Next),
-        new("M2", "Test system", "A Vue app, two .NET APIs and an Ionic app, built as real git repos.", MilestoneStatus.Planned),
-        new("M3", "Primitives", "Variables, sharing and infra links, with sprig plan showing every resolved value.", MilestoneStatus.Planned),
+        new("M1", "Spike C# authoring", "Prove sprig.cs definitions are secure, stable, EDR-friendly and editable.", MilestoneStatus.Done),
+        new("M2", "Test system", "A Vue app, two .NET APIs and an Ionic app, built as real git repos.", MilestoneStatus.Done),
+        new("M3", "Primitives", "Variables, sharing and infra links, with sprig plan showing every resolved value.", MilestoneStatus.Next),
         new("M4", "One-step up", "Worktrees, ports, env files and containers from a single command.", MilestoneStatus.Planned),
         new("M5", "Runners", "Launch apps in order, with dependencies and a log pane per app.", MilestoneStatus.Planned),
         new("M6", "Review", "Compare with Aspire and decide whether this replaces main.", MilestoneStatus.Planned),

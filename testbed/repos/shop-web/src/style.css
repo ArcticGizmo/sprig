@@ -1,0 +1,13 @@
+body { margin: 0; font: 14px system-ui, sans-serif; background: #181820; color: #e1e1eb; }
+header { display: flex; gap: 24px; align-items: center; padding: 14px 24px; border-bottom: 1px solid #2d2d3c; }
+nav { display: flex; gap: 6px; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #2d2d3c; background: #1f1f2a; color: inherit; cursor: pointer; }
+button.on { background: #60a5fa; color: #0b1220; border-color: #60a5fa; }
+main { padding: 24px; max-width: 760px; }
+input { font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid #2d2d3c; background: #1f1f2a; color: inherit; margin-left: 8px; }
+.products { list-style: none; padding: 0; display: grid; gap: 8px; }
+.products li { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center; padding: 10px 14px; background: #1f1f2a; border-radius: 8px; }
+table { border-collapse: collapse; }
+td, th { padding: 6px 14px; border-bottom: 1px solid #2d2d3c; text-align: left; }
+th { color: #8c8ca0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.muted { color: #8c8ca0; } .ok { color: #4ade80; } .bad { color: #f87171; }

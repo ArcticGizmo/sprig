@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 done. M1 spike done with a recommendation to go; findings in [spikes/m1-authoring.md](spikes/m1-authoring.md), awaiting two manual checks and your decision.
+Branch: `experimental`. Started 2026-11-03. Status: M0, M1 and M2 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M3 next.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -154,9 +154,11 @@ Clear the old model out and leave a clean skeleton that builds.
 
 **Done when:** the app opens with empty pages, `dotnet build` and `dotnet test` pass, and the CLI prints help. Met: 48 tests pass and `sprig --help` lists `open`, `update` and `shell`.
 
-### M1: Spike C# authoring, a go/no-go gate (about 2 weeks)
+### M1: Spike C# authoring, a go/no-go gate ✅ done 2026-11-03: go
 
 Answer each question with evidence and write the findings to `docs/spikes/m1-authoring.md`.
+
+**Outcome:** every question passed. IntelliSense works in the IDE and in the app's editor. The in-app editor needs style refinement before it's more than a spike; that's tracked under Later.
 
 | Question | How we test it | Pass |
 |---|---|---|
@@ -169,7 +171,7 @@ Answer each question with evidence and write the findings to `docs/spikes/m1-aut
 
 **Fallback if execution fails:** keep the same SDK model but make the primary format a data file (the schema 2 idea), with C# as an optional generator.
 
-### M2: Test system (about 1 week)
+### M2: Test system ✅ done 2026-11-03
 
 A script (`scripts/testbed.ps1`, like `scripts/sandbox`) builds real git repos in a throwaway folder. None of them has a `sprig.cs` yet; M3 adds those.
 
@@ -182,6 +184,11 @@ A script (`scripts/testbed.ps1`, like `scripts/sandbox`) builds real git repos i
 Each app has `/health` and a **config page** showing every value it received and where it came from. That page is the visible proof that the wiring worked in every later milestone.
 
 **Done when:** the script creates the repos, and each app runs by hand on its default ports.
+
+**Outcome:** templates in `testbed/repos`, built by `scripts/testbed.ps1` (see `testbed/README.md`). Verified by hand: infra up, `Migrate` ran, both APIs reported every dependency reachable with the right sources, an order went through `catalog-api` and landed in Mailpit, and both front ends rendered the catalog in headless Edge. Two things for later milestones came out of it:
+
+- Compose host ports are overridable (`PG_PORT` and so on), because a Postgres already ran on 5432 here. Sprig's compose generation (M4) should expect existing infra on default ports.
+- Vite refuses to serve a project whose path contains a Windows 8.3 short name (`%TEMP%` is often one). Sprig must expand paths to their long form before starting apps or writing worktrees (M4, M5).
 
 ### M3: Primitives for variables, sharing and infra links (about 3–4 weeks)
 
@@ -222,6 +229,7 @@ Each app has `/health` and a **config page** showing every value it received and
 
 ## Later (not in this roadmap)
 
+- **In-app editor polish:** the M1 editor works but needs style refinement (completion popup, highlighting, problems list) before it becomes a real feature. Also stop the language host after a few idle minutes.
 - **Smarter worktree branching and refresh:** pooled warm instances, refresh from base, rebasing an instance.
 - **Telemetry:** the standalone Aspire dashboard per instance, receiving OpenTelemetry (OTLP) data.
 - **Live graph:** node state colours, and click a node to see its logs.

@@ -1,0 +1,284 @@
+using Sprig;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Settings;
+using Sprig.Model;
+
+namespace Sprig.Tests.Planning;
+
+public class PlannerTests
+{
+    static readonly SprigSettings Settings = new() { PortRangeStart = 9000, PortRangeEndExclusive = 9100 };
+
+    sealed class Fixture
+    {
+        public TrellisBuilder Trellis { get; } = Sprig.Trellis.Describe("storefront");
+        readonly Dictionary<string, RepoModel> _repos = [];
+
+        public RepoRef Add(string path, Action<RepoBuilder> describe)
+        {
+            var repo = Repo.Describe(Path.GetFileName(path));
+            describe(repo);
+            _repos[path] = repo.BuildRepo();
+            return Trellis.Repo(path);
+        }
+
+        public Plan Plan(SprigSettings? settings = null, IReadOnlySet<int>? inUse = null)
+            => Planner.Build(new PlanInput(Trellis.BuildTrellis(), _repos, "feat-x", settings ?? Settings, inUse ?? new HashSet<int>()));
+    }
+
+    static PlannedEnv Env(Plan plan, string app, string key)
+        => plan.Apps.Single(a => a.Name == app).Env.Single(e => e.Key == key);
+
+    static int Port(Plan plan, string resource, string endpoint = "http")
+        => plan.Ports.Single(p => p.Resource == resource && p.Endpoint == endpoint).Port!.Value;
+
+    [Fact]
+    public void An_import_binds_to_the_one_export_of_that_name_and_says_how_it_got_there()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var catalog = repo.DotNet("catalog-api", "src/Catalog.Api").Http(urlEnv: "ASPNETCORE_URLS");
+            repo.Export<Url>("catalog-url", catalog.Url);
+        });
+        f.Add("../shop-web", repo =>
+        {
+            var catalog = repo.Import<Url>("catalog-url");
+            repo.Node("web", ".").Http(pin: "5170-5173").EnvFile(".env.local", e => e.Set("VITE_CATALOG_URL", catalog));
+        });
+
+        var plan = f.Plan();
+
+        Assert.False(plan.HasErrors, string.Join("\n", plan.Problems));
+        var catalogPort = Port(plan, "catalog-api");
+        var env = Env(plan, "web", "VITE_CATALOG_URL");
+        Assert.Equal($"http://localhost:{catalogPort}", env.Value.Value);
+        Assert.Equal(".env.local", env.File);
+        Assert.Equal(["import catalog-url ← shop-services", $"catalog-api.http port {catalogPort}"], env.Value.Via);
+        Assert.Equal($"http://localhost:{catalogPort}", Env(plan, "catalog-api", "ASPNETCORE_URLS").Value.Value);
+    }
+
+    [Fact]
+    public void Two_exporters_of_a_name_is_an_error_until_the_trellis_picks_one()
+    {
+        var f = new Fixture();
+        var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
+        f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("CACHE", repo.Import<Url>("cache-url")));
+
+        var ambiguous = f.Plan();
+        var problem = Assert.Single(ambiguous.Problems);
+        Assert.Contains("a and b all export 'cache-url'", problem.Message);
+        Assert.Contains("trellis.Bind(\"cache-url\"", problem.Message);
+
+        f.Trellis.Bind("cache-url", a.Export("cache-url"));
+        var settled = f.Plan();
+        Assert.Empty(settled.Problems);
+        Assert.Equal("redis://a", Env(settled, "web", "CACHE").Value.Value);
+    }
+
+    [Fact]
+    public void An_import_nobody_answers_is_reported_where_it_was_imported()
+    {
+        var f = new Fixture();
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url")));
+
+        var problem = Assert.Single(f.Plan().Problems);
+
+        Assert.Contains("imports 'api-url', but no repo in the trellis exports it", problem.Message);
+        Assert.EndsWith("PlannerTests.cs", problem.Location!.File);
+        Assert.Null(Env(f.Plan(), "web", "API").Value.Value);
+    }
+
+    [Fact]
+    public void An_import_of_the_wrong_type_is_refused()
+    {
+        var f = new Fixture();
+        f.Add("../db", repo => repo.Export<ConnectionString>("orders-db", "Host=x"));
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("DB", repo.Import<Url>("orders-db")));
+
+        Assert.Contains("imports 'orders-db' as url, but db exports it as connectionstring", Assert.Single(f.Plan().Problems).Message);
+    }
+
+    [Fact]
+    public void Infra_the_trellis_owns_can_answer_an_import()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Import<Url>("mail-smtp")));
+        var mail = f.Trellis.Mailpit("mail");
+        f.Trellis.Bind("mail-smtp", mail.SmtpUrl);
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        var smtp = Port(plan, "mail", "smtp");
+        Assert.Equal($"smtp://localhost:{smtp}", Env(plan, "orders-api", "Smtp__Url").Value.Value);
+        var container = Assert.Single(plan.Containers);
+        Assert.Equal("storefront", container.Owner);
+        Assert.Equal([$"{smtp}:1025", $"{Port(plan, "mail", "ui")}:8025"], container.Ports);
+    }
+
+    [Fact]
+    public void Presets_build_connection_strings_from_their_allocated_port()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var pg = repo.Postgres("pg");
+            var bus = repo.RabbitMq("bus");
+            repo.DotNet("catalog-api", ".").Http()
+                .Env("ConnectionStrings__Db", pg.Database("catalog"))
+                .Env("Bus__Url", bus.Url);
+        });
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal($"Host=localhost;Port={Port(plan, "pg", "tcp")};Database=catalog;Username=sprig;Password=sprig",
+            Env(plan, "catalog-api", "ConnectionStrings__Db").Value.Value);
+        Assert.Equal($"amqp://sprig:sprig@localhost:{Port(plan, "bus", "amqp")}", Env(plan, "catalog-api", "Bus__Url").Value.Value);
+        Assert.Contains("data → /var/lib/postgresql/data", plan.Containers.Single(c => c.Name == "pg").Volumes);
+    }
+
+    [Fact]
+    public void Ports_skip_restricted_and_busy_ones_and_pins_are_served_first()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            repo.Node("first", ".").Http();
+            repo.Node("pinned", ".").Http(pin: "9000");
+        });
+        var settings = new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9010, RestrictedPorts = [9001] };
+
+        var plan = f.Plan(settings, inUse: new HashSet<int> { 9002 });
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal(9000, Port(plan, "pinned"));
+        Assert.Equal(9003, Port(plan, "first"));
+        Assert.Equal(["first", "pinned"], plan.Ports.Select(p => p.Resource));
+    }
+
+    [Fact]
+    public void A_pin_with_no_free_port_left_is_an_error_on_that_endpoint()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo => repo.Node("web", ".").Http(pin: "8100"));
+
+        var plan = f.Plan(inUse: new HashSet<int> { 8100 });
+
+        Assert.Contains("every port in the pin \"8100\" is taken", Assert.Single(plan.Problems).Message);
+    }
+
+    [Fact]
+    public void Names_are_private_to_their_repo()
+    {
+        var f = new Fixture();
+        f.Add("../a", repo => repo.DotNet("api", ".").Http().Env("Db", $"{repo.Postgres("pg").Port}"));
+        f.Add("../b", repo =>
+        {
+            repo.Postgres("pg");
+            repo.Node("web", ".").Http().Env("Api", new Ref("api.http.url"));
+        });
+
+        var plan = f.Plan();
+
+        Assert.Equal(2, plan.Containers.Count(c => c.Name == "pg"));
+        Assert.NotEqual(plan.Ports.First(p => p.Owner == "a" && p.Resource == "pg").Port, plan.Ports.First(p => p.Owner == "b" && p.Resource == "pg").Port);
+        var problem = Assert.Single(plan.Problems);
+        Assert.Contains("'api' isn't declared in b; to use something from another repo, import it", problem.Message);
+    }
+
+    [Fact]
+    public void A_compose_service_gets_its_ports_mapped_and_other_values_set()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var compose = repo.ComposeFile("docker-compose.yml");
+            var pg = compose.Service("postgres").Endpoint("tcp", 5432);
+            compose.Set("services.postgres.container_name", $"shop-pg-{Sprout.Name}");
+            repo.DotNet("api", ".").Http().Env("Db", $"Host=localhost;Port={pg.Port}");
+        });
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        var overrides = Assert.Single(plan.Compose).Overrides;
+        var pgPort = Port(plan, "postgres", "tcp");
+        Assert.Equal($"{pgPort}:5432", overrides.Single(o => o.Path == "services.postgres.ports").Value.Value);
+        Assert.Equal("shop-pg-feat-x", overrides.Single(o => o.Path == "services.postgres.container_name").Value.Value);
+        Assert.Equal($"Host=localhost;Port={pgPort}", Env(plan, "api", "Db").Value.Value);
+    }
+
+    [Fact]
+    public void Groups_list_their_apps_and_reject_ones_that_do_not_exist()
+    {
+        var f = new Fixture();
+        var services = f.Add("../shop-services", repo => { repo.DotNet("catalog-api", ".").Http(); repo.DotNet("orders-api", ".").Http(); });
+        f.Trellis.Group("mobile", services.Only("catalog-api"));
+        f.Trellis.Group("all", services);
+        f.Trellis.Group("typo", services.Only("catalgo-api"));
+
+        var plan = f.Plan();
+
+        Assert.Equal(["shop-services/catalog-api"], plan.Groups.Single(g => g.Name == "mobile").Apps);
+        Assert.Equal(2, plan.Groups.Single(g => g.Name == "all").Apps.Count);
+        Assert.Contains("'catalgo-api', which shop-services doesn't declare", Assert.Single(plan.Problems).Message);
+    }
+
+    [Fact]
+    public void A_binding_nothing_imports_is_a_warning_not_an_error()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo => repo.Node("web", ".").Http());
+        f.Trellis.Bind("unused", "x");
+
+        var plan = f.Plan();
+
+        Assert.False(plan.HasErrors);
+        Assert.Equal(ProblemSeverity.Warning, Assert.Single(plan.Problems).Severity);
+    }
+
+    [Fact]
+    public void Waiting_for_something_undeclared_is_an_error()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            var other = Repo.Describe("elsewhere").Postgres("ghost");
+            repo.DotNet("api", ".").Http().WaitFor(other);
+        });
+
+        Assert.Contains("waits for 'ghost'", Assert.Single(f.Plan().Problems).Message);
+    }
+}
+
+public class TemplateTextTests
+{
+    [Fact]
+    public void Parses_text_placeholders_and_escaped_braces()
+    {
+        var parts = TemplateText.Parse("a{{b}}{x.y.port}c");
+
+        Assert.Equal([new TextPart("a{b}"), new RefPart("x.y.port"), new TextPart("c")], parts);
+    }
+
+    [Theory]
+    [InlineData("a{b")]
+    [InlineData("a}b")]
+    public void Unbalanced_braces_are_rejected(string template)
+        => Assert.Throws<FormatException>(() => TemplateText.Parse(template));
+
+    [Theory]
+    [InlineData("8100-8103", new[] { 8100, 8101, 8102, 8103 })]
+    [InlineData("8100, 8200", new[] { 8100, 8200 })]
+    [InlineData("8100-8101,8101", new[] { 8100, 8101 })]
+    public void Pins_parse_to_ports(string pin, int[] expected) => Assert.Equal(expected, PortSet.Parse(pin));
+
+    [Theory]
+    [InlineData("8103-8100")]
+    [InlineData("abc")]
+    [InlineData("70000")]
+    public void Bad_pins_are_rejected(string pin) => Assert.Throws<FormatException>(() => PortSet.Parse(pin));
+}

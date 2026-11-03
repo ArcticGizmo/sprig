@@ -1,6 +1,4 @@
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using Sprig.Model;
 
 namespace Sprig;
@@ -13,20 +11,14 @@ public static class Repo
         => new(name, new SourceLocation(file, line));
 }
 
-public sealed class RepoBuilder
+public sealed class RepoBuilder : DefinitionBuilder
 {
-    readonly string _name;
-    readonly SourceLocation _location;
     readonly List<AppResource> _apps = [];
-    readonly List<ContainerResource> _containers = [];
+    readonly List<ComposeFileResource> _compose = [];
     readonly List<ImportModel> _imports = [];
     readonly List<ExportModel> _exports = [];
 
-    internal RepoBuilder(string name, SourceLocation location)
-    {
-        _name = name;
-        _location = location;
-    }
+    internal RepoBuilder(string name, SourceLocation location) : base(name, location) { }
 
     /// <summary>A .NET app, run with <c>dotnet run</c> from <paramref name="path"/>.</summary>
     public AppResource DotNet(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
@@ -36,23 +28,28 @@ public sealed class RepoBuilder
     public AppResource Node(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => AddApp(name, "node", path, file, line);
 
-    /// <summary>A container sprig adds to the instance's compose project.</summary>
-    public ContainerResource Container(string name, string image, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    /// <summary>Any other app. Give it a <see cref="AppResource.Run(Expr)"/> command.</summary>
+    public AppResource App(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => AddApp(name, "app", path, file, line);
+
+    /// <summary>A compose file the repo already has. Name its services to give them sprig-allocated ports, and set
+    /// any other value in it with <see cref="ComposeFileResource.Set(string, Expr, string, int)"/>.</summary>
+    public ComposeFileResource ComposeFile(string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
-        var container = new ContainerResource(name, image, new SourceLocation(file, line));
-        _containers.Add(container);
-        return container;
+        var compose = new ComposeFileResource(path, new SourceLocation(file, line));
+        _compose.Add(compose);
+        return compose;
     }
 
-    /// <summary>Ask the system for a value. It binds to an export of the same name from another repo, or to a
-    /// value the system supplies itself.</summary>
+    /// <summary>Ask the trellis for a value. It binds to an export of the same name from another repo, or to a value
+    /// the trellis supplies itself.</summary>
     public Import<T> Import<T>(string name, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
     {
         _imports.Add(new ImportModel(name, ValueType.NameOf<T>(), new SourceLocation(file, line)));
         return new Import<T>(name);
     }
 
-    /// <summary>Make a value available to other repos in the system under <paramref name="name"/>.</summary>
+    /// <summary>Make a value available to other repos in the trellis under <paramref name="name"/>.</summary>
     public void Export<T>(string name, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
         => _exports.Add(new ExportModel(name, ValueType.NameOf<T>(), value.ToTemplate(), new SourceLocation(file, line)));
 
@@ -60,31 +57,16 @@ public sealed class RepoBuilder
     public void Export<T>(string name, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
         => Export<T>(name, value.ToExpr(), file, line);
 
-    /// <summary>Hand the description to sprig. Call it last, as <c>return repo.Emit(args);</c>.</summary>
-    public int Emit(string[] args)
-    {
-        var model = Build();
-        var json = JsonSerializer.Serialize(model, ModelJsonContext.Default.RepoModel);
+    internal RepoModel BuildRepo() => (RepoModel)Build();
 
-        var outIndex = Array.IndexOf(args, "--out");
-        if (args.Contains("emit") && outIndex >= 0 && outIndex + 1 < args.Length)
-        {
-            File.WriteAllText(args[outIndex + 1], json);
-            return 0;
-        }
-
-        Console.WriteLine(json);
-        return 0;
-    }
-
-    internal RepoModel Build() => new(
+    private protected override DefinitionModel Build() => new RepoModel(
         Schema: 1,
-        Kind: "repo",
-        Name: _name,
-        SdkVersion: SdkVersion,
-        Location: _location,
+        Name: Name,
+        SdkVersion: Sdk.Version,
+        Location: Location,
+        Containers: Containers.Select(c => c.Build()).ToArray(),
         Apps: _apps.Select(a => a.Build()).ToArray(),
-        Containers: _containers.Select(c => c.Build()).ToArray(),
+        ComposeFiles: _compose.Select(c => c.Build()).ToArray(),
         Imports: _imports.ToArray(),
         Exports: _exports.ToArray());
 
@@ -94,8 +76,4 @@ public sealed class RepoBuilder
         _apps.Add(app);
         return app;
     }
-
-    public static string SdkVersion { get; } =
-        typeof(RepoBuilder).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
-        ?? "0.0.0";
 }

@@ -8,7 +8,7 @@ namespace Sprig.Engine.Definitions;
 public abstract record DefinitionResult(string Path, string Sha256, TimeSpan Elapsed);
 
 /// <summary>The model, either freshly evaluated or from the cache.</summary>
-public sealed record Evaluated(string Path, string Sha256, TimeSpan Elapsed, RepoModel Model, bool FromCache)
+public sealed record Evaluated(string Path, string Sha256, TimeSpan Elapsed, DefinitionModel Model, bool FromCache)
     : DefinitionResult(Path, Sha256, Elapsed);
 
 /// <summary>Not run: this exact content hasn't been approved. <paramref name="ApprovedSha256"/> is set when an earlier
@@ -70,12 +70,12 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
         }
     }
 
-    string CacheFile(string sha) => Path.Combine(paths.Root, "cache", "models", $"{sha}-{Sprig.RepoBuilder.SdkVersion}.json");
+    string CacheFile(string sha) => Path.Combine(paths.Root, "cache", "models", $"{sha}-{Sprig.Sdk.Version}.json");
 
-    static RepoModel? TryRead(string file)
+    static DefinitionModel? TryRead(string file)
     {
         if (!File.Exists(file)) return null;
-        try { return JsonSerializer.Deserialize(File.ReadAllText(file), ModelJsonContext.Default.RepoModel); }
+        try { return JsonSerializer.Deserialize(File.ReadAllText(file), ModelJsonContext.Default.DefinitionModel); }
         catch (JsonException) { return null; }
     }
 }

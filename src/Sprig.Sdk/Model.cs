@@ -6,22 +6,48 @@ namespace Sprig.Model;
 
 /// <summary>Source-generated because file-based apps default to Native AOT settings, which switch reflection-based
 /// JSON off. The engine reads the model with the same context.</summary>
-[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-[JsonSerializable(typeof(RepoModel))]
+[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    AllowOutOfOrderMetadataProperties = true)]
+[JsonSerializable(typeof(DefinitionModel))]
 public sealed partial class ModelJsonContext : JsonSerializerContext;
 
 public sealed record SourceLocation(string File, int Line);
 
-public sealed record RepoModel(
+/// <summary>Either a repo's <c>sprig.cs</c> or a trellis. Both can own containers.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(RepoModel), "repo")]
+[JsonDerivedType(typeof(TrellisModel), "trellis")]
+public abstract record DefinitionModel(
     int Schema,
-    string Kind,
     string Name,
     string SdkVersion,
     SourceLocation Location,
-    IReadOnlyList<AppModel> Apps,
+    IReadOnlyList<ContainerModel> Containers);
+
+public sealed record RepoModel(
+    int Schema,
+    string Name,
+    string SdkVersion,
+    SourceLocation Location,
     IReadOnlyList<ContainerModel> Containers,
+    IReadOnlyList<AppModel> Apps,
+    IReadOnlyList<ComposeFileModel> ComposeFiles,
     IReadOnlyList<ImportModel> Imports,
-    IReadOnlyList<ExportModel> Exports);
+    IReadOnlyList<ExportModel> Exports)
+    : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
+
+public sealed record TrellisModel(
+    int Schema,
+    string Name,
+    string SdkVersion,
+    SourceLocation Location,
+    IReadOnlyList<ContainerModel> Containers,
+    IReadOnlyList<RepoRefModel> Repos,
+    IReadOnlyList<BindingModel> Bindings,
+    IReadOnlyList<GroupModel> Groups,
+    WorktreePolicyModel? Worktrees,
+    string PortPolicy)
+    : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
 
 public sealed record AppModel(
     string Name,
@@ -38,9 +64,14 @@ public sealed record ContainerModel(
     string Image,
     SourceLocation Location,
     IReadOnlyList<EndpointModel> Endpoints,
-    IReadOnlyList<EnvModel> Env);
+    IReadOnlyList<EnvModel> Env,
+    IReadOnlyList<VolumeModel> Volumes);
 
-public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, SourceLocation Location);
+public sealed record VolumeModel(string Name, string Target);
+
+/// <param name="TargetPort">The port inside a container; null for an app, which listens on the allocated port itself.</param>
+/// <param name="Scheme">How a url to this endpoint starts (<c>http</c>, <c>amqp</c>, ...); null when it has no url.</param>
+public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, string? Scheme, SourceLocation Location);
 
 /// <summary>One env var. <see cref="File"/> is null for a process env var, else the env file it's written to.</summary>
 public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location);
@@ -48,3 +79,29 @@ public sealed record EnvModel(string Key, string Value, string? File, SourceLoca
 public sealed record ImportModel(string Name, string Type, SourceLocation Location);
 
 public sealed record ExportModel(string Name, string Type, string Value, SourceLocation Location);
+
+/// <summary>A compose file the repo already has. Services named here get their host ports allocated and mapped;
+/// <see cref="Overrides"/> set other values by path.</summary>
+public sealed record ComposeFileModel(
+    string File,
+    SourceLocation Location,
+    IReadOnlyList<ComposeServiceModel> Services,
+    IReadOnlyList<ComposeOverrideModel> Overrides);
+
+public sealed record ComposeServiceModel(string Name, SourceLocation Location, IReadOnlyList<EndpointModel> Endpoints);
+
+/// <param name="Path">A dotted path into the compose file, e.g. <c>services.postgres.container_name</c>.</param>
+public sealed record ComposeOverrideModel(string Path, string Value, SourceLocation Location);
+
+/// <param name="Path">The repo's folder (or later a git URL), relative to the trellis file.</param>
+public sealed record RepoRefModel(string Path, SourceLocation Location);
+
+/// <summary>The trellis's answer for an import: a value it supplies, or a named repo's export.</summary>
+public sealed record BindingModel(string Import, string Value, SourceLocation Location);
+
+public sealed record GroupModel(string Name, IReadOnlyList<GroupMemberModel> Members, SourceLocation Location);
+
+/// <param name="Apps">Only these apps of the repo; null means all of them.</param>
+public sealed record GroupMemberModel(string Repo, IReadOnlyList<string>? Apps);
+
+public sealed record WorktreePolicyModel(string From);

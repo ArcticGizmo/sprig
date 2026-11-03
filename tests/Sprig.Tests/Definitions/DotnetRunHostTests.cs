@@ -53,7 +53,7 @@ public sealed class DotnetRunHostTests : IDisposable
         var result = Assert.IsType<Evaluated>(_runner.Evaluate(file));
 
         Assert.Equal("shop", result.Model.Name);
-        Assert.Equal("{api.http.url}", result.Model.Exports[0].Value);
+        Assert.Equal("{api.http.url}", ((Sprig.Model.RepoModel)result.Model).Exports[0].Value);
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class DotnetRunHostTests : IDisposable
 
             var result = Assert.IsType<Evaluated>(_runner.Evaluate(file));
 
-            Assert.Equal("none", result.Model.Exports[0].Value);
+            Assert.Equal("none", ((Sprig.Model.RepoModel)result.Model).Exports[0].Value);
         }
         finally
         {

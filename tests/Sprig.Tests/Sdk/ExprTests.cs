@@ -9,7 +9,7 @@ public class ExprTests
     {
         var repo = Repo.Describe("r");
         body(repo);
-        return repo.Build();
+        return repo.BuildRepo();
     }
 
     [Fact]

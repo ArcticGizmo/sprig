@@ -36,12 +36,24 @@ public sealed class AppResource : IResource
     /// <summary>The url of this app's first HTTP endpoint, e.g. <c>http://localhost:8342</c>.</summary>
     public Ref Url => new($"{Name}.{PrimaryEndpoint}.url");
 
+    /// <summary>The port of a named endpoint.</summary>
+    public PortRef PortOf(string endpoint) => new(Name, endpoint);
+
+    /// <summary>The url of a named endpoint.</summary>
+    public Ref UrlOf(string endpoint) => new($"{Name}.{endpoint}.url");
+
     /// <summary>An HTTP endpoint on a port sprig allocates.</summary>
     /// <param name="pin">Restrict the port to a set, e.g. <c>"5170-5173"</c> or <c>"8100,8200"</c>.</param>
-    public AppResource Http(string name = "http", string? pin = null, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    /// <param name="portEnv">An env var to receive the port, e.g. <c>"PORT"</c>.</param>
+    /// <param name="urlEnv">An env var to receive the url, e.g. <c>"ASPNETCORE_URLS"</c>.</param>
+    public AppResource Http(string name = "http", string? pin = null, string? portEnv = null, string? urlEnv = null,
+        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
-        _endpoints.Add(new EndpointModel(name, null, pin, new SourceLocation(file, line)));
+        var location = new SourceLocation(file, line);
+        _endpoints.Add(new EndpointModel(name, null, pin, "http", location));
         _primaryEndpoint ??= name;
+        if (portEnv is not null) _env.Add(new EnvModel(portEnv, new PortRef(Name, name).ToTemplate(), null, location));
+        if (urlEnv is not null) _env.Add(new EnvModel(urlEnv, UrlOf(name).ToTemplate(), null, location));
         return this;
     }
 
@@ -106,12 +118,13 @@ public sealed class EnvFileBuilder
         => Set(key, value.ToExpr(), file, line);
 }
 
-public sealed class ContainerResource : IResource
+public class ContainerResource : IResource
 {
     readonly string _image;
     readonly SourceLocation _location;
     readonly List<EndpointModel> _endpoints = [];
     readonly List<EnvModel> _env = [];
+    readonly List<VolumeModel> _volumes = [];
 
     internal ContainerResource(string name, string image, SourceLocation location)
     {
@@ -126,10 +139,15 @@ public sealed class ContainerResource : IResource
     public PortRef Port => new(Name, _endpoints.Count > 0 ? _endpoints[0].Name
         : throw new InvalidOperationException($"container '{Name}' has no endpoint yet; call .Endpoint() first"));
 
+    /// <summary>The host port mapped to a named endpoint.</summary>
+    public PortRef PortOf(string endpoint) => new(Name, endpoint);
+
     /// <summary>Map a host port sprig allocates to <paramref name="targetPort"/> inside the container.</summary>
-    public ContainerResource Endpoint(string name, int targetPort, string? pin = null, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    /// <param name="scheme">Gives the endpoint a url (e.g. <c>"http"</c> for a web UI).</param>
+    public ContainerResource Endpoint(string name, int targetPort, string? pin = null, string? scheme = null,
+        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
-        _endpoints.Add(new EndpointModel(name, targetPort, pin, new SourceLocation(file, line)));
+        _endpoints.Add(new EndpointModel(name, targetPort, pin, scheme, new SourceLocation(file, line)));
         return this;
     }
 
@@ -139,5 +157,77 @@ public sealed class ContainerResource : IResource
         return this;
     }
 
-    internal ContainerModel Build() => new(Name, _image, _location, _endpoints.ToArray(), _env.ToArray());
+    /// <summary>Keep <paramref name="target"/> in a volume, one per sprout.</summary>
+    public ContainerResource Volume(string name, string target)
+    {
+        _volumes.Add(new VolumeModel(name, target));
+        return this;
+    }
+
+    internal ContainerModel Build() => new(Name, _image, _location, _endpoints.ToArray(), _env.ToArray(), _volumes.ToArray());
+}
+
+public sealed class ComposeFileResource
+{
+    readonly string _file;
+    readonly SourceLocation _location;
+    readonly List<ComposeServiceResource> _services = [];
+    readonly List<ComposeOverrideModel> _overrides = [];
+
+    internal ComposeFileResource(string file, SourceLocation location)
+    {
+        _file = file;
+        _location = location;
+    }
+
+    /// <summary>A service in the compose file. Give it endpoints to have sprig allocate and map its host ports.</summary>
+    public ComposeServiceResource Service(string name, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        var service = new ComposeServiceResource(name, new SourceLocation(file, line));
+        _services.Add(service);
+        return service;
+    }
+
+    /// <summary>Set any value in the file, by a dotted path such as <c>services.postgres.container_name</c>.</summary>
+    public ComposeFileResource Set(string path, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _overrides.Add(new ComposeOverrideModel(path, value.ToTemplate(), new SourceLocation(file, line)));
+        return this;
+    }
+
+    /// <inheritdoc cref="Set(string, Expr, string, int)"/>
+    public ComposeFileResource Set(string path, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => Set(path, value.ToExpr(), file, line);
+
+    internal ComposeFileModel Build() => new(_file, _location, _services.Select(s => s.Build()).ToArray(), _overrides.ToArray());
+}
+
+public sealed class ComposeServiceResource : IResource
+{
+    readonly SourceLocation _location;
+    readonly List<EndpointModel> _endpoints = [];
+
+    internal ComposeServiceResource(string name, SourceLocation location)
+    {
+        Name = name;
+        _location = location;
+    }
+
+    public string Name { get; }
+
+    /// <summary>The host port mapped to the service's first endpoint.</summary>
+    public PortRef Port => new(Name, _endpoints.Count > 0 ? _endpoints[0].Name
+        : throw new InvalidOperationException($"service '{Name}' has no endpoint yet; call .Endpoint() first"));
+
+    public PortRef PortOf(string endpoint) => new(Name, endpoint);
+
+    /// <summary>Allocate a host port and map it to <paramref name="targetPort"/> in the service's <c>ports</c>.</summary>
+    public ComposeServiceResource Endpoint(string name, int targetPort, string? pin = null, string? scheme = null,
+        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _endpoints.Add(new EndpointModel(name, targetPort, pin, scheme, new SourceLocation(file, line)));
+        return this;
+    }
+
+    internal ComposeServiceModel Build() => new(Name, _location, _endpoints.ToArray());
 }

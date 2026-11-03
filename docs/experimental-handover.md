@@ -1,22 +1,22 @@
 # Handover: experimental branch
 
-Written 2026-11-03, after the session that added readiness checks, restart policies and `up --run` to M5. Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
+Written 2026-11-03, after the session that finished M5 (readiness checks, restart policies, `up --run`, the app's runners and log pane). Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
 
 ## Where things stand
 
 - Branch `experimental`, pushed to `origin/experimental` (tracking). `main` is untouched.
-- M0 to M4 are done. **M5 (runners) is mostly done**; what's left is listed under "Next" below.
-- 168 tests pass (`dotnet test sprig.slnx`, about 90 s). The old intermittent host-test failures were the host dying from its own Ctrl+C (see Gotchas); after the fix, 5 full runs and 20 runs of the stop tests were clean. If a host test fails, the Application event log (ids 1000 and 1026) shows whether `sprig-host` crashed. Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
+- M0 to M5 are done. M6 is next.
+- 174 tests pass (`dotnet test sprig.slnx`, about 60 s). The old intermittent host-test failures were the host dying from its own Ctrl+C (see Gotchas); after the fix, 5 full runs and 20 runs of the stop tests were clean. If a host test fails, the Application event log (ids 1000 and 1026) shows whether `sprig-host` crashed. Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
 - Warnings are errors repo-wide (`Directory.Build.props`). Build with normal verbosity: `-v q` hides warnings.
 - Version is `0.100.0-exp`. **Never tag from this branch**: the release workflow publishes on any `v*` tag. Don't use the `bump-version` or `release-next-version` skills here.
 - The user asked to commit, push and continue as each piece lands.
 
 ## Next
 
-Readiness (`.Http(health:)`, `.ReadyOnLog`), restarts (`.Restart`, `.Retry` on jobs) and `sprig up --run` / `-d` are done; see the roadmap's M5 section.
+M5 is done; see the roadmap's M5 section for everything in it.
 
-1. **App runner list and log pane:** the Sprouts page shows each runner's state from the host (`HostClient` is already on `AppServices.Host`), with start and stop buttons and a log pane (follow, ANSI colour, search, virtualised). Show `Restarting` and the restart count too. `LogTail` and `AnsiText` (Engine/Hosting) already read logs incrementally and strip escape codes. Verify with headless renders and view-model tests; the user does hand testing later.
-2. Then M6 (review against Aspire). The open question at the end of this file needs an answer before then.
+1. **M6 (review against Aspire).** The open question at the end of this file needs an answer first.
+2. The user hasn't yet tried the app's new runner rows and log pane by hand (renders are in `captures/`).
 
 ## Decisions already made (don't reopen)
 
@@ -71,7 +71,7 @@ RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ na
 - **Projects:** `Sprig.Sdk` (what definitions reference; `Model.cs` is the contract, `Sdk.Schema` its version), `Sprig.Engine`, `Sprig.Host` (`sprig-host`, a WinExe), `Sprig.LanguageHost`, `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`. The CLI and app reference the two host exes with `ReferenceOutputAssembly="false"` and find them beside themselves or in the repo's `bin`.
 - **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up [--run | -d]`, `down`, `rm`, `sprouts`, `env`, `start [apps] [--group g] [--no-wait]`, `stop [apps]`, `ps`, `logs <app> [-n]`, `host status|stop`. `up --run` is `AppFollow` + `LogFollower` in `Sprig.Cli/Commands`.
 - **Host protocol** (`Engine/Hosting/HostProtocol.cs`): one JSON line each way per connection. Ops are `ping`, `list`, `start` (specs, plus a `restart` list), `stop` (sprout, optional name) and `shutdown`. `start` only (re)starts what isn't already going, except names in `restart`. Stopping a whole sprout forgets its runners once they've stopped.
-- **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, up/stop/remove), `OperationProgressWindow` fed by `SproutEvent`s. The app doesn't show runners yet (Next, item 1).
+- **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, bring up / take down / remove, runner rows with start/restart/stop/log, and a log pane), `OperationProgressWindow` fed by `SproutEvent`s. `SproutsView` polls the host every second while the page shows; the headless renderer calls `PollAsync` itself because timers don't tick there.
 - **A sprout's record** says exactly what `up` did, and `down`/`rm` undo only that. `down` and `rm` stop the sprout's apps first.
 
 ## Testbed
@@ -107,7 +107,8 @@ RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ na
 - **This machine already runs containers** on 5432, 8004–8006, 8012–8014 and others, and the released sprig leaves `sprig-feature-*` volumes. Never stop or remove containers or volumes you didn't start; sprout projects are all `sprig-<trellis>-<sprout>[-<repo>]`.
 - **Compose without health checks:** `--wait` only means "running". Postgres and friends need a check.
 - **Model changes:** bump `Sdk.Schema`. The definition cache key includes it, and `DefinitionRunnerTests` reads it rather than hardcoding it.
-- **Avalonia styles:** a local `Foreground` beats a class style, so state colours (`.up`, `.bad`) must come from styles.
+- **Avalonia styles:** a local `Foreground` beats a class style, so state colours (`.up`, `.bad`, `.busy`) must come from styles.
+- **Avalonia `ListBox.ScrollIntoView`** also scrolls every scroller above it, so inside a page's `ScrollViewer` it drags the page. Scroll the list's own `ScrollViewer` (`ScrollToEnd`) instead.
 - **`grep -r` + `sed -i` across `src/` hits `bin/` binaries.** Exclude build output.
 - **Stopping processes by hand:** the harness blocks `taskkill /PID …`. Use `Stop-Process` and walk children with `Get-CimInstance Win32_Process`.
 - **The SDK's `Sprig.Text` value type shadows `Spectre.Console.Text`** inside `Sprig.*` namespaces; the CLI aliases it as `SpectreText`.

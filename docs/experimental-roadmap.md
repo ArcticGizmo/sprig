@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 to M4 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M5 (runners) mostly done.
+Branch: `experimental`. Started 2026-11-03. Status: M0 to M5 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M6 (review against Aspire) next.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -235,7 +235,7 @@ Also in M4:
 - **Found by running it:** `appsettings.json` with `urls` beats `ASPNETCORE_URLS`, so .NET apps should take their url in `Urls` (the testbed now does). Two `dotnet run`s in one worktree race to build a shared project; M5's runners should build once and then run with `--no-build`.
 - **Not done:** a sprout's definitions are evaluated from the repos' main checkouts, not its worktrees, so a branch that changes `sprig.cs` isn't reflected until it's merged. Trust is per path, so evaluating worktrees means deciding how approval carries across to them.
 
-### M5: Runners (about 6–8 weeks)
+### M5: Runners ✅ done 2026-11-03
 
 - **Runner per app:** command, working folder, resolved env, readiness check (port open, HTTP health, or a line in the log), restart policy.
 - **Order and dependencies:** `WaitFor(x)` waits until x is ready. `After(job)` waits for a one-off job such as migrations to finish. Starting a group starts its members and everything they depend on.
@@ -285,7 +285,14 @@ Also in M4:
 - On the testbed: `up -d` brought everything up ready, and `up --run` on the same sprout left the running apps alone and followed them. A `sprig stop` from another terminal showed each graceful stop in the stream, then "The apps were stopped."
 - **Found:** the second `up` rewrote each `.env.local` with the same values, and Vite restarted both front ends. Env files are now written only when their content changes.
 - **Found, and the cause of the long-running "flaky host tests":** sending Ctrl+C sometimes killed `sprig-host` itself, and every app with it. To signal, the host attached to the app's console and relied on a handler to absorb its own copy of the Ctrl+C. Now and then the host simply exited, leaving no crash record. Two tests that stop apps in quick succession hit it every few runs. Now a short-lived `sprig-host --ctrl-c <pid>` helper attaches and signals instead, so the host never joins an app's console. The same tests then passed 20 runs in a row. Before the change, about one full-suite run in three failed, on the earlier commits too.
-- **Still to do in M5:** the app's runner list and log pane (fed from the host).
+
+**The app's runners and log pane (done 2026-11-03):**
+- The Sprouts page's app rows show each runner's state from the host, polled every second while the page shows: building, waiting, starting, ready, restarting (with why and when), finished for a job, exited or failed (with the reason). Each has Start (Restart when it's going), Stop and Log, and the panel has Start all and Stop apps. Starting needs the sprout up, and says so otherwise. The sprout's own "Stop" button became "Take down", since it stops the infra too.
+- The log pane follows one app's log: its colours (SGR codes as styled runs, retuned for the dark theme), sprig's lines dimmed, a search that shows only matching lines ("12 of 3,400 lines match"), Follow, and a virtualised list that keeps the newest 20,000 lines. A runner started afresh replaces what was shown. Following scrolls only the log, not the page.
+- `LogTail` and `AnsiText` (Engine/Hosting) serve both this pane and `up --run`.
+- Checked with view-model tests and headless renders against a live sprout, in `captures/`; hand testing waits for the user's pass over the UI.
+
+**Outcome:** met. One command (`sprig up storefront --sprout x -d`, or `--run` to follow) brings up the infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are healthy, then web and mobile. `catalog-api` can be stopped (from the app or `sprig stop`) and run from an IDE on its leased port with the sprout's values, and the rest keeps working (shown with `dotnet run` from the worktree earlier in M5).
 
 ### M6: Review and decide (about 2 weeks)
 

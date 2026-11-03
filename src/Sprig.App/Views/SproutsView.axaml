@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:controls="clr-namespace:Sprig.App.Controls"
              x:Class="Sprig.App.Views.SproutsView"
              x:DataType="vm:SproutsViewModel">
 
@@ -48,6 +49,31 @@
         </Style>
         <Style Selector="TextBlock.bad">
             <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="TextBlock.busy">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="ListBox.log">
+            <Setter Property="Background" Value="#14141B" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="0,6" />
+        </Style>
+        <Style Selector="ListBox.log ListBoxItem">
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <Style Selector="TextBlock.logline">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="MinHeight" Value="17" />
         </Style>
         <Style Selector="Border.row">
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -150,7 +176,8 @@
                     </StackPanel>
                     <Button Grid.Column="1" Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
                             Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
-                    <Button Grid.Column="2" Content="Stop" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
+                    <Button Grid.Column="2" Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
+                            ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
                             Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
                     <Button Grid.Column="3" Content="Remove" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}"
                             VerticalAlignment="Top" Background="Transparent" Foreground="{StaticResource DangerBrush}"
@@ -174,17 +201,46 @@
 
                 <Border Classes="panel" IsVisible="{Binding HasSelection}">
                     <StackPanel Spacing="6">
-                        <TextBlock Classes="phead" Text="APPS (START THEM FROM THEIR FOLDERS)" />
-                        <ItemsControl ItemsSource="{Binding Apps}">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBlock Classes="phead" Text="APPS" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="small" Content="Start all" Command="{Binding StartAppsCommand}"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+                            <Button Grid.Column="2" Classes="small" Content="Stop apps" Command="{Binding StopAppsCommand}" />
+                        </Grid>
+                        <TextBlock Classes="msg cell" Text="{Binding AppsMessage}" Classes.bad="{Binding AppsMessageIsBad}"
+                                   IsVisible="{Binding HasAppsMessage}" />
+                        <ItemsControl x:Name="AppRows" ItemsSource="{Binding Apps}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SproutAppRow">
                                     <Border Classes="row">
-                                        <Grid ColumnDefinitions="220,180,*">
-                                            <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
-                                            <SelectableTextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Url}" />
-                                            <StackPanel Grid.Column="2" Spacing="1">
-                                                <SelectableTextBlock Classes="cell mono" Text="{Binding Folder}" />
+                                        <Grid ColumnDefinitions="230,*,190,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
+                                            <StackPanel Spacing="1">
+                                                <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Classes="cell via" Text="job: runs to the end" IsVisible="{Binding IsJob}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Spacing="1">
+                                                <TextBlock Classes="state cell" Text="{Binding State}" Classes.up="{Binding IsGood}"
+                                                           Classes.bad="{Binding IsBad}" Classes.busy="{Binding IsBusy}" />
+                                                <TextBlock Classes="cell via" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" />
+                                            </StackPanel>
+                                            <SelectableTextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Url}" />
+                                            <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,4,0,0">
+                                                <SelectableTextBlock Classes="cell via mono" Text="{Binding Folder}" Margin="0,0,12,0" />
                                                 <TextBlock Classes="cell via" Text="{Binding Values, StringFormat='values in {0}'}" />
+                                            </WrapPanel>
+                                            <StackPanel Grid.Column="3" Grid.RowSpan="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                                                <Button Classes="small" Content="Start" IsVisible="{Binding !IsAlive}"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).StartAppCommand}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Classes="small" Content="Restart" IsVisible="{Binding IsAlive}"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).StartAppCommand}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Classes="small" Content="Stop" IsVisible="{Binding IsAlive}"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).StopAppCommand}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Classes="small" Content="Log"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).ShowLogCommand}"
+                                                        CommandParameter="{Binding}" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -192,6 +248,30 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
+                </Border>
+
+                <Border Classes="panel" IsVisible="{Binding Log.IsOpen}">
+                    <DockPanel>
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,240,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
+                            <TextBlock Classes="phead" Text="LOG" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding Log.Title}" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="2" Text="{Binding Log.Search}" PlaceholderText="Search the log" />
+                            <CheckBox Grid.Column="3" IsChecked="{Binding Log.Follow}" Content="Follow" />
+                            <Button Grid.Column="4" Classes="small" Content="Close" Command="{Binding Log.CloseCommand}" />
+                        </Grid>
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" Spacing="1">
+                            <TextBlock Classes="cell via" Text="{Binding Log.Summary}" />
+                            <SelectableTextBlock Classes="cell via mono" Text="{Binding Log.FileShown}" />
+                        </StackPanel>
+                        <ListBox x:Name="LogList" Classes="log" ItemsSource="{Binding Log.Lines}" Height="420">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:LogLine">
+                                    <controls:AnsiLine Line="{Binding}" Classes="logline" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </Border>
 
                 <Border Classes="panel" IsVisible="{Binding HasSelection}">

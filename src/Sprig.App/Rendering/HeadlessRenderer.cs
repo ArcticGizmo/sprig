@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using Avalonia;
 using Avalonia.Headless;
@@ -117,8 +118,9 @@ internal static class HeadlessRenderer
     }
 
     /// <summary>
-    /// The Sprouts page over the current store (<c>SPRIG_STORE</c>), read only, with its first sprout selected; and the
-    /// progress window part way through a sample up, failing on a compose step, so both states of a row show.
+    /// The Sprouts page over the current store (<c>SPRIG_STORE</c>), read only, with its first sprout selected, its apps'
+    /// states from the host and the first app's log open; and the progress window part way through a sample up, failing
+    /// on a compose step, so both states of a row show.
     /// </summary>
     public static int RenderSprouts(string pageFile, string progressFile)
     {
@@ -132,9 +134,18 @@ internal static class HeadlessRenderer
 
             var vm = new MainWindowViewModel(new AppServices(), checkForUpdates: false);
             vm.NavigateCommand.Execute(vm.Sprouts);
-            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
+            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1400 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(500));
+
+            // Timers don't tick here, so poll as the page's timer would, then open a log that has something in it.
+            Wait(vm.Sprouts.PollAsync());
+            if ((vm.Sprouts.Apps.FirstOrDefault(a => a.IsAlive && !a.IsJob) ?? vm.Sprouts.Apps.FirstOrDefault()) is { } app)
+            {
+                vm.Sprouts.ShowLogCommand.Execute(app);
+                Wait(vm.Sprouts.Log.PollAsync());
+            }
+            Pump(TimeSpan.FromMilliseconds(600));
             Save(window, pageFile);
             window.Close();
 
@@ -171,6 +182,12 @@ internal static class HeadlessRenderer
             Console.Error.WriteLine($"headless render failed: {ex}");
             return 1;
         }
+    }
+
+    static void Wait(System.Threading.Tasks.Task task)
+    {
+        var clock = Stopwatch.StartNew();
+        while (!task.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(20)) Pump(TimeSpan.FromMilliseconds(50));
     }
 
     static void Save(Avalonia.Controls.TopLevel window, string file)

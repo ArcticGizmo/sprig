@@ -74,6 +74,39 @@ public sealed class LogTailTests : IDisposable
     }
 
     [Fact]
+    public void Colour_codes_become_styled_runs_and_everything_else_is_dropped()
+    {
+        var runs = AnsiText.Runs("\u001B[32m\u001B[1mVITE\u001B[22m v6\u001B[39m ready \u001B[2min\u001B[0m \u001B[38;5;196mred\u001B[38;2;1;2;3m rgb\u001B[44m\u001B[K!");
+
+        Assert.Equal(["VITE", " v6", " ready ", "in", " ", "red", " rgb", "!"], runs.Select(r => r.Text));
+        Assert.Equal(new AnsiRun("VITE", 0x4ADE80, Bold: true), runs[0]);
+        Assert.Equal(new AnsiRun(" v6", 0x4ADE80), runs[1]);
+        Assert.Equal(new AnsiRun(" ready "), runs[2]);
+        Assert.True(runs[3].Dim);
+        Assert.Equal(new AnsiRun(" "), runs[4]);
+        Assert.Equal(0xFF0000, runs[5].Foreground);
+        Assert.Equal(0x010203, runs[6].Foreground);
+        Assert.Equal(0x010203, runs[7].Foreground);
+        Assert.Equal([new AnsiRun("plain")], AnsiText.Runs("plain"));
+        Assert.Empty(AnsiText.Runs(""));
+    }
+
+    [Fact]
+    public void A_restarted_log_bumps_its_generation()
+    {
+        var file = File();
+        var tail = new LogTail(file);
+        Append(file, "first run, quite a long line\n");
+        tail.ReadNew();
+        Assert.Equal(0, tail.Generation);
+
+        System.IO.File.WriteAllText(file, "second\n");
+        tail.ReadNew();
+
+        Assert.Equal(1, tail.Generation);
+    }
+
+    [Fact]
     public void Followed_logs_carry_short_unique_labels_and_sprig_lines_lose_nothing()
     {
         var labels = LogFollower.Labels(["shop-services/catalog-api", "shop-web/web", "shop-mobile/web"]);

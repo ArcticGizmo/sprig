@@ -184,6 +184,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         var compose = loaded.ComposeFiles(problems);
         var plan = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, s.Sprout, cli.Settings.Get(), PortAllocator.Listening(),
             ComposeFiles: compose));
+        if (!plan.HasErrors) problems.AddRange(cli.Sprouts.CheckFiles(plan, loaded.RepoDirs));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };
         if (s.Json) CliOutput.Json(plan);
         else PlanPrinter.Print(cli.Ansi, plan, Path.GetDirectoryName(loaded.TrellisPath)!);

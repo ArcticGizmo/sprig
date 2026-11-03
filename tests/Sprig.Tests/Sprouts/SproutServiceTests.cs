@@ -39,12 +39,16 @@ public sealed class SproutServiceTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { /* temp */ }
     }
 
-    string Repo(string name, params (string path, string content)[] files)
+    const string LocalFiles = ".env.local\n**/Properties/launchSettings.json\n";
+
+    string Repo(string name, params (string path, string content)[] files) => RepoWith(name, LocalFiles, files);
+
+    string RepoWith(string name, string gitignore, params (string path, string content)[] files)
     {
         var dir = Path.Combine(_root, name);
         Directory.CreateDirectory(dir);
         Git(dir, "init", "-q", "-b", "main");
-        File.WriteAllText(Path.Combine(dir, ".gitignore"), ".env.local\n");
+        File.WriteAllText(Path.Combine(dir, ".gitignore"), gitignore);
         foreach (var (path, content) in files)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(dir, path))!);
@@ -104,8 +108,10 @@ public sealed class SproutServiceTests : IDisposable
 
         var launch = Path.Combine(record.Repos.Single(r => r.Name == "shop-services").Dir, "src", "Api", "Properties", "launchSettings.json");
         Assert.Contains("\"Feature\": \"on\"", File.ReadAllText(launch));
-        Assert.True(_git.IsIgnored(Path.GetDirectoryName(launch)!, launch));
         Assert.False(_git.HasUncommittedChanges(Path.GetDirectoryName(launch)!));
+        // The repo's own .gitignore covers it; sprig adds no ignore rules of its own.
+        var exclude = Path.Combine(_root, "shop-services", ".git", "info", "exclude");
+        Assert.True(!File.Exists(exclude) || !File.ReadAllText(exclude).Contains("launchSettings"));
 
         var again = _sprouts.Up(loaded, "feat-x", null);
         Assert.Equal(port, _sprouts.LastPlan("storefront", "feat-x")!.Ports.Single(p => p.Resource == "web").Port);
@@ -158,18 +164,36 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
-    public void A_tracked_target_is_refused_before_anything_is_written()
+    public void A_tracked_target_is_refused_before_any_worktree_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));
-        Repo("shop-services", ("src/Api/Properties/launchSettings.json", """{ "profiles": {} }"""));
+        RepoWith("shop-services", ".env.local\n", ("src/Api/Properties/launchSettings.json", """{ "profiles": {} }"""));
         var loaded = Load(true, ("shop-web", Web), ("shop-services", Api));
 
         var e = Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "feat-x", null));
 
-        Assert.Contains("won't write a sprout's values into files git tracks", e.Message);
-        Assert.Contains("launchSettings.json", e.Message);
-        Assert.False(File.Exists(Path.Combine(_root, "storefront--feat-x", "shop-web", ".env.local")));
-        Assert.Equal(SproutState.Failed, _sprouts.Get("storefront", "feat-x")!.State);
+        var problem = Assert.Single(e.Problems);
+        Assert.StartsWith("git tracks src/Api/Properties/launchSettings.json", problem.Message);
+        Assert.Contains("EnvOutput.AppSettings", problem.Message);
+        Assert.EndsWith("SproutServiceTests.cs", problem.Location!.File);
+        Assert.False(Directory.Exists(Path.Combine(_root, "storefront--feat-x")));
+        Assert.Null(_sprouts.Get("storefront", "feat-x"));
+    }
+
+    [Fact]
+    public void A_target_the_repo_does_not_ignore_is_refused_with_what_to_add()
+    {
+        RepoWith("shop-services", "bin/\n", ("src/Api/Program.cs", "// api"));
+        var loaded = Load(false, ("shop-services", repo =>
+            repo.DotNet("api", "src/Api").Http(urlEnv: "Urls").Output(EnvOutput.AppSettings("appsettings.Local.json"))));
+
+        var e = Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "local", null));
+
+        var problem = Assert.Single(e.Problems);
+        Assert.Contains("src/Api/appsettings.Local.json isn't ignored by git", problem.Message);
+        Assert.Contains("Add it to the repo's .gitignore", problem.Message);
+        Assert.Contains("AddJsonFile(\"appsettings.Local.json\", optional: true)", problem.Message);
+        Assert.False(File.Exists(Path.Combine(_root, "shop-services", "src", "Api", "appsettings.Local.json")));
     }
 
     [Fact]

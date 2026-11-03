@@ -18,7 +18,7 @@ var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
     .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
     .Env("Redis__Url", $"localhost:{redis.Port}")
     .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
-    .Output(EnvOutput.LaunchSettings())                   // so `dotnet run` (and an IDE) gets the sprout's values
+    .Output(EnvOutput.LaunchSettings())                   // dotnet run and IDEs read it; .gitignore covers it
     .WaitFor(pg, redis, rabbit);
 
 var orders = repo.DotNet("orders-api", "src/Orders.Api")
@@ -27,7 +27,7 @@ var orders = repo.DotNet("orders-api", "src/Orders.Api")
     .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
     .Env("Smtp__Url", smtp)
     .Env("Catalog__Url", catalog.Url)                     // a sibling in this repo: no import needed
-    .Output(EnvOutput.LaunchSettings())
+    .Output(EnvOutput.AppSettings("appsettings.Local.json")) // Program.cs loads it; .gitignore covers it
     .WaitFor(pg, rabbit, catalog);
 
 repo.Export<Url>("catalog-url", catalog.Url);

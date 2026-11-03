@@ -221,7 +221,8 @@ Each app has `/health` and a **config page** showing every value it received and
 
 Decisions made at the start of M4 (by the user):
 
-- **Values go to `.env` files first.** Other formats are opt-in outputs on an app: `.Output(EnvOutput.LaunchSettings())` (a profile placed first in `Properties/launchSettings.json`, used by `dotnet run` and IDEs), `.Output(EnvOutput.AppSettings(file))` and `.Output(EnvOutput.DotEnv(file))`. **Sprig never writes into a file git tracks**: `up` refuses before writing anything, and every file it does write is added to the repo's `.git/info/exclude`.
+- **Values go to `.env` files first.** Other formats are opt-in outputs on an app: `.Output(EnvOutput.LaunchSettings())` (a profile placed first in `Properties/launchSettings.json`, used by `dotnet run` and IDEs), `.Output(EnvOutput.AppSettings(file))` and `.Output(EnvOutput.DotEnv(file))`.
+- **The repo opts in to every file sprig writes.** A target must be a file the app (or its tooling) reads, and the repo's own ignore rules must cover it. Sprig refuses a tracked file, and refuses one git doesn't ignore, saying what to add to `.gitignore` (and, for an appsettings file, the `AddJsonFile` line the app needs). `sprig plan` reports this too, and `up` checks before it creates anything. Sprig adds no ignore rules of its own. An early version wrote to `.git/info/exclude`, but every worktree shares that file, so the rules leaked into the main checkout, stayed hidden from the team and were never cleaned up. It also hid whether the app read the file at all. The testbed shows both routes: `catalog-api` uses a launch profile and `orders-api` loads `appsettings.Local.json`, and both files are in the repo's `.gitignore`.
 - **Compose services a repo's `sprig.cs` doesn't name are left out of sprouts**, with a warning from `sprig plan`. Services behind a compose profile don't count, since they don't start by default.
 
 Also in M4:

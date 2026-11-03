@@ -107,7 +107,14 @@ public partial class TrellisesViewModel : PageViewModel
                 return;
             }
             var settings = _services.Settings.Get();
-            var plan = await AppServices.RunAsync(() => Planner.Build(new PlanInput(loaded.Trellis, loaded.Repos, "plan", settings, PortAllocator.Listening())));
+            var plan = await AppServices.RunAsync(() =>
+            {
+                var problems = new System.Collections.Generic.List<PlanProblem>();
+                var built = Planner.Build(new PlanInput(loaded.Trellis, loaded.Repos, "plan", settings, PortAllocator.Listening(),
+                    ComposeFiles: loaded.ComposeFiles(problems)));
+                if (!built.HasErrors) problems.AddRange(_services.Sprouts.CheckFiles(built, loaded.RepoDirs));
+                return built with { Problems = [.. problems, .. built.Problems] };
+            });
             Plan = new PlanView(plan, Path.GetDirectoryName(trellis.Path)!);
         }
         finally

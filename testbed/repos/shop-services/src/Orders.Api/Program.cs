@@ -3,6 +3,8 @@ using System.Net.Mail;
 using Shop.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
+// Machine-local values (gitignored), loaded last so they win over appsettings.json and the environment.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddHttpClient("catalog", (sp, c) =>
     c.BaseAddress = new Uri(sp.GetRequiredService<IConfiguration>()["Catalog:Url"] ?? "http://localhost:5100"));

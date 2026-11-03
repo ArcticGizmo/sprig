@@ -20,29 +20,6 @@ public sealed class GitClient(IProcessRunner runner)
     public bool IsIgnored(string repo, string file)
         => Run(repo, "check-ignore", "-q", "--no-index", "--", file).Success;
 
-    /// <summary>
-    /// Make sure git ignores <paramref name="file"/> without touching a tracked file: an entry goes in the repo's
-    /// <c>info/exclude</c>, which every worktree of the repo shares and which is never committed.
-    /// </summary>
-    public void Exclude(string repo, string file)
-    {
-        if (IsIgnored(repo, file)) return;
-        var top = TopLevel(repo);
-        var relative = Path.GetRelativePath(top, file).Replace('\\', '/');
-        var common = Run(top, "rev-parse", "--git-common-dir").EnsureSuccess().StdOut.Trim();
-        var exclude = Path.Combine(Path.IsPathRooted(common) ? common : Path.Combine(top, common), "info", "exclude");
-        Directory.CreateDirectory(Path.GetDirectoryName(exclude)!);
-
-        var lines = File.Exists(exclude) ? File.ReadAllLines(exclude).ToList() : [];
-        var entry = "/" + relative;
-        if (lines.Contains(entry)) return;
-        if (!lines.Contains(ExcludeHeader)) lines.AddRange(["", ExcludeHeader]);
-        lines.Add(entry);
-        File.WriteAllLines(exclude, lines);
-    }
-
-    public const string ExcludeHeader = "# files sprig writes for sprouts (never commit them)";
-
     public bool BranchExists(string repo, string branch)
         => Run(repo, "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}").Success;
 

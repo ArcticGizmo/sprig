@@ -20,7 +20,7 @@ Written 2026-11-03 at the end of the session that did M4. Read this first, then 
 | Editing | External IDE first (IntelliSense confirmed in VS Code/Rider via `#:package Sprig.Sdk`). The in-app editor works but needs style polish (in Later). |
 | Infra | Code presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), and a repo's own compose file is allowed (`repo.ComposeFile(...).Service(...).Endpoint(...).Health(...)`, `.Set(path, value)`). |
 | Env values | `.env` files first. Language-specific outputs are opt-in per app: `.Output(EnvOutput.LaunchSettings())`, `EnvOutput.AppSettings(file)`, `EnvOutput.DotEnv(file)`. |
-| Tracked files | **Sprig never writes sprout values into a file git tracks.** `up` refuses before writing anything; every file it writes goes in `.git/info/exclude`. Keep this for every new output. |
+| Files sprig writes | **The repo opts in.** A target must be a file the app reads and the repo's `.gitignore` covers. Tracked or not-ignored targets are refused (by `plan` and before `up` creates anything) with what to add. Sprig never adds ignore rules itself, so no `info/exclude`: it's shared by every worktree and hides the problem. Keep this for every new output. |
 | Unnamed compose services | Left out of sprouts, with a warning from `sprig plan` (services behind a compose profile don't count). |
 | Run experience | Log pane per runner in the app (M5). Telemetry later. |
 | Store | `%LOCALAPPDATA%\sprig-exp` (`sprig-exp (Dev)` for Debug). Never the released app's `sprig` folder; a test guards it. |
@@ -37,7 +37,7 @@ x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (Rep
                   Planner (Engine/Planning) — scopes, imports/exports, ports (kept leases first), {templates}
                          │
                   SproutService (Engine/Sprouts) — Up / Down / Remove / List / LastPlan
-                     ├─ GitClient (Engine/Git): worktrees, IsTracked, Exclude (info/exclude)
+                     ├─ GitClient (Engine/Git): worktrees, IsTracked, IsIgnored (CheckFiles uses both)
                      ├─ PortLeases: <store>/ports.json under a lock file, keyed "<trellis>/<sprout>" → "<owner>/<resource>.<endpoint>"
                      ├─ EnvFiles: dotenv marker blocks (top and bottom), launch profile, appsettings keys; each removable
                      ├─ ComposeYaml: ForContainers (code presets) and ForSprout (a repo's file, trimmed and re-ported)
@@ -54,6 +54,7 @@ x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (Rep
 ## Testbed
 
 - Templates in `testbed/repos/{shop-services,shop-web,shop-mobile}` plus `testbed/storefront.trellis.cs` (worktrees) and `testbed/services.trellis.cs` (the monorepo in place).
+- `catalog-api` gets its values from a launch profile and `orders-api` from `appsettings.Local.json`, which its `Program.cs` loads. Both are in `shop-services/.gitignore`.
 - `pwsh -File scripts/testbed.ps1 [-Path <dir>] [-Force] [-UsePackage]` builds real git repos (default `../sprig-testbed`). Use `C:\Users\JonHowell\AppData\Local\Temp\sprig-tb-m4` or similar for throwaway ones.
 - Try it with a throwaway store: `$env:SPRIG_STORE='...'; sprig trellis add <tb>/storefront.trellis.cs --trust; sprig up storefront --sprout feat-a; sprig up storefront --sprout feat-b`. Then `dotnet run` in each worktree's `src/Catalog.Api` and open `/config`.
 - Each app has a config page (`/config` on the APIs, a Config tab on the front ends) showing each value, its source and whether its target answers. That's how M5 should prove wiring.

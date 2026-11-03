@@ -70,7 +70,8 @@ public sealed class AppResource : IResource
     public AppResource Env(string key, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => Env(key, value.ToExpr(), file, line);
 
-    /// <summary>Write values into an env file under the app's path, e.g. <c>.env.local</c> for Vite.</summary>
+    /// <summary>Write values into an env file under the app's path, e.g. <c>.env.local</c> for Vite. The repo's .gitignore
+    /// must cover the file, or sprig refuses to write it.</summary>
     public AppResource EnvFile(string fileName, Action<EnvFileBuilder> set)
     {
         var builder = new EnvFileBuilder(fileName);
@@ -79,8 +80,11 @@ public sealed class AppResource : IResource
         return this;
     }
 
-    /// <summary>Also write the app's env vars (from <see cref="Env(string, Expr, string, int)"/> and its endpoints) into
-    /// a file, so it gets them when you run it yourself. Sprig never writes into a file git tracks; it refuses instead.</summary>
+    /// <summary>
+    /// Also write the app's env vars (from <see cref="Env(string, Expr, string, int)"/> and its endpoints) into a file, so
+    /// it gets them when you run it yourself. Pick a file the app (or its tooling) actually reads, and that the repo's
+    /// .gitignore covers: sprig refuses to write a file git tracks or doesn't ignore.
+    /// </summary>
     public AppResource Output(EnvOutput output, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
         _outputs.Add(new EnvOutputModel(output.Kind, output.File, output.Profile, new SourceLocation(file, line)));
@@ -110,7 +114,8 @@ public sealed class AppResource : IResource
     internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(), _outputs.ToArray());
 }
 
-/// <summary>Where an app's env vars are written for running it by hand. Paths are relative to the app's path.</summary>
+/// <summary>Where an app's env vars are written for running it by hand. Paths are relative to the app's path. Each file
+/// must be one the app reads and the repo's .gitignore covers.</summary>
 public sealed record EnvOutput
 {
     internal string Kind { get; }
@@ -124,15 +129,18 @@ public sealed record EnvOutput
         Profile = profile;
     }
 
-    /// <summary>A <c>KEY=value</c> file. Sprig keeps its values between marker lines and leaves the rest alone.</summary>
-    public static EnvOutput DotEnv(string file = ".env") => new("dotenv", file, null);
+    /// <summary>A <c>KEY=value</c> file. Sprig keeps its values between marker lines and leaves the rest alone. Only
+    /// useful for tools that read one (Vite, Next.js and the like read <c>.env.local</c>); .NET doesn't.</summary>
+    public static EnvOutput DotEnv(string file = ".env.local") => new("dotenv", file, null);
 
     /// <summary>A profile in <c>Properties/launchSettings.json</c>, used by <c>dotnet run</c>, Visual Studio, Rider and
-    /// VS Code. The profile goes first, so a plain <c>dotnet run</c> picks it. Only when the file isn't tracked.</summary>
+    /// VS Code. The profile goes first, so a plain <c>dotnet run</c> picks it. Many repos commit this file; for those,
+    /// use <see cref="AppSettings"/> instead.</summary>
     public static EnvOutput LaunchSettings(string profile = "sprig") => new("launchSettings", "Properties/launchSettings.json", profile);
 
     /// <summary>A JSON configuration file, with <c>Section__Key</c> names nested into sections. The app has to load it
-    /// (e.g. <c>builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true)</c>).</summary>
+    /// after its other settings (e.g. <c>builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true)</c>),
+    /// or the values do nothing; sprig can't check that.</summary>
     public static EnvOutput AppSettings(string file = "appsettings.Local.json") => new("appSettings", file, null);
 }
 

@@ -5,6 +5,7 @@ using Sprig.Engine.Planning;
 using Sprig.Engine.Settings;
 using Sprig.Engine.Store;
 using Sprig.Engine.Trellises;
+using Sprig.Model;
 
 namespace Sprig.Engine.Sprouts;
 
@@ -81,6 +82,7 @@ public sealed partial class SproutService(
         var dryPlan = Planner.Build(new PlanInput(trellis, loaded.Repos, sprout, settingsNow, _listening(),
             ComposeFiles: loaded.ComposeFiles(problems)));
         problems.AddRange(dryPlan.Problems);
+        if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.RepoDirs));
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new SproutException("the plan has errors", problems));
         var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
@@ -265,56 +267,94 @@ public sealed partial class SproutService(
         return plan;
     }
 
-    IReadOnlyList<WrittenFile> WriteFiles(Plan plan, SproutRecord record)
+    /// <summary>A file a sprout writes values into, and the definition line that asked for it.</summary>
+    sealed record FileTarget(string RepoPath, string RepoDir, string Path, string Kind, string? Profile,
+        List<KeyValuePair<string, string>> Values, SourceLocation Location);
+
+    static List<FileTarget> Targets(Plan plan, IReadOnlyDictionary<string, string> repoDirs)
     {
-        var targets = new List<(SproutRepo repo, string path, string kind, string? profile, List<KeyValuePair<string, string>> values)>();
+        var targets = new List<FileTarget>();
         foreach (var app in plan.Apps)
         {
-            var repo = record.Repos.Single(r => r.RepoPath == app.RepoPath);
-            var appDir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
-            var process = app.Env.Where(e => e.File is null).Select(e => KeyValuePair.Create(e.Key, e.Value.Value!)).ToList();
+            var repoDir = repoDirs[app.RepoPath];
+            var appDir = Path.GetFullPath(Path.Combine(repoDir, app.Path));
+            var process = app.Env.Where(e => e.File is null).Select(e => KeyValuePair.Create(e.Key, e.Value.Value ?? "")).ToList();
 
             foreach (var group in app.Env.Where(e => e.File is not null).GroupBy(e => e.File!))
-                Add(repo, Path.Combine(appDir, group.Key), "dotenv", null, group.Select(e => KeyValuePair.Create(e.Key, e.Value.Value!)));
+                Add(app.RepoPath, repoDir, Path.GetFullPath(Path.Combine(appDir, group.Key)), "dotenv", null,
+                    group.Select(e => KeyValuePair.Create(e.Key, e.Value.Value ?? "")), group.First().Location);
             foreach (var output in app.Outputs)
-                Add(repo, Path.GetFullPath(Path.Combine(appDir, output.File)), output.Kind, output.Profile, process);
+                Add(app.RepoPath, repoDir, Path.GetFullPath(Path.Combine(appDir, output.File)), output.Kind, output.Profile, process, output.Location);
         }
+        return targets;
 
-        void Add(SproutRepo repo, string path, string kind, string? profile, IEnumerable<KeyValuePair<string, string>> values)
+        void Add(string repoPath, string repoDir, string path, string kind, string? profile, IEnumerable<KeyValuePair<string, string>> values, SourceLocation at)
         {
-            var same = targets.FindIndex(t => SamePath(t.path, path));
-            if (same < 0) targets.Add((repo, path, kind, profile, values.ToList()));
-            else if (targets[same].kind != kind) throw new SproutException($"{path} is written as both {targets[same].kind} and {kind}");
-            else targets[same].values.AddRange(values);
+            var same = targets.FindIndex(t => SamePath(t.Path, path));
+            if (same < 0) targets.Add(new FileTarget(repoPath, repoDir, path, kind, profile, values.ToList(), at));
+            else if (targets[same].Kind != kind) throw new SproutException($"{path} is written as both {targets[same].Kind} and {kind}");
+            else targets[same].Values.AddRange(values);
         }
+    }
 
-        // Every target is checked before any is written, so a refusal leaves nothing half done.
-        var tracked = targets.Where(t => git.IsTracked(t.repo.Dir, t.path)).Select(t => t.path).ToArray();
-        if (tracked.Length > 0)
-            throw new SproutException("sprig won't write a sprout's values into files git tracks. Point these outputs at an untracked file:\n  "
-                + string.Join("\n  ", tracked));
+    /// <summary>
+    /// Every file the plan would write values into must be one the repo already keeps out of git: not tracked, and
+    /// covered by its ignore rules. That's the repo saying the file is for local values, so sprig never has to hide
+    /// anything from git itself. <paramref name="repoDirs"/> are the folders the sprout would use, by repo path.
+    /// </summary>
+    public IReadOnlyList<PlanProblem> CheckFiles(Plan plan, IReadOnlyDictionary<string, string> repoDirs)
+    {
+        var problems = new List<PlanProblem>();
+        foreach (var target in Targets(plan, repoDirs))
+        {
+            // Without git there's nothing to commit by accident.
+            if (!git.IsRepo(target.RepoDir)) continue;
+            var relative = Path.GetRelativePath(target.RepoDir, target.Path).Replace('\\', '/');
+            if (git.IsTracked(target.RepoDir, target.Path))
+                problems.Add(new PlanProblem(ProblemSeverity.Error,
+                    $"git tracks {relative}, so sprig won't write a sprout's values into it. Point the output at a local file the app reads instead" +
+                    (target.Kind == "launchSettings" ? ", e.g. EnvOutput.AppSettings(\"appsettings.Local.json\")." : "."), target.Location));
+            else if (!git.IsIgnored(target.RepoDir, target.Path))
+                problems.Add(new PlanProblem(ProblemSeverity.Error,
+                    $"{relative} isn't ignored by git, so a sprout's values could be committed. Add it to the repo's .gitignore" + target.Kind switch
+                    {
+                        "appSettings" => $", and have the app load it: builder.Configuration.AddJsonFile(\"{Path.GetFileName(target.Path)}\", optional: true).",
+                        _ => ".",
+                    }, target.Location));
+        }
+        return problems;
+    }
+
+    IReadOnlyList<WrittenFile> WriteFiles(Plan plan, SproutRecord record)
+    {
+        var dirs = record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal);
+        // Checked again in the sprout's own folders (a branch can have its own .gitignore), and all before any write,
+        // so a refusal leaves nothing half done.
+        var problems = CheckFiles(plan, dirs);
+        if (problems.Count > 0) throw new SproutException("sprig won't write into these files", problems);
 
         var written = new List<WrittenFile>();
-        foreach (var (repo, path, kind, profile, values) in targets)
+        foreach (var target in Targets(plan, dirs))
         {
-            var before = record.Files.FirstOrDefault(f => SamePath(f.Path, path));
-            var created = before?.Created ?? !File.Exists(path);
-            switch (kind)
+            var repo = record.Repos.Single(r => r.RepoPath == target.RepoPath);
+            var path = target.Path;
+            var created = record.Files.FirstOrDefault(f => SamePath(f.Path, path))?.Created ?? !File.Exists(path);
+            var values = Dedupe(target.Values);
+            switch (target.Kind)
             {
                 case "dotenv":
                     var seed = repo.Worktree ? Path.Combine(repo.Source, Path.GetRelativePath(repo.Dir, path)) : null;
-                    EnvFiles.WriteDotEnv(path, Dedupe(values), seed);
-                    written.Add(new WrittenFile(path, kind, created));
+                    EnvFiles.WriteDotEnv(path, values, seed);
+                    written.Add(new WrittenFile(path, target.Kind, created));
                     break;
                 case "launchSettings":
-                    EnvFiles.WriteLaunchProfile(path, profile ?? "sprig", Dedupe(values));
-                    written.Add(new WrittenFile(path, kind, created, profile ?? "sprig"));
+                    EnvFiles.WriteLaunchProfile(path, target.Profile ?? "sprig", values);
+                    written.Add(new WrittenFile(path, target.Kind, created, target.Profile ?? "sprig"));
                     break;
                 case "appSettings":
-                    written.Add(new WrittenFile(path, kind, created, Keys: EnvFiles.WriteAppSettings(path, Dedupe(values))));
+                    written.Add(new WrittenFile(path, target.Kind, created, Keys: EnvFiles.WriteAppSettings(path, values)));
                     break;
             }
-            git.Exclude(repo.Dir, path);
         }
 
         // Undo what an earlier up wrote that this one no longer does.

@@ -242,6 +242,46 @@ public sealed class HostTests : IDisposable
         Assert.Equal(1, ReadShared(now.LogFile).Split("sprig: starting").Length - 1);
     }
 
+    [Fact]
+    public async Task Following_a_sprouts_apps_streams_their_logs_and_ctrl_c_stops_them()
+    {
+        var output = new StringWriter();
+        var ansi = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings
+        {
+            Ansi = Spectre.Console.AnsiSupport.No,
+            ColorSystem = Spectre.Console.ColorSystemSupport.NoColors,
+            Out = new Spectre.Console.AnsiConsoleOutput(output),
+        });
+        var processes = new Sprig.Engine.Processes.ProcessRunner();
+        var settings = new Sprig.Engine.Settings.FileSettingsStore(_store.Paths);
+        var trust = new Sprig.Engine.Definitions.FileTrustStore(_store.Paths);
+        var cli = new Sprig.Cli.CliContext(_store.Paths, settings, trust,
+            new Sprig.Engine.Definitions.DefinitionRunner(trust, new Sprig.Engine.Definitions.DotnetRunHost(), _store.Paths),
+            new Sprig.Engine.Trellises.TrellisRegistry(_store.Paths),
+            new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), settings,
+                new Sprig.Engine.Git.GitClient(processes), new Sprig.Engine.Compose.DockerCompose(processes), host: _client),
+            _client, ansi);
+        var record = new SproutRecord("storefront", _store.Root, "feat-x", null, "stable", [], [], [], SproutState.Up,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        using var stop = new CancellationTokenSource();
+
+        var run = Task.Run(() => new Sprig.Cli.Commands.AppFollow(cli, record, [Spec("shop/api", Wait(30)), Spec("shop/web", Wait(30))])
+            .Run(stop.Token, output, colour: false));
+        Await("shop/api", r => r.State == RunnerState.Ready);
+        Await("shop/web", r => r.State == RunnerState.Ready);
+        stop.Cancel();
+
+        Assert.Equal(0, await run.WaitAsync(TimeSpan.FromSeconds(30)));
+        var text = output.ToString();
+        var alive = _client.TrySend(new HostRequest("ping"), TimeSpan.FromSeconds(2)) is { } pong ? $"host alive (pid {pong.Pid})" : "host gone";
+        foreach (var expected in new[] { "api | hello from shop/api", "web | hello from shop/web", "Stopping the apps", "shop/api stopped", "shop/web stopped" })
+            Assert.True(text.Contains(expected), $"no '{expected}' ({alive}) in:\n{text}");
+        // A whole-sprout stop forgets each runner a moment after it reports stopped.
+        var clock = Stopwatch.StartNew();
+        while (_client.Send(new HostRequest("list")).Runners!.Count > 0 && clock.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(100);
+        Assert.Empty(_client.Send(new HostRequest("list")).Runners!);
+    }
+
     /// <summary>Answers every request with <see cref="Status"/>, which a test can change while it runs.</summary>
     sealed class HealthServer : IDisposable
     {

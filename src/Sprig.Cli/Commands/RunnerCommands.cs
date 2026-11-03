@@ -46,36 +46,51 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         // Apps named outright start afresh; everything else, including what they depend on, is left alone if it's going.
         var restart = s.Apps.Length > 0 ? RunnerSpecs.Resolve(record, plan, s.Apps) : [];
 
-        var answer = cli.Host.Send(new HostRequest("start", specs, Restart: restart));
-        if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
+        Send(cli, specs, restart);
         if (s.NoWait)
             return CliOutput.Ok(s.Json, $"starting {specs.Count} apps", new { ok = true, apps = specs.Select(x => x.Name) });
 
+        var mine = WaitUntilReady(cli, record.Key, specs, s.Json, cancellation);
+        var failed = mine.Where(r => !r.State.Satisfies()).ToArray();
+        if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, runners = mine });
+        return failed.Length == 0 ? 0 : 1;
+    }
+
+    internal static void Send(CliContext cli, IReadOnlyList<RunnerSpec> specs, IReadOnlyList<string> restart)
+    {
+        var answer = cli.Host.Send(new HostRequest("start", specs, Restart: restart));
+        if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
+    }
+
+    /// <summary>
+    /// Until each of <paramref name="specs"/> is ready (or, for a job, finished) or has settled some other way, printing
+    /// each change of state, and where to read the log of each that didn't make it. Gives up after five minutes.
+    /// </summary>
+    internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string sprout, IReadOnlyList<RunnerSpec> specs, bool json,
+        CancellationToken cancellation)
+    {
         var watched = specs.Select(x => x.Name).ToHashSet();
         var seen = new Dictionary<string, RunnerState>();
         var clock = Stopwatch.StartNew();
         IReadOnlyList<RunnerStatus> mine = [];
         while (!cancellation.IsCancellationRequested)
         {
-            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Sprout == record.Key && watched.Contains(r.Name)).ToArray();
+            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Sprout == sprout && watched.Contains(r.Name)).ToArray();
             foreach (var r in mine.Where(r => !seen.TryGetValue(r.Name, out var was) || was != r.State))
             {
                 seen[r.Name] = r.State;
-                if (!s.Json) Report(r);
+                if (!json) Report(cli, r);
             }
             if (mine.All(r => r.State.Satisfies() || r.State.IsSettled())) break;
             if (clock.Elapsed > TimeSpan.FromMinutes(5)) break;
             Thread.Sleep(300);
         }
-
-        var failed = mine.Where(r => !r.State.Satisfies()).ToArray();
-        if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, runners = mine });
-        else if (failed.Length > 0)
-            foreach (var r in failed) cli.Ansi.MarkupLine($"[dim]  log: {Markup.Escape(r.LogFile)}[/]");
-        return failed.Length == 0 ? 0 : 1;
+        if (!json)
+            foreach (var r in mine.Where(r => !r.State.Satisfies())) cli.Ansi.MarkupLine($"[dim]  log: {Markup.Escape(r.LogFile)}[/]");
+        return mine;
     }
 
-    void Report(RunnerStatus r)
+    internal static void Report(CliContext cli, RunnerStatus r)
     {
         var (colour, text) = r.State switch
         {

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Sprouts;
 using Spectre.Console;
@@ -34,10 +35,20 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         [CommandOption("--branch <branch>")]
         [Description("The branch for the sprout's worktrees (default: the sprout's name). Made from the trellis's base branch when it doesn't exist")]
         public string? Branch { get; set; }
+
+        [CommandOption("--run")]
+        [Description("Then start every app and follow their logs together. Ctrl+C stops the apps; the infra keeps running")]
+        public bool Run { get; set; }
+
+        [CommandOption("-d|--detached")]
+        [Description("Then start every app, wait until they're ready, and leave them running in the background")]
+        public bool Detached { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
+        if (s.Json && s.Run && !s.Detached)
+            throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; use --detached with --json");
         if (TrellisLoad.Load(cli, s.Trellis, s) is not { } loaded) return 1;
         var trellis = loaded.Trellis!;
         var root = Path.GetDirectoryName(loaded.TrellisPath)!;
@@ -52,9 +63,23 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         {
             var record = cli.Sprouts.Up(loaded, sprout, s.Branch, progress, cancellation);
             var plan = cli.Sprouts.LastPlan(record.Trellis, record.Name)!;
-            if (s.Json) CliOutput.Json(new { ok = true, sprout = record, plan });
-            else Summary(record, plan, root);
-            return 0;
+            var runApps = s.Run || s.Detached;
+            if (!runApps)
+            {
+                if (s.Json) CliOutput.Json(new { ok = true, sprout = record, plan });
+                else Summary(record, plan, root, appsStart: false);
+                return 0;
+            }
+
+            if (!s.Json) Summary(record, plan, root, appsStart: true);
+            var specs = RunnerSpecs.For(record, plan);
+            if (specs.Count == 0)
+            {
+                if (s.Json) CliOutput.Json(new { ok = true, sprout = record, plan, runners = Array.Empty<RunnerStatus>() });
+                else cli.Ansi.MarkupLine("[dim]The trellis has no apps to run.[/]");
+                return 0;
+            }
+            return s.Detached ? StartDetached(record, plan, specs, s.Json, cancellation) : new AppFollow(cli, record, specs).Run();
         }
         catch (SproutException e)
         {
@@ -66,6 +91,22 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             }
             return 1;
         }
+    }
+
+    int StartDetached(SproutRecord record, Plan plan, IReadOnlyList<RunnerSpec> specs, bool json, CancellationToken cancellation)
+    {
+        cli.Ansi.WriteLine();
+        StartCommand.Send(cli, specs, []);
+        var runners = StartCommand.WaitUntilReady(cli, record.Key, specs, json, cancellation);
+        var ok = runners.All(r => r.State.Satisfies());
+        if (json) CliOutput.Json(new { ok, sprout = record, plan, runners });
+        else
+        {
+            var names = $"{Markup.Escape(record.Trellis)} {Markup.Escape(record.Name)}";
+            cli.Ansi.MarkupLine($"[dim]The apps keep running in the background. Watch them: sprig ps; read one's log: sprig logs {names} <app>; " +
+                                $"stop them: sprig stop {names}[/]");
+        }
+        return ok ? 0 : 1;
     }
 
     string? _lastOutput;
@@ -93,7 +134,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         }
     }
 
-    void Summary(SproutRecord record, Plan plan, string root)
+    /// <param name="appsStart">Sprig starts the apps next, so there's no need to say how to start them by hand.</param>
+    void Summary(SproutRecord record, Plan plan, string root, bool appsStart)
     {
         cli.Ansi.WriteLine();
         var where = record.InPlace ? "repos in place" : $"branch {record.Branch}";
@@ -124,8 +166,10 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 
         var warnings = plan.Problems.Where(p => p.Severity == ProblemSeverity.Warning).ToArray();
         if (warnings.Length > 0) PlanPrinter.Problems(cli.Ansi, warnings, root);
-        cli.Ansi.MarkupLine("[dim]Start the apps from their folders (dotnet run, npm run dev). Stop the infra with: sprig down " +
-                            $"{Markup.Escape(record.Trellis)} {Markup.Escape(record.Name)}[/]");
+        var names = $"{Markup.Escape(record.Trellis)} {Markup.Escape(record.Name)}";
+        if (!appsStart)
+            cli.Ansi.MarkupLine($"[dim]Start the apps: sprig start {names} (or from their folders: dotnet run, npm run dev). " +
+                                $"Stop the infra with: sprig down {names}[/]");
     }
 }
 

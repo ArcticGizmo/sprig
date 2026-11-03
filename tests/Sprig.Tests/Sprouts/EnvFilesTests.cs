@@ -34,6 +34,21 @@ public sealed class EnvFilesTests : IDisposable
     }
 
     [Fact]
+    public void Writing_the_same_values_again_leaves_the_file_untouched_so_dev_servers_dont_restart()
+    {
+        var file = Path.Combine(_dir, ".env.local");
+        EnvFiles.WriteDotEnv(file, Values(("PORT", "5171")), seed: null);
+        var written = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(file, written);
+
+        EnvFiles.WriteDotEnv(file, Values(("PORT", "5171")), seed: null);
+        Assert.Equal(written, File.GetLastWriteTimeUtc(file));
+
+        EnvFiles.WriteDotEnv(file, Values(("PORT", "5172")), seed: null);
+        Assert.NotEqual(written, File.GetLastWriteTimeUtc(file));
+    }
+
+    [Fact]
     public void A_new_dotenv_file_starts_from_the_main_checkouts_copy_and_is_deleted_when_sprig_made_it()
     {
         var seed = Path.Combine(_dir, "seed.env");

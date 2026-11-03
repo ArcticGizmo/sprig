@@ -191,8 +191,11 @@ public static class EnvFiles
 
     static void WriteJson(string path, JsonObject root) => WriteText(path, root.ToJsonString(Indented) + "\n");
 
+    /// <summary>Left alone when it already says this: dev servers (Vite) and config watchers (ASP.NET's reloadOnChange)
+    /// restart or reload on any write, so an <c>up</c> that changes nothing would bounce running apps.</summary>
     static void WriteText(string path, string text)
     {
+        if (File.Exists(path) && File.ReadAllText(path) == text) return;
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
         File.WriteAllText(path, text);
     }

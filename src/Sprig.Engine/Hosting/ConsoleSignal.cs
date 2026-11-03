@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Sprig.Engine.Hosting;
@@ -6,13 +7,20 @@ namespace Sprig.Engine.Hosting;
 /// Sends Ctrl+C to everything in a runner's console, the way pressing it in a terminal would, so apps get to shut down
 /// properly (ASP.NET drains requests, Vite closes its watchers). Each runner was started with a console of its own (no
 /// window), so the signal reaches only that runner's processes.
+/// <para>
+/// Sending it means attaching to that console, and whatever is attached gets the Ctrl+C too. The host used to attach
+/// itself and rely on a handler to survive, but now and then the signal ended the host anyway, and every app with it. So
+/// the host never attaches: a short-lived copy of itself (<see cref="HelperArgument"/>) does it and exits, and only that
+/// copy is ever at risk.
+/// </para>
 /// </summary>
 public static class ConsoleSignal
 {
-    // A console is per process, so attaching to one runner's console has to wait for the last to finish.
-    static readonly Lock Gate = new();
-    static readonly HandlerRoutine Ignore = _ => true;
-    static bool _prepared;
+    public const string HelperArgument = "--ctrl-c";
+
+    /// <summary>The exe that runs <see cref="RunHelper"/> when given <see cref="HelperArgument"/>: the host sets its own
+    /// path at startup. Without it, Ctrl+C can't be sent and stops fall back to ending the app.</summary>
+    public static string? HelperPath { get; set; }
 
     /// <summary>
     /// Call once before starting any app. Windows passes an "ignore Ctrl+C" flag from parent to child (whatever started
@@ -20,45 +28,47 @@ public static class ConsoleSignal
     /// </summary>
     public static void Prepare()
     {
-        if (!OperatingSystem.IsWindows()) return;
-        lock (Gate)
-        {
-            if (_prepared) return;
-            SetConsoleCtrlHandler(IntPtr.Zero, false);
-            _prepared = true;
-        }
+        if (OperatingSystem.IsWindows()) SetConsoleCtrlHandler(IntPtr.Zero, false);
     }
 
     /// <summary>Ask the console that <paramref name="pid"/> runs in to stop. False when that couldn't be done (it has
     /// no console, it already exited, or this isn't Windows); the caller then has only the kill left.</summary>
-    public static bool SendCtrlC(int pid)
+    public static async Task<bool> SendCtrlCAsync(int pid)
     {
-        if (!OperatingSystem.IsWindows()) return false;
-        Prepare();
-        lock (Gate)
+        if (!OperatingSystem.IsWindows() || HelperPath is not { } helper) return false;
+        var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
+        psi.ArgumentList.Add(HelperArgument);
+        psi.ArgumentList.Add(pid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        using var process = Process.Start(psi);
+        if (process is null) return false;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
         {
-            FreeConsole();
-            if (!AttachConsole((uint)pid)) return false;
-            try
-            {
-                // The host is in the console while it signals, so it gets the Ctrl+C too. A handler keeps it alive (the
-                // null "ignore" flag would, but children inherit that and could never be stopped gently). It's added
-                // again on every attach, because one added while attached to an earlier console doesn't protect the
-                // host in the next. None is ever removed: Ctrl+C arrives on a thread of its own, possibly late, and a
-                // moment with no handler would let a late one end the host.
-                if (!SetConsoleCtrlHandler(Ignore, true)) return false;
-                return GenerateConsoleCtrlEvent(CtrlCEvent, 0);
-            }
-            finally
-            {
-                FreeConsole();
-            }
+            await process.WaitForExitAsync(timeout.Token);
         }
+        catch (OperationCanceledException)
+        {
+            try { process.Kill(); } catch (InvalidOperationException) { /* just exited */ }
+            return false;
+        }
+        return process.ExitCode == 0;
+    }
+
+    /// <summary>
+    /// The helper's whole job: leave its own console, join the app's, and send Ctrl+C to everything there. It ignores
+    /// the Ctrl+C itself (it's in that console too), which is safe here because it starts nothing that could inherit
+    /// the setting. Exit code 0 when sent.
+    /// </summary>
+    public static int RunHelper(string pidText)
+    {
+        if (!OperatingSystem.IsWindows() || !uint.TryParse(pidText, out var pid)) return 2;
+        FreeConsole();
+        if (!AttachConsole(pid)) return 3;
+        if (!SetConsoleCtrlHandler(IntPtr.Zero, true)) return 4;
+        return GenerateConsoleCtrlEvent(CtrlCEvent, 0) ? 0 : 5;
     }
 
     const uint CtrlCEvent = 0;
-
-    delegate bool HandlerRoutine(uint ctrlType);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AttachConsole(uint processId);
@@ -66,10 +76,7 @@ public static class ConsoleSignal
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool FreeConsole();
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool SetConsoleCtrlHandler(HandlerRoutine handler, bool add);
-
-    /// <summary>With a null handler: set (true) or clear (false) the inherited "ignore Ctrl+C" flag.</summary>
+    /// <summary>With a null handler: set (true) or clear (false) the "ignore Ctrl+C" flag, which children inherit.</summary>
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
 

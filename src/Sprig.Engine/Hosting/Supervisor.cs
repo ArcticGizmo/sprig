@@ -284,7 +284,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             if (wasRunning)
             {
                 var clock = Stopwatch.StartNew();
-                var asked = ConsoleSignal.SendCtrlC(_process!.Id);
+                var asked = await ConsoleSignal.SendCtrlCAsync(_process!.Id);
                 Write(asked ? "sprig: sent Ctrl+C" : "sprig: couldn't send Ctrl+C, so ending it");
                 var answered = false;
                 while (asked && clock.Elapsed < grace && AppStillRunning())
@@ -427,12 +427,10 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             if (logMatched is null || logMatched.Task.IsCompleted) return;
             try
             {
-                if (_readyLog!.IsMatch(Ansi.Replace(line, ""))) logMatched.TrySetResult();
+                if (_readyLog!.IsMatch(AnsiText.Strip(line))) logMatched.TrySetResult();
             }
             catch (RegexMatchTimeoutException) { /* a pathological pattern; this line doesn't count */ }
         }
-
-        static readonly Regex Ansi = new(@"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])", RegexOptions.Compiled);
 
         /// <summary>
         /// Ready once every check it has passes: a matching log line, each health url answering with a success status.

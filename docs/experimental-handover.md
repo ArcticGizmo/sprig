@@ -72,6 +72,11 @@ RunnerSpecs (plan → what to run) ──► HostClient ══ named pipe ══
 - **Parallel `dotnet run` in one worktree** races on shared projects' `obj` (CS2012). Runners build once per repo (a lock per repo folder), then run with `--no-build --no-launch-profile`.
 - **Starting a background process from the CLI:** start it with shell-execute, or it inherits the CLI's stdout and anything piping the CLI's output hangs until the background process exits.
 - **The host holds each app's log open**, so read logs with `FileShare.ReadWrite` (`File.ReadAllText` fails).
+- **Ctrl+C on Windows** (all in `ConsoleSignal` and `Supervisor.StopCoreAsync`):
+  - Clear the inherited "ignore Ctrl+C" flag at host start.
+  - Add the host's own handler on every attach, and never remove it.
+  - Answer cmd's "Terminate batch job" with "Y" on stdin.
+  - Never run the host in-process in tests: attaching to an app's console would take the test runner's console away. The host tests start the real `sprig-host`.
 - **Windows 8.3 short paths:** `%TEMP%` here is `C:\Users\JONHOW~1\…`. Vite returns 403 from such a path. Always pass paths through `Engine/Store/LongPath.Of`.
 - **This machine already runs containers** on 5432, 8004–8006, 8012–8014 and others, and the released sprig leaves `sprig-feature-*` volumes. Never stop or remove containers or volumes you didn't start; sprout projects are all `sprig-<trellis>-<sprout>[-<repo>]`.
 - **Compose without health checks:** `--wait` only means "running". Postgres and friends need a check (presets have one; repo compose services take `.Health(...)`).
@@ -94,6 +99,6 @@ RunnerSpecs (plan → what to run) ──► HostClient ══ named pipe ══
 
 ## M5 in short (see the roadmap for the full list)
 
-Done so far: `sprig-host`, Job Objects, per-repo builds, port readiness, logs, `sprig start|stop|ps|logs`, jobs (`repo.DotNetJob`), `WaitFor` and value-implied ordering (`PlannedApp.DependsOn`), groups, npm installs in fresh worktrees, and the IDE handoff (proved on the testbed). Model schema is 3. Next: a graceful stop before the kill, HTTP and log-line readiness, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host). Done when one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then web and mobile.
+Done so far: `sprig-host`, Job Objects, per-repo builds, port readiness, logs, `sprig start|stop|ps|logs`, jobs (`repo.DotNetJob`), `WaitFor` and value-implied ordering (`PlannedApp.DependsOn`), groups, npm installs in fresh worktrees, the IDE handoff (proved on the testbed), and a graceful stop (Ctrl+C to the app's console, killed after 10 s; see `ConsoleSignal` before touching it). Model schema is 3. Next: HTTP and log-line readiness, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host). Done when one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then web and mobile.
 
 Open question for M5 or later: a sprout evaluates its repos' definitions from their main checkouts, not its worktrees, because trust is per path. Evaluating worktrees needs a rule for how approval carries over (for example, trust by content hash within a registered repo's worktrees).

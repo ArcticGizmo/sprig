@@ -8,25 +8,28 @@ using Sprig.Model;
 
 namespace Sprig.Tests.Hosting;
 
-/// <summary>The host's server in-process against a throwaway store (so its own pipe), running real processes.</summary>
+/// <summary>
+/// The real <c>sprig-host</c> exe against a throwaway store (so its own pipe), running real processes. Out of process
+/// because stopping an app attaches the host to that app's console, which would take the test runner's own console
+/// from it.
+/// </summary>
 public sealed class HostTests : IDisposable
 {
     readonly TempStore _store = new();
-    readonly HostServer _server;
-    readonly Task<int> _running;
     readonly HostClient _client;
 
     public HostTests()
     {
-        _server = new HostServer(_store.Paths, TimeSpan.FromMinutes(5));
-        _running = _server.RunAsync();
         _client = new HostClient(_store.Paths);
+        Assert.True(_client.Send(new HostRequest("ping")).Ok);
     }
 
     public void Dispose()
     {
         _client.TrySend(new HostRequest("shutdown"));
-        _running.Wait(TimeSpan.FromSeconds(10));
+        var clock = Stopwatch.StartNew();
+        while (_client.TrySend(new HostRequest("ping"), TimeSpan.FromMilliseconds(100)) is not null && clock.Elapsed < TimeSpan.FromSeconds(30))
+            Thread.Sleep(100);
         _store.Dispose();
     }
 
@@ -66,10 +69,14 @@ public sealed class HostTests : IDisposable
         var ready = Await("shop/api", r => r.State == RunnerState.Ready);
         Await("shop/api", r => ReadShared(r.LogFile).Contains("hello from sprig"));
 
-        _client.Send(new HostRequest("stop", Sprout: "storefront/feat-x", Name: "shop/api"));
+        var stopped = Assert.Single(_client.StopAndWait("storefront/feat-x", "shop/api"));
 
-        Assert.Equal(RunnerState.Stopped, Await("shop/api", r => r.State == RunnerState.Stopped).State);
+        Assert.Equal(RunnerState.Stopped, stopped.State);
+        Assert.Null(stopped.Error);
         Assert.Throws<ArgumentException>(() => Process.GetProcessById(ready.Pid!.Value));
+        var log = ReadShared(ready.LogFile);
+        Assert.Contains("sprig: sent Ctrl+C", log);
+        Assert.Contains("sprig: stopped in", log);
     }
 
     [Fact]
@@ -83,6 +90,9 @@ public sealed class HostTests : IDisposable
         Assert.Equal("the build exited with code 3", failed.Error);
 
         _client.Send(new HostRequest("stop", Sprout: "storefront/feat-x"));
+        Await("shop/web", _ => true);
+        var clock = Stopwatch.StartNew();
+        while (_client.Send(new HostRequest("list")).Runners!.Count > 0 && clock.Elapsed < TimeSpan.FromSeconds(10)) Thread.Sleep(100);
         Assert.Empty(_client.Send(new HostRequest("list")).Runners!);
     }
 
@@ -122,6 +132,21 @@ public sealed class HostTests : IDisposable
         Assert.Equal(RunnerState.Failed, api.State);
         Assert.Equal("waits for shop/migrate, which exited with code 4", api.Error);
         Assert.Null(api.Pid);
+    }
+
+    [Fact]
+    public void The_host_survives_signalling_one_app_after_another()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/a", Wait(30)), Spec("shop/b", Wait(30))]));
+        Await("shop/a", r => r.State == RunnerState.Ready);
+        Await("shop/b", r => r.State == RunnerState.Ready);
+
+        var a = Assert.Single(_client.StopAndWait("storefront/feat-x", "shop/a"));
+        var b = Assert.Single(_client.StopAndWait("storefront/feat-x", "shop/b"));
+
+        Assert.Null(a.Error);
+        Assert.Null(b.Error);
+        Assert.NotNull(_client.TrySend(new HostRequest("ping")));
     }
 
     [Fact]

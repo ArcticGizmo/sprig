@@ -24,6 +24,38 @@ public sealed class HostClient(ISprigPaths paths)
         return JsonSerializer.Deserialize<HostResponse>(line, HostProtocol.Json);
     }
 
+    /// <summary>
+    /// Stop a sprout's apps (or one of them) and wait until they've gone, so a caller can then remove what they were
+    /// using. Returns the final state of each one stopped; empty when nothing was running or no host is.
+    /// </summary>
+    public IReadOnlyList<RunnerStatus> StopAndWait(string sprout, string? name = null)
+    {
+        bool Mine(RunnerStatus r) => r.Sprout == sprout && (name is null || r.Name == name);
+        var before = TrySend(new HostRequest("list"))?.Runners?.Where(Mine).Where(r => r.State.IsAlive() || r.State == RunnerState.Stopping).ToArray();
+        if (before is not { Length: > 0 }) return [];
+
+        TrySend(new HostRequest("stop", Sprout: sprout, Name: name));
+        var deadline = Stopwatch.StartNew();
+        var last = before.Select(r => r with { State = RunnerState.Stopping }).ToDictionary(r => r.Name);
+        while (deadline.Elapsed < Supervisor.Grace + TimeSpan.FromSeconds(15))
+        {
+            var now = TrySend(new HostRequest("list"))?.Runners?.Where(Mine).ToDictionary(r => r.Name);
+            if (now is null)
+            {
+                // Its apps went with it (their jobs close with the host), but that's not the stop that was asked for.
+                foreach (var key in last.Keys.ToArray().Where(n => last[n].State == RunnerState.Stopping))
+                    last[key] = last[key] with { State = RunnerState.Stopped, Error = "the sprig host stopped answering; its apps ended with it" };
+                break;
+            }
+            foreach (var r in before.Where(b => now.ContainsKey(b.Name))) last[r.Name] = now[r.Name];
+            // A whole-sprout stop forgets each runner once it has stopped, so gone counts as stopped.
+            foreach (var r in before.Where(b => !now.ContainsKey(b.Name))) last[r.Name] = last[r.Name] with { State = RunnerState.Stopped };
+            if (last.Values.All(r => r.State != RunnerState.Stopping)) break;
+            Thread.Sleep(150);
+        }
+        return last.Values.ToArray();
+    }
+
     /// <summary>Send <paramref name="request"/>, starting the host first when it isn't running.</summary>
     public HostResponse Send(HostRequest request)
     {

@@ -33,8 +33,8 @@ public sealed record CommandSpec(string File, IReadOnlyList<string> Args)
 }
 
 /// <summary><c>Waiting</c>: built, waiting for what it depends on. <c>Running</c> and <c>Completed</c> are a job's
-/// equivalents of <c>Ready</c>: running, then finished with code 0.</summary>
-public enum RunnerState { Building, Waiting, Starting, Ready, Running, Completed, Exited, Stopped, Failed }
+/// equivalents of <c>Ready</c>: running, then finished with code 0. <c>Stopping</c>: asked to stop, not yet gone.</summary>
+public enum RunnerState { Building, Waiting, Starting, Ready, Running, Completed, Exited, Stopping, Stopped, Failed }
 
 public static class RunnerStates
 {
@@ -46,7 +46,8 @@ public static class RunnerStates
     public static bool Satisfies(this RunnerState state) => state is RunnerState.Ready or RunnerState.Completed;
 
     /// <summary>Settled one way or the other: nothing more will happen without being asked.</summary>
-    public static bool IsSettled(this RunnerState state) => state is not (RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Running);
+    public static bool IsSettled(this RunnerState state)
+        => state is not (RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Running or RunnerState.Stopping);
 }
 
 /// <param name="Exit">The exit code once it has ended.</param>

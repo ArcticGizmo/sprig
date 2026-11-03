@@ -7,16 +7,20 @@ using Sprig.Engine.Store;
 namespace Sprig.Engine.Hosting;
 
 /// <summary>
-/// Runs apps for the host: build (one at a time per repo), start in a job, log every line to a file in the store, and
-/// call an app ready once its port accepts connections. Everything it starts dies with it, because each runner's job
-/// closes when the host does.
+/// Runs apps for the host: build (one at a time per repo), wait for dependencies, start in a job, log every line to a
+/// file in the store, and call an app ready once its port accepts connections. Stopping asks politely (Ctrl+C) and
+/// kills only what's still running after <see cref="Grace"/>. Everything it starts dies with it, because each runner's
+/// job closes when the host does.
 /// </summary>
-public sealed class Supervisor(ISprigPaths paths) : IDisposable
+public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
 {
+    public static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
+
     readonly ConcurrentDictionary<(string Sprout, string Name), Runner> _runners = new();
     readonly ConcurrentDictionary<string, SemaphoreSlim> _buildLocks = new(StringComparer.OrdinalIgnoreCase);
+    readonly Lock _startGate = new();
 
-    public bool AnyAlive => _runners.Values.Any(r => r.Status.State.IsAlive());
+    public bool AnyAlive => _runners.Values.Any(r => r.Status.State.IsAlive() || r.Status.State == RunnerState.Stopping);
 
     public IReadOnlyList<RunnerStatus> List() => _runners.Values.Select(r => r.Status).OrderBy(s => s.Sprout).ThenBy(s => s.Name).ToArray();
 
@@ -29,96 +33,76 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
     {
         lock (_startGate)
         {
-            var started = new List<RunnerStatus>();
+            var started = new List<Runner>();
             foreach (var spec in specs)
             {
                 var key = (spec.Sprout, spec.Name);
+                Runner? previous = null;
                 if (_runners.TryGetValue(key, out var existing))
                 {
                     var keep = !restart.Contains(spec.Name) && (existing.Status.State.IsAlive() || existing.Status.State == RunnerState.Completed);
                     if (keep) continue;
-                    existing.Stop();
+                    _ = existing.StopAsync(Grace);
+                    previous = existing;
                 }
                 var runner = new Runner(spec, HostProtocol.LogFile(paths, spec.Sprout, spec.Name),
                     spec.BuildKey is { } k ? _buildLocks.GetOrAdd(k, _ => new SemaphoreSlim(1, 1)) : null,
-                    name => _runners.TryGetValue((spec.Sprout, name), out var r) ? r.Status : null);
+                    name => _runners.TryGetValue((spec.Sprout, name), out var r) ? r.Status : null,
+                    previous);
                 _runners[key] = runner;
-                started.Add(runner.Status);
+                started.Add(runner);
             }
-            foreach (var status in started) _ = Task.Run(_runners[(status.Sprout, status.Name)].RunAsync);
-            return started;
+            foreach (var runner in started) _ = Task.Run(runner.RunAsync);
+            return started.Select(r => r.Status).ToArray();
         }
     }
 
-    readonly Lock _startGate = new();
-
-    /// <summary>Stop one app, which stays listed as stopped; or, with no <paramref name="name"/>, the whole sprout,
-    /// whose runners are then forgotten (it's going down or away).</summary>
+    /// <summary>
+    /// Stop one app, which stays listed as stopped; or, with no <paramref name="name"/>, the whole sprout, whose
+    /// runners are forgotten once they've stopped (it's going down or away). Returns at once; each runner shows
+    /// <see cref="RunnerState.Stopping"/> until it has.
+    /// </summary>
     public bool Stop(string sprout, string? name)
     {
-        var stopped = false;
-        foreach (var (key, runner) in _runners.Where(kv => kv.Key.Sprout == sprout && (name is null || kv.Key.Name == name)).ToArray())
+        var targets = _runners.Where(kv => kv.Key.Sprout == sprout && (name is null || kv.Key.Name == name)).ToArray();
+        foreach (var (key, runner) in targets)
         {
-            runner.Stop();
-            if (name is null) _runners.TryRemove(key, out _);
-            stopped = true;
+            var stopping = runner.StopAsync(Grace);
+            if (name is null) _ = stopping.ContinueWith(_ => _runners.TryRemove(new KeyValuePair<(string, string), Runner>(key, runner)));
         }
-        return stopped;
+        return targets.Length > 0;
     }
 
-    public void Dispose()
-    {
-        foreach (var runner in _runners.Values) runner.Stop();
-    }
+    public async ValueTask DisposeAsync()
+        => await Task.WhenAll(_runners.Values.Select(r => r.StopAsync(Grace)));
 
     /// <param name="peer">Another runner of the same sprout, by name, for waiting on.</param>
-    sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer)
+    /// <param name="previous">The runner this one replaces; it has to be gone before this one builds, since a running
+    /// app locks the files its build would overwrite.</param>
+    sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer, Runner? previous)
     {
+        // The shells sprig starts apps through, and the console host Windows gives each one; neither is the app.
+        static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase) { "cmd", "conhost", "sh" };
+
         readonly JobObject _job = new();
         readonly Lock _gate = new();
+        readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
         StreamWriter? _log;
         Process? _process;
-        volatile bool _stopping;
+        Task? _stopping;
 
         public RunnerStatus Status { get; private set; } = new(spec.Sprout, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
 
-        /// <summary>Null once everything it waits for is ready; otherwise why it can't start.</summary>
-        async Task<string?> WaitForDependenciesAsync()
-        {
-            var names = spec.WaitFor ?? [];
-            if (names.Count == 0) return null;
-            Set(RunnerState.Waiting);
-            Write($"sprig: waiting for {string.Join(", ", names)}");
-            while (!_stopping)
-            {
-                var pending = new List<string>();
-                foreach (var name in names)
-                {
-                    var other = peer(name);
-                    if (other is null) return $"waits for {name}, which isn't running";
-                    if (other.State.Satisfies()) continue;
-                    if (other.State.IsSettled()) return $"waits for {name}, which {Describe(other)}";
-                    pending.Add(name);
-                }
-                if (pending.Count == 0) return null;
-                await Task.Delay(250);
-            }
-            return "stopped while waiting";
-        }
-
-        static string Describe(RunnerStatus other) => other.State switch
-        {
-            RunnerState.Exited or RunnerState.Failed when other.Exit is { } code => $"exited with code {code}",
-            RunnerState.Failed => $"failed ({other.Error})",
-            _ => $"is {other.State.ToString().ToLowerInvariant()}",
-        };
+        bool Stopping => _stopping is not null;
 
         public async Task RunAsync()
         {
             try
             {
+                if (previous is not null) await previous._ended.Task;
+                if (Stopping) return;
                 Directory.CreateDirectory(Path.GetDirectoryName(logFile)!);
-                _log = new StreamWriter(new FileStream(logFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), Encoding.UTF8) { AutoFlush = true };
+                lock (_gate) _log = new StreamWriter(new FileStream(logFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), Encoding.UTF8) { AutoFlush = true };
 
                 if (spec.Build is { } build)
                 {
@@ -127,7 +111,7 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
                     int code;
                     try { code = await RunToEndAsync(build); }
                     finally { buildLock?.Release(); }
-                    if (_stopping) return;
+                    if (Stopping) return;
                     if (code != 0)
                     {
                         Set(RunnerState.Failed, exit: code, error: $"the build exited with code {code}");
@@ -137,11 +121,11 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
 
                 if (await WaitForDependenciesAsync() is { } blocked)
                 {
-                    if (!_stopping) Set(RunnerState.Failed, error: blocked);
+                    if (!Stopping) Set(RunnerState.Failed, error: blocked);
                     Write($"sprig: {blocked}");
                     return;
                 }
-                if (_stopping) return;
+                if (Stopping) return;
 
                 Write($"sprig: starting {spec.Command}");
                 var process = Launch(spec.Command);
@@ -157,7 +141,7 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
                 await process.WaitForExitAsync();
                 var exit = process.ExitCode;
                 Write($"sprig: exited with code {exit}");
-                if (_stopping) return;
+                if (Stopping) return;
                 if (!spec.Job) Set(RunnerState.Exited, exit: exit);
                 else if (exit == 0) Set(RunnerState.Completed, exit: exit);
                 else Set(RunnerState.Failed, exit: exit, error: $"exited with code {exit}");
@@ -169,26 +153,147 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
             }
             finally
             {
-                lock (_gate)
+                // Whatever it left behind (a child that outlived its parent) goes now, unless a stop is handling that.
+                if (!Stopping)
                 {
-                    _log?.Dispose();
-                    _log = null;
+                    _job.Terminate(_process);
+                    lock (_gate)
+                    {
+                        _log?.Dispose();
+                        _log = null;
+                    }
+                    _ended.TrySetResult();
                 }
             }
         }
 
-        public void Stop()
+        /// <summary>Stop it, politely first. Safe to call more than once; every caller gets the same stop.</summary>
+        public Task StopAsync(TimeSpan grace)
         {
-            _stopping = true;
-            _job.Terminate(_process);
-            Set(RunnerState.Stopped, exit: null);
-            _job.Dispose();
+            lock (_gate)
+            {
+                if (_stopping is not null) return _stopping;
+                var wasRunning = Status.State.IsAlive() && _process is { HasExited: false };
+                // Marked before the stop request returns, so whoever asked sees Stopping on its next look, never a
+                // stale Ready it would take for "already done".
+                Status = Status with { State = RunnerState.Stopping, Since = DateTimeOffset.UtcNow };
+                return _stopping = Task.Run(() => StopCoreAsync(grace, wasRunning));
+            }
         }
+
+        async Task StopCoreAsync(TimeSpan grace, bool wasRunning)
+        {
+            string? note = null;
+            if (wasRunning)
+            {
+                var clock = Stopwatch.StartNew();
+                var asked = ConsoleSignal.SendCtrlC(_process!.Id);
+                Write(asked ? "sprig: sent Ctrl+C" : "sprig: couldn't send Ctrl+C, so ending it");
+                var answered = false;
+                while (asked && clock.Elapsed < grace && AppStillRunning())
+                {
+                    // npm, vite and friends are .cmd batch files on Windows, and cmd answers Ctrl+C with "Terminate
+                    // batch job (Y/N)?" and waits. Every shell in the tree shares this stdin, so one answer each will do.
+                    if (!answered && clock.Elapsed > TimeSpan.FromSeconds(1) && OperatingSystem.IsWindows())
+                    {
+                        answered = true;
+                        try
+                        {
+                            for (var i = 0; i < 4; i++) await _process.StandardInput.WriteLineAsync("Y");
+                            await _process.StandardInput.FlushAsync();
+                        }
+                        catch (IOException) { /* nothing is reading any more */ }
+                    }
+                    await Task.Delay(150);
+                }
+                if (AppStillRunning())
+                {
+                    note = asked ? $"didn't stop within {grace.TotalSeconds:0}s of Ctrl+C, so it was ended" : "ended without Ctrl+C";
+                    Write($"sprig: {note} (still running: {string.Join(", ", Remaining())})");
+                }
+                else Write($"sprig: stopped in {clock.Elapsed.TotalSeconds:0.0}s");
+            }
+            _job.Terminate(_process);
+            Set(RunnerState.Stopped, force: true, error: note);
+            _job.Dispose();
+            lock (_gate)
+            {
+                _log?.Dispose();
+                _log = null;
+            }
+            _ended.TrySetResult();
+        }
+
+        /// <summary>True while anything but a shell or console host is left in the job: those wait on a prompt
+        /// ("Terminate batch job?") after Ctrl+C rather than exit, so they don't count as the app.</summary>
+        bool AppStillRunning()
+        {
+            var ids = _job.ProcessIds();
+            if (ids.Count == 0) return _process is { HasExited: false } && !OperatingSystem.IsWindows();
+            foreach (var id in ids)
+            {
+                try
+                {
+                    using var p = Process.GetProcessById(id);
+                    if (!Wrappers.Contains(p.ProcessName)) return true;
+                }
+                catch (ArgumentException) { /* exited between the two calls */ }
+            }
+            return false;
+        }
+
+        IEnumerable<string> Remaining()
+        {
+            foreach (var id in _job.ProcessIds())
+            {
+                string? name;
+                try
+                {
+                    using var p = Process.GetProcessById(id);
+                    name = p.ProcessName;
+                }
+                catch (ArgumentException) { continue; }
+                yield return $"{name} {id}";
+            }
+        }
+
+        /// <summary>Null once everything it waits for is ready; otherwise why it can't start.</summary>
+        async Task<string?> WaitForDependenciesAsync()
+        {
+            var names = spec.WaitFor ?? [];
+            if (names.Count == 0) return null;
+            Set(RunnerState.Waiting);
+            Write($"sprig: waiting for {string.Join(", ", names)}");
+            while (!Stopping)
+            {
+                var pending = false;
+                foreach (var name in names)
+                {
+                    var other = peer(name);
+                    if (other is null) return $"waits for {name}, which isn't running";
+                    if (other.State.Satisfies()) continue;
+                    if (other.State.IsSettled()) return $"waits for {name}, which {Describe(other)}";
+                    pending = true;
+                }
+                if (!pending) return null;
+                await Task.Delay(250);
+            }
+            return "stopped while waiting";
+        }
+
+        static string Describe(RunnerStatus other) => other.State switch
+        {
+            RunnerState.Exited or RunnerState.Failed when other.Exit is { } code => $"exited with code {code}",
+            RunnerState.Failed => $"failed ({other.Error})",
+            _ => $"is {other.State.ToString().ToLowerInvariant()}",
+        };
 
         async Task<int> RunToEndAsync(CommandSpec command)
         {
             var process = Launch(command);
+            _process = process;
             await process.WaitForExitAsync();
+            _process = null;
             return process.ExitCode;
         }
 
@@ -222,7 +327,7 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
         /// <summary>Ready once the port accepts a connection, checked against the loopback addresses an app might bind.</summary>
         async Task WatchReadyAsync(Process process, int port)
         {
-            while (!process.HasExited && !_stopping)
+            while (!process.HasExited && !Stopping)
             {
                 foreach (var host in new[] { "127.0.0.1", "::1" })
                 {
@@ -241,12 +346,12 @@ public sealed class Supervisor(ISprigPaths paths) : IDisposable
             }
         }
 
-        void Set(RunnerState state, int? pid = null, int? exit = null, string? error = null)
+        /// <param name="force">Only stopping may change the state once a stop has begun.</param>
+        void Set(RunnerState state, int? pid = null, int? exit = null, string? error = null, bool force = false)
         {
             lock (_gate)
             {
-                // Once stopped, a late exit or readiness report mustn't bring it back.
-                if (Status.State == RunnerState.Stopped && state != RunnerState.Stopped) return;
+                if (Stopping && !force) return;
                 Status = Status with { State = state, Pid = pid ?? Status.Pid, Exit = exit, Error = error, Since = DateTimeOffset.UtcNow };
             }
         }

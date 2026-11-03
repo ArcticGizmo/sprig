@@ -32,6 +32,27 @@ public sealed class JobObject : IDisposable
             throw new InvalidOperationException($"couldn't put process {process.Id} in its job (error {Marshal.GetLastWin32Error()})");
     }
 
+    /// <summary>The processes in the job now; empty when it can't tell (not Windows).</summary>
+    public IReadOnlyList<int> ProcessIds()
+    {
+        if (_handle == IntPtr.Zero) return [];
+        const int capacity = 512;
+        var size = 8 + IntPtr.Size * capacity;
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!QueryInformationJobObject(_handle, BasicProcessIdListClass, buffer, (uint)size, IntPtr.Zero)) return [];
+            var count = Marshal.ReadInt32(buffer, 4);
+            var ids = new int[count];
+            for (var i = 0; i < count; i++) ids[i] = (int)Marshal.ReadIntPtr(buffer, 8 + i * IntPtr.Size);
+            return ids;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     /// <summary>End every process in the job.</summary>
     public void Terminate(Process? fallback)
     {
@@ -45,6 +66,7 @@ public sealed class JobObject : IDisposable
     }
 
     const int ExtendedLimitInformationClass = 9;
+    const int BasicProcessIdListClass = 3;
     const uint KillOnJobClose = 0x2000;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -86,6 +108,9 @@ public sealed class JobObject : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool QueryInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length, IntPtr returnLength);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool TerminateJobObject(IntPtr job, uint exitCode);

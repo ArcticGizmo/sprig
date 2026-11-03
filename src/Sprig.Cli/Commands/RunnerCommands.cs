@@ -102,10 +102,21 @@ public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
         if (cli.Host.TrySend(new HostRequest("list")) is not { } list)
             return CliOutput.Ok(s.Json, "nothing is running", new { ok = true, stopped = Array.Empty<string>() });
 
-        var targets = (list.Runners ?? []).Where(r => r.Sprout == key && (s.Apps.Length == 0 || s.Apps.Any(a => r.Name == a || r.Name.EndsWith("/" + a, StringComparison.Ordinal))))
+        var targets = (list.Runners ?? [])
+            .Where(r => r.Sprout == key && (r.State.IsAlive() || r.State == RunnerState.Stopping))
+            .Where(r => s.Apps.Length == 0 || s.Apps.Any(a => r.Name == a || r.Name.EndsWith("/" + a, StringComparison.Ordinal)))
             .Select(r => r.Name).ToArray();
-        foreach (var name in targets) cli.Host.Send(new HostRequest("stop", Sprout: key, Name: name));
-        return CliOutput.Ok(s.Json, targets.Length == 0 ? "nothing to stop" : $"stopped {string.Join(", ", targets)}", new { ok = true, stopped = targets });
+        if (targets.Length == 0) return CliOutput.Ok(s.Json, "nothing to stop", new { ok = true, stopped = Array.Empty<string>() });
+
+        // In parallel, so a slow one doesn't hold up the rest.
+        var results = targets.AsParallel().SelectMany(name => cli.Host.StopAndWait(key, name)).ToArray();
+        if (s.Json) { CliOutput.Json(new { ok = true, stopped = results }); return 0; }
+        foreach (var r in results.OrderBy(r => r.Name))
+        {
+            if (r.Error is { } why) cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(r.Name)}[/]  {Markup.Escape(why)}");
+            else CliOutput.Success($"{r.Name} stopped");
+        }
+        return 0;
     }
 }
 
@@ -127,6 +138,7 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
                 {
                     RunnerState.Ready => "[green]ready[/]",
                     RunnerState.Completed => "[green]finished[/]",
+                    RunnerState.Stopped when r.Error is { } note => $"stopped [yellow]{Markup.Escape(note)}[/]",
                     RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",
                     _ => r.State.ToString().ToLowerInvariant(),
                 },

@@ -22,6 +22,7 @@ public sealed class HostServer(ISprigPaths paths, TimeSpan idle)
         using var single = new Mutex(initiallyOwned: true, HostProtocol.MutexName(paths), out var mine);
         if (!mine) return 2;
 
+        ConsoleSignal.Prepare();
         _ = WatchIdleAsync();
         try
         {
@@ -37,8 +38,8 @@ public sealed class HostServer(ISprigPaths paths, TimeSpan idle)
         }
         finally
         {
-            // Closing every runner's job ends its whole process tree.
-            _supervisor.Dispose();
+            // Every app gets the same polite stop as `sprig stop`; anything left after that dies with its job.
+            await _supervisor.DisposeAsync();
         }
         return 0;
     }

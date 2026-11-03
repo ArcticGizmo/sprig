@@ -260,7 +260,17 @@ Also in M4:
 - The host does the ordering: builds run up front (one per repo at a time), then each runner waits for its dependencies. A failed job or app fails what waits for it, with the reason. `sprig start <trellis> <sprout> [apps] [--group g]` brings what they depend on. Apps named outright restart, and everything else already going is left alone.
 - Node apps in a fresh worktree get `npm ci --ignore-scripts` (or `npm install --ignore-scripts` without a lockfile) as their build step.
 - **Run against the testbed:** `sprig start storefront feat-a` installed and built everything and ran `migrate`, then started `catalog-api`, then `orders-api`, then `web` (after both APIs) and `mobile`, all ready in 23 s. Stopping `catalog-api` and running it by hand with `dotnet run` from the worktree put it back on its leased port with the sprout's values. `orders-api` placed an order through it, and the email reached Mailpit.
-- **Still to do in M5:** graceful stop before kill, readiness by HTTP or a log line, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host).
+
+**Graceful stop (done 2026-11-03):**
+- Stopping sends Ctrl+C to the app's own hidden console (the host attaches to it briefly) and ends the job only if a real program (not `cmd`, `conhost` or `sh`) is still running after 10 s. The log says how it went ("stopped in 0.2s", or what was still running when it was ended), and so do `sprig stop` and `sprig ps`.
+- `stop`, `down`, `rm` and a restart wait until the app has gone. A restart rebuilds only then, because a running app locks the files its build writes. The host stops everything this way when it shuts down.
+- On the testbed: the APIs log "Application is shutting down..." and exit 0 in 0.2 s, and the Vite apps stop in about 1.3 s. `down` with all four running stopped them, then the infra, in 5 s.
+- **Found the hard way, all handled now:**
+  - Windows passes an "ignore Ctrl+C" flag from parent to child, so the host clears it at startup, or apps it starts could inherit it and never stop gently.
+  - The host is attached to the app's console while it signals, so it gets the Ctrl+C too. A handler protects it (the null "ignore" flag would be inherited by its apps). The handler must be added on every attach, since one from an earlier console doesn't protect it in the next, and never removed, since Ctrl+C can arrive late.
+  - npm and vite are `.cmd` batch files, so `cmd` answers Ctrl+C with "Terminate batch job (Y/N)?"; the host writes "Y" to the app's stdin after a second.
+  - Stopping is marked before the request returns, or a quick status check could read a stale "ready" as done.
+- **Still to do in M5:** readiness by HTTP or a log line, restart policy, `sprig up --run` with interleaved output, and the app's runner list and log pane (fed from the host).
 
 ### M6: Review and decide (about 2 weeks)
 

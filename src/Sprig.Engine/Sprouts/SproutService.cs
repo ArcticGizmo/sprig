@@ -41,8 +41,9 @@ public sealed partial class SproutService(
     {
         if (host?.TrySend(new Hosting.HostRequest("list"))?.Runners?.Any(r => r.Sprout == record.Key) != true) return;
         step.Start("Stop apps");
-        host.TrySend(new Hosting.HostRequest("stop", Sprout: record.Key));
-        step.Done();
+        var stopped = host.StopAndWait(record.Key);
+        var forced = stopped.Count(r => r.Error is not null);
+        step.Done(forced == 0 ? $"{stopped.Count} stopped" : $"{stopped.Count} stopped, {forced} had to be ended");
     }
 
     readonly Func<IReadOnlySet<int>> _listening = listening ?? PortAllocator.Listening;

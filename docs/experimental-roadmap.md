@@ -17,7 +17,9 @@ The background and the comparison with Aspire are in [artefacts/authoring-redesi
 
 | Topic | Decision |
 |---|---|
-| Where definitions live | **Repos describe themselves, and a central composition puts them together.** Each repo has a `sprig.cs`. A composition file picks repos, sets policies (worktrees, ports, groups) and fills in what repos ask for. |
+| Names | **Trellis and sprout.** A *trellis* is the C# file that joins repos (the roadmap first called it a composition). A *sprout* is one running copy of a trellis (first called an instance). "System" was too generic. |
+| Where definitions live | **Repos describe themselves, and a trellis puts them together.** Each repo has a `sprig.cs`. A trellis file (`<name>.trellis.cs`) picks repos, sets policies (worktrees, ports, groups) and fills in what repos ask for. |
+| Where trellises live | **Any folder, registered once.** `sprig trellis add <file>` registers a trellis wherever it is: beside the repos, in a team repo, or in sprig's store. |
 | Editing | **External IDE first, in-app editor second.** A `Sprig.Sdk` NuGet package plus .NET 10 file-based apps (`#:package`), so VS Code and Rider give IntelliSense with no setup. An in-app editor (AvaloniaEdit + Roslyn) is part of the M1 spike. |
 | "Safe" means all of | Running repo code is secure. Roslyn doesn't destabilise the app. EDR (CrowdStrike, Defender) doesn't block it. The GUI can make simple edits to the C# without mangling it. |
 | Infra | **Declared in code, with compose still allowed.** Postgres, Redis and the like are declared in C# and Sprig generates the compose file. A repo can still point at its own `docker-compose.yml` and override values. |
@@ -36,7 +38,7 @@ flowchart LR
   A["shop-services/sprig.cs"] -->|"run in its own process,<br/>trusted by content hash"| MA["model.json"]
   B["shop-web/sprig.cs"] --> MB["model.json"]
   C["shop-mobile/sprig.cs"] --> MC["model.json"]
-  S["storefront.sprig.cs<br/>(composition)"] --> MS["model.json"]
+  S["storefront.trellis.cs"] --> MS["model.json"]
   MA & MB & MC & MS --> E["Engine: join + resolve"]
   E --> P["Plan: every port, env var,<br/>container and runner"]
   P --> W["Worktrees · env files · compose"]
@@ -46,7 +48,7 @@ flowchart LR
 ### How the pieces connect
 
 - **A repo exports and imports named values.** `repo.Export("catalog-url", catalog.Url)` makes a value public. `repo.Import("catalog-url")` asks for one. These are the repo's contract, the same idea as today's provides and needs, but typed (`Url`, `ConnectionString`, `HostPort`, `Secret`, `Literal`).
-- **The composition joins them.** An import binds automatically to the single export with the same name across the composition's repos. The composition steps in only when that fails: two exports with the same name, an import nobody exports, or a value the composition supplies itself (shared infra such as Mailpit).
+- **The trellis joins them.** An import binds automatically to the single export with the same name across the trellis's repos. The trellis steps in only when that fails: two exports with the same name, an import nobody exports, or a value the trellis supplies itself (shared infra such as Mailpit).
 - **Values are references, not strings.** At definition time nobody knows the port. `$"http://localhost:{api.Port}"` uses a custom interpolated string handler, so it builds an expression (`http://localhost:{catalog-api.http.port}`) that the engine fills in at resolve time. You get IntelliSense and type checking without the code needing real values.
 - **Errors point at your code.** SDK methods record `[CallerFilePath]` and `[CallerLineNumber]`, so "import `orders-url` has no export" points at `shop-web/sprig.cs:7`.
 - **Each repo is evaluated on its own.** A broken definition in one repo fails that repo with a clear error, not the whole compile.
@@ -62,7 +64,7 @@ var repo = Repo.Describe("shop-services");
 var pg     = repo.Postgres("pg").WithVolume();
 var cache  = repo.Redis("cache");
 var bus    = repo.RabbitMq("bus");
-var smtp   = repo.Import<Url>("mail-smtp");              // filled in by the composition
+var smtp   = repo.Import<Url>("mail-smtp");              // filled in by the trellis
 
 var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
     .Http("http")
@@ -104,28 +106,28 @@ web.Run($"npm run dev -- --port {web.Port}");
 return repo.Emit(args);
 ```
 
-### Sketch: the composition
+### Sketch: the trellis (`storefront.trellis.cs`)
 
 ```csharp
 #:package Sprig.Sdk@0.1.*
 using Sprig;
 
-var system = Composition.Describe("storefront");
+var trellis = Trellis.Describe("storefront");
 
-var services = system.Repo("../shop-services");          // a path or a git URL
-var web      = system.Repo("../shop-web");
-var mobile   = system.Repo("../shop-mobile");
+var services = trellis.Repo("../shop-services");         // a path or a git URL
+var web      = trellis.Repo("../shop-web");
+var mobile   = trellis.Repo("../shop-mobile");
 
-var mail = system.Mailpit("mail");                       // shared infra owned by the system
-system.Bind("mail-smtp", mail.SmtpUrl);
+var mail = trellis.Mailpit("mail");                      // shared infra owned by the trellis
+trellis.Bind("mail-smtp", mail.SmtpUrl);
 
-system.Worktrees(from: "main");                          // leave out to run in place
-system.Ports(PortPolicy.Stable);                         // Random | Stable
+trellis.Worktrees(from: "main");                         // leave out to run in place
+trellis.Ports(PortPolicy.Stable);                        // Random | Stable
 
-system.Group("web",    web, services);
-system.Group("mobile", mobile, services.Only("catalog-api"));
+trellis.Group("web",    web, services);
+trellis.Group("mobile", mobile, services.Only("catalog-api"));
 
-return system.Emit(args);
+return trellis.Emit(args);
 ```
 
 ### Running repo code safely (to prove in M1)
@@ -192,9 +194,9 @@ Each app has `/health` and a **config page** showing every value it received and
 
 ### M3: Primitives for variables, sharing and infra links (about 3–4 weeks)
 
-- **SDK:** `Repo`, `Composition`, app kinds (`DotNet`, `Node`, generic `App`), `Port` and `Http`, `Export`/`Import`, `Literal`/`Secret`, `EnvFile` targets, `Container` with presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), `ComposeFile` with overrides, `Group`, policies.
+- **SDK:** `Repo`, `Trellis`, app kinds (`DotNet`, `Node`, generic `App`), `Port` and `Http`, `Export`/`Import`, `Literal`/`Secret`, `EnvFile` targets, `Container` with presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), `ComposeFile` with overrides, `Group`, policies.
 - **Engine:** evaluate definitions (trusted, cached), join, resolve references, validate. Errors cite the file and line.
-- **`sprig plan <composition>`** prints every app's env vars, ports and containers with their resolved values and where each came from, like `terraform plan`.
+- **`sprig trellis add <file>`** registers a trellis from any folder. **`sprig plan <trellis>`** prints every app's env vars, ports and containers with their resolved values and where each came from, like `terraform plan`.
 - **App:** a read-only view of the resolved model: the graph (reusing the graph controls) and a variables table.
 - Add `sprig.cs` files to the test system.
 
@@ -202,12 +204,12 @@ Each app has `/health` and a **config page** showing every value it received and
 
 ### M4: Worktree and infra up in one step (about 3 weeks)
 
-- **`sprig up storefront --instance feat-x --branch feat-x`** creates worktrees (or runs in place), allocates ports by policy, writes env files, generates compose under its own project name, runs `docker compose up -d` and waits for health. All in one step, with progress in the app.
-- Port policies: random (fresh each `up`), stable (leased per instance), pinned (an allowed set on a port).
-- `sprig down` stops infra. `sprig rm` removes the instance, with an option to delete the branch.
-- **App:** a "New instance" flow, an instances list and the progress window.
+- **`sprig up storefront --sprout feat-x --branch feat-x`** creates worktrees (or runs in place), allocates ports by policy, writes env files, generates compose under its own project name, runs `docker compose up -d` and waits for health. All in one step, with progress in the app.
+- Port policies: random (fresh each `up`), stable (leased per sprout), pinned (an allowed set on a port).
+- `sprig down` stops infra. `sprig rm` removes the sprout, with an option to delete the branch.
+- **App:** a "New sprout" flow, a sprouts list and the progress window.
 
-**Done when:** two instances of `storefront` run side by side, each with its own Postgres volume and ports, and each from one command. The monorepo alone also runs in place with no worktree.
+**Done when:** two sprouts of `storefront` run side by side, each with its own Postgres volume and ports, and each from one command. The monorepo alone also runs in place with no worktree.
 
 ### M5: Runners (about 6–8 weeks)
 
@@ -230,11 +232,11 @@ Each app has `/health` and a **config page** showing every value it received and
 ## Later (not in this roadmap)
 
 - **In-app editor polish:** the M1 editor works but needs style refinement (completion popup, highlighting, problems list) before it becomes a real feature. Also stop the language host after a few idle minutes.
-- **Smarter worktree branching and refresh:** pooled warm instances, refresh from base, rebasing an instance.
-- **Telemetry:** the standalone Aspire dashboard per instance, receiving OpenTelemetry (OTLP) data.
+- **Smarter worktree branching and refresh:** pooled warm sprouts, refresh from base, rebasing a sprout.
+- **Telemetry:** the standalone Aspire dashboard per sprout, receiving OpenTelemetry (OTLP) data.
 - **Live graph:** node state colours, and click a node to see its logs.
 - **More languages:** a TypeScript SDK that emits the same `model.json`.
-- **Shared compositions:** a composition kept in its own git repo, so a team shares one.
+- **Shared trellises:** cloning a team's trellis repo and registering it in one step.
 
 ## Risks
 
@@ -245,6 +247,4 @@ Each app has `/health` and a **config page** showing every value it received and
 
 ## Open questions
 
-- Terminology: *composition* and *instance* replace *map* and *workspace* here. Keep, rename, or keep the old names?
-- Where compositions live by default: Sprig's central store (like maps today), next to the repos, or their own repo.
 - Whether `Sprig.Sdk` targets only .NET 10, or also older SDKs for teams that haven't moved.

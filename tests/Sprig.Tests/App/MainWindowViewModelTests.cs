@@ -14,10 +14,10 @@ public class MainWindowViewModelTests
         Assert.Same(vm.Home, vm.CurrentPage);
         Assert.True(vm.Home.IsActive);
 
-        vm.NavigateCommand.Execute(vm.Systems);
+        vm.NavigateCommand.Execute(vm.Trellises);
 
-        Assert.Same(vm.Systems, vm.CurrentPage);
-        Assert.True(vm.Systems.IsActive);
+        Assert.Same(vm.Trellises, vm.CurrentPage);
+        Assert.True(vm.Trellises.IsActive);
         Assert.False(vm.Home.IsActive);
         Assert.Single(vm.Pages, p => p.IsActive);
     }
@@ -30,7 +30,7 @@ public class MainWindowViewModelTests
 
         var navPages = vm.NavItems.OfType<PageViewModel>().Select(p => p.Title);
 
-        Assert.Equal(["Home", "Systems", "Instances", "Editor"], navPages);
+        Assert.Equal(["Home", "Trellises", "Sprouts", "Editor"], navPages);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);
     }

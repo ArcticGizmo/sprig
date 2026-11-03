@@ -16,8 +16,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<object> NavItems { get; }
 
     public HomeViewModel Home { get; }
-    public ComingSoonViewModel Systems { get; }
-    public ComingSoonViewModel Instances { get; }
+    public ComingSoonViewModel Trellises { get; }
+    public ComingSoonViewModel Sprouts { get; }
     public EditorSpikeViewModel EditorSpike { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
@@ -44,28 +44,28 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
     {
         Home = new HomeViewModel();
-        Systems = new ComingSoonViewModel(
-            title: "Systems",
-            heading: "Describe a system in C#",
-            body: "A system puts repos together: which ones run, how their values connect, and whether they get worktrees and which ports. Each repo describes itself in a sprig.cs file, and the system joins them.",
+        Trellises = new ComingSoonViewModel(
+            title: "Trellises",
+            heading: "Describe how your repos grow together",
+            body: "A trellis is a C# file that puts repos together: which ones run, how their values connect, and whether they get worktrees and which ports. Each repo describes itself in a sprig.cs file, and the trellis joins them.",
             milestone: "M3");
-        Instances = new ComingSoonViewModel(
-            title: "Instances",
-            heading: "Bring a system up in one step",
-            body: "An instance is one running copy of a system: its worktrees (or the repos in place), its ports, env files and containers, and later its apps, started in order.",
+        Sprouts = new ComingSoonViewModel(
+            title: "Sprouts",
+            heading: "Bring a trellis up in one step",
+            body: "A sprout is one running copy of a trellis: its worktrees (or the repos in place), its ports, env files and containers, and later its apps, started in order.",
             milestone: "M4");
         EditorSpike = new EditorSpikeViewModel();
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
 
-        Pages = [Home, Systems, Instances, EditorSpike, Settings, About];
+        Pages = [Home, Trellises, Sprouts, EditorSpike, Settings, About];
         NavItems =
         [
             Home,
             new NavHeaderViewModel("DEFINE"),
-            Systems,
+            Trellises,
             new NavHeaderViewModel("RUN"),
-            Instances,
+            Sprouts,
             new NavHeaderViewModel("SPIKES"),
             EditorSpike,
         ];

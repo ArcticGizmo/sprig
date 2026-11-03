@@ -1,12 +1,12 @@
 # Handover: experimental branch
 
-Written 2026-11-03 at the end of the session that did M0–M3. Read this first, then [experimental-roadmap.md](experimental-roadmap.md).
+Written 2026-11-03 at the end of the session that did M4. Read this first, then [experimental-roadmap.md](experimental-roadmap.md).
 
 ## Where things stand
 
-- Branch `experimental`, latest commit `d9c549d`. Nothing pushed. `main` is untouched.
-- M0, M1, M2 and M3 are done. **M4 is next** and waits on two decisions (below).
-- 112 tests pass (`dotnet test sprig.slnx`, about 40 s; the integration tests compile real definitions with `dotnet run`).
+- Branch `experimental`. Nothing pushed. `main` is untouched.
+- M0 to M4 are done. **M5 (runners) is next.**
+- All tests pass (`dotnet test sprig.slnx`, about 90 s; integration tests compile real definitions with `dotnet run`, and the sprout tests make real git repos in `%TEMP%`).
 - Warnings are errors repo-wide (`Directory.Build.props`). Build with normal verbosity: `-v q` hides warnings.
 - Version is `0.100.0-exp`. **Never tag from this branch**: the release workflow publishes on any `v*` tag. Don't use the `bump-version` or `release-next-version` skills here.
 
@@ -18,51 +18,57 @@ Written 2026-11-03 at the end of the session that did M0–M3. Read this first, 
 | Names | **Trellis** (the file joining repos) and **sprout** (one running copy). Not "system", "composition", "map" or "workspace". |
 | Trellis location | Any folder, registered once with `sprig trellis add <file>`. |
 | Editing | External IDE first (IntelliSense confirmed in VS Code/Rider via `#:package Sprig.Sdk`). The in-app editor works but needs style polish (in Later). |
-| Infra | Code presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), and a repo's own compose file is allowed (`repo.ComposeFile(...).Service(...).Endpoint(...)`, `.Set(path, value)`). |
+| Infra | Code presets (`Postgres`, `Redis`, `RabbitMq`, `Mailpit`), and a repo's own compose file is allowed (`repo.ComposeFile(...).Service(...).Endpoint(...).Health(...)`, `.Set(path, value)`). |
+| Env values | `.env` files first. Language-specific outputs are opt-in per app: `.Output(EnvOutput.LaunchSettings())`, `EnvOutput.AppSettings(file)`, `EnvOutput.DotEnv(file)`. |
+| Tracked files | **Sprig never writes sprout values into a file git tracks.** `up` refuses before writing anything; every file it writes goes in `.git/info/exclude`. Keep this for every new output. |
+| Unnamed compose services | Left out of sprouts, with a warning from `sprig plan` (services behind a compose profile don't count). |
 | Run experience | Log pane per runner in the app (M5). Telemetry later. |
 | Store | `%LOCALAPPDATA%\sprig-exp` (`sprig-exp (Dev)` for Debug). Never the released app's `sprig` folder; a test guards it. |
-
-## Decisions M4 needs from the user
-
-Ask these before writing M4 code. My recommendation is in each.
-
-1. **How .NET apps get their values when run by hand.** .NET reads process env vars, which only runners (M5) can set. Recommendation: sprig writes a `Properties/launchSettings.json` profile in each worktree (used by `dotnet run` and IDEs). Node apps already get `.env.local` via `EnvFile`.
-2. **Compose services a repo's `sprig.cs` doesn't name.** They keep the file's fixed ports and would clash between sprouts. Recommendation: `sprig plan` warns about them, and the generated sprout compose leaves them out unless named. (The testbed's Mailpit is behind a `standalone` profile for this reason.)
 
 ## How the pieces fit
 
 ```
 repo/sprig.cs ──┐                         dotnet run, scrubbed env, time limit,
-repo/sprig.cs ──┼─ DefinitionRunner ──►  trusted by SHA-256 of content, cached
-x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (RepoModel | TrellisModel)
+repo/sprig.cs ──┼─ DefinitionRunner ──►  trusted by SHA-256 of content, cached by sha + SDK version + schema
+x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (RepoModel | TrellisModel), schema 2
                          │
-                  TrellisLoader (Engine/Trellises) — evaluates trellis + repos in parallel
+                  TrellisLoader (Engine/Trellises) — evaluates trellis + repos in parallel; RepoDirs; ComposeFiles()
                          │
-                  Planner (Engine/Planning) — scopes per repo, binds imports→exports or
-                         │                    trellis bindings, allocates preview ports,
-                         ▼                    resolves {templates} with a "via" trail
-                       Plan  →  `sprig plan` (CLI)  /  Trellises page (App)
+                  Planner (Engine/Planning) — scopes, imports/exports, ports (kept leases first), {templates}
+                         │
+                  SproutService (Engine/Sprouts) — Up / Down / Remove / List / LastPlan
+                     ├─ GitClient (Engine/Git): worktrees, IsTracked, Exclude (info/exclude)
+                     ├─ PortLeases: <store>/ports.json under a lock file, keyed "<trellis>/<sprout>" → "<owner>/<resource>.<endpoint>"
+                     ├─ EnvFiles: dotenv marker blocks (top and bottom), launch profile, appsettings keys; each removable
+                     ├─ ComposeYaml: ForContainers (code presets) and ForSprout (a repo's file, trimmed and re-ported)
+                     ├─ DockerCompose: up --wait, down [--volumes]
+                     └─ SproutStore: <store>/sprouts/<trellis>/<sprout>/{sprout.json, plan.json, *.compose.yml}
 ```
 
-- **Projects:** `Sprig.Sdk` (what definitions reference; the model in `Model.cs` is the contract), `Sprig.Engine`, `Sprig.LanguageHost` (Roslyn for the in-app editor, separate process), `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`.
-- **Templates:** values are `Expr` placeholders. `$"...{api.Port}..."` goes through `ExprHandler`; the emitted form is text with `{path}` and doubled braces for literals. Paths: `res.endpoint.port|url`, `import.<name>`, `export.<repoPath>.<name>`, `sprout.name`.
-- **Scoping:** a repo's names are private to it; crossing repos is only by import/export or a trellis `Bind`.
-- **Ports in a plan are a preview.** Nothing is leased yet; M4 adds persistent leases (stable policy) and fresh ones (random policy).
-- **Safety model:** `DirectivePolicy` allows only `#:package Sprig.Sdk@…` (plus `#:project …/Sprig.Sdk.csproj` in Debug builds). Trust is per path + content hash (`trust.json`). It's not a sandbox: an approved definition runs with the user's rights.
+- **Projects:** `Sprig.Sdk` (what definitions reference; `Model.cs` is the contract, `Sdk.Schema` its version), `Sprig.Engine`, `Sprig.LanguageHost`, `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`.
+- **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up`, `down`, `rm`, `sprouts`, `env`.
+- **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, up/stop/remove), `OperationProgressWindow` fed by `SproutEvent`s.
+- **A sprout's record** says exactly what `up` did (worktrees, whether it made the branch, files and whether it created them, compose projects), and `down`/`rm` undo only that.
+- **Port leases:** stable keeps a sprout's ports until `rm`; random gets fresh ones on each `up` from down. A sprout that's up doesn't count its own listening ports as busy.
 
 ## Testbed
 
-- Templates in `testbed/repos/{shop-services,shop-web,shop-mobile}` plus `testbed/storefront.trellis.cs`.
-- `pwsh -File scripts/testbed.ps1 [-Path <dir>] [-Force] [-UsePackage]` builds real git repos (default `../sprig-testbed`). It rewrites `#:package Sprig.Sdk` to a `#:project` reference to this checkout unless `-UsePackage`. `-Force` only deletes a folder holding its `.sprig-testbed` marker.
-- Try it: `sprig trellis add <testbed>/storefront.trellis.cs --trust`, then `sprig plan storefront`. Use a throwaway store with `SPRIG_STORE=<dir>`.
-- Each app has a config page (`/config` on the APIs, a Config tab on the front ends) showing each value, its source and whether its target answers. That's how M4/M5 should prove wiring.
+- Templates in `testbed/repos/{shop-services,shop-web,shop-mobile}` plus `testbed/storefront.trellis.cs` (worktrees) and `testbed/services.trellis.cs` (the monorepo in place).
+- `pwsh -File scripts/testbed.ps1 [-Path <dir>] [-Force] [-UsePackage]` builds real git repos (default `../sprig-testbed`). Use `C:\Users\JonHowell\AppData\Local\Temp\sprig-tb-m4` or similar for throwaway ones.
+- Try it with a throwaway store: `$env:SPRIG_STORE='...'; sprig trellis add <tb>/storefront.trellis.cs --trust; sprig up storefront --sprout feat-a; sprig up storefront --sprout feat-b`. Then `dotnet run` in each worktree's `src/Catalog.Api` and open `/config`.
+- Each app has a config page (`/config` on the APIs, a Config tab on the front ends) showing each value, its source and whether its target answers. That's how M5 should prove wiring.
+- Headless renders, no screen capture: `sprig-gui render-sprouts <page.png> <progress.png>` (uses `SPRIG_STORE`), `render-trellises`, `render-editor`.
 
 ## Gotchas found the hard way
 
-- **Windows 8.3 short paths:** `%TEMP%` here is `C:\Users\JONHOW~1\…`. Vite returns 403 from such a path. Always pass paths through `Engine/Store/LongPath.Of`. Use `C:\Users\JonHowell\AppData\Local\Temp\…` for temp testbeds.
-- **This machine already runs containers** on 5432 and on 8004–8006, 8012–8014 and others. Never stop or remove containers you didn't start. The allocator skips listening ports; testbed compose host ports can be moved with `PG_PORT` etc.
-- **`grep -r` + `sed -i` across `src/` hits `bin/` binaries.** Exclude build output, or delete `bin`/`obj` and rebuild afterwards.
-- **Stopping processes:** the harness blocks `taskkill /PID …` (it misreads `/PID` as a path). Use `Stop-Process` and walk children with `Get-CimInstance Win32_Process`.
+- **ASP.NET Core urls:** a `urls` key in `appsettings.json` beats `ASPNETCORE_URLS`. Give .NET apps their url in `Urls` (`.Http(urlEnv: "Urls")`); the launch profile's `applicationUrl` follows it.
+- **Parallel `dotnet run` in one worktree** races on shared projects' `obj` (CS2012). M5 runners: build once per repo, then run with `--no-build`.
+- **Windows 8.3 short paths:** `%TEMP%` here is `C:\Users\JONHOW~1\…`. Vite returns 403 from such a path. Always pass paths through `Engine/Store/LongPath.Of`.
+- **This machine already runs containers** on 5432, 8004–8006, 8012–8014 and others, and the released sprig leaves `sprig-feature-*` volumes. Never stop or remove containers or volumes you didn't start; sprout projects are all `sprig-<trellis>-<sprout>[-<repo>]`.
+- **Compose without health checks:** `--wait` only means "running". Postgres and friends need a check (presets have one; repo compose services take `.Health(...)`).
+- **Avalonia styles:** a local `Foreground` beats a class style, so state colours (`.up`, `.bad`) must come from styles, never a local value on the same element.
+- **`grep -r` + `sed -i` across `src/` hits `bin/` binaries.** Exclude build output.
+- **Stopping processes:** the harness blocks `taskkill /PID …`. Use `Stop-Process` and walk children with `Get-CimInstance Win32_Process`.
 - **The SDK's `Sprig.Text` value type shadows `Spectre.Console.Text`** inside `Sprig.*` namespaces; the CLI aliases it as `SpectreText`.
 - **A referenced exe project** copies a bare `.exe` stub into referencing projects; `LanguageHostClient` only accepts a host with its `.dll` beside it.
 - File-based apps default to Native AOT settings, so the SDK uses source-generated JSON (`ModelJsonContext`, polymorphic on `kind`).
@@ -72,13 +78,13 @@ x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (Rep
 ## User conventions to keep
 
 - Path fields use `Controls/PathBox` (folder button, Tab completion, forward slashes, including when displaying stored paths).
-- Ask before taking screenshots of non-desktop UI. Desktop captures go in `captures/{timestamp}-{reason}.png` and are never deleted. Headless renders: `sprig-gui render-editor <png>` and `sprig-gui render-trellises <png> <trellis.cs>`.
+- Ask before taking screenshots of non-desktop UI. Desktop captures and headless renders go in `captures/{timestamp}-{reason}.png` and are never deleted.
 - No private repo or project names in docs, artefacts or examples. Use the testbed names (shop, catalog, orders).
 - Code comments explain why, never what the code used to do. Markdown has no hard-wrapped sentences.
 - Commit messages end with the `Co-Authored-By` line. Commit when asked; the user said to commit milestone work as it lands.
 
-## M4 in short (see the roadmap for the full list)
+## M5 in short (see the roadmap for the full list)
 
-`sprig up storefront --sprout feat-x --branch feat-x` in one step: worktrees (or in place), leased ports, env files (and the .NET answer from decision 1), a generated compose project per sprout (`docker compose up -d`, wait for health), plus `sprig down` and `sprig rm`. App: "New sprout" flow, sprouts list, and the progress window (bring `OperationProgressWindow` back from `main`, adapted). Done when two sprouts of `storefront` run side by side with separate ports and Postgres volumes, and the monorepo also runs in place.
+Runners per app (command, folder, resolved env, readiness, restart), ordered by `WaitFor` and one-off jobs (`repo.Job` for `Migrate`, not in the SDK yet). A supervisor using Job Objects so stopping kills the whole tree. Stop one runner and run it from an IDE on the same leased port (`sprig env` and the launch profile already give it its values). A log pane per runner in the app; `sprig up --run` interleaves output in the CLI. Done when one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then web and mobile.
 
-Helpers worth copying back from `main` (`git show main:<path>`): `src/Sprig.Core/Git/GitService.cs` (worktrees), `src/Sprig.Core/Ports/FilePortStore.cs` (leases), `src/Sprig.Core/Compose/ComposeGenerator.cs`, `src/Sprig.Core/Env/EnvClobberService.cs`, `src/Sprig.App/Views/OperationProgressWindow.axaml`. Adapt them; don't restore the old model.
+Open question for M5 or later: a sprout evaluates its repos' definitions from their main checkouts, not its worktrees, because trust is per path. Evaluating worktrees needs a rule for how approval carries over (for example, trust by content hash within a registered repo's worktrees).

@@ -14,8 +14,8 @@ public sealed class HomeViewModel : PageViewModel
         new("M1", "Spike C# authoring", "Prove sprig.cs definitions are secure, stable, EDR-friendly and editable.", MilestoneStatus.Done),
         new("M2", "Test system", "A Vue app, two .NET APIs and an Ionic app, built as real git repos.", MilestoneStatus.Done),
         new("M3", "Primitives", "Variables, sharing and infra links, with sprig plan showing every resolved value.", MilestoneStatus.Done),
-        new("M4", "One-step up", "Worktrees, ports, env files and containers from a single command.", MilestoneStatus.Next),
-        new("M5", "Runners", "Launch apps in order, with dependencies and a log pane per app.", MilestoneStatus.Planned),
+        new("M4", "One-step up", "Worktrees, ports, env files and containers from a single command.", MilestoneStatus.Done),
+        new("M5", "Runners", "Launch apps in order, with dependencies and a log pane per app.", MilestoneStatus.Next),
         new("M6", "Review", "Compare with Aspire and decide whether this replaces main.", MilestoneStatus.Planned),
     ];
 }

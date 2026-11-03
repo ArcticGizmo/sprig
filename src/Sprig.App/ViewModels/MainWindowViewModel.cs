@@ -17,7 +17,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public HomeViewModel Home { get; }
     public TrellisesViewModel Trellises { get; }
-    public ComingSoonViewModel Sprouts { get; }
+    public SproutsViewModel Sprouts { get; }
     public EditorSpikeViewModel EditorSpike { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
@@ -45,11 +45,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         Home = new HomeViewModel();
         Trellises = new TrellisesViewModel(services);
-        Sprouts = new ComingSoonViewModel(
-            title: "Sprouts",
-            heading: "Bring a trellis up in one step",
-            body: "A sprout is one running copy of a trellis: its worktrees (or the repos in place), its ports, env files and containers, and later its apps, started in order.",
-            milestone: "M4");
+        Sprouts = new SproutsViewModel(services);
         EditorSpike = new EditorSpikeViewModel();
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);

@@ -1,0 +1,233 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.SproutsView"
+             x:DataType="vm:SproutsViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="SelectableTextBlock.cell">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector=":is(TextBlock).mono">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+        </Style>
+        <Style Selector=":is(TextBlock).via">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+        <!-- Colours that change with state live in styles: a local Foreground would beat them. -->
+        <Style Selector="TextBlock.state">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.msg">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.up">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.bad">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="Border.row">
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="0,6" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="340,*">
+
+        <!-- New sprout, and the list -->
+        <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="20,24,16,16">
+                <StackPanel DockPanel.Dock="Top" Spacing="10">
+                    <TextBlock Text="Sprouts" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="A sprout is one running copy of a trellis: its own worktrees (or the repos in place), ports, env files and containers." />
+
+                    <TextBlock Classes="phead" Text="NEW SPROUT" Margin="0,6,0,0" />
+                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding !HasTrellises}"
+                               Text="Add a trellis on the Trellises page first." />
+                    <ComboBox ItemsSource="{Binding TrellisNames}" SelectedItem="{Binding NewTrellis}" HorizontalAlignment="Stretch"
+                              PlaceholderText="Trellis" IsVisible="{Binding HasTrellises}" />
+                    <TextBox Text="{Binding NewName}" PlaceholderText="Sprout name, e.g. feat-x" IsVisible="{Binding HasTrellises}" />
+                    <TextBox Text="{Binding NewBranch}" PlaceholderText="Branch (default: the sprout's name)" IsVisible="{Binding HasTrellises}" />
+                    <Button Content="Sprout it" Command="{Binding CreateCommand}" HorizontalAlignment="Left" IsVisible="{Binding HasTrellises}"
+                            IsEnabled="{Binding !IsWorking}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12" TextWrapping="Wrap"
+                               Classes.bad="{Binding FormFailed}"
+                               IsVisible="{Binding FormMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                    <!-- Approval before anything runs -->
+                    <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" IsVisible="{Binding HasPendingTrust}" Padding="12,10">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="phead" Text="APPROVE BEFORE RUNNING" Foreground="{StaticResource WarnBrush}" />
+                            <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                                       Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them." />
+                            <ItemsControl ItemsSource="{Binding PendingTrust}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:PendingTrustItem">
+                                        <StackPanel Margin="0,2" Spacing="1">
+                                            <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Path}" />
+                                            <TextBlock Classes="cell via" Text="{Binding Why}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="Approve and run" Command="{Binding ApproveAllCommand}" HorizontalAlignment="Left"
+                                    Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,0" />
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Top" Margin="0,12,0,0" FontSize="12.5" TextWrapping="Wrap"
+                           Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
+                           Text="No sprouts yet." />
+
+                <ListBox ItemsSource="{Binding Sprouts}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,8,0,0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SproutItem">
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Classes="state" Text="{Binding State}" FontSize="11.5" VerticalAlignment="Center"
+                                           Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- The selected sprout -->
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="28,24,28,28" Spacing="18" MaxWidth="1100" HorizontalAlignment="Stretch">
+
+                <TextBlock IsVisible="{Binding !HasSelection}" Margin="0,40,0,0" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                           Text="Make a sprout on the left, or select one to see its folders, urls and ports." HorizontalAlignment="Center" />
+
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasSelection}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Selected.Title}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Classes="state" Text="{Binding Selected.State}" FontSize="12.5"
+                                       Classes.up="{Binding Selected.IsUp}" Classes.bad="{Binding Selected.IsFailed}" />
+                            <TextBlock Text="{Binding Selected.Branch}" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding Selected.Record.PortPolicy, StringFormat='{}{0} ports'}" FontSize="12.5"
+                                       Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+                        <SelectableTextBlock Text="{Binding Selected.Record.Error}" FontSize="12" Foreground="{StaticResource DangerBrush}"
+                                             TextWrapping="Wrap" IsVisible="{Binding Selected.IsFailed}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                    <Button Grid.Column="2" Content="Stop" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                    <Button Grid.Column="3" Content="Remove" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}"
+                            VerticalAlignment="Top" Background="Transparent" Foreground="{StaticResource DangerBrush}"
+                            BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
+                </Grid>
+
+                <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding ConfirmingRemove}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Classes="phead" Text="REMOVE THIS SPROUT?" Foreground="{StaticResource DangerBrush}" />
+                        <TextBlock Classes="cell" Text="Its containers and their data (databases included) are deleted, and so are its worktrees. Sprig refuses if a worktree has changes that aren't committed." />
+                        <CheckBox IsChecked="{Binding DeleteBranch}" IsVisible="{Binding CanDeleteBranch}"
+                                  Content="Also delete its branch (refused if it has commits no other branch or remote has)" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
+                                    Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
+                            <Button Content="Keep it" Command="{Binding CancelRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
+                                    Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="panel" IsVisible="{Binding HasSelection}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="phead" Text="APPS (START THEM FROM THEIR FOLDERS)" />
+                        <ItemsControl ItemsSource="{Binding Apps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SproutAppRow">
+                                    <Border Classes="row">
+                                        <Grid ColumnDefinitions="220,180,*">
+                                            <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <SelectableTextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Url}" />
+                                            <StackPanel Grid.Column="2" Spacing="1">
+                                                <SelectableTextBlock Classes="cell mono" Text="{Binding Folder}" />
+                                                <TextBlock Classes="cell via" Text="{Binding Values, StringFormat='values in {0}'}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="panel" IsVisible="{Binding HasSelection}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="phead" Text="INFRA (HOST PORT : CONTAINER PORT)" />
+                        <ItemsControl ItemsSource="{Binding Infra}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SproutInfraRow">
+                                    <Border Classes="row">
+                                        <Grid ColumnDefinitions="220,*">
+                                            <TextBlock Classes="cell" Text="{Binding Name}" />
+                                            <SelectableTextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Ports}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="panel" IsVisible="{Binding HasWarnings}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="phead" Text="WARNINGS" Foreground="{StaticResource WarnBrush}" />
+                        <ItemsControl ItemsSource="{Binding Warnings}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ProblemRow">
+                                    <StackPanel Margin="0,3" Spacing="1">
+                                        <TextBlock Classes="cell" Text="{Binding Message}" />
+                                        <TextBlock Classes="cell via mono" Text="{Binding Where}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

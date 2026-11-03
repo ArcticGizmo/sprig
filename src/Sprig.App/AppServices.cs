@@ -1,5 +1,9 @@
+using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
+using Sprig.Engine.Git;
+using Sprig.Engine.Processes;
 using Sprig.Engine.Settings;
+using Sprig.Engine.Sprouts;
 using Sprig.Engine.Store;
 using Sprig.Engine.Trellises;
 
@@ -17,6 +21,7 @@ public sealed class AppServices
     public DefinitionRunner Definitions { get; }
     public TrellisRegistry Trellises { get; }
     public TrellisLoader Loader { get; }
+    public SproutService Sprouts { get; }
 
     /// <param name="root">Store root; null means this profile's store.</param>
     public AppServices(string? root = null)
@@ -27,6 +32,9 @@ public sealed class AppServices
         Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
         Trellises = new TrellisRegistry(Paths);
         Loader = new TrellisLoader(Definitions);
+        var processes = new ProcessRunner();
+        Sprouts = new SproutService(new SproutStore(Paths), new PortLeases(Paths), Settings,
+            new GitClient(processes), new DockerCompose(processes));
     }
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);

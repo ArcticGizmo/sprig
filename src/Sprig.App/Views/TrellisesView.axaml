@@ -32,6 +32,13 @@
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
             <Setter Property="FontSize" Value="11.5" />
         </Style>
+        <!-- Colours that change with state live in styles: a local Foreground would beat them. -->
+        <Style Selector="TextBlock.msg">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.severity">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
         <Style Selector="TextBlock.bad">
             <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
         </Style>
@@ -55,8 +62,8 @@
                                       Placeholder="path/to/storefront.trellis.cs" />
                     <Button Content="Add trellis" Command="{Binding AddCommand}" HorizontalAlignment="Left"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
-                    <TextBlock Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap"
-                               Foreground="{StaticResource OkBrush}" Classes.bad="{Binding AddFailed}"
+                    <TextBlock Classes="msg" Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap"
+                               Classes.bad="{Binding AddFailed}"
                                IsVisible="{Binding AddMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,0" />
                 </StackPanel>
@@ -153,8 +160,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ProblemRow">
                                         <Grid ColumnDefinitions="70,*" Margin="0,3">
-                                            <TextBlock Classes="cell" Text="{Binding Severity}" Foreground="{StaticResource WarnBrush}"
-                                                       Classes.bad="{Binding IsError}" />
+                                            <TextBlock Classes="cell severity" Text="{Binding Severity}" Classes.bad="{Binding IsError}" />
                                             <StackPanel Grid.Column="1" Spacing="1">
                                                 <TextBlock Classes="cell" Text="{Binding Message}" />
                                                 <TextBlock Classes="cell via mono" Text="{Binding Where}" />

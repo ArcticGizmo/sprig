@@ -116,6 +116,69 @@ internal static class HeadlessRenderer
         }
     }
 
+    /// <summary>
+    /// The Sprouts page over the current store (<c>SPRIG_STORE</c>), read only, with its first sprout selected; and the
+    /// progress window part way through a sample up, failing on a compose step, so both states of a row show.
+    /// </summary>
+    public static int RenderSprouts(string pageFile, string progressFile)
+    {
+        try
+        {
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
+
+            var vm = new MainWindowViewModel(new AppServices(), checkForUpdates: false);
+            vm.NavigateCommand.Execute(vm.Sprouts);
+            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
+            window.Show();
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, pageFile);
+            window.Close();
+
+            var progress = new OperationProgressViewModel("Sprouting storefront / feat-x");
+            Sprig.Engine.Sprouts.SproutEvent[] sample =
+            [
+                new("Plan", Sprig.Engine.Sprouts.StepState.Running),
+                new("Plan", Sprig.Engine.Sprouts.StepState.Done, "4 apps, 1 containers, 1 compose files"),
+                new("Worktree shop-services", Sprig.Engine.Sprouts.StepState.Running),
+                new("Worktree shop-services", Sprig.Engine.Sprouts.StepState.Done, "../storefront--feat-x/shop-services on feat-x (new, from main)"),
+                new("Ports", Sprig.Engine.Sprouts.StepState.Running),
+                new("Ports", Sprig.Engine.Sprouts.StepState.Done, "catalog-api.http 8000, postgres.tcp 8002"),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Sprouts.StepState.Running),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Sprouts.StepState.Output, "Container sprig-storefront-feat-x-storefront-mail-1 Waiting"),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Sprouts.StepState.Done, "running; healthy: mail"),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Sprouts.StepState.Running),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Sprouts.StepState.Output, "Container sprig-storefront-feat-x-shop-services-postgres-1 Starting"),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Sprouts.StepState.Output, "Error response from daemon: port is already allocated"),
+            ];
+            foreach (var e in sample) progress.Apply(e);
+            progress.Finish("command failed (exit 1): docker compose up (a sample failure, rendered for review)", ProgressState.Error);
+            progress.Steps[^1].State = ProgressState.Error;
+            var dialog = new OperationProgressWindow { DataContext = progress };
+            dialog.Show();
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(dialog, progressFile);
+            dialog.Close();
+
+            Console.WriteLine($"rendered {Path.GetFullPath(pageFile)} ({vm.Sprouts.Sprouts.Count} sprouts) and {Path.GetFullPath(progressFile)}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
+        }
+    }
+
+    static void Save(Avalonia.Controls.TopLevel window, string file)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!);
+        window.CaptureRenderedFrame()?.Save(file);
+    }
+
     static void Pump(TimeSpan duration)
     {
         var until = DateTime.UtcNow + duration;

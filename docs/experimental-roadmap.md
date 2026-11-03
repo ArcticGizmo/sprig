@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 to M3 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M4 next.
+Branch: `experimental`. Started 2026-11-03. Status: M0 to M4 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M5 next.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -208,7 +208,7 @@ Each app has `/health` and a **config page** showing every value it received and
 - **Not yet in the SDK:** one-off jobs (`repo.Job`, for `Migrate`) arrive with runners in M5.
 - **For M4:** .NET apps read process env vars, which only a runner (M5) can set. For M4's by-hand runs, sprig needs to put .NET values somewhere `dotnet run` reads: a generated `launchSettings.json` profile in the worktree is the likely answer. Compose services a repo doesn't name in its `sprig.cs` keep their file's fixed ports, so they'd clash between sprouts; M4 should warn about them (the testbed's Mailpit moved to a `standalone` profile for this reason).
 
-### M4: Worktree and infra up in one step (about 3 weeks)
+### M4: Worktree and infra up in one step ✅ done 2026-11-03
 
 - **`sprig up storefront --sprout feat-x --branch feat-x`** creates worktrees (or runs in place), allocates ports by policy, writes env files, generates compose under its own project name, runs `docker compose up -d` and waits for health. All in one step, with progress in the app.
 - Port policies: random (fresh each `up`), stable (leased per sprout), pinned (an allowed set on a port).
@@ -216,6 +216,23 @@ Each app has `/health` and a **config page** showing every value it received and
 - **App:** a "New sprout" flow, a sprouts list and the progress window.
 
 **Done when:** two sprouts of `storefront` run side by side, each with its own Postgres volume and ports, and each from one command. The monorepo alone also runs in place with no worktree.
+
+**Outcome:** met. Two sprouts of `storefront` came up side by side, each from one `sprig up`, with their own worktrees, ports and `pgdata` volume. `catalog-api` and `orders-api` ran in both with plain `dotnet run` from the worktrees, and each API's `/config` page reported its own sprout's Postgres, Redis, RabbitMQ and Mailpit as reachable. Ports held across `down` and `up`. `services.trellis.cs` ran the monorepo in place. `sprig rm` left no containers, volumes, worktrees, branches or files behind.
+
+Decisions made at the start of M4 (by the user):
+
+- **Values go to `.env` files first.** Other formats are opt-in outputs on an app: `.Output(EnvOutput.LaunchSettings())` (a profile placed first in `Properties/launchSettings.json`, used by `dotnet run` and IDEs), `.Output(EnvOutput.AppSettings(file))` and `.Output(EnvOutput.DotEnv(file))`. **Sprig never writes into a file git tracks**: `up` refuses before writing anything, and every file it does write is added to the repo's `.git/info/exclude`.
+- **Compose services a repo's `sprig.cs` doesn't name are left out of sprouts**, with a warning from `sprig plan`. Services behind a compose profile don't count, since they don't start by default.
+
+Also in M4:
+
+- **One compose project per infra source:** `sprig-<trellis>-<sprout>` for containers declared in code, and `sprig-<trellis>-<sprout>-<repo>` for each repo's compose file. The sprout's copy of a repo's compose file lives in the store and runs with the repo (or worktree) as its project directory. It keeps only the named services, maps their ports to `127.0.0.1`, drops `container_name` and `profiles`, and prunes `depends_on`.
+- **Health:** presets have health checks, and `compose.Service(...).Health(cmd)` adds one to a repo's service. `up` waits with `docker compose up --wait`; without a check, it only waits for the service to be running.
+- **Worktrees** go in `<folder holding the repos>/<trellis>--<sprout>/<repo>`, keeping the repos' layout (a `SproutsFolder` setting moves them). A new branch starts from the trellis's `Worktrees(from:)`, an existing local or remote branch is checked out, and a fresh worktree's dotenv files start from the main checkout's copy.
+- **`sprig sprouts`** lists sprouts, and **`sprig env <trellis> <sprout> <app>`** prints an app's env vars for an IDE or shell.
+- **Model schema 2** (app outputs, health checks). The definition cache key includes the schema, and a definition built with an older SDK is refused with a message.
+- **Found by running it:** `appsettings.json` with `urls` beats `ASPNETCORE_URLS`, so .NET apps should take their url in `Urls` (the testbed now does). Two `dotnet run`s in one worktree race to build a shared project; M5's runners should build once and then run with `--no-build`.
+- **Not done:** a sprout's definitions are evaluated from the repos' main checkouts, not its worktrees, so a branch that changes `sprig.cs` isn't reflected until it's merged. Trust is per path, so evaluating worktrees means deciding how approval carries across to them.
 
 ### M5: Runners (about 6–8 weeks)
 

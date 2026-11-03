@@ -31,6 +31,9 @@ internal static class Program
         if (args.Length > 2 && args[0] == "render-trellises")
             return Rendering.HeadlessRenderer.RenderTrellises(args[1], args[2]);
 
+        if (args.Length > 2 && args[0] == "render-sprouts")
+            return Rendering.HeadlessRenderer.RenderSprouts(args[1], args[2]);
+
         // A headless probe of the same update check the UI runs on launch (honours SPRIG_UPDATE_FEED).
         if (args.Length > 0 && args[0] == "check-update")
         {

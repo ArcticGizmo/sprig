@@ -45,12 +45,12 @@ public class TrellisesViewModelTests
         var plan = new Plan("storefront", "plan", "stable", "main",
             [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
             [
-                new PlannedApp("shop-web", "web", "node", ".",
+                new PlannedApp("shop-web", "shop-web", "web", "node", ".",
                     [new PlannedEnv("VITE_CATALOG_URL", new PlannedValue("{import.catalog-url}", "http://localhost:8000",
                         ["import catalog-url ← shop-services", "catalog-api.http port 8000"]), ".env.local", at)],
-                    null, []),
-                new PlannedApp("shop-services", "catalog-api", "dotnet", "src/Catalog.Api",
-                    [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", []), null, at)], null, []),
+                    null, [], []),
+                new PlannedApp("shop-services", "shop-services", "catalog-api", "dotnet", "src/Catalog.Api",
+                    [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", []), null, at)], null, [], []),
             ],
             [], [], [], [new PlanProblem(ProblemSeverity.Warning, "careful", at)]);
 

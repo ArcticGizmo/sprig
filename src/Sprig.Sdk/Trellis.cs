@@ -73,7 +73,7 @@ public sealed class TrellisBuilder : DefinitionBuilder
     internal TrellisModel BuildTrellis() => (TrellisModel)Build();
 
     private protected override DefinitionModel Build() => new TrellisModel(
-        Schema: 1,
+        Schema: Sdk.Schema,
         Name: Name,
         SdkVersion: Sdk.Version,
         Location: Location,

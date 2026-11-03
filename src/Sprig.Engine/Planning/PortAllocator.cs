@@ -36,9 +36,23 @@ public static class PortSet
 /// Picks host ports for a plan: from the pin when there is one, else from the settings range, never a restricted
 /// port, never one already taken in this plan, and never one something on the machine is listening on.
 /// </summary>
-public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUse)
+public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUse, Random? random = null)
 {
     readonly HashSet<int> _taken = [];
+
+    /// <summary>Claim a port held from before, if it's still allowed and free. A kept port may lie outside the
+    /// current range: moving the range shouldn't move a sprout that's already working.</summary>
+    public bool TryKeep(string? pin, int port)
+    {
+        if (_taken.Contains(port) || inUse.Contains(port) || settings.RestrictedPorts.Contains(port)) return false;
+        if (pin is not null)
+        {
+            try { if (!PortSet.Parse(pin).Contains(port)) return false; }
+            catch (FormatException) { return false; }
+        }
+        _taken.Add(port);
+        return true;
+    }
 
     /// <summary>Ports something on this machine is listening on right now.</summary>
     public static IReadOnlySet<int> Listening()
@@ -63,7 +77,9 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
         }
         else
         {
-            candidates = Enumerable.Range(settings.PortRangeStart, settings.PortRangeEndExclusive - settings.PortRangeStart);
+            var count = settings.PortRangeEndExclusive - settings.PortRangeStart;
+            var start = random is null || count <= 0 ? 0 : random.Next(count);
+            candidates = Enumerable.Range(0, Math.Max(count, 0)).Select(i => settings.PortRangeStart + (start + i) % count);
         }
 
         foreach (var candidate in candidates)

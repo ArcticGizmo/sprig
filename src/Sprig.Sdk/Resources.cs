@@ -17,6 +17,7 @@ public sealed class AppResource : IResource
     readonly List<EndpointModel> _endpoints = [];
     readonly List<EnvModel> _env = [];
     readonly List<string> _waitFor = [];
+    readonly List<EnvOutputModel> _outputs = [];
     string? _run;
     string? _primaryEndpoint;
 
@@ -45,7 +46,8 @@ public sealed class AppResource : IResource
     /// <summary>An HTTP endpoint on a port sprig allocates.</summary>
     /// <param name="pin">Restrict the port to a set, e.g. <c>"5170-5173"</c> or <c>"8100,8200"</c>.</param>
     /// <param name="portEnv">An env var to receive the port, e.g. <c>"PORT"</c>.</param>
-    /// <param name="urlEnv">An env var to receive the url, e.g. <c>"ASPNETCORE_URLS"</c>.</param>
+    /// <param name="urlEnv">An env var to receive the url. For ASP.NET Core use <c>"Urls"</c>: it outranks a <c>urls</c>
+    /// setting in appsettings.json, which <c>ASPNETCORE_URLS</c> doesn't.</param>
     public AppResource Http(string name = "http", string? pin = null, string? portEnv = null, string? urlEnv = null,
         [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
@@ -77,6 +79,14 @@ public sealed class AppResource : IResource
         return this;
     }
 
+    /// <summary>Also write the app's env vars (from <see cref="Env(string, Expr, string, int)"/> and its endpoints) into
+    /// a file, so it gets them when you run it yourself. Sprig never writes into a file git tracks; it refuses instead.</summary>
+    public AppResource Output(EnvOutput output, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _outputs.Add(new EnvOutputModel(output.Kind, output.File, output.Profile, new SourceLocation(file, line)));
+        return this;
+    }
+
     /// <summary>The command that starts the app. Defaults to the app kind's usual command.</summary>
     public AppResource Run(Expr command)
     {
@@ -97,7 +107,33 @@ public sealed class AppResource : IResource
     string PrimaryEndpoint => _primaryEndpoint
         ?? throw new InvalidOperationException($"app '{Name}' has no endpoint yet; call .Http() before using its Port or Url");
 
-    internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray());
+    internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(), _outputs.ToArray());
+}
+
+/// <summary>Where an app's env vars are written for running it by hand. Paths are relative to the app's path.</summary>
+public sealed record EnvOutput
+{
+    internal string Kind { get; }
+    internal string File { get; }
+    internal string? Profile { get; }
+
+    EnvOutput(string kind, string file, string? profile)
+    {
+        Kind = kind;
+        File = file;
+        Profile = profile;
+    }
+
+    /// <summary>A <c>KEY=value</c> file. Sprig keeps its values between marker lines and leaves the rest alone.</summary>
+    public static EnvOutput DotEnv(string file = ".env") => new("dotenv", file, null);
+
+    /// <summary>A profile in <c>Properties/launchSettings.json</c>, used by <c>dotnet run</c>, Visual Studio, Rider and
+    /// VS Code. The profile goes first, so a plain <c>dotnet run</c> picks it. Only when the file isn't tracked.</summary>
+    public static EnvOutput LaunchSettings(string profile = "sprig") => new("launchSettings", "Properties/launchSettings.json", profile);
+
+    /// <summary>A JSON configuration file, with <c>Section__Key</c> names nested into sections. The app has to load it
+    /// (e.g. <c>builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true)</c>).</summary>
+    public static EnvOutput AppSettings(string file = "appsettings.Local.json") => new("appSettings", file, null);
 }
 
 public sealed class EnvFileBuilder
@@ -125,6 +161,7 @@ public class ContainerResource : IResource
     readonly List<EndpointModel> _endpoints = [];
     readonly List<EnvModel> _env = [];
     readonly List<VolumeModel> _volumes = [];
+    string? _health;
 
     internal ContainerResource(string name, string image, SourceLocation location)
     {
@@ -164,7 +201,15 @@ public class ContainerResource : IResource
         return this;
     }
 
-    internal ContainerModel Build() => new(Name, _image, _location, _endpoints.ToArray(), _env.ToArray(), _volumes.ToArray());
+    /// <summary>A shell command run inside the container that exits 0 once it's ready, e.g. <c>"pg_isready"</c>. Sprig
+    /// waits for it before calling the sprout up.</summary>
+    public ContainerResource Health(string command)
+    {
+        _health = command;
+        return this;
+    }
+
+    internal ContainerModel Build() => new(Name, _image, _location, _endpoints.ToArray(), _env.ToArray(), _volumes.ToArray(), _health);
 }
 
 public sealed class ComposeFileResource
@@ -206,6 +251,7 @@ public sealed class ComposeServiceResource : IResource
 {
     readonly SourceLocation _location;
     readonly List<EndpointModel> _endpoints = [];
+    string? _health;
 
     internal ComposeServiceResource(string name, SourceLocation location)
     {
@@ -229,5 +275,13 @@ public sealed class ComposeServiceResource : IResource
         return this;
     }
 
-    internal ComposeServiceModel Build() => new(Name, _location, _endpoints.ToArray());
+    /// <summary>A shell command run inside the service that exits 0 once it's ready, e.g. <c>"pg_isready -h 127.0.0.1"</c>.
+    /// Sprig waits for it. Without one (here or in the file), sprig only waits for the service to be running.</summary>
+    public ComposeServiceResource Health(string command)
+    {
+        _health = command;
+        return this;
+    }
+
+    internal ComposeServiceModel Build() => new(Name, _location, _endpoints.ToArray(), _health);
 }

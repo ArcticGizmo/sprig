@@ -1,6 +1,10 @@
 using Sprig.Cli.Commands;
+using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
+using Sprig.Engine.Git;
+using Sprig.Engine.Processes;
 using Sprig.Engine.Settings;
+using Sprig.Engine.Sprouts;
 using Sprig.Engine.Trellises;
 using Sprig.Engine.Store;
 using Spectre.Console;
@@ -26,8 +30,12 @@ public static class CliApp
         AnsiConsole.Console = ansi;
 
         var trust = new FileTrustStore(paths);
-        var context = new CliContext(paths, new FileSettingsStore(paths), trust,
-            new DefinitionRunner(trust, new DotnetRunHost(), paths), new TrellisRegistry(paths), ansi);
+        var settings = new FileSettingsStore(paths);
+        var processes = new ProcessRunner();
+        var sprouts = new SproutService(new SproutStore(paths), new PortLeases(paths), settings,
+            new GitClient(processes), new DockerCompose(processes));
+        var context = new CliContext(paths, settings, trust,
+            new DefinitionRunner(trust, new DotnetRunHost(), paths), new TrellisRegistry(paths), sprouts, ansi);
 
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {
@@ -63,6 +71,11 @@ public static class CliApp
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
         config.AddCommand<PlanCommand>("plan");
+        config.AddCommand<UpCommand>("up");
+        config.AddCommand<DownCommand>("down");
+        config.AddCommand<RmCommand>("rm");
+        config.AddCommand<SproutsCommand>("sprouts");
+        config.AddCommand<EnvCommand>("env");
 
         config.AddBranch("trellis", trellis =>
         {

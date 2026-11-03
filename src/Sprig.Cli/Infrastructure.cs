@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Settings;
+using Sprig.Engine.Sprouts;
 using Sprig.Engine.Trellises;
 using Sprig.Engine.Store;
 using Spectre.Console;
@@ -17,6 +18,7 @@ public sealed record CliContext(
     ITrustStore Trust,
     DefinitionRunner Definitions,
     TrellisRegistry Trellises,
+    SproutService Sprouts,
     IAnsiConsole Ansi)
 {
     /// <summary>Prompts are only shown at a real terminal, never under <c>--json</c> or when input is piped.</summary>

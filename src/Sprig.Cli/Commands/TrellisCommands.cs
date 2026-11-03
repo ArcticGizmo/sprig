@@ -178,29 +178,40 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var path = cli.Trellises.Resolve(s.Trellis)
-            ?? throw new InvalidOperationException($"no trellis named '{s.Trellis}'. Register one with: sprig trellis add <file>");
+        if (TrellisLoad.Load(cli, s.Trellis, s) is not { } loaded) return 1;
+
+        var problems = new List<PlanProblem>();
+        var compose = loaded.ComposeFiles(problems);
+        var plan = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, s.Sprout, cli.Settings.Get(), PortAllocator.Listening(),
+            ComposeFiles: compose));
+        plan = plan with { Problems = [.. problems, .. plan.Problems] };
+        if (s.Json) CliOutput.Json(plan);
+        else PlanPrinter.Print(cli.Ansi, plan, Path.GetDirectoryName(loaded.TrellisPath)!);
+        return plan.HasErrors ? 1 : 0;
+    }
+}
+
+static class TrellisLoad
+{
+    /// <summary>Load a trellis by name or path, asking to approve what isn't yet. Null (after saying why) when it
+    /// can't be planned.</summary>
+    public static LoadedTrellis? Load(CliContext cli, string nameOrPath, TrustingSettings s)
+    {
+        var path = cli.Trellises.Resolve(nameOrPath)
+            ?? throw new InvalidOperationException($"no trellis named '{nameOrPath}'. Register one with: sprig trellis add <file>");
 
         var loader = new TrellisLoader(cli.Definitions);
         var loaded = loader.Load(path);
         if (loaded.Untrusted.Count > 0)
         {
-            if (!TrustFlow.Approve(cli, loaded.Untrusted, s)) return 1;
+            if (!TrustFlow.Approve(cli, loaded.Untrusted, s)) return null;
             loaded = loader.Load(path);
         }
 
-        if (loaded.Trellis is null || loaded.Problems.Count > 0)
-        {
-            var problems = loaded.Problems;
-            if (s.Json) CliOutput.Json(new { ok = false, problems });
-            else PlanPrinter.Problems(cli.Ansi, problems, Path.GetDirectoryName(path)!);
-            return 1;
-        }
-
-        var plan = Planner.Build(new PlanInput(loaded.Trellis, loaded.Repos, s.Sprout, cli.Settings.Get(), PortAllocator.Listening()));
-        if (s.Json) CliOutput.Json(plan);
-        else PlanPrinter.Print(cli.Ansi, plan, Path.GetDirectoryName(path)!);
-        return plan.HasErrors ? 1 : 0;
+        if (loaded.Trellis is not null && loaded.Problems.Count == 0) return loaded;
+        if (s.Json) CliOutput.Json(new { ok = false, problems = loaded.Problems });
+        else PlanPrinter.Problems(cli.Ansi, loaded.Problems, Path.GetDirectoryName(path)!);
+        return null;
     }
 }
 
@@ -231,6 +242,8 @@ static class PlanPrinter
             }
             if (app.Run is { } run) table.AddRow(new Markup("[dim]run[/]"), Value(run), Via(run));
             if (app.WaitFor.Count > 0) table.AddRow(new Markup("[dim]waits for[/]"), new SpectreText(string.Join(", ", app.WaitFor)), new SpectreText(""));
+            if (app.Outputs.Count > 0)
+                table.AddRow(new Markup("[dim]env vars also go to[/]"), new SpectreText(string.Join(", ", app.Outputs.Select(o => o.File))), new SpectreText(""));
             console.Write(table);
         }
 
@@ -248,6 +261,8 @@ static class PlanPrinter
             var table = new Table().Border(TableBorder.Rounded)
                 .Title($"[bold]{Markup.Escape(compose.Owner)} / {Markup.Escape(compose.File)}[/]").AddColumns("Path", "Value", "Comes from");
             foreach (var o in compose.Overrides) table.AddRow(new SpectreText(o.Path), Value(o.Value), Via(o.Value));
+            if (compose.Services.Count > 0)
+                table.AddRow(new Markup("[dim]keeps[/]"), new SpectreText(string.Join(", ", compose.Services.Select(x => x.Name))), new SpectreText(""));
             console.Write(table);
         }
 

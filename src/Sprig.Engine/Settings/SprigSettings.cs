@@ -25,6 +25,12 @@ public sealed class SprigSettings
     /// </summary>
     public string? LastSeenVersion { get; set; }
 
+    /// <summary>
+    /// Where sprouts put their worktrees, as <c>&lt;folder&gt;/&lt;trellis&gt;--&lt;sprout&gt;/&lt;repo&gt;</c>. Null puts that
+    /// folder beside the trellis's repos instead, which keeps the repos' layout relative to each other.
+    /// </summary>
+    public string? SproutsFolder { get; set; }
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -38,5 +44,6 @@ public sealed class SprigSettings
         RestrictedPorts = new List<int>(RestrictedPorts),
         ShowChangelogOnUpdate = ShowChangelogOnUpdate,
         LastSeenVersion = LastSeenVersion,
+        SproutsFolder = SproutsFolder,
     };
 }

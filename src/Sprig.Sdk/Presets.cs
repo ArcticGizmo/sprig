@@ -14,6 +14,8 @@ public sealed class PostgresResource : ContainerResource
         Env("POSTGRES_USER", User, location.File, location.Line);
         Env("POSTGRES_PASSWORD", Password, location.File, location.Line);
         Volume("data", "/var/lib/postgresql/data");
+        // Over TCP, because the image's first-run setup serves only the unix socket and would pass a plain pg_isready.
+        Health($"pg_isready -h 127.0.0.1 -U {User}");
     }
 
     /// <summary>An Npgsql-style connection string for <paramref name="database"/>.</summary>
@@ -24,7 +26,10 @@ public sealed class PostgresResource : ContainerResource
 public sealed class RedisResource : ContainerResource
 {
     internal RedisResource(string name, string image, SourceLocation location) : base(name, image, location)
-        => Endpoint("tcp", 6379, file: location.File, line: location.Line);
+    {
+        Endpoint("tcp", 6379, file: location.File, line: location.Line);
+        Health("redis-cli ping");
+    }
 
     /// <summary><c>localhost:&lt;port&gt;</c>, the form StackExchange.Redis expects.</summary>
     public Expr Url => new Template([new Literal("localhost:"), Port]);
@@ -41,6 +46,7 @@ public sealed class RabbitMqResource : ContainerResource
         Endpoint("ui", 15672, scheme: "http", file: location.File, line: location.Line);
         Env("RABBITMQ_DEFAULT_USER", User, location.File, location.Line);
         Env("RABBITMQ_DEFAULT_PASS", Password, location.File, location.Line);
+        Health("rabbitmq-diagnostics -q ping");
     }
 
     /// <summary><c>amqp://sprig:sprig@localhost:&lt;port&gt;</c>.</summary>
@@ -56,6 +62,7 @@ public sealed class MailpitResource : ContainerResource
     {
         Endpoint("smtp", 1025, file: location.File, line: location.Line);
         Endpoint("ui", 8025, scheme: "http", file: location.File, line: location.Line);
+        Health("/mailpit readyz");
     }
 
     /// <summary><c>smtp://localhost:&lt;port&gt;</c>.</summary>

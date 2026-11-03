@@ -59,6 +59,10 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
                 return new Failed(path, sha, clock.Elapsed, $"exited with code {result.ExitCode}", result.Output);
             if (TryRead(outFile) is not { } model)
                 return new Failed(path, sha, clock.Elapsed, "ran but wrote no model; does it end with 'return repo.Emit(args);'?", result.Output);
+            if (model.Schema != Sprig.Sdk.Schema)
+                return new Failed(path, sha, clock.Elapsed,
+                    $"was built with Sprig.Sdk {model.SdkVersion} (model schema {model.Schema}); this sprig reads schema {Sprig.Sdk.Schema}. Update its #:package line.",
+                    result.Output);
 
             Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
             File.Copy(outFile, cacheFile, overwrite: true);
@@ -70,7 +74,7 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
         }
     }
 
-    string CacheFile(string sha) => Path.Combine(paths.Root, "cache", "models", $"{sha}-{Sprig.Sdk.Version}.json");
+    string CacheFile(string sha) => Path.Combine(paths.Root, "cache", "models", $"{sha}-{Sprig.Sdk.Version}-s{Sprig.Sdk.Schema}.json");
 
     static DefinitionModel? TryRead(string file)
     {

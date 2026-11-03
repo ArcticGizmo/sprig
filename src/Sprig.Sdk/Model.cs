@@ -49,6 +49,7 @@ public sealed record TrellisModel(
     string PortPolicy)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
 
+/// <param name="Outputs">Files that also receive the app's process env vars, for running it by hand or from an IDE.</param>
 public sealed record AppModel(
     string Name,
     string Kind,
@@ -57,15 +58,25 @@ public sealed record AppModel(
     IReadOnlyList<EndpointModel> Endpoints,
     IReadOnlyList<EnvModel> Env,
     string? Run,
-    IReadOnlyList<string> WaitFor);
+    IReadOnlyList<string> WaitFor,
+    IReadOnlyList<EnvOutputModel> Outputs);
 
+/// <summary>A file, under the app's path, that gets the app's process env vars written into it.</summary>
+/// <param name="Kind"><c>dotenv</c>, <c>launchSettings</c> or <c>appSettings</c>.</param>
+/// <param name="File">Relative to the app's path.</param>
+/// <param name="Profile">The launch profile's name, for <c>launchSettings</c>.</param>
+public sealed record EnvOutputModel(string Kind, string File, string? Profile, SourceLocation Location);
+
+/// <param name="Health">A command run inside the container that exits 0 once it's ready; null to only wait for it to
+/// be running.</param>
 public sealed record ContainerModel(
     string Name,
     string Image,
     SourceLocation Location,
     IReadOnlyList<EndpointModel> Endpoints,
     IReadOnlyList<EnvModel> Env,
-    IReadOnlyList<VolumeModel> Volumes);
+    IReadOnlyList<VolumeModel> Volumes,
+    string? Health);
 
 public sealed record VolumeModel(string Name, string Target);
 
@@ -88,7 +99,8 @@ public sealed record ComposeFileModel(
     IReadOnlyList<ComposeServiceModel> Services,
     IReadOnlyList<ComposeOverrideModel> Overrides);
 
-public sealed record ComposeServiceModel(string Name, SourceLocation Location, IReadOnlyList<EndpointModel> Endpoints);
+/// <param name="Health">A command that exits 0 once the service is ready, replacing the file's own health check.</param>
+public sealed record ComposeServiceModel(string Name, SourceLocation Location, IReadOnlyList<EndpointModel> Endpoints, string? Health);
 
 /// <param name="Path">A dotted path into the compose file, e.g. <c>services.postgres.container_name</c>.</param>
 public sealed record ComposeOverrideModel(string Path, string Value, SourceLocation Location);

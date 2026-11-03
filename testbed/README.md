@@ -13,6 +13,11 @@ pwsh -File scripts/testbed.ps1 -Path D:\tb -Force
 | `shop-web` | Vue + Vite storefront: lists the catalog, places orders | 5173 |
 | `shop-mobile` | Ionic Vue app run in the browser: reads the catalog | 8100 |
 
+Two trellises sit beside the repos:
+
+- `storefront.trellis.cs` joins all three repos and gives each sprout its own worktrees: `sprig up storefront --sprout feat-x`.
+- `services.trellis.cs` runs `shop-services` alone, in place in its checkout: `sprig up services`.
+
 ## What proves the wiring
 
 Every app shows the values it was given, where each came from, and whether the service it names answers:

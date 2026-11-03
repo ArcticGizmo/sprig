@@ -60,7 +60,7 @@ public sealed class RepoBuilder : DefinitionBuilder
     internal RepoModel BuildRepo() => (RepoModel)Build();
 
     private protected override DefinitionModel Build() => new RepoModel(
-        Schema: 1,
+        Schema: Sdk.Schema,
         Name: Name,
         SdkVersion: Sdk.Version,
         Location: Location,

@@ -24,6 +24,96 @@ public class PlannerTests
 
         public Plan Plan(SprigSettings? settings = null, IReadOnlySet<int>? inUse = null)
             => Planner.Build(new PlanInput(Trellis.BuildTrellis(), _repos, "feat-x", settings ?? Settings, inUse ?? new HashSet<int>()));
+
+        public Plan PlanWith(Func<PlanInput, PlanInput> change)
+            => Planner.Build(change(new PlanInput(Trellis.BuildTrellis(), _repos, "feat-x", Settings, new HashSet<int>())));
+    }
+
+    [Fact]
+    public void A_sprout_keeps_its_leased_ports_and_only_new_endpoints_get_new_ones()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            repo.Node("web", ".").Http();
+            repo.Node("admin", ".").Http();
+        });
+        var leased = new Dictionary<string, int> { ["r/web.http"] = 9050 };
+
+        var plan = f.PlanWith(i => i with { Leased = leased });
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal(9050, Port(plan, "web"));
+        Assert.Equal(9000, Port(plan, "admin"));
+        Assert.Equal("r/web.http", plan.Ports.Single(p => p.Resource == "web").Key);
+    }
+
+    [Fact]
+    public void A_leased_port_is_given_up_when_something_else_has_it_or_its_pin_no_longer_allows_it()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            repo.Node("web", ".").Http();
+            repo.Node("pinned", ".").Http(pin: "9020-9021");
+        });
+        var leased = new Dictionary<string, int> { ["r/web.http"] = 9050, ["r/pinned.http"] = 9000 };
+
+        var plan = f.PlanWith(i => i with { Leased = leased, PortsInUse = new HashSet<int> { 9050 } });
+
+        Assert.Empty(plan.Problems);
+        Assert.NotEqual(9050, Port(plan, "web"));
+        Assert.Equal(9020, Port(plan, "pinned"));
+    }
+
+    [Fact]
+    public void Compose_services_the_repo_does_not_name_are_left_out_with_a_warning()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var compose = repo.ComposeFile("docker-compose.yml");
+            compose.Service("postgres").Endpoint("tcp", 5432);
+            compose.Service("redis");
+        });
+        var info = new ComposeFileInfo(["postgres", "redis", "mailpit", "seq", "tools"], ["postgres"], ["tools"]);
+
+        var plan = f.PlanWith(i => i with { ComposeFiles = new Dictionary<string, ComposeFileInfo> { [ComposeFileInfo.Key("../shop-services", "docker-compose.yml")] = info } });
+
+        var warning = Assert.Single(plan.Problems);
+        Assert.Equal(ProblemSeverity.Warning, warning.Severity);
+        Assert.Contains("also has 'mailpit', 'seq', which its sprig.cs doesn't name, so sprouts leave them out", warning.Message);
+        var compose = Assert.Single(plan.Compose);
+        Assert.Equal(["postgres", "redis"], compose.Services.Select(s => s.Name));
+        Assert.Contains(compose.Overrides, o => o.Path == "services.postgres.container_name" && o.Generated);
+    }
+
+    [Fact]
+    public void Naming_a_compose_service_the_file_does_not_have_is_an_error()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo => repo.ComposeFile("compose.yml").Service("postgress").Endpoint("tcp", 5432));
+        var info = new ComposeFileInfo(["postgres"], [], []);
+
+        var plan = f.PlanWith(i => i with { ComposeFiles = new Dictionary<string, ComposeFileInfo> { [ComposeFileInfo.Key("../r", "compose.yml")] = info } });
+
+        Assert.Contains(plan.Problems, p => p.Severity == ProblemSeverity.Error && p.Message == "compose.yml has no service named 'postgress'");
+    }
+
+    [Fact]
+    public void Outputs_are_carried_into_the_plan_and_a_launch_profile_for_a_node_app_is_a_warning()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            repo.DotNet("api", ".").Http(urlEnv: "ASPNETCORE_URLS").Output(EnvOutput.LaunchSettings());
+            repo.Node("web", ".").Http(portEnv: "PORT").Output(EnvOutput.LaunchSettings());
+        });
+
+        var plan = f.Plan();
+
+        Assert.Equal("Properties/launchSettings.json", Assert.Single(plan.Apps.Single(a => a.Name == "api").Outputs).File);
+        Assert.Contains("'web' isn't a .NET app", Assert.Single(plan.Problems).Message);
     }
 
     static PlannedEnv Env(Plan plan, string app, string key)
@@ -116,6 +206,7 @@ public class PlannerTests
         var container = Assert.Single(plan.Containers);
         Assert.Equal("storefront", container.Owner);
         Assert.Equal([$"{smtp}:1025", $"{Port(plan, "mail", "ui")}:8025"], container.Ports);
+        Assert.Equal("/mailpit readyz", container.Health);
     }
 
     [Fact]

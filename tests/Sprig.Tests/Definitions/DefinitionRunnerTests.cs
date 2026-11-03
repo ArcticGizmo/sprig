@@ -74,7 +74,7 @@ public class DefinitionRunnerTests
     }
 
     const string ModelJson = """
-        { "schema": 1, "kind": "repo", "name": "r", "sdkVersion": "0", "location": { "file": "f", "line": 1 },
+        { "schema": 2, "kind": "repo", "name": "r", "sdkVersion": "0", "location": { "file": "f", "line": 1 },
           "apps": [], "containers": [], "imports": [], "exports": [] }
         """;
 

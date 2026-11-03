@@ -4,13 +4,29 @@ using Sprig.Model;
 namespace Sprig.Engine.Planning;
 
 /// <param name="Repos">Each repo's model, keyed by the path the trellis names it by.</param>
-/// <param name="PortsInUse">Ports to avoid because something already listens on them.</param>
+/// <param name="PortsInUse">Ports to avoid: something listens on them, or another sprout holds them.</param>
+/// <param name="Leased">Ports this sprout already holds, by <see cref="PlannedPort.Key"/>. Each is kept while its pin
+/// still allows it and nothing else has it.</param>
+/// <param name="ComposeFiles">What's in each repo compose file, by <see cref="ComposeFileInfo.Key"/>. Without it the
+/// plan can't say which services a sprout leaves out.</param>
+/// <param name="Random">Set for the random port policy: unpinned ports start from a random point in the range.</param>
 public sealed record PlanInput(
     TrellisModel Trellis,
     IReadOnlyDictionary<string, RepoModel> Repos,
     string Sprout,
     SprigSettings Settings,
-    IReadOnlySet<int> PortsInUse);
+    IReadOnlySet<int> PortsInUse,
+    IReadOnlyDictionary<string, int>? Leased = null,
+    IReadOnlyDictionary<string, ComposeFileInfo>? ComposeFiles = null,
+    Random? Random = null);
+
+/// <summary>The services in a repo's compose file.</summary>
+/// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between sprouts.</param>
+/// <param name="Profiled">Services that only start under a compose profile, so they don't run by default anyway.</param>
+public sealed record ComposeFileInfo(IReadOnlyList<string> Services, IReadOnlyList<string> FixedNames, IReadOnlyList<string> Profiled)
+{
+    public static string Key(string repoPath, string file) => $"{repoPath}|{file}";
+}
 
 /// <summary>
 /// Joins a trellis and its repos into a <see cref="Plan"/>. Names are private to the repo (or trellis) that declares
@@ -117,13 +133,24 @@ public static class Planner
         /// <summary>Pinned endpoints go first, so an unpinned one can't take the only port a pin allows.</summary>
         void AllocatePorts()
         {
-            var allocator = new PortAllocator(input.Settings, input.PortsInUse);
+            var allocator = new PortAllocator(input.Settings, input.PortsInUse, input.Random);
             var all = _scopes.SelectMany(s => s.Resources.Values.SelectMany(r => r.Endpoints.Values.Select(e => (s, r, e)))).ToList();
+
+            // Kept leases are claimed before anything new, so a fresh allocation can't take a port this sprout holds.
+            var kept = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var (scope, resource, endpoint) in all)
+            {
+                var key = PlannedPort.LeaseKey(scope.Owner, resource.Name, endpoint.Model.Name);
+                if (input.Leased?.TryGetValue(key, out var leased) == true && allocator.TryKeep(endpoint.Model.Pin, leased))
+                    kept[key] = leased;
+            }
 
             foreach (var (scope, resource, endpoint) in all.OrderBy(x => x.e.Model.Pin is null ? 1 : 0))
             {
                 int? port = null;
-                if (allocator.TryAllocate(endpoint.Model.Pin, out var allocated, out var error)) port = allocated;
+                var key = PlannedPort.LeaseKey(scope.Owner, resource.Name, endpoint.Model.Name);
+                if (kept.TryGetValue(key, out var leased)) port = leased;
+                else if (allocator.TryAllocate(endpoint.Model.Pin, out var allocated, out var error)) port = allocated;
                 else Problem($"{resource.Name}.{endpoint.Model.Name}: {error}", endpoint.Model.Location);
 
                 ((Dictionary<string, Endpoint>)resource.Endpoints)[endpoint.Model.Name] = endpoint with { Port = port };
@@ -142,38 +169,85 @@ public static class Planner
             foreach (var wait in app.WaitFor.Where(w => !scope.Resources.ContainsKey(w)))
                 Problem($"'{app.Name}' waits for '{wait}', which {scope.Owner} doesn't declare", app.Location);
 
+            foreach (var output in app.Outputs)
+            {
+                if (output.Kind is not ("dotenv" or "launchSettings" or "appSettings"))
+                    Problem($"'{app.Name}' writes to an unknown kind of output '{output.Kind}'", output.Location);
+                else if (output.Kind == "launchSettings" && app.Kind != "dotnet")
+                    Warn($"'{app.Name}' isn't a .NET app, so nothing reads the launch profile sprig writes for it", output.Location);
+            }
+            if (app.Outputs.Count > 0 && !app.Env.Any(e => e.File is null))
+                Warn($"'{app.Name}' has outputs but no env vars to write into them", app.Location);
+
             return new PlannedApp(
-                scope.Owner, app.Name, app.Kind, app.Path,
+                scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path,
                 app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location)).ToArray(),
                 app.Run is null ? null : Resolve(scope, app.Run, app.Location),
-                app.WaitFor);
+                app.WaitFor,
+                app.Outputs);
         }
 
         PlannedContainer PlanContainer(Scope scope, ContainerModel c)
         {
-            var resource = scope.Resources[c.Name];
-            var ports = c.Endpoints.Select(e => $"{resource.Endpoints[e.Name].Port?.ToString() ?? "?"}:{e.TargetPort}").ToArray();
-            var volumes = c.Volumes.Select(v => $"{v.Name} → {v.Target}").ToArray();
-            return new PlannedContainer(scope.Owner, c.Name, c.Image, ports,
-                c.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), null, e.Location)).ToArray(), volumes);
+            var mappings = Mappings(scope.Resources[c.Name], c.Endpoints);
+            return new PlannedContainer(scope.Owner, c.Name, c.Image,
+                mappings.Select(m => m.ToString()).ToArray(),
+                c.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), null, e.Location)).ToArray(),
+                c.Volumes.Select(v => $"{v.Name} → {v.Target}").ToArray(),
+                mappings, c.Volumes, c.Health);
         }
 
         PlannedCompose PlanCompose(Scope scope, ComposeFileModel file)
         {
             var overrides = new List<PlannedOverride>();
+            var services = new List<PlannedComposeService>();
             foreach (var service in file.Services)
             {
-                if (service.Endpoints.Count == 0) continue;
-                var resource = scope.Resources[service.Name];
-                var mappings = service.Endpoints.Select(e => $"{resource.Endpoints[e.Name].Port?.ToString() ?? "?"}:{e.TargetPort}");
+                var mappings = Mappings(scope.Resources[service.Name], service.Endpoints);
+                services.Add(new PlannedComposeService(service.Name, mappings, service.Health));
+                if (mappings.Count == 0) continue;
                 var value = string.Join(", ", mappings);
                 overrides.Add(new PlannedOverride($"services.{service.Name}.ports",
-                    new PlannedValue(value, value, [$"ports for {service.Name}, replacing the file's own"])));
+                    new PlannedValue(value, value, [$"ports for {service.Name}, replacing the file's own"]), Generated: true));
             }
             foreach (var o in file.Overrides)
                 overrides.Add(new PlannedOverride(o.Path, Resolve(scope, o.Value, o.Location)));
-            return new PlannedCompose(scope.Owner, file.File, overrides);
+
+            CheckComposeFile(scope, file, overrides);
+            return new PlannedCompose(scope.Owner, scope.RepoPath!, file.File, overrides, services);
         }
+
+        /// <summary>A sprout keeps only the services the repo names: the others would start on the file's fixed host
+        /// ports and clash with the same service in another sprout.</summary>
+        void CheckComposeFile(Scope scope, ComposeFileModel file, List<PlannedOverride> overrides)
+        {
+            if (input.ComposeFiles?.TryGetValue(ComposeFileInfo.Key(scope.RepoPath!, file.File), out var info) != true) return;
+
+            foreach (var service in file.Services.Where(s => !info!.Services.Contains(s.Name)))
+                Problem($"{file.File} has no service named '{service.Name}'", service.Location);
+
+            var named = file.Services.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+            var left = info!.Services.Where(s => !named.Contains(s) && !info.Profiled.Contains(s)).ToArray();
+            if (left.Length > 0)
+            {
+                var (them, they) = left.Length == 1 ? ("it", "it") : ("them", "them");
+                Warn($"{scope.Owner}'s {file.File} also has {string.Join(", ", left.Select(s => $"'{s}'"))}, which its sprig.cs doesn't name, " +
+                     $"so sprouts leave {them} out. Name {they} with compose.Service(...) to keep {them}.", file.Location);
+            }
+
+            foreach (var name in info.FixedNames.Where(named.Contains))
+            {
+                var path = $"services.{name}.container_name";
+                if (overrides.Any(o => o.Path == path)) continue;
+                overrides.Add(new PlannedOverride(path,
+                    new PlannedValue("", "(removed)", ["a fixed container name would clash between sprouts"]), Generated: true));
+            }
+        }
+
+        static IReadOnlyList<PlannedMapping> Mappings(Resource resource, IReadOnlyList<EndpointModel> endpoints)
+            => endpoints.Where(e => e.TargetPort is not null)
+                .Select(e => new PlannedMapping(e.Name, resource.Endpoints[e.Name].Port, e.TargetPort!.Value))
+                .ToArray();
 
         PlannedGroup PlanGroup(GroupModel group)
         {

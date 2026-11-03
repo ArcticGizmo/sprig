@@ -7,15 +7,41 @@ namespace Sprig.Engine.Trellises;
 
 /// <param name="Repos">Each repo that evaluated, keyed by the path the trellis names it by.</param>
 /// <param name="Untrusted">Definitions that weren't run because their current content hasn't been approved.</param>
+/// <param name="RepoDirs">Each repo's folder, keyed like <see cref="Repos"/>.</param>
 public sealed record LoadedTrellis(
     string TrellisPath,
     TrellisModel? Trellis,
     IReadOnlyDictionary<string, RepoModel> Repos,
     IReadOnlyList<NeedsTrust> Untrusted,
     IReadOnlyList<PlanProblem> Problems,
-    IReadOnlyList<DefinitionResult> Results)
+    IReadOnlyList<DefinitionResult> Results,
+    IReadOnlyDictionary<string, string> RepoDirs)
 {
     public bool Complete => Trellis is not null && Untrusted.Count == 0 && Problems.Count == 0;
+
+    /// <summary>What's in each repo's compose files, read from <paramref name="dirs"/> (the repos' own folders when
+    /// null). Files that are missing or unreadable are reported in <paramref name="problems"/>.</summary>
+    public IReadOnlyDictionary<string, ComposeFileInfo> ComposeFiles(List<PlanProblem> problems, IReadOnlyDictionary<string, string>? dirs = null)
+    {
+        var result = new Dictionary<string, ComposeFileInfo>(StringComparer.Ordinal);
+        foreach (var (repoPath, repo) in Repos)
+        {
+            foreach (var file in repo.ComposeFiles)
+            {
+                var path = Path.Combine((dirs ?? RepoDirs)[repoPath], file.File);
+                try
+                {
+                    result[ComposeFileInfo.Key(repoPath, file.File)] = Compose.ComposeYaml.Inspect(File.ReadAllText(path));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or Compose.ComposeException)
+                {
+                    var why = e is FileNotFoundException or DirectoryNotFoundException ? "doesn't exist" : e.Message;
+                    problems.Add(new PlanProblem(ProblemSeverity.Error, $"{repo.Name}'s {file.File} {why}", file.Location));
+                }
+            }
+        }
+        return result;
+    }
 }
 
 /// <summary>Evaluates a trellis and the <c>sprig.cs</c> of every repo it names. Repos are evaluated in parallel; each
@@ -31,6 +57,7 @@ public sealed class TrellisLoader(DefinitionRunner runner)
         var results = new List<DefinitionResult>();
         var untrusted = new List<NeedsTrust>();
         var repos = new Dictionary<string, RepoModel>(StringComparer.Ordinal);
+        var dirs = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var trellisResult = runner.Evaluate(path);
         results.Add(trellisResult);
@@ -40,13 +67,14 @@ public sealed class TrellisLoader(DefinitionRunner runner)
             RepoModel => Fail($"{Path.GetFileName(path)} describes a repo, not a trellis (it calls Repo.Describe)", path, problems),
             _ => null,
         };
-        if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results);
+        if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results, dirs);
 
         var dir = Path.GetDirectoryName(path)!;
         var definitions = new List<(RepoRefModel reference, string file)>();
         foreach (var reference in trellis.Repos)
         {
             var repoDir = LongPath.Of(Path.Combine(dir, reference.Path));
+            dirs[reference.Path] = repoDir;
             var file = Path.Combine(repoDir, RepoDefinitionFile);
             if (!Directory.Exists(repoDir))
                 problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo folder '{repoDir}' doesn't exist", reference.Location));
@@ -69,7 +97,7 @@ public sealed class TrellisLoader(DefinitionRunner runner)
             }
         }
 
-        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results);
+        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs);
     }
 
     static DefinitionModel? Accept(DefinitionResult result, List<PlanProblem> problems, List<NeedsTrust> untrusted)

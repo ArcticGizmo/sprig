@@ -15,19 +15,19 @@ internal static class JsonFile
     };
 
     /// <summary>Read and deserialize; returns <c>default</c> if the file does not exist.</summary>
-    public static T? Read<T>(string path)
+    public static T? Read<T>(string path, JsonSerializerOptions? options = null)
     {
         if (!File.Exists(path)) return default;
-        return JsonSerializer.Deserialize<T>(File.ReadAllText(path), Options);
+        return JsonSerializer.Deserialize<T>(File.ReadAllText(path), options ?? Options);
     }
 
     /// <summary>Serialize and write atomically (temp file in the same dir, then move over the target).</summary>
-    public static void Write<T>(string path, T value)
+    public static void Write<T>(string path, T value, JsonSerializerOptions? options = null)
     {
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
         var tmp = Path.Combine(dir, $".{Path.GetFileName(path)}.tmp-{Guid.NewGuid():N}");
-        File.WriteAllText(tmp, JsonSerializer.Serialize(value, Options));
+        File.WriteAllText(tmp, JsonSerializer.Serialize(value, options ?? Options));
 
         // Windows can transiently deny a rename-over-existing when an external handle (AV,
         // search indexer) briefly holds the destination. Retry with backoff, then clean up.

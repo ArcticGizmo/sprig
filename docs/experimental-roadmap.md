@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 done, M1 next.
+Branch: `experimental`. Started 2026-11-03. Status: M0 done. M1 spike done with a recommendation to go; findings in [spikes/m1-authoring.md](spikes/m1-authoring.md), awaiting two manual checks and your decision.
 
 This branch rebuilds Sprig from scratch around two changes:
 

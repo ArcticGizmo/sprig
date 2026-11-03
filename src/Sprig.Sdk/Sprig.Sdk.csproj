@@ -10,7 +10,10 @@
     <PackageId>Sprig.Sdk</PackageId>
     <Version>0.1.0-exp</Version>
     <IsPackable>true</IsPackable>
+    <!-- Docs ship for IntelliSense. Undocumented members (CS1591) and partial param docs (CS1573) are allowed
+         while the SDK's shape is still a spike; revisit before the SDK is published. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

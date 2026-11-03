@@ -10,4 +10,8 @@
     <InternalsVisibleTo Include="Sprig.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Sprig.Sdk\Sprig.Sdk.csproj" />
+  </ItemGroup>
+
 </Project>

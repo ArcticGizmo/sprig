@@ -30,7 +30,7 @@ public class MainWindowViewModelTests
 
         var navPages = vm.NavItems.OfType<PageViewModel>().Select(p => p.Title);
 
-        Assert.Equal(["Home", "Systems", "Instances"], navPages);
+        Assert.Equal(["Home", "Systems", "Instances", "Editor"], navPages);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);
     }

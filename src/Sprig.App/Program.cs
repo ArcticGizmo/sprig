@@ -25,6 +25,9 @@ internal static class Program
 
         velopack.Run();
 
+        if (args.Length > 1 && args[0] == "render-editor")
+            return Rendering.HeadlessRenderer.RenderEditor(args[1]);
+
         // A headless probe of the same update check the UI runs on launch (honours SPRIG_UPDATE_FEED).
         if (args.Length > 0 && args[0] == "check-update")
         {

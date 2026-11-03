@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:host="clr-namespace:Sprig.App.Authoring"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="Sprig.App.Views.EditorSpikeView"
+             x:DataType="vm:EditorSpikeViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.stat">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="*,300" RowDefinitions="Auto,*,Auto" Margin="24,24,24,16" ColumnSpacing="16" RowSpacing="12">
+
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Spacing="3">
+            <TextBlock Text="SPIKE · M1" FontSize="11" FontWeight="SemiBold" LetterSpacing="1.5"
+                       Foreground="{StaticResource WarnBrush}" />
+            <TextBlock Text="Editing a sprig.cs in the app" FontSize="20" FontWeight="SemiBold"
+                       Foreground="{StaticResource TitleBrush}" />
+            <TextBlock Text="Type a dot after catalog or repo, or press Ctrl+Space. Completion and errors come from a separate process."
+                       FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+            <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontSize="13.5"
+                           FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace"
+                           Foreground="{StaticResource FgBrush}" Background="Transparent"
+                           LineNumbersForeground="{StaticResource MutedBrush}" Padding="8" />
+        </Border>
+
+        <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="phead" Text="LANGUAGE HOST" />
+                    <TextBlock Classes="stat" Text="{Binding HostStatus}" />
+                    <Button Classes="small" Content="Kill the host" Command="{Binding KillHostCommand}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="phead" Text="LAST COMPLETION" />
+                    <TextBlock Classes="stat" Text="{Binding CompletionTiming}" />
+                    <TextBlock Classes="phead" Text="LAST DIAGNOSTICS" Margin="0,6,0,0" />
+                    <TextBlock Classes="stat" Text="{Binding DiagnosticsTiming}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="phead" Text="MEMORY" />
+                    <TextBlock Classes="stat" Text="{Binding AppMemory, StringFormat='App: {0}'}" />
+                    <TextBlock Classes="stat" Text="{Binding HostMemory, StringFormat='Host: {0}'}" />
+                    <Button Classes="small" Content="Refresh" Command="{Binding RefreshMemoryCommand}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="phead" Text="EDITS THE GUI WOULD MAKE" />
+                    <Button Classes="small" x:Name="AddEnvButton" Content="Add Bus__Url to catalog-api" />
+                    <Button Classes="small" x:Name="PinButton" Content="Pin catalog-api to 8100-8103" />
+                    <Button Classes="small" x:Name="ImportButton" Content="Import billing-url" />
+                    <TextBlock Classes="stat" Text="{Binding EditMessage}" Foreground="{StaticResource MutedBrush}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12,10"
+                MaxHeight="150">
+            <StackPanel Spacing="6">
+                <TextBlock Classes="phead" Text="PROBLEMS" />
+                <TextBlock Classes="stat" Text="None." IsVisible="{Binding !HasDiagnostics}"
+                           Foreground="{StaticResource OkBrush}" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasDiagnostics}">
+                    <ItemsControl ItemsSource="{Binding Diagnostics}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="host:HostDiagnostic">
+                                <Grid ColumnDefinitions="60,70,*" Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding Line, StringFormat='line {0}'}"
+                                               FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Id}" FontSize="12.5"
+                                               Foreground="{StaticResource DangerBrush}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Message}" FontSize="12.5"
+                                               TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

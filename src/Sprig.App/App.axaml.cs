@@ -18,13 +18,16 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var services = new AppServices();
+            var vm = new MainWindowViewModel(services);
             var main = new MainWindow
             {
-                DataContext = new MainWindowViewModel(services),
+                DataContext = vm,
                 Title = MainWindowViewModel.WindowTitle,
             };
 
             desktop.MainWindow = main;
+            // The language host is a child process; don't leave it running after the app closes.
+            desktop.Exit += (_, _) => vm.EditorSpike.Host.Dispose();
             MaybeShowChangelog(services, main);
         }
         base.OnFrameworkInitializationCompleted();

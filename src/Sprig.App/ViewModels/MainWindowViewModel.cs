@@ -18,6 +18,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public HomeViewModel Home { get; }
     public ComingSoonViewModel Systems { get; }
     public ComingSoonViewModel Instances { get; }
+    public EditorSpikeViewModel EditorSpike { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
 
@@ -53,10 +54,11 @@ public partial class MainWindowViewModel : ViewModelBase
             heading: "Bring a system up in one step",
             body: "An instance is one running copy of a system: its worktrees (or the repos in place), its ports, env files and containers, and later its apps, started in order.",
             milestone: "M4");
+        EditorSpike = new EditorSpikeViewModel();
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
 
-        Pages = [Home, Systems, Instances, Settings, About];
+        Pages = [Home, Systems, Instances, EditorSpike, Settings, About];
         NavItems =
         [
             Home,
@@ -64,6 +66,8 @@ public partial class MainWindowViewModel : ViewModelBase
             Systems,
             new NavHeaderViewModel("RUN"),
             Instances,
+            new NavHeaderViewModel("SPIKES"),
+            EditorSpike,
         ];
 
         _currentPage = Home;

@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Sprig.Engine.Definitions;
 using Sprig.Engine.Settings;
+using Sprig.Engine.Trellises;
 using Sprig.Engine.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -12,7 +14,14 @@ namespace Sprig.Cli;
 public sealed record CliContext(
     ISprigPaths Paths,
     ISettingsStore Settings,
-    IAnsiConsole Ansi);
+    ITrustStore Trust,
+    DefinitionRunner Definitions,
+    TrellisRegistry Trellises,
+    IAnsiConsole Ansi)
+{
+    /// <summary>Prompts are only shown at a real terminal, never under <c>--json</c> or when input is piped.</summary>
+    public bool Interactive(bool json) => !json && !Console.IsInputRedirected && !Console.IsOutputRedirected;
+}
 
 /// <summary>Base settings carrying the one global flag, so <c>--json</c> is accepted by every command.</summary>
 public class GlobalSettings : CommandSettings
@@ -68,4 +77,12 @@ static class CliOutput
     /// <summary>A green-ticked success line. The message is escaped, so brackets in paths render literally.</summary>
     public static void Success(string message)
         => Console_.MarkupLine($"[green]{Commands.Glyph.Check(Console_)}[/] {Markup.Escape(message)}");
+
+    /// <summary>The machine payload under <c>--json</c>, else a green-ticked line.</summary>
+    public static int Ok(bool json, string human, object payload)
+    {
+        if (json) Json(payload);
+        else Success(human);
+        return 0;
+    }
 }

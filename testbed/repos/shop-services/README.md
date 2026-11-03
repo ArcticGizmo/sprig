@@ -13,7 +13,7 @@ Every API has `/health` and `/config`. `/config` lists each setting the app reli
 ## Run by hand
 
 ```sh
-docker compose up -d
+docker compose --profile standalone up -d     # the profile adds Mailpit, which sprig supplies itself
 dotnet run --project src/Catalog.Api
 dotnet run --project src/Orders.Api
 ```

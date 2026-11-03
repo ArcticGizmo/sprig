@@ -1,5 +1,7 @@
 using Sprig.Cli.Commands;
+using Sprig.Engine.Definitions;
 using Sprig.Engine.Settings;
+using Sprig.Engine.Trellises;
 using Sprig.Engine.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -23,7 +25,9 @@ public static class CliApp
         var ansi = SharedConsole;
         AnsiConsole.Console = ansi;
 
-        var context = new CliContext(paths, new FileSettingsStore(paths), ansi);
+        var trust = new FileTrustStore(paths);
+        var context = new CliContext(paths, new FileSettingsStore(paths), trust,
+            new DefinitionRunner(trust, new DotnetRunHost(), paths), new TrellisRegistry(paths), ansi);
 
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {
@@ -58,6 +62,22 @@ public static class CliApp
 
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
+        config.AddCommand<PlanCommand>("plan");
+
+        config.AddBranch("trellis", trellis =>
+        {
+            trellis.SetDescription("Register the trellis files that put repos together");
+            trellis.AddCommand<TrellisAddCommand>("add");
+            trellis.AddCommand<TrellisLsCommand>("ls");
+            trellis.AddCommand<TrellisRmCommand>("rm");
+        });
+
+        config.AddBranch("trust", trust =>
+        {
+            trust.SetDescription("Approve definition files to run (by exact content)");
+            trust.AddCommand<TrustAddCommand>("add");
+            trust.AddCommand<TrustLsCommand>("ls");
+        });
 
         config.AddBranch("shell", shell =>
         {

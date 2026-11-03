@@ -27,13 +27,8 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
         </Style>
-        <!-- Save-status + check-result colouring -->
         <Style Selector="TextBlock.status.err"><Setter Property="Foreground" Value="{StaticResource DangerBrush}" /></Style>
         <Style Selector="TextBlock.status.ok"><Setter Property="Foreground" Value="{StaticResource OkBrush}" /></Style>
-        <Style Selector="TextBlock.result.ok"><Setter Property="Foreground" Value="{StaticResource OkBrush}" /></Style>
-        <Style Selector="TextBlock.result.warn"><Setter Property="Foreground" Value="{StaticResource WarnBrush}" /></Style>
-        <Style Selector="TextBlock.result.info"><Setter Property="Foreground" Value="{StaticResource AccentBrush}" /></Style>
-        <Style Selector="TextBlock.result.muted"><Setter Property="Foreground" Value="{StaticResource MutedBrush}" /></Style>
     </UserControl.Styles>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -43,15 +38,14 @@
                 <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" />
                 <TextBlock Classes="help"
-                           Text="Control how sprig picks host ports for each workspace." />
+                           Text="Control how sprig picks host ports for each instance." />
             </StackPanel>
 
-            <!-- Port allocation policy -->
             <Border Classes="panel">
                 <StackPanel Spacing="16">
                     <TextBlock Classes="phead" Text="PORT RANGE" />
                     <TextBlock Classes="help"
-                               Text="sprig allocates each workspace's ports from this range. Changes apply to new workspaces; existing ones keep the ports they already hold." />
+                               Text="sprig allocates ports from this range. Changes apply to new instances; existing ones keep the ports they already hold." />
                     <StackPanel Orientation="Horizontal" Spacing="16">
                         <StackPanel Spacing="4">
                             <TextBlock Classes="field" Text="Start port" />
@@ -67,7 +61,7 @@
 
                     <TextBlock Classes="phead" Text="RESTRICTED PORTS" />
                     <TextBlock Classes="help"
-                               Text="Ports that are never allocated, even when they fall inside the range — e.g. ones another app on this machine already uses. One per line or comma-separated." />
+                               Text="Ports that are never allocated, even when they fall inside the range, e.g. ones another app on this machine already uses. One per line or comma-separated." />
                     <TextBox Text="{Binding RestrictedText}" AcceptsReturn="True" TextWrapping="Wrap"
                              MinHeight="80" MaxHeight="160" PlaceholderText="e.g. 8080, 8443" />
 
@@ -85,74 +79,11 @@
                 </StackPanel>
             </Border>
 
-            <!-- Single-port checker -->
-            <Border Classes="panel">
-                <StackPanel Spacing="12">
-                    <TextBlock Classes="phead" Text="CHECK A PORT" />
-                    <TextBlock Classes="help" Text="Type a port to see its status." />
-                    <TextBox Text="{Binding CheckText}" Width="130" HorizontalAlignment="Left"
-                             PlaceholderText="e.g. 8080" />
-                    <TextBlock Classes="result"
-                               Classes.ok="{Binding CheckIsAvailable}" Classes.warn="{Binding CheckIsRestricted}"
-                               Classes.info="{Binding CheckIsInUse}" Classes.muted="{Binding CheckIsOutOfRange}"
-                               Text="{Binding CheckResult}" FontSize="14" FontWeight="SemiBold"
-                               IsVisible="{Binding HasCheckResult}" />
-                </StackPanel>
-            </Border>
-
-            <!-- Worktree layout -->
-            <Border Classes="panel">
-                <StackPanel Spacing="10">
-                    <TextBlock Classes="phead" Text="WORKTREES" />
-                    <CheckBox IsChecked="{Binding UseClaudeWorktrees}"
-                              Content="Use Claude Code's worktree folder" Foreground="{StaticResource FgBrush}" />
-                    <TextBlock Classes="help"
-                               Text="New workspaces put each worktree in &lt;repo&gt;/.claude/worktrees/&lt;workspace&gt;, where a Claude Code session can enter and switch between them, with a shortcut at the usual &lt;repo&gt;--&lt;workspace&gt; path. Existing workspaces keep their layout." />
-                </StackPanel>
-            </Border>
-
-            <!-- Changelog -->
             <Border Classes="panel">
                 <StackPanel Spacing="10">
                     <TextBlock Classes="phead" Text="CHANGELOG" />
                     <CheckBox IsChecked="{Binding ShowChangelogOnUpdate}"
                               Content="Show what's new after an update" Foreground="{StaticResource FgBrush}" />
-                </StackPanel>
-            </Border>
-
-            <!-- Guided-tour sample (only when one is on disk) -->
-            <Border Classes="panel" IsVisible="{Binding HasSample}">
-                <StackPanel Spacing="12">
-                    <TextBlock Classes="phead" Text="GUIDED TOUR SAMPLE" />
-                    <TextBlock Classes="help" TextWrapping="Wrap"
-                               Text="The guided tour's throwaway setup is still on disk — two sample repos, their worktrees and a demo store. Deleting it stops any containers it started and frees the space; the tour rebuilds it next time." />
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Button Content="Delete the sample" Command="{Binding DeleteSampleCommand}"
-                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource DangerBrush}" />
-                        <TextBlock Text="{Binding SampleMessage}" VerticalAlignment="Center"
-                                   Foreground="{StaticResource MutedBrush}" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Ports in use -->
-            <Border Classes="panel" AutomationProperties.AutomationId="settings.portsInUse">
-                <StackPanel Spacing="12">
-                    <TextBlock Classes="phead" Text="PORTS IN USE" />
-                    <TextBlock Classes="help" Text="No ports are currently allocated to a workspace."
-                               IsVisible="{Binding !HasLeases}" />
-                    <ItemsControl ItemsSource="{Binding Leases}" IsVisible="{Binding HasLeases}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PortUsageItem">
-                                <Grid ColumnDefinitions="90,*" Margin="0,3">
-                                    <TextBlock Grid.Column="0" Text="{Binding PortText}" FontWeight="SemiBold"
-                                               FontFamily="Consolas,monospace" Foreground="{StaticResource FgBrush}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding HeldBy}"
-                                               Foreground="{StaticResource MutedBrush}" />
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
                 </StackPanel>
             </Border>
 

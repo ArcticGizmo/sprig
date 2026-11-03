@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using Sprig.Core.Shell;
+using Sprig.Engine.Shell;
 using Spectre.Console;
 using Spectre.Console.Cli;
 

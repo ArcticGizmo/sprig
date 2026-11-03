@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Experimental branch: everything goes** — the old model, maps, pools, editors, tour and most of the CLI are gone. What's left is the app shell, Settings, About, the updater and `sprig open`/`update`/`shell`. Brave, or reckless. The roadmap will decide.
+- **A store of its own** — this build keeps its data in `sprig-exp`, so it can't touch the released app's maps and workspaces.
+
 ---
 
 ## [v0.8.2] - 2026-11-02

@@ -1,5 +1,5 @@
-using Sprig.Core.Shell;
-using Sprig.Core.Store;
+using Sprig.Engine.Shell;
+using Sprig.Engine.Store;
 
 namespace Sprig.Tests.Shell;
 

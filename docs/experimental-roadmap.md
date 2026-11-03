@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Status: planning. Started 2026-11-03.
+Branch: `experimental`. Started 2026-11-03. Status: M0 done, M1 next.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -141,16 +141,18 @@ return system.Emit(args);
 
 Sizes are rough, for one developer working with Claude, based on the pace on `main` (about 27k lines plus 12k of tests in four months).
 
-### M0: Reset the branch (about 1 week)
+### M0: Reset the branch ✅ done 2026-11-03
 
 Clear the old model out and leave a clean skeleton that builds.
 
-- Delete the old engine model, wiring, maps, pool, repo editors and their tests. Move old plan docs to `docs/history/main/`.
-- Keep the app shell (`MainWindow`, nav, two-pane page layout), the theme brushes, the graph controls (`MapWiringCanvas`, `RowGraphControl`, `MapGraphLayout`), `OperationProgressWindow`, the Velopack updater and the changelog window.
-- New project layout: `Sprig.Sdk` (what definitions reference), `Sprig.Engine` (join, resolve, materialise, supervise), `Sprig.App`, `Sprig.Cli` (thin), `Sprig.Tests`.
-- Version the branch `0.100.0-exp` and never tag from it, so the release workflow can't publish it.
+- Deleted the old engine model, wiring, maps, pool, repo editors, guided tour and coachmarks, their tests, `examples/`, the Claude plugin and the sandbox script. Old plan docs moved to `docs/history/main/`.
+- Kept the app shell (`MainWindow`, nav, page layout), the theme brushes, Settings (port range, restricted ports, changelog toggle), About, the Velopack updater and the changelog window. The CLI keeps `open`, `update` and `shell`.
+- `Sprig.Core` became `Sprig.Engine`, keeping only the changelog parser, process runner, settings store, app profile and shell PATH install. `Sprig.Sdk` exists as an empty package project.
+- The store moved to `sprig-exp` (`sprig-exp (Dev)` for Debug builds), so this build can never read or overwrite the released app's data. A test guards it.
+- The app is versioned `0.100.0-exp`. Never tag from this branch: the release workflow publishes on any `v*` tag.
+- **Changed from the plan:** the graph controls (`MapWiringCanvas`, `RowGraphControl`, `MapGraphLayout`) and `OperationProgressWindow` were built on the old model's types, so they couldn't be kept compiling. They come back from `main` when M3 (graph view) and M4 (progress window) need them, adapted to the new model.
 
-**Done when:** the app opens with empty pages, `dotnet build` and `dotnet test` pass, and the CLI prints help.
+**Done when:** the app opens with empty pages, `dotnet build` and `dotnet test` pass, and the CLI prints help. Met: 48 tests pass and `sprig --help` lists `open`, `update` and `shell`.
 
 ### M1: Spike C# authoring, a go/no-go gate (about 2 weeks)
 

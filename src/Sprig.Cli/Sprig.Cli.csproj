@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Sprig.Core\Sprig.Core.csproj" />
+    <ProjectReference Include="..\Sprig.Engine\Sprig.Engine.csproj" />
   </ItemGroup>
 
   <ItemGroup>

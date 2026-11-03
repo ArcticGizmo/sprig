@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What sprig.cs definitions reference (#:package Sprig.Sdk). Kept free of engine and UI dependencies so a
+       definition restores and compiles quickly in any editor. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sprig</RootNamespace>
+    <PackageId>Sprig.Sdk</PackageId>
+    <Version>0.1.0-exp</Version>
+    <IsPackable>true</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sprig.Tests" />
+  </ItemGroup>
+
+</Project>

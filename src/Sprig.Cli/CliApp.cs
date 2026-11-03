@@ -1,62 +1,30 @@
 using Sprig.Cli.Commands;
-using Sprig.Core.Compose;
-using Sprig.Core.Docker;
-using Sprig.Core.Env;
-using Sprig.Core.Git;
-using Sprig.Core.Pools;
-using Sprig.Core.Ports;
-using Sprig.Core.Processes;
-using Sprig.Core.Settings;
-using Sprig.Core.Setup;
-using Sprig.Core.Stacks;   // RepoRegistryStore lives here (kept through the stack retirement)
-using Sprig.Core.Store;
-using Sprig.Core.Workspaces;
+using Sprig.Engine.Settings;
+using Sprig.Engine.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Sprig.Cli;
 
-/// <summary>The CLI's whole surface — a Spectre.Console <see cref="CommandApp"/> over Sprig.Core. A
-/// supported, shipped front-end (not a dev-only harness); <c>--json</c> output is a stability contract,
-/// so it is written straight to stdout, never through the markup renderer.</summary>
+/// <summary>The CLI's whole surface: a Spectre.Console <see cref="CommandApp"/> over Sprig.Engine. <c>--json</c>
+/// output is a stability contract, so it is written straight to stdout, never through the markup renderer.</summary>
 public static class CliApp
 {
-    // SprigPaths' default root honours SPRIG_STORE, so a throwaway store (the examples sandbox) applies here
-    // and in the app alike.
+    // SprigPaths' default root honours SPRIG_STORE, so a throwaway store applies here and in the app alike.
     public static int Run(string[] args) => Run(args, new SprigPaths());
 
     internal static int Run(string[] args, ISprigPaths paths)
     {
-        // --json is a global flag; a failure before/inside a command still has to honour it. Detect it
-        // up front so the outer catch can pick the machine payload over the human line.
+        // A failure before or inside a command still has to honour --json, so detect it up front.
         var json = args.Contains("--json");
 
-        // Spectre caches the console it renders help/errors through, so we can't hand it a fresh
-        // per-run instance — the in-process test suite would render into a disposed writer from an
-        // earlier case. Instead one shared console whose output is late-bound to the current
-        // Console.Out (see ConsoleForwardingWriter) serves every run; assigning the static each time is
-        // cheap and idempotent.
+        // Spectre caches the console it renders help and errors through, so one shared console (late-bound to
+        // Console.Out) serves every run instead of a fresh one per run that a later test would find disposed.
         var ansi = SharedConsole;
         AnsiConsole.Console = ansi;
 
-        var runner = new ProcessRunner();
-        var git = new GitService(runner);
-        var settings = new FileSettingsStore(paths);
-        var ports = new FilePortStore(paths, settings);
-        var instances = new InstanceStore(paths);
-        var workspaces = new WorkspaceService(git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), new DockerService(runner), paths, new SetupRunner(runner), settings);
-        var reconciler = new WorkspaceReconciler(git, instances);
-        var registry = new RepoRegistryStore(paths);
-        var maps = new Core.Maps.MapStore(paths, registry);
-        var mapResolver = new Core.Maps.MapResolver(registry, maps, git, paths);
-        var mapPool = new MapPoolService(maps, instances, mapResolver, workspaces, paths);
+        var context = new CliContext(paths, new FileSettingsStore(paths), ansi);
 
-        var context = new CliContext(paths, workspaces, reconciler, registry,
-            maps, mapResolver, mapPool, settings, git, ansi);
-
-        // The registrar hands the one CliContext (and the console) to every command; commands are
-        // constructed by reflection from there.
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {
             [typeof(CliContext)] = context,
@@ -72,119 +40,42 @@ public static class CliApp
         }
         catch (Exception ex)
         {
-            // Machine callers get a parseable failure ({ ok: false, error }); humans get the same
-            // message on stderr. Either way the exit code is 1 — the primary signal for scripts.
+            // Exit code 1 either way; machine callers get { ok: false, error }, humans a line on stderr.
             if (json) CliOutput.Json(new { ok = false, error = ex.Message });
             else Console.Error.WriteLine($"error: {ex.Message}");
             return 1;
         }
     }
 
-    // Dispatch convention: every object is namespaced under its noun (ws/repo/pool/map/settings). Only the
-    // navigation and meta commands (cd/path/here/code/open/update/init) sit at the top level.
     static void Configure(IConfigurator config)
     {
         config.SetApplicationName("sprig");
         config.SetApplicationVersion(Version());
-        // Let domain/parse errors bubble to Run's catch so the --json/stderr error contract and the
-        // exit-code-1 promise live in exactly one place.
+        // Errors bubble to Run's catch so the --json/stderr contract and exit code 1 live in one place.
         config.PropagateExceptions();
-        // Reject unknown options rather than silently ignore them — the hand-rolled parser did, and a
-        // typo'd flag should fail loudly instead of quietly running a command it didn't mean.
+        // A typo'd flag should fail loudly instead of quietly running a command it didn't mean.
         config.UseStrictParsing();
 
-        config.AddCommand<CdCommand>("cd");
-        config.AddCommand<PathCommand>("path");
-        config.AddCommand<HereCommand>("here");
-        config.AddCommand<CodeCommand>("code");
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
-        config.AddCommand<InitCommand>("init");
-
-        config.AddBranch("repo", repo =>
-        {
-            repo.SetDescription("Register repositories sprig builds workspaces from");
-            repo.AddCommand<RepoAddCommand>("add");
-            repo.AddCommand<RepoLsCommand>("ls");
-            repo.AddCommand<RepoRmCommand>("rm");
-        });
-
-        config.AddBranch("pool", pool =>
-        {
-            pool.SetDescription("Check out and manage the pooled workspaces built from a map");
-            pool.AddCommand<PoolCheckoutCommand>("checkout");
-            pool.AddCommand<PoolReleaseCommand>("release");
-            pool.AddCommand<PoolStatusCommand>("status");
-        });
-
-        // Maps (the Graph Turn) — self-describing repos wired through a map. Maps are authored in the app;
-        // the CLI lists/shows/imports them, and checks workspaces out of their pool (see `pool`).
-        config.AddBranch("map", map =>
-        {
-            map.SetDescription("List, show, check and import maps (self-describing repos wired by provides/needs)");
-            map.AddCommand<MapLsCommand>("ls");
-            map.AddCommand<MapShowCommand>("show");
-            map.AddCommand<MapCheckCommand>("check");
-            map.AddCommand<MapConstantCommand>("constant");
-            map.AddCommand<MapDefaultCommand>("default");
-            map.AddCommand<MapWireCommand>("wire");
-            map.AddCommand<MapImportCommand>("import");
-        });
 
         config.AddBranch("shell", shell =>
         {
-            shell.SetDescription("Shell integration (shims that let 'sprig cd' move your shell)");
+            shell.SetDescription("Shell integration (PATH entries and shims)");
             shell.AddCommand<ShellShimsCommand>("shims");
             shell.AddCommand<ShellInstallCommand>("install");
         });
-
-        config.AddBranch("settings", settings =>
-        {
-            settings.SetDescription("Port allocation policy");
-            settings.AddCommand<SettingsShowCommand>("show");
-            settings.AddCommand<SettingsSetCommand>("set");
-        }).WithAlias("config");
-
-        // `ws`/`workspace <verb>` — the workspace is scoped under its own noun so the top level stays
-        // uncluttered (repo/pool/map/settings + the meta commands). This is the only home for these verbs.
-        config.AddBranch("ws", ws =>
-        {
-            ws.SetDescription("Create and manage workspaces (create, up, down, status, rm, ...)");
-            ws.AddCommand<CreateCommand>("create");
-            ws.AddCommand<LsCommand>("ls");
-            ws.AddCommand<InfoCommand>("info");
-            ws.AddCommand<LabelCommand>("label");
-            ws.AddCommand<NoteCommand>("note");
-            ws.AddCommand<ColourCommand>("colour").WithAlias("color");
-            ws.AddCommand<TagCommand>("tag");
-            ws.AddCommand<UntagCommand>("untag");
-            ws.AddCommand<UrlsCommand>("urls");
-            ws.AddCommand<BrowseCommand>("browse");
-            ws.AddCommand<UpCommand>("up");
-            ws.AddCommand<DownCommand>("down");
-            ws.AddCommand<SwitchCommand>("switch");
-            ws.AddCommand<RefreshCommand>("refresh");
-            ws.AddCommand<RestartCommand>("restart");
-            ws.AddCommand<StatusCommand>("status");
-            ws.AddCommand<RmCommand>("rm").WithAlias("remove");
-            ws.AddCommand<ReconcileCommand>("reconcile").WithAlias("doctor");
-        }).WithAlias("workspace");
     }
 
-    static string Version()
+    internal static string Version()
         => typeof(CliApp).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
-    // One console for the whole process (see Run for why it can't be per-run). Its output is late-bound
-    // to Console.Out, so it always writes wherever stdout currently points — real stdout in production,
-    // the test's captured writer under xUnit. Detection runs against a non-tty writer, so it renders
-    // plain (no ANSI/colour); the rounded box borders still come through.
     static readonly IAnsiConsole SharedConsole = CreateSharedConsole();
 
     static IAnsiConsole CreateSharedConsole()
     {
-        // Colour a real terminal, but stay plain when stdout is redirected (a pipe, a file, the test
-        // harness) — scripts and captured output want text, not escape codes. Decided per process, at
-        // first use, which is the only invocation a shipped CLI ever sees.
+        // Colour a real terminal, but stay plain when stdout is redirected: scripts and captured output want
+        // text, not escape codes.
         var redirected = Console.IsOutputRedirected;
         var console = AnsiConsole.Create(new AnsiConsoleSettings
         {
@@ -192,8 +83,7 @@ public static class CliApp
             ColorSystem = redirected ? ColorSystemSupport.NoColors : ColorSystemSupport.Detect,
             Out = new AnsiConsoleOutput(new ConsoleForwardingWriter()),
         });
-        // The forwarding writer isn't a real terminal, so detection assumes 80 cols and wraps tables
-        // narrowly. Use the real width when we have one, else a generous fallback.
+        // The forwarding writer isn't a real terminal, so detection would assume 80 columns.
         console.Profile.Width = SafeWidth(redirected);
         return console;
     }
@@ -206,9 +96,8 @@ public static class CliApp
     }
 }
 
-/// <summary>A <see cref="TextWriter"/> that forwards every write to whatever <see cref="Console.Out"/>
-/// currently is, resolved per call. Lets the single shared <see cref="IAnsiConsole"/> follow
-/// <see cref="Console.SetOut"/> (the seam the tests swap per case) instead of capturing one writer.</summary>
+/// <summary>Forwards every write to whatever <see cref="Console.Out"/> currently is, so the shared console
+/// follows <see cref="Console.SetOut"/> (the seam tests swap per case) instead of capturing one writer.</summary>
 sealed class ConsoleForwardingWriter : TextWriter
 {
     public override System.Text.Encoding Encoding => Console.OutputEncoding;

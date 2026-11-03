@@ -2,6 +2,7 @@ using Sprig.Cli.Commands;
 using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Git;
+using Sprig.Engine.Hosting;
 using Sprig.Engine.Processes;
 using Sprig.Engine.Settings;
 using Sprig.Engine.Sprouts;
@@ -32,10 +33,11 @@ public static class CliApp
         var trust = new FileTrustStore(paths);
         var settings = new FileSettingsStore(paths);
         var processes = new ProcessRunner();
+        var host = new HostClient(paths);
         var sprouts = new SproutService(new SproutStore(paths), new PortLeases(paths), settings,
-            new GitClient(processes), new DockerCompose(processes));
+            new GitClient(processes), new DockerCompose(processes), host: host);
         var context = new CliContext(paths, settings, trust,
-            new DefinitionRunner(trust, new DotnetRunHost(), paths), new TrellisRegistry(paths), sprouts, ansi);
+            new DefinitionRunner(trust, new DotnetRunHost(), paths), new TrellisRegistry(paths), sprouts, host, ansi);
 
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {
@@ -76,6 +78,17 @@ public static class CliApp
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<SproutsCommand>("sprouts");
         config.AddCommand<EnvCommand>("env");
+        config.AddCommand<StartCommand>("start");
+        config.AddCommand<StopCommand>("stop");
+        config.AddCommand<PsCommand>("ps");
+        config.AddCommand<LogsCommand>("logs");
+
+        config.AddBranch("host", host =>
+        {
+            host.SetDescription("The background process that runs sprouts' apps");
+            host.AddCommand<HostStatusCommand>("status");
+            host.AddCommand<HostStopCommand>("stop");
+        });
 
         config.AddBranch("trellis", trellis =>
         {

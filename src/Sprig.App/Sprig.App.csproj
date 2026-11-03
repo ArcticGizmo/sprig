@@ -58,6 +58,7 @@
     <!-- Built first so the editor can start it, but never loaded into the app: Roslyn's features stay in their
          own process. -->
     <ProjectReference Include="..\Sprig.LanguageHost\Sprig.LanguageHost.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Sprig.Host\Sprig.Host.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

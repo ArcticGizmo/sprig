@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Sprig.Host/Sprig.Host.csproj" />
     <Project Path="src/Sprig.LanguageHost/Sprig.LanguageHost.csproj" />
     <Project Path="src/Sprig.Sdk/Sprig.Sdk.csproj" />
     <Project Path="src/Sprig.Engine/Sprig.Engine.csproj" />

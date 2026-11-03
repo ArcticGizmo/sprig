@@ -245,6 +245,16 @@ Also in M4:
 
 **Done when:** one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then starts web and mobile. You can stop `catalog-api` in the app, run it from your IDE, and the web app still works.
 
+**Decision (by the user, 2026-11-03): runners live in a background host, not in the app or CLI.** `sprig-host` is started on demand by either. There's one per store, reached over a named pipe only the current user can open, so the CLI and the app see and control the same runners, and apps keep running when the window closes or the CLI exits. It exits after 10 idle minutes. Each runner is in its own Job Object, so stopping it ends its whole tree, and because those jobs close with the host, a host that dies takes its apps with it rather than leaving orphans.
+
+**Spike (done 2026-11-03):** `sprig start|stop|ps|logs <trellis> <sprout> [apps]` and `sprig host status|stop`. `down` and `rm` stop a sprout's apps first.
+- Started from the CLI, both testbed APIs were built (one build per repo at a time), started with `dotnet run --no-build --no-launch-profile`, and reported ready on their ports in 9 s. They kept running after the CLI and its shell exited, and their `/config` pages showed their sprout's values.
+- `sprig stop` on one app ended its `dotnet` process and the app under it, and freed its port. Killing `sprig-host` outright ended everything it ran. `rm` with an app running stopped it, then removed the worktrees cleanly.
+- Nothing was blocked on this machine. Whether CrowdStrike or Defender raised alerts that don't block is a question for SecOps' consoles.
+- **Found:** a host started the ordinary way inherited the CLI's stdout, so `sprig start | tail` hung until the host exited. It's now shell-executed, so it inherits no handles.
+- **Found:** with no launch profile, ASP.NET runs as Production, so runners set `ASPNETCORE_ENVIRONMENT`/`DOTNET_ENVIRONMENT` to Development unless the app sets them.
+- **Still to do in M5:** `WaitFor` ordering and `repo.Job`/`After` (migrations), graceful stop before kill, readiness by HTTP or a log line, restart policy, starting groups, `sprig up --run`, the app's log pane and runner list, and the IDE handoff (stop one runner, keep its port leased).
+
 ### M6: Review and decide (about 2 weeks)
 
 - Run the same test system under Aspire (an AppHost with `--isolated`) and compare setup effort, start time, isolation and the debugging workflow.

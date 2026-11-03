@@ -1,0 +1,177 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using Sprig.Engine.Hosting;
+using Spectre.Console;
+using Spectre.Console.Cli;
+
+namespace Sprig.Cli.Commands;
+
+/// <summary>Settings for commands that act on some or all of a sprout's apps.</summary>
+public class AppsSettings : SproutSettings
+{
+    [CommandArgument(2, "[apps]")]
+    [Description("Only these apps, as <name> or <repo>/<name> (default: all of them)")]
+    public string[] Apps { get; set; } = [];
+}
+
+[Description("Start a sprout's apps in the background sprig host, and wait until each is ready")]
+public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings>
+{
+    public sealed class Settings : AppsSettings
+    {
+        [CommandOption("--no-wait")]
+        [Description("Return once the apps are starting, without waiting for them to be ready")]
+        public bool NoWait { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var record = cli.Sprouts.Get(s.Trellis, s.Sprout) ?? throw new InvalidOperationException($"{s.Trellis} has no sprout named '{s.Sprout}'");
+        var plan = cli.Sprouts.LastPlan(s.Trellis, s.Sprout) ?? throw new InvalidOperationException($"{s.Trellis}/{s.Sprout} hasn't come up yet; run sprig up first");
+        var specs = RunnerSpecs.For(record, plan, s.Apps.Length > 0 ? s.Apps : null);
+
+        foreach (var spec in specs)
+        {
+            var answer = cli.Host.Send(new HostRequest("start", spec));
+            if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? $"the host wouldn't start {spec.Name}");
+        }
+        if (s.NoWait)
+            return CliOutput.Ok(s.Json, $"starting {specs.Count} apps", new { ok = true, apps = specs.Select(x => x.Name) });
+
+        var names = specs.Select(x => x.Name).ToHashSet();
+        var seen = new Dictionary<string, RunnerState>();
+        var clock = Stopwatch.StartNew();
+        IReadOnlyList<RunnerStatus> mine = [];
+        while (!cancellation.IsCancellationRequested)
+        {
+            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Sprout == record.Key && names.Contains(r.Name)).ToArray();
+            foreach (var r in mine.Where(r => !seen.TryGetValue(r.Name, out var was) || was != r.State))
+            {
+                seen[r.Name] = r.State;
+                if (!s.Json) Report(r);
+            }
+            if (mine.All(r => r.State is not (RunnerState.Building or RunnerState.Starting))) break;
+            if (clock.Elapsed > TimeSpan.FromMinutes(5)) break;
+            Thread.Sleep(300);
+        }
+
+        var failed = mine.Where(r => r.State != RunnerState.Ready).ToArray();
+        if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, runners = mine });
+        else if (failed.Length > 0)
+            foreach (var r in failed) cli.Ansi.MarkupLine($"[dim]  log: {Markup.Escape(r.LogFile)}[/]");
+        return failed.Length == 0 ? 0 : 1;
+    }
+
+    void Report(RunnerStatus r)
+    {
+        var (colour, text) = r.State switch
+        {
+            RunnerState.Building => ("blue", "building"),
+            RunnerState.Starting => ("blue", "starting"),
+            RunnerState.Ready => ("green", r.Port is { } p ? $"ready on http://localhost:{p}" : "running"),
+            RunnerState.Exited => ("red", $"exited with code {r.Exit}"),
+            RunnerState.Failed => ("red", r.Error ?? "failed"),
+            _ => ("dim", r.State.ToString().ToLowerInvariant()),
+        };
+        cli.Ansi.MarkupLine($"[{colour}]{Markup.Escape(r.Name)}[/]  {Markup.Escape(text)}");
+    }
+}
+
+[Description("Stop a sprout's apps (its infra keeps running; sprig down stops that)")]
+public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
+{
+    protected override int Execute(CommandContext context, AppsSettings s, CancellationToken cancellation)
+    {
+        var key = Sprig.Engine.Sprouts.SproutRecord.KeyOf(s.Trellis, s.Sprout);
+        if (cli.Host.TrySend(new HostRequest("list")) is not { } list)
+            return CliOutput.Ok(s.Json, "nothing is running", new { ok = true, stopped = Array.Empty<string>() });
+
+        var targets = (list.Runners ?? []).Where(r => r.Sprout == key && (s.Apps.Length == 0 || s.Apps.Any(a => r.Name == a || r.Name.EndsWith("/" + a, StringComparison.Ordinal))))
+            .Select(r => r.Name).ToArray();
+        foreach (var name in targets) cli.Host.Send(new HostRequest("stop", Sprout: key, Name: name));
+        return CliOutput.Ok(s.Json, targets.Length == 0 ? "nothing to stop" : $"stopped {string.Join(", ", targets)}", new { ok = true, stopped = targets });
+    }
+}
+
+[Description("List the apps the sprig host is running")]
+public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
+{
+    protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
+    {
+        var runners = cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+        if (s.Json) { CliOutput.Json(runners); return 0; }
+        if (runners.Count == 0)
+        {
+            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a sprout's apps with: sprig start <trellis> <sprout>[/]");
+            return 0;
+        }
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("Sprout", "App", "State", "Port", "Pid", "Since");
+        foreach (var r in runners)
+            table.AddRow(Markup.Escape(r.Sprout), Markup.Escape(r.Name), r.State switch
+                {
+                    RunnerState.Ready => "[green]ready[/]",
+                    RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",
+                    _ => r.State.ToString().ToLowerInvariant(),
+                },
+                r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "", r.Since.LocalDateTime.ToString("T"));
+        cli.Ansi.Write(table);
+        return 0;
+    }
+}
+
+[Description("Print the end of an app's log")]
+public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
+{
+    public sealed class Settings : SproutSettings
+    {
+        [CommandArgument(2, "<app>")]
+        public string App { get; set; } = "";
+
+        [CommandOption("-n|--lines <count>")]
+        public int Lines { get; set; } = 40;
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var key = Sprig.Engine.Sprouts.SproutRecord.KeyOf(s.Trellis, s.Sprout);
+        var runner = (cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
+            .FirstOrDefault(r => r.Sprout == key && (r.Name == s.App || r.Name.EndsWith("/" + s.App, StringComparison.Ordinal)));
+        var file = runner?.LogFile;
+        if (file is null)
+        {
+            var plan = cli.Sprouts.LastPlan(s.Trellis, s.Sprout);
+            var app = plan?.Apps.FirstOrDefault(a => a.Name == s.App || $"{a.Owner}/{a.Name}" == s.App)
+                ?? throw new InvalidOperationException($"no app '{s.App}' in {key}");
+            file = HostProtocol.LogFile(cli.Paths, key, $"{app.Owner}/{app.Name}");
+        }
+        if (!File.Exists(file)) throw new InvalidOperationException($"{s.App} has no log yet");
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        var lines = reader.ReadToEnd().Split('\n');
+        foreach (var line in lines.TakeLast(s.Lines + 1)) Console.WriteLine(line.TrimEnd('\r'));
+        return 0;
+    }
+}
+
+[Description("Show whether this store's sprig host is running")]
+public sealed class HostStatusCommand(CliContext cli) : Command<GlobalSettings>
+{
+    protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
+    {
+        var answer = cli.Host.TrySend(new HostRequest("ping"));
+        if (answer is null) return CliOutput.Ok(s.Json, "the sprig host isn't running; it starts when something needs it", new { ok = true, running = false });
+        var alive = answer.Runners?.Count(r => r.State is RunnerState.Building or RunnerState.Starting or RunnerState.Ready) ?? 0;
+        return CliOutput.Ok(s.Json, $"the sprig host is running (pid {answer.Pid}, v{answer.Version}) with {alive} apps",
+            new { ok = true, running = true, pid = answer.Pid, version = answer.Version, apps = alive });
+    }
+}
+
+[Description("Stop this store's sprig host, and every app it runs")]
+public sealed class HostStopCommand(CliContext cli) : Command<GlobalSettings>
+{
+    protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
+    {
+        var answer = cli.Host.TrySend(new HostRequest("shutdown"));
+        return CliOutput.Ok(s.Json, answer is null ? "the sprig host wasn't running" : "the sprig host is stopping", new { ok = true, wasRunning = answer is not null });
+    }
+}

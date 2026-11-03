@@ -19,6 +19,7 @@ public sealed record CliContext(
     DefinitionRunner Definitions,
     TrellisRegistry Trellises,
     SproutService Sprouts,
+    Sprig.Engine.Hosting.HostClient Host,
     IAnsiConsole Ansi)
 {
     /// <summary>Prompts are only shown at a real terminal, never under <c>--json</c> or when input is piped.</summary>

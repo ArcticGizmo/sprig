@@ -23,6 +23,8 @@ Written 2026-11-03 at the end of the session that did M4. Read this first, then 
 | Files sprig writes | **The repo opts in.** A target must be a file the app reads and the repo's `.gitignore` covers. Tracked or not-ignored targets are refused (by `plan` and before `up` creates anything) with what to add. Sprig never adds ignore rules itself, so no `info/exclude`: it's shared by every worktree and hides the problem. Keep this for every new output. |
 | Unnamed compose services | Left out of sprouts, with a warning from `sprig plan` (services behind a compose profile don't count). |
 | Run experience | Log pane per runner in the app (M5). Telemetry later. |
+| Who runs apps | **A background `sprig-host`**, one per store, started on demand by the CLI or app, over a current-user-only named pipe. Apps outlive the CLI and the window; each runner is in a Job Object, so a dying host takes its apps with it. |
+| UI testing | The user tests the UI by hand only once most of the structure is done. Verify with headless renders and view-model tests meanwhile; don't ask them to try pages. |
 | Store | `%LOCALAPPDATA%\sprig-exp` (`sprig-exp (Dev)` for Debug). Never the released app's `sprig` folder; a test guards it. |
 
 ## How the pieces fit
@@ -43,10 +45,14 @@ x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (Rep
                      ├─ ComposeYaml: ForContainers (code presets) and ForSprout (a repo's file, trimmed and re-ported)
                      ├─ DockerCompose: up --wait, down [--volumes]
                      └─ SproutStore: <store>/sprouts/<trellis>/<sprout>/{sprout.json, plan.json, *.compose.yml}
+
+RunnerSpecs (plan → what to run) ──► HostClient ══ named pipe ══► sprig-host (src/Sprig.Host)
+                                                                    HostServer → Supervisor → Runner per app
+                                                                    (build per repo, Job Object, log to <store>/logs, ready on port)
 ```
 
 - **Projects:** `Sprig.Sdk` (what definitions reference; `Model.cs` is the contract, `Sdk.Schema` its version), `Sprig.Engine`, `Sprig.LanguageHost`, `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`.
-- **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up`, `down`, `rm`, `sprouts`, `env`.
+- **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up`, `down`, `rm`, `sprouts`, `env`, `start`, `stop`, `ps`, `logs`, `host status|stop`.
 - **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, up/stop/remove), `OperationProgressWindow` fed by `SproutEvent`s.
 - **A sprout's record** says exactly what `up` did (worktrees, whether it made the branch, files and whether it created them, compose projects), and `down`/`rm` undo only that.
 - **Port leases:** stable keeps a sprout's ports until `rm`; random gets fresh ones on each `up` from down. A sprout that's up doesn't count its own listening ports as busy.
@@ -63,7 +69,9 @@ x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (Rep
 ## Gotchas found the hard way
 
 - **ASP.NET Core urls:** a `urls` key in `appsettings.json` beats `ASPNETCORE_URLS`. Give .NET apps their url in `Urls` (`.Http(urlEnv: "Urls")`); the launch profile's `applicationUrl` follows it.
-- **Parallel `dotnet run` in one worktree** races on shared projects' `obj` (CS2012). M5 runners: build once per repo, then run with `--no-build`.
+- **Parallel `dotnet run` in one worktree** races on shared projects' `obj` (CS2012). Runners build once per repo (a lock per repo folder), then run with `--no-build --no-launch-profile`.
+- **Starting a background process from the CLI:** start it with shell-execute, or it inherits the CLI's stdout and anything piping the CLI's output hangs until the background process exits.
+- **The host holds each app's log open**, so read logs with `FileShare.ReadWrite` (`File.ReadAllText` fails).
 - **Windows 8.3 short paths:** `%TEMP%` here is `C:\Users\JONHOW~1\…`. Vite returns 403 from such a path. Always pass paths through `Engine/Store/LongPath.Of`.
 - **This machine already runs containers** on 5432, 8004–8006, 8012–8014 and others, and the released sprig leaves `sprig-feature-*` volumes. Never stop or remove containers or volumes you didn't start; sprout projects are all `sprig-<trellis>-<sprout>[-<repo>]`.
 - **Compose without health checks:** `--wait` only means "running". Postgres and friends need a check (presets have one; repo compose services take `.Health(...)`).
@@ -86,6 +94,6 @@ x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (Rep
 
 ## M5 in short (see the roadmap for the full list)
 
-Runners per app (command, folder, resolved env, readiness, restart), ordered by `WaitFor` and one-off jobs (`repo.Job` for `Migrate`, not in the SDK yet). A supervisor using Job Objects so stopping kills the whole tree. Stop one runner and run it from an IDE on the same leased port (`sprig env` and the launch profile already give it its values). A log pane per runner in the app; `sprig up --run` interleaves output in the CLI. Done when one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then web and mobile.
+The host spike is done: `sprig-host`, Job Objects, per-repo builds, port readiness, logs, and `sprig start|stop|ps|logs`. Next: `WaitFor` ordering and one-off jobs (`repo.Job` for `Migrate`, with `After`), a graceful stop before the kill, HTTP and log-line readiness, restart policy, groups, `sprig up --run` with interleaved output, the app's runner list and log pane (fed from the host), and the IDE handoff (stop one runner, its port stays leased). Done when one command brings up infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are ready, then web and mobile.
 
 Open question for M5 or later: a sprout evaluates its repos' definitions from their main checkouts, not its worktrees, because trust is per path. Evaluating worktrees needs a rule for how approval carries over (for example, trust by content hash within a registered repo's worktrees).

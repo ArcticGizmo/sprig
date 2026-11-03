@@ -33,8 +33,18 @@ public sealed partial class SproutService(
     ISettingsStore settings,
     GitClient git,
     DockerCompose docker,
-    Func<IReadOnlySet<int>>? listening = null)
+    Func<IReadOnlySet<int>>? listening = null,
+    Hosting.HostClient? host = null)
 {
+    /// <summary>A sprout's apps go before its infra and worktrees, which they depend on and hold open.</summary>
+    void StopApps(SproutRecord record, Steps step)
+    {
+        if (host?.TrySend(new Hosting.HostRequest("list"))?.Runners?.Any(r => r.Sprout == record.Key) != true) return;
+        step.Start("Stop apps");
+        host.TrySend(new Hosting.HostRequest("stop", Sprout: record.Key));
+        step.Done();
+    }
+
     readonly Func<IReadOnlySet<int>> _listening = listening ?? PortAllocator.Listening;
 
     public static string? CheckName(string sprout)
@@ -138,6 +148,7 @@ public sealed partial class SproutService(
     {
         var record = store.Get(trellis, sprout) ?? throw new SproutException($"{trellis} has no sprout named '{sprout}'");
         var step = new Steps(progress);
+        StopApps(record, step);
         foreach (var project in record.Compose)
         {
             step.Start($"Stop {project.Name}");
@@ -175,6 +186,7 @@ public sealed partial class SproutService(
             }
         }
 
+        StopApps(record, step);
         foreach (var project in record.Compose)
         {
             step.Start($"Remove {project.Name}");

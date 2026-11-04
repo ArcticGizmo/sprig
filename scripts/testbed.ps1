@@ -4,8 +4,9 @@
 
 .DESCRIPTION
   Copies each template (shop-services, shop-web, shop-mobile) into its own folder under -Path, makes it a git repo
-  on 'main' and commits it, so sprig can make worktrees and branches from it like any real repo. Build output and
-  node_modules are never copied.
+  on 'main' and commits it, so sprig can make worktrees and branches from it like any real repo. Each repo's origin
+  is a bare repo under remotes/, already pushed, so pushing and remote branches work without leaving the machine.
+  Build output and node_modules are never copied.
 
   The folder gets a .sprig-testbed marker. -Force only deletes a folder that has one, so a wrong -Path can't wipe
   anything else.
@@ -97,7 +98,15 @@ foreach ($template in Get-ChildItem -LiteralPath $templates -Directory) {
     git -C $repo -c user.name='Sprig Testbed' -c user.email='testbed@example.invalid' -c commit.gpgsign=false `
         commit --quiet -m "Initial testbed commit"
     if ($LASTEXITCODE -ne 0) { throw "git commit failed in $repo" }
-    Write-Host "  $($template.Name)  ->  $repo"
+
+    # A bare repo on disk as origin, so pushes, remote branches and the unpushed-commits check have something real to
+    # work against, and nothing leaves the machine.
+    $remote = Join-Path $Path "remotes/$($template.Name).git"
+    git init --quiet --bare --initial-branch=main $remote
+    git -C $repo remote add origin $remote
+    git -C $repo push --quiet -u origin main 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "pushing to $remote failed" }
+    Write-Host "  $($template.Name)  ->  $repo  (origin: remotes/$($template.Name).git)"
 }
 
 # The trellis sits beside the repos it names, the way a team might keep one next to its checkouts.

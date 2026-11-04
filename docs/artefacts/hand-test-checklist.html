@@ -1,0 +1,443 @@
+<title>Sprig Hand Pass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a sticky progress strip; sections of check rows with pass/fail/skip on the left. */
+:root {
+  --bg: #f6f7f3;
+  --surface: #ffffff;
+  --fg: #1d2420;
+  --muted: #5d6a62;
+  --line: #dde3dc;
+  --accent: #2f6b45;
+  --accent-soft: #e3efe6;
+  --pass: #2f7d4a;
+  --pass-soft: #dff1e5;
+  --fail: #b3362c;
+  --fail-soft: #f8e1de;
+  --skip: #8a6d1f;
+  --skip-soft: #f4ecd2;
+  --code-bg: #eef1ec;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+    --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+    --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+  --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+  --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); max-width: 64ch; margin: 8px 0 0; }
+code, pre { font-family: var(--font-mono); font-size: 12.5px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.setup { display: grid; gap: 10px; margin-top: 20px; }
+.cmd { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--code-bg); min-width: 0; }
+.cmd pre { margin: 0; padding: 8px 10px; overflow-x: auto; flex: 1; min-width: 0; white-space: pre; }
+.cmd button { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: 600 12px var(--font-body); padding: 0 12px; cursor: pointer; border-radius: 0 6px 6px 0; }
+.cmd button:hover { color: var(--accent); }
+.cmd-label { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+
+.strip { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 12px; margin-top: 24px; border-bottom: 1px solid var(--line); }
+.strip-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between; }
+.counts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.counts b { font-weight: 700; }
+.c-pass { color: var(--pass); } .c-fail { color: var(--fail); } .c-skip { color: var(--skip); } .c-todo { color: var(--muted); }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin-top: 10px; }
+.bar span { display: block; height: 100%; transition: width .25s ease; }
+.bar .b-pass { background: var(--pass); } .bar .b-fail { background: var(--fail); } .bar .b-skip { background: var(--skip); }
+.toggle { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.saved { font-size: 12px; color: var(--muted); }
+.saved.warn { color: var(--fail); }
+
+section { margin-top: 36px; }
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--fg); }
+.sec-head .tally { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-intro { color: var(--muted); font-size: 14px; margin: 8px 0 0; max-width: 70ch; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.item.is-pass { --mark: var(--pass); } .item.is-fail { --mark: var(--fail); } .item.is-skip { --mark: var(--skip); }
+.states { display: flex; flex-direction: column; gap: 4px; }
+.states button { width: 52px; font: 600 11.5px var(--font-body); letter-spacing: .02em; padding: 5px 0; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.states button:hover { border-color: var(--muted); color: var(--fg); }
+.states button[aria-pressed="true"][data-s="pass"] { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+.states button[aria-pressed="true"][data-s="fail"] { background: var(--fail-soft); border-color: var(--fail); color: var(--fail); }
+.states button[aria-pressed="true"][data-s="skip"] { background: var(--skip-soft); border-color: var(--skip); color: var(--skip); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.body { min-width: 0; }
+.title { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.title .id { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.item.is-pass .title .label, .item.is-skip .title .label { color: var(--muted); }
+.how, .expect { margin: 6px 0 0; font-size: 14px; }
+.how ol { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.expect { padding-left: 10px; border-left: 3px solid var(--accent-soft); color: var(--fg); }
+.expect::before { content: "Expect  "; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.note-wrap { margin-top: 10px; }
+.note-wrap textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px/1.45 var(--font-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.item.is-fail .note-wrap textarea { border-color: var(--fail); }
+.note-link { background: none; border: 0; padding: 0; color: var(--accent); font: 500 13px var(--font-body); cursor: pointer; margin-top: 8px; }
+.item.done-hidden { display: none; }
+.foot { margin-top: 40px; color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) {
+  h1 { font-size: 24px; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .states { flex-direction: row; }
+}
+@media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">experimental branch · hand pass before replacing main</div>
+  <h1>Sprig hand pass</h1>
+  <p class="lede">Work top to bottom. Each row says what to do and what you should see. Mark it Pass, Fail or Skip, and add a note whenever something is off, however small: a fail note is what gets fixed. Your marks and notes are saved, so you can stop and come back.</p>
+
+  <div class="setup">
+    <div>
+      <p class="cmd-label">Build both (from the sprig checkout). The Debug app and CLI share the <code>sprig-exp (Dev)</code> store, so they see the same sprouts.</p>
+      <div class="cmd"><pre id="cmd-build">cd C:\Users\JonHowell\Documents\git\personal\sprig; dotnet build sprig.slnx</pre><button type="button" data-copy="cmd-build">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">A <code>sprig</code> alias for this PowerShell session, then open the app.</p>
+      <div class="cmd"><pre id="cmd-alias">Set-Alias sprig "$PWD\src\Sprig.Cli\bin\Debug\net10.0\sprig.exe"; &amp; .\src\Sprig.App\bin\Debug\net10.0\sprig-gui.exe</pre><button type="button" data-copy="cmd-alias">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">The test repos live in <code>..\sprig-testbed</code>. To start over from clean templates at any point:</p>
+      <div class="cmd"><pre id="cmd-reset">pwsh -File scripts/testbed.ps1 -Force</pre><button type="button" data-copy="cmd-reset">Copy</button></div>
+    </div>
+  </div>
+
+  <div class="strip" aria-live="polite">
+    <div class="strip-row">
+      <div class="counts" id="counts"></div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <label class="toggle"><input type="checkbox" id="hide-done"> Hide passed and skipped</label>
+        <span class="saved" id="saved">Connecting…</span>
+      </div>
+    </div>
+    <div class="bar" id="bar"><span class="b-pass"></span><span class="b-fail"></span><span class="b-skip"></span></div>
+  </div>
+
+  <div id="sections"></div>
+
+  <p class="foot">When you're done, tell Claude in the terminal; it reads these results directly and turns every fail note into a fix.</p>
+</div>
+
+<script>
+const T = "C:/Users/JonHowell/Documents/git/personal/sprig-testbed";
+const SECTIONS = [
+  {
+    id: "trellis", title: "Trellises page",
+    intro: "Registering the testbed's trellises and approving their definitions. The store is empty, so everything asks for approval the first time.",
+    items: [
+      { id: "T1", title: "Add the storefront trellis",
+        how: [`Open <b>Trellises</b>. In the path box, type <code>${T}/st</code> and press <b>Tab</b> to complete it to <code>storefront.trellis.cs</code>.`, `Try the folder button too, then click <b>Add trellis</b>.`],
+        expect: `The path shows forward slashes. An <b>Approve before running</b> panel lists the trellis file as "not approved yet". After <b>Approve and run</b>, storefront appears in the list.` },
+      { id: "T2", title: "Plan storefront",
+        how: [`Select storefront. Approve the three <code>sprig.cs</code> files when asked.`],
+        expect: `The plan shows the wiring between repos (catalog-url, orders-url, mail-smtp), a ports preview with web inside 5170–5179, the mail container, the web and mobile groups, and no problems.` },
+      { id: "T3", title: "Add and plan the in-place trellis",
+        how: [`Add <code>${T}/services.trellis.cs</code> and select it.`],
+        expect: `It plans without asking to approve shop-services' <code>sprig.cs</code> again (same content). The plan says the repos run in place.` },
+      { id: "T4", title: "Remove and re-add a trellis",
+        how: [`Remove services, then add it again.`],
+        expect: `Removing leaves the file alone. Re-adding asks nothing, since its content is already approved.` },
+    ]
+  },
+  {
+    id: "sprout", title: "Making a sprout",
+    intro: "One running copy of storefront, on its own branch and worktrees.",
+    items: [
+      { id: "S1", title: "Sprout feat-a",
+        how: [`Open <b>Sprouts</b>. Pick storefront, name it <code>feat-a</code>, leave the branch empty, click <b>Sprout it</b>.`],
+        expect: `A progress window walks through Plan, a worktree per repo, Definitions ("read from the worktrees"), Ports, Files and the two container projects, then says it's up. No approval is asked: the new branches have main's definitions.` },
+      { id: "S2", title: "Read the sprout's details",
+        how: [`Select feat-a in the list.`],
+        expect: `Its folders under <code>${T}/storefront--feat-a</code> (forward slashes), each app's url, the infra's host and container ports, and no warnings.` },
+      { id: "S3", title: "Check the files it wrote",
+        how: [`Open <code>storefront--feat-a/shop-web/.env.local</code>.`, `Run <code>git status</code> in each of the three worktrees.`],
+        expect: `A marked sprig block with PORT and the two API urls. Every worktree is clean: everything sprig wrote is ignored by the repo.` },
+    ]
+  },
+  {
+    id: "apps", title: "Running the apps",
+    intro: "The runner rows and the log pane on the Sprouts page.",
+    items: [
+      { id: "R1", title: "Start all",
+        how: [`With feat-a selected, click <b>Start all</b> under Apps.`],
+        expect: `Rows move through building, waiting and starting to ready. migrate shows "job: runs to the end" and finishes first; catalog-api is ready before orders-api; web starts after both APIs. All ready in well under a minute.` },
+      { id: "R2", title: "Each app's config page",
+        how: [`Open catalog-api's url plus <code>/config</code>, the same for orders-api, and the Config tab in web and in mobile.`],
+        expect: `Every value is listed with where it came from, and every target says it's reachable.` },
+      { id: "R3", title: "Place an order end to end",
+        how: [`Run this with orders-api's port from the details, then open the mail container's UI port in a browser:<div class="cmd" style="margin-top:6px"><pre id="cmd-order">Invoke-RestMethod -Method Post http://localhost:&lt;orders-port&gt;/orders -ContentType application/json -Body '{"productId":"tea","quantity":1,"email":"someone@example.com"}'</pre><button type="button" data-copy="cmd-order">Copy</button></div>`],
+        expect: `The response has <code>mailSent: true</code>, and Mailpit shows "Order … confirmed".` },
+      { id: "R4", title: "The log pane",
+        how: [`Click <b>Log</b> on catalog-api. Type <code>health</code> in the search box, then clear it. Toggle <b>Follow</b> off and back on. Click <b>Close</b>.`],
+        expect: `The app's colours show, sprig's own lines are dimmed, the search shows "N of M lines match" with only matching lines, following scrolls the log and never the page, and Close hides the pane.` },
+      { id: "R5", title: "Restart one app",
+        how: [`Click <b>Restart</b> on web with its log open.`],
+        expect: `Only web restarts; the log pane starts afresh; the other rows don't change.` },
+      { id: "R6", title: "Recovery after a crash",
+        how: [`End catalog-api's process: <code>Stop-Process -Name Catalog.Api</code> (only one sprout is running at this point).`],
+        expect: `Its row shows restarting with why and when, then ready again within a few seconds. <code>sprig ps</code> shows "(restarted 1×)".` },
+      { id: "R7", title: "Take one app over in your IDE",
+        how: [`<b>Stop</b> catalog-api in the app.`, `Open <code>storefront--feat-a/shop-services</code> in Rider or VS Code and run Catalog.Api with the <code>sprig</code> launch profile (or <code>dotnet run --launch-profile sprig</code> in <code>src/Catalog.Api</code>).`, `Place an order again (R3).`, `Stop it in the IDE, then <b>Start</b> it in the app.`],
+        expect: `The IDE copy comes up on the same port with the sprout's values, the order still goes through, and the app's Start brings sprig's copy back.` },
+      { id: "R8", title: "Apps outlive the window",
+        how: [`Close the app window. Run <code>sprig ps</code>. Open the app again and select feat-a.`],
+        expect: `ps lists every app as ready. The reopened app shows the same states within a second.` },
+    ]
+  },
+  {
+    id: "cli", title: "The CLI alongside the app",
+    intro: "Both drive the same background host, so either sees what the other does.",
+    items: [
+      { id: "C1", title: "ps and logs",
+        how: [`<code>sprig ps</code>, then <code>sprig logs storefront feat-a catalog-api -n 20</code>.`],
+        expect: `ps lists feat-a's apps with ports and states; logs prints the last 20 lines.` },
+      { id: "C2", title: "Stop from the CLI, watch the app",
+        how: [`With the app open on feat-a, run <code>sprig stop storefront feat-a</code>.`],
+        expect: `The CLI reports each app stopped gracefully ("stopped in 0.2s" and the like), and the app's rows turn stopped within a second.` },
+      { id: "C3", title: "Follow with up --run",
+        how: [`<code>sprig up storefront --sprout feat-a --run</code>, watch for a bit, then press <b>Ctrl+C</b> once.`],
+        expect: `One interleaved stream with an aligned, coloured <code>name |</code> prefix per app. Ctrl+C stops the apps gracefully and leaves the containers running.` },
+      { id: "C4", title: "Detached up",
+        how: [`<code>sprig up storefront --sprout feat-a -d</code>`],
+        expect: `It returns once every app is ready, in about 15 seconds when nothing needs rebuilding.` },
+    ]
+  },
+  {
+    id: "branch", title: "A branch that changes its definition",
+    intro: "A sprout runs its own branch's sprig.cs, and asks before running a version you haven't approved.",
+    items: [
+      { id: "B1", title: "Edit sprig.cs in a worktree, bring it up in the app",
+        how: [`In <code>storefront--feat-a/shop-web/sprig.cs</code>, add <code>.Set("VITE_BRANCH_FLAG", "on")</code> to the EnvFile chain and save.`, `In the app, select feat-a and click <b>Bring up</b>.`],
+        expect: `The progress window stops and says the branch changes this definition. The Sprouts page shows the approval panel with "the sprout's branch changes it". After <b>Approve and run</b> it carries on by itself, and shop-web's <code>.env.local</code> has <code>VITE_BRANCH_FLAG=on</code>.` },
+      { id: "B2", title: "Both versions stay approved",
+        how: [`<code>sprig trust ls</code>, then <code>sprig plan storefront</code> (plain, not for the sprout).`],
+        expect: `shop-web's <code>sprig.cs</code> shows 2 versions. The plain plan asks nothing and has no VITE_BRANCH_FLAG.` },
+    ]
+  },
+  {
+    id: "two", title: "Two sprouts at once",
+    items: [
+      { id: "M1", title: "A second sprout beside the first",
+        how: [`Sprout <code>feat-b</code> from the app and start its apps.`, `<code>docker ps</code>`],
+        expect: `Different ports from feat-a (web still inside 5170–5179), its own <code>sprig-storefront-feat-b-*</code> containers, and both sprouts' apps work at the same time.` },
+      { id: "M2", title: "Start just a group",
+        how: [`<code>sprig stop storefront feat-b</code>, then <code>sprig start storefront feat-b --group mobile</code>.`],
+        expect: `Only mobile and what it needs (catalog-api and migrate) start; web and orders-api stay stopped.` },
+    ]
+  },
+  {
+    id: "down", title: "Taking down and removing",
+    intro: "Each refusal should say what's wrong and what to do about it.",
+    items: [
+      { id: "D1", title: "Take down, bring up again",
+        how: [`Select feat-b, click <b>Take down</b>, then <b>Bring up</b>.`],
+        expect: `Take down stops the apps, then the containers. Bring up gives back the same ports, and the database data is still there.` },
+      { id: "D2", title: "Remove refuses uncommitted changes",
+        how: [`Edit any file in <code>storefront--feat-b/shop-web</code> without committing. Click <b>Remove</b>, tick "Also delete its branch", then <b>Remove it</b>.`],
+        expect: `Refused, naming the worktree with uncommitted changes. Nothing is removed.` },
+      { id: "D3", title: "Remove refuses commits only this branch has",
+        how: [`Commit that change in the worktree, then try the same removal again.`],
+        expect: `Refused: feat-b has commits no other branch or remote has, in shop-web.` },
+      { id: "D4", title: "Remove after pushing",
+        how: [`<code>git push -u origin feat-b</code> in that worktree (origin is a bare repo under <code>sprig-testbed/remotes</code>), then remove with the branch ticked.`],
+        expect: `The containers, volumes, worktrees and local branches go, and the folder is gone. The branch is still on the remote.` },
+      { id: "D5", title: "A sprout that runs the repos in place",
+        how: [`Sprout the services trellis (name <code>local</code>), then try a second in-place sprout of it. Remove <code>local</code> afterwards.`],
+        expect: `It writes into <code>${T}/shop-services</code> itself. The second in-place sprout is refused. Removing puts the repo's files back as they were.` },
+    ]
+  },
+  {
+    id: "misc", title: "Settings, host and impressions",
+    items: [
+      { id: "X1", title: "Port range and restricted ports",
+        how: [`In <b>Settings</b>, change the port range and add a restricted port inside it, then save. Sprout a new one and check its ports, then remove it.`],
+        expect: `The new sprout's ports come from the new range and skip the restricted one; existing sprouts keep theirs.` },
+      { id: "X2", title: "The host exits when idle",
+        how: [`Stop every app (<code>sprig stop storefront feat-a</code>), close the app, wait 11 minutes, then <code>sprig host status</code>.`],
+        expect: `It says no host is running. This path has never been tested.` },
+      { id: "X3", title: "About page",
+        how: [`Open <b>About</b>.`],
+        expect: `It shows the installed version. Note anything that reads wrong for an experimental build.` },
+      { id: "X4", title: "Overall look and feel",
+        how: [`Anything that looked off, read badly, took too many clicks, or surprised you anywhere above.`],
+        expect: `Use the note. Mark Pass if there's nothing to add.` },
+      { id: "X5", title: "Tidy up",
+        how: [`Remove every sprout, then <code>sprig host stop</code>.`],
+        expect: `<code>sprig sprouts</code> lists nothing and <code>docker ps</code> shows no <code>sprig-storefront-*</code> containers.` },
+    ]
+  },
+];
+
+const ALL = SECTIONS.flatMap(s => s.items.map(i => ({ ...i, section: s.id })));
+const results = new Map();
+let db = null;
+const writeChains = new Map();
+const els = {};
+
+function render() {
+  const host = document.getElementById("sections");
+  host.innerHTML = "";
+  for (const sec of SECTIONS) {
+    const s = document.createElement("section");
+    s.innerHTML = `<div class="sec-head"><h2>${sec.title}</h2><span class="tally" id="tally-${sec.id}"></span></div>` +
+      (sec.intro ? `<p class="sec-intro">${sec.intro}</p>` : "");
+    for (const item of sec.items) s.appendChild(renderItem(item));
+    host.appendChild(s);
+  }
+  refresh();
+}
+
+function renderItem(item) {
+  const row = document.createElement("div");
+  row.className = "item";
+  row.id = "item-" + item.id;
+  row.innerHTML = `
+    <div class="states" role="group" aria-label="Result for ${item.id}">
+      <button type="button" data-s="pass" aria-pressed="false">Pass</button>
+      <button type="button" data-s="fail" aria-pressed="false">Fail</button>
+      <button type="button" data-s="skip" aria-pressed="false">Skip</button>
+    </div>
+    <div class="body">
+      <div class="title"><span class="id">${item.id}</span><span class="label">${item.title}</span></div>
+      <div class="how"><ol>${item.how.map(h => `<li>${h}</li>`).join("")}</ol></div>
+      <p class="expect">${item.expect}</p>
+      <button type="button" class="note-link">Add a note</button>
+      <div class="note-wrap" hidden><textarea id="note-${item.id}" aria-label="Note for ${item.id}" placeholder="What happened, and what you expected instead"></textarea></div>
+    </div>`;
+  const noteWrap = row.querySelector(".note-wrap");
+  const noteLink = row.querySelector(".note-link");
+  const textarea = row.querySelector("textarea");
+  row.querySelectorAll(".states button").forEach(b => b.addEventListener("click", () => {
+    const cur = results.get(item.id) || {};
+    const next = cur.status === b.dataset.s ? null : b.dataset.s;
+    results.set(item.id, { ...cur, status: next });
+    if (next === "fail") { noteWrap.hidden = false; noteLink.hidden = true; }
+    refresh();
+    save(item.id);
+  }));
+  noteLink.addEventListener("click", () => { noteWrap.hidden = false; noteLink.hidden = true; textarea.focus(); });
+  let timer = null;
+  textarea.addEventListener("input", () => {
+    const cur = results.get(item.id) || {};
+    results.set(item.id, { ...cur, note: textarea.value });
+    clearTimeout(timer);
+    timer = setTimeout(() => save(item.id), 800);
+  });
+  textarea.addEventListener("blur", () => { clearTimeout(timer); save(item.id); });
+  els[item.id] = { row, noteWrap, noteLink, textarea };
+  return row;
+}
+
+function refresh() {
+  const hide = document.getElementById("hide-done").checked;
+  const totals = { pass: 0, fail: 0, skip: 0, todo: 0 };
+  for (const item of ALL) {
+    const r = results.get(item.id) || {};
+    const st = r.status || null;
+    totals[st || "todo"]++;
+    const e = els[item.id];
+    if (!e) continue;
+    e.row.classList.toggle("is-pass", st === "pass");
+    e.row.classList.toggle("is-fail", st === "fail");
+    e.row.classList.toggle("is-skip", st === "skip");
+    e.row.classList.toggle("done-hidden", hide && (st === "pass" || st === "skip"));
+    e.row.querySelectorAll(".states button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === st)));
+    if (document.activeElement !== e.textarea && (r.note || "") !== e.textarea.value) e.textarea.value = r.note || "";
+    const hasNote = !!(r.note && r.note.trim()) || st === "fail";
+    if (hasNote) { e.noteWrap.hidden = false; e.noteLink.hidden = true; }
+  }
+  for (const sec of SECTIONS) {
+    const done = sec.items.filter(i => (results.get(i.id) || {}).status).length;
+    const fails = sec.items.filter(i => (results.get(i.id) || {}).status === "fail").length;
+    document.getElementById("tally-" + sec.id).textContent = `${done} of ${sec.items.length}` + (fails ? ` · ${fails} failed` : "");
+  }
+  const n = ALL.length;
+  document.getElementById("counts").innerHTML =
+    `<span class="c-pass"><b>${totals.pass}</b> passed</span><span class="c-fail"><b>${totals.fail}</b> failed</span>` +
+    `<span class="c-skip"><b>${totals.skip}</b> skipped</span><span class="c-todo"><b>${totals.todo}</b> to do, of ${n}</span>`;
+  const [bp, bf, bs] = document.querySelectorAll("#bar span");
+  bp.style.width = (totals.pass / n * 100) + "%";
+  bf.style.width = (totals.fail / n * 100) + "%";
+  bs.style.width = (totals.skip / n * 100) + "%";
+}
+
+function setSaved(text, warn) {
+  const el = document.getElementById("saved");
+  el.textContent = text;
+  el.classList.toggle("warn", !!warn);
+}
+
+function save(id) {
+  if (!db) return;
+  const r = results.get(id) || {};
+  const body = { status: r.status || null, note: r.note || "", item: id, at: new Date().toISOString() };
+  const prev = writeChains.get(id) || Promise.resolve();
+  const next = prev.then(() => db.collection("results").doc(id).set(body))
+    .then(() => setSaved("Saved"))
+    .catch(e => setSaved(e && e.code === "quota_exceeded" ? "Couldn't save: storage is full" : "Couldn't save the last change; it's kept on this page", true));
+  writeChains.set(id, next);
+}
+
+document.getElementById("hide-done").addEventListener("change", refresh);
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  const pre = document.getElementById(b.dataset.copy);
+  const text = pre.textContent;
+  const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1400); };
+  try {
+    navigator.clipboard.writeText(text).then(done, () => selectText(pre));
+  } catch { selectText(pre); }
+});
+function selectText(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const b = document.querySelector(`[data-copy="${node.id}"]`);
+  if (b) { b.textContent = "Press Ctrl+C"; setTimeout(() => (b.textContent = "Copy"), 2000); }
+}
+
+render();
+
+(async () => {
+  const claudeApi = window.claude;
+  db = claudeApi && claudeApi.use ? await claudeApi.use("db") : null;
+  if (!db) { setSaved("Not saving in this view: marks last until you close it", true); return; }
+  const slow = setTimeout(() => setSaved("Still loading saved marks…", true), 10000);
+  db.collection("results").onSnapshot(snap => {
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (!data) continue;
+      const local = results.get(d.id);
+      const editing = els[d.id] && document.activeElement === els[d.id].textarea;
+      results.set(d.id, { status: data.status || null, note: editing && local ? local.note : (data.note || "") });
+    }
+    if (!snap.metadata.fromCache) { clearTimeout(slow); setSaved(snap.empty ? "Saved as you go" : "Saved"); }
+    refresh();
+  }, err => {
+    clearTimeout(slow);
+    setSaved("Saved marks can't be reached; changes stay on this page", true);
+  });
+})();
+</script>

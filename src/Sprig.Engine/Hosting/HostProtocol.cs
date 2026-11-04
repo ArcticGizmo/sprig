@@ -109,7 +109,7 @@ public static class HostProtocol
     public static string LogFile(ISprigPaths paths, string sprout, string name)
         => Path.Combine(LogFolder(paths), Safe(sprout), Safe(name) + ".log");
 
-    static string StoreId(ISprigPaths paths)
+    public static string StoreId(ISprigPaths paths)
     {
         var root = Path.GetFullPath(paths.Root).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(root)))[..16].ToLowerInvariant();

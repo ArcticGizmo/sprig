@@ -66,6 +66,29 @@ public sealed class HostClient(ISprigPaths paths)
         return last.Values.ToArray();
     }
 
+    static bool Alive(RunnerStatus r) => r.State.IsAlive() || r.State == RunnerState.Stopping;
+
+    /// <summary>Stop every app of every sprout, waiting for each to go, then end the host itself.</summary>
+    public IReadOnlyList<RunnerStatus> StopAllAndShutdown()
+    {
+        var sprouts = TrySend(new HostRequest("list"))?.Runners?.Where(Alive).Select(r => r.Sprout).Distinct().ToArray() ?? [];
+        var stopped = sprouts.AsParallel().SelectMany(s => StopAndWait(s)).ToArray();
+        TrySend(new HostRequest("shutdown"));
+        return stopped;
+    }
+
+    /// <summary>
+    /// End the host when nothing is running in it, rather than leaving it to sit out its idle time holding the store's
+    /// files open. False (and the host left alone) when an app is still going.
+    /// </summary>
+    public bool ShutdownIfIdle()
+    {
+        if (TrySend(new HostRequest("list"))?.Runners is not { } runners) return true;
+        if (runners.Any(Alive)) return false;
+        TrySend(new HostRequest("shutdown"));
+        return true;
+    }
+
     /// <summary>Send <paramref name="request"/>, starting the host first when it isn't running.</summary>
     public HostResponse Send(HostRequest request)
     {

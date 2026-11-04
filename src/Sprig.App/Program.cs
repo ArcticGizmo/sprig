@@ -45,6 +45,8 @@ internal static class Program
             return 0;
         }
 
+        using var instance = SingleInstance.Claim(new Sprig.Engine.Store.SprigPaths(null));
+        if (instance is null) return 0;
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
     }

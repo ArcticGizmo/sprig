@@ -150,6 +150,47 @@ public sealed class HostTests : IDisposable
         Assert.DoesNotContain("sprig: starting", ReadShared(stopped.LogFile));
     }
 
+    bool HostGone()
+    {
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(15))
+        {
+            if (_client.TrySend(new HostRequest("ping"), TimeSpan.FromMilliseconds(100)) is null) return true;
+            Thread.Sleep(100);
+        }
+        return false;
+    }
+
+    [Fact]
+    public void An_idle_host_is_ended_on_request_but_one_running_apps_is_left_alone()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/api", Wait(30))]));
+        Await("shop/api", r => r.State == RunnerState.Ready);
+
+        Assert.False(_client.ShutdownIfIdle());
+        Assert.NotNull(_client.TrySend(new HostRequest("ping")));
+
+        Assert.Single(_client.StopAndWait("storefront/feat-x"));
+        Assert.True(_client.ShutdownIfIdle());
+        Assert.True(HostGone());
+        Assert.True(_client.ShutdownIfIdle());
+    }
+
+    [Fact]
+    public void Stopping_everything_ends_every_sprouts_apps_and_then_the_host()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/api", Wait(30))]));
+        _client.Send(new HostRequest("start", [Spec("shop/web", Wait(30)) with { Sprout = "storefront/feat-y" }]));
+        Await("shop/api", r => r.State == RunnerState.Ready);
+        Await("shop/web", r => r.State == RunnerState.Ready);
+
+        var stopped = _client.StopAllAndShutdown();
+
+        Assert.Equal(["shop/api", "shop/web"], stopped.Select(r => r.Name).Order());
+        Assert.All(stopped, r => Assert.Equal(RunnerState.Stopped, r.State));
+        Assert.True(HostGone());
+    }
+
     [Fact]
     public void A_failed_job_keeps_what_waits_for_it_from_starting()
     {

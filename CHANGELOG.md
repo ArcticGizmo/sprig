@@ -11,6 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Quick links** — `app.Link("Swagger", "/swagger")` and `trellis.Link("Mail inbox", mail.UrlOf("ui"))` name the pages you actually start from, at each sprout's own ports. App links lead the details panel; trellis links live under the sprout's **Links** button. Click to open, middle-click for a new window. Containers grew `UrlOf` so their web UIs can be linked to.
 - **Logs you can work with** — drag or Shift+click lines and Ctrl+C them, stack traces included. Right-click a line to see what every app was doing at that moment, or the reverse. Timestamps and wrapping can be switched off, and stay off.
 
+- **sprig lives in the tray** — close the window while apps are running and sprig tucks itself into the notification area instead of leaving them orphaned. From there: open it again, stop every app and quit, or quit and leave them running. Close it with nothing running and the background host goes too, rather than loitering for ten minutes holding files hostage. Launching sprig again brings back the one you have instead of starting a second.
+
 ### Changed
 - **Experimental branch: everything goes** — the old model, maps, pools, editors, tour and most of the CLI are gone. What's left is the app shell, Settings, About, the updater and `sprig open`/`update`/`shell`. Brave, or reckless. The roadmap will decide.
 - **A store of its own** — this build keeps its data in `sprig-exp`, so it can't touch the released app's maps and workspaces.

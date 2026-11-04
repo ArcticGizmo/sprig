@@ -27,7 +27,11 @@ public partial class App : Application
 
             desktop.MainWindow = main;
             // The language host is a child process; don't leave it running after the app closes.
-            desktop.Exit += (_, _) => vm.EditorSpike.Host.Dispose();
+            desktop.Exit += (_, _) =>
+            {
+                vm.EditorSpike.Host.Dispose();
+                services.Language.Dispose();
+            };
             _ = new Tray(this, desktop, main, services);
             MaybeShowChangelog(services, main);
         }

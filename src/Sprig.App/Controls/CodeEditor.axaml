@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:host="clr-namespace:Sprig.App.Authoring"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="Sprig.App.Controls.CodeEditor">
+
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,8"
+                MaxHeight="140">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" x:Name="ProblemsSummary" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                    <ItemsControl x:Name="ProblemList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="host:HostDiagnostic">
+                                <Button Classes="problem" Tag="{Binding}" Click="OnProblemClick">
+                                    <Grid ColumnDefinitions="64,*">
+                                        <TextBlock Text="{Binding Line, StringFormat='line {0}'}" FontSize="12"
+                                                   Foreground="{StaticResource MutedBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Message}" FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="{StaticResource DangerBrush}" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+        <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontSize="13.5"
+                       FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace"
+                       Foreground="{StaticResource FgBrush}" Background="Transparent"
+                       LineNumbersForeground="{StaticResource MutedBrush}" Padding="8" />
+    </DockPanel>
+
+    <UserControl.Styles>
+        <Style Selector="Button.problem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0,1" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+    </UserControl.Styles>
+</UserControl>

@@ -47,6 +47,21 @@
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="Padding" Value="0,6" />
         </Style>
+        <Style Selector="TextBlock.source">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.source.virtual">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="TextBlock.source.missing">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
     </UserControl.Styles>
 
     <Grid ColumnDefinitions="320,*">
@@ -58,19 +73,22 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Text="Trellises" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
                                    VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenAddCommand}" VerticalAlignment="Center"
+                        <Button Grid.Column="1" Content="+ New" Command="{Binding OpenNewCommand}" VerticalAlignment="Center"
+                                IsEnabled="{Binding !IsEditing}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                     </Grid>
                     <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="A trellis is a C# file that puts repos together. Add one from any folder." />
+                               Text="A trellis puts repos together. Make one here, kept in sprig, or add a .trellis.cs from any folder." />
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,0" />
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Top" Margin="0,12,0,0" FontSize="12.5" TextWrapping="Wrap"
                            Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
-                           Text="None yet. The testbed has one: run scripts/testbed.ps1, then add storefront.trellis.cs from the folder it builds." />
+                           Text="None yet. + New makes one from a few repo folders, with nothing committed to them." />
 
-                <ListBox ItemsSource="{Binding Trellises}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,8,0,0">
+                <!-- Locked while a definition is open, so unsaved edits can't be left behind by picking another. -->
+                <ListBox ItemsSource="{Binding Trellises}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,8,0,0"
+                         IsEnabled="{Binding !IsEditing}">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:TrellisItem">
                             <StackPanel Spacing="2" Margin="0,2">
@@ -87,21 +105,25 @@
             </DockPanel>
         </Border>
 
-        <!-- The selected trellis's plan -->
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+        <!-- The selected trellis: its repos and plan, or one of its definitions open in the editor -->
+        <Grid Grid.Column="1">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding !IsEditing}">
             <StackPanel Margin="28,24,28,28" Spacing="18" MaxWidth="1100" HorizontalAlignment="Stretch">
 
                 <TextBlock IsVisible="{Binding !HasSelection}" Margin="0,40,0,0" FontSize="14" Foreground="{StaticResource MutedBrush}"
                            Text="Select a trellis to see what a sprout of it would get." HorizontalAlignment="Center" />
 
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasSelection}">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasSelection}">
                     <StackPanel Spacing="2">
                         <TextBlock Text="{Binding Selected.Name}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                         <TextBlock Text="{Binding Selected.DisplayPath}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
                     </StackPanel>
-                    <Button Grid.Column="1" Content="Plan again" Command="{Binding ReplanCommand}" VerticalAlignment="Top"
+                    <Button Grid.Column="1" Content="Edit trellis" Command="{Binding EditTrellisCommand}" VerticalAlignment="Top"
+                            IsEnabled="{Binding !Selected.Missing, FallbackValue=False}" ToolTip.Tip="Open the trellis's C# in the editor"
                             Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
-                    <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}" CommandParameter="{Binding Selected}"
+                    <Button Grid.Column="2" Content="Plan again" Command="{Binding ReplanCommand}" VerticalAlignment="Top"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                    <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}" CommandParameter="{Binding Selected}"
                             VerticalAlignment="Top" Background="Transparent" Foreground="{StaticResource DangerBrush}"
                             BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
                 </Grid>
@@ -146,6 +168,40 @@
                                         <TextBlock Classes="cell via mono" Text="{Binding Where}" />
                                         <TextBlock Classes="cell mono" Text="{Binding Message}" />
                                     </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Where each repo's definition comes from, and what can be done about it -->
+                <Border Classes="panel" IsVisible="{Binding HasRepos}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="phead" Text="REPOS AND THEIR DEFINITIONS" />
+                        <ItemsControl ItemsSource="{Binding Repos}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:TrellisRepoRow">
+                                    <Border Classes="row">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                            <StackPanel Spacing="1">
+                                                <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
+                                                <TextBlock Classes="cell via mono" Text="{Binding DisplayDir}" />
+                                                <TextBlock Classes="cell source" Text="{Binding Source}" FontSize="12"
+                                                           Classes.virtual="{Binding IsVirtual}" Classes.missing="{Binding Undescribed}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <Button Classes="small" Content="Edit" IsVisible="{Binding CanEdit}" CommandParameter="{Binding}"
+                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).EditRepoCommand}" />
+                                                <Button Classes="small" Content="{Binding DescribeLabel}" IsVisible="{Binding CanDescribe}"
+                                                        ToolTip.Tip="{Binding DescribeTip}" CommandParameter="{Binding}"
+                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).DescribeInSprigCommand}" />
+                                                <Button Classes="small" Content="Use its own sprig.cs" IsVisible="{Binding CanUseOwn}"
+                                                        ToolTip.Tip="Point the trellis back at the repo's committed sprig.cs; the copy in sprig is kept"
+                                                        CommandParameter="{Binding}"
+                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).UseOwnDefinitionCommand}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -326,6 +382,118 @@
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
+
+        <!-- One definition open in the editor; saving approves it and plans again -->
+        <DockPanel IsVisible="{Binding IsEditing}" Margin="24,20,24,16">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding EditingTitle}" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock Text="{Binding EditingNote}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" VerticalAlignment="Top"
+                        HotKey="Ctrl+S" ToolTip.Tip="Save, approve and plan again (Ctrl+S)"
+                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,6" />
+                <Button Grid.Column="2" Content="Close" Command="{Binding CloseEditorCommand}" VerticalAlignment="Top"
+                        Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,6" />
+            </Grid>
+            <Border DockPanel.Dock="Top" Margin="0,10,0,0" Padding="12,8" CornerRadius="8" Background="#3A2F12"
+                    IsVisible="{Binding ConfirmingDiscard}">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Text="It has changes you haven't saved." FontSize="12.5" Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Keep editing" Command="{Binding KeepEditingCommand}"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="10,4" />
+                    <Button Grid.Column="2" Content="Discard them" Command="{Binding CloseEditorCommand}"
+                            Background="Transparent" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}"
+                            BorderThickness="1" Padding="10,3" />
+                </Grid>
+            </Border>
+            <TextBlock DockPanel.Dock="Top" Classes="msg" Margin="0,10,0,0" Text="{Binding EditorStatus}" FontSize="12.5" TextWrapping="Wrap"
+                       Classes.bad="{Binding EditorStatusBad}"
+                       IsVisible="{Binding EditorStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Border Margin="0,12,0,0" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+                <controls:CodeEditor Text="{Binding EditorText}" Host="{Binding Language}" />
+            </Border>
+        </DockPanel>
+        </Grid>
+
+        <!-- A new trellis kept in sprig -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsNewOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelNewCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="New trellis" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="Kept in sprig, so nothing is written to your repos. A repo with its own sprig.cs uses it; one without gets a definition kept in sprig, drafted from what's in its folder. Edit any of them afterwards." />
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="phead" Text="NAME" />
+                        <TextBox Text="{Binding NewName}" PlaceholderText="e.g. storefront" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="phead" Text="REPO FOLDERS" />
+                        <ItemsControl ItemsSource="{Binding NewRepoDirs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                        <TextBlock Classes="cell mono" Text="{Binding}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="✕" Padding="8,2" Background="Transparent" ToolTip.Tip="Leave it out"
+                                                Foreground="{StaticResource MutedBrush}" CommandParameter="{Binding}"
+                                                Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).RemoveNewRepoCommand}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <controls:PathBox Path="{Binding NewRepoPath}" PickFolder="True" PickerTitle="Choose a repo folder"
+                                              Placeholder="path/to/a/repo" />
+                            <Button Grid.Column="1" Content="Add" Command="{Binding AddNewRepoCommand}" VerticalAlignment="Center"
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                        </Grid>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox IsChecked="{Binding NewWorktrees}" Content="Give each sprout its own worktrees, branching from" VerticalAlignment="Center" />
+                        <TextBox Text="{Binding NewFrom}" Width="140" IsEnabled="{Binding NewWorktrees}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <CheckBox IsChecked="{Binding NewRandomPorts}" Content="Fresh random ports each time a sprout comes up (otherwise each keeps its own)" />
+                    <TextBlock Classes="msg" Text="{Binding NewMessage}" FontSize="12" TextWrapping="Wrap" Classes.bad="{Binding NewFailed}"
+                               IsVisible="{Binding NewMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                        <Button Content="Add an existing .trellis.cs instead" Command="{Binding SwitchToAddCommand}" Padding="0"
+                                Background="Transparent" Foreground="{StaticResource AccentBrush}" FontSize="12.5" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelNewCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Grid.Column="2" Content="Create trellis" Command="{Binding CreateNewCommand}" IsEnabled="{Binding !IsBusy}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Deleting a trellis kept in sprig -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding ConfirmingRemove}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelRemoveCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource DangerBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding Selected.Name, StringFormat='Delete {0}?'}" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock Classes="cell" Text="It's kept only in sprig, so its file goes too. Definitions it uses stay for other trellises. Take down or remove its sprouts first: without the trellis they can't be brought up again." />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Keep it" Command="{Binding CancelRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
+                                Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Content="Delete it" Command="{Binding RemoveCommand}" CommandParameter="{Binding Selected}"
+                                Background="{StaticResource DangerBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
 
         <!-- Add a trellis: a modal so the path has the room a narrow list column can't give it. -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">

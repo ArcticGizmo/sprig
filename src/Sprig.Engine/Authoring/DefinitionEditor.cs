@@ -111,6 +111,36 @@ public static class DefinitionEditor
         return Apply(text, InsertionPointAfter(text, after), insert);
     }
 
+    /// <summary>
+    /// Point a trellis's <c>Repo("path")</c> at a definition sprig keeps (<paramref name="definition"/>), or back at the
+    /// repo's own sprig.cs (null).
+    /// </summary>
+    public static EditResult SetRepoDefinition(string text, string repoPath, string? definition)
+    {
+        var call = Parse(text).DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .FirstOrDefault(i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "Repo" } && FirstStringArg(i) == repoPath);
+        if (call is null) return EditResult.Fail(text, $"no trellis.Repo(\"{repoPath}\") to change");
+
+        var args = call.ArgumentList;
+        // Named, or the second positional argument (the path is the first).
+        var existing = args.Arguments.FirstOrDefault(a => a.NameColon?.Name.Identifier.Text == "definition")
+            ?? (args.Arguments.Count > 1 && args.Arguments[1].NameColon is null ? args.Arguments[1] : null);
+
+        if (existing is not null)
+        {
+            if (definition is null)
+            {
+                var index = args.Arguments.IndexOf(existing);
+                var start = args.Arguments.GetSeparator(index - 1).SpanStart;
+                return Apply(text, new TextSpan(start, existing.Span.End - start), "");
+            }
+            return Apply(text, existing.Expression.Span, Literal(definition));
+        }
+
+        if (definition is null) return new EditResult(true, text);
+        return Apply(text, args.Arguments[0].Span.End, $", definition: {Literal(definition)}");
+    }
+
     /// <summary>Where to insert a new line after <paramref name="node"/>: at the end of its line when the code carries
     /// on below, so a trailing comment stays with the line it describes; straight after the node when more code
     /// follows on the same line (a one-line chain ending in <c>;</c>).</summary>

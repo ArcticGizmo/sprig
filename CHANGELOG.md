@@ -13,6 +13,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **sprig lives in the tray** — close the window while apps are running and sprig tucks itself into the notification area instead of leaving them orphaned. From there: open it again, stop every app and quit, or quit and leave them running. Close it with nothing running and the background host goes too, rather than loitering for ten minutes holding files hostage. Launching sprig again brings back the one you have instead of starting a second.
 
+- **Trellises and definitions kept in sprig** — try sprig on repos without committing a thing. **+ New** on the Trellises page makes a trellis from a few repo folders, and any repo without a `sprig.cs` gets a definition kept in sprig, drafted from its `.csproj` and `package.json` files. Edit any of them in the app, with completion and compile errors; saving approves what you saved and plans again. `trellis.Repo(path, definition: "id")` picks a definition sprig keeps over the repo's own, so the two never squabble.
+- **Trellises have IDs** — sprouts are keyed by the ID a trellis is registered under, not the name it gives itself, so two trellises that both call themselves `storefront` no longer share sprouts, ports and containers like a pair of confused twins. `sprig trellis add --id` picks one.
+
 ### Changed
 - **Experimental branch: everything goes** — the old model, maps, pools, editors, tour and most of the CLI are gone. What's left is the app shell, Settings, About, the updater and `sprig open`/`update`/`shell`. Brave, or reckless. The roadmap will decide.
 - **A store of its own** — this build keeps its data in `sprig-exp`, so it can't touch the released app's maps and workspaces.

@@ -1,3 +1,4 @@
+using Sprig.Engine.Authoring;
 using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Git;
@@ -23,6 +24,11 @@ public sealed class AppServices
     public TrellisRegistry Trellises { get; }
     public TrellisLoader Loader { get; }
     public VirtualDefinitions Virtuals { get; }
+    public TrellisAuthoring Authoring { get; }
+
+    /// <summary>Completion and errors for the definition editor, from a separate process so Roslyn can't take the app
+    /// down. Started on first use.</summary>
+    public Sprig.App.Authoring.LanguageHostClient Language { get; } = new();
     public SproutService Sprouts { get; }
     public HostClient Host { get; }
     public HostStatus HostStatus { get; }
@@ -38,6 +44,7 @@ public sealed class AppServices
         Trellises = new TrellisRegistry(Paths);
         Virtuals = new VirtualDefinitions(Paths);
         Loader = new TrellisLoader(Definitions, Trellises, Virtuals);
+        Authoring = new TrellisAuthoring(Virtuals, Trellises, Trust);
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         HostStatus = new HostStatus(Host);

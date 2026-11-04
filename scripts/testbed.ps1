@@ -108,6 +108,16 @@ foreach ($trellis in Get-ChildItem -LiteralPath (Join-Path $root 'testbed') -Fil
     Write-Host "  $($trellis.Name)  ->  $dest"
 }
 
+# The same system as an Aspire AppHost, for comparison (docs/spikes/m6-aspire.md). Copied out so the sprig repo's
+# Directory.Build.props doesn't apply to it.
+$aspire = Join-Path $root 'testbed/aspire'
+if (Test-Path -LiteralPath $aspire) {
+    $dest = Join-Path $Path 'aspire'
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    Copy-Item -Path (Join-Path $aspire '*') -Destination $dest
+    Write-Host "  aspire/  ->  $dest"
+}
+
 Write-Host ""
 Write-Host "Testbed ready at $Path"
 Write-Host "Plan it:      sprig trellis add `"$(Join-Path $Path 'storefront.trellis.cs')`" ; sprig plan storefront"

@@ -22,6 +22,7 @@ public sealed class AppServices
     public DefinitionRunner Definitions { get; }
     public TrellisRegistry Trellises { get; }
     public TrellisLoader Loader { get; }
+    public VirtualDefinitions Virtuals { get; }
     public SproutService Sprouts { get; }
     public HostClient Host { get; }
     public HostStatus HostStatus { get; }
@@ -35,7 +36,8 @@ public sealed class AppServices
         Trust = new FileTrustStore(Paths);
         Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
         Trellises = new TrellisRegistry(Paths);
-        Loader = new TrellisLoader(Definitions, Trellises);
+        Virtuals = new VirtualDefinitions(Paths);
+        Loader = new TrellisLoader(Definitions, Trellises, Virtuals);
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         HostStatus = new HostStatus(Host);

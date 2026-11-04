@@ -344,6 +344,64 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
+    public void Virtual_trellises_and_definitions_sit_beside_a_repos_own_without_clashing()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));
+        var virtuals = new VirtualDefinitions(_store.Paths);
+        var registry = new TrellisRegistry(_store.Paths);
+        var trust = new FileTrustStore(_store.Paths);
+        var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
+        {
+            ["// own"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo(source); return t; },
+            ["// uses a"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo(source, definition: "web-a"); return t; },
+            ["// uses b"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo(source, definition: "web-b"); return t; },
+            ["// uses missing"] = () => { var t = Trellis.Describe("storefront"); t.Repo(source, definition: "nope"); return t; },
+            ["// web v1"] = () => WebWith("v1"),
+            ["// virtual a"] = () => WebWith("a"),
+            ["// virtual b"] = () => WebWith("b"),
+        }), _store.Paths), registry, virtuals);
+        var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
+
+        string VirtualTrellis(string id, string text)
+        {
+            var file = virtuals.CreateTrellis(id, text);
+            registry.Add(id, file);
+            trust.Approve(file, DefinitionHash.Of(text));
+            return file;
+        }
+        var own = VirtualTrellis("own", "// own");
+        var usesA = VirtualTrellis("uses-a", "// uses a");
+        var usesB = VirtualTrellis("uses-b", "// uses b");
+        foreach (var (id, text) in new[] { ("web-a", "// virtual a"), ("web-b", "// virtual b") })
+            trust.Approve(virtuals.CreateRepo(id, text), DefinitionHash.Of(text));
+        trust.Approve(Path.Combine(source, "sprig.cs"), DefinitionHash.Of("// web v1"));
+
+        var feature = new Dictionary<string, string>();
+        foreach (var (file, sprout) in new[] { (own, "x1"), (usesA, "x2"), (usesB, "x3") })
+        {
+            var record = sprouts.Up(loader.Load(file), sprout, null);
+            feature[record.Trellis] = string.Join(",", File.ReadAllLines(Path.Combine(record.Repos.Single().Dir, ".env.local"))
+                .Where(l => l.StartsWith("FEATURE=")).Distinct());
+        }
+
+        Assert.Equal("FEATURE=v1", feature["own"]);
+        Assert.Equal("FEATURE=a", feature["uses-a"]);
+        Assert.Equal("FEATURE=b", feature["uses-b"]);
+        Assert.Equal("// web v1", File.ReadAllText(Path.Combine(source, "sprig.cs")));
+        Assert.Equal(["web-a", "web-b"], virtuals.RepoIds());
+
+        var missing = VirtualTrellis("uses-missing", "// uses missing");
+        var problem = Assert.Single(loader.Load(missing).Problems);
+        Assert.Contains("names the definition 'nope', which sprig doesn't have", problem.Message);
+
+        // A virtual definition is approved as itself, so changing it asks again.
+        File.WriteAllText(virtuals.RepoFile("web-a"), "// virtual b");
+        var pending = Assert.Single(loader.Load(usesA).Untrusted);
+        Assert.Equal(virtuals.RepoFile("web-a"), pending.TrustPath);
+    }
+
+    [Fact]
     public void A_new_branch_from_main_needs_no_new_approval()
     {
         var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));

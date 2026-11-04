@@ -127,7 +127,8 @@ public sealed record ComposeServiceModel(string Name, SourceLocation Location, I
 public sealed record ComposeOverrideModel(string Path, string Value, SourceLocation Location);
 
 /// <param name="Path">The repo's folder (or later a git URL), relative to the trellis file.</param>
-public sealed record RepoRefModel(string Path, SourceLocation Location);
+/// <param name="Definition">A definition sprig keeps for this repo, by ID, used instead of the repo's own sprig.cs.</param>
+public sealed record RepoRefModel(string Path, SourceLocation Location, string? Definition = null);
 
 /// <summary>The trellis's answer for an import: a value it supplies, or a named repo's export.</summary>
 public sealed record BindingModel(string Import, string Value, SourceLocation Location);

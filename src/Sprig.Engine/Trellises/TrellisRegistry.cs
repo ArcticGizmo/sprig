@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Trellises;
@@ -9,7 +8,7 @@ public sealed record TrellisEntry(string Id, string Path, DateTimeOffset AddedAt
 
 /// <summary>Where each registered trellis file lives, under its ID. A trellis can be in any folder; registering it once
 /// lets every command name it by ID instead of its path.</summary>
-public sealed partial class TrellisRegistry(ISprigPaths paths)
+public sealed class TrellisRegistry(ISprigPaths paths)
 {
     string File => System.IO.Path.Combine(paths.Root, "trellises.json");
 
@@ -57,36 +56,24 @@ public sealed partial class TrellisRegistry(ISprigPaths paths)
 
     /// <summary><paramref name="wanted"/>, or the first <c>wanted-2</c>, <c>wanted-3</c>… that no other file has.</summary>
     public string UnusedId(string wanted, string? forPath = null)
-    {
-        var taken = Load().Where(e => forPath is null || !SamePath(e.Path, forPath)).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var candidate = Slug(wanted);
-        for (var n = 2; taken.Contains(candidate); n++) candidate = $"{Slug(wanted)}-{n}";
-        return candidate;
-    }
+        => Ids.Unused(Ids.Slug(wanted, "trellis"),
+            Load().Where(e => forPath is null || !SamePath(e.Path, forPath)).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
-    /// <summary>The ID a trellis file suggests: its name without <c>.trellis.cs</c>.</summary>
+    /// <summary>The ID a trellis file suggests: its name without <c>.trellis.cs</c>. A virtual trellis's file is always
+    /// <c>trellis.cs</c>, so its folder (named by its ID) says it instead.</summary>
     public static string IdFromFile(string path)
     {
         var file = System.IO.Path.GetFileName(path);
+        if (file.Equals(Definitions.VirtualDefinitions.TrellisFileName, StringComparison.OrdinalIgnoreCase)
+            && System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path)) is { Length: > 0 } folder)
+            return Ids.Slug(folder, "trellis");
         foreach (var suffix in (string[])[".trellis.cs", ".cs"])
             if (file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && file.Length > suffix.Length)
-                return Slug(file[..^suffix.Length]);
-        return Slug(System.IO.Path.GetFileNameWithoutExtension(file));
+                return Ids.Slug(file[..^suffix.Length], "trellis");
+        return Ids.Slug(System.IO.Path.GetFileNameWithoutExtension(file), "trellis");
     }
 
-    /// <summary>IDs end up in folder, compose project and branch-adjacent names, so they keep to a safe alphabet.</summary>
-    public static string? CheckId(string id)
-        => IdRule().IsMatch(id) ? null
-            : $"'{id}' can't be a trellis ID: use letters, digits, '.', '_' and '-', starting with a letter or digit";
-
-    static string Slug(string name)
-    {
-        var slug = Regex.Replace(name.Trim(), "[^A-Za-z0-9._-]+", "-").Trim('-', '.', '_');
-        return slug.Length == 0 ? "trellis" : slug.Length > 63 ? slug[..63] : slug;
-    }
-
-    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")]
-    private static partial Regex IdRule();
+    public static string? CheckId(string id) => Ids.Check(id, "a trellis ID");
 
     // Before IDs, entries were written with a "name", which was already the key every sprout used.
     sealed record Stored(string? Id, string? Name, string Path, DateTimeOffset AddedAt);

@@ -213,7 +213,7 @@ static class TrellisLoad
         var path = cli.Trellises.Resolve(nameOrPath)
             ?? throw new InvalidOperationException($"no trellis named '{nameOrPath}'. Register one with: sprig trellis add <file>");
 
-        var loader = new TrellisLoader(cli.Definitions, cli.Trellises);
+        var loader = new TrellisLoader(cli.Definitions, cli.Trellises, new VirtualDefinitions(cli.Paths));
         var worktrees = sprout is null ? null : cli.Sprouts.Worktrees(path, sprout);
         var loaded = loader.Load(path, worktrees);
         if (loaded.Untrusted.Count > 0)

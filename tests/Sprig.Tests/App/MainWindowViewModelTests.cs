@@ -28,9 +28,15 @@ public class MainWindowViewModelTests
         using var store = new TempStore();
         var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
 
-        var navPages = vm.NavItems.OfType<PageViewModel>().Select(p => p.Title);
+        var navPages = vm.NavItems.Select(i => i switch
+        {
+            PageViewModel p => p.Title,
+            SproutsNavViewModel s => s.Page.Title,
+            _ => null,
+        }).OfType<string>();
 
         Assert.Equal(["Home", "Trellises", "Sprouts", "Editor"], navPages);
+        Assert.Same(vm.Sprouts, vm.SproutsNav.Page);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);
     }

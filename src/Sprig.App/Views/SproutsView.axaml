@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:logs="clr-namespace:Sprig.App.Logs"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              x:Class="Sprig.App.Views.SproutsView"
              x:DataType="vm:SproutsViewModel">
@@ -53,20 +54,124 @@
         <Style Selector="TextBlock.busy">
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         </Style>
+        <Style Selector="Ellipse.dot">
+            <Setter Property="Fill" Value="#6E6E82" />
+        </Style>
+        <Style Selector="Ellipse.dot.up">
+            <Setter Property="Fill" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="Ellipse.dot.busy">
+            <Setter Property="Fill" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Ellipse.dot.warn">
+            <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="Ellipse.dot.bad">
+            <Setter Property="Fill" Value="{StaticResource DangerBrush}" />
+        </Style>
         <Style Selector="Button.small">
             <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
             <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- Chromeless buttons for list rows and tabs: the Border inside carries hover and selection. -->
+        <Style Selector="Button.flat">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.flat /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.flat:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.flat:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.approw">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.approw:pointerover">
+            <Setter Property="Background" Value="#262633" />
+        </Style>
+        <Style Selector="Border.approw.selected">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Border.approw.selected TextBlock.appname">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.pin">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.approw:pointerover Button.pin">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Button.pin.on">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.chip">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="Button.chip.on">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="Button.toggle.on">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.toggle.warnon">
+            <Setter Property="Background" Value="#3A2F12" />
+            <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="Border.tab">
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="0,6,0,8" />
+        </Style>
+        <Style Selector="Border.tab TextBlock.tablabel">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.tab.on">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Border.tab.on TextBlock.tablabel">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
         <Style Selector="ListBox.log">
             <Setter Property="Background" Value="#14141B" />
-            <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="0,6" />
         </Style>
         <Style Selector="ListBox.log ListBoxItem">
-            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Padding" Value="0" />
             <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <Style Selector="Border.logrow.error">
+            <Setter Property="Background" Value="#1FF87171" />
         </Style>
         <Style Selector="TextBlock.logline">
             <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
@@ -74,6 +179,12 @@
             <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="MinHeight" Value="17" />
+        </Style>
+        <Style Selector="TextBlock.logline.error">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="TextBlock.logline.warn">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
         </Style>
         <Style Selector="Border.row">
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -83,231 +194,631 @@
         <Style Selector="TextBox">
             <Setter Property="FontSize" Value="13" />
         </Style>
+        <!-- Too narrow for the log and the details side by side: the details sit over the log's right edge instead. -->
+        <Style Selector="Grid.narrow > Border#DetailsPanel">
+            <Setter Property="Grid.Column" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="ZIndex" Value="10" />
+            <Setter Property="BoxShadow" Value="-8 0 24 0 #80000000" />
+        </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="340,*">
+    <UserControl.Resources>
+        <!-- Shown in the new-sprout modal while it's open, and under the sprout's header otherwise. -->
+        <DataTemplate x:Key="TrustPanel" x:DataType="vm:SproutsViewModel">
+            <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" Padding="14,12">
+                <StackPanel Spacing="8">
+                    <TextBlock Classes="phead" Text="APPROVE BEFORE RUNNING" Foreground="{StaticResource WarnBrush}" />
+                    <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                               Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them." />
+                    <ItemsControl ItemsSource="{Binding PendingTrust}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PendingTrustItem">
+                                <StackPanel Margin="0,2" Spacing="1">
+                                    <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Path}" />
+                                    <TextBlock Classes="cell via" Text="{Binding Why}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="Approve and run" Command="{Binding ApproveAllCommand}" HorizontalAlignment="Left"
+                            Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <StreamGeometry x:Key="PinIcon">M9 3h6l-1 6 4 4H6l4-4z M11.25 13h1.5v8h-1.5z</StreamGeometry>
+    </UserControl.Resources>
 
-        <!-- New sprout, and the list -->
-        <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-            <DockPanel Margin="20,24,16,16">
-                <StackPanel DockPanel.Dock="Top" Spacing="10">
-                    <TextBlock Text="Sprouts" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="A sprout is one running copy of a trellis: its own worktrees (or the repos in place), ports, env files and containers." />
+    <Grid>
+        <!-- Every sprout, for seeing them all at once and clearing out old ones -->
+        <DockPanel IsVisible="{Binding !HasSelection}">
+            <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,18,24,14">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16">
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="Sprouts" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Text="{Binding OverviewSummary}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <ItemsControl Grid.Column="1" ItemsSource="{Binding OverviewChips}" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:OverviewChip">
+                                <Button Classes="chip" Classes.on="{Binding IsOn}" Margin="0,0,6,0"
+                                        Command="{Binding PickCommand}" CommandParameter="{Binding}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
+                                                 Classes.up="{Binding IsUpKind}" Classes.bad="{Binding IsFailedKind}" />
+                                        <TextBlock Text="{Binding Label}" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Grid.Column="2" Content="+ New sprout" Command="{Binding OpenAddCommand}" IsEnabled="{Binding !IsWorking}"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
 
-                    <TextBlock Classes="phead" Text="NEW SPROUT" Margin="0,6,0,0" />
-                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding !HasTrellises}"
-                               Text="Add a trellis on the Trellises page first." />
-                    <ComboBox ItemsSource="{Binding TrellisNames}" SelectedItem="{Binding NewTrellis}" HorizontalAlignment="Stretch"
-                              PlaceholderText="Trellis" IsVisible="{Binding HasTrellises}" />
-                    <TextBox Text="{Binding NewName}" PlaceholderText="Sprout name, e.g. feat-x" IsVisible="{Binding HasTrellises}" />
-                    <TextBox Text="{Binding NewBranch}" PlaceholderText="Branch (default: the sprout's name)" IsVisible="{Binding HasTrellises}" />
-                    <Button Content="Sprout it" Command="{Binding CreateCommand}" HorizontalAlignment="Left" IsVisible="{Binding HasTrellises}"
-                            IsEnabled="{Binding !IsWorking}"
-                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
-                    <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12" TextWrapping="Wrap"
-                               Classes.bad="{Binding FormFailed}"
-                               IsVisible="{Binding FormMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,9" MinHeight="44">
+                <Panel>
+                    <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding NoneChecked}" VerticalAlignment="Center">
+                        <TextBlock Text="Tick sprouts to bring up, take down or remove several at once." FontSize="12.5"
+                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <Button Classes="flat" Command="{Binding SelectStaleCommand}" IsVisible="{Binding HasStale}" HorizontalAlignment="Left">
+                            <TextBlock Text="{Binding StaleLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
+                        </Button>
+                    </StackPanel>
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8" IsVisible="{Binding HasChecked}">
+                        <TextBlock Text="{Binding CheckedLabel}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <Button Grid.Column="1" Classes="small" Content="Bring up" Command="{Binding BulkUpCommand}" IsEnabled="{Binding !IsWorking}" />
+                        <Button Grid.Column="2" Classes="small" Content="Take down" Command="{Binding BulkDownCommand}" IsEnabled="{Binding !IsWorking}" />
+                        <Button Grid.Column="3" Content="Remove…" Command="{Binding AskBulkRemoveCommand}" IsEnabled="{Binding !IsWorking}"
+                                Background="Transparent" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}"
+                                BorderThickness="1" Padding="10,3" FontSize="12" />
+                        <Button Grid.Column="4" Classes="flat" Command="{Binding ClearCheckedCommand}" VerticalAlignment="Center">
+                            <TextBlock Text="Clear" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
+                        </Button>
+                        <TextBlock Grid.Column="5" Text="{Binding GuardNote}" FontSize="12" Foreground="{StaticResource WarnBrush}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    </Grid>
+                </Panel>
+            </Border>
 
-                    <!-- Approval before anything runs -->
-                    <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" IsVisible="{Binding HasPendingTrust}" Padding="12,10">
-                        <StackPanel Spacing="8">
-                            <TextBlock Classes="phead" Text="APPROVE BEFORE RUNNING" Foreground="{StaticResource WarnBrush}" />
-                            <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
-                                       Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them." />
-                            <ItemsControl ItemsSource="{Binding PendingTrust}">
+            <TextBlock DockPanel.Dock="Top" Margin="24,24" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
+                       Text="No sprouts yet. + New sprout makes one from a trellis." />
+
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsVisible="{Binding !IsEmpty}">
+                <StackPanel MinWidth="980">
+                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130" ColumnSpacing="12" Margin="24,8,24,6">
+                        <CheckBox IsChecked="{Binding AllChecked, Mode=OneWay}" Command="{Binding ToggleAllCheckedCommand}" ToolTip.Tip="Tick every one shown" />
+                        <TextBlock Grid.Column="1" Classes="phead" Text="SPROUT" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Classes="phead" Text="TRELLIS" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="3" Classes="phead" Text="STATE" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="4" Classes="phead" Text="APPS" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="5" Classes="phead" Text="PORTS" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="6" Classes="phead" Text="WORKTREES" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="7" Classes="phead" Text="LAST UP" VerticalAlignment="Center" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding OverviewRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:OverviewRow">
+                                <Border Classes="approw" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="24,8">
+                                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130" ColumnSpacing="12">
+                                        <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Classes="flat" HorizontalAlignment="Left" CommandParameter="{Binding}"
+                                                Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenOverviewRowCommand}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TitleBrush}" />
+                                                <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Trellis}" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                            <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
+                                                     Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                                            <TextBlock Classes="state" Text="{Binding State}" FontSize="12.5"
+                                                       Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Ports}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="6" Classes="cell state" Text="{Binding Worktrees}" VerticalAlignment="Center"
+                                                   Classes.bad="{Binding WorktreesWarn}" />
+                                        <TextBlock Grid.Column="7" Classes="cell via" Text="{Binding LastUp}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- The sprout picked in the nav. The page never scrolls: the list, the log and the details each scroll on their own. -->
+        <DockPanel IsVisible="{Binding HasSelection}">
+            <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="22,16,22,0">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Selected.Title}" FontSize="19" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock Classes="state" Text="{Binding Selected.State}" FontSize="12"
+                                           Classes.up="{Binding Selected.IsUp}" Classes.bad="{Binding Selected.IsFailed}" />
+                                <TextBlock Text="{Binding Selected.Branch}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                <TextBlock Text="{Binding Selected.Record.PortPolicy, StringFormat='{}{0} ports'}" FontSize="12"
+                                           Foreground="{StaticResource MutedBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Button Content="Start all" Command="{Binding StartAppsCommand}" Padding="12,6" FontSize="12.5"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+                            <Button Content="Stop apps" Command="{Binding StopAppsCommand}" Padding="12,6" FontSize="12.5"
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
+                            <Button Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
+                            <Button Content="⋯" Padding="10,6" FontSize="12.5" ToolTip.Tip="More"
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}">
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuItem Header="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" />
+                                        <MenuItem Header="Remove…" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <SelectableTextBlock Text="{Binding Selected.Record.Error}" FontSize="12" Foreground="{StaticResource DangerBrush}"
+                                         TextWrapping="Wrap" IsVisible="{Binding Selected.IsFailed}" />
+                    <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
+                               Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageOnPage}" />
+                    <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap"
+                               Classes.bad="{Binding AppsMessageIsBad}" IsVisible="{Binding HasAppsMessage}" />
+                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TrustPanel}" IsVisible="{Binding TrustOnPage}" />
+
+                    <StackPanel Orientation="Horizontal" Spacing="18">
+                        <Button Classes="flat" Command="{Binding ShowAppsTabCommand}" HorizontalAlignment="Left">
+                            <Border Classes="tab" Classes.on="{Binding OnAppsTab}">
+                                <TextBlock Classes="tablabel" Text="Apps and logs" FontSize="13" FontWeight="SemiBold" />
+                            </Border>
+                        </Button>
+                        <Button Classes="flat" Command="{Binding ShowInfraTabCommand}" HorizontalAlignment="Left">
+                            <Border Classes="tab" Classes.on="{Binding OnInfraTab}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="tablabel" Text="Infra, worktrees and files" FontSize="13" FontWeight="SemiBold" />
+                                    <Border Background="#3A2F12" CornerRadius="999" Padding="7,0" IsVisible="{Binding HasWarnings}">
+                                        <TextBlock Text="{Binding WarningsBadge}" FontSize="11" Foreground="{StaticResource WarnBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Infra, worktrees and files -->
+            <ScrollViewer IsVisible="{Binding OnInfraTab}" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="22,18" Spacing="16" MaxWidth="1200" HorizontalAlignment="Stretch">
+                    <Border Classes="panel" BorderBrush="#5C4A17" IsVisible="{Binding HasWarnings}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="WARNINGS" Foreground="{StaticResource WarnBrush}" />
+                            <ItemsControl ItemsSource="{Binding Warnings}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:PendingTrustItem">
-                                        <StackPanel Margin="0,2" Spacing="1">
-                                            <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Path}" />
-                                            <TextBlock Classes="cell via" Text="{Binding Why}" />
+                                    <DataTemplate x:DataType="vm:ProblemRow">
+                                        <StackPanel Margin="0,3" Spacing="1">
+                                            <TextBlock Classes="cell" Text="{Binding Message}" />
+                                            <TextBlock Classes="cell via mono" Text="{Binding Where}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <Button Content="Approve and run" Command="{Binding ApproveAllCommand}" HorizontalAlignment="Left"
-                                    Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
                         </StackPanel>
                     </Border>
-
-                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,0" />
-                </StackPanel>
-
-                <TextBlock DockPanel.Dock="Top" Margin="0,12,0,0" FontSize="12.5" TextWrapping="Wrap"
-                           Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
-                           Text="No sprouts yet." />
-
-                <ListBox ItemsSource="{Binding Sprouts}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,8,0,0">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SproutItem">
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                                    <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
-                                </StackPanel>
-                                <TextBlock Grid.Column="1" Classes="state" Text="{Binding State}" FontSize="11.5" VerticalAlignment="Center"
-                                           Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                    <Border Classes="panel">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="INFRA (HOST PORT : CONTAINER PORT)" />
+                            <ItemsControl ItemsSource="{Binding Infra}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SproutInfraRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="220,*">
+                                                <TextBlock Classes="cell" Text="{Binding Name}" />
+                                                <SelectableTextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Ports}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="panel">
+                        <StackPanel Spacing="6">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="phead" Text="WORKTREES" />
+                                <TextBlock Grid.Column="1" Classes="cell via" Text="asking git…" IsVisible="{Binding InfraLoading}" />
                             </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
+                            <ItemsControl ItemsSource="{Binding Worktrees}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:WorktreeRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="160,*,220" ColumnSpacing="10">
+                                                <TextBlock Classes="cell" Text="{Binding Repo}" />
+                                                <SelectableTextBlock Grid.Column="1" Classes="cell via mono" Text="{Binding Folder}" />
+                                                <TextBlock Grid.Column="2" Classes="cell up" Classes.bad="{Binding IsWarn}" Text="{Binding Status}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="panel">
+                        <StackPanel Spacing="6">
+                            <TextBlock Classes="phead" Text="FILES SPRIG WROTE" />
+                            <ItemsControl ItemsSource="{Binding WrittenFiles}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:WrittenFileRow">
+                                        <Border Classes="row">
+                                            <Grid ColumnDefinitions="*,140,220" ColumnSpacing="10">
+                                                <SelectableTextBlock Classes="cell mono" FontSize="12" Text="{Binding Path}" />
+                                                <TextBlock Grid.Column="1" Classes="cell via" Text="{Binding What}" />
+                                                <TextBlock Grid.Column="2" Classes="cell up" Classes.bad="{Binding IsWarn}" Text="{Binding Status}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Apps and logs -->
+            <Grid IsVisible="{Binding OnAppsTab}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340" MinWidth="240" MaxWidth="560" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" MinWidth="320" />
+                </Grid.ColumnDefinitions>
+
+                <!-- The list picks what the log shows: every app, or one -->
+                <DockPanel Grid.Column="0">
+                    <StackPanel DockPanel.Dock="Top" Margin="12,10,12,8" Spacing="8">
+                        <ItemsControl ItemsSource="{Binding Chips}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StateChip">
+                                    <Button Classes="chip" Classes.on="{Binding IsOn}" Margin="0,0,6,6"
+                                            Command="{Binding PickCommand}" CommandParameter="{Binding}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
+                                                     Classes.up="{Binding IsReadyKind}" Classes.bad="{Binding IsProblemKind}" />
+                                            <TextBlock Text="{Binding Label}" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBox Text="{Binding AppFilter}" PlaceholderText="{Binding Apps.Count, StringFormat='Filter {0} apps'}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding ListCaption}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                            <Button Grid.Column="1" Classes="flat" Command="{Binding ToggleAllReposCommand}" HorizontalAlignment="Right">
+                                <TextBlock Text="{Binding FoldLabel}" FontSize="11.5" Foreground="{StaticResource AccentBrush}" />
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+                    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="AppList" ItemsSource="{Binding ListRows}" Margin="0,4,0,10">
+                            <ItemsControl.DataTemplates>
+                                <DataTemplate DataType="vm:AllAppsEntry" x:DataType="vm:AllAppsEntry">
+                                    <Button Classes="flat" Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenAllAppsCommand}">
+                                        <Border Classes="approw" Classes.selected="{Binding IsSelected}" Padding="12,8">
+                                            <Grid ColumnDefinitions="22,*,Auto">
+                                                <PathIcon Width="13" Height="13" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Left"
+                                                          Data="M3 5h18v2H3z M3 11h18v2H3z M3 17h12v2H3z" />
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Classes="appname" Text="All apps" FontSize="13" Foreground="{StaticResource TitleBrush}" />
+                                                    <TextBlock Text="{Binding Caption}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="{Binding Count}" FontSize="11.5" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource MutedBrush}" />
+                                            </Grid>
+                                        </Border>
+                                    </Button>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:AppListHeader" x:DataType="vm:AppListHeader">
+                                    <Button Classes="flat" IsHitTestVisible="{Binding CanFold}" CommandParameter="{Binding}"
+                                            Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).ToggleRepoCommand}">
+                                        <Grid ColumnDefinitions="14,*,Auto" Margin="12,10,12,4">
+                                            <TextBlock Text="{Binding Chevron}" FontSize="10" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="11" FontWeight="SemiBold" LetterSpacing="1"
+                                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Classes="state" Text="{Binding Caption}" FontSize="11"
+                                                       Classes.bad="{Binding CaptionIsBad}" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                                <DataTemplate DataType="vm:AppListEntry" x:DataType="vm:AppListEntry">
+                                    <Border Classes="approw" Classes.selected="{Binding Row.IsSelected}" Padding="0,0,8,0">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <Button Classes="flat" CommandParameter="{Binding Row}"
+                                                    Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenAppRowCommand}">
+                                                <Grid ColumnDefinitions="22,*,Auto" Margin="12,6,0,6">
+                                                    <Ellipse Classes="dot" Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                             Classes.up="{Binding Row.IsGood}" Classes.busy="{Binding Row.IsBusy}"
+                                                             Classes.bad="{Binding Row.IsProblem}" />
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Classes="appname" Text="{Binding Row.App}" FontSize="13"
+                                                                   Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
+                                                        <Grid ColumnDefinitions="Auto,*">
+                                                            <TextBlock Text="{Binding Row.Repo, StringFormat='{}{0} · '}" IsVisible="{Binding InPinned}"
+                                                                       FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                                            <TextBlock Grid.Column="1" Classes="state" Text="{Binding Row.StateLine}" FontSize="11.5"
+                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Row.StateLine}"
+                                                                       Classes.up="{Binding Row.IsGood}" Classes.bad="{Binding Row.IsProblem}"
+                                                                       Classes.busy="{Binding Row.IsBusy}" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Row.Port}" FontSize="11.5" Margin="8,0,4,0"
+                                                               FontFamily="Cascadia Mono,Consolas,monospace" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                </Grid>
+                                            </Button>
+                                            <Button Grid.Column="1" Classes="flat pin" Classes.on="{Binding Row.IsPinned}" Width="26" Height="26"
+                                                    ToolTip.Tip="Pin" VerticalAlignment="Center" CommandParameter="{Binding Row}"
+                                                    Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).TogglePinCommand}">
+                                                <PathIcon Width="13" Height="13" Data="{StaticResource PinIcon}" />
+                                            </Button>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                                                        IsVisible="{Binding Row.IsSelected}" Margin="4,0,0,0">
+                                                <Button Classes="small" Content="Start" IsVisible="{Binding !Row.IsAlive}" Padding="8,3" CommandParameter="{Binding Row}"
+                                                        Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).StartAppCommand}" />
+                                                <Button Classes="small" Content="Restart" IsVisible="{Binding Row.IsAlive}" Padding="8,3" CommandParameter="{Binding Row}"
+                                                        Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).StartAppCommand}" />
+                                                <Button Classes="small" Content="Stop" IsVisible="{Binding Row.IsAlive}" Padding="8,3" CommandParameter="{Binding Row}"
+                                                        Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).StopAppCommand}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.DataTemplates>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="1" Width="5" ResizeDirection="Columns" Background="Transparent"
+                              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0" />
+
+                <!-- The log the list picked, with the picked app's details beside it (over it, in a narrow window) -->
+                <Grid x:Name="LogArea" Grid.Column="2" ColumnDefinitions="*,Auto">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,10">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding LogTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock Classes="state" Text="{Binding LogSub}" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                               Classes.up="{Binding LogApp.IsGood, FallbackValue=False}"
+                                               Classes.bad="{Binding LogApp.IsProblem, FallbackValue=False}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0" IsVisible="{Binding Logs.IsAll}" VerticalAlignment="Center">
+                                    <Button Classes="toggle" Classes.on="{Binding StreamingList}" Command="{Binding StreamListCommand}"
+                                            CornerRadius="6,0,0,6" Content="{Binding AllApps.Count, StringFormat='Apps in the list · {0}'}" />
+                                    <Button Classes="toggle" Classes.on="{Binding StreamPinned}" Command="{Binding StreamPinsCommand}"
+                                            CornerRadius="0,6,6,0" BorderThickness="0,1,1,1" IsEnabled="{Binding HasPins}"
+                                            Content="{Binding PinnedCount, StringFormat='Pinned · {0}'}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" IsVisible="{Binding Logs.IsOne}" VerticalAlignment="Center">
+                                    <Button Classes="small" Content="Start" IsVisible="{Binding !LogApp.IsAlive, FallbackValue=False}"
+                                            Command="{Binding StartAppCommand}" CommandParameter="{Binding LogApp}" />
+                                    <Button Classes="small" Content="Restart" IsVisible="{Binding LogApp.IsAlive, FallbackValue=False}"
+                                            Command="{Binding StartAppCommand}" CommandParameter="{Binding LogApp}" />
+                                    <Button Classes="small" Content="Stop" IsVisible="{Binding LogApp.IsAlive, FallbackValue=False}"
+                                            Command="{Binding StopAppCommand}" CommandParameter="{Binding LogApp}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MaxWidth="280" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="LogSearch" Text="{Binding Logs.Search}" PlaceholderText="Search this log" FontSize="12.5" />
+                                <Button Grid.Column="2" Classes="toggle" Classes.warnon="{Binding Logs.ProblemsOnly}"
+                                        Content="Warnings and errors" Click="ToggleProblems" />
+                                <Button Grid.Column="3" Classes="toggle" Classes.on="{Binding DetailsOpen}" Content="Details"
+                                        Command="{Binding ToggleDetailsCommand}" />
+                            </Grid>
+                        </Border>
+                        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,5">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <TextBlock Classes="cell via" Text="{Binding Logs.Summary}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" Text="Each log keeps its search, filter, pause and place." FontSize="11"
+                                           Foreground="#6E6E82" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                            </Grid>
+                        </Border>
+                        <Grid>
+                            <ListBox x:Name="LogList" Classes="log" ItemsSource="{Binding Logs.Lines}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="logs:LogRow">
+                                        <Border Classes="logrow" Classes.error="{Binding IsError}" Padding="12,0">
+                                        <Grid ColumnDefinitions="88,Auto,*">
+                                            <TextBlock Text="{Binding Time}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12"
+                                                       Foreground="#5F5F74" VerticalAlignment="Top" />
+                                            <Button Grid.Column="1" Classes="flat" Width="110" Margin="0,0,10,0" VerticalAlignment="Top"
+                                                    IsVisible="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).Logs.IsAll}"
+                                                    ToolTip.Tip="Open its own log" CommandParameter="{Binding}"
+                                                    Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenAppOfLineCommand}">
+                                                <TextBlock Text="{Binding Label}" Foreground="{Binding LabelBrush}" TextAlignment="Right"
+                                                           FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                            </Button>
+                                            <controls:AnsiLine Grid.Column="2" Line="{Binding}" Classes="logline"
+                                                               Classes.error="{Binding IsError}" Classes.warn="{Binding IsWarning}" />
+                                        </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <Button IsVisible="{Binding Logs.IsPaused}" Command="{Binding Logs.JumpToLatestCommand}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold"
+                                    CornerRadius="999" Padding="14,7" FontSize="12.5" Content="{Binding Logs.PausedText}" />
+                        </Grid>
+                    </DockPanel>
+
+                    <!-- The picked app's details: beside the log rather than above it -->
+                    <Border x:Name="DetailsPanel" Grid.Column="1" Width="300" IsVisible="{Binding DetailsOpen}" Background="{StaticResource PanelBgBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="16,14" Spacing="14" IsVisible="{Binding Details, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Details.Repo}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                    <TextBlock Text="{Binding Details.Name}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock Classes="state" Text="{Binding PickedApp.StateLine}" FontSize="12" TextWrapping="Wrap"
+                                               Classes.up="{Binding PickedApp.IsGood, FallbackValue=False}"
+                                               Classes.bad="{Binding PickedApp.IsProblem, FallbackValue=False}" />
+                                </StackPanel>
+                                <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="7" ColumnSpacing="10">
+                                    <TextBlock Classes="cell via" Text="Url" />
+                                    <SelectableTextBlock Grid.Column="1" Classes="cell mono" FontSize="12" Text="{Binding Details.Url}"
+                                                         Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Grid.Row="1" Classes="cell via" Text="Folder" />
+                                    <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="cell mono" FontSize="12" Text="{Binding Details.Folder}" />
+                                    <TextBlock Grid.Row="2" Classes="cell via" Text="Values in" />
+                                    <SelectableTextBlock Grid.Row="2" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ValuesIn}" />
+                                    <TextBlock Grid.Row="3" Classes="cell via" Text="Starts after" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.StartsAfter}" />
+                                    <TextBlock Grid.Row="4" Classes="cell via" Text="Ready when" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ReadyWhen}" />
+                                    <TextBlock Grid.Row="5" Classes="cell via" Text="Restarts" />
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding PickedApp.Restarts}" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Classes="small" Content="Open folder" Command="{Binding OpenFolderCommand}" />
+                                    <Button Classes="small" Content="Copy env" Click="CopyEnv" />
+                                </StackPanel>
+                                <StackPanel Spacing="4" IsVisible="{Binding Details.HasSettings, FallbackValue=False}">
+                                    <TextBlock Classes="phead" Text="VALUES" />
+                                    <ItemsControl ItemsSource="{Binding Details.Settings}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SettingRow">
+                                                <Border Classes="row">
+                                                    <StackPanel Spacing="1">
+                                                        <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Key}" Foreground="{StaticResource TitleBrush}" />
+                                                        <SelectableTextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Value}" />
+                                                        <TextBlock Classes="cell via" FontSize="11" Text="{Binding Via}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <SelectableTextBlock Classes="cell via" FontSize="11" Text="{Binding Details.LogFile, StringFormat='Log file: {0}'}" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </Grid>
+        </DockPanel>
+
+        <!-- Remove -->
+        <Border ZIndex="50" Background="#B3060A12" IsVisible="{Binding ConfirmingRemove}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelRemoveCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource DangerBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding Selected.Title, StringFormat='Remove {0}?'}" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock Classes="cell" Text="Its containers and their data (databases included) are deleted, and so are its worktrees. Sprig refuses if a worktree has changes that aren't committed." />
+                    <CheckBox IsChecked="{Binding DeleteBranch}" IsVisible="{Binding CanDeleteBranch}"
+                              Content="Also delete its branch (refused if it has commits no other branch or remote has)" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Keep it" Command="{Binding CancelRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
+                                Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
+                                Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </Border>
 
-        <!-- The selected sprout -->
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="28,24,28,28" Spacing="18" MaxWidth="1100" HorizontalAlignment="Stretch">
+        <!-- Remove several -->
+        <Border ZIndex="50" Background="#B3060A12" IsVisible="{Binding ConfirmingBulkRemove}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelBulkRemoveCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource DangerBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding CheckedLabel, StringFormat='Remove {0}?'}" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock Classes="cell" Text="Each one's containers and their data are deleted, and so are its worktrees. Any with changes that aren't committed are skipped, and the summary says which." />
+                    <TextBlock Classes="cell" Foreground="{StaticResource WarnBrush}" Text="{Binding GuardNote}"
+                               IsVisible="{Binding GuardNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <CheckBox IsChecked="{Binding BulkDeleteBranches}"
+                              Content="Also delete their branches (each refused if it has commits no other branch or remote has)" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Keep them" Command="{Binding CancelBulkRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
+                                Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Content="Remove them" Command="{Binding BulkRemoveCommand}" Background="{StaticResource DangerBrush}"
+                                Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
 
-                <TextBlock IsVisible="{Binding !HasSelection}" Margin="0,40,0,0" FontSize="14" Foreground="{StaticResource MutedBrush}"
-                           Text="Make a sprout on the left, or select one to see its folders, urls and ports." HorizontalAlignment="Center" />
-
-                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasSelection}">
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="{Binding Selected.Title}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <TextBlock Classes="state" Text="{Binding Selected.State}" FontSize="12.5"
-                                       Classes.up="{Binding Selected.IsUp}" Classes.bad="{Binding Selected.IsFailed}" />
-                            <TextBlock Text="{Binding Selected.Branch}" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
-                            <TextBlock Text="{Binding Selected.Record.PortPolicy, StringFormat='{}{0} ports'}" FontSize="12.5"
-                                       Foreground="{StaticResource MutedBrush}" />
+        <!-- New sprout -->
+        <Border ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelAddCommand}" />
+                <KeyBinding Gesture="Enter" Command="{Binding CreateCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="New sprout" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding !HasTrellises}"
+                               Text="Add a trellis on the Trellises page first." />
+                    <StackPanel Spacing="10" IsVisible="{Binding HasTrellises}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="phead" Text="TRELLIS" />
+                            <ComboBox ItemsSource="{Binding TrellisNames}" SelectedItem="{Binding NewTrellis}" HorizontalAlignment="Stretch" />
                         </StackPanel>
-                        <SelectableTextBlock Text="{Binding Selected.Record.Error}" FontSize="12" Foreground="{StaticResource DangerBrush}"
-                                             TextWrapping="Wrap" IsVisible="{Binding Selected.IsFailed}" />
-                    </StackPanel>
-                    <Button Grid.Column="1" Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
-                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
-                    <Button Grid.Column="2" Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" VerticalAlignment="Top"
-                            ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
-                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
-                    <Button Grid.Column="3" Content="Remove" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}"
-                            VerticalAlignment="Top" Background="Transparent" Foreground="{StaticResource DangerBrush}"
-                            BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
-                </Grid>
-
-                <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding ConfirmingRemove}">
-                    <StackPanel Spacing="10">
-                        <TextBlock Classes="phead" Text="REMOVE THIS SPROUT?" Foreground="{StaticResource DangerBrush}" />
-                        <TextBlock Classes="cell" Text="Its containers and their data (databases included) are deleted, and so are its worktrees. Sprig refuses if a worktree has changes that aren't committed." />
-                        <CheckBox IsChecked="{Binding DeleteBranch}" IsVisible="{Binding CanDeleteBranch}"
-                                  Content="Also delete its branch (refused if it has commits no other branch or remote has)" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
-                                    Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
-                            <Button Content="Keep it" Command="{Binding CancelRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
-                                    Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="phead" Text="NAME" />
+                            <TextBox x:Name="NewNameBox" Text="{Binding NewName}" PlaceholderText="e.g. feat-x" />
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="phead" Text="BRANCH" />
+                            <TextBox Text="{Binding NewBranch}" PlaceholderText="Default: the sprout's name" />
                         </StackPanel>
                     </StackPanel>
-                </Border>
-
-                <Border Classes="panel" IsVisible="{Binding HasSelection}">
-                    <StackPanel Spacing="6">
-                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                            <TextBlock Classes="phead" Text="APPS" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Classes="small" Content="Start all" Command="{Binding StartAppsCommand}"
-                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
-                            <Button Grid.Column="2" Classes="small" Content="Stop apps" Command="{Binding StopAppsCommand}" />
-                        </Grid>
-                        <TextBlock Classes="msg cell" Text="{Binding AppsMessage}" Classes.bad="{Binding AppsMessageIsBad}"
-                                   IsVisible="{Binding HasAppsMessage}" />
-                        <ItemsControl x:Name="AppRows" ItemsSource="{Binding Apps}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:SproutAppRow">
-                                    <Border Classes="row">
-                                        <Grid ColumnDefinitions="230,*,190,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
-                                            <StackPanel Spacing="1">
-                                                <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
-                                                <TextBlock Classes="cell via" Text="job: runs to the end" IsVisible="{Binding IsJob}" />
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Spacing="1">
-                                                <TextBlock Classes="state cell" Text="{Binding State}" Classes.up="{Binding IsGood}"
-                                                           Classes.bad="{Binding IsBad}" Classes.busy="{Binding IsBusy}" />
-                                                <TextBlock Classes="cell via" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" />
-                                            </StackPanel>
-                                            <SelectableTextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Url}" />
-                                            <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,4,0,0">
-                                                <SelectableTextBlock Classes="cell via mono" Text="{Binding Folder}" Margin="0,0,12,0" />
-                                                <TextBlock Classes="cell via" Text="{Binding Values, StringFormat='values in {0}'}" />
-                                            </WrapPanel>
-                                            <StackPanel Grid.Column="3" Grid.RowSpan="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
-                                                <Button Classes="small" Content="Start" IsVisible="{Binding !IsAlive}"
-                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).StartAppCommand}"
-                                                        CommandParameter="{Binding}" />
-                                                <Button Classes="small" Content="Restart" IsVisible="{Binding IsAlive}"
-                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).StartAppCommand}"
-                                                        CommandParameter="{Binding}" />
-                                                <Button Classes="small" Content="Stop" IsVisible="{Binding IsAlive}"
-                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).StopAppCommand}"
-                                                        CommandParameter="{Binding}" />
-                                                <Button Classes="small" Content="Log"
-                                                        Command="{Binding $parent[ItemsControl].((vm:SproutsViewModel)DataContext).ShowLogCommand}"
-                                                        CommandParameter="{Binding}" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                    <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
+                               Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageInModal}" />
+                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TrustPanel}" IsVisible="{Binding TrustInModal}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button Content="Cancel" Command="{Binding CancelAddCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Content="Sprout it" Command="{Binding CreateCommand}" IsVisible="{Binding HasTrellises}"
+                                IsEnabled="{Binding !IsWorking}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
                     </StackPanel>
-                </Border>
-
-                <Border Classes="panel" IsVisible="{Binding Log.IsOpen}">
-                    <DockPanel>
-                        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,240,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
-                            <TextBlock Classes="phead" Text="LOG" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{Binding Log.Title}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                            <TextBox Grid.Column="2" Text="{Binding Log.Search}" PlaceholderText="Search the log" />
-                            <CheckBox Grid.Column="3" IsChecked="{Binding Log.Follow}" Content="Follow" />
-                            <Button Grid.Column="4" Classes="small" Content="Close" Command="{Binding Log.CloseCommand}" />
-                        </Grid>
-                        <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" Spacing="1">
-                            <TextBlock Classes="cell via" Text="{Binding Log.Summary}" />
-                            <SelectableTextBlock Classes="cell via mono" Text="{Binding Log.FileShown}" />
-                        </StackPanel>
-                        <ListBox x:Name="LogList" Classes="log" ItemsSource="{Binding Log.Lines}" Height="420">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="vm:LogLine">
-                                    <controls:AnsiLine Line="{Binding}" Classes="logline" />
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
-                </Border>
-
-                <Border Classes="panel" IsVisible="{Binding HasSelection}">
-                    <StackPanel Spacing="6">
-                        <TextBlock Classes="phead" Text="INFRA (HOST PORT : CONTAINER PORT)" />
-                        <ItemsControl ItemsSource="{Binding Infra}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:SproutInfraRow">
-                                    <Border Classes="row">
-                                        <Grid ColumnDefinitions="220,*">
-                                            <TextBlock Classes="cell" Text="{Binding Name}" />
-                                            <SelectableTextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Ports}" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
-
-                <Border Classes="panel" IsVisible="{Binding HasWarnings}">
-                    <StackPanel Spacing="6">
-                        <TextBlock Classes="phead" Text="WARNINGS" Foreground="{StaticResource WarnBrush}" />
-                        <ItemsControl ItemsSource="{Binding Warnings}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:ProblemRow">
-                                    <StackPanel Margin="0,3" Spacing="1">
-                                        <TextBlock Classes="cell" Text="{Binding Message}" />
-                                        <TextBlock Classes="cell via mono" Text="{Binding Where}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </UserControl>

@@ -9,34 +9,73 @@ namespace Sprig.Tests.App;
 public class TrellisesViewModelTests
 {
     [Fact]
-    public async Task Adding_an_unapproved_trellis_asks_first_and_runs_nothing()
+    public async Task An_unapproved_trellis_is_listed_and_selected_by_its_file_name_but_runs_nothing_until_approved()
     {
         using var store = new TempStore();
         Directory.CreateDirectory(store.Root);
         var file = Path.Combine(store.Root, "storefront.trellis.cs");
-        File.WriteAllText(file, "using Sprig;\nreturn Trellis.Describe(\"storefront\").Emit(args);");
-        var vm = new TrellisesViewModel(new AppServices(store.Root)) { NewPath = file };
+        File.WriteAllText(file, "using Sprig;\nreturn Trellis.Describe(\"shop\").Emit(args);");
+        var vm = new TrellisesViewModel(new AppServices(store.Root));
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = file;
 
         await vm.AddCommand.ExecuteAsync(null);
 
-        Assert.True(vm.HasPendingTrust);
+        Assert.False(vm.IsAddOpen);
+        var item = Assert.Single(vm.Trellises);
+        Assert.Equal("storefront", item.Name);
+        Assert.True(item.NeedsApproval);
+        Assert.Equal(item, vm.Selected);
         var pending = Assert.Single(vm.PendingTrust);
         Assert.Equal(file.Replace('\\', '/'), pending.Path);
         Assert.False(pending.Changed);
-        Assert.Empty(vm.Trellises);
+        Assert.True(vm.PendingIsTrellis);
+        Assert.Null(vm.Plan);
     }
 
     [Fact]
-    public async Task A_path_that_is_not_a_file_is_refused_with_a_reason()
+    public async Task A_guessed_name_steps_aside_for_a_trellis_already_registered_under_it()
     {
         using var store = new TempStore();
-        var vm = new TrellisesViewModel(new AppServices(store.Root)) { NewPath = Path.Combine(store.Root, "nope.trellis.cs") };
+        Directory.CreateDirectory(Path.Combine(store.Root, "a"));
+        Directory.CreateDirectory(Path.Combine(store.Root, "b"));
+        var first = Path.Combine(store.Root, "a", "storefront.trellis.cs");
+        var second = Path.Combine(store.Root, "b", "storefront.trellis.cs");
+        File.WriteAllText(first, "using Sprig;\nreturn Trellis.Describe(\"one\").Emit(args);");
+        File.WriteAllText(second, "using Sprig;\nreturn Trellis.Describe(\"two\").Emit(args);");
+        var vm = new TrellisesViewModel(new AppServices(store.Root));
+
+        vm.NewPath = first;
+        await vm.AddCommand.ExecuteAsync(null);
+        vm.NewPath = second;
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Equal(["storefront", "storefront-2"], vm.Trellises.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task A_path_that_is_not_a_file_is_refused_with_a_reason_and_the_modal_stays_open()
+    {
+        using var store = new TempStore();
+        var vm = new TrellisesViewModel(new AppServices(store.Root));
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = Path.Combine(store.Root, "nope.trellis.cs");
 
         await vm.AddCommand.ExecuteAsync(null);
 
+        Assert.True(vm.IsAddOpen);
         Assert.True(vm.AddFailed);
         Assert.Contains("Choose a trellis file", vm.AddMessage);
+        Assert.Empty(vm.Trellises);
     }
+
+    [Theory]
+    [InlineData("C:/x/storefront.trellis.cs", "storefront")]
+    [InlineData("C:/x/Shop.Trellis.CS", "Shop")]
+    [InlineData("C:/x/shop.cs", "shop")]
+    [InlineData("C:/x/.trellis.cs", ".trellis")]
+    public void The_name_before_a_trellis_has_run_comes_from_its_file(string path, string expected)
+        => Assert.Equal(expected, TrellisItem.NameFromFile(path));
 
     [Fact]
     public void The_plan_view_lists_wiring_between_repos_and_masks_passwords()

@@ -1,21 +1,29 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
-using Sprig.App.ViewModels;
+using Sprig.Engine.Hosting;
 
 namespace Sprig.App.Controls;
+
+/// <summary>A line of output with its colours.</summary>
+public interface IAnsiLine
+{
+    IReadOnlyList<AnsiRun> Runs { get; }
+    bool IsSprig { get; }
+}
 
 /// <summary>A log line in the colours the app printed it in. Sprig's own lines are dimmed so the app's stand out.</summary>
 public sealed class AnsiLine : TextBlock
 {
-    public static readonly StyledProperty<LogLine?> LineProperty = AvaloniaProperty.Register<AnsiLine, LogLine?>(nameof(Line));
+    public static readonly StyledProperty<IAnsiLine?> LineProperty = AvaloniaProperty.Register<AnsiLine, IAnsiLine?>(nameof(Line));
 
     static readonly ConcurrentDictionary<int, IBrush> Brushes = new();
 
-    public LogLine? Line
+    public IAnsiLine? Line
     {
         get => GetValue(LineProperty);
         set => SetValue(LineProperty, value);

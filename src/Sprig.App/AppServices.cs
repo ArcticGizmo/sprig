@@ -24,6 +24,8 @@ public sealed class AppServices
     public TrellisLoader Loader { get; }
     public SproutService Sprouts { get; }
     public HostClient Host { get; }
+    public HostStatus HostStatus { get; }
+    public UiState Ui { get; }
 
     /// <param name="root">Store root; null means this profile's store.</param>
     public AppServices(string? root = null)
@@ -36,6 +38,8 @@ public sealed class AppServices
         Loader = new TrellisLoader(Definitions);
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
+        HostStatus = new HostStatus(Host);
+        Ui = new UiState(Paths);
         Sprouts = new SproutService(new SproutStore(Paths), new PortLeases(Paths), Settings,
             new GitClient(processes), new DockerCompose(processes), host: Host, loader: Loader);
     }

@@ -12,6 +12,7 @@ public sealed class LogTail(string file)
 {
     static readonly byte[] Bom = [0xEF, 0xBB, 0xBF];
 
+    readonly LogLineParser _parser = new();
     long _position;
 
     public string File => file;
@@ -19,7 +20,19 @@ public sealed class LogTail(string file)
     /// <summary>Goes up each time the log was found started afresh, so a reader can drop what it showed before.</summary>
     public int Generation { get; private set; }
 
-    public IReadOnlyList<string> ReadNew()
+    /// <summary>At most this many lines per read; the rest wait for the next, so one very busy log can't hold up a
+    /// reader that's following several.</summary>
+    public int MaxLinesPerRead { get; init; } = int.MaxValue;
+
+    public IReadOnlyList<LogEntry> ReadNew()
+    {
+        var entries = new List<LogEntry>();
+        foreach (var raw in ReadNewRaw())
+            if (_parser.Parse(raw) is { } entry) entries.Add(entry);
+        return entries;
+    }
+
+    IReadOnlyList<string> ReadNewRaw()
     {
         if (!System.IO.File.Exists(file)) return [];
         byte[] bytes;
@@ -29,6 +42,7 @@ public sealed class LogTail(string file)
             if (stream.Length < _position)
             {
                 _position = 0;
+                _parser.Reset();
                 Generation++;
             }
             if (stream.Length == _position) return [];
@@ -40,6 +54,16 @@ public sealed class LogTail(string file)
 
         var end = Array.LastIndexOf(bytes, (byte)'\n');
         if (end < 0) return [];
+        if (MaxLinesPerRead != int.MaxValue)
+        {
+            var lines = 0;
+            for (var i = 0; i <= end; i++)
+            {
+                if (bytes[i] != '\n' || ++lines < MaxLinesPerRead) continue;
+                end = i;
+                break;
+            }
+        }
         var start = _position == 0 && bytes.AsSpan().StartsWith(Bom) ? Bom.Length : 0;
         _position += end + 1;
         if (end < start) return [];

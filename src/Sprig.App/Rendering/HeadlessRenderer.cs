@@ -16,7 +16,7 @@ namespace Sprig.App.Rendering;
 /// Renders app views to PNG on a headless Skia platform, so the UI can be checked without a display or any
 /// screen capture. Invoked via <c>sprig-gui render-editor &lt;file.png&gt;</c>.
 /// </summary>
-internal static class HeadlessRenderer
+internal static partial class HeadlessRenderer
 {
     /// <summary>The editor spike after the GUI's "add env var" edit, with a typo so the problems list has a row.</summary>
     public static int RenderEditor(string outFile)
@@ -100,10 +100,24 @@ internal static class HeadlessRenderer
                 Pump(TimeSpan.FromMilliseconds(100));
             Pump(TimeSpan.FromMilliseconds(500));
 
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
-            window.CaptureRenderedFrame()?.Save(outFile);
+            Save(window, outFile);
+            var planned = vm.Trellises.Plan is not null;
+
+            vm.Trellises.OpenAddCommand.Execute(null);
+            vm.Trellises.NewPath = Sprig.App.Controls.PathCompletion.ToPosix(Path.GetFullPath(trellisFile));
+            Pump(TimeSpan.FromMilliseconds(400));
+            var addFile = Sibling(outFile, "add");
+            Save(window, addFile);
+
+            // The same file, added again once its approval is revoked, shows what a not-yet-approved trellis looks like.
+            services.Trust.Revoke(trellisFile);
+            Wait(vm.Trellises.AddCommand.ExecuteAsync(null));
+            Pump(TimeSpan.FromMilliseconds(400));
+            var unapprovedFile = Sibling(outFile, "unapproved");
+            Save(window, unapprovedFile);
             window.Close();
-            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (plan: {vm.Trellises.Plan is not null}, problems: {vm.Trellises.LoadProblems.Count}, took {clock.Elapsed.TotalSeconds:0.0}s)");
+
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (plan: {planned}, problems: {vm.Trellises.LoadProblems.Count}, took {clock.Elapsed.TotalSeconds:0.0}s), {Path.GetFullPath(addFile)} and {Path.GetFullPath(unapprovedFile)}");
             return 0;
         }
         catch (Exception ex)
@@ -132,18 +146,21 @@ internal static class HeadlessRenderer
                 .WithInterFont()
                 .SetupWithoutStarting();
 
-            var vm = new MainWindowViewModel(new AppServices(), checkForUpdates: false);
+            var services = new AppServices();
+            var vm = new MainWindowViewModel(services, checkForUpdates: false);
             vm.NavigateCommand.Execute(vm.Sprouts);
+            vm.Sprouts.Show(vm.Sprouts.Sprouts.FirstOrDefault()?.Record.Key);
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1400 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(500));
 
-            // Timers don't tick here, so poll as the page's timer would, then open a log that has something in it.
+            // Timers don't tick here, so poll as the window's and the page's timers would, then open a log that has something in it.
+            Wait(services.HostStatus.PollAsync());
             Wait(vm.Sprouts.PollAsync());
             if ((vm.Sprouts.Apps.FirstOrDefault(a => a.IsAlive && !a.IsJob) ?? vm.Sprouts.Apps.FirstOrDefault()) is { } app)
             {
-                vm.Sprouts.ShowLogCommand.Execute(app);
-                Wait(vm.Sprouts.Log.PollAsync());
+                vm.Sprouts.OpenApp(app);
+                Wait(vm.Sprouts.Logs.PollAsync());
             }
             Pump(TimeSpan.FromMilliseconds(600));
             Save(window, pageFile);
@@ -189,6 +206,9 @@ internal static class HeadlessRenderer
         var clock = Stopwatch.StartNew();
         while (!task.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(20)) Pump(TimeSpan.FromMilliseconds(50));
     }
+
+    static string Sibling(string file, string suffix)
+        => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(file))!, $"{Path.GetFileNameWithoutExtension(file)}-{suffix}{Path.GetExtension(file)}");
 
     static void Save(Avalonia.Controls.TopLevel window, string file)
     {

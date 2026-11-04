@@ -154,6 +154,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         readonly TaskCompletionSource _stopAsked = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly Regex? _readyLog = spec.ReadyLog is { } pattern ? new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1)) : null;
         StreamWriter? _log;
+        DateOnly? _logDate;
         Process? _process;
         Task? _stopping;
         int _restarts;
@@ -169,7 +170,11 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 if (previous is not null) await previous._ended.Task;
                 if (Stopping) return;
                 Directory.CreateDirectory(Path.GetDirectoryName(logFile)!);
-                lock (_gate) _log = new StreamWriter(new FileStream(logFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), Encoding.UTF8) { AutoFlush = true };
+                lock (_gate)
+                {
+                    _log = new StreamWriter(new FileStream(logFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite), Encoding.UTF8) { AutoFlush = true };
+                    _logDate = null;
+                }
 
                 if (spec.Build is { } build)
                 {
@@ -563,9 +568,23 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
 
         void Write(string line)
         {
+            var now = DateTime.Now;
+            var today = DateOnly.FromDateTime(now);
             lock (_gate)
             {
-                try { _log?.WriteLine(line); } catch (ObjectDisposedException) { /* the runner ended mid-line */ }
+                if (_log is null) return;
+                try
+                {
+                    if (_logDate != today)
+                    {
+                        _log.WriteLine(LogLineFormat.DateMarker(today));
+                        _logDate = today;
+                    }
+                    // Each line of a multi-line message gets the time, so readers never see an untimed line from sprig.
+                    var prefix = LogLineFormat.Prefix(now);
+                    foreach (var part in line.Split('\n')) _log.WriteLine(prefix + part.TrimEnd('\r'));
+                }
+                catch (ObjectDisposedException) { /* the runner ended mid-line */ }
             }
         }
     }

@@ -18,6 +18,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public HomeViewModel Home { get; }
     public TrellisesViewModel Trellises { get; }
     public SproutsViewModel Sprouts { get; }
+    public SproutsNavViewModel SproutsNav { get; }
     public EditorSpikeViewModel EditorSpike { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
@@ -34,6 +35,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public UpdateInstaller Updater { get; } = new();
 
+    /// <summary>The app-wide host poll; the window's timer drives it.</summary>
+    public HostStatus HostStatus { get; }
+
     public bool ShowUpdateNotice => !string.IsNullOrEmpty(UpdateNotice);
 
     public bool IsDevInstance => AppProfile.IsDev;
@@ -43,6 +47,7 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <param name="checkForUpdates">Tests pass false so constructing the window never touches the network.</param>
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
     {
+        HostStatus = services.HostStatus;
         Home = new HomeViewModel();
         Trellises = new TrellisesViewModel(services);
         Sprouts = new SproutsViewModel(services);
@@ -51,13 +56,14 @@ public partial class MainWindowViewModel : ViewModelBase
         About = new AboutViewModel(Updater);
 
         Pages = [Home, Trellises, Sprouts, EditorSpike, Settings, About];
+        SproutsNav = new SproutsNavViewModel(services, Sprouts, () => CurrentPage = Sprouts);
         NavItems =
         [
             Home,
             new NavHeaderViewModel("DEFINE"),
             Trellises,
             new NavHeaderViewModel("RUN"),
-            Sprouts,
+            SproutsNav,
             new NavHeaderViewModel("SPIKES"),
             EditorSpike,
         ];

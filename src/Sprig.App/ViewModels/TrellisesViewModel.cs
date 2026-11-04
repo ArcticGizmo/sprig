@@ -13,11 +13,23 @@ using Sprig.Model;
 
 namespace Sprig.App.ViewModels;
 
-public sealed record TrellisItem(string Name, string Path)
+/// <param name="NeedsApproval">The file's current content isn't approved, so it hasn't run and its name may only be a
+/// guess from the file name.</param>
+public sealed record TrellisItem(string Name, string Path, bool NeedsApproval = false)
 {
     public string DisplayPath => Path.Replace('\\', '/');
     public string Folder => System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? "";
     public bool Missing => !File.Exists(Path);
+
+    /// <summary>The name a trellis is listed under before it has run: its file name without <c>.trellis.cs</c>.</summary>
+    public static string NameFromFile(string path)
+    {
+        var file = System.IO.Path.GetFileName(path);
+        foreach (var suffix in (string[])[".trellis.cs", ".cs"])
+            if (file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && file.Length > suffix.Length)
+                return file[..^suffix.Length];
+        return System.IO.Path.GetFileNameWithoutExtension(file);
+    }
 }
 
 /// <param name="Changed">An earlier version was approved; this content wasn't.</param>
@@ -36,12 +48,14 @@ public sealed record PendingTrustItem(string Path, string Sha256, bool Changed, 
 
 /// <summary>
 /// The Trellises page: register trellis files, and see what a sprout of the selected one would get. Definitions only
-/// run once their exact content is approved; anything that isn't is listed for the user to approve first.
+/// run once their exact content is approved; anything that isn't is listed for the user to approve first. Registering
+/// doesn't need approval, so a trellis is in the list (and can be read) before anything in it has run.
 /// </summary>
 public partial class TrellisesViewModel : PageViewModel
 {
     readonly AppServices _services;
     Func<Task>? _afterApproval;
+    bool _quietSelection;
 
     public override string Title => "Trellises";
 
@@ -50,6 +64,7 @@ public partial class TrellisesViewModel : PageViewModel
     public ObservableCollection<ProblemRow> LoadProblems { get; } = [];
 
     [ObservableProperty] private TrellisItem? _selected;
+    [ObservableProperty] private bool _isAddOpen;
     [ObservableProperty] private string _newPath = "";
     [ObservableProperty] private string _addMessage = "";
     [ObservableProperty] private bool _addFailed;
@@ -57,6 +72,7 @@ public partial class TrellisesViewModel : PageViewModel
     [ObservableProperty] private string _busyText = "";
     [ObservableProperty] private PlanView? _plan;
     [ObservableProperty] private bool _hasPendingTrust;
+    [ObservableProperty] private bool _pendingIsTrellis;
     [ObservableProperty] private bool _hasLoadProblems;
 
     public bool IsEmpty => Trellises.Count == 0;
@@ -70,21 +86,45 @@ public partial class TrellisesViewModel : PageViewModel
 
     protected override void OnActivated() => Refresh();
 
-    void Refresh()
+    void Refresh() => Refresh(Selected?.Name, replan: true);
+
+    /// <param name="replan">False when the caller shows what goes with the selection itself.</param>
+    void Refresh(string? keep, bool replan)
     {
-        var keep = Selected?.Name;
+        var previous = Selected;
         Trellises.Clear();
-        foreach (var e in _services.Trellises.List()) Trellises.Add(new TrellisItem(e.Name, e.Path));
+        foreach (var e in _services.Trellises.List()) Trellises.Add(new TrellisItem(e.Name, e.Path, NeedsApproval(e.Path)));
         NavCount = Trellises.Count;
         OnPropertyChanged(nameof(IsEmpty));
-        Selected = Trellises.FirstOrDefault(t => t.Name == keep) ?? Selected ?? Trellises.FirstOrDefault();
+        _quietSelection = !replan;
+        try { Selected = Trellises.FirstOrDefault(t => t.Name == keep) ?? previous ?? Trellises.FirstOrDefault(); }
+        finally { _quietSelection = false; }
+    }
+
+    bool NeedsApproval(string path)
+    {
+        try { return _services.Trust.Check(path, DefinitionHash.Of(File.ReadAllText(path))).State != TrustState.Trusted; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     partial void OnSelectedChanged(TrellisItem? value)
     {
         OnPropertyChanged(nameof(HasSelection));
-        if (value is not null) _ = PlanSelectedAsync();
+        if (value is not null && !_quietSelection) _ = PlanSelectedAsync();
     }
+
+    [RelayCommand]
+    private void OpenAdd()
+    {
+        NewPath = "";
+        AddMessage = "";
+        AddFailed = false;
+        IsAddOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelAdd() => IsAddOpen = false;
 
     [RelayCommand]
     private Task Replan() => PlanSelectedAsync();
@@ -108,6 +148,12 @@ public partial class TrellisesViewModel : PageViewModel
             {
                 AskForTrust(loaded.Untrusted, PlanSelectedAsync);
                 return;
+            }
+            // A trellis registered before approval is listed under its file name until it first runs.
+            if (loaded.Trellis is { } model && !string.Equals(model.Name, trellis.Name, StringComparison.Ordinal))
+            {
+                _services.Trellises.Add(model.Name, trellis.Path);
+                Refresh(model.Name, replan: false);
             }
             if (loaded.Trellis is null || loaded.Problems.Count > 0)
             {
@@ -153,14 +199,17 @@ public partial class TrellisesViewModel : PageViewModel
         switch (result)
         {
             case NeedsTrust pending:
-                AskForTrust([pending], Add);
+                var name = UnusedName(TrellisItem.NameFromFile(path), path);
+                _services.Trellises.Add(name, path);
+                CloseAdd();
+                Refresh(name, replan: false);
+                ClearResults();
+                AskForTrust([pending], PlanSelectedAsync);
                 return;
             case Evaluated { Model: TrellisModel model }:
                 _services.Trellises.Add(model.Name, path);
-                NewPath = "";
-                AddMessage = $"Added {model.Name}.";
-                Refresh();
-                Selected = Trellises.FirstOrDefault(t => t.Name == model.Name);
+                CloseAdd();
+                Refresh(model.Name, replan: true);
                 return;
             case Evaluated:
                 Fail("That file describes a repo (Repo.Describe), not a trellis.");
@@ -180,6 +229,7 @@ public partial class TrellisesViewModel : PageViewModel
         foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
         PendingTrust.Clear();
         HasPendingTrust = false;
+        Refresh(Selected?.Name, replan: false);
         if (_afterApproval is { } next)
         {
             _afterApproval = null;
@@ -202,6 +252,8 @@ public partial class TrellisesViewModel : PageViewModel
         PendingTrust.Clear();
         foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
         HasPendingTrust = PendingTrust.Count > 0;
+        // Only a trellis that has run can say which repos it uses, so their definitions are a second ask.
+        PendingIsTrellis = Selected is { } trellis && PendingTrust.Any(p => string.Equals(p.Path, trellis.DisplayPath, StringComparison.OrdinalIgnoreCase));
         _afterApproval = then;
     }
 
@@ -219,6 +271,26 @@ public partial class TrellisesViewModel : PageViewModel
         HasPendingTrust = false;
         LoadProblems.Clear();
         HasLoadProblems = false;
+    }
+
+    void CloseAdd()
+    {
+        IsAddOpen = false;
+        NewPath = "";
+        AddMessage = "";
+        AddFailed = false;
+    }
+
+    /// <summary>Registering under a name already taken would replace that trellis, so a guessed name steps aside.</summary>
+    string UnusedName(string name, string path)
+    {
+        var taken = _services.Trellises.List()
+            .Where(e => !string.Equals(Path.GetFullPath(e.Path), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+            .Select(e => e.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var candidate = name;
+        for (var n = 2; taken.Contains(candidate); n++) candidate = $"{name}-{n}";
+        return candidate;
     }
 
     void Fail(string message)

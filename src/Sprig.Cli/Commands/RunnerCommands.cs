@@ -175,6 +175,10 @@ public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
 
         [CommandOption("-n|--lines <count>")]
         public int Lines { get; set; } = 40;
+
+        [CommandOption("-t|--timestamps")]
+        [Description("Lead each line with the time the host wrote it")]
+        public bool Timestamps { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -193,8 +197,12 @@ public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
         if (!File.Exists(file)) throw new InvalidOperationException($"{s.App} has no log yet");
         using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         using var reader = new StreamReader(stream);
-        var lines = reader.ReadToEnd().Split('\n');
-        foreach (var line in lines.TakeLast(s.Lines + 1)) Console.WriteLine(line.TrimEnd('\r'));
+        var parser = new LogLineParser();
+        var text = reader.ReadToEnd();
+        var entries = text.Split('\n').Select(l => l.TrimEnd('\r')).SkipLast(text.EndsWith('\n') ? 1 : 0)
+            .Select(parser.Parse).OfType<LogEntry>().TakeLast(s.Lines);
+        foreach (var entry in entries)
+            Console.WriteLine(s.Timestamps && entry.Time is { } time ? $"{time.LocalDateTime:HH:mm:ss.fff} {entry.Text}" : entry.Text);
         return 0;
     }
 }

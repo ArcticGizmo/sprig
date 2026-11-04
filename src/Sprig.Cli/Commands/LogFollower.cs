@@ -29,13 +29,7 @@ sealed class LogFollower
     /// <summary>
     /// Shortest unique labels: an app's own name, or <c>repo/app</c> when two repos have an app of that name.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> Labels(IEnumerable<string> names)
-    {
-        var all = names.ToArray();
-        var shortName = all.ToDictionary(n => n, n => n[(n.IndexOf('/') + 1)..]);
-        var clashes = shortName.Values.GroupBy(v => v).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
-        return all.ToDictionary(n => n, n => clashes.Contains(shortName[n]) ? n : shortName[n]);
-    }
+    public static IReadOnlyDictionary<string, string> Labels(IEnumerable<string> names) => LogLabels.Shortest(names);
 
     public void Add(string label, string logFile)
     {
@@ -50,7 +44,7 @@ sealed class LogFollower
         var any = false;
         foreach (var (label, colour, tail) in _logs)
         {
-            foreach (var line in tail.ReadNew())
+            foreach (var line in tail.ReadNew().Select(e => e.Text))
             {
                 any = true;
                 _ansi.Markup($"[{colour}]{Markup.Escape(label.PadRight(_width))} |[/] ");

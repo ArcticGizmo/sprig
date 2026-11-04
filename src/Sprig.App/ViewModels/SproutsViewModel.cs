@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.App.Logs;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
@@ -24,26 +25,63 @@ public sealed record SproutItem(SproutRecord Record)
 }
 
 /// <summary>One app or job of the selected sprout, with what the host says about it.</summary>
-/// <param name="Key">The app as the host names it, <c>repo/app</c>.</param>
-public sealed partial class SproutAppRow(string key, string name, string folder, string url, string values, bool job) : ObservableObject
+/// <param name="key">The app as the host names it, <c>repo/app</c>.</param>
+/// <param name="name">For messages: <c>repo / app</c>.</param>
+/// <param name="repo">The repo's name.</param>
+/// <param name="app">The app's own name.</param>
+/// <param name="port">Its main port, or "" when it has none.</param>
+public sealed partial class SproutAppRow(string key, string name, string folder, string url, string values, bool job,
+    string repo = "", string app = "", string port = "") : ObservableObject
 {
     public string Key => key;
     public string Name => name;
+    public string Repo => repo;
+    public string App => app.Length > 0 ? app : key[(key.IndexOf('/') + 1)..];
+    public string Port => port.Length > 0 ? port : job ? "job" : "";
     public string Folder => folder;
     public string Url => url;
     public string Values => values;
     public bool IsJob => job;
 
-    [ObservableProperty] private string _state = "not running";
-    [ObservableProperty] private string _detail = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateLine), nameof(IsReady), nameof(IsStoppedOrDone))]
+    private string _state = "not running";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateLine))]
+    private string _detail = "";
+
     [ObservableProperty] private bool _isGood;
-    [ObservableProperty] private bool _isBad;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProblem), nameof(IsStoppedOrDone))]
+    private bool _isBad;
+
     [ObservableProperty] private bool _isBusy;
-    [ObservableProperty] private bool _isAlive;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsStoppedOrDone))]
+    private bool _isAlive;
+
+    [ObservableProperty] private int _restarts;
+
+    /// <summary>Its log is the one showing.</summary>
+    [ObservableProperty] private bool _isSelected;
+    [ObservableProperty] private bool _isPinned;
 
     public bool HasDetail => Detail.Length > 0;
+    public string StateLine => Detail.Length == 0 ? State
+        : Detail.StartsWith(State, StringComparison.OrdinalIgnoreCase) ? Detail : $"{State} · {Detail}";
+    public bool IsReady => State == "ready";
+
+    /// <summary>Exited, failed, or going round restarts: worth a look.</summary>
+    public bool IsProblem => IsBad || State == "restarting";
+
+    public bool IsStoppedOrDone => !IsAlive && !IsBad;
 
     partial void OnDetailChanged(string value) => OnPropertyChanged(nameof(HasDetail));
+
+    partial void OnStateChanged(string value) => OnPropertyChanged(nameof(IsProblem));
 
     public void MarkStopping()
     {
@@ -75,6 +113,7 @@ public sealed partial class SproutAppRow(string key, string name, string folder,
         IsBusy = status?.State is RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Running
             or RunnerState.Restarting or RunnerState.Stopping;
         IsAlive = status is not null && (status.State.IsAlive() || status.State == RunnerState.Stopping);
+        Restarts = status?.Restarts ?? 0;
     }
 }
 
@@ -100,17 +139,30 @@ public partial class SproutsViewModel : PageViewModel
     [ObservableProperty] private IReadOnlyList<SproutAppRow> _apps = [];
     [ObservableProperty] private IReadOnlyList<SproutInfraRow> _infra = [];
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasWarnings))]
+    [NotifyPropertyChangedFor(nameof(HasWarnings), nameof(WarningsBadge))]
     private IReadOnlyList<ProblemRow> _warnings = [];
 
     public bool HasWarnings => Warnings.Count > 0;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TrustInModal), nameof(TrustOnPage), nameof(MessageInModal), nameof(MessageOnPage))]
+    private bool _isAddOpen;
     [ObservableProperty] private string? _newTrellis;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string _newBranch = "";
-    [ObservableProperty] private string _formMessage = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MessageInModal), nameof(MessageOnPage))]
+    private string _formMessage = "";
     [ObservableProperty] private bool _formFailed;
-    [ObservableProperty] private bool _hasPendingTrust;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TrustInModal), nameof(TrustOnPage))]
+    private bool _hasPendingTrust;
+
+    // Approvals and form messages belong to whichever is in front: the new-sprout modal, or the selected sprout.
+    public bool TrustInModal => HasPendingTrust && IsAddOpen;
+    public bool TrustOnPage => HasPendingTrust && !IsAddOpen;
+    public bool MessageInModal => FormMessage.Length > 0 && IsAddOpen;
+    public bool MessageOnPage => FormMessage.Length > 0 && !IsAddOpen;
 
     [ObservableProperty] private bool _isWorking;
     [ObservableProperty] private bool _confirmingRemove;
@@ -127,10 +179,15 @@ public partial class SproutsViewModel : PageViewModel
     public SproutsViewModel(AppServices services)
     {
         _services = services;
+        _services.HostStatus.Changed += ApplyRunners;
+        _lastRunners = _services.HostStatus.Runners;
         Refresh();
     }
 
     protected override void OnActivated() => Refresh();
+
+    /// <summary>Raised after the list of sprouts is read again, so the nav can follow.</summary>
+    public event Action? SproutsChanged;
 
     [RelayCommand]
     private void Refresh()
@@ -147,7 +204,17 @@ public partial class SproutsViewModel : PageViewModel
 
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(HasTrellises));
-        Selected = Sprouts.FirstOrDefault(s => s.Record.Key == keep) ?? Sprouts.FirstOrDefault();
+        Selected = Sprouts.FirstOrDefault(s => s.Record.Key == keep);
+        BuildOverview();
+        if (Selected is null && IsActive) _ = LoadOverviewStatusAsync();
+        SproutsChanged?.Invoke();
+    }
+
+    /// <summary>Show one sprout, by its key; null shows them all.</summary>
+    public void Show(string? key)
+    {
+        Selected = key is null ? null : Sprouts.FirstOrDefault(s => s.Record.Key == key);
+        if (Selected is null) _ = LoadOverviewStatusAsync();
     }
 
     partial void OnSelectedChanged(SproutItem? value)
@@ -162,17 +229,20 @@ public partial class SproutsViewModel : PageViewModel
     void ShowDetails(SproutRecord? record)
     {
         var plan = record is null ? null : _services.Sprouts.LastPlan(record.Trellis, record.Name);
-        if (Log.IsOpen && (record is null || !Log.File!.StartsWith(LogFolder(record), StringComparison.OrdinalIgnoreCase))) Log.CloseCommand.Execute(null);
+        _plan = plan;
         AppsMessage = "";
         if (record is null || plan is null)
         {
             Apps = [];
             Infra = [];
             Warnings = [];
+            LoadWorkspace(null, null);
             return;
         }
 
-        Apps = plan.Apps.Select(app =>
+        // A plan newer than the record (a repo added since the sprout last came up) names repos the record hasn't got;
+        // those apps wait for the next bring-up rather than breaking the page.
+        Apps = plan.Apps.Where(app => record.Repos.Any(r => r.RepoPath == app.RepoPath)).Select(app =>
         {
             var repo = record.Repos.First(r => r.RepoPath == app.RepoPath);
             var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
@@ -180,9 +250,11 @@ public partial class SproutsViewModel : PageViewModel
             var files = record.Files.Where(f => f.Path.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
                 .Select(f => Path.GetRelativePath(dir, f.Path).Replace('\\', '/')).ToArray();
             return new SproutAppRow(app.Key, $"{repo.Name} / {app.Name}", dir.Replace('\\', '/'), port is null ? "" : $"http://localhost:{port}",
-                files.Length > 0 ? string.Join(", ", files) : $"none; sprig env {record.Trellis} {record.Name} {app.Name}", app.Job);
+                files.Length > 0 ? string.Join(", ", files) : $"none; sprig env {record.Trellis} {record.Name} {app.Name}", app.Job,
+                repo.Name, app.Name, port?.ToString() ?? "");
         }).ToArray();
         ApplyRunners(_lastRunners);
+        LoadWorkspace(record, plan);
 
         Infra = plan.Containers.Select(c => new SproutInfraRow($"{c.Owner} / {c.Name}", string.Join(", ", c.Ports)))
             .Concat(plan.Compose.SelectMany(c => c.Services.Select(s => new SproutInfraRow($"{c.Owner} / {s.Name}", string.Join(", ", s.Mappings)))))
@@ -194,10 +266,11 @@ public partial class SproutsViewModel : PageViewModel
     // ---- running the selected sprout's apps ----
 
     IReadOnlyList<RunnerStatus>? _lastRunners;
+    Plan? _plan;
     bool _polling;
 
-    /// <summary>The selected app's log, read as it grows.</summary>
-    public LogPaneViewModel Log { get; } = new();
+    /// <summary>The selected sprout's logs: every app interleaved, or one app's.</summary>
+    public SproutLogPane Logs { get; } = new();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAppsMessage))]
@@ -207,8 +280,6 @@ public partial class SproutsViewModel : PageViewModel
 
     public bool HasAppsMessage => AppsMessage.Length > 0;
 
-    string LogFolder(SproutRecord record) => Path.GetDirectoryName(HostProtocol.LogFile(_services.Paths, record.Key, "x/x"))!;
-
     /// <summary>Show what the host says about each app of the selected sprout; null when no host is running.</summary>
     public void ApplyRunners(IReadOnlyList<RunnerStatus>? runners)
     {
@@ -216,24 +287,31 @@ public partial class SproutsViewModel : PageViewModel
         var key = Selected?.Record.Key;
         foreach (var row in Apps)
             row.Apply(runners?.FirstOrDefault(r => r.Sprout == key && r.Name == row.Key));
+        StatesChanged();
+        if (Selected is null) CountOverviewApps();
     }
 
-    /// <summary>Ask the host how the apps are doing and read the open log. The view calls this every second while the
-    /// page shows; a call still waiting on the host makes the next one a no-op.</summary>
+    /// <summary>Read the logs. The view calls this every second while the page shows; the app-wide
+    /// <see cref="HostStatus"/> poll brings the apps' states.</summary>
     public async Task PollAsync()
     {
         if (_polling || Selected is null) return;
         _polling = true;
         try
         {
-            var answer = await AppServices.RunAsync(() => _services.Host.TrySend(new HostRequest("list")));
-            ApplyRunners(answer?.Runners);
-            await Log.PollAsync();
+            await Logs.PollAsync();
         }
         finally
         {
             _polling = false;
         }
+    }
+
+    /// <summary>Ask the host now rather than at the next tick, after something here changed what's running.</summary>
+    async Task RefreshRunnersAsync()
+    {
+        await _services.HostStatus.PollAsync();
+        await PollAsync();
     }
 
     [RelayCommand]
@@ -263,9 +341,8 @@ public partial class SproutsViewModel : PageViewModel
                 if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
             });
             SayApps(row is null ? "Starting the apps, each after what it depends on." : $"Starting {row.Name}.", bad: false);
-            if (row is not null) ShowLog(row);
-            else if (!Log.IsOpen && Apps.FirstOrDefault(a => !a.IsJob) is { } first) ShowLog(first);
-            await PollAsync();
+            if (row is not null) OpenApp(row);
+            await RefreshRunnersAsync();
         }
         catch (Exception e)
         {
@@ -290,15 +367,7 @@ public partial class SproutsViewModel : PageViewModel
         SayApps(forced.Length > 0 ? string.Join("; ", forced)
             : stopped.Count == 0 ? "Nothing was running." : row is null ? "The apps have stopped. The infra is still up." : $"{row.Name} has stopped.",
             bad: forced.Length > 0);
-        await PollAsync();
-    }
-
-    [RelayCommand]
-    private void ShowLog(SproutAppRow row)
-    {
-        if (Selected?.Record is not { } record) return;
-        Log.Open(row.Name, HostProtocol.LogFile(_services.Paths, record.Key, row.Key));
-        _ = Log.PollAsync();
+        await RefreshRunnersAsync();
     }
 
     void SayApps(string message, bool bad)
@@ -308,6 +377,26 @@ public partial class SproutsViewModel : PageViewModel
     }
 
     // ---- making and changing sprouts ----
+
+    [RelayCommand]
+    private void OpenAdd()
+    {
+        FormMessage = "";
+        FormFailed = false;
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        IsAddOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelAdd()
+    {
+        IsAddOpen = false;
+        FormMessage = "";
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        _afterApproval = null;
+    }
 
     [RelayCommand]
     private async Task Create()
@@ -338,6 +427,8 @@ public partial class SproutsViewModel : PageViewModel
             return;
         }
 
+        // The progress window takes over from here, and reports any failure.
+        IsAddOpen = false;
         var ok = await RunAsync($"Sprouting {loaded.Trellis!.Name} / {sprout}",
             progress => _services.Sprouts.Up(loaded, sprout, branch, progress),
             $"{loaded.Trellis.Name} / {sprout} is up.", retry: Create);

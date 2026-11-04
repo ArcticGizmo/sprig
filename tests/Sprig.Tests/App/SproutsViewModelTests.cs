@@ -56,6 +56,8 @@ public class SproutsViewModelTests
             [], [new PlanProblem(ProblemSeverity.Warning, "careful", at)]));
 
         var vm = new SproutsViewModel(services);
+        Assert.Null(vm.Selected);
+        vm.Show("storefront/feat-x");
 
         Assert.Equal(["storefront / feat-x", "storefront / old"], vm.Sprouts.Select(s => s.Title));
         Assert.Equal(1, vm.NavCount);
@@ -104,13 +106,19 @@ public class SproutsViewModelTests
         OperationProgressViewModel? shown = null;
         vm.ProgressStarted += p => shown = p;
 
-        // The trellis is approved first; only then does sprig know which repos' definitions to ask about.
+        // The trellis is approved first; only then does sprig know which repos' definitions to ask about. Both asks
+        // happen in the modal, which closes once the sprouting starts.
+        vm.OpenAddCommand.Execute(null);
         await vm.CreateCommand.ExecuteAsync(null);
         Assert.EndsWith("web.trellis.cs", Assert.Single(vm.PendingTrust).Path);
+        Assert.True(vm.TrustInModal);
+        Assert.False(vm.TrustOnPage);
         await vm.ApproveAllCommand.ExecuteAsync(null);
         Assert.EndsWith("sprig.cs", Assert.Single(vm.PendingTrust).Path);
+        Assert.True(vm.IsAddOpen);
         await vm.ApproveAllCommand.ExecuteAsync(null);
 
+        Assert.False(vm.IsAddOpen);
         Assert.NotNull(shown);
         Assert.True(shown!.CanClose);
         Assert.Equal("web / local is up.", shown.Summary);
@@ -131,11 +139,19 @@ public class SproutsViewModelTests
     {
         using var store = new TempStore();
         var vm = new SproutsViewModel(new AppServices(store.Root));
+        vm.OpenAddCommand.Execute(null);
 
         vm.CreateCommand.Execute(null);
 
         Assert.False(vm.HasTrellises);
         Assert.True(vm.FormFailed);
         Assert.Contains("Choose a trellis", vm.FormMessage);
+        Assert.True(vm.IsAddOpen);
+        Assert.True(vm.MessageInModal);
+        Assert.False(vm.MessageOnPage);
+
+        vm.CancelAddCommand.Execute(null);
+        Assert.False(vm.IsAddOpen);
+        Assert.False(vm.MessageOnPage);
     }
 }

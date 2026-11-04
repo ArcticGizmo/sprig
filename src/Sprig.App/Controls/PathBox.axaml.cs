@@ -52,6 +52,8 @@ public partial class PathBox : UserControl
         BrowseButton.Click += Browse;
     }
 
+    public void FocusInput() => Box.Focus();
+
     bool Matches(string fileName) => FileSuffix is not { Length: > 0 } suffix || fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

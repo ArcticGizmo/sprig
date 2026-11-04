@@ -25,6 +25,14 @@ public sealed class SproutException(string message, IReadOnlyList<PlanProblem>? 
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
 
+/// <param name="Repo">The repo's name.</param>
+/// <param name="Worktree">A worktree sprig made, rather than the repo run in place.</param>
+/// <param name="Unpushed">Commits on the sprout's branch that no other branch or remote has.</param>
+public sealed record WorktreeStatus(string Repo, string Dir, bool Worktree, bool Exists, bool Dirty, int Unpushed);
+
+/// <param name="Repo">The repo folder it's in; null when it's outside every repo.</param>
+public sealed record WrittenFileStatus(string Path, string Kind, string? Repo, bool Tracked, bool Ignored);
+
 /// <summary>
 /// Brings sprouts up, down and away. <c>up</c> is one step: worktrees (or the repos in place), leased ports, env files,
 /// a compose project per infra source, started and healthy. Each sprout's record says exactly what it did, so
@@ -179,7 +187,8 @@ public sealed partial class SproutService(
 
             beforeInfra?.Invoke(record, plan);
             record = record with { Compose = StartInfra(plan, record, step, cancellation) };
-            record = record with { State = SproutState.Up, UpdatedAt = DateTimeOffset.UtcNow };
+            var upAt = DateTimeOffset.UtcNow;
+            record = record with { State = SproutState.Up, UpdatedAt = upAt, LastUpAt = upAt };
             store.Save(record);
             return record;
         }
@@ -220,20 +229,7 @@ public sealed partial class SproutService(
         var record = store.Get(trellis, sprout) ?? throw new SproutException($"{trellis} has no sprout named '{sprout}'");
         var step = new Steps(progress);
 
-        if (!options.Force)
-        {
-            var dirty = record.Repos.Where(r => r.Worktree && Directory.Exists(r.Dir) && git.HasUncommittedChanges(r.Dir)).ToArray();
-            if (dirty.Length > 0)
-                throw new SproutException("these worktrees have changes that aren't committed; commit or discard them, or force it:\n  "
-                    + string.Join("\n  ", dirty.Select(r => r.Dir)));
-            if (options.DeleteBranch && record.Branch is { } b)
-            {
-                var unpushed = record.Repos.Where(r => r.Worktree && git.BranchExists(r.Source, b) && git.CommitsOnlyOn(r.Source, b) > 0).ToArray();
-                if (unpushed.Length > 0)
-                    throw new SproutException($"'{b}' has commits no other branch or remote has, in " + string.Join(", ", unpushed.Select(r => r.Name))
-                        + "; push them, keep the branch, or force it");
-            }
-        }
+        if (!options.Force && RemovalBlockers(record, options.DeleteBranch) is [var first, ..]) throw new SproutException(first);
 
         StopApps(record, step);
         foreach (var project in record.Compose)
@@ -261,6 +257,58 @@ public sealed partial class SproutService(
         leases.Release(record.Key);
         store.Delete(trellis, sprout);
     }
+
+    /// <summary>
+    /// Why removing <paramref name="record"/> would lose work, in the order <see cref="Remove"/> checks: worktrees with
+    /// changes that aren't committed, then (when its branch would go too) commits no other branch or remote has. Empty
+    /// when it can go. Asked before removing so a warning can come first; <see cref="Remove"/> asks again itself.
+    /// </summary>
+    public IReadOnlyList<string> RemovalBlockers(SproutRecord record, bool deleteBranch)
+    {
+        var blockers = new List<string>();
+        var dirty = record.Repos.Where(r => r.Worktree && Directory.Exists(r.Dir) && git.HasUncommittedChanges(r.Dir)).ToArray();
+        if (dirty.Length > 0)
+            blockers.Add("these worktrees have changes that aren't committed; commit or discard them, or force it:\n  "
+                + string.Join("\n  ", dirty.Select(r => r.Dir)));
+        if (deleteBranch && record.Branch is { } b)
+        {
+            var unpushed = record.Repos.Where(r => r.Worktree && git.BranchExists(r.Source, b) && git.CommitsOnlyOn(r.Source, b) > 0).ToArray();
+            if (unpushed.Length > 0)
+                blockers.Add($"'{b}' has commits no other branch or remote has, in " + string.Join(", ", unpushed.Select(r => r.Name))
+                    + "; push them, keep the branch, or force it");
+        }
+        return blockers;
+    }
+
+    /// <summary>Each of the sprout's repos as it stands: whether its folder is there, has changes that aren't committed,
+    /// and how many commits its branch has that no other branch or remote has.</summary>
+    public IReadOnlyList<WorktreeStatus> WorktreeStatus(SproutRecord record) => record.Repos.Select(r =>
+    {
+        var exists = Directory.Exists(r.Dir);
+        var unpushed = r.Worktree && record.Branch is { } b && git.BranchExists(r.Source, b) ? git.CommitsOnlyOn(r.Source, b) : 0;
+        return new WorktreeStatus(r.Name, r.Dir, r.Worktree, exists, exists && git.HasUncommittedChanges(r.Dir), unpushed);
+    }).ToArray();
+
+    /// <summary>The files sprig wrote for the sprout, each with whether its repo ignores it (so it can't be committed by
+    /// mistake) or tracks it.</summary>
+    public IReadOnlyList<WrittenFileStatus> FileStatus(SproutRecord record)
+    {
+        var result = new List<WrittenFileStatus>();
+        foreach (var group in record.Files.GroupBy(f => record.Repos.FirstOrDefault(r => InRepo(r.Dir, f.Path))?.Dir))
+        {
+            var status = group.Key is { } dir ? git.Status(dir, group.Select(f => f.Path).ToArray()) : null;
+            foreach (var file in group)
+            {
+                var (tracked, ignored) = status?.GetValueOrDefault(file.Path) ?? (false, false);
+                result.Add(new WrittenFileStatus(file.Path, file.Kind, group.Key, tracked, ignored));
+            }
+        }
+        return result;
+    }
+
+    static bool InRepo(string dir, string file)
+        => Path.GetFullPath(file).StartsWith(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     // ---- up, step by step ----
 

@@ -164,6 +164,39 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
+    public void Worktree_and_file_status_and_the_removal_blockers_say_what_removing_would_lose()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        Repo("shop-services", ("src/Api/Program.cs", "// api"));
+        var record = _sprouts.Up(Load(true, ("shop-web", Web), ("shop-services", Api)), "feat-x", null);
+        var web = record.Repos.Single(r => r.Name == "shop-web");
+        var services = record.Repos.Single(r => r.Name == "shop-services");
+
+        Assert.Empty(_sprouts.RemovalBlockers(record, deleteBranch: true));
+        Assert.All(_sprouts.WorktreeStatus(record), t => Assert.Equal((true, false, 0), (t.Exists, t.Dirty, t.Unpushed)));
+        var files = _sprouts.FileStatus(record);
+        Assert.Equal(2, files.Count);
+        Assert.All(files, f => Assert.True(f.Ignored && !f.Tracked));
+
+        File.WriteAllText(Path.Combine(web.Dir, "index.html"), "changed");
+        File.WriteAllText(Path.Combine(services.Dir, "notes.txt"), "new");
+        Git(services.Dir, "add", "-A");
+        Git(services.Dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "only here");
+
+        var trees = _sprouts.WorktreeStatus(record).ToDictionary(t => t.Repo);
+        Assert.True(trees["shop-web"].Dirty);
+        Assert.Equal(1, trees["shop-services"].Unpushed);
+        var blockers = _sprouts.RemovalBlockers(record, deleteBranch: true);
+        Assert.Equal(2, blockers.Count);
+        Assert.Contains("changes that aren't committed", blockers[0]);
+        Assert.Contains("commits no other branch or remote has, in shop-services", blockers[1]);
+        Assert.Single(_sprouts.RemovalBlockers(record, deleteBranch: false));
+
+        var e = Assert.Throws<SproutException>(() => _sprouts.Remove("storefront", "feat-x", new RemoveOptions(DeleteBranch: true)));
+        Assert.Equal(blockers[0], e.Message);
+    }
+
+    [Fact]
     public void A_tracked_target_is_refused_before_any_worktree_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));

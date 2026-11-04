@@ -6,7 +6,7 @@ namespace Sprig.Engine.Store;
 /// Read/write JSON to disk with an atomic write (temp file + move), so an interrupted write
 /// never leaves a half-written store on disk.
 /// </summary>
-internal static class JsonFile
+public static class JsonFile
 {
     static readonly JsonSerializerOptions Options = new()
     {

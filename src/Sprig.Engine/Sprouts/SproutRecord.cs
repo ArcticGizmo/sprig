@@ -14,6 +14,7 @@ public sealed record SproutRepo(string RepoPath, string Name, string Source, str
 /// started. Kept in the store so <c>down</c> and <c>rm</c> undo exactly what <c>up</c> did.</summary>
 /// <param name="Branch">Null when the repos run in place.</param>
 /// <param name="Folder">The folder holding the sprout's worktrees; null when the repos run in place.</param>
+/// <param name="LastUpAt">When it last finished coming up; null for a record from before this was kept.</param>
 public sealed record SproutRecord(
     string Trellis,
     string TrellisPath,
@@ -27,7 +28,8 @@ public sealed record SproutRecord(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     string? Folder = null,
-    string? Error = null)
+    string? Error = null,
+    DateTimeOffset? LastUpAt = null)
 {
     public bool InPlace => Branch is null;
 

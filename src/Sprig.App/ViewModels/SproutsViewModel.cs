@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.App.Logs;
@@ -44,7 +46,7 @@ public sealed partial class SproutAppRow(string key, string name, string folder,
     public bool IsJob => job;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StateLine), nameof(IsReady), nameof(IsStoppedOrDone))]
+    [NotifyPropertyChangedFor(nameof(StateLine), nameof(IsReady), nameof(IsStoppedOrDone), nameof(IsFinished))]
     private string _state = "not running";
 
     [ObservableProperty]
@@ -73,6 +75,7 @@ public sealed partial class SproutAppRow(string key, string name, string folder,
     public string StateLine => Detail.Length == 0 ? State
         : Detail.StartsWith(State, StringComparison.OrdinalIgnoreCase) ? Detail : $"{State} · {Detail}";
     public bool IsReady => State == "ready";
+    public bool IsFinished => State == "finished";
 
     /// <summary>Exited, failed, or going round restarts: worth a look.</summary>
     public bool IsProblem => IsBad || State == "restarting";
@@ -181,6 +184,9 @@ public partial class SproutsViewModel : PageViewModel
         _services = services;
         _services.HostStatus.Changed += ApplyRunners;
         _lastRunners = _services.HostStatus.Runners;
+        DetailsOpen = _services.Ui.DetailsOpen;
+        Logs.ShowTimes = _services.Ui.LogTimes;
+        Logs.Wrap = _services.Ui.LogWrap;
         Refresh();
     }
 
@@ -217,10 +223,16 @@ public partial class SproutsViewModel : PageViewModel
         if (Selected is null) _ = LoadOverviewStatusAsync();
     }
 
+    /// <summary>The header offers the one that applies: take an up sprout down, or bring any other up.</summary>
+    public bool ShowTakeDown => Selected?.IsUp == true;
+    public bool ShowBringUp => !ShowTakeDown;
+
     partial void OnSelectedChanged(SproutItem? value)
     {
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(CanDeleteBranch));
+        OnPropertyChanged(nameof(ShowTakeDown));
+        OnPropertyChanged(nameof(ShowBringUp));
         ConfirmingRemove = false;
         DeleteBranch = false;
         ShowDetails(value?.Record);
@@ -230,6 +242,7 @@ public partial class SproutsViewModel : PageViewModel
     {
         var plan = record is null ? null : _services.Sprouts.LastPlan(record.Trellis, record.Name);
         _plan = plan;
+        SproutLinks = plan?.Links ?? [];
         AppsMessage = "";
         if (record is null || plan is null)
         {
@@ -271,6 +284,13 @@ public partial class SproutsViewModel : PageViewModel
 
     /// <summary>The selected sprout's logs: every app interleaved, or one app's.</summary>
     public SproutLogPane Logs { get; } = new();
+
+    /// <summary>The trellis's quick links, at this sprout's ports.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSproutLinks))]
+    private IReadOnlyList<PlannedLink> _sproutLinks = [];
+
+    public bool HasSproutLinks => SproutLinks.Count > 0;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAppsMessage))]
@@ -321,14 +341,18 @@ public partial class SproutsViewModel : PageViewModel
     private async Task StartApp(SproutAppRow row) => await StartAsync(row);
 
     /// <summary>Every app (null), leaving alone what's already going; or one app, started afresh, after what it
-    /// depends on.</summary>
+    /// depends on. Starting means everything it needs too: a sprout that isn't up is brought up first.</summary>
     async Task StartAsync(SproutAppRow? row)
     {
         if (Selected?.Record is not { } record) return;
         if (record.State != SproutState.Up)
         {
-            SayApps("Bring the sprout up first: its apps need its infra and env files.", bad: true);
-            return;
+            var key = row?.Key;
+            if (!await UpAsync(retry: () => StartAsync(key is null ? null : Apps.FirstOrDefault(a => a.Key == key)))) return;
+            if (Selected?.Record is not { State: SproutState.Up } up) return;
+            record = up;
+            // Bringing it up reads the sprout afresh, so the row is a new one.
+            if (key is not null) row = Apps.FirstOrDefault(a => a.Key == key);
         }
         if (_services.Sprouts.LastPlan(record.Trellis, record.Name) is not { } plan) return;
         try
@@ -430,7 +454,7 @@ public partial class SproutsViewModel : PageViewModel
         // The progress window takes over from here, and reports any failure.
         IsAddOpen = false;
         var ok = await RunAsync($"Sprouting {loaded.Trellis!.Name} / {sprout}",
-            progress => _services.Sprouts.Up(loaded, sprout, branch, progress),
+            (progress, cancellation) => _services.Sprouts.Up(loaded, sprout, branch, progress, cancellation),
             $"{loaded.Trellis.Name} / {sprout} is up.", retry: Create);
         if (ok)
         {
@@ -442,15 +466,21 @@ public partial class SproutsViewModel : PageViewModel
     }
 
     [RelayCommand]
-    private async Task Up()
+    private Task Up() => UpAsync(retry: Up);
+
+    /// <summary>Bring the selected sprout up, asking for approval first when a definition needs it. True once it's up.</summary>
+    /// <param name="retry">What to carry on with once the user approves.</param>
+    async Task<bool> UpAsync(Func<Task> retry)
     {
-        if (Selected?.Record is not { } record) return;
-        var loaded = await LoadAsync(record.TrellisPath, Up, record.Name);
-        if (loaded is null) return;
-        await RunAsync($"Bringing {record.Trellis} / {record.Name} up",
-            progress => _services.Sprouts.Up(loaded, record.Name, record.Branch, progress), $"{record.Trellis} / {record.Name} is up.",
-            retry: Up);
+        if (Selected?.Record is not { } record) return false;
+        var loaded = await LoadAsync(record.TrellisPath, retry, record.Name);
+        if (loaded is null) return false;
+        var ok = await RunAsync($"Bringing {record.Trellis} / {record.Name} up",
+            (progress, cancellation) => _services.Sprouts.Up(loaded, record.Name, record.Branch, progress, cancellation),
+            $"{record.Trellis} / {record.Name} is up.",
+            retry: retry);
         Refresh();
+        return ok;
     }
 
     [RelayCommand]
@@ -458,7 +488,7 @@ public partial class SproutsViewModel : PageViewModel
     {
         if (Selected?.Record is not { } record) return;
         await RunAsync($"Stopping {record.Trellis} / {record.Name}",
-            progress => _services.Sprouts.Down(record.Trellis, record.Name, progress),
+            (progress, cancellation) => _services.Sprouts.Down(record.Trellis, record.Name, progress, cancellation),
             $"{record.Trellis} / {record.Name} is down. Its data, worktrees and ports are kept.");
         Refresh();
     }
@@ -476,7 +506,7 @@ public partial class SproutsViewModel : PageViewModel
         ConfirmingRemove = false;
         var options = new RemoveOptions(DeleteBranch && !record.InPlace);
         await RunAsync($"Removing {record.Trellis} / {record.Name}",
-            progress => _services.Sprouts.Remove(record.Trellis, record.Name, options, progress),
+            (progress, cancellation) => _services.Sprouts.Remove(record.Trellis, record.Name, options, progress, cancellation),
             $"{record.Trellis} / {record.Name} is gone.");
         Refresh();
     }
@@ -517,6 +547,11 @@ public partial class SproutsViewModel : PageViewModel
             }
             return loaded;
         }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Fail($"The trellis couldn't be read: {e.Message}");
+            return null;
+        }
         finally
         {
             IsWorking = false;
@@ -533,19 +568,29 @@ public partial class SproutsViewModel : PageViewModel
 
     /// <summary>Run one operation off the UI thread, reporting into a progress window.</summary>
     /// <param name="retry">Run again once the user approves definitions the operation found unapproved.</param>
-    async Task<bool> RunAsync(string heading, Action<IProgress<SproutEvent>> work, string success, Func<Task>? retry = null)
+    async Task<bool> RunAsync(string heading, Action<IProgress<SproutEvent>, CancellationToken> work, string success, Func<Task>? retry = null)
     {
         var window = new OperationProgressViewModel(heading);
         var progress = new Progress<SproutEvent>(window.Apply);
         ProgressStarted?.Invoke(window);
         IsWorking = true;
+        var running = AppServices.RunAsync(() => work(progress, window.Cancellation));
         try
         {
-            await AppServices.RunAsync(() => work(progress));
+            await FinishedOrAbandoned(running, window.Cancellation);
             // Progress<T> posts its reports, so let the last ones land before the summary.
             await Task.Yield();
             window.Finish(success, ProgressState.Done);
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            await Task.Yield();
+            window.Finish(running.IsCompleted
+                ? "Cancelled part-way. What had finished stays done; run it again to finish the rest."
+                : "Cancelled, but the step it was on hasn't let go and is still going in the background. Docker has probably stopped answering: restarting Docker Desktop frees it.",
+                ProgressState.Warning);
+            return false;
         }
         catch (SproutException e) when (e.Untrusted.Count > 0 && retry is not null)
         {
@@ -563,8 +608,24 @@ public partial class SproutsViewModel : PageViewModel
         }
         finally
         {
-            IsWorking = false;
+            // Abandoned work keeps the page's up and down buttons off until it really ends, so two never overlap.
+            if (running.IsCompleted) IsWorking = false;
+            else _ = running.ContinueWith(_ => Dispatcher.UIThread.Post(() => IsWorking = false), TaskScheduler.Default);
         }
+    }
+
+    /// <summary>
+    /// The work's own outcome; or, once it has been cancelled and still hasn't stopped a few seconds later, an
+    /// <see cref="OperationCanceledException"/> without it. Whatever it was blocked on (a docker that has stopped
+    /// answering, say) may never notice the cancel, and the window must not be held open by it.
+    /// </summary>
+    public static async Task FinishedOrAbandoned(Task running, CancellationToken cancellation, TimeSpan? patience = null)
+    {
+        var asked = Task.Delay(Timeout.Infinite, cancellation);
+        if (await Task.WhenAny(running, asked) != running
+            && await Task.WhenAny(running, Task.Delay(patience ?? TimeSpan.FromSeconds(5))) != running)
+            throw new OperationCanceledException(cancellation);
+        await running;
     }
 
     void Fail(string message)

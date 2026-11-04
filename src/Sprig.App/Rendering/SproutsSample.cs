@@ -4,7 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+using Sprig.App.Logs;
 using Sprig.App.ViewModels;
 using Sprig.App.Views;
 using Sprig.Engine.Hosting;
@@ -82,6 +88,53 @@ internal static partial class HeadlessRenderer
             Save(window, Sibling(outFile, "app"));
             var lines = vm.Sprouts.Logs.Lines.Count;
 
+            var linksButton = window.GetVisualDescendants().OfType<Button>().First(b => b.Name == "LinksButton");
+            linksButton.Flyout!.ShowAt(linksButton);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "links"));
+            linksButton.Flyout.Hide();
+
+            vm.Sprouts.ToggleDetailsCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "folded"));
+            vm.Sprouts.ToggleDetailsCommand.Execute(null);
+
+            // Unwrapped, the failure and its stack trace picked by dragging over them and copied, as a user would.
+            vm.Sprouts.ToggleLogWrapCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(400));
+            var list = window.GetVisualDescendants().OfType<ListBox>().First(l => l.Name == "LogList");
+            Point At(int index)
+            {
+                var row = list.ContainerFromIndex(index)!;
+                return row.TranslatePoint(new Point(160, row.Bounds.Height / 2), window)!.Value;
+            }
+            var fail = vm.Sprouts.Logs.Lines.ToList().FindIndex(l => l.IsError);
+            window.MouseDown(At(fail), MouseButton.Left);
+            window.MouseMove(At(fail + 1), RawInputModifiers.LeftMouseButton);
+            window.MouseMove(At(fail + 2), RawInputModifiers.LeftMouseButton);
+            window.MouseUp(At(fail + 2), MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(200));
+            window.KeyPress(Key.C, RawInputModifiers.Control, PhysicalKey.C, "c");
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "select"));
+            Console.WriteLine($"dragged over {list.SelectedItems?.Count} lines; paused: {vm.Sprouts.Logs.IsPaused}; copied:");
+            var copied = window.Clipboard!.TryGetTextAsync();
+            Wait(copied);
+            Console.WriteLine(copied.Result);
+
+            // Right-click the failure: every app's log, around the moment it was written.
+            window.MouseDown(At(fail), MouseButton.Right);
+            window.MouseUp(At(fail), MouseButton.Right);
+            Pump(TimeSpan.FromMilliseconds(200));
+            var menu = list.ContextMenu!.Items.OfType<MenuItem>().ToArray();
+            Console.WriteLine("menu: " + string.Join(" | ", menu.Where(m => m.IsVisible).Select(m => m.Header)));
+            list.ContextMenu.Close();
+            menu.First(m => m.IsVisible && $"{m.Header}".StartsWith("Show all apps")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Pump(TimeSpan.FromMilliseconds(600));
+            Save(window, Sibling(outFile, "around"));
+            Console.WriteLine($"now showing {(vm.Sprouts.Logs.IsAll ? "all apps" : vm.Sprouts.Logs.Key)}, picked: {(list.SelectedItem as LogRow)?.Text}");
+            vm.Sprouts.ToggleLogWrapCommand.Execute(null);
+
             vm.Sprouts.ShowInfraTabCommand.Execute(null);
             Wait(vm.Sprouts.LoadInfraAsync());
             Pump(TimeSpan.FromMilliseconds(400));
@@ -141,9 +194,16 @@ internal static partial class HeadlessRenderer
                     : [],
                 null, a.Job ? [] : ["migrate"], [], Job: a.Job,
                 DependsOn: a.Repo == "shop-services" && !a.Job ? ["shop-services/migrate", "shop-services/seed"] : null,
-                Health: a.Port is not null && !a.Job ? [new PlannedHealth("http", "/health")] : null))],
+                Health: a.Port is not null && !a.Job ? [new PlannedHealth("http", "/health")] : null,
+                Links: a.App switch
+                {
+                    "web" => [new PlannedLink("Storefront", $"http://localhost:{a.Port}"), new PlannedLink("Admin as dev", $"http://localhost:{a.Port}/admin/login?as=dev")],
+                    "payments-api" => [new PlannedLink("Swagger", $"http://localhost:{a.Port}/swagger")],
+                    _ => null,
+                }))],
             [], [], [], [new PlanProblem(ProblemSeverity.Warning, "ingest-worker has no health check, so \"ready\" only means it started",
-                new SourceLocation(Path.Combine(root, "shop-analytics", "sprig.cs"), 14))]));
+                new SourceLocation(Path.Combine(root, "shop-analytics", "sprig.cs"), 14))],
+            [new PlannedLink("Mail inbox", "http://localhost:8025"), new PlannedLink("Checkout flow", "http://localhost:5170/cart?seed=demo")]));
 
         var runners = new List<RunnerStatus>();
         var clock = DateTime.Now.AddMinutes(-2);
@@ -178,6 +238,7 @@ internal static partial class HeadlessRenderer
             yield return "warn: Npgsql: connection to localhost:8002 refused, retry 1 of 3";
             yield return "warn: Npgsql: connection to localhost:8002 refused, retry 2 of 3";
             yield return "fail: Npgsql.NpgsqlException: Failed to connect to 127.0.0.1:8002";
+            yield return "      at Npgsql.Internal.NpgsqlConnector.Connect(NpgsqlTimeout timeout) in /_/src/Npgsql/Internal/NpgsqlConnector.cs:line 712, after 3 attempts over 2.4s to 127.0.0.1:8002 (connection refused)";
             yield return "      at Payments.Api.Program.Main(String[] args) in Program.cs:line 31";
             yield return "sprig: exited with code 1 after 4.1s";
             yield break;

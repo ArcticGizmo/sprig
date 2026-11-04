@@ -23,6 +23,7 @@ public sealed class TrellisBuilder : DefinitionBuilder
     readonly List<RepoRefModel> _repos = [];
     readonly List<BindingModel> _bindings = [];
     readonly List<GroupModel> _groups = [];
+    readonly List<LinkModel> _links = [];
     WorktreePolicyModel? _worktrees;
     PortPolicy _ports = PortPolicy.Stable;
 
@@ -70,6 +71,21 @@ public sealed class TrellisBuilder : DefinitionBuilder
         return this;
     }
 
+    /// <summary>
+    /// A quick link for the whole sprout, offered in its header: somewhere to start that isn't one app's, such as a
+    /// flow through several, or the trellis's own infra (<c>mail.UrlOf("ui")</c>). A repo's app is reached through
+    /// what the repo exports (<c>web.Export("web-url")</c>), as for a binding.
+    /// </summary>
+    public TrellisBuilder Link(string label, Expr url, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _links.Add(new LinkModel(label, url.ToTemplate(), new SourceLocation(file, line)));
+        return this;
+    }
+
+    /// <inheritdoc cref="Link(string, Expr, string, int)"/>
+    public TrellisBuilder Link(string label, [InterpolatedStringHandlerArgument] ExprHandler url, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => Link(label, url.ToExpr(), file, line);
+
     internal TrellisModel BuildTrellis() => (TrellisModel)Build();
 
     private protected override DefinitionModel Build() => new TrellisModel(
@@ -82,7 +98,8 @@ public sealed class TrellisBuilder : DefinitionBuilder
         Bindings: _bindings.ToArray(),
         Groups: _groups.ToArray(),
         Worktrees: _worktrees,
-        PortPolicy: _ports.ToString().ToLowerInvariant());
+        PortPolicy: _ports.ToString().ToLowerInvariant(),
+        Links: _links.Count > 0 ? _links.ToArray() : null);
 }
 
 /// <summary>A repo in a trellis.</summary>

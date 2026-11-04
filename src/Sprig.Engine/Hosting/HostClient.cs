@@ -36,7 +36,7 @@ public sealed class HostClient(ISprigPaths paths)
     /// Stop a sprout's apps (or one of them) and wait until they've gone, so a caller can then remove what they were
     /// using. Returns the final state of each one stopped; empty when nothing was running or no host is.
     /// </summary>
-    public IReadOnlyList<RunnerStatus> StopAndWait(string sprout, string? name = null)
+    public IReadOnlyList<RunnerStatus> StopAndWait(string sprout, string? name = null, CancellationToken cancellation = default)
     {
         bool Mine(RunnerStatus r) => r.Sprout == sprout && (name is null || r.Name == name);
         var before = TrySend(new HostRequest("list"))?.Runners?.Where(Mine).Where(r => r.State.IsAlive() || r.State == RunnerState.Stopping).ToArray();
@@ -47,6 +47,8 @@ public sealed class HostClient(ISprigPaths paths)
         var last = before.Select(r => r with { State = RunnerState.Stopping }).ToDictionary(r => r.Name);
         while (deadline.Elapsed < Supervisor.Grace + TimeSpan.FromSeconds(15))
         {
+            // The host carries on stopping them; only the waiting is given up.
+            cancellation.ThrowIfCancellationRequested();
             var now = TrySend(new HostRequest("list"))?.Runners?.Where(Mine).ToDictionary(r => r.Name);
             if (now is null)
             {

@@ -21,12 +21,13 @@ public sealed record SproutLogLine(long Seq, string App, int Number, DateTimeOff
 }
 
 /// <summary>What one poll changed.</summary>
-/// <param name="Added">New lines, in the order they now sit in <see cref="SproutLogs.Merged"/>.</param>
+/// <param name="Added">New lines, in time order. A line can be older than one already merged (another log was read
+/// first), so a view of the merged list slots each in by time rather than assuming it goes on the end.</param>
 /// <param name="Restarted">Apps whose log was started afresh: their earlier lines are gone.</param>
-/// <param name="InOrder">The added lines all went on the end of the merged list (nothing was slotted in earlier, trimmed
-/// or removed), so a view of it can append rather than rebuild.</param>
+/// <param name="Removed">Lines left the merged list (trimmed to the cap, or an app started afresh), so a view of it has
+/// to be rebuilt.</param>
 /// <param name="TrimmedApps">Apps whose own list lost its oldest lines to the cap.</param>
-public sealed record SproutLogChange(IReadOnlyList<SproutLogLine> Added, IReadOnlySet<string> Restarted, bool InOrder,
+public sealed record SproutLogChange(IReadOnlyList<SproutLogLine> Added, IReadOnlySet<string> Restarted, bool Removed,
     IReadOnlySet<string> TrimmedApps)
 {
     public bool IsEmpty => Added.Count == 0 && Restarted.Count == 0;
@@ -94,7 +95,7 @@ public sealed class SproutLogs
     /// <summary>Read what every log has gained. A call while another is still reading returns nothing.</summary>
     public async Task<SproutLogChange> PollAsync()
     {
-        if (_polling) return new SproutLogChange([], new HashSet<string>(), true, new HashSet<string>());
+        if (_polling) return new SproutLogChange([], new HashSet<string>(), false, new HashSet<string>());
         _polling = true;
         try
         {
@@ -119,7 +120,7 @@ public sealed class SproutLogs
     {
         var restarted = new HashSet<string>(StringComparer.Ordinal);
         var trimmed = new HashSet<string>(StringComparer.Ordinal);
-        var inOrder = true;
+        var removed = false;
 
         foreach (var read in reads.Where(r => r.Restarted))
         {
@@ -128,7 +129,7 @@ public sealed class SproutLogs
             read.Source.Read = 0;
             read.Source.LastTime = DateTimeOffset.MinValue;
         }
-        if (restarted.Count > 0 && _merged.RemoveAll(l => restarted.Contains(l.App)) > 0) inOrder = false;
+        if (restarted.Count > 0 && _merged.RemoveAll(l => restarted.Contains(l.App)) > 0) removed = true;
 
         var fresh = new List<SproutLogLine>();
         foreach (var (source, _, lines) in reads)
@@ -158,7 +159,6 @@ public sealed class SproutLogs
                 _merged.Add(line);
                 continue;
             }
-            inOrder = false;
             var at = _merged.Count - 1;
             while (at > 0 && _merged[at - 1].Time > line.Time) at--;
             _merged.Insert(at, line);
@@ -166,9 +166,9 @@ public sealed class SproutLogs
         if (_merged.Count > _mergedCap)
         {
             _merged.RemoveRange(0, _merged.Count - _mergedCap + _mergedCap / 10);
-            inOrder = false;
+            removed = true;
         }
 
-        return new SproutLogChange(fresh, restarted, inOrder, trimmed);
+        return new SproutLogChange(fresh, restarted, removed, trimmed);
     }
 }

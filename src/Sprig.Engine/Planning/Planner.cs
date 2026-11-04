@@ -78,7 +78,7 @@ public static class Planner
 
             return new Plan(
                 input.Trellis.Name, input.Sprout, input.Trellis.PortPolicy, input.Trellis.Worktrees?.From,
-                _ports, Order(apps), containers, compose, groups, _problems);
+                _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_trellis, input.Trellis.Links));
         }
 
         // ---- scopes and names ----
@@ -192,7 +192,28 @@ public static class Planner
                 .Select(w => $"{scope.Owner}/{w}")
                 .ToArray();
             return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor, app.Outputs,
-                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app));
+                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app), PlanLinks(scope, app.Links));
+        }
+
+        /// <summary>Resolved after the app's values, so linking to another app's page never makes it wait for that app.
+        /// A link that isn't a web address is left out with a warning, rather than failing the plan over it.</summary>
+        IReadOnlyList<PlannedLink>? PlanLinks(Scope scope, IReadOnlyList<LinkModel>? links)
+        {
+            if (links is null or { Count: 0 }) return null;
+            var planned = new List<PlannedLink>();
+            foreach (var link in links)
+            {
+                if (string.IsNullOrWhiteSpace(link.Label))
+                {
+                    Warn("a quick link has no label", link.Location);
+                    continue;
+                }
+                if (Resolve(scope, link.Url, link.Location).Value is not { } url) continue; // resolving reported why
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+                    Warn($"the quick link '{link.Label}' goes to '{url}', which isn't an http(s) address, so it's left out", link.Location);
+                else planned.Add(new PlannedLink(link.Label, url));
+            }
+            return planned;
         }
 
         IReadOnlyList<PlannedHealth> PlanHealth(AppModel app)

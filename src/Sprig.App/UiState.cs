@@ -8,10 +8,16 @@ namespace Sprig.App;
 /// <param name="CollapsedTrellises">Trellis groups folded shut in the nav.</param>
 /// <param name="OpenDownTrellises">Trellis groups whose sprouts that are down are showing.</param>
 /// <param name="Pins">Pinned apps (<c>repo/app</c>) per trellis, so a pin applies to every sprout of it.</param>
+/// <param name="DetailsClosed">The app details beside the log were folded away.</param>
+/// <param name="LogTimesHidden">The log's time column was turned off.</param>
+/// <param name="LogWrapOff">The log's long lines run on past the edge rather than wrapping.</param>
 public sealed record UiStateData(
     List<string>? CollapsedTrellises = null,
     List<string>? OpenDownTrellises = null,
-    Dictionary<string, List<string>>? Pins = null);
+    Dictionary<string, List<string>>? Pins = null,
+    bool DetailsClosed = false,
+    bool LogTimesHidden = false,
+    bool LogWrapOff = false);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -29,6 +35,24 @@ public sealed class UiState(ISprigPaths paths)
     public bool IsDownOpen(string trellis) => Data.OpenDownTrellises?.Contains(trellis) == true;
 
     public void SetDownOpen(string trellis, bool open) => Save(Data with { OpenDownTrellises = Toggle(Data.OpenDownTrellises, trellis, open) });
+
+    public bool DetailsOpen
+    {
+        get => !Data.DetailsClosed;
+        set => Save(Data with { DetailsClosed = !value });
+    }
+
+    public bool LogTimes
+    {
+        get => !Data.LogTimesHidden;
+        set => Save(Data with { LogTimesHidden = !value });
+    }
+
+    public bool LogWrap
+    {
+        get => !Data.LogWrapOff;
+        set => Save(Data with { LogWrapOff = !value });
+    }
 
     public IReadOnlyList<string> Pins(string trellis) => Data.Pins?.GetValueOrDefault(trellis) ?? [];
 

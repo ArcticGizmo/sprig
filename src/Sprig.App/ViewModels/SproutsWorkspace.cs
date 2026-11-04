@@ -37,6 +37,9 @@ public sealed partial class AppListHeader(string title, string? repo) : Observab
     [ObservableProperty] private string _caption = "";
     [ObservableProperty] private bool _captionIsBad;
 
+    /// <summary>The caption in words, since it's only a count.</summary>
+    [ObservableProperty] private string? _captionTip;
+
     public string Chevron => !CanFold ? "" : IsOpen ? "▾" : "▸";
 }
 
@@ -61,10 +64,11 @@ public sealed partial class StateChip(AppStateFilter filter, IRelayCommand<State
 /// <param name="ValuesIn">Where its values are written, e.g. <c>.env.local</c>.</param>
 /// <param name="Settings">Each value, secrets masked, with where it came from.</param>
 public sealed record AppDetails(string Repo, string Name, string Url, string Folder, string ValuesIn, string StartsAfter,
-    string ReadyWhen, string LogFile, IReadOnlyList<SettingRow> Settings)
+    string ReadyWhen, string LogFile, IReadOnlyList<SettingRow> Settings, IReadOnlyList<PlannedLink> Links)
 {
     public bool HasUrl => Url.Length > 0;
     public bool HasSettings => Settings.Count > 0;
+    public bool HasLinks => Links.Count > 0;
 }
 
 public enum SproutTab { Apps, Infra }
@@ -134,26 +138,36 @@ public partial class SproutsViewModel
         if (Chips.Count == 0)
             foreach (var filter in Enum.GetValues<AppStateFilter>()) Chips.Add(new StateChip(filter, PickChipCommand));
 
+        // The same sprout read afresh (after bringing it up, say) keeps where the user was; another one starts clean.
+        var same = record is not null && record.Key == _workspaceKey;
+        _workspaceKey = record?.Key;
         _trellis = record?.Trellis ?? "";
         _pins = record is null ? [] : [.. _services.Ui.Pins(_trellis)];
-        _closedRepos.Clear();
         _listShape = "";
-        AppFilter = "";
-        StateFilter = AppStateFilter.All;
-        Tab = SproutTab.Apps;
-        Worktrees = [];
-        WrittenFiles = [];
+        if (!same)
+        {
+            _closedRepos.Clear();
+            AppFilter = "";
+            StateFilter = AppStateFilter.All;
+            Tab = SproutTab.Apps;
+            Worktrees = [];
+            WrittenFiles = [];
+        }
         foreach (var row in Apps) row.IsPinned = _pins.Contains(row.Key);
         PinnedCount = Apps.Count(a => a.IsPinned);
-        StreamPinned = false;
+        if (!same || PinnedCount == 0) StreamPinned = false;
 
         Logs.SetApps(record is null ? [] : Apps.Select(a => (a.Key, HostProtocol.LogFile(_services.Paths, record.Key, a.Key))).ToArray());
         Logs.SetStream(InStream);
-        Logs.Show(SproutLogPane.All);
-        PickedApp = Apps.FirstOrDefault(a => a.IsProblem) ?? Apps.FirstOrDefault(a => !a.IsJob) ?? Apps.FirstOrDefault();
+        var picked = PickedApp?.Key;
+        if (!same) Logs.Show(SproutLogPane.All);
+        PickedApp = (same ? Apps.FirstOrDefault(a => a.Key == picked) : null)
+            ?? Apps.FirstOrDefault(a => a.IsProblem) ?? Apps.FirstOrDefault(a => !a.IsJob) ?? Apps.FirstOrDefault();
         MarkSelected();
         RebuildList();
     }
+
+    string? _workspaceKey;
 
     bool InStream(string app) => StreamPinned ? _pins.Contains(app) : Visible(Apps.FirstOrDefault(a => a.Key == app));
 
@@ -205,8 +219,10 @@ public partial class SproutsViewModel
     {
         var mine = Apps.Where(a => a.Repo == header.Repo).ToArray();
         var bad = mine.Count(a => a.IsProblem);
-        header.Caption = bad > 0 ? $"{bad} need{(bad == 1 ? "s" : "")} attention" : $"{mine.Count(a => a.IsReady)} of {mine.Length} ready";
+        var ready = mine.Count(a => a.IsReady);
+        header.Caption = $"{ready}/{mine.Length}";
         header.CaptionIsBad = bad > 0;
+        header.CaptionTip = $"{ready} of {mine.Length} ready" + (bad > 0 ? $", {bad} need{(bad == 1 ? "s" : "")} attention" : "");
     }
 
     void RebuildList()
@@ -262,7 +278,8 @@ public partial class SproutsViewModel
             ready.Length > 0 ? string.Join(" and ", ready) : app.Job ? "it finishes" : row.Port.Length > 0 && row.Port != "job" ? "its port opens" : "it starts",
             HostProtocol.LogFile(_services.Paths, record.Key, row.Key).Replace('\\', '/'),
             app.Env.Select(e => new SettingRow(e.Key, e.File, e.Value.Value is { } v ? ValueMask.Apply(v) : "unresolved",
-                string.Join(" → ", e.Value.Via), e.Value.Value is null)).ToArray());
+                string.Join(" → ", e.Value.Via), e.Value.Value is null)).ToArray(),
+            app.Links ?? []);
     }
 
     void MarkSelected()
@@ -303,6 +320,30 @@ public partial class SproutsViewModel
         if (Apps.FirstOrDefault(a => a.Key == line.App) is { } row) OpenApp(row);
     }
 
+    /// <summary>From a line in one app's log: what every app was doing when it was written.</summary>
+    public void OpenAllAt(LogRow line, LogRow? topNow = null)
+    {
+        Tab = SproutTab.Apps;
+        Logs.ShowAt(SproutLogPane.All, line, topNow);
+        MarkSelected();
+    }
+
+    /// <summary>From a line in the interleaved log: the same line in its app's own log, with what came either side of it.</summary>
+    public void OpenAppAt(LogRow line, LogRow? topNow = null)
+    {
+        if (Apps.FirstOrDefault(a => a.Key == line.App) is not { } row) return;
+        Tab = SproutTab.Apps;
+        Logs.ShowAt(row.Key, line, topNow);
+        PickedApp = row;
+        MarkSelected();
+    }
+
+    [RelayCommand]
+    private void ToggleLogTimes() => _services.Ui.LogTimes = Logs.ShowTimes = !Logs.ShowTimes;
+
+    [RelayCommand]
+    private void ToggleLogWrap() => _services.Ui.LogWrap = Logs.Wrap = !Logs.Wrap;
+
     [RelayCommand]
     private void TogglePin(SproutAppRow row)
     {
@@ -342,8 +383,22 @@ public partial class SproutsViewModel
         if (PinnedCount > 0) StreamPinned = true;
     }
 
+    bool _narrow;
+
     [RelayCommand]
-    private void ToggleDetails() => DetailsOpen = !DetailsOpen;
+    private void ToggleDetails()
+    {
+        DetailsOpen = !DetailsOpen;
+        if (!_narrow) _services.Ui.DetailsOpen = DetailsOpen;
+    }
+
+    /// <summary>A window too narrow for the details beside the log folds them away, and opening them there (over the
+    /// log) is only for now; widening it again puts back what was chosen with room for both.</summary>
+    public void FitDetails(bool narrow)
+    {
+        _narrow = narrow;
+        DetailsOpen = !narrow && _services.Ui.DetailsOpen;
+    }
 
     [RelayCommand]
     private void ShowAppsTab() => Tab = SproutTab.Apps;

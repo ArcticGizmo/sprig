@@ -97,6 +97,59 @@ public class PlannerTests
     }
 
     [Fact]
+    public void Quick_links_resolve_to_each_sprouts_ports_without_making_one_app_wait_for_another()
+    {
+        var f = new Fixture();
+        var services = f.Add("../shop-services", repo =>
+        {
+            var api = repo.DotNet("catalog-api", ".").Http().Http("admin").Link("Swagger", "/swagger").Link("Admin", "/", endpoint: "admin");
+            repo.Export<Url>("catalog-url", api.Url);
+        });
+        f.Add("../shop-web", repo =>
+        {
+            var web = repo.Node("web", ".").Http()
+                .Link("Storefront")
+                .Link("Docs", "https://example.com/docs");
+            repo.Node("admin", ".").Http().Link("Web's cart", $"{web.Url}/cart?seed=demo");
+        });
+        var mail = f.Trellis.Container("mail", "mailpit").Endpoint("ui", 8025, scheme: "http");
+        f.Trellis.Link("Mail inbox", mail.UrlOf("ui")).Link("Catalog", $"{services.Export("catalog-url")}/products");
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        string Port(string resource, string endpoint = "http") => plan.Ports.Single(p => p.Resource == resource && p.Endpoint == endpoint).Port!.Value.ToString();
+        var api = plan.Apps.Single(a => a.Name == "catalog-api");
+        Assert.Equal([new PlannedLink("Swagger", $"http://localhost:{Port("catalog-api")}/swagger"), new PlannedLink("Admin", $"http://localhost:{Port("catalog-api", "admin")}")],
+            api.Links);
+        Assert.Equal([new PlannedLink("Storefront", $"http://localhost:{Port("web")}"), new PlannedLink("Docs", "https://example.com/docs")],
+            plan.Apps.Single(a => a.Name == "web").Links);
+        var admin = plan.Apps.Single(a => a.Name == "admin");
+        Assert.Equal($"http://localhost:{Port("web")}/cart?seed=demo", Assert.Single(admin.Links!).Url);
+        Assert.Empty(admin.DependsOn!);
+        Assert.Equal([new PlannedLink("Mail inbox", $"http://localhost:{Port("mail", "ui")}"), new PlannedLink("Catalog", $"http://localhost:{Port("catalog-api")}/products")],
+            plan.Links);
+    }
+
+    [Fact]
+    public void A_quick_link_that_isnt_a_web_address_is_left_out_with_a_warning()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            var pg = repo.Postgres("pg");
+            repo.Node("a", ".").Http().Link("Database", pg.Database("app")).Link("Home");
+        });
+
+        var plan = f.Plan();
+
+        var warning = Assert.Single(plan.Problems);
+        Assert.Equal(ProblemSeverity.Warning, warning.Severity);
+        Assert.Contains("'Database' goes to", warning.Message);
+        Assert.Equal(["Home"], plan.Apps.Single().Links!.Select(l => l.Label));
+    }
+
+    [Fact]
     public void A_bad_health_path_log_pattern_or_restart_count_is_an_error()
     {
         var f = new Fixture();

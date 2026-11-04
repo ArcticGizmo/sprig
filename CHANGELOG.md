@@ -7,9 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Quick links** — `app.Link("Swagger", "/swagger")` and `trellis.Link("Mail inbox", mail.UrlOf("ui"))` name the pages you actually start from, at each sprout's own ports. App links lead the details panel; trellis links live under the sprout's **Links** button. Click to open, middle-click for a new window. Containers grew `UrlOf` so their web UIs can be linked to.
+- **Logs you can work with** — drag or Shift+click lines and Ctrl+C them, stack traces included. Right-click a line to see what every app was doing at that moment, or the reverse. Timestamps and wrapping can be switched off, and stay off.
+
 ### Changed
 - **Experimental branch: everything goes** — the old model, maps, pools, editors, tour and most of the CLI are gone. What's left is the app shell, Settings, About, the updater and `sprig open`/`update`/`shell`. Brave, or reckless. The roadmap will decide.
 - **A store of its own** — this build keeps its data in `sprig-exp`, so it can't touch the released app's maps and workspaces.
+- **Right-click an app to start, restart, stop or pin it** — the app list was too narrow for a row of buttons on every line, so it traded them for one menu, also behind a faint ⋮ at the end of each row for those who don't right-click on instinct. A small pin marks the pinned ones.
+- **Up, down and remove can be cancelled** — the progress window has a Cancel button, and its close button cancels too, instead of holding you hostage while Docker stares into the middle distance. If the step ignores the cancel, sprig stops waiting for it after a few seconds and says so.
+- **Finished jobs fade out** — still green, but dimmed, so a migration that went fine stops asking for your attention.
 
 ---
 

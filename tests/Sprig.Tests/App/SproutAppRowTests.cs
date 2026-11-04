@@ -9,7 +9,7 @@ namespace Sprig.Tests.App;
 public class SproutAppRowTests
 {
     [Fact]
-    public void App_rows_show_what_the_host_says_and_starting_needs_the_sprout_up()
+    public async Task App_rows_show_what_the_host_says_and_starting_one_brings_a_sprout_that_is_down_up_first()
     {
         using var store = new TempStore();
         var services = new AppServices(store.Root);
@@ -52,9 +52,14 @@ public class SproutAppRowTests
         vm.ApplyRunners(null);
         Assert.Equal("not running", api.State);
 
-        vm.StartAppCommand.Execute(api);
-        Assert.True(vm.AppsMessageIsBad);
-        Assert.Contains("Bring the sprout up first", vm.AppsMessage);
+        // Down, so Bring up is what the header offers, and starting an app tries to bring it up: here its trellis file
+        // doesn't exist, so that stops with why.
+        Assert.True(vm.ShowBringUp);
+        Assert.False(vm.ShowTakeDown);
+        await vm.StartAppCommand.ExecuteAsync(api);
+        Assert.True(vm.FormFailed);
+        Assert.Contains("trellis", vm.FormMessage);
+        Assert.False(vm.HasAppsMessage);
 
         vm.OpenAppRowCommand.Execute(api);
         Assert.Equal("shop / api", vm.LogTitle);

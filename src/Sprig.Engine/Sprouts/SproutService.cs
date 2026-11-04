@@ -51,11 +51,11 @@ public sealed partial class SproutService(
     TrellisLoader? loader = null)
 {
     /// <summary>A sprout's apps go before its infra and worktrees, which they depend on and hold open.</summary>
-    void StopApps(SproutRecord record, Steps step)
+    void StopApps(SproutRecord record, Steps step, CancellationToken cancellation)
     {
         if (host?.TrySend(new Hosting.HostRequest("list"))?.Runners?.Any(r => r.Sprout == record.Key) != true) return;
         step.Start("Stop apps");
-        var stopped = host.StopAndWait(record.Key);
+        var stopped = host.StopAndWait(record.Key, cancellation: cancellation);
         var forced = stopped.Count(r => r.Error is not null);
         step.Done(forced == 0 ? $"{stopped.Count} stopped" : $"{stopped.Count} stopped, {forced} had to be ended");
     }
@@ -206,7 +206,7 @@ public sealed partial class SproutService(
     {
         var record = store.Get(trellis, sprout) ?? throw new SproutException($"{trellis} has no sprout named '{sprout}'");
         var step = new Steps(progress);
-        StopApps(record, step);
+        StopApps(record, step, cancellation);
         foreach (var project in record.Compose)
         {
             step.Start($"Stop {project.Name}");
@@ -231,7 +231,7 @@ public sealed partial class SproutService(
 
         if (!options.Force && RemovalBlockers(record, options.DeleteBranch) is [var first, ..]) throw new SproutException(first);
 
-        StopApps(record, step);
+        StopApps(record, step, cancellation);
         foreach (var project in record.Compose)
         {
             step.Start($"Remove {project.Name}");

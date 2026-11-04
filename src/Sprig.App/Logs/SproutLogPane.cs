@@ -81,10 +81,30 @@ public sealed partial class SproutLogPane : ViewModelBase
 
     [ObservableProperty] private string _summary = "";
 
+    /// <summary>Whether any line showing has a time; a log written before lines carried one has none, and gets no
+    /// empty column for them.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TimesShown))]
+    private bool _hasTimes;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TimesShown))]
+    private bool _showTimes = true;
+
+    /// <summary>Off, a long line runs on past the edge and the log scrolls sideways, so a stack trace keeps its shape.</summary>
+    [ObservableProperty] private bool _wrap = true;
+
+    public bool TimesShown => HasTimes && ShowTimes;
+
     public bool IsAll => Key == All;
     public bool IsOne => !IsAll;
     public bool IsPaused => !Follow;
-    public string PausedText => NewCount == 1 ? "Paused · 1 new line · Jump to latest" : $"Paused · {NewCount:N0} new lines · Jump to latest";
+    public string PausedText => NewCount switch
+    {
+        0 => "Paused · Jump to latest",
+        1 => "Paused · 1 new line · Jump to latest",
+        _ => $"Paused · {NewCount:N0} new lines · Jump to latest",
+    };
     public string? FileShown => IsAll ? null : _logs.FileOf(Key)?.Replace('\\', '/');
 
     public string LabelOf(string app) => _labels.GetValueOrDefault(app, app);
@@ -97,6 +117,9 @@ public sealed partial class SproutLogPane : ViewModelBase
 
     /// <summary>The view should bring this row to the top, putting back where a log was left.</summary>
     public event Action<LogRow>? ScrollTo;
+
+    /// <summary>The view should show this row with the lines either side of it, and pick it out.</summary>
+    public event Action<LogRow>? Reveal;
 
     /// <summary>Follow these apps' logs, in this order (which sets their colours).</summary>
     public void SetApps(IReadOnlyList<(string App, string File)> apps)
@@ -117,7 +140,18 @@ public sealed partial class SproutLogPane : ViewModelBase
     }
 
     /// <param name="topNow">The row at the top of the view now, kept as this log's place if it isn't following.</param>
-    public void Show(string key, LogRow? topNow = null)
+    public void Show(string key, LogRow? topNow = null) => Show(key, topNow, null);
+
+    /// <summary>Show <paramref name="key"/>'s log paused at the moment <paramref name="line"/> was written: that line
+    /// where this log shows it, else the first line written at or after it (another app's, or the search left it out).</summary>
+    public void ShowAt(string key, LogRow line, LogRow? topNow = null)
+    {
+        topNow ??= Follow ? null : TopRow?.Invoke();
+        State(key).Follow = false;
+        Show(key, topNow, line);
+    }
+
+    void Show(string key, LogRow? topNow, LogRow? at)
     {
         topNow ??= Follow ? null : TopRow?.Invoke();
         if (!Follow && topNow is not null) State(Key).AnchorSeq = topNow.Seq;
@@ -136,7 +170,15 @@ public sealed partial class SproutLogPane : ViewModelBase
             _loading = false;
         }
         Rebuild();
-        if (!state.Follow && state.AnchorSeq is { } seq && Lines.FirstOrDefault(r => r.Seq >= seq) is { } row) ScrollTo?.Invoke(row);
+        if (at is not null)
+        {
+            if ((Lines.FirstOrDefault(r => r.Seq == at.Seq) ?? Lines.FirstOrDefault(r => r.Line.Time >= at.Line.Time) ?? Lines.LastOrDefault()) is { } near)
+                Reveal?.Invoke(near);
+            return;
+        }
+        // The exact line it was left on; failing that (trimmed since), the next one that arrived after it.
+        if (!state.Follow && state.AnchorSeq is { } seq && (Lines.FirstOrDefault(r => r.Seq == seq) ?? Lines.FirstOrDefault(r => r.Seq > seq)) is { } row)
+            ScrollTo?.Invoke(row);
         else ScrollToEnd?.Invoke();
     }
 
@@ -145,19 +187,26 @@ public sealed partial class SproutLogPane : ViewModelBase
     {
         var change = await _logs.PollAsync();
         if (change.IsEmpty) return;
-        var mine = IsAll
-            ? change.InOrder && change.Restarted.Count == 0
-            : !change.Restarted.Contains(Key) && !change.TrimmedApps.Contains(Key);
-        if (!mine)
+        var rebuild = IsAll ? change.Removed : change.Restarted.Contains(Key) || change.TrimmedApps.Contains(Key);
+        if (rebuild)
         {
+            // A paused log keeps its place: the line that was at the top goes back to the top.
+            var top = Follow ? null : TopRow?.Invoke();
             Rebuild();
             if (Follow) ScrollToEnd?.Invoke();
+            else if (top is not null && (Lines.FirstOrDefault(r => r.Seq == top.Seq) ?? Lines.FirstOrDefault(r => r.Line.Time >= top.Line.Time)) is { } row)
+                ScrollTo?.Invoke(row);
             return;
         }
         var added = 0;
         foreach (var line in change.Added.Where(Wanted))
         {
-            Lines.Add(Row(line));
+            // Each app's lines arrive in order, but across apps a line can be older than the last one shown.
+            var at = Lines.Count;
+            if (IsAll)
+                while (at > 0 && Lines[at - 1].Line.Time > line.Time) at--;
+            Lines.Insert(at, Row(line));
+            HasTimes |= line.Timed;
             added++;
         }
         if (added == 0) return;
@@ -180,6 +229,10 @@ public sealed partial class SproutLogPane : ViewModelBase
         Follow = true;
         ScrollToEnd?.Invoke();
     }
+
+    /// <summary>Lines as the log shows them, for the clipboard: with their time and app when those columns are showing.</summary>
+    public string CopyText(IEnumerable<LogRow> rows) => string.Join(Environment.NewLine,
+        rows.Select(r => (TimesShown ? r.Time.PadRight(12) + "  " : "") + (IsAll ? r.Label + "  " : "") + r.Text));
 
     partial void OnSearchChanged(string value)
     {
@@ -223,6 +276,7 @@ public sealed partial class SproutLogPane : ViewModelBase
     void Rebuild()
     {
         Lines = new ObservableCollection<LogRow>((IsAll ? _logs.Merged : _logs.For(Key)).Where(Wanted).Select(Row));
+        HasTimes = Lines.Any(r => r.Line.Timed);
         UpdateSummary();
     }
 

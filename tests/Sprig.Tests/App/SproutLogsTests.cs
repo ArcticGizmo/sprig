@@ -37,11 +37,11 @@ public sealed class SproutLogsTests : IDisposable
         Assert.Equal([1, 2], logs.For("shop/web").Select(l => l.Number));
         Assert.Equal(LineLevel.Error, logs.For("shop/web")[1].Level);
         Assert.Equal(4, change.Added.Count);
-        Assert.True(change.InOrder);
+        Assert.False(change.Removed);
     }
 
     [Fact]
-    public async Task A_line_older_than_the_newest_is_slotted_in_and_the_change_says_so()
+    public async Task A_line_older_than_the_newest_is_slotted_in_without_anything_being_removed()
     {
         Append(File("api.log"), Today + Timed("11:00:01.000", "api late"));
         Append(File("web.log"), Today);
@@ -53,7 +53,7 @@ public sealed class SproutLogsTests : IDisposable
         var change = await logs.PollAsync();
 
         Assert.Equal(["web earlier", "api late"], logs.Merged.Select(l => l.Text));
-        Assert.False(change.InOrder);
+        Assert.False(change.Removed);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class SproutLogsTests : IDisposable
         Assert.Equal(["second run"], logs.For("shop/api").Select(l => l.Text));
         Assert.Equal(["web", "second run"], logs.Merged.Select(l => l.Text));
         Assert.Contains("shop/api", change.Restarted);
-        Assert.False(change.InOrder);
+        Assert.True(change.Removed);
         Assert.Equal(1, logs.ReadCount("shop/api"));
     }
 

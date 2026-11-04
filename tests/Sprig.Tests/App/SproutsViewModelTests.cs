@@ -35,6 +35,58 @@ public class SproutsViewModelTests
     }
 
     [Fact]
+    public void Cancelling_a_running_operation_signals_its_work_once_and_not_after_it_has_finished()
+    {
+        var progress = new OperationProgressViewModel("Stopping storefront / feat-a");
+        Assert.True(progress.IsRunning);
+        Assert.True(progress.CancelCommand.CanExecute(null));
+
+        progress.Cancel();
+
+        Assert.True(progress.Cancellation.IsCancellationRequested);
+        Assert.True(progress.IsCancelling);
+        Assert.False(progress.CancelCommand.CanExecute(null));
+        Assert.False(progress.CanClose);
+
+        progress.Finish("Cancelled part-way.", ProgressState.Warning);
+        Assert.False(progress.IsRunning);
+
+        var finished = new OperationProgressViewModel("Bringing storefront / feat-a up");
+        finished.Finish("up", ProgressState.Done);
+        finished.Cancel();
+        Assert.False(finished.Cancellation.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task Work_that_ignores_a_cancel_is_abandoned_so_the_window_can_close()
+    {
+        using var cancel = new CancellationTokenSource();
+        var stuck = new TaskCompletionSource();
+        var waiting = SproutsViewModel.FinishedOrAbandoned(stuck.Task, cancel.Token, TimeSpan.FromMilliseconds(50));
+        Assert.False(waiting.IsCompleted);
+
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        Assert.False(stuck.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Work_that_stops_when_cancelled_reports_its_own_outcome()
+    {
+        using var cancel = new CancellationTokenSource();
+        var work = Task.Run(() => Task.Delay(Timeout.Infinite, cancel.Token));
+        var waiting = SproutsViewModel.FinishedOrAbandoned(work, cancel.Token, TimeSpan.FromSeconds(10));
+
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        Assert.True(work.IsCompleted);
+
+        await SproutsViewModel.FinishedOrAbandoned(Task.CompletedTask, CancellationToken.None);
+    }
+
+    [Fact]
     public void The_page_lists_sprouts_counts_those_up_and_shows_the_selected_ones_apps_and_infra()
     {
         using var store = new TempStore();

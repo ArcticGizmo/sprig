@@ -46,13 +46,20 @@ public sealed record TrellisModel(
     IReadOnlyList<BindingModel> Bindings,
     IReadOnlyList<GroupModel> Groups,
     WorktreePolicyModel? Worktrees,
-    string PortPolicy)
+    string PortPolicy,
+    IReadOnlyList<LinkModel>? Links = null)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
+
+/// <summary>A page worth opening, named for what it's for: where you'd actually start, rather than wherever the
+/// endpoint's root lands.</summary>
+/// <param name="Url">A template that resolves to an absolute http(s) url.</param>
+public sealed record LinkModel(string Label, string Url, SourceLocation Location);
 
 /// <param name="Outputs">Files that also receive the app's process env vars, for running it by hand or from an IDE.</param>
 /// <param name="Job">A one-off command (such as migrations) that runs to completion, rather than an app that keeps running.</param>
 /// <param name="ReadyLog">A regular expression; the app is ready once a line of its output matches.</param>
 /// <param name="Restart">What to do when it exits without being asked to; null to leave it exited.</param>
+/// <param name="Links">Quick links to the app's pages.</param>
 public sealed record AppModel(
     string Name,
     string Kind,
@@ -65,7 +72,8 @@ public sealed record AppModel(
     IReadOnlyList<EnvOutputModel> Outputs,
     bool Job,
     string? ReadyLog = null,
-    RestartModel? Restart = null);
+    RestartModel? Restart = null,
+    IReadOnlyList<LinkModel>? Links = null);
 
 /// <param name="Policy"><c>onFailure</c> (a non-zero exit) or <c>always</c> (any exit; for a job, the same as
 /// <c>onFailure</c>).</param>

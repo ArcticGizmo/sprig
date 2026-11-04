@@ -74,7 +74,8 @@ public class SproutsWorkspaceTests
         Assert.Equal(["*all", "#SHOP-SERVICES", "catalog-api", "payments-api", "migrate", "#SHOP-WEB", "web", "storybook"], Shown(vm));
         Assert.Equal(["All 5", "2 ready", "1 needs attention", "2 stopped or done"], vm.Chips.Select(c => c.Label));
         var services = vm.ListRows.OfType<AppListHeader>().First();
-        Assert.Equal("1 needs attention", services.Caption);
+        Assert.Equal("1/3", services.Caption);
+        Assert.Equal("1 of 3 ready, 1 needs attention", services.CaptionTip);
         Assert.True(services.CaptionIsBad);
         Assert.Equal("payments-api", vm.PickedApp!.App);
 
@@ -191,6 +192,49 @@ public class SproutsWorkspaceTests
     }
 
     [Fact]
+    public async Task A_paused_log_takes_lines_older_than_the_last_one_in_their_place_without_being_moved()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out var services);
+        await vm.Logs.PollAsync();
+        var moved = 0;
+        vm.Logs.ScrollToEnd += () => moved++;
+        vm.Logs.ScrollTo += _ => moved++;
+        vm.Logs.SetFollowing(false, vm.Logs.Lines[0]);
+        var lines = vm.Logs.Lines;
+
+        // Older than the newest line shown (storybook's second, at 11:00:14), as a line read late from another log is.
+        File.AppendAllText(HostProtocol.LogFile(services.Paths, Key, "shop-web/web"),
+            $"{LogLineFormat.Prefix(DateTime.Now.Date.AddHours(11).AddSeconds(13.5))}web late\n");
+        await vm.Logs.PollAsync();
+
+        Assert.Same(lines, vm.Logs.Lines);
+        Assert.Equal(["web line two", "web late", "storybook line two"], vm.Logs.Lines.TakeLast(3).Select(l => l.Text));
+        Assert.Equal(1, vm.Logs.NewCount);
+        Assert.Equal(0, moved);
+    }
+
+    [Fact]
+    public async Task A_paused_log_rebuilt_under_it_is_put_back_where_it_was()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out var services);
+        await vm.Logs.PollAsync();
+        LogRow? putBack = null;
+        vm.Logs.ScrollTo += row => putBack = row;
+        var top = vm.Logs.Lines.First(l => l.Text == "web line one");
+        vm.Logs.TopRow = () => top;
+        vm.Logs.SetFollowing(false, top);
+
+        // catalog-api started afresh: its lines leave the interleaved list, so it's rebuilt.
+        File.WriteAllText(HostProtocol.LogFile(services.Paths, Key, "shop-services/catalog-api"), "new\n");
+        await vm.Logs.PollAsync();
+
+        Assert.Equal("web line one", putBack?.Text);
+        Assert.True(vm.Logs.IsPaused);
+    }
+
+    [Fact]
     public void The_details_show_what_the_picked_app_needs_with_secrets_masked()
     {
         using var store = new TempStore();
@@ -207,6 +251,100 @@ public class SproutsWorkspaceTests
         Assert.Equal("postgres.tcp port 8002", db.Via);
         Assert.Equal("Db=Host=a;Password=***", vm.EnvText());
         Assert.EndsWith("logs/storefront/feat-x/shop-services/catalog-api.log", details.LogFile);
+    }
+
+    [Fact]
+    public void Folding_the_details_is_remembered_but_a_narrow_window_folds_them_only_for_now()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out _);
+        Assert.True(vm.DetailsOpen);
+
+        vm.ToggleDetailsCommand.Execute(null);
+        var again = new SproutsViewModel(new AppServices(store.Root));
+        Assert.False(again.DetailsOpen);
+
+        again.ToggleDetailsCommand.Execute(null);
+        again.FitDetails(narrow: true);
+        Assert.False(again.DetailsOpen);
+        again.ToggleDetailsCommand.Execute(null);
+        again.ToggleDetailsCommand.Execute(null);
+        again.FitDetails(narrow: false);
+        Assert.True(again.DetailsOpen);
+        Assert.True(new SproutsViewModel(new AppServices(store.Root)).DetailsOpen);
+    }
+
+    [Fact]
+    public async Task The_time_column_shows_only_when_a_line_has_a_time()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out var services);
+        await vm.Logs.PollAsync();
+        Assert.True(vm.Logs.HasTimes);
+        Assert.Matches(@"^\d\d:\d\d:\d\d\.\d{3}$", vm.Logs.Lines[0].Time);
+
+        // Shorter than what was read, so it reads as the log started afresh, by a host from before lines carried a time.
+        File.WriteAllText(HostProtocol.LogFile(services.Paths, Key, "shop-web/web"), "old line\n");
+        vm.OpenApp(vm.Apps.Single(a => a.App == "web"));
+        await vm.Logs.PollAsync();
+
+        Assert.Equal(["old line"], vm.Logs.Lines.Select(l => l.Text));
+        Assert.False(vm.Logs.HasTimes);
+    }
+
+    [Fact]
+    public async Task A_line_in_one_apps_log_opens_all_apps_paused_at_that_moment_and_back_again()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out _);
+        await vm.Logs.PollAsync();
+        vm.OpenApp(vm.Apps.Single(a => a.App == "payments-api"));
+        LogRow? revealed = null;
+        vm.Logs.Reveal += row => revealed = row;
+        var failed = vm.Logs.Lines.Single(l => l.IsError);
+
+        vm.OpenAllAt(failed);
+
+        Assert.True(vm.Logs.IsAll);
+        Assert.True(vm.AllApps.IsSelected);
+        Assert.True(vm.Logs.IsPaused);
+        Assert.Equal(failed.Seq, revealed?.Seq);
+
+        // The interleaved log leaves payments-api out, so the line nearest after it in time is shown instead.
+        vm.OpenApp(vm.Apps.Single(a => a.App == "payments-api"));
+        vm.AppFilter = "web";
+        vm.OpenAllAt(failed);
+        Assert.Equal("web line two", revealed?.Text);
+
+        vm.AppFilter = "";
+        vm.OpenAppAt(vm.Logs.Lines.First(l => l.Text == "catalog-api line two"));
+        Assert.Equal("shop-services/catalog-api", vm.Logs.Key);
+        Assert.Equal("catalog-api", vm.PickedApp?.App);
+        Assert.Equal("catalog-api line two", revealed?.Text);
+        Assert.True(vm.Logs.IsPaused);
+    }
+
+    [Fact]
+    public async Task Copied_lines_carry_the_columns_showing_and_the_time_and_wrap_toggles_are_remembered()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out _);
+        await vm.Logs.PollAsync();
+        var rows = vm.Logs.Lines.Take(2).ToArray();
+
+        Assert.Matches(@"^\d\d:\d\d:\d\d\.\d{3}  catalog-api  catalog-api line one\r?\n\d\d:\d\d:\d\d\.\d{3}  payments-api  info: starting$", vm.Logs.CopyText(rows));
+
+        vm.ToggleLogTimesCommand.Execute(null);
+        vm.ToggleLogWrapCommand.Execute(null);
+        Assert.False(vm.Logs.TimesShown);
+        Assert.Equal($"catalog-api  catalog-api line one{Environment.NewLine}payments-api  info: starting", vm.Logs.CopyText(rows));
+
+        vm.OpenApp(vm.Apps.Single(a => a.App == "payments-api"));
+        Assert.Equal("info: starting", vm.Logs.CopyText(vm.Logs.Lines.Take(1)));
+
+        var again = new SproutsViewModel(new AppServices(store.Root));
+        Assert.False(again.Logs.ShowTimes);
+        Assert.False(again.Logs.Wrap);
     }
 
     [Fact]

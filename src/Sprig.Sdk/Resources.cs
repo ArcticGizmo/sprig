@@ -130,14 +130,43 @@ public sealed class AppResource : IResource
         return this;
     }
 
+    /// <summary>
+    /// A quick link, shown first in the app's details: a page on the app worth opening by name, such as where you'd
+    /// actually start, rather than the root of its url. Opened in the browser with a click.
+    /// </summary>
+    /// <param name="path">A path on the app's url, e.g. <c>"/swagger"</c> or <c>"/admin/login?as=dev"</c>. A full url
+    /// (<c>"https://..."</c>) is linked to as it is.</param>
+    /// <param name="endpoint">Which of the app's HTTP endpoints the path is on; its first, if left out.</param>
+    public AppResource Link(string label, string path = "/", string? endpoint = null,
+        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        Expr url = path.Contains("://", StringComparison.Ordinal)
+            ? path
+            : new Template([UrlOf(endpoint ?? PrimaryEndpoint), new Literal(path == "/" ? "" : path)]);
+        return Link(label, url, file, line);
+    }
+
+    /// <summary>A quick link to any url this repo can reach: another of its resources (<c>queue.UrlOf("ui")</c>), an
+    /// import, or a page outside sprig.</summary>
+    public AppResource Link(string label, Expr url, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _links.Add(new LinkModel(label, url.ToTemplate(), new SourceLocation(file, line)));
+        return this;
+    }
+
+    /// <inheritdoc cref="Link(string, Expr, string, int)"/>
+    public AppResource Link(string label, [InterpolatedStringHandlerArgument] ExprHandler url, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => Link(label, url.ToExpr(), file, line);
+
     string? _readyLog;
     RestartModel? _restart;
+    readonly List<LinkModel> _links = [];
 
     string PrimaryEndpoint => _primaryEndpoint
         ?? throw new InvalidOperationException($"app '{Name}' has no endpoint yet; call .Http() before using its Port or Url");
 
     internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(),
-        _outputs.ToArray(), Job: false, _readyLog, _restart);
+        _outputs.ToArray(), Job: false, _readyLog, _restart, _links.Count > 0 ? _links.ToArray() : null);
 }
 
 /// <summary>When sprig starts an app again after it exits on its own.</summary>
@@ -300,6 +329,9 @@ public class ContainerResource : IResource
 
     /// <summary>The host port mapped to a named endpoint.</summary>
     public PortRef PortOf(string endpoint) => new(Name, endpoint);
+
+    /// <summary>The url of a named endpoint given a scheme, e.g. a web UI's <c>http://localhost:8025</c>.</summary>
+    public Ref UrlOf(string endpoint) => new($"{Name}.{endpoint}.url");
 
     /// <summary>Map a host port sprig allocates to <paramref name="targetPort"/> inside the container.</summary>
     /// <param name="scheme">Gives the endpoint a url (e.g. <c>"http"</c> for a web UI).</param>

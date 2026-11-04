@@ -6,7 +6,8 @@ using Sprig.App.ViewModels;
 namespace Sprig.App.Views;
 
 /// <summary>Shown with <c>Show(owner)</c>, so it floats over the main window without blocking it. It closes only once
-/// the operation has finished, so a half-done step is never hidden.</summary>
+/// the operation has finished, so a half-done step is never hidden; closing it before then cancels the operation
+/// instead, and the window stays to say how far it got.</summary>
 public partial class OperationProgressWindow : Window
 {
     public OperationProgressWindow() => InitializeComponent();
@@ -15,7 +16,11 @@ public partial class OperationProgressWindow : Window
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        if (DataContext is OperationProgressViewModel { CanClose: false } && !e.IsProgrammatic) e.Cancel = true;
+        if (DataContext is OperationProgressViewModel { CanClose: false } running && !e.IsProgrammatic)
+        {
+            e.Cancel = true;
+            running.Cancel();
+        }
         base.OnClosing(e);
     }
 

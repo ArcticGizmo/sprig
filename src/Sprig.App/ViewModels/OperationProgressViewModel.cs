@@ -3,7 +3,9 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Sprig.Engine.Sprouts;
 
 namespace Sprig.App.ViewModels;
@@ -21,7 +23,34 @@ public partial class OperationProgressViewModel(string heading) : ViewModelBase
 
     public ObservableCollection<OperationStepViewModel> Steps { get; } = [];
 
-    [ObservableProperty] private bool _canClose;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRunning))]
+    private bool _canClose;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+    private bool _isCancelling;
+
+    readonly CancellationTokenSource _cancellation = new();
+
+    /// <summary>Handed to the work, which stops (killing what it started) once the user cancels.</summary>
+    public CancellationToken Cancellation => _cancellation.Token;
+
+    public bool IsRunning => !CanClose;
+
+    /// <summary>A docker that has stopped answering can hold a step forever, so a running operation can always be
+    /// abandoned rather than leaving the window stuck open.</summary>
+    [RelayCommand(CanExecute = nameof(CanCancel))]
+    public void Cancel()
+    {
+        if (!CanCancel()) return;
+        IsCancelling = true;
+        Summary = "Cancelling…";
+        SummaryBrush = Brush("MutedBrush");
+        _cancellation.Cancel();
+    }
+
+    bool CanCancel() => !CanClose && !IsCancelling;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSummary))]
@@ -69,6 +98,7 @@ public partial class OperationProgressViewModel(string heading) : ViewModelBase
             _ => Brush("OkBrush"),
         };
         CanClose = true;
+        CancelCommand.NotifyCanExecuteChanged();
     }
 
     internal static IBrush Brush(string key)

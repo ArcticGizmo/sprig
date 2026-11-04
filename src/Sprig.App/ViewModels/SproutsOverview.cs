@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -241,18 +242,19 @@ public partial class SproutsViewModel
     IReadOnlyList<SproutRecord> CheckedRecords() => _overview.Where(r => r.IsChecked).Select(r => r.Record).ToArray();
 
     [RelayCommand]
-    private Task BulkUp() => RunBulk("Bringing up", CheckedRecords(), (record, progress) =>
+    private Task BulkUp() => RunBulk("Bringing up", CheckedRecords(), (record, progress, cancellation) =>
     {
         var worktrees = _services.Sprouts.Worktrees(record.TrellisPath, record.Name);
         var loaded = _services.Loader.Load(record.TrellisPath, worktrees);
         if (loaded.Untrusted.Count > 0) throw new InvalidOperationException("it has definitions to approve first; open it and bring it up there");
         if (loaded.Trellis is null || loaded.Problems.Count > 0)
             throw new InvalidOperationException("its trellis can't be planned: " + string.Join("; ", loaded.Problems.Take(2).Select(p => p.Message)));
-        _services.Sprouts.Up(loaded, record.Name, record.Branch, progress);
+        _services.Sprouts.Up(loaded, record.Name, record.Branch, progress, cancellation);
     });
 
     [RelayCommand]
-    private Task BulkDown() => RunBulk("Taking down", CheckedRecords(), (record, progress) => _services.Sprouts.Down(record.Trellis, record.Name, progress));
+    private Task BulkDown() => RunBulk("Taking down", CheckedRecords(), (record, progress, cancellation) =>
+        _services.Sprouts.Down(record.Trellis, record.Name, progress, cancellation));
 
     [RelayCommand]
     private void AskBulkRemove() => ConfirmingBulkRemove = CheckedCount > 0;
@@ -265,26 +267,28 @@ public partial class SproutsViewModel
     {
         ConfirmingBulkRemove = false;
         var options = new RemoveOptions(BulkDeleteBranches);
-        await RunBulk("Removing", CheckedRecords(), (record, progress) =>
-            _services.Sprouts.Remove(record.Trellis, record.Name, options with { DeleteBranch = options.DeleteBranch && !record.InPlace }, progress));
+        await RunBulk("Removing", CheckedRecords(), (record, progress, cancellation) =>
+            _services.Sprouts.Remove(record.Trellis, record.Name, options with { DeleteBranch = options.DeleteBranch && !record.InPlace },
+                progress, cancellation));
     }
 
     /// <summary>One sprout after another in one progress window, each step named for its sprout. One failing doesn't stop
-    /// the rest; the summary says which failed and why.</summary>
-    async Task RunBulk(string verb, IReadOnlyList<SproutRecord> records, Action<SproutRecord, IProgress<SproutEvent>> each)
+    /// the rest, but a cancel does; the summary says which failed and why.</summary>
+    async Task RunBulk(string verb, IReadOnlyList<SproutRecord> records, Action<SproutRecord, IProgress<SproutEvent>, CancellationToken> each)
     {
         if (records.Count == 0) return;
         var failed = new List<string>();
-        await RunAsync($"{verb} {records.Count} sprout{(records.Count == 1 ? "" : "s")}", progress =>
+        await RunAsync($"{verb} {records.Count} sprout{(records.Count == 1 ? "" : "s")}", (progress, cancellation) =>
         {
             foreach (var record in records)
             {
+                cancellation.ThrowIfCancellationRequested();
                 var named = new NamedProgress(progress, $"{record.Trellis} / {record.Name}");
                 try
                 {
-                    each(record, named);
+                    each(record, named, cancellation);
                 }
-                catch (Exception e)
+                catch (Exception e) when (e is not OperationCanceledException)
                 {
                     failed.Add($"{record.Trellis} / {record.Name}: {e.Message.Split('\n')[0]}");
                 }

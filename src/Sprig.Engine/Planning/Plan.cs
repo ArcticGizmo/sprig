@@ -18,7 +18,8 @@ public sealed record Plan(
     IReadOnlyList<PlannedContainer> Containers,
     IReadOnlyList<PlannedCompose> Compose,
     IReadOnlyList<PlannedGroup> Groups,
-    IReadOnlyList<PlanProblem> Problems)
+    IReadOnlyList<PlanProblem> Problems,
+    IReadOnlyList<PlannedLink>? Links = null)
 {
     public bool HasErrors => Problems.Any(p => p.Severity == ProblemSeverity.Error);
 }
@@ -46,6 +47,7 @@ public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, So
 /// <param name="Health">HTTP paths that must answer with a success status before it's ready.</param>
 /// <param name="ReadyLog">A regular expression a line of its output must match before it's ready.</param>
 /// <param name="Restart">Whether, and how often, to start it again after it exits on its own.</param>
+/// <param name="Links">Its quick links, each resolved to an absolute url.</param>
 public sealed record PlannedApp(
     string Owner,
     string RepoPath,
@@ -60,10 +62,14 @@ public sealed record PlannedApp(
     IReadOnlyList<string>? DependsOn = null,
     IReadOnlyList<PlannedHealth>? Health = null,
     string? ReadyLog = null,
-    RestartModel? Restart = null)
+    RestartModel? Restart = null,
+    IReadOnlyList<PlannedLink>? Links = null)
 {
     public string Key => $"{Owner}/{Name}";
 }
+
+/// <summary>A quick link: a page worth opening by name.</summary>
+public sealed record PlannedLink(string Label, string Url);
 
 /// <summary>A path on one of an app's endpoints that answers with a success status once the app is ready.</summary>
 public sealed record PlannedHealth(string Endpoint, string Path);

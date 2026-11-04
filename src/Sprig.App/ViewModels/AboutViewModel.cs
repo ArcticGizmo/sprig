@@ -93,17 +93,7 @@ public partial class AboutViewModel : PageViewModel
         ApplyUpdateCommand.NotifyCanExecuteChanged();
     }
 
-    static void OpenUrl(string url)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Opening a browser is best-effort; never crash the app over it.
-        }
-    }
+    static void OpenUrl(string url) => Browser.Open(url);
 
     static string ResolveVersion()
     {

@@ -3,6 +3,7 @@
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
              xmlns:logs="clr-namespace:Sprig.App.Logs"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
+             xmlns:planning="clr-namespace:Sprig.Engine.Planning;assembly=Sprig.Engine"
              x:Class="Sprig.App.Views.SproutsView"
              x:DataType="vm:SproutsViewModel">
 
@@ -69,6 +70,13 @@
         <Style Selector="Ellipse.dot.bad">
             <Setter Property="Fill" Value="{StaticResource DangerBrush}" />
         </Style>
+        <!-- A job that finished went fine and needs nothing: still green, but faded so the eye passes over it. -->
+        <Style Selector="Ellipse.dot.done">
+            <Setter Property="Opacity" Value="0.4" />
+        </Style>
+        <Style Selector="TextBlock.state.done">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
         <Style Selector="Button.small">
             <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
             <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
@@ -108,16 +116,31 @@
         <Style Selector="Border.approw.selected TextBlock.appname">
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
-        <Style Selector="Button.pin">
-            <Setter Property="Opacity" Value="0" />
+        <!-- Always there so the menu can be found, but faint until the row is pointed at. -->
+        <Style Selector="Button.more">
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="CornerRadius" Value="4" />
         </Style>
-        <Style Selector="Border.approw:pointerover Button.pin">
-            <Setter Property="Opacity" Value="1" />
+        <Style Selector="Border.approw:pointerover Button.more">
+            <Setter Property="Opacity" Value="0.8" />
         </Style>
-        <Style Selector="Button.pin.on">
+        <Style Selector="Button.more:pointerover">
             <Setter Property="Opacity" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="Button.more:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#33333F" />
+        </Style>
+        <!-- Opened by the view: a click in the browser, a middle-click in a new window; right-click to copy. Tag holds the url. -->
+        <Style Selector="TextBlock.link">
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TextBlock.link:pointerover">
+            <Setter Property="TextDecorations" Value="Underline" />
         </Style>
         <Style Selector="Button.chip">
             <Setter Property="Background" Value="Transparent" />
@@ -148,6 +171,12 @@
             <Setter Property="Background" Value="#3A2F12" />
             <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
         </Style>
+        <Style Selector="Border.rail">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+        </Style>
+        <Style Selector="Button.flat:pointerover Border.rail">
+            <Setter Property="Background" Value="#262633" />
+        </Style>
         <Style Selector="Border.tab">
             <Setter Property="BorderThickness" Value="0,0,0,2" />
             <Setter Property="BorderBrush" Value="Transparent" />
@@ -165,10 +194,17 @@
         <Style Selector="ListBox.log">
             <Setter Property="Background" Value="#14141B" />
             <Setter Property="Padding" Value="0,6" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        </Style>
+        <Style Selector="ListBox.log.nowrap">
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
         </Style>
         <Style Selector="ListBox.log ListBoxItem">
             <Setter Property="Padding" Value="0" />
             <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <Style Selector="ListBox.log ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#2B3654" />
         </Style>
         <Style Selector="Border.logrow.error">
             <Setter Property="Background" Value="#1FF87171" />
@@ -185,6 +221,9 @@
         </Style>
         <Style Selector="TextBlock.logline.warn">
             <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="ListBox.nowrap TextBlock.logline">
+            <Setter Property="TextWrapping" Value="NoWrap" />
         </Style>
         <Style Selector="Border.row">
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -353,18 +392,42 @@
                             </StackPanel>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Button x:Name="LinksButton" Content="Links ▾" Padding="12,6" FontSize="12.5" IsVisible="{Binding HasSproutLinks}"
+                                    ToolTip.Tip="The trellis's quick links, at this sprout's ports"
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}">
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedRight">
+                                        <ItemsControl ItemsSource="{Binding SproutLinks}" MinWidth="220" Margin="4,2">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="planning:PlannedLink">
+                                                    <StackPanel Margin="0,4" Spacing="1">
+                                                        <TextBlock Classes="link" Text="{Binding Label, StringFormat='{}{0} ↗'}" Tag="{Binding Url}" FontSize="13" />
+                                                        <TextBlock Text="{Binding Url}" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                                                   FontFamily="Cascadia Mono,Consolas,monospace" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
                             <Button Content="Start all" Command="{Binding StartAppsCommand}" Padding="12,6" FontSize="12.5"
+                                    ToolTip.Tip="Every app, after what each depends on; a sprout that's down is brought up first"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
                             <Button Content="Stop apps" Command="{Binding StopAppsCommand}" Padding="12,6" FontSize="12.5"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
+                                    IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
+                            <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding ShowBringUp}" ToolTip.Tip="Its worktrees, env files and infra, without starting its apps."
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="⋯" Padding="10,6" FontSize="12.5" ToolTip.Tip="More"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}">
                                 <Button.Flyout>
                                     <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                        <MenuItem Header="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" />
+                                        <MenuItem Header="Bring up again" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}"
+                                                  IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="Write its env files and start its infra afresh" />
                                         <MenuItem Header="Remove…" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}" />
                                     </MenuFlyout>
                                 </Button.Flyout>
@@ -536,55 +599,49 @@
                                 <DataTemplate DataType="vm:AppListHeader" x:DataType="vm:AppListHeader">
                                     <Button Classes="flat" IsHitTestVisible="{Binding CanFold}" CommandParameter="{Binding}"
                                             Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).ToggleRepoCommand}">
-                                        <Grid ColumnDefinitions="14,*,Auto" Margin="12,10,12,4">
+                                        <Grid ColumnDefinitions="14,Auto,*" Margin="12,10,12,4">
                                             <TextBlock Text="{Binding Chevron}" FontSize="10" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                                             <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="11" FontWeight="SemiBold" LetterSpacing="1"
                                                        Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="2" Classes="state" Text="{Binding Caption}" FontSize="11"
-                                                       Classes.bad="{Binding CaptionIsBad}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Classes="state" Text="{Binding Caption}" FontSize="11" Margin="8,0,0,0"
+                                                       Classes.bad="{Binding CaptionIsBad}" VerticalAlignment="Center" ToolTip.Tip="{Binding CaptionTip}" />
                                         </Grid>
                                     </Button>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:AppListEntry" x:DataType="vm:AppListEntry">
-                                    <Border Classes="approw" Classes.selected="{Binding Row.IsSelected}" Padding="0,0,8,0">
-                                        <Grid ColumnDefinitions="*,Auto,Auto">
-                                            <Button Classes="flat" CommandParameter="{Binding Row}"
-                                                    Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenAppRowCommand}">
-                                                <Grid ColumnDefinitions="22,*,Auto" Margin="12,6,0,6">
-                                                    <Ellipse Classes="dot" Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                             Classes.up="{Binding Row.IsGood}" Classes.busy="{Binding Row.IsBusy}"
-                                                             Classes.bad="{Binding Row.IsProblem}" />
-                                                    <StackPanel Grid.Column="1">
-                                                        <TextBlock Classes="appname" Text="{Binding Row.App}" FontSize="13"
-                                                                   Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
-                                                        <Grid ColumnDefinitions="Auto,*">
-                                                            <TextBlock Text="{Binding Row.Repo, StringFormat='{}{0} · '}" IsVisible="{Binding InPinned}"
-                                                                       FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
-                                                            <TextBlock Grid.Column="1" Classes="state" Text="{Binding Row.StateLine}" FontSize="11.5"
-                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Row.StateLine}"
-                                                                       Classes.up="{Binding Row.IsGood}" Classes.bad="{Binding Row.IsProblem}"
-                                                                       Classes.busy="{Binding Row.IsBusy}" />
-                                                        </Grid>
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="2" Text="{Binding Row.Port}" FontSize="11.5" Margin="8,0,4,0"
-                                                               FontFamily="Cascadia Mono,Consolas,monospace" VerticalAlignment="Center"
-                                                               Foreground="{StaticResource MutedBrush}" />
-                                                </Grid>
-                                            </Button>
-                                            <Button Grid.Column="1" Classes="flat pin" Classes.on="{Binding Row.IsPinned}" Width="26" Height="26"
-                                                    ToolTip.Tip="Pin" VerticalAlignment="Center" CommandParameter="{Binding Row}"
-                                                    Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).TogglePinCommand}">
-                                                <PathIcon Width="13" Height="13" Data="{StaticResource PinIcon}" />
-                                            </Button>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
-                                                        IsVisible="{Binding Row.IsSelected}" Margin="4,0,0,0">
-                                                <Button Classes="small" Content="Start" IsVisible="{Binding !Row.IsAlive}" Padding="8,3" CommandParameter="{Binding Row}"
-                                                        Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).StartAppCommand}" />
-                                                <Button Classes="small" Content="Restart" IsVisible="{Binding Row.IsAlive}" Padding="8,3" CommandParameter="{Binding Row}"
-                                                        Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).StartAppCommand}" />
-                                                <Button Classes="small" Content="Stop" IsVisible="{Binding Row.IsAlive}" Padding="8,3" CommandParameter="{Binding Row}"
-                                                        Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).StopAppCommand}" />
-                                            </StackPanel>
+                                    <!-- Start, stop and pin are on a menu the view opens: right-click the row, or click its ⋮ -->
+                                    <Border Classes="approw" Classes.selected="{Binding Row.IsSelected}" Padding="0,0,4,0">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                        <Button Classes="flat" CommandParameter="{Binding Row}"
+                                                Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenAppRowCommand}">
+                                            <Grid ColumnDefinitions="22,*,Auto,Auto" Margin="12,6,4,6">
+                                                <Ellipse Classes="dot" Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                         Classes.up="{Binding Row.IsGood}" Classes.busy="{Binding Row.IsBusy}"
+                                                         Classes.bad="{Binding Row.IsProblem}" Classes.done="{Binding Row.IsFinished}" />
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Classes="appname" Text="{Binding Row.App}" FontSize="13"
+                                                               Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
+                                                    <Grid ColumnDefinitions="Auto,*">
+                                                        <TextBlock Text="{Binding Row.Repo, StringFormat='{}{0} · '}" IsVisible="{Binding InPinned}"
+                                                                   FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                                                        <TextBlock Grid.Column="1" Classes="state" Text="{Binding Row.StateLine}" FontSize="11.5"
+                                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Row.StateLine}"
+                                                                   Classes.up="{Binding Row.IsGood}" Classes.bad="{Binding Row.IsProblem}"
+                                                                   Classes.busy="{Binding Row.IsBusy}" Classes.done="{Binding Row.IsFinished}" />
+                                                    </Grid>
+                                                </StackPanel>
+                                                <PathIcon Grid.Column="2" Width="11" Height="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                          Data="{StaticResource PinIcon}" Foreground="{StaticResource AccentBrush}"
+                                                          IsVisible="{Binding Row.IsPinned}" ToolTip.Tip="Pinned" />
+                                                <TextBlock Grid.Column="3" Text="{Binding Row.Port}" FontSize="11.5" Margin="8,0,0,0"
+                                                           FontFamily="Cascadia Mono,Consolas,monospace" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource MutedBrush}" />
+                                            </Grid>
+                                        </Button>
+                                        <Button Grid.Column="1" Classes="flat more" Width="20" Height="26" VerticalAlignment="Center"
+                                                ToolTip.Tip="Start, stop or pin" Click="OpenAppMenu">
+                                            <TextBlock Text="⋮" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Button>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -605,7 +662,8 @@
                                     <TextBlock Text="{Binding LogTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                     <TextBlock Classes="state" Text="{Binding LogSub}" FontSize="11.5" TextTrimming="CharacterEllipsis"
                                                Classes.up="{Binding LogApp.IsGood, FallbackValue=False}"
-                                               Classes.bad="{Binding LogApp.IsProblem, FallbackValue=False}" />
+                                               Classes.bad="{Binding LogApp.IsProblem, FallbackValue=False}"
+                                               Classes.done="{Binding LogApp.IsFinished, FallbackValue=False}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0" IsVisible="{Binding Logs.IsAll}" VerticalAlignment="Center">
                                     <Button Classes="toggle" Classes.on="{Binding StreamingList}" Command="{Binding StreamListCommand}"
@@ -633,27 +691,35 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="LogSearch" Text="{Binding Logs.Search}" PlaceholderText="Search this log" FontSize="12.5" />
-                                <Button Grid.Column="2" Classes="toggle" Classes.warnon="{Binding Logs.ProblemsOnly}"
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="0">
+                                    <Button Classes="toggle" Classes.on="{Binding Logs.ShowTimes}" Command="{Binding ToggleLogTimesCommand}"
+                                            CornerRadius="6,0,0,6" Content="Timestamps" IsEnabled="{Binding Logs.HasTimes}"
+                                            ToolTip.Tip="Show when each line was written" />
+                                    <Button Classes="toggle" Classes.on="{Binding Logs.Wrap}" Command="{Binding ToggleLogWrapCommand}"
+                                            CornerRadius="0,6,6,0" BorderThickness="0,1,1,1" Content="Wrap"
+                                            ToolTip.Tip="Wrap long lines; off, they run on and the log scrolls sideways" />
+                                </StackPanel>
+                                <Button Grid.Column="3" Classes="toggle" Classes.warnon="{Binding Logs.ProblemsOnly}"
                                         Content="Warnings and errors" Click="ToggleProblems" />
-                                <Button Grid.Column="3" Classes="toggle" Classes.on="{Binding DetailsOpen}" Content="Details"
-                                        Command="{Binding ToggleDetailsCommand}" />
                             </Grid>
                         </Border>
                         <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,5">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                                 <TextBlock Classes="cell via" Text="{Binding Logs.Summary}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Grid.Column="1" Text="Each log keeps its search, filter, pause and place." FontSize="11"
-                                           Foreground="#6E6E82" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                                <TextBlock Grid.Column="1" Text="Drag or Shift+click lines, Ctrl+C to copy. Right-click a line for more." FontSize="11"
+                                           Foreground="#6E6E82" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="400" />
                             </Grid>
                         </Border>
                         <Grid>
-                            <ListBox x:Name="LogList" Classes="log" ItemsSource="{Binding Logs.Lines}">
+                            <ListBox x:Name="LogList" Classes="log" Classes.nowrap="{Binding !Logs.Wrap}" ItemsSource="{Binding Logs.Lines}"
+                                     SelectionMode="Multiple">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="logs:LogRow">
                                         <Border Classes="logrow" Classes.error="{Binding IsError}" Padding="12,0">
-                                        <Grid ColumnDefinitions="88,Auto,*">
+                                        <Grid ColumnDefinitions="Auto,Auto,*">
                                             <TextBlock Text="{Binding Time}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12"
-                                                       Foreground="#5F5F74" VerticalAlignment="Top" />
+                                                       Foreground="#5F5F74" VerticalAlignment="Top" Width="88"
+                                                       IsVisible="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).Logs.TimesShown}" />
                                             <Button Grid.Column="1" Classes="flat" Width="110" Margin="0,0,10,0" VerticalAlignment="Top"
                                                     IsVisible="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).Logs.IsAll}"
                                                     ToolTip.Tip="Open its own log" CommandParameter="{Binding}"
@@ -675,22 +741,60 @@
                         </Grid>
                     </DockPanel>
 
+                    <!-- Folded: a strip on the right edge that opens the details again -->
+                    <Button Grid.Column="1" Classes="flat" Width="30" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch"
+                            IsVisible="{Binding !DetailsOpen}" Command="{Binding ToggleDetailsCommand}" ToolTip.Tip="Show the app's details">
+                        <Border Classes="rail" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0" Padding="0,12">
+                            <StackPanel Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Top">
+                                <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" />
+                                <LayoutTransformControl HorizontalAlignment="Center">
+                                    <LayoutTransformControl.LayoutTransform>
+                                        <RotateTransform Angle="90" />
+                                    </LayoutTransformControl.LayoutTransform>
+                                    <TextBlock Text="DETAILS" FontSize="10.5" FontWeight="SemiBold" LetterSpacing="1.5"
+                                               Foreground="{StaticResource MutedBrush}" />
+                                </LayoutTransformControl>
+                            </StackPanel>
+                        </Border>
+                    </Button>
+
                     <!-- The picked app's details: beside the log rather than above it -->
                     <Border x:Name="DetailsPanel" Grid.Column="1" Width="300" IsVisible="{Binding DetailsOpen}" Background="{StaticResource PanelBgBrush}"
                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel Margin="16,14" Spacing="14" IsVisible="{Binding Details, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <StackPanel Margin="16,10,16,14" Spacing="14">
+                                <Button Classes="flat" Command="{Binding ToggleDetailsCommand}" ToolTip.Tip="Fold the details away">
+                                    <Grid ColumnDefinitions="*,Auto" Background="Transparent">
+                                        <TextBlock Classes="phead" Text="DETAILS" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="›" FontSize="16" Foreground="{StaticResource MutedBrush}" Margin="6,0" />
+                                    </Grid>
+                                </Button>
+                                <TextBlock Classes="cell via" Text="Pick an app in the list to see its details."
+                                           IsVisible="{Binding Details, Converter={x:Static ObjectConverters.IsNull}}" />
+                                <StackPanel Spacing="14" IsVisible="{Binding Details, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="2">
                                     <TextBlock Text="{Binding Details.Repo}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                     <TextBlock Text="{Binding Details.Name}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                     <TextBlock Classes="state" Text="{Binding PickedApp.StateLine}" FontSize="12" TextWrapping="Wrap"
                                                Classes.up="{Binding PickedApp.IsGood, FallbackValue=False}"
-                                               Classes.bad="{Binding PickedApp.IsProblem, FallbackValue=False}" />
+                                               Classes.bad="{Binding PickedApp.IsProblem, FallbackValue=False}"
+                                               Classes.done="{Binding PickedApp.IsFinished, FallbackValue=False}" />
+                                </StackPanel>
+                                <StackPanel Spacing="6" IsVisible="{Binding Details.HasLinks, FallbackValue=False}">
+                                    <TextBlock Classes="phead" Text="QUICK LINKS" />
+                                    <ItemsControl ItemsSource="{Binding Details.Links}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="planning:PlannedLink">
+                                                <TextBlock Classes="link" Text="{Binding Label, StringFormat='{}{0} ↗'}" Tag="{Binding Url}" FontSize="13"
+                                                           Margin="0,2" ToolTip.Tip="{Binding Url}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                                 <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="7" ColumnSpacing="10">
                                     <TextBlock Classes="cell via" Text="Url" />
-                                    <SelectableTextBlock Grid.Column="1" Classes="cell mono" FontSize="12" Text="{Binding Details.Url}"
-                                                         Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Grid.Column="1" Classes="cell mono link" FontSize="12" Text="{Binding Details.Url}" Tag="{Binding Details.Url}"
+                                               ToolTip.Tip="Click to open · middle-click for a new window · right-click to copy" />
                                     <TextBlock Grid.Row="1" Classes="cell via" Text="Folder" />
                                     <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="cell mono" FontSize="12" Text="{Binding Details.Folder}" />
                                     <TextBlock Grid.Row="2" Classes="cell via" Text="Values in" />
@@ -723,6 +827,7 @@
                                     </ItemsControl>
                                 </StackPanel>
                                 <SelectableTextBlock Classes="cell via" FontSize="11" Text="{Binding Details.LogFile, StringFormat='Log file: {0}'}" />
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </Border>

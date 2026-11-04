@@ -227,6 +227,92 @@ public sealed class SproutServiceTests : IDisposable
         Assert.Null(_sprouts.Get("storefront", "feat-x"));
     }
 
+    /// <summary>Stands in for <c>dotnet run</c>: each definition's text names the builder whose model it emits.</summary>
+    sealed class ScriptedHost(Dictionary<string, Func<DefinitionBuilder>> models) : IDefinitionHost
+    {
+        public HostResult Run(string definitionPath, string outputFile, TimeSpan timeout)
+        {
+            models[File.ReadAllText(definitionPath).Trim()]().Emit(["emit", "--out", outputFile]);
+            return new HostResult(0, "", false);
+        }
+    }
+
+    static RepoBuilder WebWith(string feature)
+    {
+        var repo = Sprig.Repo.Describe("shop-web");
+        var web = repo.Node("web", ".").Http();
+        web.EnvFile(".env.local", e => e.Set("PORT", web.Port).Set("FEATURE", feature));
+        return repo;
+    }
+
+    [Fact]
+    public void A_branch_that_changes_sprig_cs_is_run_as_the_branch_has_it_once_approved()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));
+        Git(source, "checkout", "-q", "-b", "feat-x");
+        File.WriteAllText(Path.Combine(source, "sprig.cs"), "// web v2");
+        Git(source, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-am", "v2");
+        Git(source, "checkout", "-q", "main");
+        var trellisFile = Path.Combine(_root, "storefront.trellis.cs");
+        File.WriteAllText(trellisFile, "// trellis");
+
+        var trust = new FileTrustStore(_store.Paths);
+        var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
+        {
+            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo("shop-web"); return t; },
+            ["// web v1"] = () => WebWith("v1"),
+            ["// web v2"] = () => WebWith("v2"),
+        }), _store.Paths));
+        var settings = new FileSettingsStore(_store.Paths);
+        var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), settings, _git,
+            new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
+        var mainDefinition = Path.Combine(source, "sprig.cs");
+        trust.Approve(trellisFile, DefinitionHash.Of("// trellis"));
+        trust.Approve(mainDefinition, DefinitionHash.Of("// web v1"));
+        var loaded = loader.Load(trellisFile);
+        Assert.True(loaded.Complete);
+
+        var e = Assert.Throws<SproutException>(() => sprouts.Up(loaded, "feat-x", null));
+
+        var pending = Assert.Single(e.Untrusted);
+        var worktree = Path.Combine(_root, "storefront--feat-x", "shop-web");
+        Assert.Equal(Path.Combine(worktree, "sprig.cs"), pending.Path);
+        Assert.Equal(mainDefinition, pending.TrustPath);
+        Assert.Equal(mainDefinition, sprouts.TrustPathFor(pending.Path));
+        Assert.False(File.Exists(Path.Combine(worktree, ".env.local")));
+
+        trust.Approve(pending.TrustPath, pending.Sha256);
+        var record = sprouts.Up(loaded, "feat-x", null);
+
+        Assert.Equal(SproutState.Up, record.State);
+        Assert.Contains("FEATURE=v2", File.ReadAllText(Path.Combine(worktree, ".env.local")));
+        // The main checkout's version stays approved alongside the branch's.
+        Assert.IsType<Evaluated>(loader.Load(trellisFile).Results[1]);
+    }
+
+    [Fact]
+    public void A_new_branch_from_main_needs_no_new_approval()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));
+        var trellisFile = Path.Combine(_root, "storefront.trellis.cs");
+        File.WriteAllText(trellisFile, "// trellis");
+        var trust = new FileTrustStore(_store.Paths);
+        var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
+        {
+            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo("shop-web"); return t; },
+            ["// web v1"] = () => WebWith("v1"),
+        }), _store.Paths));
+        var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
+        trust.Approve(trellisFile, DefinitionHash.Of("// trellis"));
+        trust.Approve(Path.Combine(source, "sprig.cs"), DefinitionHash.Of("// web v1"));
+
+        var record = sprouts.Up(loader.Load(trellisFile), "feat-y", null);
+
+        Assert.Contains("FEATURE=v1", File.ReadAllText(Path.Combine(record.Repos[0].Dir, ".env.local")));
+        Assert.Equal(record.Repos[0].Dir, sprouts.Worktrees(trellisFile, "feat-y")!["shop-web"]);
+    }
+
     [Theory]
     [InlineData("feat-x", true)]
     [InlineData("feat/x", false)]

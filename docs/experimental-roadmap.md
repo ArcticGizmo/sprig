@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 to M5 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)). M6 (review against Aspire) next.
+Branch: `experimental`. Started 2026-11-03. Status: M0 to M5 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)), and sprouts now run their branch's definitions. M6 (review against Aspire) next.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -26,6 +26,7 @@ The background and the comparison with Aspire are in [artefacts/authoring-redesi
 | Test system | **Mix of mono and poly.** One monorepo with two .NET APIs, plus separate repos for a Vue web app and an Ionic app. Infra: Postgres, Redis, RabbitMQ, Mailpit. |
 | Old code | **New model, copy helpers as needed.** Delete the old model, wiring, maps, pool and editors. Keep the app shell, theme, graph controls, updater and changelog. Copy small proven helpers (git worktree wrapper, `ProcessRunner`, port allocator) into the new engine when a milestone needs them. |
 | Run experience | **A log pane per runner in the app**, with start, stop and restart. Telemetry (traces, metrics) comes later, probably through the standalone Aspire dashboard. |
+| A sprout's definitions | (User, 2026-11-04.) **Read from the sprout's worktrees, approved by content per repo.** A branch that changes `sprig.cs` takes effect in its sprout straight away. Approvals are kept per repo's own `sprig.cs`, several versions each, so a worktree's copy runs if that exact content was approved for the repo before, and a new version asks once, whichever worktree it's in. |
 
 ---
 
@@ -295,6 +296,12 @@ Also in M4:
 **Outcome:** met. One command (`sprig up storefront --sprout x -d`, or `--run` to follow) brings up the infra, runs `migrate`, starts both APIs once Postgres and RabbitMQ are healthy, then web and mobile. `catalog-api` can be stopped (from the app or `sprig stop`) and run from an IDE on its leased port with the sprout's values, and the rest keeps working (shown with `dotnet run` from the worktree earlier in M5).
 
 ### M6: Review and decide (about 2 weeks)
+
+**Before M6 (done 2026-11-04): a sprout runs its branch's definitions.**
+- `up` reads each repo's `sprig.cs` from the sprout's worktree: for an existing sprout before the dry plan, and for a new one right after its worktrees are made (a "Definitions" step). Compose files are read from the same place. `sprig plan <trellis> --sprout <name>` does the same for an existing sprout.
+- The trust store keeps up to 20 approved versions per file. A worktree's copy is checked against its repo's own `sprig.cs` (`DefinitionRunner.Evaluate(file, trustAs)`, `NeedsTrust.TrustPath`), so a new branch made from `main` asks nothing, and switching back to `main` doesn't ask again.
+- When a branch brings a version that isn't approved, `up` stops after making the worktrees and before writing anything. The CLI asks (or `--trust` approves) and goes again; the app shows the approval panel and carries on once approved. `sprig trust add <worktree>/sprig.cs` approves it for its repo. `sprig trust ls` lists each file once, with how many versions are approved.
+- **On the testbed:** a `feat-defs` branch of `shop-web` added `VITE_BRANCH_FLAG=on` to its `sprig.cs`. `sprig up storefront --sprout feat-defs` made the three worktrees and stopped at "Definitions", asking only for shop-web's branch version (the two branches made fresh from `main` asked nothing). After `sprig trust add <worktree>/shop-web/sprig.cs`, `up` came up with the flag in the worktree's `.env.local`, `plan --sprout feat-defs` showed it, plain `plan` (the main checkouts) didn't and asked nothing, and `rm` cleaned up.
 
 - Run the same test system under Aspire (an AppHost with `--isolated`) and compare setup effort, start time, isolation and the debugging workflow.
 - Decide whether `experimental` replaces `main`, and how existing `.sprig.json` users move over. That could be a converter, or a clean break before 1.0.

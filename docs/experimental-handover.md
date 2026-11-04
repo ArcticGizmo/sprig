@@ -1,21 +1,21 @@
 # Handover: experimental branch
 
-Written 2026-11-03, after the session that finished M5 (readiness checks, restart policies, `up --run`, the app's runners and log pane). Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
+Written 2026-11-03, after the session that finished M5 (readiness checks, restart policies, `up --run`, the app's runners and log pane). Updated 2026-11-04: sprouts run their branch's definitions. Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
 
 ## Where things stand
 
 - Branch `experimental`, pushed to `origin/experimental` (tracking). `main` is untouched.
 - M0 to M5 are done. M6 is next.
-- 174 tests pass (`dotnet test sprig.slnx`, about 60 s). The old intermittent host-test failures were the host dying from its own Ctrl+C (see Gotchas); after the fix, 5 full runs and 20 runs of the stop tests were clean. If a host test fails, the Application event log (ids 1000 and 1026) shows whether `sprig-host` crashed. Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
+- 179 tests pass (`dotnet test sprig.slnx`, about 70 s). The old intermittent host-test failures were the host dying from its own Ctrl+C (see Gotchas); after the fix, 5 full runs and 20 runs of the stop tests were clean. If a host test fails, the Application event log (ids 1000 and 1026) shows whether `sprig-host` crashed. Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
 - Warnings are errors repo-wide (`Directory.Build.props`). Build with normal verbosity: `-v q` hides warnings.
 - Version is `0.100.0-exp`. **Never tag from this branch**: the release workflow publishes on any `v*` tag. Don't use the `bump-version` or `release-next-version` skills here.
 - The user asked to commit, push and continue as each piece lands.
 
 ## Next
 
-M5 is done; see the roadmap's M5 section for everything in it.
+M5 is done, and sprouts now run their branch's definitions (the roadmap's "Before M6" note under M6).
 
-1. **M6 (review against Aspire).** The open question at the end of this file needs an answer first.
+1. **M6 (review against Aspire).** Nothing blocks it now.
 2. The user hasn't yet tried the app's new runner rows and log pane by hand (renders are in `captures/`).
 
 ## Decisions already made (don't reopen)
@@ -34,6 +34,7 @@ M5 is done; see the roadmap's M5 section for everything in it.
 | Ordering | `WaitFor` means ready for an app, finished with code 0 for a job, and healthy for infra. There's no separate `After`. Apps also start after apps their values point at, unless that closes a loop. |
 | Stopping | Ctrl+C to the app's console, then end the job after 10 s if a real program is still running. |
 | `up --run` | (User, 2026-11-03.) Follows every app's log, `docker compose up` style. Ctrl+C in the CLI stops the apps (the infra stays up for `sprig down`); a second Ctrl+C leaves at once and the host finishes the stops. `-d/--detached` starts the apps, waits until they're ready and returns. Plain `up` still does only the infra. |
+| A sprout's definitions | (User, 2026-11-04.) Read from its worktrees and approved by content per repo: the trust store keeps several versions per repo's `sprig.cs`, and a worktree's copy is checked against those (`Evaluate(file, trustAs)`). An unapproved branch version stops `up` after the worktrees, before any writes; the CLI and app ask, then go again. |
 | UI testing | The user tests the UI by hand only once most of the structure is done. Verify with headless renders and view-model tests meanwhile; don't ask them to try pages. |
 | Store | `%LOCALAPPDATA%\sprig-exp` (`sprig-exp (Dev)` for Debug). Never the released app's `sprig` folder; a test guards it. |
 
@@ -44,7 +45,8 @@ repo/sprig.cs ──┐                         dotnet run, scrubbed env, time l
 repo/sprig.cs ──┼─ DefinitionRunner ──►  trusted by SHA-256 of content, cached by sha + SDK version + schema
 x.trellis.cs ───┘   (Engine/Definitions)   → DefinitionModel JSON (RepoModel | TrellisModel), schema 4
                          │
-                  TrellisLoader (Engine/Trellises) — evaluates trellis + repos in parallel; RepoDirs; ComposeFiles()
+                  TrellisLoader (Engine/Trellises) — evaluates trellis + repos in parallel; RepoDirs; ComposeFiles();
+                         │                         Load(path, sproutDirs) reads repos from a sprout's worktrees (ReadFrom)
                          │
                   Planner (Engine/Planning) — scopes, imports/exports, ports (kept leases first), {templates},
                          │                    PlannedApp.DependsOn (WaitFor + value-implied, loop-free)
@@ -131,7 +133,3 @@ RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ na
 - No private repo or project names in docs, artefacts or examples. Use the testbed names (shop, catalog, orders).
 - Code comments explain why, never what the code used to do. Markdown has no hard-wrapped sentences.
 - Commit messages end with the `Co-Authored-By` line.
-
-## Open question (before M6)
-
-A sprout evaluates its repos' definitions from their main checkouts, not its worktrees, because trust is per path. So a branch that changes `sprig.cs` isn't reflected until it's merged. Evaluating worktrees needs a rule for how approval carries over, for example trusting by content hash within a registered repo's worktrees.

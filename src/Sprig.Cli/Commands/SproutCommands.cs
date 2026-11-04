@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Sprouts;
+using Sprig.Engine.Trellises;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -49,19 +50,20 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (s.Json && s.Run && !s.Detached)
             throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; use --detached with --json");
-        if (TrellisLoad.Load(cli, s.Trellis, s) is not { } loaded) return 1;
+        var named = s.Sprout ?? (s.Branch is { } b ? SproutService.NameFromBranch(b) : null);
+        if (TrellisLoad.Load(cli, s.Trellis, s, named) is not { } loaded) return 1;
         var trellis = loaded.Trellis!;
         var root = Path.GetDirectoryName(loaded.TrellisPath)!;
 
-        var sprout = s.Sprout
-            ?? (s.Branch is { } b ? SproutService.NameFromBranch(b) : null)
+        var sprout = named
             ?? (trellis.Worktrees is null ? "local" : throw new InvalidOperationException(
                 $"{trellis.Name} gives each sprout its own worktrees; name it: sprig up {trellis.Name} --sprout <name>"));
 
         var progress = new SyncProgress<SproutEvent>(e => Report(e, s.Json));
         try
         {
-            var record = cli.Sprouts.Up(loaded, sprout, s.Branch, progress, cancellation);
+            var record = UpApproving(loaded, sprout, s, progress, cancellation);
+            if (record is null) return 1;
             var plan = cli.Sprouts.LastPlan(record.Trellis, record.Name)!;
             var runApps = s.Run || s.Detached;
             if (!runApps)
@@ -90,6 +92,24 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
                 if (e.Problems.Count > 0) PlanPrinter.Problems(cli.Ansi, e.Problems, root);
             }
             return 1;
+        }
+    }
+
+    /// <summary>Up, asking to approve the definitions a new sprout's worktrees bring (its branch can change them) and
+    /// going again. Null when they weren't approved.</summary>
+    SproutRecord? UpApproving(LoadedTrellis loaded, string sprout, Settings s, IProgress<SproutEvent> progress,
+        CancellationToken cancellation)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return cli.Sprouts.Up(loaded, sprout, s.Branch, progress, cancellation);
+            }
+            catch (SproutException e) when (e.Untrusted.Count > 0 && attempt < 3)
+            {
+                if (!TrustFlow.Approve(cli, e.Untrusted, s)) return null;
+            }
         }
     }
 

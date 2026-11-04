@@ -323,7 +323,7 @@ public partial class SproutsViewModel : PageViewModel
         var branch = NewBranch.Trim() is { Length: > 0 } b ? b : null;
         var sprout = NewName.Trim() is { Length: > 0 } n ? n : branch is null ? null : SproutService.NameFromBranch(branch);
 
-        var loaded = await LoadAsync(path, Create);
+        var loaded = await LoadAsync(path, Create, sprout);
         if (loaded is null) return;
 
         sprout ??= loaded.Trellis!.Worktrees is null ? "local" : null;
@@ -340,7 +340,7 @@ public partial class SproutsViewModel : PageViewModel
 
         var ok = await RunAsync($"Sprouting {loaded.Trellis!.Name} / {sprout}",
             progress => _services.Sprouts.Up(loaded, sprout, branch, progress),
-            $"{loaded.Trellis.Name} / {sprout} is up.");
+            $"{loaded.Trellis.Name} / {sprout} is up.", retry: Create);
         if (ok)
         {
             NewName = "";
@@ -354,10 +354,11 @@ public partial class SproutsViewModel : PageViewModel
     private async Task Up()
     {
         if (Selected?.Record is not { } record) return;
-        var loaded = await LoadAsync(record.TrellisPath, Up);
+        var loaded = await LoadAsync(record.TrellisPath, Up, record.Name);
         if (loaded is null) return;
         await RunAsync($"Bringing {record.Trellis} / {record.Name} up",
-            progress => _services.Sprouts.Up(loaded, record.Name, record.Branch, progress), $"{record.Trellis} / {record.Name} is up.");
+            progress => _services.Sprouts.Up(loaded, record.Name, record.Branch, progress), $"{record.Trellis} / {record.Name} is up.",
+            retry: Up);
         Refresh();
     }
 
@@ -392,7 +393,7 @@ public partial class SproutsViewModel : PageViewModel
     [RelayCommand]
     private async Task ApproveAll()
     {
-        foreach (var item in PendingTrust) _services.Trust.Approve(item.Path, item.Sha256);
+        foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
         PendingTrust.Clear();
         HasPendingTrust = false;
         if (_afterApproval is { } next)
@@ -404,19 +405,17 @@ public partial class SproutsViewModel : PageViewModel
 
     /// <summary>Load a trellis, asking for approval first when a definition needs it. Null when it can't be used yet;
     /// the form says why.</summary>
-    async Task<LoadedTrellis?> LoadAsync(string path, Func<Task> retry)
+    /// <param name="sprout">When it names a sprout with worktrees, the repos' definitions are read from those.</param>
+    async Task<LoadedTrellis?> LoadAsync(string path, Func<Task> retry, string? sprout = null)
     {
         IsWorking = true;
         try
         {
-            var loaded = await AppServices.RunAsync(() => _services.Loader.Load(path));
+            var loaded = await AppServices.RunAsync(() =>
+                _services.Loader.Load(path, sprout is null ? null : _services.Sprouts.Worktrees(path, sprout)));
             if (loaded.Untrusted.Count > 0)
             {
-                PendingTrust.Clear();
-                foreach (NeedsTrust p in loaded.Untrusted)
-                    PendingTrust.Add(new PendingTrustItem(p.Path.Replace('\\', '/'), p.Sha256, p.ApprovedSha256 is not null));
-                HasPendingTrust = true;
-                _afterApproval = retry;
+                AskForTrust(loaded.Untrusted, retry);
                 return null;
             }
             if (loaded.Trellis is null || loaded.Problems.Count > 0)
@@ -433,8 +432,17 @@ public partial class SproutsViewModel : PageViewModel
         }
     }
 
+    void AskForTrust(IEnumerable<NeedsTrust> pending, Func<Task> then)
+    {
+        PendingTrust.Clear();
+        foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
+        HasPendingTrust = PendingTrust.Count > 0;
+        _afterApproval = then;
+    }
+
     /// <summary>Run one operation off the UI thread, reporting into a progress window.</summary>
-    async Task<bool> RunAsync(string heading, Action<IProgress<SproutEvent>> work, string success)
+    /// <param name="retry">Run again once the user approves definitions the operation found unapproved.</param>
+    async Task<bool> RunAsync(string heading, Action<IProgress<SproutEvent>> work, string success, Func<Task>? retry = null)
     {
         var window = new OperationProgressViewModel(heading);
         var progress = new Progress<SproutEvent>(window.Apply);
@@ -447,6 +455,14 @@ public partial class SproutsViewModel : PageViewModel
             await Task.Yield();
             window.Finish(success, ProgressState.Done);
             return true;
+        }
+        catch (SproutException e) when (e.Untrusted.Count > 0 && retry is not null)
+        {
+            AskForTrust(e.Untrusted, retry);
+            window.Finish("The sprout's branch changes these definitions, so they need approving first:\n"
+                + string.Join("\n", e.Untrusted.Select(u => u.Path.Replace('\\', '/')))
+                + "\nApprove them on the Sprouts page and it carries on.", ProgressState.Error);
+            return false;
         }
         catch (Exception e)
         {

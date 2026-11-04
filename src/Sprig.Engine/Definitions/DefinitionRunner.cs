@@ -12,9 +12,13 @@ public sealed record Evaluated(string Path, string Sha256, TimeSpan Elapsed, Def
     : DefinitionResult(Path, Sha256, Elapsed);
 
 /// <summary>Not run: this exact content hasn't been approved. <paramref name="ApprovedSha256"/> is set when an earlier
-/// version was.</summary>
-public sealed record NeedsTrust(string Path, string Sha256, TimeSpan Elapsed, string? ApprovedSha256)
-    : DefinitionResult(Path, Sha256, Elapsed);
+/// version was. Approve it under <paramref name="TrustPath"/>, which differs from <paramref name="Path"/> for a copy of a
+/// repo's definition in a sprout's worktree.</summary>
+public sealed record NeedsTrust(string Path, string Sha256, TimeSpan Elapsed, string? ApprovedSha256, string TrustPath)
+    : DefinitionResult(Path, Sha256, Elapsed)
+{
+    public bool IsCopy => Path != TrustPath;
+}
 
 /// <summary>Not run: the file uses directives a definition may not.</summary>
 public sealed record Rejected(string Path, string Sha256, TimeSpan Elapsed, IReadOnlyList<DirectivePolicy.Violation> Violations)
@@ -32,18 +36,21 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
 {
     readonly DefinitionRunnerOptions _options = options ?? new DefinitionRunnerOptions();
 
-    public DefinitionResult Evaluate(string definitionPath)
+    /// <param name="trustAs">The file whose approvals count for this one; a worktree's copy of a repo's sprig.cs is
+    /// approved as the repo's own, so each version is approved once per repo rather than once per worktree.</param>
+    public DefinitionResult Evaluate(string definitionPath, string? trustAs = null)
     {
         var clock = Stopwatch.StartNew();
         var path = Path.GetFullPath(definitionPath);
+        var trustPath = trustAs is null ? path : Path.GetFullPath(trustAs);
         var text = File.ReadAllText(path);
         var sha = DefinitionHash.Of(text);
 
         var violations = DirectivePolicy.Check(text, _options.AllowLocalSdkProject);
         if (violations.Count > 0) return new Rejected(path, sha, clock.Elapsed, violations);
 
-        var decision = trust.Check(path, sha);
-        if (decision.State != TrustState.Trusted) return new NeedsTrust(path, sha, clock.Elapsed, decision.ApprovedSha256);
+        var decision = trust.Check(trustPath, sha);
+        if (decision.State != TrustState.Trusted) return new NeedsTrust(path, sha, clock.Elapsed, decision.ApprovedSha256, trustPath);
 
         var cacheFile = CacheFile(sha);
         if (_options.UseCache && TryRead(cacheFile) is { } cached)

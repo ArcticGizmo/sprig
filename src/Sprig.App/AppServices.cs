@@ -37,7 +37,7 @@ public sealed class AppServices
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         Sprouts = new SproutService(new SproutStore(Paths), new PortLeases(Paths), Settings,
-            new GitClient(processes), new DockerCompose(processes), host: Host);
+            new GitClient(processes), new DockerCompose(processes), host: Host, loader: Loader);
     }
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);

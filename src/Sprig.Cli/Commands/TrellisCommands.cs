@@ -33,8 +33,13 @@ static class TrustFlow
             var approve = s.Trust;
             if (!approve && interactive)
             {
-                var why = item.ApprovedSha256 is null ? "hasn't been approved" : "changed since you approved it";
-                cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(item.Path)}[/] {why}.");
+                var why = (item.ApprovedSha256, item.IsCopy) switch
+                {
+                    (null, _) => "hasn't been approved",
+                    (_, false) => "changed since you approved it",
+                    _ => $"differs from every version of {item.TrustPath} you've approved",
+                };
+                cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(item.Path)}[/] {Markup.Escape(why)}.");
                 cli.Ansi.MarkupLine("[dim]  Running it runs its code with your permissions. Read it first if you didn't write it.[/]");
                 approve = cli.Ansi.Prompt(new ConfirmationPrompt("  Approve and run it?") { DefaultValue = false });
             }
@@ -45,7 +50,7 @@ static class TrustFlow
                 else Console.Error.WriteLine(message);
                 return false;
             }
-            cli.Trust.Approve(item.Path, item.Sha256);
+            cli.Trust.Approve(item.TrustPath, item.Sha256);
         }
         return true;
     }
@@ -137,8 +142,10 @@ public sealed class TrustAddCommand(CliContext cli) : Command<TrustAddCommand.Se
     {
         var path = LongPath.Of(s.File);
         var sha = DefinitionHash.Of(System.IO.File.ReadAllText(path));
-        cli.Trust.Approve(path, sha);
-        return CliOutput.Ok(s.Json, $"approved {path} ({sha[..12]})", new { ok = true, path, sha256 = sha });
+        var trustPath = cli.Sprouts.TrustPathFor(path);
+        cli.Trust.Approve(trustPath, sha);
+        var message = trustPath == path ? $"approved {path} ({sha[..12]})" : $"approved this version of {trustPath} ({sha[..12]}), from {path}";
+        return CliOutput.Ok(s.Json, message, new { ok = true, path, trustPath, sha256 = sha });
     }
 }
 
@@ -149,13 +156,12 @@ public sealed class TrustLsCommand(CliContext cli) : Command<GlobalSettings>
     {
         var entries = cli.Trust.List();
         if (s.Json) { CliOutput.Json(entries); return 0; }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("File", "Content", "Approved", "Now");
-        foreach (var e in entries)
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("File", "Versions", "Last approved", "Now");
+        foreach (var file in entries.GroupBy(e => e.Path, StringComparer.OrdinalIgnoreCase))
         {
-            var now = File.Exists(e.Path)
-                ? DefinitionHash.Of(File.ReadAllText(e.Path)) == e.Sha256 ? "[green]unchanged[/]" : "[yellow]changed[/]"
-                : "[red]missing[/]";
-            table.AddRow(Markup.Escape(e.Path), e.Sha256[..12], e.ApprovedAt.LocalDateTime.ToString("g"), now);
+            var current = File.Exists(file.Key) ? DefinitionHash.Of(File.ReadAllText(file.Key)) : null;
+            var now = current is null ? "[red]missing[/]" : file.Any(e => e.Sha256 == current) ? "[green]approved[/]" : "[yellow]changed[/]";
+            table.AddRow(Markup.Escape(file.Key), file.Count().ToString(), file.Max(e => e.ApprovedAt).LocalDateTime.ToString("g"), now);
         }
         cli.Ansi.Write(table);
         return 0;
@@ -172,19 +178,19 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         public string Trellis { get; set; } = "";
 
         [CommandOption("--sprout <name>")]
-        [Description("The sprout name to plan for (default: plan)")]
+        [Description("The sprout name to plan for (default: plan). An existing sprout's definitions are read from its worktrees")]
         public string Sprout { get; set; } = "plan";
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        if (TrellisLoad.Load(cli, s.Trellis, s) is not { } loaded) return 1;
+        if (TrellisLoad.Load(cli, s.Trellis, s, s.Sprout) is not { } loaded) return 1;
 
         var problems = new List<PlanProblem>();
         var compose = loaded.ComposeFiles(problems);
         var plan = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, s.Sprout, cli.Settings.Get(), PortAllocator.Listening(),
             ComposeFiles: compose));
-        if (!plan.HasErrors) problems.AddRange(cli.Sprouts.CheckFiles(plan, loaded.RepoDirs));
+        if (!plan.HasErrors) problems.AddRange(cli.Sprouts.CheckFiles(plan, loaded.ReadFrom));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };
         if (s.Json) CliOutput.Json(plan);
         else PlanPrinter.Print(cli.Ansi, plan, Path.GetDirectoryName(loaded.TrellisPath)!);
@@ -196,17 +202,19 @@ static class TrellisLoad
 {
     /// <summary>Load a trellis by name or path, asking to approve what isn't yet. Null (after saying why) when it
     /// can't be planned.</summary>
-    public static LoadedTrellis? Load(CliContext cli, string nameOrPath, TrustingSettings s)
+    /// <param name="sprout">When it names a sprout with worktrees, the repos' definitions are read from those.</param>
+    public static LoadedTrellis? Load(CliContext cli, string nameOrPath, TrustingSettings s, string? sprout = null)
     {
         var path = cli.Trellises.Resolve(nameOrPath)
             ?? throw new InvalidOperationException($"no trellis named '{nameOrPath}'. Register one with: sprig trellis add <file>");
 
         var loader = new TrellisLoader(cli.Definitions);
-        var loaded = loader.Load(path);
+        var worktrees = sprout is null ? null : cli.Sprouts.Worktrees(path, sprout);
+        var loaded = loader.Load(path, worktrees);
         if (loaded.Untrusted.Count > 0)
         {
             if (!TrustFlow.Approve(cli, loaded.Untrusted, s)) return null;
-            loaded = loader.Load(path);
+            loaded = loader.Load(path, worktrees);
         }
 
         if (loaded.Trellis is not null && loaded.Problems.Count == 0) return loaded;

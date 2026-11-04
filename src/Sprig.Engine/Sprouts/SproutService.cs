@@ -14,10 +14,13 @@ public enum StepState { Running, Done, Skipped, Failed, Output }
 /// <summary>Progress from <see cref="SproutService"/>: a step starting or ending, or a line of a tool's output.</summary>
 public sealed record SproutEvent(string Step, StepState State, string? Detail = null);
 
-/// <summary>A sprout couldn't come up. <see cref="Problems"/> holds the plan's problems when that's why.</summary>
-public sealed class SproutException(string message, IReadOnlyList<PlanProblem>? problems = null) : Exception(message)
+/// <summary>A sprout couldn't come up. <see cref="Problems"/> holds the plan's problems when that's why, and
+/// <see cref="Untrusted"/> the definitions in its worktrees that need approving first.</summary>
+public sealed class SproutException(string message, IReadOnlyList<PlanProblem>? problems = null,
+    IReadOnlyList<Definitions.NeedsTrust>? untrusted = null) : Exception(message)
 {
     public IReadOnlyList<PlanProblem> Problems { get; } = problems ?? [];
+    public IReadOnlyList<Definitions.NeedsTrust> Untrusted { get; } = untrusted ?? [];
 }
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
@@ -27,6 +30,8 @@ public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false
 /// a compose project per infra source, started and healthy. Each sprout's record says exactly what it did, so
 /// <c>down</c> and <c>rm</c> undo that and nothing else.
 /// </summary>
+/// <param name="loader">Reads the repos' definitions again from a sprout's worktrees, so a branch that changes its
+/// sprig.cs is planned as the branch has it. Without one, definitions come only from the repos' own folders.</param>
 public sealed partial class SproutService(
     SproutStore store,
     PortLeases leases,
@@ -34,7 +39,8 @@ public sealed partial class SproutService(
     GitClient git,
     DockerCompose docker,
     Func<IReadOnlySet<int>>? listening = null,
-    Hosting.HostClient? host = null)
+    Hosting.HostClient? host = null,
+    TrellisLoader? loader = null)
 {
     /// <summary>A sprout's apps go before its infra and worktrees, which they depend on and hold open.</summary>
     void StopApps(SproutRecord record, Steps step)
@@ -64,6 +70,28 @@ public sealed partial class SproutService(
 
     public Plan? LastPlan(string trellis, string sprout) => store.GetPlan(trellis, sprout);
 
+    /// <summary>The worktree of each repo of the trellis at <paramref name="trellisPath"/>'s sprout, keyed by repo path,
+    /// when it has worktrees that are all still there.</summary>
+    public IReadOnlyDictionary<string, string>? Worktrees(string trellisPath, string sprout)
+        => store.List().FirstOrDefault(r => r.Name == sprout && SamePath(r.TrellisPath, trellisPath)) is { } record ? Worktrees(record) : null;
+
+    static IReadOnlyDictionary<string, string>? Worktrees(SproutRecord record)
+        => record.Repos.Count > 0 && record.Repos.All(r => r.Worktree && Directory.Exists(r.Dir))
+            ? record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal)
+            : null;
+
+    /// <summary>
+    /// Where approval for a definition file is kept. A file in a sprout's worktree counts as the same file in the repo
+    /// it came from, so each version of a repo's sprig.cs is approved once, whichever worktree it's in.
+    /// </summary>
+    public string TrustPathFor(string file)
+    {
+        foreach (var repo in store.List().SelectMany(r => r.Repos).Where(r => r.Worktree))
+            if (IsUnder(file, repo.Dir) && !SamePath(file, repo.Dir))
+                return Path.Combine(repo.Source, Path.GetRelativePath(repo.Dir, file));
+        return file;
+    }
+
     /// <param name="branch">The branch for the sprout's worktrees; defaults to the sprout's name. Must be null when the
     /// trellis runs its repos in place.</param>
     public SproutRecord Up(LoadedTrellis loaded, string sprout, string? branch, IProgress<SproutEvent>? progress = null,
@@ -89,11 +117,16 @@ public sealed partial class SproutService(
 
         // A dry run first, so a broken trellis fails before anything is created.
         step.Start("Plan");
+        if (existing is not null && Worktrees(existing) is { } worktrees)
+        {
+            try { loaded = FromWorktrees(loaded, worktrees); }
+            catch (SproutException e) { throw step.Fail(e); }
+        }
         var problems = new List<PlanProblem>();
         var dryPlan = Planner.Build(new PlanInput(trellis, loaded.Repos, sprout, settingsNow, _listening(),
             ComposeFiles: loaded.ComposeFiles(problems)));
         problems.AddRange(dryPlan.Problems);
-        if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.RepoDirs));
+        if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new SproutException("the plan has errors", problems));
         var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
@@ -120,6 +153,16 @@ public sealed partial class SproutService(
             store.Save(record);
 
             var dirs = record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal);
+            if (!inPlace && loader is not null && !SameDirs(loaded.ReadFrom, dirs))
+            {
+                step.Start("Definitions");
+                loaded = FromWorktrees(loaded, dirs);
+                var fresh = loaded.Repos;
+                record = record with { Repos = record.Repos.Select(r => r with { Name = fresh[r.RepoPath].Name }).ToList() };
+                store.Save(record);
+                step.Done("read from the worktrees");
+            }
+
             step.Start("Ports");
             var plan = LeasePorts(loaded, record, existing, dirs, settingsNow);
             step.Done(string.Join(", ", plan.Ports.Select(p => $"{p.Resource}.{p.Endpoint} {p.Port}")));
@@ -417,6 +460,22 @@ public sealed partial class SproutService(
     }
 
     // ---- helpers ----
+
+    /// <summary>The trellis with each repo's definition read from the sprout's worktree instead, since the sprout runs
+    /// its branch's code. Unchanged when there's no loader or it was already read from there.</summary>
+    LoadedTrellis FromWorktrees(LoadedTrellis loaded, IReadOnlyDictionary<string, string> dirs)
+    {
+        if (loader is null || SameDirs(loaded.ReadFrom, dirs)) return loaded;
+        var again = loader.Load(loaded.TrellisPath, dirs);
+        if (again.Untrusted.Count > 0)
+            throw new SproutException("the sprout's branch has definitions you haven't approved: "
+                + string.Join(", ", again.Untrusted.Select(u => u.Path)), untrusted: again.Untrusted);
+        if (!again.Complete) throw new SproutException("the definitions in the sprout's worktrees have problems", again.Problems);
+        return again;
+    }
+
+    static bool SameDirs(IReadOnlyDictionary<string, string> a, IReadOnlyDictionary<string, string> b)
+        => a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var other) && SamePath(kv.Value, other));
 
     void CheckNoOtherInPlace(string trellis, string sprout, IEnumerable<string> dirs)
     {

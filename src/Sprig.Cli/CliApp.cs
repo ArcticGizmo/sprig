@@ -34,10 +34,10 @@ public static class CliApp
         var settings = new FileSettingsStore(paths);
         var processes = new ProcessRunner();
         var host = new HostClient(paths);
+        var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths);
         var sprouts = new SproutService(new SproutStore(paths), new PortLeases(paths), settings,
-            new GitClient(processes), new DockerCompose(processes), host: host);
-        var context = new CliContext(paths, settings, trust,
-            new DefinitionRunner(trust, new DotnetRunHost(), paths), new TrellisRegistry(paths), sprouts, host, ansi);
+            new GitClient(processes), new DockerCompose(processes), host: host, loader: new TrellisLoader(definitions));
+        var context = new CliContext(paths, settings, trust, definitions, new TrellisRegistry(paths), sprouts, host, ansi);
 
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {

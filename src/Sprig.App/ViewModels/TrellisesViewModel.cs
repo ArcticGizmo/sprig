@@ -21,9 +21,17 @@ public sealed record TrellisItem(string Name, string Path)
 }
 
 /// <param name="Changed">An earlier version was approved; this content wasn't.</param>
-public sealed record PendingTrustItem(string Path, string Sha256, bool Changed)
+/// <param name="TrustPath">Where the approval is kept: the repo's own sprig.cs, for a copy in a sprout's worktree.</param>
+public sealed record PendingTrustItem(string Path, string Sha256, bool Changed, string TrustPath)
 {
-    public string Why => Changed ? "changed since you approved it" : "not approved yet";
+    public static PendingTrustItem From(NeedsTrust p) => new(p.Path.Replace('\\', '/'), p.Sha256, p.ApprovedSha256 is not null, p.TrustPath);
+
+    public string Why => (Changed, Path != TrustPath.Replace('\\', '/')) switch
+    {
+        (false, _) => "not approved yet",
+        (true, false) => "changed since you approved it",
+        _ => "the sprout's branch changes it; this version isn't approved yet",
+    };
 }
 
 /// <summary>
@@ -169,7 +177,7 @@ public partial class TrellisesViewModel : PageViewModel
     [RelayCommand]
     private async Task ApproveAll()
     {
-        foreach (var item in PendingTrust) _services.Trust.Approve(item.Path, item.Sha256);
+        foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
         PendingTrust.Clear();
         HasPendingTrust = false;
         if (_afterApproval is { } next)
@@ -192,7 +200,7 @@ public partial class TrellisesViewModel : PageViewModel
     void AskForTrust(System.Collections.Generic.IEnumerable<NeedsTrust> pending, Func<Task> then)
     {
         PendingTrust.Clear();
-        foreach (var p in pending) PendingTrust.Add(new PendingTrustItem(p.Path.Replace('\\', '/'), p.Sha256, p.ApprovedSha256 is not null));
+        foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
         HasPendingTrust = PendingTrust.Count > 0;
         _afterApproval = then;
     }

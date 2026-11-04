@@ -7,7 +7,9 @@ namespace Sprig.Engine.Trellises;
 
 /// <param name="Repos">Each repo that evaluated, keyed by the path the trellis names it by.</param>
 /// <param name="Untrusted">Definitions that weren't run because their current content hasn't been approved.</param>
-/// <param name="RepoDirs">Each repo's folder, keyed like <see cref="Repos"/>.</param>
+/// <param name="RepoDirs">Each repo's own folder, keyed like <see cref="Repos"/>.</param>
+/// <param name="SproutDirs">The sprout folders the repos' definitions were read from, when they weren't read from the
+/// repos' own folders.</param>
 public sealed record LoadedTrellis(
     string TrellisPath,
     TrellisModel? Trellis,
@@ -15,11 +17,15 @@ public sealed record LoadedTrellis(
     IReadOnlyList<NeedsTrust> Untrusted,
     IReadOnlyList<PlanProblem> Problems,
     IReadOnlyList<DefinitionResult> Results,
-    IReadOnlyDictionary<string, string> RepoDirs)
+    IReadOnlyDictionary<string, string> RepoDirs,
+    IReadOnlyDictionary<string, string>? SproutDirs = null)
 {
     public bool Complete => Trellis is not null && Untrusted.Count == 0 && Problems.Count == 0;
 
-    /// <summary>What's in each repo's compose files, read from <paramref name="dirs"/> (the repos' own folders when
+    /// <summary>Where the repos' definitions were read from, so where their other files belong too.</summary>
+    public IReadOnlyDictionary<string, string> ReadFrom => SproutDirs ?? RepoDirs;
+
+    /// <summary>What's in each repo's compose files, read from <paramref name="dirs"/> (<see cref="ReadFrom"/> when
     /// null). Files that are missing or unreadable are reported in <paramref name="problems"/>.</summary>
     public IReadOnlyDictionary<string, ComposeFileInfo> ComposeFiles(List<PlanProblem> problems, IReadOnlyDictionary<string, string>? dirs = null)
     {
@@ -28,7 +34,7 @@ public sealed record LoadedTrellis(
         {
             foreach (var file in repo.ComposeFiles)
             {
-                var path = Path.Combine((dirs ?? RepoDirs)[repoPath], file.File);
+                var path = Path.Combine((dirs ?? ReadFrom)[repoPath], file.File);
                 try
                 {
                     result[ComposeFileInfo.Key(repoPath, file.File)] = Compose.ComposeYaml.Inspect(File.ReadAllText(path));
@@ -50,7 +56,9 @@ public sealed class TrellisLoader(DefinitionRunner runner)
 {
     public const string RepoDefinitionFile = "sprig.cs";
 
-    public LoadedTrellis Load(string trellisPath)
+    /// <param name="sproutDirs">A sprout's folder for each repo, keyed by the trellis's repo path. Its definitions are
+    /// read from there, so a branch's changes count, and approved as the repo's own.</param>
+    public LoadedTrellis Load(string trellisPath, IReadOnlyDictionary<string, string>? sproutDirs = null)
     {
         var path = LongPath.Of(trellisPath);
         var problems = new List<PlanProblem>();
@@ -70,22 +78,25 @@ public sealed class TrellisLoader(DefinitionRunner runner)
         if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results, dirs);
 
         var dir = Path.GetDirectoryName(path)!;
-        var definitions = new List<(RepoRefModel reference, string file)>();
+        var definitions = new List<(RepoRefModel reference, string file, string trustAs)>();
         foreach (var reference in trellis.Repos)
         {
             var repoDir = LongPath.Of(Path.Combine(dir, reference.Path));
             dirs[reference.Path] = repoDir;
-            var file = Path.Combine(repoDir, RepoDefinitionFile);
-            if (!Directory.Exists(repoDir))
-                problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo folder '{repoDir}' doesn't exist", reference.Location));
+            var readDir = sproutDirs?.GetValueOrDefault(reference.Path) is { } sproutDir ? LongPath.Of(sproutDir) : repoDir;
+            var file = Path.Combine(readDir, RepoDefinitionFile);
+            if (!Directory.Exists(readDir))
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo folder '{readDir}' doesn't exist", reference.Location));
             else if (!File.Exists(file))
-                problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{reference.Path}' has no {RepoDefinitionFile} to describe it", reference.Location));
+                problems.Add(new PlanProblem(ProblemSeverity.Error, readDir == repoDir
+                    ? $"'{reference.Path}' has no {RepoDefinitionFile} to describe it"
+                    : $"'{reference.Path}' has no {RepoDefinitionFile} in the sprout's folder {readDir}", reference.Location));
             else
-                definitions.Add((reference, file));
+                definitions.Add((reference, file, Path.Combine(repoDir, RepoDefinitionFile)));
         }
 
         var evaluated = definitions.AsParallel().AsOrdered()
-            .Select(d => (d.reference, result: runner.Evaluate(d.file)))
+            .Select(d => (d.reference, result: runner.Evaluate(d.file, d.trustAs)))
             .ToList();
         foreach (var (reference, result) in evaluated)
         {
@@ -97,7 +108,9 @@ public sealed class TrellisLoader(DefinitionRunner runner)
             }
         }
 
-        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs);
+        IReadOnlyDictionary<string, string>? readFrom = sproutDirs is null ? null
+            : trellis.Repos.ToDictionary(r => r.Path, r => sproutDirs.GetValueOrDefault(r.Path) is { } d ? LongPath.Of(d) : dirs[r.Path], StringComparer.Ordinal);
+        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs, readFrom);
     }
 
     static DefinitionModel? Accept(DefinitionResult result, List<PlanProblem> problems, List<NeedsTrust> untrusted)

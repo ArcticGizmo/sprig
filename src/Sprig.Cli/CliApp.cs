@@ -35,9 +35,10 @@ public static class CliApp
         var processes = new ProcessRunner();
         var host = new HostClient(paths);
         var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths);
+        var trellises = new TrellisRegistry(paths);
         var sprouts = new SproutService(new SproutStore(paths), new PortLeases(paths), settings,
-            new GitClient(processes), new DockerCompose(processes), host: host, loader: new TrellisLoader(definitions));
-        var context = new CliContext(paths, settings, trust, definitions, new TrellisRegistry(paths), sprouts, host, ansi);
+            new GitClient(processes), new DockerCompose(processes), host: host, loader: new TrellisLoader(definitions, trellises));
+        var context = new CliContext(paths, settings, trust, definitions, trellises, sprouts, host, ansi);
 
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {

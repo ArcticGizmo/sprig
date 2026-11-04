@@ -64,6 +64,10 @@ public sealed class TrellisAddCommand(CliContext cli) : Command<TrellisAddComman
         [CommandArgument(0, "<file>")]
         [Description("The trellis file, e.g. storefront.trellis.cs")]
         public string File { get; set; } = "";
+
+        [CommandOption("--id <id>")]
+        [Description("What to register it as (default: the name in its code, or that name with -2, -3… when taken). Its sprouts are keyed by this")]
+        public string? Id { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -87,9 +91,10 @@ public sealed class TrellisAddCommand(CliContext cli) : Command<TrellisAddComman
             _ => throw new InvalidOperationException("the trellis couldn't be read"),
         };
 
-        var entry = cli.Trellises.Add(model.Name, path);
-        return CliOutput.Ok(s.Json, $"registered '{entry.Name}' ({model.Repos.Count} repos) from {entry.Path}",
-            new { ok = true, name = entry.Name, path = entry.Path, repos = model.Repos.Select(r => r.Path) });
+        var entry = cli.Trellises.Add(s.Id ?? cli.Trellises.UnusedId(model.Name, path), path);
+        var named = entry.Id == model.Name ? "" : $" (it calls itself '{model.Name}')";
+        return CliOutput.Ok(s.Json, $"registered '{entry.Id}'{named} ({model.Repos.Count} repos) from {entry.Path}",
+            new { ok = true, id = entry.Id, name = model.Name, path = entry.Path, repos = model.Repos.Select(r => r.Path) });
     }
 }
 
@@ -105,9 +110,9 @@ public sealed class TrellisLsCommand(CliContext cli) : Command<GlobalSettings>
             cli.Ansi.MarkupLine("[dim]No trellises registered. Add one with: sprig trellis add <file>[/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("Name", "File");
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("ID", "File");
         foreach (var e in entries)
-            table.AddRow(Markup.Escape(e.Name), File.Exists(e.Path) ? Markup.Escape(e.Path) : $"[red]{Markup.Escape(e.Path)} (missing)[/]");
+            table.AddRow(Markup.Escape(e.Id), File.Exists(e.Path) ? Markup.Escape(e.Path) : $"[red]{Markup.Escape(e.Path)} (missing)[/]");
         cli.Ansi.Write(table);
         return 0;
     }
@@ -118,14 +123,14 @@ public sealed class TrellisRmCommand(CliContext cli) : Command<TrellisRmCommand.
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<name>")]
-        public string Name { get; set; } = "";
+        [CommandArgument(0, "<id>")]
+        public string Id { get; set; } = "";
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        if (!cli.Trellises.Remove(s.Name)) throw new InvalidOperationException($"no trellis named '{s.Name}'");
-        return CliOutput.Ok(s.Json, $"forgot '{s.Name}'", new { ok = true, name = s.Name });
+        if (!cli.Trellises.Remove(s.Id)) throw new InvalidOperationException($"no trellis registered as '{s.Id}'");
+        return CliOutput.Ok(s.Json, $"forgot '{s.Id}'", new { ok = true, id = s.Id });
     }
 }
 
@@ -208,7 +213,7 @@ static class TrellisLoad
         var path = cli.Trellises.Resolve(nameOrPath)
             ?? throw new InvalidOperationException($"no trellis named '{nameOrPath}'. Register one with: sprig trellis add <file>");
 
-        var loader = new TrellisLoader(cli.Definitions);
+        var loader = new TrellisLoader(cli.Definitions, cli.Trellises);
         var worktrees = sprout is null ? null : cli.Sprouts.Worktrees(path, sprout);
         var loaded = loader.Load(path, worktrees);
         if (loaded.Untrusted.Count > 0)

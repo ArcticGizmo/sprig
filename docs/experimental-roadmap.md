@@ -315,8 +315,19 @@ Also in M4:
 
 1. **The user's hand pass over the app.** Trellises and Sprouts pages, runner rows, log pane, and the new approval prompt during bring-up. Fix what it finds.
 2. **The app gets the same head start as the CLI.** Bring-up from the app doesn't start the apps, so it doesn't prebuild; "Start all" straight after could use the held start too.
-3. **EDR sign-off.** Ask SecOps whether CrowdStrike or Defender raised non-blocking alerts for `sprig-host` and its `--ctrl-c` helper (see the handover's loose ends).
+3. **EDR sign-off.** Ask SecOps whether CrowdStrike or Defender raised non-blocking alerts for `sprig-host` (process trees, and its `--ctrl-c` helper attaching to app consoles). Nothing was blocked on this machine.
 4. **Merge mechanics.** The store moves from `sprig-exp` to `sprig` (the test guarding the released store changes with it), the version leaves `0.100.0-exp`, `Sprig.Host` gets a version, the changelog says `.sprig.json` is gone, and `Sprig.Sdk` is published as a package so definitions stop needing the local `#:project` line.
+
+## M7: Authoring in the app, with virtual trellises and repos (in progress)
+
+**Decision (user, 2026-11-04):** sprig should be usable on repos without committing anything. Trellises and repo definitions can both be *virtual*: kept in sprig's store and edited in the app. Several of each can exist, and none may clash with each other or with a definition committed in a repo. The user will judge the details once editing works in the app, so the shape below is a starting point.
+
+1. **Every trellis has an ID.** Set when it's registered or created, unique, and never taken from the code. Sprout records, compose projects, port leases, worktree folders, logs and runners are keyed by it. `Trellis.Describe("storefront")` becomes a display name, so two trellises that both call themselves `storefront` have separate sprouts. Existing registrations keep their name as their ID.
+2. **Virtual trellises and repo definitions live in the store,** each under its own ID: `<store>/trellises/<id>/trellis.cs` and `<store>/repos/<id>/sprig.cs`. There can be any number of each, including several definitions for the same repo folder. Approval stays per file; saving in the app approves what was saved.
+3. **A trellis names the definition it uses for each repo.** `trellis.Repo("C:/src/shop-web")` uses the repo's committed `sprig.cs`; `trellis.Repo("C:/src/shop-web", definition: "shop-web-local")` uses a virtual one. Nothing is picked up because it happens to be there, so a committed file and any number of virtual ones never compete. A virtual definition is the same for every sprout, since no branch can change it.
+4. **Editing in the app.** The M1 editor, polished, for trellises and repo definitions; a new definition starts from what the repo has (a `.csproj` becomes `DotNet(...)`, a `package.json` becomes `Node(...)`), and the plan updates beside the code.
+
+A branch can be checked out in only one worktree, so two trellises making sprouts of the same repo on the same branch still clash; the plan should say which trellis has it.
 
 ## Later (after `main`)
 

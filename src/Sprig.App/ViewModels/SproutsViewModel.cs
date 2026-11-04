@@ -205,7 +205,7 @@ public partial class SproutsViewModel : PageViewModel
 
         var trellis = NewTrellis;
         TrellisNames.Clear();
-        foreach (var entry in _services.Trellises.List()) TrellisNames.Add(entry.Name);
+        foreach (var entry in _services.Trellises.List()) TrellisNames.Add(entry.Id);
         NewTrellis = TrellisNames.Contains(trellis ?? "") ? trellis : TrellisNames.FirstOrDefault();
 
         OnPropertyChanged(nameof(IsEmpty));
@@ -453,16 +453,16 @@ public partial class SproutsViewModel : PageViewModel
 
         // The progress window takes over from here, and reports any failure.
         IsAddOpen = false;
-        var ok = await RunAsync($"Sprouting {loaded.Trellis!.Name} / {sprout}",
+        var ok = await RunAsync($"Sprouting {loaded.Id} / {sprout}",
             (progress, cancellation) => _services.Sprouts.Up(loaded, sprout, branch, progress, cancellation),
-            $"{loaded.Trellis.Name} / {sprout} is up.", retry: Create);
+            $"{loaded.Id} / {sprout} is up.", retry: Create);
         if (ok)
         {
             NewName = "";
             NewBranch = "";
         }
         Refresh();
-        Selected = Sprouts.FirstOrDefault(s => s.Record.Trellis == loaded.Trellis.Name && s.Record.Name == sprout) ?? Selected;
+        Selected = Sprouts.FirstOrDefault(s => s.Record.Trellis == loaded.Id && s.Record.Name == sprout) ?? Selected;
     }
 
     [RelayCommand]

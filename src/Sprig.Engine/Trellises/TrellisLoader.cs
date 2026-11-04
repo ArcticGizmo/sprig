@@ -20,6 +20,9 @@ public sealed record LoadedTrellis(
     IReadOnlyDictionary<string, string> RepoDirs,
     IReadOnlyDictionary<string, string>? SproutDirs = null)
 {
+    /// <summary>What its sprouts are keyed by: the registry's ID for the file, never the name in its code.</summary>
+    public string Id { get; init; } = TrellisRegistry.IdFromFile(TrellisPath);
+
     public bool Complete => Trellis is not null && Untrusted.Count == 0 && Problems.Count == 0;
 
     /// <summary>Where the repos' definitions were read from, so where their other files belong too.</summary>
@@ -52,7 +55,8 @@ public sealed record LoadedTrellis(
 
 /// <summary>Evaluates a trellis and the <c>sprig.cs</c> of every repo it names. Repos are evaluated in parallel; each
 /// goes through the same directive, trust and cache checks as any definition.</summary>
-public sealed class TrellisLoader(DefinitionRunner runner)
+/// <param name="registry">Gives each trellis its registered ID; without one, the ID comes from the file name.</param>
+public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? registry = null)
 {
     public const string RepoDefinitionFile = "sprig.cs";
 
@@ -61,6 +65,7 @@ public sealed class TrellisLoader(DefinitionRunner runner)
     public LoadedTrellis Load(string trellisPath, IReadOnlyDictionary<string, string>? sproutDirs = null)
     {
         var path = LongPath.Of(trellisPath);
+        var id = registry?.IdFor(path) ?? TrellisRegistry.IdFromFile(path);
         var problems = new List<PlanProblem>();
         var results = new List<DefinitionResult>();
         var untrusted = new List<NeedsTrust>();
@@ -75,7 +80,7 @@ public sealed class TrellisLoader(DefinitionRunner runner)
             RepoModel => Fail($"{Path.GetFileName(path)} describes a repo, not a trellis (it calls Repo.Describe)", path, problems),
             _ => null,
         };
-        if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results, dirs);
+        if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results, dirs) { Id = id };
 
         var dir = Path.GetDirectoryName(path)!;
         var definitions = new List<(RepoRefModel reference, string file, string trustAs)>();
@@ -110,7 +115,7 @@ public sealed class TrellisLoader(DefinitionRunner runner)
 
         IReadOnlyDictionary<string, string>? readFrom = sproutDirs is null ? null
             : trellis.Repos.ToDictionary(r => r.Path, r => sproutDirs.GetValueOrDefault(r.Path) is { } d ? LongPath.Of(d) : dirs[r.Path], StringComparer.Ordinal);
-        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs, readFrom);
+        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs, readFrom) { Id = id };
     }
 
     static DefinitionModel? Accept(DefinitionResult result, List<PlanProblem> problems, List<NeedsTrust> untrusted)

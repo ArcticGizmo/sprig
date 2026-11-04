@@ -119,6 +119,26 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
+    public void Two_trellises_that_call_themselves_the_same_keep_separate_sprouts_under_their_ids()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        Repo("shop-web-2", ("index.html", "hi"));
+        var committed = Load(true, ("shop-web", Web));
+        var local = Load(true, ("shop-web-2", Web)) with { TrellisPath = Path.Combine(_root, "local", "trellis.cs"), Id = "storefront-local" };
+
+        var a = _sprouts.Up(committed, "feat-x", null);
+        var b = _sprouts.Up(local, "feat-x", null);
+
+        Assert.Equal("storefront/feat-x", a.Key);
+        Assert.Equal("storefront-local/feat-x", b.Key);
+        Assert.Equal(Path.Combine(_root, "storefront-local--feat-x", "shop-web-2"), b.Repos.Single().Dir);
+        Assert.Equal(2, _sprouts.List().Count);
+        Assert.NotEqual(_sprouts.LastPlan("storefront", "feat-x")!.Ports.Single().Port,
+            _sprouts.LastPlan("storefront-local", "feat-x")!.Ports.Single().Port);
+        Assert.Equal("storefront-local", _sprouts.LastPlan("storefront-local", "feat-x")!.Trellis);
+    }
+
+    [Fact]
     public void Two_sprouts_get_their_own_worktrees_and_ports()
     {
         Repo("shop-web", ("index.html", "hi"));

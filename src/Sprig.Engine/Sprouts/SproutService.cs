@@ -111,13 +111,14 @@ public sealed partial class SproutService(
             throw new SproutException($"{Path.GetFileName(loaded.TrellisPath)} isn't ready to sprout", loaded.Problems);
         if (CheckName(sprout) is { } bad) throw new SproutException(bad);
 
-        var existing = store.Get(trellis.Name, sprout);
+        var id = loaded.Id;
+        var existing = store.Get(id, sprout);
         if (existing is not null && !SamePath(existing.TrellisPath, loaded.TrellisPath))
             throw new SproutException($"sprout '{sprout}' already belongs to the trellis at {existing.TrellisPath}");
 
         var inPlace = trellis.Worktrees is null;
         branch = inPlace ? null : branch ?? existing?.Branch ?? sprout;
-        if (inPlace && branch is not null) throw new SproutException($"{trellis.Name} runs its repos in place, so a sprout can't have its own branch");
+        if (inPlace && branch is not null) throw new SproutException($"{id} runs its repos in place, so a sprout can't have its own branch");
         if (branch is not null && existing?.Branch is { } had && had != branch)
             throw new SproutException($"sprout '{sprout}' is on branch '{had}'; remove it first to change branch");
         if (branch is not null && !git.IsValidBranchName(branch)) throw new SproutException($"'{branch}' isn't a valid branch name");
@@ -144,10 +145,10 @@ public sealed partial class SproutService(
         if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new SproutException(why));
         step.Done($"{dryPlan.Apps.Count} apps, {dryPlan.Containers.Count} containers, {dryPlan.Compose.Count} compose files");
 
-        if (inPlace) CheckNoOtherInPlace(trellis.Name, sprout, loaded.RepoDirs.Values);
+        if (inPlace) CheckNoOtherInPlace(id, sprout, loaded.RepoDirs.Values);
 
         var now = DateTimeOffset.UtcNow;
-        var record = existing ?? new SproutRecord(trellis.Name, loaded.TrellisPath, sprout, branch, trellis.PortPolicy,
+        var record = existing ?? new SproutRecord(id, loaded.TrellisPath, sprout, branch, trellis.PortPolicy,
             [], [], [], SproutState.Starting, now, now);
         record = record with
         {
@@ -155,7 +156,7 @@ public sealed partial class SproutService(
             State = SproutState.Starting,
             UpdatedAt = now,
             Error = null,
-            Folder = inPlace ? null : record.Folder ?? SproutFolder(loaded, trellis.Name, sprout, settingsNow),
+            Folder = inPlace ? null : record.Folder ?? SproutFolder(loaded, id, sprout, settingsNow),
         };
 
         try
@@ -373,7 +374,8 @@ public sealed partial class SproutService(
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });
         if (plan.HasErrors) throw new SproutException("the plan has errors", plan.Problems);
-        return plan;
+        // Saved and looked up under the sprout's own key, not the name the trellis gives itself in code.
+        return plan with { Trellis = record.Trellis };
     }
 
     /// <summary>A file a sprout writes values into, and the definition line that asked for it.</summary>
@@ -531,7 +533,7 @@ public sealed partial class SproutService(
             throw new SproutException("the sprout's branch has definitions you haven't approved: "
                 + string.Join(", ", again.Untrusted.Select(u => u.Path)), untrusted: again.Untrusted);
         if (!again.Complete) throw new SproutException("the definitions in the sprout's worktrees have problems", again.Problems);
-        return again;
+        return again with { Id = loaded.Id };
     }
 
     static bool SameDirs(IReadOnlyDictionary<string, string> a, IReadOnlyDictionary<string, string> b)

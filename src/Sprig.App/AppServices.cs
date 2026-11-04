@@ -35,7 +35,7 @@ public sealed class AppServices
         Trust = new FileTrustStore(Paths);
         Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
         Trellises = new TrellisRegistry(Paths);
-        Loader = new TrellisLoader(Definitions);
+        Loader = new TrellisLoader(Definitions, Trellises);
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         HostStatus = new HostStatus(Host);

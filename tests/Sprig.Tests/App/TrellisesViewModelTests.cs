@@ -73,9 +73,10 @@ public class TrellisesViewModelTests
     [InlineData("C:/x/storefront.trellis.cs", "storefront")]
     [InlineData("C:/x/Shop.Trellis.CS", "Shop")]
     [InlineData("C:/x/shop.cs", "shop")]
-    [InlineData("C:/x/.trellis.cs", ".trellis")]
-    public void The_name_before_a_trellis_has_run_comes_from_its_file(string path, string expected)
-        => Assert.Equal(expected, TrellisItem.NameFromFile(path));
+    [InlineData("C:/x/.trellis.cs", "trellis")]
+    [InlineData("C:/x/my shop!.trellis.cs", "my-shop")]
+    public void The_id_a_trellis_is_offered_comes_from_its_file(string path, string expected)
+        => Assert.Equal(expected, Sprig.Engine.Trellises.TrellisRegistry.IdFromFile(path));
 
     [Fact]
     public void The_plan_view_lists_wiring_between_repos_and_masks_passwords()

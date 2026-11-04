@@ -13,23 +13,13 @@ using Sprig.Model;
 
 namespace Sprig.App.ViewModels;
 
-/// <param name="NeedsApproval">The file's current content isn't approved, so it hasn't run and its name may only be a
-/// guess from the file name.</param>
+/// <param name="Name">Its registered ID, which its sprouts are keyed by.</param>
+/// <param name="NeedsApproval">The file's current content isn't approved, so it hasn't run yet.</param>
 public sealed record TrellisItem(string Name, string Path, bool NeedsApproval = false)
 {
     public string DisplayPath => Path.Replace('\\', '/');
     public string Folder => System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? "";
     public bool Missing => !File.Exists(Path);
-
-    /// <summary>The name a trellis is listed under before it has run: its file name without <c>.trellis.cs</c>.</summary>
-    public static string NameFromFile(string path)
-    {
-        var file = System.IO.Path.GetFileName(path);
-        foreach (var suffix in (string[])[".trellis.cs", ".cs"])
-            if (file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && file.Length > suffix.Length)
-                return file[..^suffix.Length];
-        return System.IO.Path.GetFileNameWithoutExtension(file);
-    }
 }
 
 /// <param name="Changed">An earlier version was approved; this content wasn't.</param>
@@ -93,7 +83,7 @@ public partial class TrellisesViewModel : PageViewModel
     {
         var previous = Selected;
         Trellises.Clear();
-        foreach (var e in _services.Trellises.List()) Trellises.Add(new TrellisItem(e.Name, e.Path, NeedsApproval(e.Path)));
+        foreach (var e in _services.Trellises.List()) Trellises.Add(new TrellisItem(e.Id, e.Path, NeedsApproval(e.Path)));
         NavCount = Trellises.Count;
         OnPropertyChanged(nameof(IsEmpty));
         _quietSelection = !replan;
@@ -149,12 +139,6 @@ public partial class TrellisesViewModel : PageViewModel
                 AskForTrust(loaded.Untrusted, PlanSelectedAsync);
                 return;
             }
-            // A trellis registered before approval is listed under its file name until it first runs.
-            if (loaded.Trellis is { } model && !string.Equals(model.Name, trellis.Name, StringComparison.Ordinal))
-            {
-                _services.Trellises.Add(model.Name, trellis.Path);
-                Refresh(model.Name, replan: false);
-            }
             if (loaded.Trellis is null || loaded.Problems.Count > 0)
             {
                 ShowLoadProblems(loaded.Problems, trellis.Path);
@@ -199,17 +183,16 @@ public partial class TrellisesViewModel : PageViewModel
         switch (result)
         {
             case NeedsTrust pending:
-                var name = UnusedName(TrellisItem.NameFromFile(path), path);
-                _services.Trellises.Add(name, path);
+                var guessed = _services.Trellises.Add(_services.Trellises.UnusedId(TrellisRegistry.IdFromFile(path), path), path);
                 CloseAdd();
-                Refresh(name, replan: false);
+                Refresh(guessed.Id, replan: false);
                 ClearResults();
                 AskForTrust([pending], PlanSelectedAsync);
                 return;
             case Evaluated { Model: TrellisModel model }:
-                _services.Trellises.Add(model.Name, path);
+                var entry = _services.Trellises.Add(_services.Trellises.UnusedId(model.Name, path), path);
                 CloseAdd();
-                Refresh(model.Name, replan: true);
+                Refresh(entry.Id, replan: true);
                 return;
             case Evaluated:
                 Fail("That file describes a repo (Repo.Describe), not a trellis.");
@@ -279,18 +262,6 @@ public partial class TrellisesViewModel : PageViewModel
         NewPath = "";
         AddMessage = "";
         AddFailed = false;
-    }
-
-    /// <summary>Registering under a name already taken would replace that trellis, so a guessed name steps aside.</summary>
-    string UnusedName(string name, string path)
-    {
-        var taken = _services.Trellises.List()
-            .Where(e => !string.Equals(Path.GetFullPath(e.Path), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
-            .Select(e => e.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var candidate = name;
-        for (var n = 2; taken.Contains(candidate); n++) candidate = $"{name}-{n}";
-        return candidate;
     }
 
     void Fail(string message)

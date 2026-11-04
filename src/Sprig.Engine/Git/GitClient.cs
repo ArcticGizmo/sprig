@@ -20,6 +20,30 @@ public sealed class GitClient(IProcessRunner runner)
     public bool IsIgnored(string repo, string file)
         => Run(repo, "check-ignore", "-q", "--no-index", "--", file).Success;
 
+    /// <summary>
+    /// Whether git tracks each of <paramref name="files"/> (absolute, inside <paramref name="repo"/>) and whether an
+    /// ignore rule covers it, existing or not, in two calls however many files there are; each git call costs a few
+    /// hundred milliseconds on Windows. Null when <paramref name="repo"/> isn't in a git working tree.
+    /// </summary>
+    public IReadOnlyDictionary<string, (bool Tracked, bool Ignored)>? Status(string repo, IReadOnlyList<string> files)
+    {
+        if (!Directory.Exists(repo)) return null;
+        var relative = files.Select(f => Path.GetRelativePath(repo, f).Replace('\\', '/')).ToArray();
+        var tracked = Run(repo, ["ls-files", "-z", "--", .. relative]);
+        if (!tracked.Success) return null;
+        // check-ignore exits 1 when it matches nothing, which is an answer, not a failure.
+        // Its -z needs --stdin, so read lines, with quoting off so a non-ASCII path comes back as it went in.
+        var ignored = Run(repo, ["-c", "core.quotePath=false", "check-ignore", "--no-index", "--", .. relative]);
+        if (ignored.ExitCode > 1) ignored.EnsureSuccess();
+
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var trackedSet = tracked.StdOut.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToHashSet(comparer);
+        var ignoredSet = ignored.StdOut.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).ToHashSet(comparer);
+        var result = new Dictionary<string, (bool, bool)>(comparer);
+        for (var i = 0; i < files.Count; i++) result[files[i]] = (trackedSet.Contains(relative[i]), ignoredSet.Contains(relative[i]));
+        return result;
+    }
+
     public bool BranchExists(string repo, string branch)
         => Run(repo, "rev-parse", "--verify", "--quiet", $"refs/heads/{branch}").Success;
 

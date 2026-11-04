@@ -1,22 +1,23 @@
 # Handover: experimental branch
 
-Written 2026-11-03, after the session that finished M5 (readiness checks, restart policies, `up --run`, the app's runners and log pane). Updated 2026-11-04: sprouts run their branch's definitions. Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
+Written 2026-11-03, after the session that finished M5 (readiness checks, restart policies, `up --run`, the app's runners and log pane). Updated 2026-11-04: sprouts run their branch's definitions, M6 (the Aspire comparison) is done, and `up` is about three times faster. Read this first, then [experimental-roadmap.md](experimental-roadmap.md), which has each milestone's outcome and findings.
 
 ## Where things stand
 
 - Branch `experimental`, pushed to `origin/experimental` (tracking). `main` is untouched.
-- M0 to M5 are done. M6 is next.
-- 179 tests pass (`dotnet test sprig.slnx`, about 70 s). The old intermittent host-test failures were the host dying from its own Ctrl+C (see Gotchas); after the fix, 5 full runs and 20 runs of the stop tests were clean. If a host test fails, the Application event log (ids 1000 and 1026) shows whether `sprig-host` crashed. Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
+- M0 to M6 are done. Next are the steps to replace `main` (the roadmap's "Next" section).
+- 182 tests pass (`dotnet test sprig.slnx`, about 60 s). The old intermittent host-test failures were the host dying from its own Ctrl+C (see Gotchas); after the fix, 5 full runs and 20 runs of the stop tests were clean. If a host test fails, the Application event log (ids 1000 and 1026) shows whether `sprig-host` crashed. Integration tests compile real definitions with `dotnet run`, the sprout tests make real git repos in `%TEMP%`, and the host tests start the real `sprig-host`.
 - Warnings are errors repo-wide (`Directory.Build.props`). Build with normal verbosity: `-v q` hides warnings.
 - Version is `0.100.0-exp`. **Never tag from this branch**: the release workflow publishes on any `v*` tag. Don't use the `bump-version` or `release-next-version` skills here.
 - The user asked to commit, push and continue as each piece lands.
 
 ## Next
 
-M5 is done, and sprouts now run their branch's definitions (the roadmap's "Before M6" note under M6).
+M6 is done ([spikes/m6-aspire.md](spikes/m6-aspire.md)). The user decided `experimental` replaces `main` after their hand pass over the UI, with no migration from `.sprig.json`. The roadmap's "Next: replacing `main`" section lists the steps:
 
-1. **M6 (review against Aspire).** Nothing blocks it now.
-2. The user hasn't yet tried the app's new runner rows and log pane by hand (renders are in `captures/`).
+1. **The user's hand pass over the app.** They haven't tried the runner rows, the log pane or the approval prompt during bring-up yet (renders are in `captures/`). Wait for them; don't ask them to try pages before they're ready.
+2. The app's bring-up doesn't prebuild yet (only the CLI's `up -d`/`--run` does).
+3. EDR sign-off from SecOps, then the merge mechanics (store name, version, `Sprig.Sdk` package, changelog).
 
 ## Decisions already made (don't reopen)
 
@@ -35,6 +36,8 @@ M5 is done, and sprouts now run their branch's definitions (the roadmap's "Befor
 | Stopping | Ctrl+C to the app's console, then end the job after 10 s if a real program is still running. |
 | `up --run` | (User, 2026-11-03.) Follows every app's log, `docker compose up` style. Ctrl+C in the CLI stops the apps (the infra stays up for `sprig down`); a second Ctrl+C leaves at once and the host finishes the stops. `-d/--detached` starts the apps, waits until they're ready and returns. Plain `up` still does only the infra. |
 | A sprout's definitions | (User, 2026-11-04.) Read from its worktrees and approved by content per repo: the trust store keeps several versions per repo's `sprig.cs`, and a worktree's copy is checked against those (`Evaluate(file, trustAs)`). An unapproved branch version stops `up` after the worktrees, before any writes; the CLI and app ask, then go again. |
+| Replacing `main` | (User, 2026-11-04.) `experimental` replaces `main` once start time is fixed (done) and the user's hand pass over the UI is done. **No migration**: `.sprig.json` goes, with a changelog note. |
+| Prebuilding | `up -d`/`--run` sends a held `start` (`HostRequest.Hold`) just before the infra starts: runners build, then wait ("waiting for the sprout's infra") until the `start` after `up` releases them. A failed `up` stops the sprout's runners; a hold nobody releases fails after 15 minutes. |
 | UI testing | The user tests the UI by hand only once most of the structure is done. Verify with headless renders and view-model tests meanwhile; don't ask them to try pages. |
 | Store | `%LOCALAPPDATA%\sprig-exp` (`sprig-exp (Dev)` for Debug). Never the released app's `sprig` folder; a test guards it. |
 
@@ -72,7 +75,7 @@ RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ na
 
 - **Projects:** `Sprig.Sdk` (what definitions reference; `Model.cs` is the contract, `Sdk.Schema` its version), `Sprig.Engine`, `Sprig.Host` (`sprig-host`, a WinExe), `Sprig.LanguageHost`, `Sprig.App` (Avalonia 12), `Sprig.Cli` (Spectre), `tests/Sprig.Tests`. The CLI and app reference the two host exes with `ReferenceOutputAssembly="false"` and find them beside themselves or in the repo's `bin`.
 - **CLI:** `trellis add|ls|rm`, `trust add|ls`, `plan`, `up [--run | -d]`, `down`, `rm`, `sprouts`, `env`, `start [apps] [--group g] [--no-wait]`, `stop [apps]`, `ps`, `logs <app> [-n]`, `host status|stop`. `up --run` is `AppFollow` + `LogFollower` in `Sprig.Cli/Commands`.
-- **Host protocol** (`Engine/Hosting/HostProtocol.cs`): one JSON line each way per connection. Ops are `ping`, `list`, `start` (specs, plus a `restart` list), `stop` (sprout, optional name) and `shutdown`. `start` only (re)starts what isn't already going, except names in `restart`. Stopping a whole sprout forgets its runners once they've stopped.
+- **Host protocol** (`Engine/Hosting/HostProtocol.cs`): one JSON line each way per connection. Ops are `ping`, `list`, `start` (specs, plus a `restart` list and an optional `hold`), `stop` (sprout, optional name) and `shutdown`. `start` only (re)starts what isn't already going, except names in `restart`. Stopping a whole sprout forgets its runners once they've stopped.
 - **App:** Trellises page (plan preview), Sprouts page (new sprout form, list, details, bring up / take down / remove, runner rows with start/restart/stop/log, and a log pane), `OperationProgressWindow` fed by `SproutEvent`s. `SproutsView` polls the host every second while the page shows; the headless renderer calls `PollAsync` itself because timers don't tick there.
 - **A sprout's record** says exactly what `up` did, and `down`/`rm` undo only that. `down` and `rm` stop the sprout's apps first.
 
@@ -84,6 +87,7 @@ RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ na
 - `pwsh -File scripts/testbed.ps1 [-Path <dir>] [-Force] [-UsePackage]` builds real git repos. The latest throwaway one is at `%LOCALAPPDATA%\Temp\sprig-tb-m5`, with a store at `%LOCALAPPDATA%\Temp\sprig-store-m5` (its sprout was removed; the trellis is still registered). The M4 ones (`sprig-tb-m4`, `sprig-store-m4`) predate schema 4 and the readiness changes.
 - The full loop with a throwaway store (`$env:SPRIG_STORE`): `sprig trellis add <tb>/storefront.trellis.cs --trust`, `sprig up storefront --sprout feat-a --trust` (the repos' `sprig.cs` files need trusting too), `sprig start storefront feat-a` (everything ready in about 23 s, in dependency order), then `sprig stop`/`down`/`rm`. Compose project names don't include the store, so use a sprout name no other store has running.
 - Each app has a config page (`/config` on the APIs, a Config tab on the front ends) showing each value, its source and whether its target answers.
+- **Aspire comparison:** `testbed/aspire/apphost.cs` (copied into each testbed as `aspire/`, outside the sprig repo so `Directory.Build.props` doesn't apply). The Aspire CLI 13.6.1 is installed as a global dotnet tool (`dotnet tool uninstall -g Aspire.Cli` removes it); its usual installer is a download-and-run script, which this machine's rules forbid. Run `aspire run --isolated --detach --apphost <tb>/aspire`; a second set of checkouts needs its own copy of the AppHost (isolation is keyed on its path).
 - Headless renders, no screen capture: `sprig-gui render-sprouts <page.png> <progress.png>` (uses `SPRIG_STORE`), `render-trellises`, `render-editor`. Save them to `captures/`.
 
 ## Gotchas found the hard way
@@ -96,6 +100,8 @@ RunnerSpecs (plan → specs + dependency closure) ──► HostClient ══ na
   - Never run the host in-process in tests: attaching to an app's console takes the test runner's console away.
   - The stop runs fire-and-forget, so an exception in it used to leave the runner `Stopping` forever. `StopCoreAsync` now catches, logs and still ends the job. Reading a process's name can throw `InvalidOperationException` if it has just exited; catch that alongside `ArgumentException`.
   - A process starts under the runner's gate, so a stop either sees it and signals it or is seen first and nothing starts. Keep that when touching `Launch` (restarts made the window real).
+- **Git calls cost about 0.3 s each on this machine** (docker checks about 1.2 s together). `GitClient.Status` answers tracked/ignored for many files in two calls; `check-ignore -z` needs `--stdin`, so its output is read as lines with `core.quotePath=false`. Keep per-file git calls out of `up`'s path.
+- **Releasing a hold:** stopping a whole sprout marks its runners as stopping *before* releasing its hold, or a held runner can wake and start (a test caught this).
 - **Env files are only written when their content changes.** Vite restarts on any write to `.env.local`, and ASP.NET reloads `reloadOnChange` settings, so an `up` that changes nothing used to bounce running apps.
 - **RabbitMQ sometimes fails its first start** with `.erlang.cookie: eacces` (a container-level race). Running `up` again worked.
 - **Host pipe:** `HostClient.TrySend` returns null if the host drops the connection (it does after answering `shutdown`). Don't wrap the pipe in a `StreamWriter`: its dispose flushes into the closed pipe and throws.

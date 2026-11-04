@@ -313,6 +313,25 @@ public sealed class SproutServiceTests : IDisposable
         Assert.Equal(record.Repos[0].Dir, sprouts.Worktrees(trellisFile, "feat-y")!["shop-web"]);
     }
 
+    [Fact]
+    public void Git_status_answers_for_every_file_in_one_go()
+    {
+        var dir = RepoWith("shop-services", ".env.local\n", ("src/Api/appsettings.json", "{}"), ("src/Api/.env.local", ""));
+        File.WriteAllText(Path.Combine(dir, "loose.txt"), "");
+        string At(string relative) => Path.Combine(dir, relative.Replace('/', Path.DirectorySeparatorChar));
+
+        var status = _git.Status(dir, [At("src/Api/appsettings.json"), At("src/Api/.env.local"), At("web/.env.local"), At("loose.txt"), At("new.json")])!;
+
+        Assert.Equal((true, false), status[At("src/Api/appsettings.json")]);
+        Assert.Equal((false, true), status[At("src/Api/.env.local")]);   // ignored, and the commit left it out
+        Assert.Equal((false, true), status[At("web/.env.local")]);       // doesn't exist yet
+        Assert.Equal((false, false), status[At("loose.txt")]);
+        Assert.Equal((false, false), status[At("new.json")]);
+        var outside = Path.Combine(_root, "not-a-repo");
+        Directory.CreateDirectory(outside);
+        Assert.Null(_git.Status(outside, [Path.Combine(outside, "x")]));
+    }
+
     [Theory]
     [InlineData("feat-x", true)]
     [InlineData("feat/x", false)]

@@ -94,8 +94,10 @@ public sealed partial class SproutService(
 
     /// <param name="branch">The branch for the sprout's worktrees; defaults to the sprout's name. Must be null when the
     /// trellis runs its repos in place.</param>
+    /// <param name="beforeInfra">Called once the sprout's files are written and before its infra starts, with the
+    /// record so far and the plan; a caller that will start the apps can have them building meanwhile.</param>
     public SproutRecord Up(LoadedTrellis loaded, string sprout, string? branch, IProgress<SproutEvent>? progress = null,
-        CancellationToken cancellation = default)
+        CancellationToken cancellation = default, Action<SproutRecord, Plan>? beforeInfra = null)
     {
         if (!loaded.Complete || loaded.Trellis is not { } trellis)
             throw new SproutException($"{Path.GetFileName(loaded.TrellisPath)} isn't ready to sprout", loaded.Problems);
@@ -127,6 +129,7 @@ public sealed partial class SproutService(
             ComposeFiles: loaded.ComposeFiles(problems)));
         problems.AddRange(dryPlan.Problems);
         if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
+        var filesCheckedFor = loaded;
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new SproutException("the plan has errors", problems));
         var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
@@ -168,11 +171,13 @@ public sealed partial class SproutService(
             step.Done(string.Join(", ", plan.Ports.Select(p => $"{p.Resource}.{p.Endpoint} {p.Port}")));
 
             step.Start("Files");
-            record = record with { Files = WriteFiles(plan, record) };
+            var alreadyChecked = ReferenceEquals(loaded, filesCheckedFor) && SameDirs(loaded.ReadFrom, dirs);
+            record = record with { Files = WriteFiles(plan, record, check: !alreadyChecked) };
             store.Save(record);
             store.SavePlan(plan);
             step.Done($"{record.Files.Count} files");
 
+            beforeInfra?.Invoke(record, plan);
             record = record with { Compose = StartInfra(plan, record, step, cancellation) };
             record = record with { State = SproutState.Up, UpdatedAt = DateTimeOffset.UtcNow };
             store.Save(record);
@@ -361,16 +366,22 @@ public sealed partial class SproutService(
     public IReadOnlyList<PlanProblem> CheckFiles(Plan plan, IReadOnlyDictionary<string, string> repoDirs)
     {
         var problems = new List<PlanProblem>();
-        foreach (var target in Targets(plan, repoDirs))
+        var targets = Targets(plan, repoDirs);
+        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var statusByRepo = targets.GroupBy(t => t.RepoDir, pathComparer).AsParallel()
+            .Select(g => (dir: g.Key, status: git.Status(g.Key, g.Select(t => t.Path).ToList())))
+            .ToDictionary(x => x.dir, x => x.status, pathComparer);
+        foreach (var target in targets)
         {
             // Without git there's nothing to commit by accident.
-            if (!git.IsRepo(target.RepoDir)) continue;
+            if (statusByRepo[target.RepoDir] is not { } status) continue;
+            var (tracked, ignored) = status[target.Path];
             var relative = Path.GetRelativePath(target.RepoDir, target.Path).Replace('\\', '/');
-            if (git.IsTracked(target.RepoDir, target.Path))
+            if (tracked)
                 problems.Add(new PlanProblem(ProblemSeverity.Error,
                     $"git tracks {relative}, so sprig won't write a sprout's values into it. Point the output at a local file the app reads instead" +
                     (target.Kind == "launchSettings" ? ", e.g. EnvOutput.AppSettings(\"appsettings.Local.json\")." : "."), target.Location));
-            else if (!git.IsIgnored(target.RepoDir, target.Path))
+            else if (!ignored)
                 problems.Add(new PlanProblem(ProblemSeverity.Error,
                     $"{relative} isn't ignored by git, so a sprout's values could be committed. Add it to the repo's .gitignore" + target.Kind switch
                     {
@@ -381,12 +392,13 @@ public sealed partial class SproutService(
         return problems;
     }
 
-    IReadOnlyList<WrittenFile> WriteFiles(Plan plan, SproutRecord record)
+    /// <param name="check">False when the plan step already checked these targets in these folders.</param>
+    IReadOnlyList<WrittenFile> WriteFiles(Plan plan, SproutRecord record, bool check)
     {
         var dirs = record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal);
-        // Checked again in the sprout's own folders (a branch can have its own .gitignore), and all before any write,
-        // so a refusal leaves nothing half done.
-        var problems = CheckFiles(plan, dirs);
+        // Checked in the sprout's own folders (a branch can have its own .gitignore), and all before any write, so a
+        // refusal leaves nothing half done.
+        IReadOnlyList<PlanProblem> problems = check ? CheckFiles(plan, dirs) : [];
         if (problems.Count > 0) throw new SproutException("sprig won't write into these files", problems);
 
         var written = new List<WrittenFile>();

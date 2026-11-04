@@ -1,6 +1,6 @@
 # Experimental roadmap
 
-Branch: `experimental`. Started 2026-11-03. Status: M0 to M5 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md)), and sprouts now run their branch's definitions. M6 (review against Aspire) next.
+Branch: `experimental`. Started 2026-11-03. Status: M0 to M6 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md); M6's Aspire comparison is in [spikes/m6-aspire.md](spikes/m6-aspire.md)). Next: the steps to replace `main`, below M6.
 
 This branch rebuilds Sprig from scratch around two changes:
 
@@ -303,13 +303,22 @@ Also in M4:
 - When a branch brings a version that isn't approved, `up` stops after making the worktrees and before writing anything. The CLI asks (or `--trust` approves) and goes again; the app shows the approval panel and carries on once approved. `sprig trust add <worktree>/sprig.cs` approves it for its repo. `sprig trust ls` lists each file once, with how many versions are approved.
 - **On the testbed:** a `feat-defs` branch of `shop-web` added `VITE_BRANCH_FLAG=on` to its `sprig.cs`. `sprig up storefront --sprout feat-defs` made the three worktrees and stopped at "Definitions", asking only for shop-web's branch version (the two branches made fresh from `main` asked nothing). After `sprig trust add <worktree>/shop-web/sprig.cs`, `up` came up with the flag in the worktree's `.env.local`, `plan --sprout feat-defs` showed it, plain `plan` (the main checkouts) didn't and asked nothing, and `rm` cleaned up.
 
-- Run the same test system under Aspire (an AppHost with `--isolated`) and compare setup effort, start time, isolation and the debugging workflow. **Done 2026-11-04**, findings in [spikes/m6-aspire.md](spikes/m6-aspire.md): Aspire isolates by the AppHost file's path (a second run of the same AppHost replaced the first and shared its volume), picks new ports every run, and can't hand one app to an IDE (its proxy holds the port and forwards nothing). It starts faster: 26 s warm against sprig's 50 s, which has two fixable causes (builds wait for the infra; the file checks call git three times per file, twice over).
-- Decide whether `experimental` replaces `main`, and how existing `.sprig.json` users move over. That could be a converter, or a clean break before 1.0.
-- Firm up the "Later" list below into the next roadmap.
+- Run the same test system under Aspire (an AppHost with `--isolated`) and compare setup effort, start time, isolation and the debugging workflow. **Done 2026-11-04**, findings in [spikes/m6-aspire.md](spikes/m6-aspire.md): Aspire isolates by the AppHost file's path (a second run of the same AppHost replaced the first and shared its volume), picks new ports every run, and can't hand one app to an IDE (its proxy holds the port and forwards nothing). It started faster (26 s warm against sprig's 50 s), from two causes now fixed: `up -d`/`--run` has the host build while the infra starts (a held `start`), and the file checks are two git calls per repo, run once. Sprig is now **14 s warm and 19 s for a new sprout**.
+- Decide whether `experimental` replaces `main`, and how existing `.sprig.json` users move over. **Decided (user, 2026-11-04):** `experimental` replaces `main` once start time is fixed (done) and the user has made their hand pass over the app's UI. **No migration:** the `.sprig.json` format goes, with a changelog note only.
+- Firm up the "Later" list below into the next roadmap. **Proposed below**, for the user to reorder.
+
+**Outcome:** met. Sprig keeps what Aspire can't do across repos (worktrees made for you, stable ports, per-sprout data, an IDE taking one app over) and now starts faster than Aspire on the testbed.
 
 ---
 
-## Later (not in this roadmap)
+## Next: replacing `main` (proposed)
+
+1. **The user's hand pass over the app.** Trellises and Sprouts pages, runner rows, log pane, and the new approval prompt during bring-up. Fix what it finds.
+2. **The app gets the same head start as the CLI.** Bring-up from the app doesn't start the apps, so it doesn't prebuild; "Start all" straight after could use the held start too.
+3. **EDR sign-off.** Ask SecOps whether CrowdStrike or Defender raised non-blocking alerts for `sprig-host` and its `--ctrl-c` helper (see the handover's loose ends).
+4. **Merge mechanics.** The store moves from `sprig-exp` to `sprig` (the test guarding the released store changes with it), the version leaves `0.100.0-exp`, `Sprig.Host` gets a version, the changelog says `.sprig.json` is gone, and `Sprig.Sdk` is published as a package so definitions stop needing the local `#:project` line.
+
+## Later (after `main`)
 
 - **In-app editor polish:** the M1 editor works but needs style refinement (completion popup, highlighting, problems list) before it becomes a real feature. Also stop the language host after a few idle minutes.
 - **Smarter worktree branching and refresh:** pooled warm sprouts, refresh from base, rebasing a sprout.

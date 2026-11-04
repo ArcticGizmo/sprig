@@ -8,8 +8,8 @@ Run 2026-11-04 on the same Windows machine as M1–M5, with Aspire CLI 13.6.1 (a
 |---|---|---|
 | Describing the system | One file (about 60 lines) that names every repo's projects by path and knows each app's settings | Each repo describes itself (`sprig.cs`); a 20-line trellis joins them by name, through imports and exports |
 | Infra | Declared again in C#; the repo's `docker-compose.yml` isn't used | The repo's own compose file, re-ported per sprout; Mailpit from a preset |
-| Cold start (fresh worktrees, npm installs, builds) | 35 s | 73 s and 83 s |
-| Warm start (everything built) | 26–27 s | 50 s |
+| Cold start (fresh worktrees, npm installs, builds) | 35 s | 73 s and 83 s; **19 s** after the start-time work below |
+| Warm start (everything built) | 26–27 s | 50 s; **14 s** after the start-time work below |
 | Two copies at once | Only with **a copy of the AppHost per set of checkouts**, and worktrees made by hand | Two sprouts, worktrees made and removed by sprig |
 | Ports | Random on every run | Leased per sprout and kept (8000… and 8013… on the two sprouts; web pinned to 5170–5179) |
 | Data | One Postgres volume per AppHost path | Volumes per sprout's compose project |
@@ -44,5 +44,16 @@ One thing favours Aspire in this comparison: its front ends count as healthy as 
 ## What it means for sprig
 
 - The moat in [the Aspire notes](../artefacts/authoring-redesign.html) holds, and is now measured: worktrees made for you, stable and pinned ports, per-sprout data, repos that describe themselves, existing compose files, and an IDE taking over one app. Aspire needs hand work for each of these across repos.
-- Aspire wins on start time and on telemetry. Both are fixable in sprig: telemetry is already in Later (the standalone dashboard), and start time has two clear causes.
-- **Start-time work (small):** start builds while the infra comes up, since nothing in a build needs it; and batch the file checks into one `git ls-files` and one `git check-ignore --stdin` per repo, run once. Together they should take the warm start from about 50 s to about 35 s.
+- Aspire won on start time and still wins on telemetry. Start time had two clear causes, both now fixed (below); telemetry is already in Later (the standalone dashboard).
+- **Start-time work (small):** start builds while the infra comes up, since nothing in a build needs it; and batch the file checks into one `git ls-files` and one `git check-ignore` per repo, run once.
+
+## After the start-time work (same day)
+
+Both changes are in: `up -d`/`--run` has the host build the apps while the infra starts (a held `start`, released when `up` finishes, or stopped if it fails), and the file checks are two git calls per repo, the repos in parallel, skipped the second time when nothing changed between the plan and the writes.
+
+| Sprig, same testbed | Before | After |
+|---|---|---|
+| Warm `down` then `up -d` | 50 s | **14 s** (Plan 1.4 s, Files 0.5 s, infra healthy at 7.3 s, migrate finished at 8.3 s, all ready at 13.5 s) |
+| New sprout, fresh worktrees, `npm ci` and builds | 73 s and 83 s | **19 s** |
+
+The warm figures are like for like. The cold ones aren't quite: the earlier runs also paid for colder npm, NuGet and build caches. Either way, sprig now starts faster than Aspire did here (26 s warm, 35 s for a new set of worktrees).

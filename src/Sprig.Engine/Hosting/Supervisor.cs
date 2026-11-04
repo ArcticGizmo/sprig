@@ -19,8 +19,13 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
 {
     public static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
 
+    /// <summary>How long a held runner waits for its release: long enough for a first pull of every image, short
+    /// enough that a CLI that died mid-up doesn't leave runners waiting for good.</summary>
+    public static readonly TimeSpan HoldLimit = TimeSpan.FromMinutes(15);
+
     readonly ConcurrentDictionary<(string Sprout, string Name), Runner> _runners = new();
     readonly ConcurrentDictionary<string, SemaphoreSlim> _buildLocks = new(StringComparer.OrdinalIgnoreCase);
+    readonly ConcurrentDictionary<string, TaskCompletionSource> _holds = new();
     readonly Lock _startGate = new();
 
     public bool AnyAlive => _runners.Values.Any(r => r.Status.State.IsAlive() || r.Status.State == RunnerState.Stopping);
@@ -32,10 +37,17 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     /// only when it isn't already going or (for a job) finished, so starting one app doesn't bounce what it depends on.
     /// Returns at once; builds, waits and starts carry on in the background and show in <see cref="List"/>.
     /// </summary>
-    public IReadOnlyList<RunnerStatus> Start(IReadOnlyList<RunnerSpec> specs, IReadOnlyCollection<string> restart)
+    /// <param name="hold">Build, then wait until a start for the same sprout without a hold releases them.</param>
+    public IReadOnlyList<RunnerStatus> Start(IReadOnlyList<RunnerSpec> specs, IReadOnlyCollection<string> restart, bool hold = false)
     {
         lock (_startGate)
         {
+            foreach (var sprout in specs.Select(s => s.Sprout).Distinct())
+            {
+                if (hold) _holds.GetOrAdd(sprout, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                else Release(sprout);
+            }
+
             var started = new List<Runner>();
             foreach (var spec in specs)
             {
@@ -51,7 +63,8 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 var runner = new Runner(spec, HostProtocol.LogFile(paths, spec.Sprout, spec.Name),
                     spec.BuildKey is { } k ? _buildLocks.GetOrAdd(k, _ => new SemaphoreSlim(1, 1)) : null,
                     name => _runners.TryGetValue((spec.Sprout, name), out var r) ? r.Status : null,
-                    previous);
+                    previous,
+                    () => _holds.TryGetValue(spec.Sprout, out var held) ? held.Task : Task.CompletedTask);
                 _runners[key] = runner;
                 started.Add(runner);
             }
@@ -73,16 +86,25 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             var stopping = runner.StopAsync(Grace);
             if (name is null) _ = stopping.ContinueWith(_ => _runners.TryRemove(new KeyValuePair<(string, string), Runner>(key, runner)));
         }
+        // Only once they're all marked as stopping, or a held runner could wake and start.
+        if (name is null) Release(sprout);
         return targets.Length > 0;
     }
 
     public async ValueTask DisposeAsync()
         => await Task.WhenAll(_runners.Values.Select(r => r.StopAsync(Grace)));
 
+    void Release(string sprout)
+    {
+        if (_holds.TryRemove(sprout, out var held)) held.TrySetResult();
+    }
+
     /// <param name="peer">Another runner of the same sprout, by name, for waiting on.</param>
     /// <param name="previous">The runner this one replaces; it has to be gone before this one builds, since a running
     /// app locks the files its build would overwrite.</param>
-    sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer, Runner? previous)
+    /// <param name="held">Completes once the sprout's hold (if any) is released.</param>
+    sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer, Runner? previous,
+        Func<Task> held)
     {
         // The shells sprig starts apps through, and the console host Windows gives each one; neither is the app.
         static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase) { "cmd", "conhost", "sh" };
@@ -160,6 +182,22 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     if (code != 0)
                     {
                         Set(RunnerState.Failed, exit: code, error: $"the build exited with code {code}");
+                        return;
+                    }
+                }
+
+                var hold = held();
+                if (!hold.IsCompleted)
+                {
+                    Set(RunnerState.Waiting);
+                    Write("sprig: waiting for the sprout's infra");
+                    var first = await Task.WhenAny(hold, _stopAsked.Task, Task.Delay(HoldLimit));
+                    if (Stopping) return;
+                    if (first != hold)
+                    {
+                        var why = $"the sprout's infra didn't come up within {HoldLimit.TotalMinutes:0} minutes";
+                        Write($"sprig: {why}");
+                        Set(RunnerState.Failed, error: why);
                         return;
                     }
                 }

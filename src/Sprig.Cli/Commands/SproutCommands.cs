@@ -100,16 +100,42 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     SproutRecord? UpApproving(LoadedTrellis loaded, string sprout, Settings s, IProgress<SproutEvent> progress,
         CancellationToken cancellation)
     {
+        var runApps = s.Run || s.Detached;
         for (var attempt = 1; ; attempt++)
         {
+            string? held = null;
             try
             {
-                return cli.Sprouts.Up(loaded, sprout, s.Branch, progress, cancellation);
+                return cli.Sprouts.Up(loaded, sprout, s.Branch, progress, cancellation,
+                    runApps ? (record, plan) => held = Prebuild(record, plan) : null);
             }
             catch (SproutException e) when (e.Untrusted.Count > 0 && attempt < 3)
             {
                 if (!TrustFlow.Approve(cli, e.Untrusted, s)) return null;
             }
+            catch (Exception) when (held is not null)
+            {
+                cli.Host.TrySend(new HostRequest("stop", Sprout: held));
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Has the host build the apps while the infra comes up, held until starting them after <c>up</c> releases them.
+    /// Returns the sprout's key when it did. Only a head start: if it fails, starting them afterwards builds as usual.
+    /// </summary>
+    string? Prebuild(SproutRecord record, Plan plan)
+    {
+        var specs = RunnerSpecs.For(record, plan);
+        if (specs.Count == 0) return null;
+        try
+        {
+            return cli.Host.Send(new HostRequest("start", specs, Restart: [], Hold: true)).Ok ? record.Key : null;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

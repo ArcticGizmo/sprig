@@ -81,8 +81,10 @@ public sealed record RunnerStatus(string Sprout, string Name, RunnerState State,
 /// <param name="Specs">For <c>start</c>: the runners to have going.</param>
 /// <param name="Restart">For <c>start</c>: names among <see cref="Specs"/> to start afresh even if running. The others
 /// start only if they aren't already going (or, for a job, already finished).</param>
+/// <param name="Hold">For <c>start</c>: build now, but run nothing until a <c>start</c> for the same sprout without it.
+/// <c>up</c> sends it before the infra starts, so builds and containers come up together.</param>
 public sealed record HostRequest(string Op, IReadOnlyList<RunnerSpec>? Specs = null, string? Sprout = null, string? Name = null,
-    IReadOnlyList<string>? Restart = null);
+    IReadOnlyList<string>? Restart = null, bool? Hold = null);
 
 public sealed record HostResponse(bool Ok, string? Error = null, int? Pid = null, string? Version = null,
     IReadOnlyList<RunnerStatus>? Runners = null);

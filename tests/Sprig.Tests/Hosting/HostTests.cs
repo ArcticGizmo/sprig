@@ -124,6 +124,33 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
+    public void A_held_start_builds_then_waits_until_a_plain_start_releases_it()
+    {
+        var spec = Spec("shop/migrate", Exit(0), job: true) with { Build = Exit(0), BuildKey = "shop" };
+
+        _client.Send(new HostRequest("start", [spec], Hold: true));
+
+        var held = Await("shop/migrate", r => ReadShared(r.LogFile).Contains("waiting for the sprout's infra"));
+        Assert.Equal(RunnerState.Waiting, held.State);
+        Thread.Sleep(500);
+        Assert.Equal(RunnerState.Waiting, Await("shop/migrate", _ => true).State);
+
+        Assert.Empty(_client.Send(new HostRequest("start", [spec])).Runners!);
+        Assert.Equal(RunnerState.Completed, Await("shop/migrate", r => r.State.IsSettled()).State);
+    }
+
+    [Fact]
+    public void Stopping_a_held_sprout_ends_its_runners_without_starting_them()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/migrate", Exit(0), job: true)], Hold: true));
+        Await("shop/migrate", r => r.State == RunnerState.Waiting);
+
+        var stopped = Assert.Single(_client.StopAndWait("storefront/feat-x"));
+
+        Assert.DoesNotContain("sprig: starting", ReadShared(stopped.LogFile));
+    }
+
+    [Fact]
     public void A_failed_job_keeps_what_waits_for_it_from_starting()
     {
         _client.Send(new HostRequest("start", [Spec("shop/migrate", Exit(4), job: true), Spec("shop/api", Wait(30), waitFor: "shop/migrate")]));

@@ -7,8 +7,10 @@ var repo = Repo.Describe("shop-services");
 var compose = repo.ComposeFile("docker-compose.yml");
 var pg     = compose.Service("postgres").Endpoint("tcp", 5432).Health("pg_isready -h 127.0.0.1 -U shop");
 var redis  = compose.Service("redis").Endpoint("tcp", 6379).Health("redis-cli ping");
+// Health checks run as root: pinging before the server writes its Erlang cookie leaves a root-owned one the server
+// can't read, and it exits. Waiting for the server's cookie first avoids that.
 var rabbit = compose.Service("rabbitmq").Endpoint("amqp", 5672).Endpoint("ui", 15672, scheme: "http")
-    .Health("rabbitmq-diagnostics -q ping");
+    .Health("test -f /var/lib/rabbitmq/.erlang.cookie && rabbitmq-diagnostics -q ping");
 
 var smtp = repo.Import<Url>("mail-smtp");                 // the trellis supplies the mail server
 

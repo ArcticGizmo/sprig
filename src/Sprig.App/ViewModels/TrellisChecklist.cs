@@ -6,7 +6,7 @@ namespace Sprig.App.ViewModels;
 public enum ChecklistState { Done, Open, Waiting }
 
 /// <summary>What a step's button does; the page turns it into a command.</summary>
-public enum StepAction { None, Approve, EditCode, ShowValues, Start }
+public enum StepAction { None, Review, EditCode, ShowValues, Start }
 
 /// <summary>One step on the way to a trellis's first sprout.</summary>
 public sealed record ChecklistStep(int Number, string Title, string Detail, ChecklistState State, StepAction Action = StepAction.None, string ActionLabel = "")
@@ -46,10 +46,10 @@ public static class TrellisChecklist
             }
         }
 
-        Add("Approve the code", pendingApprovals == 0,
-            "Everything it runs is approved.",
-            $"{Count(pendingApprovals, "definition")} to read first: sprig runs {(pendingApprovals == 1 ? "it" : "them")} as you.",
-            StepAction.Approve, "Approve and run");
+        Add("Review the code", pendingApprovals == 0,
+            "Every file it runs is approved.",
+            $"{Count(pendingApprovals, "file")} to read and approve. Nothing runs until {(pendingApprovals == 1 ? "it's" : "they're")} approved.",
+            StepAction.Review, $"Review {Count(pendingApprovals, "file")}");
 
         var notRun = cards.Where(c => !c.HasModel).ToArray();
         Add("Its definitions run", loadProblems == 0 && notRun.Length == 0,

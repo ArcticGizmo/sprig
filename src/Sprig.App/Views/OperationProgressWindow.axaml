@@ -60,8 +60,10 @@
         </ScrollViewer>
 
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,18,0,0">
-            <SelectableTextBlock Text="{Binding Summary}" IsVisible="{Binding HasSummary}" Foreground="{Binding SummaryBrush}"
-                                 FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          IsVisible="{Binding HasSummary}" VerticalAlignment="Center" Margin="0,0,12,0">
+                <SelectableTextBlock Text="{Binding Summary}" Foreground="{Binding SummaryBrush}" FontSize="12.5" TextWrapping="Wrap" />
+            </ScrollViewer>
             <Button Grid.Column="1" Content="Close" Click="OnCloseClick" IsVisible="{Binding CanClose}" Padding="16,8"
                     FontWeight="SemiBold" Background="{StaticResource AccentBrush}" Foreground="#0B1220" VerticalAlignment="Center" />
             <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsRunning}" Padding="16,8"

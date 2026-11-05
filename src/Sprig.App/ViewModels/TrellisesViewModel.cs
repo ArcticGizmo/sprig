@@ -92,6 +92,9 @@ public partial class TrellisesViewModel : PageViewModel
 
     public DefinitionEditorViewModel Editor { get; }
 
+    /// <summary>The files waiting for approval, read and approved one at a time.</summary>
+    public CodeReviewViewModel Review { get; }
+
     /// <summary>Opens a repo on the Repos page, by ID.</summary>
     public Action<string>? OpenRepo { get; set; }
 
@@ -118,6 +121,8 @@ public partial class TrellisesViewModel : PageViewModel
     [ObservableProperty] private bool _showChecklist;
 
     // ---- adding a trellis ----
+    /// <summary>The first step of + Add: which kind of trellis, before any of either form's fields.</summary>
+    [ObservableProperty] private bool _isChooseOpen;
     [ObservableProperty] private bool _isAddOpen;
     [ObservableProperty] private string _newPath = "";
     [ObservableProperty] private string _addMessage = "";
@@ -160,6 +165,8 @@ public partial class TrellisesViewModel : PageViewModel
         _services = services;
         Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
         Editor.Closed += () => Tab = TrellisTab.Overview;
+        Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
+        Review.Approved += SetStatus;
         // Only listed here, for the nav's count; planning runs definitions, so it waits until the page is shown.
         Refresh(null, replan: false);
     }
@@ -240,6 +247,20 @@ public partial class TrellisesViewModel : PageViewModel
     [RelayCommand]
     private Task Replan() => PlanSelectedAsync();
 
+    /// <summary>The definition files the last load of the selected trellis read, by where their approval is kept.</summary>
+    IReadOnlyList<string> _definitionFiles = [];
+
+    /// <summary>Removing a trellis keeps its approvals, so re-adding it asks nothing; this is the way to be asked again,
+    /// as on first use. Its repos' sprig.cs files are approved per file, so other trellises using them ask again too.</summary>
+    [RelayCommand]
+    private void ForgetApprovals()
+    {
+        if (Selected is not { Missing: false } trellis) return;
+        foreach (var file in _definitionFiles.Append(trellis.Path).Distinct(StringComparer.OrdinalIgnoreCase))
+            _services.Trust.Revoke(file);
+        Refresh(trellis.Name, replan: true);
+    }
+
     int _planVersion;
 
     async Task PlanSelectedAsync()
@@ -262,6 +283,7 @@ public partial class TrellisesViewModel : PageViewModel
         {
             var loaded = await AppServices.RunAsync(() => _services.Loader.Load(trellis.Path));
             if (version != _planVersion) return;
+            _definitionFiles = [.. loaded.Results.Select(r => r is NeedsTrust pending ? pending.TrustPath : r.Path)];
             Description = loaded.Trellis is null ? "" : TrellisSummary.Description(loaded);
             if (loaded.Untrusted.Count > 0)
             {
@@ -402,7 +424,7 @@ public partial class TrellisesViewModel : PageViewModel
         {
             { Selected: null } => ("", StatusKind.None),
             { IsBusy: true } => ("Checking…", StatusKind.None),
-            { HasPendingTrust: true } => ("Needs approval: its code hasn't run yet.", StatusKind.Warn),
+            { HasPendingTrust: true } => ("Review the code: nothing runs until you approve it.", StatusKind.Warn),
             { HasLoadProblems: true } => ($"Can't plan: {Count(LoadProblems.Count, "problem")} below.", StatusKind.Bad),
             _ when errors > 0 => ($"{Count(errors, "problem")} to fix before a sprout can start; see Values.", StatusKind.Bad),
             { Plan: not null } => ($"Ready to start{(warnings > 0 ? $", with {Count(warnings, "warning")} on Values" : "")}. Checked at {DateTime.Now:HH:mm}.", StatusKind.Good),
@@ -422,7 +444,7 @@ public partial class TrellisesViewModel : PageViewModel
             return;
         }
         var unfilledErrors = Plan?.Problems.Count(p => p.IsError && p.Message.Contains(UnfilledMessage, StringComparison.Ordinal)) ?? 0;
-        foreach (var step in TrellisChecklist.Steps(PendingTrust.Count, LoadProblems.Count, [.. Cards], Plan is not null, errors - unfilledErrors))
+        foreach (var step in TrellisChecklist.Steps(HasPendingTrust ? Review.Remaining : 0, LoadProblems.Count, [.. Cards], Plan is not null, errors - unfilledErrors))
             Steps.Add(step);
         ShowChecklist = TrellisChecklist.Blocks(Steps);
     }
@@ -435,7 +457,7 @@ public partial class TrellisesViewModel : PageViewModel
     {
         switch (step?.Action)
         {
-            case StepAction.Approve: await ApproveAll(); break;
+            case StepAction.Review: Review.OpenCommand.Execute(null); break;
             case StepAction.EditCode: Tab = TrellisTab.Code; break;
             case StepAction.ShowValues: Tab = TrellisTab.Values; break;
             case StepAction.Start: Start(); break;
@@ -452,6 +474,10 @@ public partial class TrellisesViewModel : PageViewModel
         // Only a trellis that has run can say which repos it uses, so their definitions are a second ask.
         PendingIsTrellis = Selected is { } trellis && PendingTrust.Any(p => string.Equals(p.Path, trellis.DisplayPath, StringComparison.OrdinalIgnoreCase));
         _afterApproval = then;
+        Review.Note = PendingIsTrellis
+            ? "The trellis names its repos, so once it's approved sprig asks about any of their sprig.cs files you haven't approved."
+            : "";
+        Review.Load(PendingTrust);
     }
 
     [RelayCommand]
@@ -460,6 +486,7 @@ public partial class TrellisesViewModel : PageViewModel
         foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
         PendingTrust.Clear();
         HasPendingTrust = false;
+        Review.Clear();
         Refresh(Selected?.Name, replan: false);
         if (_afterApproval is { } next)
         {
@@ -480,6 +507,7 @@ public partial class TrellisesViewModel : PageViewModel
         Plan = null;
         PendingTrust.Clear();
         HasPendingTrust = false;
+        Review.Clear();
         LoadProblems.Clear();
         HasLoadProblems = false;
     }
@@ -560,8 +588,23 @@ public partial class TrellisesViewModel : PageViewModel
     // ---- adding and removing trellises ----
 
     [RelayCommand]
+    private void OpenChoose()
+    {
+        IsAddOpen = false;
+        IsNewOpen = false;
+        IsChooseOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelChoose() => IsChooseOpen = false;
+
+    [RelayCommand]
+    private void BackToChoose() => OpenChoose();
+
+    [RelayCommand]
     private void OpenAdd()
     {
+        IsChooseOpen = false;
         IsNewOpen = false;
         NewPath = "";
         AddMessage = "";
@@ -660,6 +703,7 @@ public partial class TrellisesViewModel : PageViewModel
     [RelayCommand]
     private void OpenNew()
     {
+        IsChooseOpen = false;
         IsAddOpen = false;
         NewName = "";
         NewRepoPath = "";
@@ -674,13 +718,6 @@ public partial class TrellisesViewModel : PageViewModel
 
     [RelayCommand]
     private void CancelNew() => IsNewOpen = false;
-
-    [RelayCommand]
-    private void SwitchToAdd()
-    {
-        IsNewOpen = false;
-        OpenAdd();
-    }
 
     [RelayCommand]
     private void AddNewRepo()

@@ -12,6 +12,16 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+
+        <!-- Anything that does something when clicked shows the hand, so it reads as clickable before you try it.
+             :is(Button) also covers ToggleButton, RepeatButton, CheckBox and RadioButton. Log lines select text, so
+             they keep the arrow. -->
+        <Style Selector=":is(Button), ComboBox, MenuItem, ListBox:not(.log) ListBoxItem">
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector=":is(Button):disabled, ComboBox:disabled, MenuItem:disabled, ListBoxItem:disabled">
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
     </Application.Styles>
 
     <Application.Resources>

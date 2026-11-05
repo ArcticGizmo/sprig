@@ -20,10 +20,12 @@ public partial class TrellisesView : UserControl
         };
     }
 
-    // The modal opens ready to type a path; posted so the box is visible before it takes focus.
+    // Each modal opens with focus inside it, so typing and Escape work at once; posted so it's visible before it takes focus.
     void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(TrellisesViewModel.IsAddOpen) && _vm?.IsAddOpen == true)
             Dispatcher.UIThread.Post(() => AddPath.FocusInput(), DispatcherPriority.Loaded);
+        if (e.PropertyName == nameof(TrellisesViewModel.IsChooseOpen) && _vm?.IsChooseOpen == true)
+            Dispatcher.UIThread.Post(() => ChooseExisting.Focus(), DispatcherPriority.Loaded);
     }
 }

@@ -121,6 +121,38 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="FontSize" Value="12.5" />
         </Style>
+        <!-- The two ways to add a trellis: chromeless buttons whose inner card carries hover. -->
+        <Style Selector="Button.choice">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.choice /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.choice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.choice:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+        <Style Selector="Button.choice:pointerover Border.card">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.choice:focus-visible Border.card">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
         <!-- The picture -->
         <Style Selector="Border.gbox">
             <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
@@ -237,7 +269,7 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Text="Trellises" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
                                    VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenNewCommand}" VerticalAlignment="Center"
+                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenChooseCommand}" VerticalAlignment="Center"
                                 IsEnabled="{Binding !Editor.IsDirty}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                     </Grid>
@@ -289,16 +321,18 @@
                     <Button Grid.Column="1" Content="Edit code" Command="{Binding EditCodeCommand}" VerticalAlignment="Top"
                             IsEnabled="{Binding !Selected.Missing, FallbackValue=False}"
                             Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,8" />
-                    <Button Grid.Column="2" Content="⋯" VerticalAlignment="Top" ToolTip.Tip="More"
+                    <Button Grid.Column="3" Content="⋯" VerticalAlignment="Top" ToolTip.Tip="More"
                             Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,8">
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedRight">
                                 <MenuItem Header="Check again" Command="{Binding ReplanCommand}" />
+                                <MenuItem Header="Forget approvals" Command="{Binding ForgetApprovalsCommand}"
+                                          ToolTip.Tip="Ask again before running this trellis's file and its repos' sprig.cs files. Other trellises that use those repos ask again too." />
                                 <MenuItem Header="Remove…" Command="{Binding RemoveCommand}" />
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Grid.Column="3" Content="Start a sprout" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"
+                    <Button Grid.Column="2" Content="Start a sprout" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"
                             VerticalAlignment="Top" ToolTip.Tip="Make a new sprout of this trellis"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="16,8" />
                 </Grid>
@@ -368,27 +402,6 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- What approving covers -->
-                            <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" IsVisible="{Binding HasPendingTrust}">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Classes="phead" Text="TO READ BEFORE APPROVING" Foreground="{StaticResource WarnBrush}" />
-                                    <TextBlock FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
-                                               Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them. Approval covers this exact content; any change asks again." />
-                                    <ItemsControl ItemsSource="{Binding PendingTrust}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:PendingTrustItem">
-                                                <StackPanel Margin="0,3" Spacing="1">
-                                                    <TextBlock Classes="cell mono" Text="{Binding Path}" />
-                                                    <TextBlock Classes="cell via" Text="{Binding Why}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
-                                               IsVisible="{Binding PendingIsTrellis}"
-                                               Text="The trellis is what names its repos, so any of their sprig.cs files you haven't approved are asked about next, once it has run." />
-                                </StackPanel>
-                            </Border>
 
                             <!-- Problems that stopped the plan -->
                             <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding HasLoadProblems}">
@@ -819,6 +832,51 @@
             </DockPanel>
         </Grid>
 
+        <!-- The files waiting for approval, read one at a time, opened from the checklist's first step -->
+        <ContentControl Grid.Column="0" Grid.ColumnSpan="2" ZIndex="60" Content="{Binding Review}" IsVisible="{Binding Review.IsOpen}" />
+
+        <!-- + Add starts with a choice, so neither form's fields show until you've said which you want. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsChooseOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelChooseCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Add a trellis" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="A trellis is a few repos run together. Do you have one already, or are you starting from the repos?" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <Button x:Name="ChooseExisting" Classes="choice" Command="{Binding OpenAddCommand}"
+                                AutomationProperties.AutomationId="trellis-add:existing">
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="I have a .trellis.cs" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Pick a trellis file that's already written, in a repo or a folder of its own. Nothing in it runs until you approve it." />
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                        <Button Grid.Column="1" Classes="choice" Command="{Binding OpenNewCommand}"
+                                AutomationProperties.AutomationId="trellis-add:from-repos">
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Build one from repos" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Choose a few repo folders and name it. It's kept in sprig, so nothing is written to your repos." />
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                    </Grid>
+                    <Button Content="Cancel" Command="{Binding CancelChooseCommand}" HorizontalAlignment="Right"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                </StackPanel>
+            </Border>
+        </Border>
+
         <!-- A new trellis kept in sprig -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsNewOpen}">
             <Border.KeyBindings>
@@ -864,8 +922,8 @@
                     <TextBlock Classes="msg" Text="{Binding NewMessage}" FontSize="12" TextWrapping="Wrap" Classes.bad="{Binding NewFailed}"
                                IsVisible="{Binding NewMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
-                        <Button Content="Add an existing .trellis.cs instead" Command="{Binding SwitchToAddCommand}" Padding="0"
-                                Background="Transparent" Foreground="{StaticResource AccentBrush}" FontSize="12.5" VerticalAlignment="Center" />
+                        <Button Content="← Back" Command="{Binding BackToChooseCommand}" HorizontalAlignment="Left"
+                                Background="Transparent" Foreground="{StaticResource MutedBrush}" Padding="6,7" />
                         <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelNewCommand}"
                                 Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
                         <Button Grid.Column="2" Content="Create trellis" Command="{Binding CreateNewCommand}" IsEnabled="{Binding !IsBusy}"
@@ -893,12 +951,14 @@
                     <TextBlock Classes="msg" Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap"
                                Classes.bad="{Binding AddFailed}"
                                IsVisible="{Binding AddMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <Button Content="Cancel" Command="{Binding CancelAddCommand}"
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                        <Button Content="← Back" Command="{Binding BackToChooseCommand}" HorizontalAlignment="Left"
+                                Background="Transparent" Foreground="{StaticResource MutedBrush}" Padding="6,7" />
+                        <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelAddCommand}"
                                 Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
-                        <Button Content="Add trellis" Command="{Binding AddCommand}"
+                        <Button Grid.Column="2" Content="Add trellis" Command="{Binding AddCommand}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
-                    </StackPanel>
+                    </Grid>
                 </StackPanel>
             </Border>
         </Border>

@@ -116,7 +116,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
       <div class="cmd"><pre id="cmd-alias">Set-Alias sprig "$PWD\src\Sprig.Cli\bin\Debug\net10.0\sprig.exe"; &amp; .\src\Sprig.App\bin\Debug\net10.0\sprig-gui.exe</pre><button type="button" data-copy="cmd-alias">Copy</button></div>
     </div>
     <div>
-      <p class="cmd-label">The test repos live in <code>..\sprig-testbed</code>. To start over from clean templates at any point:</p>
+      <p class="cmd-label">The test repos live in <code>C:/Users/JonHowell/Documents/git/personal/sprig-testbed</code>. To start over from clean templates at any point:</p>
       <div class="cmd"><pre id="cmd-reset">pwsh -File scripts/testbed.ps1 -Force</pre><button type="button" data-copy="cmd-reset">Copy</button></div>
     </div>
   </div>
@@ -144,14 +144,20 @@ const SECTIONS = [
     id: "trellis", title: "Trellises page",
     intro: "Registering the testbed's trellises and approving their definitions. The store is empty, so everything asks for approval the first time. A trellis opens on its Overview: a summary, or while something's in the way, the steps to its first sprout.",
     items: [
-      { id: "TP1", title: "The nav",
-        how: [`Look at the left nav.`],
-        expect: `DEFINE lists <b>Repos</b> ("what each repo runs") then <b>Trellises</b> ("repos run together"); RUN's <b>Sprouts</b> says "running copies".` },
+      { id: "TP1", title: "The nav, and the hand cursor",
+        how: [`Look at the left nav.`, `Point at a nav item, a button, a ⋯ menu's items, and a row in the Trellises list. Then point at a greyed-out button.`],
+        expect: `DEFINE lists <b>Repos</b> ("what each repo runs") then <b>Trellises</b> ("repos run together"); RUN's <b>Sprouts</b> says "running copies". Everything clickable shows the hand cursor; a greyed-out button keeps the arrow.` },
+      { id: "TP1b", title: "Forget approvals",
+        how: [`Pick a trellis that's approved and choose <b>⋯ › Forget approvals</b>. Point at the item first to read its tooltip.`],
+        expect: `The list says "not approved yet" and the Overview goes back to <b>Before its first sprout</b>, asking to approve the trellis file and then its repos' <code>sprig.cs</code> files. <code>sprig trust ls</code> no longer lists them.` },
       { id: "TP2", title: "Add the storefront trellis",
-        how: [`Open <b>Trellises</b>, click <b>+ Add</b>, then <b>Add an existing .trellis.cs instead</b>. In the path box, type <code>${T}/st</code> and press <b>Tab</b> to complete it to <code>storefront.trellis.cs</code>.`, `Click <b>Add trellis</b> (or press <b>Enter</b>).`],
-        expect: `storefront is listed straight away, "in a folder", saying "not approved yet". Its Overview opens on <b>Before its first sprout</b>: <b>Approve the code</b> is open with an <b>Approve and run</b> button, the steps below wait, the status line says it needs approval, and <b>Start a sprout</b> is greyed out. The trellis file is listed under "To read before approving".` },
+        how: [`If storefront is already listed from an earlier run, pick it and choose <b>⋯ › Forget approvals</b>, then <b>⋯ › Remove…</b>. Removing alone keeps the approval, so re-adding wouldn't ask (TP8 checks that).`, `Open <b>Trellises</b> and click <b>+ Add</b>.`, `Click the <b>I have a .trellis.cs</b> card. In the path box, type <code>${T}/st</code> and press <b>Tab</b> to complete it to <code>storefront.trellis.cs</code>.`, `Click <b>Add trellis</b> (or press <b>Enter</b>).`],
+        expect: `+ Add first shows two cards, <b>I have a .trellis.cs</b> and <b>Build one from repos</b>, and no fields. Each card's border lights on hover, and the file form has <b>← Back</b> to return to the cards. storefront is listed straight away, "in a folder", saying "not approved yet". Its Overview opens on <b>Before its first sprout</b>: <b>Review the code</b> is open, saying 1 file to read and approve, with a <b>Review 1 file</b> button. The steps below it wait, the status line says to review the code, and <b>Start a sprout</b> is greyed out. In the header, <b>⋯</b> is the rightmost button. Nothing about the review is shown inline on the page.` },
+      { id: "TP2b", title: "The review dialog, one file at a time",
+        how: [`Click <b>Review 1 file</b>.`, `Press <b>Esc</b>, then open it again. Click <b>Approve storefront.trellis.cs</b>.`, `When the three <code>sprig.cs</code> files appear, click each one in the list to read it. Then click <b>Approve shop-services/sprig.cs</b>.`],
+        expect: `A large dialog fills most of the window: the files on the left, the picked one's code on the right, read-only and coloured, with its full path above. Esc and <b>Close</b> close it without approving anything. Nothing says "run". After the trellis file is approved, the dialog stays open and lists the repos' files by repo (<code>shop-web/sprig.cs</code> and so on). Approving one ticks it green and opens the next unapproved file. <b>Approve all</b> shows only while more than one is left.` },
       { id: "TP3", title: "Approve, and see the picture",
-        how: [`Click <b>Approve and run</b>, then again for the three <code>sprig.cs</code> files.`],
+        how: [`Approve the last two files, one at a time or with <b>Approve all 2</b>.`],
         expect: `The checklist goes and the status says "Ready to start". <b>How it fits together</b> shows "added by the trellis" (mail) on the left, shop-services next, then shop-mobile and shop-web, with wires labelled mail-smtp, catalog-url and orders-url running left to right. Below: How sprouts run (worktrees from main, stable ports, the two groups), Added by the trellis, and no sprouts yet.` },
       { id: "TP4", title: "Pick things in the picture",
         how: [`Click <b>web</b> in shop-web's box. Click <b>group web</b>, then <b>Everything</b>. Click the <b>shop-services</b> title.`],
@@ -163,7 +169,7 @@ const SECTIONS = [
         how: [`Click <b>Start a sprout</b> in the header, then cancel the form.`],
         expect: `The Sprouts page opens with its new-sprout form, storefront already chosen.` },
       { id: "TP7", title: "Add and plan the in-place trellis",
-        how: [`Add <code>${T}/services.trellis.cs</code> the same way.`],
+        how: [`Add <code>${T}/services.trellis.cs</code> the same way: <b>+ Add</b>, <b>I have a .trellis.cs</b>, then the path.`],
         expect: `It asks once, for <code>services.trellis.cs</code> itself. After approving it plans with no second ask, since shop-services' <code>sprig.cs</code> is unchanged. How sprouts run says the repos run where they're checked out.` },
       { id: "TP8", title: "Remove and re-add a trellis",
         how: [`Remove services from the <b>⋯</b> menu, then add it again.`],
@@ -187,7 +193,7 @@ const SECTIONS = [
         how: [`Click <b>In the repo</b>, then <b>In sprig</b> again, and open the definition.`],
         expect: `In the repo uses the folder's file again. Switching back to In sprig restores the copy with your comment rather than copying over it.` },
       { id: "RP5", title: "A new trellis from folders",
-        how: [`On Trellises, click <b>+ Add</b>, name it <code>trial</code>, add the shop-web and shop-services folders and click <b>Create trellis</b>.`],
+        how: [`On Trellises, click <b>+ Add</b>, then the <b>Build one from repos</b> card. Name it <code>trial</code>, add the <code>${T}/shop-web</code> and <code>${T}/shop-services</code> folders and click <b>Create trellis</b>.`],
         expect: `trial is listed "in sprig". Nothing in it offers mail-smtp, so its checklist stops at <b>What the repos need</b>: "Nothing fills mail-smtp (for shop-services)", with <b>Fill it in code</b>; the picture shows a dashed "nothing fills mail-smtp" stub on orders-api. The Repos list reuses shop-web and adds shop-services, "in repo", rather than making copies.` },
     ]
   },
@@ -196,8 +202,8 @@ const SECTIONS = [
     intro: "One running copy of storefront, on its own branch and worktrees.",
     items: [
       { id: "S1", title: "Sprout feat-a",
-        how: [`Click <b>+ Add</b> beside Sprouts in the nav. Pick storefront, name it <code>feat-a</code>, leave the branch empty, click <b>Sprout it</b>.`],
-        expect: `A progress window walks through Plan, a worktree per repo, Definitions ("read from the worktrees"), Ports, Files and the two container projects, then says it's up. No approval is asked: the new branches have main's definitions.` },
+        how: [`Point at the small <b>+</b> on the Sprouts row in the nav, then click it. Pick storefront, name it <code>feat-a</code>, leave the branch empty, click <b>Sprout it</b>.`],
+        expect: `Pointing at the + also highlights the whole Sprouts row, and clicking the + opens the new-sprout form rather than the overview. A progress window walks through Plan, a worktree per repo, Definitions ("read from the worktrees"), Ports, Files and the two container projects, then says it's up. No approval is asked: the new branches have main's definitions.` },
       { id: "S2", title: "Read the sprout's details",
         how: [`Click feat-a under STOREFRONT in the nav. Pick an app in the list, then open the <b>Infra, worktrees and files</b> tab.`],
         expect: `The apps are listed by repo with their ports; the page itself never scrolls. <b>Details</b> shows the picked app's url, its folder under <code>${T}/storefront--feat-a</code> (forward slashes) and its values with where each came from. The tab shows the infra's host and container ports, each worktree, the files sprig wrote, and no warnings.` },
@@ -269,7 +275,7 @@ const SECTIONS = [
     items: [
       { id: "B1", title: "Edit sprig.cs in a worktree, bring it up in the app",
         how: [`In <code>storefront--feat-a/shop-web/sprig.cs</code>, add <code>.Set("VITE_BRANCH_FLAG", "on")</code> to the EnvFile chain and save.`, `In the app, select feat-a and click <b>Bring up</b>.`],
-        expect: `The progress window stops and says the branch changes this definition. The Sprouts page shows the approval panel with "the sprout's branch changes it". After <b>Approve and run</b> it carries on by itself, and shop-web's <code>.env.local</code> has <code>VITE_BRANCH_FLAG=on</code>.` },
+        expect: `The progress window stops and says the branch changes this definition. The review dialog opens by itself with <code>shop-web/sprig.cs</code>, saying "the sprout's branch changes it", and the code shown includes your <code>VITE_BRANCH_FLAG</code> line. Close it once: the Sprouts page shows a <b>Review the code</b> notice with a <b>Review 1 file</b> button that opens it again. After <b>Approve shop-web/sprig.cs</b> it carries on by itself, and shop-web's <code>.env.local</code> has <code>VITE_BRANCH_FLAG=on</code>.` },
       { id: "B2", title: "Both versions stay approved",
         how: [`<code>sprig trust ls</code>, then <code>sprig plan storefront</code> (plain, not for the sprout).`],
         expect: `shop-web's <code>sprig.cs</code> shows 2 versions. The plain plan asks nothing and has no VITE_BRANCH_FLAG.` },

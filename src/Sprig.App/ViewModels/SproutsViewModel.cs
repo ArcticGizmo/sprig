@@ -138,6 +138,9 @@ public partial class SproutsViewModel : PageViewModel
     public ObservableCollection<string> TrellisNames { get; } = [];
     public ObservableCollection<PendingTrustItem> PendingTrust { get; } = [];
 
+    /// <summary>The files waiting for approval, read and approved one at a time.</summary>
+    public CodeReviewViewModel Review { get; }
+
     [ObservableProperty] private SproutItem? _selected;
     [ObservableProperty] private IReadOnlyList<SproutAppRow> _apps = [];
     [ObservableProperty] private IReadOnlyList<SproutInfraRow> _infra = [];
@@ -182,6 +185,7 @@ public partial class SproutsViewModel : PageViewModel
     public SproutsViewModel(AppServices services)
     {
         _services = services;
+        Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
         _services.HostStatus.Changed += ApplyRunners;
         _lastRunners = _services.HostStatus.Runners;
         DetailsOpen = _services.Ui.DetailsOpen;
@@ -517,6 +521,7 @@ public partial class SproutsViewModel : PageViewModel
         foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
         PendingTrust.Clear();
         HasPendingTrust = false;
+        Review.Clear();
         if (_afterApproval is { } next)
         {
             _afterApproval = null;
@@ -564,6 +569,17 @@ public partial class SproutsViewModel : PageViewModel
         foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
         HasPendingTrust = PendingTrust.Count > 0;
         _afterApproval = then;
+        Review.Load(PendingTrust);
+        // Asked for because the user just started something, so the review opens straight away.
+        Review.OpenCommand.Execute(null);
+    }
+
+    /// <summary>An error's first paragraph: what went wrong. The rest (a service's log, say) is already on the failed
+    /// step, so the summary under the steps stays short.</summary>
+    internal static string Headline(string message)
+    {
+        var end = message.IndexOf("\n\n", StringComparison.Ordinal);
+        return (end < 0 ? message : message[..end]).Trim();
     }
 
     /// <summary>Run one operation off the UI thread, reporting into a progress window.</summary>
@@ -597,13 +613,13 @@ public partial class SproutsViewModel : PageViewModel
             AskForTrust(e.Untrusted, retry);
             window.Finish("The sprout's branch changes these definitions, so they need approving first:\n"
                 + string.Join("\n", e.Untrusted.Select(u => u.Path.Replace('\\', '/')))
-                + "\nApprove them on the Sprouts page and it carries on.", ProgressState.Error);
+                + "\nReview them in the main window and it carries on.", ProgressState.Error);
             return false;
         }
         catch (Exception e)
         {
             var problems = e is SproutException se ? se.Problems.Where(p => p.Severity == ProblemSeverity.Error).Take(4).Select(p => p.Message) : [];
-            window.Finish(string.Join("\n", new[] { e.Message }.Concat(problems)), ProgressState.Error);
+            window.Finish(string.Join("\n", new[] { Headline(e.Message) }.Concat(problems)), ProgressState.Error);
             return false;
         }
         finally

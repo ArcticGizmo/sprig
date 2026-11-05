@@ -246,23 +246,15 @@
         <!-- Shown in the new-sprout modal while it's open, and under the sprout's header otherwise. -->
         <DataTemplate x:Key="TrustPanel" x:DataType="vm:SproutsViewModel">
             <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" Padding="14,12">
-                <StackPanel Spacing="8">
-                    <TextBlock Classes="phead" Text="APPROVE BEFORE RUNNING" Foreground="{StaticResource WarnBrush}" />
-                    <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
-                               Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them." />
-                    <ItemsControl ItemsSource="{Binding PendingTrust}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PendingTrustItem">
-                                <StackPanel Margin="0,2" Spacing="1">
-                                    <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Path}" />
-                                    <TextBlock Classes="cell via" Text="{Binding Why}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <Button Content="Approve and run" Command="{Binding ApproveAllCommand}" HorizontalAlignment="Left"
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="Review the code" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                   Text="{Binding Review.Summary, StringFormat='{}{0}. What you started carries on once the code is approved.'}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="{Binding Review.OpenLabel}" Command="{Binding Review.OpenCommand}" VerticalAlignment="Center"
                             Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
-                </StackPanel>
+                </Grid>
             </Border>
         </DataTemplate>
         <StreamGeometry x:Key="PinIcon">M9 3h6l-1 6 4 4H6l4-4z M11.25 13h1.5v8h-1.5z</StreamGeometry>
@@ -435,8 +427,14 @@
                         </StackPanel>
                     </Grid>
 
-                    <SelectableTextBlock Text="{Binding Selected.Record.Error}" FontSize="12" Foreground="{StaticResource DangerBrush}"
-                                         TextWrapping="Wrap" IsVisible="{Binding Selected.IsFailed}" />
+                    <!-- A failure can carry a service's log, so it scrolls in its own box rather than pushing the page down. -->
+                    <Border IsVisible="{Binding Selected.IsFailed}" Background="#1AF87171" BorderBrush="#66F87171" BorderThickness="1"
+                            CornerRadius="8" Padding="12,8">
+                        <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <SelectableTextBlock Text="{Binding Selected.Record.Error}" FontSize="12" Foreground="{StaticResource DangerBrush}"
+                                                 TextWrapping="Wrap" />
+                        </ScrollViewer>
+                    </Border>
                     <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
                                Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageOnPage}" />
                     <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap"
@@ -884,6 +882,9 @@
                 </StackPanel>
             </Border>
         </Border>
+
+        <!-- The files waiting for approval: over the new-sprout form too, which waits on them -->
+        <ContentControl ZIndex="60" Content="{Binding Review}" IsVisible="{Binding Review.IsOpen}" />
 
         <!-- New sprout -->
         <Border ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">

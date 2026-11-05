@@ -170,8 +170,9 @@ public class TrellisChecklistTests
         var steps = TrellisChecklist.Steps(pendingApprovals: 2, loadProblems: 0, cards: [], planned: false, otherErrors: 0);
 
         Assert.Equal([ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
-        Assert.Equal(StepAction.Approve, steps[0].Action);
-        Assert.Contains("2 definitions", steps[0].Detail);
+        Assert.Equal(StepAction.Review, steps[0].Action);
+        Assert.Equal("Review 2 files", steps[0].ActionLabel);
+        Assert.Contains("2 files to read and approve", steps[0].Detail);
         Assert.True(TrellisChecklist.Blocks(steps));
     }
 

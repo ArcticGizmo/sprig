@@ -46,8 +46,13 @@ public sealed class RabbitMqResource : ContainerResource
         Endpoint("ui", 15672, scheme: "http", file: location.File, line: location.Line);
         Env("RABBITMQ_DEFAULT_USER", User, location.File, location.Line);
         Env("RABBITMQ_DEFAULT_PASS", Password, location.File, location.Line);
-        Health("rabbitmq-diagnostics -q ping");
+        Health(HealthCommand);
     }
+
+    /// <summary>Health checks run as root. If rabbitmq-diagnostics runs before the server has written its Erlang
+    /// cookie, it writes one as root that the server (uid 999) can't read, and the server exits at start. So the
+    /// check waits for the server's own cookie first.</summary>
+    public const string HealthCommand = "test -f /var/lib/rabbitmq/.erlang.cookie && rabbitmq-diagnostics -q ping";
 
     /// <summary><c>amqp://sprig:sprig@localhost:&lt;port&gt;</c>.</summary>
     public Expr Url => new Template([new Literal($"amqp://{User}:{Password}@localhost:"), PortOf("amqp")]);

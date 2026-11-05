@@ -34,6 +34,59 @@ public class TrellisesViewModelTests
     }
 
     [Fact]
+    public void Add_asks_which_kind_first_and_back_returns_to_that_choice()
+    {
+        using var store = new TempStore();
+        var vm = new TrellisesViewModel(new AppServices(store.Root));
+
+        vm.OpenChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsAddOpen);
+        Assert.False(vm.IsNewOpen);
+
+        vm.OpenAddCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+        Assert.True(vm.IsAddOpen);
+
+        vm.BackToChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsAddOpen);
+
+        vm.OpenNewCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+        Assert.True(vm.IsNewOpen);
+
+        vm.BackToChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsNewOpen);
+
+        vm.CancelChooseCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+    }
+
+    [Fact]
+    public async Task Forgetting_approvals_makes_an_approved_trellis_ask_again_as_on_first_use()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(store.Root);
+        var file = Path.Combine(store.Root, "storefront.trellis.cs");
+        var text = "using Sprig;\nreturn Trellis.Describe(\"shop\").Emit(args);";
+        File.WriteAllText(file, text);
+        var services = new AppServices(store.Root);
+        services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(text));
+        services.Trellises.Add("storefront", file);
+        var vm = new TrellisesViewModel(services);
+        Assert.False(Assert.Single(vm.Trellises).NeedsApproval);
+
+        vm.ForgetApprovalsCommand.Execute(null);
+        await vm.ReplanCommand.ExecuteAsync(null);
+
+        Assert.True(Assert.Single(vm.Trellises).NeedsApproval);
+        Assert.Equal(file.Replace('\\', '/'), Assert.Single(vm.PendingTrust).Path);
+        Assert.Empty(services.Trust.List());
+    }
+
+    [Fact]
     public async Task A_guessed_name_steps_aside_for_a_trellis_already_registered_under_it()
     {
         using var store = new TempStore();

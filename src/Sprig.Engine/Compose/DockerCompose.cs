@@ -30,9 +30,61 @@ public sealed class DockerCompose(IProcessRunner runner)
 
     /// <summary>Start the project and wait until every service is running and, where it has a health check,
     /// healthy.</summary>
+    /// <exception cref="ComposeUpException">Says which service failed and how, with the end of its log, rather than
+    /// the whole command and everything compose printed (that already went to <paramref name="onOutput"/>).</exception>
     public void Up(ComposeProject project, Action<string>? onOutput, CancellationToken cancellation)
-        => Compose(project, ["up", "--detach", "--wait", "--wait-timeout", ((int)WaitTimeout.TotalSeconds).ToString(), "--remove-orphans"],
-            onOutput, cancellation).EnsureSuccess();
+    {
+        var result = Compose(project, ["up", "--detach", "--wait", "--wait-timeout", ((int)WaitTimeout.TotalSeconds).ToString(), "--remove-orphans"],
+            onOutput, cancellation);
+        if (!result.Success) throw new ComposeUpException(Explain(project, result), result);
+    }
+
+    public const int LogLinesShown = 12;
+
+    string Explain(ComposeProject project, ProcessResult result)
+    {
+        IReadOnlyList<ComposeService> services;
+        try { services = Services(project.Name); }
+        catch (ProcessException) { services = []; }
+        var failed = services.Where(s => s.Failed).ToArray();
+        if (failed.Length == 0)
+        {
+            // Nothing started badly, so compose itself refused: a port in use, an image that won't pull, a bad file.
+            var reason = result.StdErr.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim())
+                .LastOrDefault(l => l.Contains("error", StringComparison.OrdinalIgnoreCase));
+            return reason is null
+                ? $"docker compose couldn't start {project.Name} (exit {result.ExitCode}). Its output is in the step above."
+                : $"docker compose couldn't start {project.Name}: {reason}";
+        }
+
+        var text = new System.Text.StringBuilder();
+        text.Append(string.Join(" ", failed.Select(s => s.Why + ".")));
+        foreach (var service in failed)
+        {
+            var log = Logs(project.Name, service.Service);
+            if (log.Count == 0) continue;
+            text.Append($"\n\nThe end of {service.Service}'s log:\n");
+            text.Append(string.Join("\n", log));
+        }
+        return text.ToString();
+    }
+
+    /// <summary>Each service's container and how it's doing, from <c>docker compose ps</c>.</summary>
+    public IReadOnlyList<ComposeService> Services(string projectName)
+    {
+        var r = runner.Run("docker", ["compose", "-p", projectName, "ps", "--all", "--format", "json"]).EnsureSuccess();
+        return ComposeService.Parse(r.StdOut);
+    }
+
+    IReadOnlyList<string> Logs(string projectName, string service)
+    {
+        try
+        {
+            var r = runner.Run("docker", ["compose", "-p", projectName, "logs", "--no-color", "--no-log-prefix", "--tail", LogLinesShown.ToString(), service]);
+            return r.Success ? r.StdOut.Split('\n').Select(l => l.TrimEnd()).Where(l => l.Length > 0).TakeLast(LogLinesShown).ToArray() : [];
+        }
+        catch (ProcessException) { return []; }
+    }
 
     /// <param name="volumes">Also delete the project's volumes (its databases).</param>
     public void Down(ComposeProject project, bool volumes, Action<string>? onOutput = null, CancellationToken cancellation = default)

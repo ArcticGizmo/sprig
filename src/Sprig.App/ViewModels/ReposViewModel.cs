@@ -97,10 +97,14 @@ public partial class ReposViewModel : PageViewModel
     {
         _services = services;
         Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
-        Refresh();
+        // Only counted here, for the nav; reading the repos runs their definitions, so it waits until the page is shown.
+        NavCount = services.Stored.Repos().Count;
     }
 
-    protected override void OnActivated() => Refresh();
+    protected override void OnActivated()
+    {
+        if (!Editor.IsDirty) Refresh();
+    }
 
     /// <summary>Show one repo, by ID.</summary>
     public void Show(string id)

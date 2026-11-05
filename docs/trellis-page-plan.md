@@ -1,6 +1,6 @@
 # Trellis page redesign: plan
 
-Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3, 4 and 6 done together the same day (286 tests pass), checked with headless renders, not yet hand-tested. Phase 7 is next, then 5.
+Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3, 4, 6 and 7 done the same day (291 tests pass), checked with headless renders, not yet hand-tested. Phase 5 (the picture) is next.
 
 The options and the reasoning are on the canvas at https://claude.ai/artifact/QqNHSoEZhiQ5B5zjwgBqhy, with a copy in [artefacts/trellis-options/](artefacts/trellis-options/). This plan builds the blend: names and badges from the Model board, a Repos page (C), a summary trellis page (A) with the picture at its centre (B), and the checklist (D) only while something blocks a first sprout.
 
@@ -76,11 +76,12 @@ Each phase leaves the app building and the tests passing. Sizes: S is under a da
 - [x] Ports: the ports table, with a line saying it's a preview.
 - [x] Code: the trellis's file (or a repo's, opened from its card) in the shared editor; a save plans again and says whether it plans, and the other tabs show the result. Closing the editor goes back to Overview.
 
-### 7. The checklist, only while something blocks (S)
+### 7. The checklist, only while something blocks (S) ✅ done 2026-11-05
 
-- [ ] When a trellis can't make a sprout yet, the Overview opens on the steps: Repos, What the repos need, How sprouts run, Approve the code, Start a sprout. Each shows its state and the one action that clears it (Add a Mailpit to fill it, Fill it in code, Read and approve).
-- [ ] Start a sprout is disabled with the reason while any step is open. Once all are done the checklist goes and the summary shows.
-- [ ] Tests: each step's state from load results and plans.
+- [x] While a trellis can't make a sprout, the Overview opens on "Before its first sprout": Approve the code, Its definitions run, What the repos need, The plan checks out, Start a sprout. Approval comes first, since nothing runs until then; "How sprouts run" isn't a step, since it never blocks a sprout (the summary shows it). Each step shows done, open (with the one action that clears it: Approve and run, Open the code, Fill it in code, See them on Values) or waiting on the one above.
+- [x] Start a sprout is disabled in the header while any step is open, and the status line says why. Once all are done the checklist goes and the summary shows. The approval panel stays below it as the list of files to read.
+- [x] Tests: each step's state for unapproved code, a repo that didn't run, an unfilled need, other plan errors, and nothing in the way.
+- [x] Found on the way: the page planned once when built and again when shown, running the same trellis twice at once, and two `dotnet run`s of one file clash in dotnet's build output (seen only when the SDK had just been rebuilt). Pages now run definitions only when shown, and `DefinitionRunner` runs one file at a time; a second caller waits and reads the cache.
 
 ### 8. Names, testbed, data and docs (S)
 

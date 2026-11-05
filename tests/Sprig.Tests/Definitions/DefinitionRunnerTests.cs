@@ -203,6 +203,33 @@ public class DefinitionRunnerTests
     }
 
     [Fact]
+    public async Task Asking_for_the_same_file_twice_at_once_runs_it_once_and_the_second_ask_reads_the_cache()
+    {
+        var (store, file) = Definition();
+        using var _ = store;
+        var trust = new FileTrustStore(store.Paths);
+        trust.Approve(file, DefinitionHash.Of(File.ReadAllText(file)));
+        var running = 0;
+        var overlapped = false;
+        var host = new FakeHost(outFile =>
+        {
+            if (Interlocked.Increment(ref running) > 1) overlapped = true;
+            Thread.Sleep(200);
+            File.WriteAllText(outFile, ModelJson);
+            Interlocked.Decrement(ref running);
+            return new HostResult(0, "", false);
+        });
+        var runner = new DefinitionRunner(trust, host, store.Paths);
+
+        var results = await Task.WhenAll(Task.Run(() => runner.Evaluate(file)), Task.Run(() => runner.Evaluate(file)));
+
+        Assert.False(overlapped);
+        Assert.Equal(1, host.Runs);
+        Assert.All(results, r => Assert.IsType<Evaluated>(r));
+        Assert.Single(results, r => ((Evaluated)r).FromCache);
+    }
+
+    [Fact]
     public void A_definition_that_writes_no_model_says_what_is_probably_missing()
     {
         var (store, file) = Definition();

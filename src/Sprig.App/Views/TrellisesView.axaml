@@ -121,6 +121,33 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="FontSize" Value="12.5" />
         </Style>
+        <Style Selector="Border.step">
+            <Setter Property="BorderBrush" Value="#6E6E82" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.step TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.step.done">
+            <Setter Property="BorderBrush" Value="{StaticResource OkBrush}" />
+            <Setter Property="Background" Value="#1A3A2A" />
+        </Style>
+        <Style Selector="Border.step.done TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="Border.step.open">
+            <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
+            <Setter Property="Background" Value="#3A2F12" />
+        </Style>
+        <Style Selector="Border.step.open TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.steptitle">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.steptitle.waiting">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
         <Style Selector="Button.tab">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
@@ -250,10 +277,37 @@
 
                             <ProgressBar IsIndeterminate="True" Height="4" IsVisible="{Binding IsBusy}" />
 
-                            <!-- Approval before anything runs -->
+                            <!-- The steps to a first sprout, only while one is in the way -->
+                            <Border Classes="panel" IsVisible="{Binding ShowChecklist}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="phead" Text="BEFORE ITS FIRST SPROUT" Margin="0,0,0,8" />
+                                    <ItemsControl ItemsSource="{Binding Steps}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ChecklistStep">
+                                                <Grid ColumnDefinitions="40,*,Auto" Margin="0,0,0,12">
+                                                    <Border Classes="step" Classes.done="{Binding IsDone}" Classes.open="{Binding IsOpen}"
+                                                            Width="26" Height="26" CornerRadius="13" BorderThickness="1" VerticalAlignment="Top" HorizontalAlignment="Left">
+                                                        <TextBlock Text="{Binding Marker}" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                        <TextBlock Classes="steptitle" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                                                   Classes.waiting="{Binding IsWaiting}" />
+                                                        <TextBlock Classes="cell" Text="{Binding Detail}" Foreground="{StaticResource MutedBrush}" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2" Classes="small" Content="{Binding ActionLabel}" IsVisible="{Binding HasAction}"
+                                                            VerticalAlignment="Top" Margin="12,0,0,0" CommandParameter="{Binding}"
+                                                            Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).RunStepCommand}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- What approving covers -->
                             <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" IsVisible="{Binding HasPendingTrust}">
                                 <StackPanel Spacing="10">
-                                    <TextBlock Classes="phead" Text="APPROVE BEFORE RUNNING" Foreground="{StaticResource WarnBrush}" />
+                                    <TextBlock Classes="phead" Text="TO READ BEFORE APPROVING" Foreground="{StaticResource WarnBrush}" />
                                     <TextBlock FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
                                                Text="These definitions are C# that sprig runs with your permissions. Read them first if you didn't write them. Approval covers this exact content; any change asks again." />
                                     <ItemsControl ItemsSource="{Binding PendingTrust}">
@@ -269,8 +323,6 @@
                                     <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
                                                IsVisible="{Binding PendingIsTrellis}"
                                                Text="The trellis is what names its repos, so any of their sprig.cs files you haven't approved are asked about next, once it has run." />
-                                    <Button Content="Approve and run" Command="{Binding ApproveAllCommand}" HorizontalAlignment="Left"
-                                            Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
                                 </StackPanel>
                             </Border>
 

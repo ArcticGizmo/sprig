@@ -52,6 +52,16 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
         var decision = trust.Check(trustPath, sha);
         if (decision.State != TrustState.Trusted) return new NeedsTrust(path, sha, clock.Elapsed, decision.ApprovedSha256, trustPath);
 
+        // Two runs of one file at once share dotnet's build output for it, and the loser fails. The second caller waits,
+        // then usually finds the first one's model in the cache.
+        lock (RunLocks.GetOrAdd(OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path, _ => new object()))
+            return Run(path, sha, clock);
+    }
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> RunLocks = new();
+
+    DefinitionResult Run(string path, string sha, Stopwatch clock)
+    {
         var cacheFile = CacheFile(sha);
         if (_options.UseCache && TryRead(cacheFile) is { } cached)
             return new Evaluated(path, sha, clock.Elapsed, cached, FromCache: true);

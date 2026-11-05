@@ -100,6 +100,57 @@ public sealed class TrellisSummaryTests : IDisposable
     }
 }
 
+public class TrellisChecklistTests
+{
+    static RepoCard Card(string name, string? problem = null, params NeedRow[] needs)
+        => new(name, name, null, true, "", "web", "none", "nothing", needs, problem);
+
+    static ChecklistState[] States(IReadOnlyList<ChecklistStep> steps) => steps.Select(s => s.State).ToArray();
+
+    [Fact]
+    public void Unapproved_code_is_the_first_step_and_everything_after_it_waits()
+    {
+        var steps = TrellisChecklist.Steps(pendingApprovals: 2, loadProblems: 0, cards: [], planned: false, otherErrors: 0);
+
+        Assert.Equal([ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
+        Assert.Equal(StepAction.Approve, steps[0].Action);
+        Assert.Contains("2 definitions", steps[0].Detail);
+        Assert.True(TrellisChecklist.Blocks(steps));
+    }
+
+    [Fact]
+    public void A_need_nothing_fills_is_its_own_step_naming_the_repo_and_how_to_fill_it()
+    {
+        var steps = TrellisChecklist.Steps(0, 0, [Card("shop-services", null, new NeedRow("mail-smtp", "nothing fills it", false))], planned: true, otherErrors: 0);
+
+        Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
+        Assert.Contains("mail-smtp (for shop-services)", steps[2].Detail);
+        Assert.Contains("trellis.Bind(\"mail-smtp\"", steps[2].Detail);
+        Assert.Equal(StepAction.EditCode, steps[2].Action);
+    }
+
+    [Fact]
+    public void A_repo_that_did_not_run_says_why_and_other_plan_errors_point_at_Values()
+    {
+        var notRun = TrellisChecklist.Steps(0, 1, [Card("shop-web", "Its definition doesn't run; see the problems above")], planned: false, otherErrors: 0);
+        Assert.Equal(ChecklistState.Open, notRun[1].State);
+        Assert.StartsWith("shop-web: Its definition doesn't run", notRun[1].Detail);
+
+        var errors = TrellisChecklist.Steps(0, 0, [Card("shop-web")], planned: true, otherErrors: 3);
+        Assert.Equal(ChecklistState.Open, errors[3].State);
+        Assert.Equal(StepAction.ShowValues, errors[3].Action);
+    }
+
+    [Fact]
+    public void Once_nothing_is_in_the_way_only_starting_is_left_and_the_checklist_steps_aside()
+    {
+        var steps = TrellisChecklist.Steps(0, 0, [Card("shop-web")], planned: true, otherErrors: 0);
+
+        Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Done, ChecklistState.Done, ChecklistState.Open], States(steps));
+        Assert.False(TrellisChecklist.Blocks(steps));
+    }
+}
+
 public class ReposViewModelTests
 {
     [Fact]
@@ -113,6 +164,9 @@ public class ReposViewModelTests
         services.Authoring.AddRepo(folder, "shop-web");
 
         var vm = new ReposViewModel(services);
+        Assert.Empty(vm.Repos);
+        Assert.Equal(1, vm.NavCount);
+        vm.IsActive = true;
         await WaitFor(() => vm.NeedsApproval);
 
         var item = Assert.Single(vm.Repos);

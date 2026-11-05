@@ -157,6 +157,9 @@ internal static partial class HeadlessRenderer
 
             Save(window, outFile);
             var planned = vm.Trellises.Plan is not null;
+            // A failed definition's output is the only clue to why the render didn't plan.
+            if (vm.Trellises.HasLoadProblems && services.Definitions.Evaluate(trellisFile) is Sprig.Engine.Definitions.Failed failed)
+                Console.Error.WriteLine($"the trellis {failed.Reason}:\n{failed.Output}");
 
             foreach (var tab in new[] { TrellisTab.Values, TrellisTab.Ports })
             {

@@ -65,6 +65,7 @@ public partial class TrellisesViewModel : PageViewModel
     public ObservableCollection<AddedRow> Added { get; } = [];
     public ObservableCollection<PolicyRow> Policies { get; } = [];
     public ObservableCollection<SproutRow> SproutsOfIt { get; } = [];
+    public ObservableCollection<ChecklistStep> Steps { get; } = [];
     public ObservableCollection<string> NewRepoDirs { get; } = [];
 
     public DefinitionEditorViewModel Editor { get; }
@@ -92,6 +93,7 @@ public partial class TrellisesViewModel : PageViewModel
     [ObservableProperty] private bool _hasAdded;
     [ObservableProperty] private bool _hasSprouts;
     [ObservableProperty] private bool _confirmingRemove;
+    [ObservableProperty] private bool _showChecklist;
 
     // ---- adding a trellis ----
     [ObservableProperty] private bool _isAddOpen;
@@ -135,7 +137,8 @@ public partial class TrellisesViewModel : PageViewModel
         _services = services;
         Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
         Editor.Closed += () => Tab = TrellisTab.Overview;
-        Refresh(null, replan: true);
+        // Only listed here, for the nav's count; planning runs definitions, so it waits until the page is shown.
+        Refresh(null, replan: false);
     }
 
     protected override void OnActivated() => Refresh(Selected?.Name, replan: !Editor.IsDirty);
@@ -315,6 +318,37 @@ public partial class TrellisesViewModel : PageViewModel
             _ => ("", StatusKind.None),
         };
         CanStart = StatusKind == StatusKind.Good;
+        BuildChecklist(errors);
+    }
+
+    /// <summary>The steps to a first sprout, shown only while one of them is in the way.</summary>
+    void BuildChecklist(int errors)
+    {
+        Steps.Clear();
+        if (Selected is null || IsBusy)
+        {
+            ShowChecklist = false;
+            return;
+        }
+        var unfilledErrors = Plan?.Problems.Count(p => p.IsError && p.Message.Contains(UnfilledMessage, StringComparison.Ordinal)) ?? 0;
+        foreach (var step in TrellisChecklist.Steps(PendingTrust.Count, LoadProblems.Count, [.. Cards], Plan is not null, errors - unfilledErrors))
+            Steps.Add(step);
+        ShowChecklist = TrellisChecklist.Blocks(Steps);
+    }
+
+    // How the planner words an import nothing answers; the checklist counts those under its own step.
+    const string UnfilledMessage = "but no repo in the trellis exports it";
+
+    [RelayCommand]
+    private async Task RunStep(ChecklistStep? step)
+    {
+        switch (step?.Action)
+        {
+            case StepAction.Approve: await ApproveAll(); break;
+            case StepAction.EditCode: Tab = TrellisTab.Code; break;
+            case StepAction.ShowValues: Tab = TrellisTab.Values; break;
+            case StepAction.Start: Start(); break;
+        }
     }
 
     static string Count(int n, string what) => $"{n} {what}{(n == 1 ? "" : "s")}";

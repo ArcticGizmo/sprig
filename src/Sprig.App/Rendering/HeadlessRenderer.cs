@@ -18,6 +18,53 @@ namespace Sprig.App.Rendering;
 /// </summary>
 internal static partial class HeadlessRenderer
 {
+    /// <summary>The definition editor with a typo (an error) and an unused import's variable shadowed (a warning), so
+    /// both kinds of squiggle and the problems strip show.</summary>
+    public static int RenderCodeEditor(string outFile)
+    {
+        var host = new Sprig.App.Authoring.LanguageHostClient();
+        try
+        {
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
+
+            var text = EditorSpikeViewModel.SampleText
+                .Replace(".Http(\"http\")\n    .Env(\"ConnectionStrings", ".Htp(\"http\")\n    .Env(\"ConnectionStrings")
+                .Replace("repo.Export<Url>", "#warning check the export name before committing\nrepo.Export<Url>");
+            var editor = new Sprig.App.Controls.CodeEditor { Host = host, Text = text };
+            var window = new Avalonia.Controls.Window
+            {
+                Width = 1000, Height = 640, Content = editor,
+                Background = Avalonia.Media.Brush.Parse("#1F1F2A"),
+            };
+            window.Show();
+            Pump(TimeSpan.FromMilliseconds(200));
+
+            var pending = editor.DiagnoseAsync();
+            var clock = Stopwatch.StartNew();
+            while (!pending.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(30)) Pump(TimeSpan.FromMilliseconds(50));
+            Pump(TimeSpan.FromMilliseconds(300));
+
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
+            window.CaptureRenderedFrame()?.Save(outFile);
+            window.Close();
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
+        }
+        finally
+        {
+            host.Dispose();
+        }
+    }
+
     /// <summary>The editor spike after the GUI's "add env var" edit, with a typo so the problems list has a row.</summary>
     public static int RenderEditor(string outFile)
     {

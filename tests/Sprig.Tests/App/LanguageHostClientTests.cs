@@ -25,6 +25,47 @@ public sealed class LanguageHostClientTests : IDisposable
     }
 
     [Fact]
+    public async Task Typing_a_word_offers_the_variables_in_scope_from_where_the_word_starts_with_docs_on_request()
+    {
+        var text = Sample.Replace("return repo.Emit(args);", "cat");
+        var caret = text.LastIndexOf("cat", StringComparison.Ordinal) + 3;
+
+        var response = await _client.CompleteAsync(text, caret);
+
+        Assert.Equal(caret - 3, response.SpanStart);
+        Assert.False(response.Suggestion);
+        var catalog = response.Items!.Select((item, index) => (item, index)).Single(x => x.item.Label == "catalog");
+        Assert.Equal("Local", catalog.item.Kind);
+        Assert.NotNull(catalog.item.Sort);
+        var described = await _client.DescribeAsync(catalog.index);
+        Assert.Contains("AppResource", described.Text);
+    }
+
+    [Fact]
+    public async Task Hovering_an_sdk_method_shows_its_signature_and_doc_comment()
+    {
+        var at = Sample.IndexOf(".Http(", StringComparison.Ordinal) + 2;
+
+        var hover = (await _client.HoverAsync(Sample, at)).Hover!;
+
+        Assert.Contains("Http(", hover.Signature);
+        Assert.Contains("An HTTP endpoint on a port sprig allocates", hover.Docs);
+        Assert.True(hover.Start <= at && at <= hover.End);
+        Assert.Null((await _client.HoverAsync(Sample, 0)).Hover);
+    }
+
+    [Fact]
+    public async Task Formatting_lays_the_file_out_and_leaves_the_package_line_alone()
+    {
+        var messy = Sample.Replace("var orders = repo.DotNet", "var   orders=repo.DotNet");
+
+        var formatted = (await _client.FormatAsync(messy)).Text!;
+
+        Assert.Contains("var orders = repo.DotNet", formatted);
+        Assert.StartsWith("#:package Sprig.Sdk@0.1.0-exp", formatted);
+    }
+
+    [Fact]
     public async Task The_sample_has_no_problems_and_a_typo_is_reported_on_its_line()
     {
         Assert.Empty((await _client.DiagnoseAsync(Sample)).Diagnostics!);

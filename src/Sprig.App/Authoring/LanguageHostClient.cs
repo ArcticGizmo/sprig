@@ -10,10 +10,17 @@ using System.Threading.Tasks;
 
 namespace Sprig.App.Authoring;
 
-public sealed record HostCompletionItem(string Label, string Kind, string? Detail);
+/// <param name="Suffix">Shown after the label but not inserted, e.g. <c>&lt;&gt;</c> on a generic method.</param>
+/// <param name="Sort">Roslyn's ordering for the list.</param>
+public sealed record HostCompletionItem(string Label, string Kind, string? Detail, string? Suffix = null, string? Sort = null);
 
 public sealed record HostDiagnostic(int Start, int End, int Line, string Severity, string Id, string Message);
 
+public sealed record HostHover(int Start, int End, string Signature, string? Docs);
+
+/// <param name="SpanStart">Where the word being completed starts.</param>
+/// <param name="Suggestion">A new name is likely being typed here, so the list shouldn't open by itself.</param>
+/// <param name="Text">A formatted file, or a completion item's description.</param>
 public sealed record HostResponse(
     int Id,
     double Ms,
@@ -21,7 +28,11 @@ public sealed record HostResponse(
     IReadOnlyList<HostDiagnostic>? Diagnostics,
     double? WorkingSetMb,
     double? ManagedHeapMb,
-    string? Error);
+    string? Error,
+    int? SpanStart = null,
+    bool? Suggestion = null,
+    HostHover? Hover = null,
+    string? Text = null);
 
 /// <summary>
 /// Talks to sprig-langhost over stdin/stdout. If the host dies, pending requests fail, <see cref="Stopped"/> fires,
@@ -51,6 +62,14 @@ public sealed class LanguageHostClient : IDisposable
     public Task<HostResponse> CompleteAsync(string text, int position) => SendAsync("complete", text, position);
 
     public Task<HostResponse> DiagnoseAsync(string text) => SendAsync("diagnostics", text, 0);
+
+    /// <summary>The description of item <paramref name="index"/> of the last completion list, in <see cref="HostResponse.Text"/>.</summary>
+    public Task<HostResponse> DescribeAsync(int index) => SendAsync("describe", null, index);
+
+    public Task<HostResponse> HoverAsync(string text, int position) => SendAsync("hover", text, position);
+
+    /// <summary>The whole file formatted, in <see cref="HostResponse.Text"/>.</summary>
+    public Task<HostResponse> FormatAsync(string text) => SendAsync("format", text, 0);
 
     public Task<HostResponse> StatsAsync() => SendAsync("stats", null, 0);
 

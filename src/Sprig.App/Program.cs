@@ -28,6 +28,9 @@ internal static class Program
         if (args.Length > 1 && args[0] == "render-editor")
             return Rendering.HeadlessRenderer.RenderEditor(args[1]);
 
+        if (args.Length > 1 && args[0] == "render-code-editor")
+            return Rendering.HeadlessRenderer.RenderCodeEditor(args[1]);
+
         if (args.Length > 2 && args[0] == "render-trellises")
             return Rendering.HeadlessRenderer.RenderTrellises(args[1], args[2]);
 

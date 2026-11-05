@@ -3,7 +3,9 @@ using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.Host.Mef;
+using Microsoft.CodeAnalysis.QuickInfo;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Sprig.LanguageHost;
@@ -49,14 +51,52 @@ public sealed class DefinitionWorkspace
         _workspace.TryApplyChanges(solution);
     }
 
-    public async Task<IReadOnlyList<CompletionItemDto>> CompleteAsync(string text, int position)
+    // Kept so a description can be fetched for one item when it's highlighted, rather than for every item up front.
+    Document? _completedIn;
+    IReadOnlyList<CompletionItem> _completed = [];
+
+    public async Task<Response> CompleteAsync(int id, string text, int position)
     {
         var document = WithText(text);
         var service = CompletionService.GetService(document)!;
         var list = await service.GetCompletionsAsync(document, Math.Clamp(position, 0, text.Length));
-        return list.ItemsList
-            .Select(i => new CompletionItemDto(i.DisplayText, i.Tags.FirstOrDefault() ?? "", i.InlineDescription is { Length: > 0 } d ? d : null))
+        _completedIn = document;
+        _completed = list.ItemsList.ToArray();
+        var items = _completed
+            .Select(i => new CompletionItemDto(i.DisplayText, i.Tags.FirstOrDefault() ?? "",
+                i.InlineDescription is { Length: > 0 } d ? d : null,
+                i.DisplayTextSuffix is { Length: > 0 } s ? s : null, i.SortText))
             .ToArray();
+        return new Response(id, 0, Items: items, SpanStart: list.Span.Start, Suggestion: list.SuggestionModeItem is not null);
+    }
+
+    /// <summary>The description of item <paramref name="index"/> of the last completion list: its signature and docs.</summary>
+    public async Task<string?> DescribeAsync(int index)
+    {
+        if (_completedIn is not { } document || index < 0 || index >= _completed.Count) return null;
+        var description = await CompletionService.GetService(document)!.GetDescriptionAsync(document, _completed[index]);
+        return description?.Text is { Length: > 0 } text ? text : null;
+    }
+
+    public async Task<HoverDto?> HoverAsync(string text, int position)
+    {
+        var document = WithText(text);
+        var info = await QuickInfoService.GetService(document)!.GetQuickInfoAsync(document, Math.Clamp(position, 0, text.Length));
+        if (info is null) return null;
+        string Section(string kind) => string.Join("", info.Sections.Where(s => s.Kind == kind).Select(s => s.Text)).Trim();
+        var signature = Section(QuickInfoSectionKinds.Description);
+        if (signature.Length == 0) return null;
+        var docs = string.Join("\n\n", new[] { QuickInfoSectionKinds.DocumentationComments, QuickInfoSectionKinds.RemarksDocumentationComments,
+                QuickInfoSectionKinds.ReturnsDocumentationComments, QuickInfoSectionKinds.TypeParameters, QuickInfoSectionKinds.AnonymousTypes }
+            .Select(Section).Where(s => s.Length > 0));
+        return new HoverDto(info.Span.Start, info.Span.End, signature, docs.Length > 0 ? docs : null);
+    }
+
+    /// <summary>The whole file laid out the way the IDE's Format Document would.</summary>
+    public async Task<string> FormatAsync(string text)
+    {
+        var formatted = await Formatter.FormatAsync(WithText(text));
+        return (await formatted.GetTextAsync()).ToString();
     }
 
     public async Task<IReadOnlyList<DiagnosticDto>> DiagnoseAsync(string text)

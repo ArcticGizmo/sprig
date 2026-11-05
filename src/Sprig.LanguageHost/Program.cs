@@ -23,7 +23,10 @@ while ((line = await Console.In.ReadLineAsync()) is not null)
         request = JsonSerializer.Deserialize(line, ProtocolJson.Default.Request)!;
         response = request.Op switch
         {
-            "complete" => new Response(request.Id, 0, Items: await workspace.CompleteAsync(request.Text ?? "", request.Position)),
+            "complete" => await workspace.CompleteAsync(request.Id, request.Text ?? "", request.Position),
+            "describe" => new Response(request.Id, 0, Text: await workspace.DescribeAsync(request.Position)),
+            "hover" => new Response(request.Id, 0, Hover: await workspace.HoverAsync(request.Text ?? "", request.Position)),
+            "format" => new Response(request.Id, 0, Text: await workspace.FormatAsync(request.Text ?? "")),
             "diagnostics" => new Response(request.Id, 0, Diagnostics: await workspace.DiagnoseAsync(request.Text ?? "")),
             "stats" => Stats(request.Id),
             _ => new Response(request.Id, 0, Error: $"unknown op '{request.Op}'"),

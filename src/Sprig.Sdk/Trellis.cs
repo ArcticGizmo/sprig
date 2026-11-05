@@ -40,6 +40,14 @@ public sealed class TrellisBuilder : DefinitionBuilder
         return new RepoRef(path);
     }
 
+    /// <summary>A repo from sprig's Repos list, by its ID: the folder and the definition it was set up with there,
+    /// whether written in sprig or the repo's own sprig.cs. Keeps folder paths out of the trellis.</summary>
+    public RepoRef UseRepo(string id, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _repos.Add(new RepoRefModel(id, new SourceLocation(file, line), Use: id));
+        return new RepoRef(id);
+    }
+
     /// <summary>Answer a repo's import with a value: one this trellis supplies (often from its own infra), or a
     /// particular repo's export when more than one repo exports that name.</summary>
     public TrellisBuilder Bind(string import, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)

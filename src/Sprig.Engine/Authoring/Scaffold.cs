@@ -7,8 +7,10 @@ using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Authoring;
 
+/// <param name="Path">The repo's folder, for a <c>Repo(path)</c> line.</param>
 /// <param name="Definition">A virtual definition's ID; null for the repo's own sprig.cs.</param>
-public sealed record ScaffoldRepo(string Path, string? Definition);
+/// <param name="Use">An entry from the Repos list, for a <c>UseRepo(id)</c> line instead.</param>
+public sealed record ScaffoldRepo(string? Path, string? Definition = null, string? Use = null);
 
 /// <summary>
 /// The first draft of a definition, guessed from what's in the folders, so a new one starts from something that
@@ -27,9 +29,15 @@ public static partial class Scaffold
         var used = new HashSet<string>(StringComparer.Ordinal) { "trellis", "args" };
         foreach (var repo in repos)
         {
-            var variable = Variable(System.IO.Path.GetFileName(repo.Path.TrimEnd('/', '\\')), used);
+            if (repo.Use is { } use)
+            {
+                text.Append($"var {Variable(use, used)} = trellis.UseRepo({Literal(use)});\n");
+                continue;
+            }
+            var path = repo.Path ?? throw new ArgumentException("a repo needs a path or an entry to use");
+            var variable = Variable(System.IO.Path.GetFileName(path.TrimEnd('/', '\\')), used);
             var definition = repo.Definition is { } id ? $", definition: {Literal(id)}" : "";
-            text.Append($"var {variable} = trellis.Repo({Literal(repo.Path.Replace('\\', '/'))}{definition});\n");
+            text.Append($"var {variable} = trellis.Repo({Literal(path.Replace('\\', '/'))}{definition});\n");
         }
         text.Append('\n');
         text.Append(worktreesFrom is { } from

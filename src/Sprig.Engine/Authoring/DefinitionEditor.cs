@@ -141,6 +141,15 @@ public static class DefinitionEditor
         return Apply(text, args.Arguments[0].Span.End, $", definition: {Literal(definition)}");
     }
 
+    /// <summary>Change which Repos-list entry a trellis's <c>UseRepo("id")</c> names.</summary>
+    public static EditResult SetUseRepo(string text, string from, string to)
+    {
+        var call = Parse(text).DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .FirstOrDefault(i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "UseRepo" } && FirstStringArg(i) == from);
+        if (call is null) return EditResult.Fail(text, $"no trellis.UseRepo(\"{from}\") to change");
+        return Apply(text, call.ArgumentList.Arguments[0].Expression.Span, Literal(to));
+    }
+
     /// <summary>Where to insert a new line after <paramref name="node"/>: at the end of its line when the code carries
     /// on below, so a trailing comment stays with the line it describes; straight after the node when more code
     /// follows on the same line (a one-line chain ending in <c>;</c>).</summary>

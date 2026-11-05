@@ -402,6 +402,40 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_repo_used_by_id_brings_its_folder_and_reads_its_own_sprig_cs_from_the_sprouts_worktree()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));
+        var virtuals = new VirtualDefinitions(_store.Paths);
+        var trust = new FileTrustStore(_store.Paths);
+        var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
+        {
+            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.UseRepo("web"); return t; },
+            ["// uses nothing"] = () => { var t = Trellis.Describe("storefront"); t.UseRepo("nope"); return t; },
+            ["// web v1"] = () => WebWith("v1"),
+        }), _store.Paths), virtuals: virtuals);
+        var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
+        virtuals.ReferenceRepo("web", source);
+        var trellisFile = Path.Combine(_root, "storefront.trellis.cs");
+        File.WriteAllText(trellisFile, "// trellis");
+        trust.Approve(trellisFile, DefinitionHash.Of("// trellis"));
+        trust.Approve(Path.Combine(source, "sprig.cs"), DefinitionHash.Of("// web v1"));
+
+        var record = sprouts.Up(loader.Load(trellisFile), "feat-x", null);
+
+        var repo = Assert.Single(record.Repos);
+        Assert.Equal("web", repo.RepoPath);
+        Assert.Equal(source, repo.Source);
+        Assert.Equal(Path.Combine(_root, "storefront--feat-x", "shop-web"), repo.Dir);
+        Assert.Contains("FEATURE=v1", File.ReadAllText(Path.Combine(repo.Dir, ".env.local")));
+
+        var missingFile = Path.Combine(_root, "missing.trellis.cs");
+        File.WriteAllText(missingFile, "// uses nothing");
+        trust.Approve(missingFile, DefinitionHash.Of("// uses nothing"));
+        Assert.Contains("'nope' isn't in sprig's Repos list", Assert.Single(loader.Load(missingFile).Problems).Message);
+    }
+
+    [Fact]
     public void A_new_branch_from_main_needs_no_new_approval()
     {
         var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));

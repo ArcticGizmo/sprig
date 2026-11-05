@@ -87,6 +87,11 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
         var definitions = new List<(RepoRefModel reference, string file, string trustAs)>();
         foreach (var reference in trellis.Repos)
         {
+            if (reference.Use is { } use)
+            {
+                UseEntry(reference, use);
+                continue;
+            }
             var repoDir = LongPath.Of(Path.Combine(dir, reference.Path));
             dirs[reference.Path] = repoDir;
             var readDir = sproutDirs?.GetValueOrDefault(reference.Path) is { } sproutDir ? LongPath.Of(sproutDir) : repoDir;
@@ -111,6 +116,31 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
                 definitions.Add((reference, file, Path.Combine(repoDir, RepoDefinitionFile)));
         }
 
+        // A repo from the Repos list: its folder and definition come from its entry, not the trellis.
+        void UseEntry(RepoRefModel reference, string use)
+        {
+            if (virtuals?.Repo(use) is not { } entry)
+            {
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{use}' isn't in sprig's Repos list", reference.Location));
+                return;
+            }
+            if (entry.Folder is not { } folder)
+            {
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo '{use}' doesn't say which folder it describes; give it one in the Repos list", reference.Location));
+                return;
+            }
+            dirs[reference.Path] = folder;
+            var readDir = sproutDirs?.GetValueOrDefault(reference.Path) is { } sproutDir ? LongPath.Of(sproutDir) : folder;
+            if (!Directory.Exists(readDir))
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo folder '{readDir}' doesn't exist", reference.Location));
+            else if (!entry.InRepo)
+                definitions.Add((reference, entry.DefinitionFile, entry.DefinitionFile));
+            else if (Path.Combine(readDir, RepoDefinitionFile) is var file && File.Exists(file))
+                definitions.Add((reference, file, entry.DefinitionFile));
+            else
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{use}' uses {readDir}'s own {RepoDefinitionFile}, which isn't there", reference.Location));
+        }
+
         var evaluated = definitions.AsParallel().AsOrdered()
             .Select(d => (d.reference, result: runner.Evaluate(d.file, d.trustAs)))
             .ToList();
@@ -125,7 +155,7 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
         }
 
         IReadOnlyDictionary<string, string>? readFrom = sproutDirs is null ? null
-            : trellis.Repos.ToDictionary(r => r.Path, r => sproutDirs.GetValueOrDefault(r.Path) is { } d ? LongPath.Of(d) : dirs[r.Path], StringComparer.Ordinal);
+            : trellis.Repos.ToDictionary(r => r.Path, r => sproutDirs.GetValueOrDefault(r.Path) is { } d ? LongPath.Of(d) : dirs.GetValueOrDefault(r.Path) ?? r.Path, StringComparer.Ordinal);
         return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs, readFrom) { Id = id };
     }
 

@@ -93,26 +93,40 @@ public sealed class AuthoringTests : IDisposable
         var entry = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")], "main", "Stable");
         var trellisText = File.ReadAllText(entry.Path);
 
-        Assert.Contains($"trellis.Repo(\"{Dir("shop-web").Replace('\\', '/')}\");", trellisText);
-        Assert.Contains($"trellis.Repo(\"{Dir("shop-services").Replace('\\', '/')}\", definition: \"shop-services\");", trellisText);
-        Assert.Equal(["shop-services"], virtuals.RepoIds());
+        Assert.Contains("var shopWeb = trellis.UseRepo(\"shop-web\");", trellisText);
+        Assert.Contains("var shopServices = trellis.UseRepo(\"shop-services\");", trellisText);
+        Assert.True(virtuals.Repo("shop-web")!.InRepo);
+        Assert.Equal(Path.Combine(Dir("shop-web"), "sprig.cs"), virtuals.Repo("shop-web")!.DefinitionFile);
+        Assert.False(virtuals.Repo("shop-services")!.InRepo);
         Assert.Equal(TrustState.Trusted, trust.Check(virtuals.RepoFile("shop-services"), DefinitionHash.Of(File.ReadAllText(virtuals.RepoFile("shop-services")))).State);
 
-        var copy = authoring.DescribeInSprig(entry.Path, Dir("shop-web").Replace('\\', '/'), Dir("shop-web"));
+        // A second trellis over the same folders reuses their entries.
+        var second = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")], null, "Stable");
+        Assert.Equal("storefront-2", second.Id);
+        Assert.Equal(2, virtuals.Repos().Count);
+
+        var copy = authoring.DescribeInSprig(entry.Path, "shop-web", Dir("shop-web"), use: "shop-web");
 
         Assert.Equal("// shop-web's own", File.ReadAllText(copy));
         Assert.NotEqual(TrustState.Trusted, trust.Check(copy, DefinitionHash.Of("// shop-web's own")).State);
-        Assert.Contains("definition: \"shop-web\"", File.ReadAllText(entry.Path));
+        Assert.Contains("trellis.UseRepo(\"shop-web-2\")", File.ReadAllText(entry.Path));
         Assert.Equal(TrustState.Trusted, trust.Check(entry.Path, DefinitionHash.Of(File.ReadAllText(entry.Path))).State);
+        Assert.Equal(["storefront"], authoring.UsedBy("shop-web-2"));
+        Assert.Equal(["storefront-2"], authoring.UsedBy("shop-web"));
 
-        authoring.UseOwnDefinition(entry.Path, Dir("shop-web").Replace('\\', '/'));
-        Assert.DoesNotContain("definition: \"shop-web\"", File.ReadAllText(entry.Path));
+        authoring.UseOwnDefinition(entry.Path, "shop-web-2", use: "shop-web-2", folder: Dir("shop-web"));
+        Assert.Contains("trellis.UseRepo(\"shop-web\")", File.ReadAllText(entry.Path));
         Assert.True(File.Exists(copy));
 
         authoring.RemoveTrellis(entry.Id);
         Assert.False(File.Exists(entry.Path));
-        Assert.Empty(new TrellisRegistry(_store.Paths).List());
-        Assert.Equal(["shop-services", "shop-web"], virtuals.RepoIds());
+        Assert.Equal(["storefront-2"], new TrellisRegistry(_store.Paths).List().Select(e => e.Id));
+        Assert.Equal(3, virtuals.Repos().Count);
+
+        // Taking a referenced repo off the list leaves the repo's own file where it is.
+        authoring.DeleteRepo("shop-web");
+        Assert.Null(virtuals.Repo("shop-web"));
+        Assert.True(File.Exists(Path.Combine(Dir("shop-web"), "sprig.cs")));
     }
 
     /// <summary>The drafts are only useful if they run, so this one compiles them with the real SDK.</summary>

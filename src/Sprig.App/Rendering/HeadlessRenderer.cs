@@ -135,6 +135,11 @@ internal static partial class HeadlessRenderer
                          .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.cs")).Where(File.Exists)))
                 services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
             services.Trellises.Add("storefront", trellisFile);
+            // One repo of each kind in the Repos list.
+            if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.cs")))
+                services.Authoring.ReferenceRepo(web, "shop-web");
+            if (Path.Combine(root, "shop-services") is var services_ && Directory.Exists(services_))
+                services.Authoring.WriteRepo(services_, "shop-services-local");
 
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
             vm.NavigateCommand.Execute(vm.Trellises);
@@ -149,6 +154,18 @@ internal static partial class HeadlessRenderer
 
             Save(window, outFile);
             var planned = vm.Trellises.Plan is not null;
+
+            if (vm.Trellises.RepoEntries.FirstOrDefault(r => !r.InRepo) is { } written)
+            {
+                vm.Trellises.SelectedRepo = written;
+                clock.Restart();
+                Pump(TimeSpan.FromMilliseconds(200));
+                while (vm.Trellises.RepoCheck.EndsWith('…') && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "repo"));
+                vm.Trellises.Selected = vm.Trellises.Trellises.FirstOrDefault();
+                Pump(TimeSpan.FromMilliseconds(300));
+            }
 
             vm.Trellises.OpenAddCommand.Execute(null);
             vm.Trellises.NewPath = Sprig.App.Controls.PathCompletion.ToPosix(Path.GetFullPath(trellisFile));

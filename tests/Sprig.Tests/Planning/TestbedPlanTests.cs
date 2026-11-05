@@ -62,7 +62,7 @@ public sealed class TestbedPlanTests : IDisposable
         var catalogPort = plan.Ports.Single(p => p.Resource == "catalog-api").Port;
         var web = plan.Apps.Single(a => a.Name == "web");
         Assert.Equal($"http://localhost:{catalogPort}", web.Env.Single(e => e.Key == "VITE_CATALOG_URL").Value.Value);
-        Assert.InRange(plan.Ports.Single(p => p.Resource == "web").Port!.Value, 5170, 5179);
+        Assert.InRange(plan.Ports.Single(p => p.Resource == "web").Port!.Value, 9170, 9179);
 
         var smtpPort = plan.Ports.Single(p => p.Resource == "mail" && p.Endpoint == "smtp").Port;
         var orders = plan.Apps.Single(a => a.Name == "orders-api");

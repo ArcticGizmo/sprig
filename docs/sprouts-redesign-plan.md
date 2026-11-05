@@ -9,6 +9,7 @@ Where the build differs from the plan below:
 - Pins (phase 5) were built with the workspace (phase 4), since the list's structure needed the Pinned group from the start.
 - "Open in IDE" waits for an IDE setting. Copy env copies the values with secrets masked.
 - `sprig-gui render-sprouts-sample <file.png>` draws a made-up sprout of 20 apps headlessly: every app's log at 1440×900 and 1024×700, one app's log, the Infra tab and the overview.
+- 2026-11-05, after hand-testing: the sprouts no longer sit in the nav, and the nav has no "+". Sprouts in the nav is an ordinary row that always lands on the overview. The overview is where a sprout is picked: a search box (every word must match the name, trellis or branch; Esc clears it), a double-click anywhere on a row or its **Open ›** opens it, and **← All sprouts** on the sprout page goes back. The rows below about the nav's groups describe what was built first.
 
 The target is the mock in [artefacts/sprout-layouts/](artefacts/sprout-layouts/) (published at https://claude.ai/artifact/KtgQmLR3QS6ihfa8TqYshy). It has three boards: the sprout workspace (`Main.dc.html`), the Sprouts overview (`SproutsOverview.dc.html`), and a docked-log layout kept only for comparison (`Docked.dc.html`).
 

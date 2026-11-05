@@ -102,8 +102,9 @@ public partial class SettingsViewModel : PageViewModel
     [RelayCommand]
     private void ResetDefaults()
     {
-        StartText = SprigSettings.DefaultRangeStart.ToString(CultureInfo.InvariantCulture);
-        EndText = (SprigSettings.DefaultRangeEndExclusive - 1).ToString(CultureInfo.InvariantCulture);
+        var defaults = _services.Settings.Defaults();
+        StartText = defaults.PortRangeStart.ToString(CultureInfo.InvariantCulture);
+        EndText = (defaults.PortRangeEndExclusive - 1).ToString(CultureInfo.InvariantCulture);
         RestrictedText = "";
         SaveMessage = "Defaults filled in. Click Save to apply.";
         SaveFailed = false;

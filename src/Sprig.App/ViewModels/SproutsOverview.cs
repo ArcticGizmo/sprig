@@ -68,6 +68,12 @@ public partial class SproutsViewModel
     public ObservableCollection<OverviewChip> OverviewChips { get; } = [];
 
     [ObservableProperty] private OverviewFilter _overviewFilter = OverviewFilter.All;
+
+    /// <summary>Words that each have to appear in a sprout's name, trellis or branch for it to be listed.</summary>
+    [ObservableProperty] private string _overviewSearch = "";
+
+    /// <summary>There are sprouts, but the state chip and the search between them leave none listed.</summary>
+    [ObservableProperty] private bool _noOverviewMatches;
     [ObservableProperty] private string _overviewSummary = "";
     [ObservableProperty] private int _checkedCount;
     [ObservableProperty] private string _guardNote = "";
@@ -157,8 +163,14 @@ public partial class SproutsViewModel
 
     void FilterOverview()
     {
+        var words = OverviewSearch.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        bool Matches(OverviewRow r) => words.All(w =>
+            r.Name.Contains(w, StringComparison.OrdinalIgnoreCase)
+            || r.Trellis.Contains(w, StringComparison.OrdinalIgnoreCase)
+            || r.Branch.Contains(w, StringComparison.OrdinalIgnoreCase));
+
         OverviewRows.Clear();
-        foreach (var row in _overview.Where(r => OverviewFilter switch
+        foreach (var row in _overview.Where(r => Matches(r) && OverviewFilter switch
                  {
                      OverviewFilter.Up => r.IsUp,
                      OverviewFilter.Failed => r.IsFailed,
@@ -166,6 +178,7 @@ public partial class SproutsViewModel
                      _ => true,
                  }))
             OverviewRows.Add(row);
+        NoOverviewMatches = _overview.Count > 0 && OverviewRows.Count == 0;
         foreach (var chip in OverviewChips) chip.IsOn = chip.Filter == OverviewFilter;
     }
 
@@ -174,6 +187,15 @@ public partial class SproutsViewModel
         FilterOverview();
         CheckedChanged();
     }
+
+    partial void OnOverviewSearchChanged(string value)
+    {
+        FilterOverview();
+        CheckedChanged();
+    }
+
+    [RelayCommand]
+    private void ClearOverviewSearch() => OverviewSearch = "";
 
     void CheckedChanged()
     {
@@ -238,6 +260,9 @@ public partial class SproutsViewModel
 
     [RelayCommand]
     private void OpenOverviewRow(OverviewRow row) => Show(row.Key);
+
+    [RelayCommand]
+    private void BackToList() => Show(null);
 
     IReadOnlyList<SproutRecord> CheckedRecords() => _overview.Where(r => r.IsChecked).Select(r => r.Record).ToArray();
 

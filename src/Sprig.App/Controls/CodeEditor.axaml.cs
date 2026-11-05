@@ -112,8 +112,12 @@ public partial class CodeEditor : UserControl
         _syncing = true;
         try
         {
-            Editor.Document = new TextDocument(text);
-            _squiggles.Attach(Editor.Document);
+            // Refilled rather than replaced: a new document makes TextMate stop its tokenizer and start another, and
+            // a file opened while that hand-over races can stay uncoloured. Refilling is the path typing takes.
+            Editor.Document.Text = text;
+            Editor.Document.UndoStack.ClearAll();
+            _squiggles.Show(Editor.Document, []);
+            Editor.CaretOffset = 0;
             Editor.ScrollToHome();
         }
         finally { _syncing = false; }

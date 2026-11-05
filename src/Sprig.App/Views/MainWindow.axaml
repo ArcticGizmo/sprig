@@ -43,25 +43,6 @@
         <Style Selector="Border.navitem.active > Grid > TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
         </Style>
-        <!-- Sprouts in the nav: a state dot, and a caption coloured by how the trellis's sprouts are doing. -->
-        <Style Selector="Ellipse.dot">
-            <Setter Property="Fill" Value="#6E6E82" />
-        </Style>
-        <Style Selector="Ellipse.dot.up">
-            <Setter Property="Fill" Value="{StaticResource OkBrush}" />
-        </Style>
-        <Style Selector="Ellipse.dot.bad">
-            <Setter Property="Fill" Value="{StaticResource DangerBrush}" />
-        </Style>
-        <Style Selector="TextBlock.caption">
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-        </Style>
-        <Style Selector="TextBlock.caption.good">
-            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
-        </Style>
-        <Style Selector="TextBlock.caption.bad">
-            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
-        </Style>
     </Window.Styles>
 
     <Grid ColumnDefinitions="216,*">
@@ -115,11 +96,6 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding NavItems}" Margin="8,4">
                         <ItemsControl.DataTemplates>
-                            <DataTemplate DataType="vm:NavHeaderViewModel" x:CompileBindings="False">
-                                <TextBlock Text="{Binding Label}" FontSize="10" FontWeight="SemiBold"
-                                           LetterSpacing="1.5" Foreground="{StaticResource MutedBrush}"
-                                           Margin="12,14,12,4" />
-                            </DataTemplate>
                             <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
                                 <Button Classes="nav"
                                         AutomationProperties.AutomationId="{Binding Title, StringFormat='nav:{0}'}"
@@ -139,81 +115,6 @@
                                                            Foreground="{StaticResource MutedBrush}" />
                                             </Border>
                                         </Grid>
-                                    </Border>
-                                </Button>
-                            </DataTemplate>
-
-                            <!-- Sprouts: the overview, then each trellis's sprouts, with the ones that are down folded away -->
-                            <DataTemplate DataType="vm:SproutsNavViewModel" x:CompileBindings="False">
-                                <StackPanel>
-                                    <!-- The + sits inside the row so pointing at it also lights the row, showing the row opens something too. -->
-                                    <Button Classes="nav" Command="{Binding OpenOverviewCommand}"
-                                            AutomationProperties.AutomationId="nav:Sprouts">
-                                        <Border Classes="navitem" Classes.active="{Binding OverviewIsCurrent}">
-                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                                <StackPanel Spacing="1" VerticalAlignment="Center">
-                                                    <TextBlock Text="Sprouts" FontSize="14" Foreground="{StaticResource FgBrush}" />
-                                                    <TextBlock Text="running copies" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="1" Text="{Binding Count}" FontSize="11" VerticalAlignment="Center"
-                                                           Foreground="{StaticResource MutedBrush}" />
-                                                <Button Grid.Column="2" Content="+" Command="{Binding AddCommand}"
-                                                        AutomationProperties.AutomationId="nav:Sprouts:add" AutomationProperties.Name="New sprout"
-                                                        Width="22" Height="22" Padding="0" CornerRadius="6" VerticalAlignment="Center"
-                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                                        FontSize="15" FontWeight="SemiBold"
-                                                        Background="{StaticResource AccentBrush}" Foreground="#0B1220"
-                                                        ToolTip.Tip="New sprout" />
-                                            </Grid>
-                                        </Border>
-                                    </Button>
-                                    <ItemsControl ItemsSource="{Binding Groups}" />
-                                </StackPanel>
-                            </DataTemplate>
-                            <DataTemplate DataType="vm:SproutNavGroup" x:CompileBindings="False">
-                                <StackPanel>
-                                    <Button Classes="nav" Command="{Binding ToggleCommand}">
-                                        <Border Classes="navitem" Padding="10,7,10,3">
-                                            <Grid ColumnDefinitions="14,*,Auto">
-                                                <TextBlock Text="{Binding Chevron}" FontSize="10" Foreground="{StaticResource MutedBrush}"
-                                                           VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="10.5" FontWeight="SemiBold"
-                                                           LetterSpacing="1" Foreground="{StaticResource MutedBrush}"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="2" Classes="caption" Text="{Binding Caption}" FontSize="11"
-                                                           Classes.good="{Binding CaptionIsGood}" Classes.bad="{Binding CaptionIsBad}"
-                                                           VerticalAlignment="Center" Margin="6,0,0,0" />
-                                            </Grid>
-                                        </Border>
-                                    </Button>
-                                    <StackPanel IsVisible="{Binding IsOpen}">
-                                        <ItemsControl ItemsSource="{Binding Shown}" />
-                                        <Button Classes="nav" Command="{Binding ToggleDownCommand}" IsVisible="{Binding HasDown}">
-                                            <Border Classes="navitem" Padding="26,5,10,5">
-                                                <StackPanel Orientation="Horizontal" Spacing="7">
-                                                    <Ellipse Width="7" Height="7" Stroke="#6E6E82" StrokeThickness="1" VerticalAlignment="Center" />
-                                                    <TextBlock Text="{Binding DownLabel}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                                                </StackPanel>
-                                            </Border>
-                                        </Button>
-                                        <ItemsControl ItemsSource="{Binding Down}" IsVisible="{Binding IsDownOpen}" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </DataTemplate>
-                            <DataTemplate DataType="vm:SproutNavItem" x:CompileBindings="False">
-                                <Button Classes="nav" Command="{Binding OpenCommand}" CommandParameter="{Binding}"
-                                        AutomationProperties.AutomationId="{Binding Key, StringFormat='nav:sprout:{0}'}">
-                                    <Border Classes="navitem" Classes.active="{Binding IsCurrent}" Padding="26,5,10,5">
-                                        <StackPanel Spacing="1">
-                                            <StackPanel Orientation="Horizontal" Spacing="7">
-                                                <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
-                                                         Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
-                                                <TextBlock Text="{Binding Name}" FontSize="13" Foreground="{StaticResource TitleBrush}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding Sub}" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                                       Margin="14,0,0,0" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
                                     </Border>
                                 </Button>
                             </DataTemplate>

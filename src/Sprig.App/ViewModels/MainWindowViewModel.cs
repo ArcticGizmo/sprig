@@ -12,15 +12,13 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>Every navigable page, including the two pinned to the bottom of the nav.</summary>
     public IReadOnlyList<PageViewModel> Pages { get; }
 
-    /// <summary>Left-nav rows: page entries interleaved with section headers.</summary>
-    public IReadOnlyList<object> NavItems { get; }
+    /// <summary>Left-nav rows, in workflow order. Each row's subtitle says what it holds, so they need no section headers.</summary>
+    public IReadOnlyList<PageViewModel> NavItems { get; }
 
     public HomeViewModel Home { get; }
     public ReposViewModel Repos { get; }
     public TrellisesViewModel Trellises { get; }
     public SproutsViewModel Sprouts { get; }
-    public SproutsNavViewModel SproutsNav { get; }
-    public EditorSpikeViewModel EditorSpike { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
 
@@ -53,7 +51,6 @@ public partial class MainWindowViewModel : ViewModelBase
         Repos = new ReposViewModel(services);
         Trellises = new TrellisesViewModel(services);
         Sprouts = new SproutsViewModel(services);
-        EditorSpike = new EditorSpikeViewModel();
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
 
@@ -76,19 +73,8 @@ public partial class MainWindowViewModel : ViewModelBase
             Sprouts.OpenAddCommand.Execute(null);
         };
 
-        Pages = [Home, Repos, Trellises, Sprouts, EditorSpike, Settings, About];
-        SproutsNav = new SproutsNavViewModel(services, Sprouts, () => CurrentPage = Sprouts);
-        NavItems =
-        [
-            Home,
-            new NavHeaderViewModel("DEFINE"),
-            Repos,
-            Trellises,
-            new NavHeaderViewModel("RUN"),
-            SproutsNav,
-            new NavHeaderViewModel("SPIKES"),
-            EditorSpike,
-        ];
+        Pages = [Home, Repos, Trellises, Sprouts, Settings, About];
+        NavItems = [Home, Repos, Trellises, Sprouts];
 
         _currentPage = Home;
         Home.IsActive = true;
@@ -96,8 +82,13 @@ public partial class MainWindowViewModel : ViewModelBase
         if (checkForUpdates) _ = CheckForUpdatesAsync();
     }
 
+    /// <summary>Sprouts in the nav always lands on the list of them, the one place a sprout is picked from.</summary>
     [RelayCommand]
-    private void Navigate(PageViewModel page) => CurrentPage = page;
+    private void Navigate(PageViewModel page)
+    {
+        CurrentPage = page;
+        if (page == Sprouts) Sprouts.Show(null);
+    }
 
     /// <summary>Install the available update, then restart. Only returns when the install failed.</summary>
     [RelayCommand]
@@ -126,10 +117,4 @@ public partial class MainWindowViewModel : ViewModelBase
 
         UpdateNotice = $"Update available: v{result.AvailableVersion} (you have v{result.CurrentVersion})";
     }
-}
-
-/// <summary>A non-interactive section label in the left nav.</summary>
-public sealed class NavHeaderViewModel(string label)
-{
-    public string Label { get; } = label;
 }

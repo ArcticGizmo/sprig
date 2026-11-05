@@ -18,9 +18,10 @@ namespace Sprig.Cli;
 public static class CliApp
 {
     // SprigPaths' default root honours SPRIG_STORE, so a throwaway store applies here and in the app alike.
-    public static int Run(string[] args) => Run(args, new SprigPaths());
+    public static int Run(string[] args) => Run(args, new SprigPaths(), devDefaults: AppProfile.IsDev);
 
-    internal static int Run(string[] args, ISprigPaths paths)
+    /// <param name="devDefaults">This profile's own store on a Dev build, whose settings default to the 9000s.</param>
+    internal static int Run(string[] args, ISprigPaths paths, bool devDefaults = false)
     {
         // A failure before or inside a command still has to honour --json, so detect it up front.
         var json = args.Contains("--json");
@@ -31,7 +32,7 @@ public static class CliApp
         AnsiConsole.Console = ansi;
 
         var trust = new FileTrustStore(paths);
-        var settings = new FileSettingsStore(paths);
+        var settings = new FileSettingsStore(paths, devDefaults);
         var processes = new ProcessRunner();
         var host = new HostClient(paths);
         var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths);

@@ -11,7 +11,7 @@ public sealed class LanguageHostClientTests : IDisposable
 
     public void Dispose() => _client.Dispose();
 
-    static readonly string Sample = EditorSpikeViewModel.SampleText;
+    static readonly string Sample = Sprig.App.Authoring.SampleDefinition.Text;
 
     [Fact]
     public async Task Completion_after_a_dot_lists_the_sdk_members()

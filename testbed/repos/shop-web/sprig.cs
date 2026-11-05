@@ -7,7 +7,7 @@ var catalog = repo.Import<Url>("catalog-url");
 var orders  = repo.Import<Url>("orders-url");
 
 // Pinned, the way an auth provider's registered callback ports would be.
-var web = repo.Node("web", ".").Http(pin: "5170-5179");
+var web = repo.Node("web", ".").Http(pin: "9170-9179");
 
 web.EnvFile(".env.local", e => e
     .Set("PORT", web.Port)

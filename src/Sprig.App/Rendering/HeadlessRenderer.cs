@@ -14,7 +14,8 @@ namespace Sprig.App.Rendering;
 
 /// <summary>
 /// Renders app views to PNG on a headless Skia platform, so the UI can be checked without a display or any
-/// screen capture. Invoked via <c>sprig-gui render-editor &lt;file.png&gt;</c>.
+/// screen capture. Invoked via <c>sprig-gui render-code-editor &lt;file.png&gt;</c> and the other render-* switches in
+/// Program.cs.
 /// </summary>
 internal static partial class HeadlessRenderer
 {
@@ -31,7 +32,7 @@ internal static partial class HeadlessRenderer
                 .WithInterFont()
                 .SetupWithoutStarting();
 
-            var text = EditorSpikeViewModel.SampleText
+            var text = Sprig.App.Authoring.SampleDefinition.Text
                 .Replace(".Http(\"http\")\n    .Env(\"ConnectionStrings", ".Htp(\"http\")\n    .Env(\"ConnectionStrings")
                 .Replace("repo.Export<Url>", "#warning check the export name before committing\nrepo.Export<Url>");
             var editor = new Sprig.App.Controls.CodeEditor { Host = host, Text = text };
@@ -65,10 +66,11 @@ internal static partial class HeadlessRenderer
         }
     }
 
-    /// <summary>The editor spike after the GUI's "add env var" edit, with a typo so the problems list has a row.</summary>
-    public static int RenderEditor(string outFile)
+    /// <summary>The code editor's colouring in the orders a page can give it a file: opened while hidden (as the Repos
+    /// page does), a second file into a showing editor, and a file after closing and opening again. Each should be
+    /// coloured.</summary>
+    public static int RenderCodeEditorCases(string outFile)
     {
-        var store = Path.Combine(Path.GetTempPath(), "sprig-render-" + Guid.NewGuid().ToString("N"));
         try
         {
             AppBuilder.Configure<App>()
@@ -77,42 +79,55 @@ internal static partial class HeadlessRenderer
                 .WithInterFont()
                 .SetupWithoutStarting();
 
-            var vm = new MainWindowViewModel(new AppServices(store), checkForUpdates: false);
-            vm.NavigateCommand.Execute(vm.EditorSpike);
-            var window = new MainWindow { DataContext = vm, Width = 1280, Height = 820 };
+            var editor = new Sprig.App.Controls.CodeEditor();
+            var holder = new Avalonia.Controls.ContentControl { Content = editor, IsVisible = false };
+            var window = new Avalonia.Controls.Window
+            {
+                Width = 900, Height = 420, Content = holder,
+                Background = Avalonia.Media.Brush.Parse("#1F1F2A"),
+            };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(200));
-
-            var editor = Find<TextEditor>(window) ?? throw new InvalidOperationException("editor not found");
-            var addEnv = Find<Avalonia.Controls.Button>(window, "AddEnvButton")!;
-            addEnv.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
-            var typo = editor.Text.IndexOf(".Http(\"http\")", StringComparison.Ordinal);
-            editor.Document.Replace(typo, ".Http".Length, ".Htp");
-
-            // The debounce timer doesn't tick on the headless platform, so ask for diagnostics directly and pump
-            // until the answer from the host process has been applied.
-            var view = Find<EditorSpikeView>(window)!;
-            var pending = view.RunDiagnostics();
-            var clock = Stopwatch.StartNew();
-            while (!pending.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(20)) Pump(TimeSpan.FromMilliseconds(50));
-            vm.EditorSpike.RefreshMemoryCommand.Execute(null);
-            Pump(TimeSpan.FromMilliseconds(800));
-
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
-            window.CaptureRenderedFrame()?.Save(outFile);
+
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text;
+            holder.IsVisible = true;
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "opened-hidden"));
+
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace("shop-services", "shop-web");
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "second-file"));
+
+            holder.IsVisible = false;
+            Pump(TimeSpan.FromMilliseconds(200));
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace("shop-services", "shop-mobile");
+            holder.IsVisible = true;
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "reopened"));
+
+            // A Dev build drafts definitions against the local SDK project, so their first line is a Windows path.
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace(
+                "#:package Sprig.Sdk@0.1.0-exp", @"#:project C:\Users\someone\src\sprig\src\Sprig.Sdk\Sprig.Sdk.csproj");
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "project-path"));
+
+            // Leaving a page and coming back takes the editor out of the window and puts it back.
+            window.Content = null;
+            Pump(TimeSpan.FromMilliseconds(200));
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace("shop-services", "shop-docs");
+            window.Content = holder;
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "reattached"));
+
             window.Close();
-            vm.EditorSpike.Host.Dispose();
-            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (diagnostics: {vm.EditorSpike.Diagnostics.Count}, {vm.EditorSpike.DiagnosticsTiming})");
+            Console.WriteLine($"rendered {Sibling(outFile, "opened-hidden")}, -second-file and -reopened");
             return 0;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"headless render failed: {ex}");
             return 1;
-        }
-        finally
-        {
-            try { Directory.Delete(store, recursive: true); } catch { /* temp store */ }
         }
     }
 

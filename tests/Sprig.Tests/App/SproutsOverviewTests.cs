@@ -90,5 +90,35 @@ public class SproutsOverviewTests
         vm.OpenOverviewRowCommand.Execute(vm.OverviewRows.Single(r => r.Name == "feat-a"));
 
         Assert.Equal("storefront/feat-a", vm.Selected!.Record.Key);
+
+        vm.BackToListCommand.Execute(null);
+
+        Assert.Null(vm.Selected);
+    }
+
+    [Fact]
+    public void The_search_matches_every_word_against_name_trellis_or_branch_and_works_with_the_state_chips()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out _);
+
+        vm.OverviewSearch = "feat";
+        Assert.Equal(["feat-a", "feat-c"], vm.OverviewRows.Select(r => r.Name));
+
+        vm.OverviewSearch = "STOREFRONT down";
+        Assert.Empty(vm.OverviewRows);
+        Assert.True(vm.NoOverviewMatches);
+
+        vm.OverviewSearch = "storefront";
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
+        Assert.Equal(["feat-c", "spike"], vm.OverviewRows.Select(r => r.Name));
+
+        vm.OverviewSearch = "in place";
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.All));
+        Assert.Equal(["local"], vm.OverviewRows.Select(r => r.Name));
+
+        vm.ClearOverviewSearchCommand.Execute(null);
+        Assert.Equal(6, vm.OverviewRows.Count);
+        Assert.False(vm.NoOverviewMatches);
     }
 }

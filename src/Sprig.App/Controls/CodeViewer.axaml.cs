@@ -1,6 +1,5 @@
 using Avalonia;
 using Avalonia.Controls;
-using AvaloniaEdit.Document;
 using AvaloniaEdit.TextMate;
 using TextMateSharp.Grammars;
 
@@ -29,7 +28,10 @@ public partial class CodeViewer : UserControl
     {
         base.OnPropertyChanged(change);
         if (change.Property != TextProperty) return;
-        Editor.Document = new TextDocument(change.GetNewValue<string>() ?? "");
+        // Refilled rather than replaced, as in CodeEditor: a new document restarts TextMate's tokenizer and can be left
+        // uncoloured.
+        Editor.Document.Text = change.GetNewValue<string>() ?? "";
+        Editor.Document.UndoStack.ClearAll();
         Editor.ScrollToHome();
     }
 }

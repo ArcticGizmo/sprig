@@ -38,7 +38,7 @@ public sealed class AppServices
     public AppServices(string? root = null)
     {
         Paths = new SprigPaths(root);
-        Settings = new FileSettingsStore(Paths);
+        Settings = new FileSettingsStore(Paths, dev: root is null && AppProfile.IsDev);
         Trust = new FileTrustStore(Paths);
         Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
         Trellises = new TrellisRegistry(Paths);

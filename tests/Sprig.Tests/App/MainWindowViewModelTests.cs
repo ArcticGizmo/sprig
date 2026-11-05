@@ -28,17 +28,23 @@ public class MainWindowViewModelTests
         using var store = new TempStore();
         var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
 
-        var navPages = vm.NavItems.Select(i => i switch
-        {
-            PageViewModel p => p.Title,
-            SproutsNavViewModel s => s.Page.Title,
-            _ => null,
-        }).OfType<string>();
-
-        Assert.Equal(["Home", "Repos", "Trellises", "Sprouts", "Editor"], navPages);
-        Assert.Same(vm.Sprouts, vm.SproutsNav.Page);
+        Assert.Equal(["Home", "Repos", "Trellises", "Sprouts"], vm.NavItems.Select(p => p.Title));
+        Assert.Contains(vm.Sprouts, vm.NavItems);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);
+    }
+
+    [Fact]
+    public void Sprouts_in_the_nav_opens_the_list_of_them()
+    {
+        using var store = new TempStore();
+        var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
+
+        vm.NavigateCommand.Execute(vm.Sprouts);
+
+        Assert.Same(vm.Sprouts, vm.CurrentPage);
+        Assert.Null(vm.Sprouts.Selected);
+        Assert.Equal("running copies", vm.Sprouts.NavSubtitle);
     }
 
     [Fact]

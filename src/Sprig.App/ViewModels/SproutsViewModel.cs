@@ -133,6 +133,7 @@ public partial class SproutsViewModel : PageViewModel
     Func<Task>? _afterApproval;
 
     public override string Title => "Sprouts";
+    public override string? NavSubtitle => "running copies";
 
     public ObservableCollection<SproutItem> Sprouts { get; } = [];
     public ObservableCollection<string> TrellisNames { get; } = [];

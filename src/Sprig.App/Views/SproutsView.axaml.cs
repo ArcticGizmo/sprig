@@ -128,6 +128,13 @@ public partial class SproutsView : UserControl
         => (source as Visual)?.FindAncestorOfType<TextBlock>(includeSelf: true) is { } text && text.Classes.Contains("link") && text.Tag is string { Length: > 0 }
             ? text : null;
 
+    /// <summary>A double-click on a ticking box only ticks it twice, so it doesn't also open the sprout.</summary>
+    void OnOverviewRowDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if ((e.Source as Visual)?.FindAncestorOfType<CheckBox>(includeSelf: true) is not null) return;
+        if ((sender as Control)?.DataContext is OverviewRow row) _vm?.OpenOverviewRowCommand.Execute(row);
+    }
+
     /// <summary>As a link in a browser: a click opens it, a middle-click opens it in a window of its own.</summary>
     void OnLinkReleased(object? sender, PointerReleasedEventArgs e)
     {

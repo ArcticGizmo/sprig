@@ -68,7 +68,8 @@ internal static partial class HeadlessRenderer
             services.Ui.SetPins("storefront", ["shop-services/orders-api", "shop-services/payments-api", "shop-web/web"]);
 
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
-            vm.SproutsNav.OpenCommand.Execute(vm.SproutsNav.Groups.SelectMany(g => g.Shown).First(s => s.Key == "storefront/feat-a"));
+            vm.NavigateCommand.Execute(vm.Sprouts);
+            vm.Sprouts.Show("storefront/feat-a");
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(400));
@@ -136,15 +137,33 @@ internal static partial class HeadlessRenderer
             vm.Sprouts.ToggleLogWrapCommand.Execute(null);
 
             vm.Sprouts.ShowInfraTabCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(100));
+            Save(window, Sibling(outFile, "infra-loading"));
             Wait(vm.Sprouts.LoadInfraAsync());
             Pump(TimeSpan.FromMilliseconds(400));
             Save(window, Sibling(outFile, "infra"));
 
-            vm.SproutsNav.OpenOverviewCommand.Execute(null);
+            // Wider than the tab's 1200 cap, where it should sit centred.
+            window.Width = 2000;
+            window.Height = 1100;
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "infra-wide"));
+            window.Width = 1440;
+            window.Height = 900;
+
+            vm.NavigateCommand.Execute(vm.Sprouts);
             Wait(vm.Sprouts.LoadOverviewStatusAsync());
-            vm.Sprouts.SelectStaleCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "overview"));
+
+            vm.Sprouts.OverviewSearch = "feat";
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "overview-search"));
+            vm.Sprouts.OverviewSearch = "";
+
+            vm.Sprouts.SelectStaleCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "overview-ticked"));
             window.Close();
 
             Console.WriteLine($"rendered {Sibling(outFile, "all")}, -small, -app, -infra and -overview ({lines} lines in the app's log)");

@@ -16,6 +16,16 @@ public class SettingsStoreTests
     }
 
     [Fact]
+    public void A_dev_store_defaults_to_the_9000s_so_it_never_takes_an_installed_sprigs_ports()
+    {
+        using var s = new TempStore();
+        var store = new FileSettingsStore(s.Paths, dev: true);
+
+        Assert.Equal((9000, 10000), (store.Get().PortRangeStart, store.Get().PortRangeEndExclusive));
+        Assert.Equal((9000, 10000), (store.Defaults().PortRangeStart, store.Defaults().PortRangeEndExclusive));
+    }
+
+    [Fact]
     public void Save_then_get_roundtrips()
     {
         using var s = new TempStore();

@@ -8,20 +8,26 @@ public interface ISettingsStore
     /// <summary>Current settings, or defaults if none have been saved.</summary>
     SprigSettings Get();
 
+    /// <summary>What this store starts with, and what resetting goes back to.</summary>
+    SprigSettings Defaults();
+
     /// <summary>Validate and persist. Throws <see cref="ArgumentException"/> on an invalid range.</summary>
     void Save(SprigSettings settings);
 }
 
 /// <summary>File-backed <see cref="ISettingsStore"/> (one JSON file at <see cref="ISprigPaths.SettingsFile"/>).</summary>
-public sealed class FileSettingsStore(ISprigPaths paths) : ISettingsStore
+/// <param name="dev">Nothing saved yet means <see cref="SprigSettings.Defaults"/> for a Dev build.</param>
+public sealed class FileSettingsStore(ISprigPaths paths, bool dev = false) : ISettingsStore
 {
     public SprigSettings Get()
     {
-        var loaded = JsonFile.Read<SprigSettings>(paths.SettingsFile) ?? new SprigSettings();
+        var loaded = JsonFile.Read<SprigSettings>(paths.SettingsFile) ?? Defaults();
         // Normalise restricted ports so callers always see a clean, deduped, sorted list.
         loaded.RestrictedPorts = Normalise(loaded.RestrictedPorts);
         return loaded;
     }
+
+    public SprigSettings Defaults() => SprigSettings.Defaults(dev);
 
     public void Save(SprigSettings settings)
     {

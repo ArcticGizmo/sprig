@@ -34,6 +34,15 @@ public sealed class SprigSettings
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
+    /// <summary>A Dev build's own range, so its sprouts never take ports an installed sprig's sprouts use.</summary>
+    public const int DevRangeStart = 9000;
+    public const int DevRangeEndExclusive = 10000;
+
+    /// <param name="dev">A Dev build (<see cref="Store.AppProfile.IsDev"/>), which defaults to the 9000s.</param>
+    public static SprigSettings Defaults(bool dev) => dev
+        ? new SprigSettings { PortRangeStart = DevRangeStart, PortRangeEndExclusive = DevRangeEndExclusive }
+        : new SprigSettings();
+
     public const int MinPort = 1;
     public const int MaxPort = 65535;
 

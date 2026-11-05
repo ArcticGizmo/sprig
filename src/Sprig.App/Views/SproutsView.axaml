@@ -125,6 +125,13 @@
         <Style Selector="Border.approw:pointerover Button.more">
             <Setter Property="Opacity" Value="0.8" />
         </Style>
+        <!-- A sprout in the overview opens on a double-click anywhere on its row; Open says so, and lights with the row. -->
+        <Style Selector="Button.open TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.approw:pointerover Button.open TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
         <Style Selector="Button.more:pointerover">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
@@ -293,10 +300,17 @@
             </Border>
 
             <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,9" MinHeight="44">
-                <Panel>
+                <Grid ColumnDefinitions="280,*" ColumnSpacing="16">
+                <TextBox x:Name="OverviewSearchBox" Text="{Binding OverviewSearch}" PlaceholderText="Search by sprout, trellis or branch"
+                         FontSize="12.5" VerticalAlignment="Center" IsVisible="{Binding !IsEmpty}">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Escape" Command="{Binding ClearOverviewSearchCommand}" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+                <Panel Grid.Column="1">
                     <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding NoneChecked}" VerticalAlignment="Center">
-                        <TextBlock Text="Tick sprouts to bring up, take down or remove several at once." FontSize="12.5"
-                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="Double-click a sprout to open it. Tick sprouts to bring up, take down or remove several at once." FontSize="12.5"
+                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
                         <Button Classes="flat" Command="{Binding SelectStaleCommand}" IsVisible="{Binding HasStale}" HorizontalAlignment="Left">
                             <TextBlock Text="{Binding StaleLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
                         </Button>
@@ -316,14 +330,17 @@
                                    TextWrapping="Wrap" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </Grid>
                 </Panel>
+                </Grid>
             </Border>
 
             <TextBlock DockPanel.Dock="Top" Margin="24,24" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
                        Text="No sprouts yet. + New sprout makes one from a trellis." />
+            <TextBlock DockPanel.Dock="Top" Margin="24,24" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding NoOverviewMatches}"
+                       Text="No sprouts match. Clear the search or pick All to see them all." />
 
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsVisible="{Binding !IsEmpty}">
-                <StackPanel MinWidth="980">
-                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130" ColumnSpacing="12" Margin="24,8,24,6">
+                <StackPanel MinWidth="1060">
+                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12" Margin="24,8,24,6">
                         <CheckBox IsChecked="{Binding AllChecked, Mode=OneWay}" Command="{Binding ToggleAllCheckedCommand}" ToolTip.Tip="Tick every one shown" />
                         <TextBlock Grid.Column="1" Classes="phead" Text="SPROUT" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="2" Classes="phead" Text="TRELLIS" VerticalAlignment="Center" />
@@ -336,16 +353,17 @@
                     <ItemsControl ItemsSource="{Binding OverviewRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:OverviewRow">
-                                <Border Classes="approw" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="24,8">
-                                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130" ColumnSpacing="12">
-                                        <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" />
-                                        <Button Grid.Column="1" Classes="flat" HorizontalAlignment="Left" CommandParameter="{Binding}"
-                                                Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenOverviewRowCommand}">
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TitleBrush}" />
-                                                <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
-                                            </StackPanel>
-                                        </Button>
+                                <Border Classes="approw" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="24,8"
+                                        Cursor="Hand" ToolTip.Tip="Double-click to open" DoubleTapped="OnOverviewRowDoubleTapped"
+                                        AutomationProperties.AutomationId="{Binding Key, StringFormat='overview:{0}'}">
+                                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12">
+                                        <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" Cursor="Arrow" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TitleBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
                                         <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Trellis}" VerticalAlignment="Center" />
                                         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                                             <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
@@ -358,6 +376,11 @@
                                         <TextBlock Grid.Column="6" Classes="cell state" Text="{Binding Worktrees}" VerticalAlignment="Center"
                                                    Classes.bad="{Binding WorktreesWarn}" />
                                         <TextBlock Grid.Column="7" Classes="cell via" Text="{Binding LastUp}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="8" Classes="flat open" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                CommandParameter="{Binding}" ToolTip.Tip="Open this sprout"
+                                                Command="{Binding $parent[UserControl].((vm:SproutsViewModel)DataContext).OpenOverviewRowCommand}">
+                                            <TextBlock Text="Open ›" FontSize="12.5" FontWeight="SemiBold" />
+                                        </Button>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -367,10 +390,14 @@
             </ScrollViewer>
         </DockPanel>
 
-        <!-- The sprout picked in the nav. The page never scrolls: the list, the log and the details each scroll on their own. -->
+        <!-- The sprout opened from the list. The page never scrolls: the list, the log and the details each scroll on their own. -->
         <DockPanel IsVisible="{Binding HasSelection}">
-            <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="22,16,22,0">
+            <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="22,12,22,0">
                 <StackPanel Spacing="10">
+                    <Button Classes="flat" Command="{Binding BackToListCommand}" HorizontalAlignment="Left"
+                            AutomationProperties.AutomationId="sprout:back" ToolTip.Tip="Back to every sprout">
+                        <TextBlock Text="← All sprouts" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
+                    </Button>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
                         <StackPanel Spacing="2" VerticalAlignment="Center">
                             <TextBlock Text="{Binding Selected.Title}" FontSize="19" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
@@ -461,8 +488,11 @@
                 </StackPanel>
             </Border>
 
-            <!-- Infra, worktrees and files -->
-            <ScrollViewer IsVisible="{Binding OnInfraTab}" VerticalScrollBarVisibility="Auto">
+            <!-- The two tabs share the space under the header. In one panel, each fills it: as a DockPanel child that
+                 isn't the last, the infra tab would be docked left at the width of whatever had loaded so far. -->
+            <Panel>
+            <!-- Infra, worktrees and files: the page's width up to 1200, centred -->
+            <ScrollViewer IsVisible="{Binding OnInfraTab}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="22,18" Spacing="16" MaxWidth="1200" HorizontalAlignment="Stretch">
                     <Border Classes="panel" BorderBrush="#5C4A17" IsVisible="{Binding HasWarnings}">
                         <StackPanel Spacing="6">
@@ -831,6 +861,7 @@
                     </Border>
                 </Grid>
             </Grid>
+            </Panel>
         </DockPanel>
 
         <!-- Remove -->

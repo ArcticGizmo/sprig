@@ -119,53 +119,66 @@ public sealed class AuthoringTests : IDisposable
     }
 
     [Fact]
-    public void Keeping_a_repo_in_sprig_copies_its_own_file_with_the_approval_it_had_and_switching_back_keeps_the_copy()
+    public void Copying_a_repo_into_sprig_makes_a_new_entry_with_the_approval_it_had_and_leaves_the_first_as_it_was()
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
         Write("shop-web/sprig.cs", "// shop-web's own");
         var own = Path.Combine(Dir("shop-web"), "sprig.cs");
-        authoring.AddRepo(Dir("shop-web"), "web");
+        var web = authoring.AddRepo(Dir("shop-web"), "web");
+        Assert.Equal("shop-web-sprig", authoring.SuggestId(web, inRepo: false));
 
-        var inSprig = authoring.KeepInSprig("web");
+        var copy = authoring.CopyIntoSprig("web", "web-sprig");
 
-        Assert.False(inSprig.InRepo);
-        Assert.Equal(Stored.CopyFile("web"), inSprig.DefinitionFile);
-        Assert.Equal("// shop-web's own", File.ReadAllText(inSprig.DefinitionFile));
+        Assert.False(copy.InRepo);
+        Assert.Equal(Stored.CopyFile("web-sprig"), copy.DefinitionFile);
+        Assert.Equal("// shop-web's own", File.ReadAllText(copy.DefinitionFile));
         // The repo's own file was never approved, so neither is its copy.
-        Assert.False(Approved(trust, inSprig.DefinitionFile));
+        Assert.False(Approved(trust, copy.DefinitionFile));
+        Assert.Equal(own, Stored.Repo("web")!.DefinitionFile);
+        Assert.True(Stored.Repo("web")!.InRepo);
+        Assert.False(File.Exists(Stored.CopyFile("web")));
 
-        File.WriteAllText(inSprig.DefinitionFile, "// tried in sprig");
-        var back = authoring.PutInRepo("web");
-        Assert.True(back.InRepo);
-        Assert.Equal(own, back.DefinitionFile);
-        Assert.Equal("// shop-web's own", File.ReadAllText(own));
-
-        // Switching again restores the copy rather than copying over it.
-        Assert.Equal("// tried in sprig", File.ReadAllText(authoring.KeepInSprig("web").DefinitionFile));
-
-        // With an approved own file and no copy yet, the copy is approved too.
+        // With an approved own file, the copy is approved too.
         trust.Approve(own, DefinitionHash.Of("// shop-web's own"));
-        authoring.AddRepo(Dir("shop-web"), "web-2");
-        Assert.True(Approved(trust, authoring.KeepInSprig("web-2").DefinitionFile));
+        Assert.True(Approved(trust, authoring.CopyIntoSprig("web", "web-sprig-2").DefinitionFile));
+
+        // A new trellis over the folder reuses the entry that uses its own file, and the folder's file is only listed once.
+        Assert.Equal("web", Stored.RepoFor(Dir("shop-web"))!.Id);
+        Assert.Throws<ArgumentException>(() => authoring.AddRepo(Dir("shop-web"), "web-again"));
+        Assert.Throws<ArgumentException>(() => authoring.CopyIntoSprig("web-sprig", "x"));
     }
 
     [Fact]
-    public void Putting_a_repo_kept_in_sprig_into_a_folder_with_no_sprig_cs_writes_its_copy_there()
+    public void Writing_a_repo_kept_in_sprig_to_its_folder_adds_a_separate_entry_and_never_writes_over_a_sprig_cs()
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
-        var entry = authoring.AddRepo(Dir("shop-services"), "services");
+        var entry = authoring.AddRepo(Dir("shop-services"), "services-sprig");
         Assert.False(entry.InRepo);
         var draft = File.ReadAllText(entry.DefinitionFile);
+        Assert.Null(authoring.WriteToRepoBlocker(entry));
+        Assert.Equal("shop-services", authoring.SuggestId(entry, inRepo: true));
 
-        var inRepo = authoring.PutInRepo("services");
+        var inRepo = authoring.WriteToRepo("services-sprig", "services");
 
         var own = Path.Combine(Dir("shop-services"), "sprig.cs");
+        Assert.Equal("services", inRepo.Id);
+        Assert.True(inRepo.InRepo);
         Assert.Equal(own, inRepo.DefinitionFile);
         Assert.Equal(draft, File.ReadAllText(own));
         Assert.True(Approved(trust, own));
-        Assert.True(inRepo.HasCopy);
+        // The one in sprig is still its own entry, reading its own file.
+        var still = Stored.Repo("services-sprig")!;
+        Assert.False(still.InRepo);
+        Assert.Equal(Stored.CopyFile("services-sprig"), still.DefinitionFile);
+
+        // Once the folder has a sprig.cs, writing again is refused and the file is left alone.
+        File.WriteAllText(still.DefinitionFile, "// changed in sprig");
+        Assert.Contains("'services'", authoring.WriteToRepoBlocker(still));
+        Assert.Throws<IOException>(() => authoring.WriteToRepo("services-sprig", "services-2"));
+        Assert.Equal(draft, File.ReadAllText(own));
+        Assert.Throws<ArgumentException>(() => authoring.WriteToRepo("services", "x"));
     }
 
     [Fact]

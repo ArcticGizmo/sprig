@@ -212,7 +212,7 @@ public class TrellisChecklistTests
 public class ReposViewModelTests
 {
     [Fact]
-    public async Task A_repo_not_yet_approved_shows_it_and_switching_where_it_is_kept_copies_it_into_sprig_unapproved()
+    public async Task A_repo_not_yet_approved_shows_it_and_copying_it_into_sprig_adds_a_new_unapproved_entry()
     {
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
@@ -233,12 +233,25 @@ public class ReposViewModelTests
         Assert.False(vm.HasModel);
         Assert.Contains("Not approved yet", vm.Check);
 
-        await vm.SetKeptCommand.ExecuteAsync("sprig");
-        await WaitFor(() => vm.NeedsApproval);
+        Assert.Equal("Copy into sprig…", vm.DeriveLabel);
+        vm.OpenDeriveCommand.Execute(null);
+        Assert.True(vm.IsDeriveOpen);
+        Assert.False(vm.DeriveBlocked);
+        Assert.Equal("shop-web-sprig", vm.DeriveId);
+        await vm.DeriveCommand.ExecuteAsync(null);
+        await WaitFor(() => vm.Selected?.Id == "shop-web-sprig" && vm.NeedsApproval);
 
-        Assert.True(vm.InSprig);
+        Assert.False(vm.IsDeriveOpen);
+        Assert.Equal(2, vm.Repos.Count);
         Assert.Equal("in sprig", vm.Selected!.Kept);
-        Assert.Equal("// shop-web's own, never approved", File.ReadAllText(services.Stored.CopyFile("shop-web")));
+        Assert.Equal("Write to the repo…", vm.DeriveLabel);
+        Assert.Equal("// shop-web's own, never approved", File.ReadAllText(services.Stored.CopyFile("shop-web-sprig")));
+        Assert.True(vm.Repos.Single(r => r.Id == "shop-web").InRepo);
+
+        // The folder has its own sprig.cs, so writing the copy back is refused before anything is asked.
+        vm.OpenDeriveCommand.Execute(null);
+        Assert.True(vm.DeriveBlocked);
+        Assert.Contains("'shop-web'", vm.DeriveMessage);
     }
 
     [Theory]

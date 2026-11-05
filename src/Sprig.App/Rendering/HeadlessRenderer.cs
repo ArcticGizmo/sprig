@@ -150,13 +150,13 @@ internal static partial class HeadlessRenderer
                          .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.cs")).Where(File.Exists)))
                 services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
             services.Trellises.Add("storefront", trellisFile);
-            // One repo of each kind in the Repos list: its file in the repo, and in sprig.
+            // One repo of each kind in the Repos list: its file in the repo, and a copy of one kept in sprig.
             if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.cs")))
                 services.Authoring.AddRepo(web, "shop-web");
-            if (Path.Combine(root, "shop-services") is var services_ && Directory.Exists(services_))
+            if (Path.Combine(root, "shop-services") is var services_ && File.Exists(Path.Combine(services_, "sprig.cs")))
             {
-                services.Authoring.AddRepo(services_, "shop-services-local");
-                services.Authoring.KeepInSprig("shop-services-local");
+                services.Authoring.AddRepo(services_, "shop-services");
+                services.Authoring.CopyIntoSprig("shop-services", "shop-services-local");
             }
 
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
@@ -202,6 +202,11 @@ internal static partial class HeadlessRenderer
             while (vm.Repos.Check.EndsWith('…') && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo"));
+            // Its Write to the repo dialog, which says why it can't: the folder has its own sprig.cs already.
+            vm.Repos.OpenDeriveCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo-write"));
+            vm.Repos.CancelDeriveCommand.Execute(null);
             vm.NavigateCommand.Execute(vm.Trellises);
             Pump(TimeSpan.FromMilliseconds(300));
 

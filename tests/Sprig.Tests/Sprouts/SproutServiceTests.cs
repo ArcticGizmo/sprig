@@ -415,7 +415,7 @@ public sealed class SproutServiceTests : IDisposable
         }), _store.Paths), stored: stored);
         var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
             new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
-        stored.AddRepo("web", source, inRepo: true, copy: null);
+        stored.AddRepo("web", source, inRepo: true, definition: null);
         var trellisFile = Path.Combine(_root, "storefront.trellis.cs");
         File.WriteAllText(trellisFile, "// trellis");
         trust.Approve(trellisFile, DefinitionHash.Of("// trellis"));

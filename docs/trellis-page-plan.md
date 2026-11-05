@@ -12,10 +12,10 @@ Today's Trellises page is `sprig plan` printed in full. It answers "what will ev
 
 1. **Three nouns and one badge.** Repo, Trellis and Sprout stay. "Virtual" goes from the app. Every repo and trellis shows where its file is kept: **in repo** or **in sprig**. The app says **needs** and **offers**; the SDK keeps `Import`, `Export` and `Bind`.
 2. **Two ways to put a repo in a trellis, not three.** `trellis.Repo("path")` uses the folder's own `sprig.cs`. `trellis.UseRepo("id")` uses an entry from the Repos list, whose file is in the repo or in sprig. `Repo(path, definition: "id")` is removed: a definition in sprig always belongs to a Repos entry.
-3. **Where a repo's file is kept is a switch on the repo**, not buttons on a trellis:
-   - *In repo → In sprig* copies the folder's `sprig.cs` into sprig, or reuses the copy sprig already has from an earlier switch, or drafts one from the folder if it has neither.
-   - *In sprig → In repo* uses the folder's `sprig.cs` if there is one (sprig's copy is kept, so switching back restores it). If the folder has none, sprig's copy is written there as `sprig.cs`, left uncommitted.
-   - Every trellis that uses the entry follows the switch; nothing in the trellises changes.
+3. **Where a repo's file is kept is fixed for its ID** (revised by the user after phase 8; it was first a switch on the repo). A switch meant what a trellis using the ID ran could change under it. Instead, the other kind is always a new entry:
+   - *Copy into sprig* (on an in-repo entry) makes a new in-sprig ID starting from the folder's `sprig.cs`, with the approval it had.
+   - *Write to the repo* (on an in-sprig entry) writes the definition into the folder as `sprig.cs`, left uncommitted, and uses it from a new in-repo ID. It's refused if the folder already has a `sprig.cs`.
+   - The entry it started from, and every trellis using it, is left as it is; pointing a trellis at the new ID is done by hand. A folder's own `sprig.cs` is listed under at most one ID.
 4. **A trellis's file location is shown, not switched.** Moving a trellis between a folder and sprig needs a destination folder; that waits until it's asked for.
 5. **The plan says where values come from as data.** `PlannedValue` gains `Sources` beside the `Via` text, so the picture never parses display strings.
 6. **No migration.** Model schema goes up, so definitions cached under the old schema are re-run. Repos entries and trellises in the dev store that use `definition:` are deleted rather than converted; the testbed is updated to match.

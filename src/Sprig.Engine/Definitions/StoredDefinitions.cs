@@ -2,12 +2,11 @@ using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Definitions;
 
-/// <summary>One repo in sprig's Repos list: a folder, and where the definition that describes it is kept.</summary>
-/// <param name="InRepo">Described by the folder's own sprig.cs; otherwise by the copy kept in sprig.</param>
-/// <param name="DefinitionFile">The file that describes it now.</param>
-/// <param name="HasCopy">Sprig keeps a copy for it, used when it's kept in sprig. A repo switched back to the repo keeps
-/// its copy, so switching again restores it.</param>
-public sealed record RepoEntry(string Id, string Folder, bool InRepo, string DefinitionFile, bool HasCopy)
+/// <summary>One repo in sprig's Repos list: a folder, and the definition that describes it. An ID is one or the other
+/// for good, so what a trellis using it runs never changes under it.</summary>
+/// <param name="InRepo">Described by the folder's own sprig.cs; otherwise by a definition kept in sprig.</param>
+/// <param name="DefinitionFile">The file that describes it.</param>
+public sealed record RepoEntry(string Id, string Folder, bool InRepo, string DefinitionFile)
 {
     public string OwnFile => Path.Combine(Folder, StoredDefinitions.RepoFileName);
 }
@@ -26,7 +25,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
     string ReposRoot => Path.Combine(paths.Root, "repos");
     string TrellisesRoot => Path.Combine(paths.Root, "trellises");
 
-    /// <summary>Where sprig keeps its copy of a repo's definition.</summary>
+    /// <summary>Where sprig keeps the definition of a repo kept in sprig.</summary>
     public string CopyFile(string id) => LongPath.Of(Path.Combine(ReposRoot, id, RepoFileName));
 
     public string TrellisFile(string id) => LongPath.Of(Path.Combine(TrellisesRoot, id, TrellisFileName));
@@ -45,38 +44,34 @@ public sealed class StoredDefinitions(ISprigPaths paths)
         if (Ids.Check(id, "") is not null) return null;
         if (JsonFile.Read<StoredEntry>(Path.Combine(ReposRoot, id, EntryFileName)) is not { Folder.Length: > 0 } stored) return null;
         var folder = LongPath.Of(stored.Folder);
-        var copy = CopyFile(id);
-        var hasCopy = File.Exists(copy);
-        return new RepoEntry(id, folder, stored.InRepo, stored.InRepo ? Path.Combine(folder, RepoFileName) : copy, hasCopy);
+        return new RepoEntry(id, folder, stored.InRepo, stored.InRepo ? Path.Combine(folder, RepoFileName) : CopyFile(id));
     }
 
-    /// <summary>The first entry for <paramref name="folder"/>, so a second trellis over the same repo reuses it.</summary>
-    public RepoEntry? RepoFor(string folder) => Repos().FirstOrDefault(e => SamePath(e.Folder, folder));
+    /// <summary>The entry a new trellis over <paramref name="folder"/> reuses: the one using its own sprig.cs if there
+    /// is one, else the first kept in sprig.</summary>
+    public RepoEntry? RepoFor(string folder)
+    {
+        var matching = Repos().Where(e => SamePath(e.Folder, folder)).ToArray();
+        return matching.FirstOrDefault(e => e.InRepo) ?? matching.FirstOrDefault();
+    }
 
-    /// <summary>A new entry. <paramref name="copy"/> is the text of sprig's copy, needed when it isn't kept in the
+    /// <summary>The entry that uses <paramref name="folder"/>'s own sprig.cs. There's at most one, since two would
+    /// describe the folder identically.</summary>
+    public RepoEntry? InRepoFor(string folder) => Repos().FirstOrDefault(e => e.InRepo && SamePath(e.Folder, folder));
+
+    /// <summary>A new entry. <paramref name="definition"/> is the text kept in sprig, needed when it isn't in the
     /// repo.</summary>
-    public RepoEntry AddRepo(string id, string folder, bool inRepo, string? copy)
+    public RepoEntry AddRepo(string id, string folder, bool inRepo, string? definition)
     {
         if (Ids.Check(id, "a repo ID") is { } bad) throw new ArgumentException(bad, nameof(id));
         var dir = Path.Combine(ReposRoot, id);
         if (Directory.Exists(dir)) throw new ArgumentException($"'{id}' is already taken", nameof(id));
-        if (!inRepo && copy is null) throw new ArgumentException("a repo kept in sprig needs its definition", nameof(copy));
+        if (!inRepo && definition is null) throw new ArgumentException("a repo kept in sprig needs its definition", nameof(definition));
         Directory.CreateDirectory(dir);
-        if (copy is not null) File.WriteAllText(CopyFile(id), copy);
+        if (!inRepo) File.WriteAllText(CopyFile(id), definition);
         JsonFile.Write(Path.Combine(dir, EntryFileName), new StoredEntry(LongPath.Of(folder), inRepo));
         return Repo(id)!;
     }
-
-    /// <summary>Say where the entry's definition is kept. Nothing is copied here; the caller makes sure the file it
-    /// switches to exists.</summary>
-    public RepoEntry SetInRepo(string id, bool inRepo)
-    {
-        var entry = Repo(id) ?? throw new ArgumentException($"'{id}' isn't in the Repos list", nameof(id));
-        JsonFile.Write(Path.Combine(ReposRoot, id, EntryFileName), new StoredEntry(entry.Folder, inRepo));
-        return Repo(id)!;
-    }
-
-    public void WriteCopy(string id, string text) => File.WriteAllText(CopyFile(id), text);
 
     static bool SamePath(string a, string b) => string.Equals(Path.GetFullPath(a).TrimEnd('\\', '/'), Path.GetFullPath(b).TrimEnd('\\', '/'),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);

@@ -54,7 +54,7 @@ public partial class ReposViewModel : PageViewModel
     public Action<string>? OpenTrellis { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(InSprig), nameof(KeptExplanation), nameof(SwitchNote))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(KeptExplanation), nameof(DeriveLabel), nameof(DeriveNote), nameof(RemoveNote))]
     private RepoItem? _selected;
 
     [ObservableProperty] private string _check = "";
@@ -70,11 +70,16 @@ public partial class ReposViewModel : PageViewModel
     [ObservableProperty] private string _addMessage = "";
     [ObservableProperty] private bool _addFailed;
 
+    [ObservableProperty] private bool _isDeriveOpen;
+    [ObservableProperty] private string _deriveId = "";
+    [ObservableProperty] private string _deriveMessage = "";
+    [ObservableProperty] private bool _deriveFailed;
+    [ObservableProperty] private bool _deriveBlocked;
+
     NeedsTrust? _pending;
 
     public bool HasSelection => Selected is not null;
     public bool IsEmpty => Repos.Count == 0;
-    public bool InSprig => Selected is { InRepo: false };
     public bool HasOffers => Offers.Count > 0;
     public bool HasNeeds => Needs.Count > 0;
     public bool HasInfra => Infra.Count > 0;
@@ -82,16 +87,32 @@ public partial class ReposViewModel : PageViewModel
     public string KeptExplanation => Selected switch
     {
         null => "",
-        { InRepo: true } => "Committed as sprig.cs. Sprouts run their branch's version, and sprig asks before running one you haven't approved.",
+        { InRepo: true } => "Uses the repo's own sprig.cs. Sprouts run their branch's version, and sprig asks before running one you haven't approved.",
         _ => "Kept on this machine, so nothing is written to the repo. The same for every sprout, since no branch can change it.",
     };
 
-    public string SwitchNote => Selected switch
+    /// <summary>The one way to get the other kind: a new entry made from this one, which stays as it is.</summary>
+    public string DeriveLabel => Selected is { InRepo: true } ? "Copy into sprig…" : "Write to the repo…";
+
+    public string DeriveNote => Selected switch
     {
         null => "",
-        { InRepo: true } => "Switching to In sprig copies it into sprig (or restores sprig's earlier copy); the repo's file is left as it is.",
-        _ => "Switching to In the repo uses the folder's own sprig.cs; if it has none, sprig's copy is written there, uncommitted.",
+        { InRepo: true } => "To try changes without touching the repo, copy it into sprig as a new ID.",
+        _ => "To put it in the repo, write it there as sprig.cs; that's used from a new ID, and this one stays in sprig.",
     };
+
+    public string DeriveTitle => Selected is { InRepo: true } ? "Copy into sprig" : "Write to the repo";
+
+    public string DeriveExplanation => Selected switch
+    {
+        null => "",
+        { InRepo: true } => $"Copies {Selected.DisplayFile} into sprig as a new repo, kept on this machine. '{Selected.Id}' keeps using the repo's file, and so do the trellises that use it.",
+        _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.cs, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the trellises that use it.",
+    };
+
+    public string RemoveNote => Selected is { InRepo: true }
+        ? "Take it off the Repos list? The folder's own sprig.cs is left where it is. Trellises that use it will say it's missing."
+        : "Take it off the Repos list? The definition sprig keeps for it goes with it. Trellises that use it will say it's missing.";
 
     public ReposViewModel(AppServices services)
     {
@@ -295,20 +316,56 @@ public partial class ReposViewModel : PageViewModel
         await CheckAsync(repo);
     }
 
-    /// <summary>Switch where the selected repo's definition is kept; every trellis that uses it follows.</summary>
     [RelayCommand]
-    private async Task SetKept(string? where)
+    private void OpenDerive()
     {
         if (Selected is not { } repo) return;
-        var toSprig = where == "sprig";
-        if (toSprig == !repo.InRepo) return;
-        try { await AppServices.RunAsync(() => toSprig ? _services.Authoring.KeepInSprig(repo.Id) : _services.Authoring.PutInRepo(repo.Id)); }
-        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        OnPropertyChanged(nameof(DeriveTitle));
+        OnPropertyChanged(nameof(DeriveExplanation));
+        DeriveId = _services.Authoring.SuggestId(repo.Entry, inRepo: !repo.InRepo);
+        var blocked = repo.InRepo
+            ? repo.Missing ? $"{repo.DisplayFile} isn't there, so there's nothing to copy." : null
+            : _services.Authoring.WriteToRepoBlocker(repo.Entry);
+        DeriveBlocked = blocked is not null;
+        DeriveFailed = DeriveBlocked;
+        DeriveMessage = blocked ?? "";
+        IsDeriveOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelDerive() => IsDeriveOpen = false;
+
+    /// <summary>Make the new entry and show it. Nothing about the selected one changes.</summary>
+    [RelayCommand]
+    private async Task Derive()
+    {
+        if (Selected is not { } repo || DeriveBlocked) return;
+        var id = DeriveId.Trim();
+        if (Ids.Check(id, "a repo ID") is { } bad)
         {
-            Say(e.Message, bad: true);
+            FailDerive(bad);
             return;
         }
-        Refresh(repo.Id);
+        RepoEntry made;
+        try
+        {
+            made = await AppServices.RunAsync(() => repo.InRepo
+                ? _services.Authoring.CopyIntoSprig(repo.Id, id)
+                : _services.Authoring.WriteToRepo(repo.Id, id));
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            FailDerive(e.Message);
+            return;
+        }
+        IsDeriveOpen = false;
+        Refresh(made.Id);
+    }
+
+    void FailDerive(string message)
+    {
+        DeriveFailed = true;
+        DeriveMessage = message;
     }
 
     [RelayCommand]
@@ -317,7 +374,8 @@ public partial class ReposViewModel : PageViewModel
         if (id is not null) OpenTrellis?.Invoke(id);
     }
 
-    /// <summary>Taking a repo off the list deletes sprig's copy of its definition, so it asks first.</summary>
+    /// <summary>Taking a repo kept in sprig off the list deletes its definition, and trellises using either kind break,
+    /// so it asks first.</summary>
     [RelayCommand]
     private void Remove()
     {

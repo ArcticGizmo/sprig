@@ -42,52 +42,66 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
         folder = LongPath.Of(folder);
         if (!Directory.Exists(folder)) throw new ArgumentException($"there's no folder at {folder}");
         id ??= stored.UnusedRepoId(FolderName(folder));
-        if (HasOwn(folder)) return stored.AddRepo(id, folder, inRepo: true, copy: null);
+        if (HasOwn(folder))
+        {
+            if (stored.InRepoFor(folder) is { } existing)
+                throw new ArgumentException($"its sprig.cs is already on the list as '{existing.Id}'");
+            return stored.AddRepo(id, folder, inRepo: true, definition: null);
+        }
         var entry = stored.AddRepo(id, folder, inRepo: false, Draft(folder));
         Approve(entry.DefinitionFile);
         return entry;
     }
 
     /// <summary>
-    /// Keep the repo's definition in sprig, so changes can be tried without committing them. It starts from the copy an
-    /// earlier switch left, else a copy of the folder's own sprig.cs, else a draft from what's in the folder. Every
-    /// trellis that uses the repo follows.
+    /// A new entry, <paramref name="newId"/>, kept in sprig and starting as a copy of <paramref name="id"/>'s sprig.cs,
+    /// so changes can be tried without touching the repo. <paramref name="id"/> and the trellises using it are left as
+    /// they are.
     /// </summary>
-    public RepoEntry KeepInSprig(string id)
+    public RepoEntry CopyIntoSprig(string id, string newId)
     {
         var entry = Entry(id);
-        if (!entry.InRepo) return entry;
-        if (!entry.HasCopy)
-        {
-            if (File.Exists(entry.OwnFile))
-                Copy(entry.OwnFile, stored.CopyFile(id), File.ReadAllText(entry.OwnFile));
-            else
-            {
-                stored.WriteCopy(id, Draft(entry.Folder));
-                Approve(stored.CopyFile(id));
-            }
-        }
-        return stored.SetInRepo(id, false);
+        if (!entry.InRepo) throw new ArgumentException($"'{id}' is already kept in sprig");
+        if (!File.Exists(entry.OwnFile)) throw new IOException($"{entry.OwnFile} isn't there");
+        var text = File.ReadAllText(entry.OwnFile);
+        var copy = stored.AddRepo(newId, entry.Folder, inRepo: false, text);
+        CarryApproval(entry.OwnFile, copy.DefinitionFile, text);
+        return copy;
     }
 
     /// <summary>
-    /// Use the folder's own sprig.cs. A folder without one gets sprig's copy written there, left uncommitted. Sprig's
-    /// copy is kept either way, so switching back restores it.
+    /// Write <paramref name="id"/>'s definition into its folder as sprig.cs, left uncommitted, and use it from a new
+    /// entry, <paramref name="newId"/>. <paramref name="id"/> and the trellises using it are left as they are. A folder
+    /// that already has a sprig.cs is never written over.
     /// </summary>
-    public RepoEntry PutInRepo(string id)
+    public RepoEntry WriteToRepo(string id, string newId)
     {
         var entry = Entry(id);
-        if (entry.InRepo) return entry;
-        if (!File.Exists(entry.OwnFile))
-        {
-            if (!Directory.Exists(entry.Folder)) throw new IOException($"there's no folder at {entry.Folder}");
-            Copy(entry.DefinitionFile, entry.OwnFile, File.ReadAllText(entry.DefinitionFile));
-        }
-        return stored.SetInRepo(id, true);
+        if (entry.InRepo) throw new ArgumentException($"'{id}' already uses the repo's sprig.cs");
+        if (WriteToRepoBlocker(entry) is { } blocked) throw new IOException(blocked);
+        var text = File.ReadAllText(entry.DefinitionFile);
+        File.WriteAllText(entry.OwnFile, text);
+        CarryApproval(entry.DefinitionFile, entry.OwnFile, text);
+        return stored.InRepoFor(entry.Folder) ?? stored.AddRepo(newId, entry.Folder, inRepo: true, definition: null);
     }
 
+    /// <summary>Why <see cref="WriteToRepo"/> can't run for <paramref name="entry"/>, or null when it can.</summary>
+    public string? WriteToRepoBlocker(RepoEntry entry)
+    {
+        if (!Directory.Exists(entry.Folder)) return $"there's no folder at {entry.Folder}";
+        if (!File.Exists(entry.OwnFile)) return null;
+        return stored.InRepoFor(entry.Folder) is { } existing
+            ? $"The folder already has its own sprig.cs, on the list as '{existing.Id}'. Sprig won't write over it."
+            : "The folder already has its own sprig.cs. Sprig won't write over it; + Add the folder to use it.";
+    }
+
+    /// <summary>The ID offered for a new entry made from <paramref name="entry"/>: the folder's name for one in the
+    /// repo, with "-sprig" after it for one kept in sprig.</summary>
+    public string SuggestId(RepoEntry entry, bool inRepo)
+        => stored.UnusedRepoId(inRepo ? FolderName(entry.Folder) : $"{FolderName(entry.Folder)}-sprig");
+
     /// <summary>Bring one of a trellis's <c>Repo("path")</c> repos in through the Repos list instead, reusing an entry
-    /// for its folder, so where its definition is kept can be switched.</summary>
+    /// for its folder, so it shows on the Repos page and other trellises can use it by ID.</summary>
     public RepoEntry UseFromRepos(string trellisFile, string repoPath)
     {
         var folder = LongPath.Of(Path.Combine(Path.GetDirectoryName(trellisFile)!, repoPath));
@@ -96,8 +110,8 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
         return entry;
     }
 
-    /// <summary>Take a repo off the Repos list, with sprig's copy of its definition. The folder's own sprig.cs is left
-    /// alone.</summary>
+    /// <summary>Take a repo off the Repos list, with the definition sprig keeps for it. The folder's own sprig.cs is
+    /// left alone.</summary>
     public void DeleteRepo(string id) => stored.DeleteRepo(id);
 
     /// <summary>Registered trellises that name the repo <paramref name="id"/> with <c>UseRepo</c>.</summary>
@@ -129,9 +143,8 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
 
     static string Draft(string folder) => Scaffold.Repo(folder, Ids.Slug(FolderName(folder), "repo"));
 
-    void Copy(string from, string to, string text)
+    void CarryApproval(string from, string to, string text)
     {
-        File.WriteAllText(to, text);
         if (trust.Check(from, DefinitionHash.Of(text)).State == TrustState.Trusted) Approve(to);
     }
 

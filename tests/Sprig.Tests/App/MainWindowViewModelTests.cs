@@ -35,7 +35,7 @@ public class MainWindowViewModelTests
             _ => null,
         }).OfType<string>();
 
-        Assert.Equal(["Home", "Trellises", "Sprouts", "Editor"], navPages);
+        Assert.Equal(["Home", "Repos", "Trellises", "Sprouts", "Editor"], navPages);
         Assert.Same(vm.Sprouts, vm.SproutsNav.Page);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);

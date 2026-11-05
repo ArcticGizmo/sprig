@@ -1,0 +1,299 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:controls="clr-namespace:Sprig.App.Controls"
+             x:Class="Sprig.App.Views.ReposView"
+             x:DataType="vm:ReposViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16,14" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.name">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.msg">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.bad">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <!-- Where a definition is kept: the same badge everywhere -->
+        <Style Selector="Border.kept">
+            <Setter Property="BorderBrush" Value="#4A4A5E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="7,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.kept TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Foreground" Value="#D4D4E0" />
+        </Style>
+        <Style Selector="Border.kept.sprig">
+            <Setter Property="BorderBrush" Value="#5B4A92" />
+            <Setter Property="Background" Value="#2A2340" />
+        </Style>
+        <Style Selector="Border.kept.sprig TextBlock">
+            <Setter Property="Foreground" Value="#CFC2FF" />
+        </Style>
+        <Style Selector="ToggleButton.seg">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="CornerRadius" Value="7" />
+        </Style>
+        <Style Selector="ToggleButton.seg:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.seg:checked">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Padding" Value="12,6" />
+        </Style>
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="290,*">
+
+        <!-- The Repos list -->
+        <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="18,24,14,16">
+                <StackPanel DockPanel.Dock="Top" Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="Repos" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenAddCommand}" IsEnabled="{Binding !Editor.IsEditing}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
+                    </Grid>
+                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="What each repo runs, offers and needs. Trellises use them by ID: trellis.UseRepo(&quot;shop-web&quot;)." />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
+                               Text="None yet. + Add takes a repo folder: its own sprig.cs if it has one, or a draft kept in sprig." />
+                </StackPanel>
+                <!-- Locked while a definition is open, so unsaved edits can't be left behind by picking another. -->
+                <ListBox ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,10,0,0"
+                         IsEnabled="{Binding !Editor.IsEditing}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:RepoItem">
+                            <StackPanel Spacing="3" Margin="0,3">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Text="{Binding Id}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding !InRepo}">
+                                        <TextBlock Text="{Binding Kept}" />
+                                    </Border>
+                                </Grid>
+                                <TextBlock Text="{Binding Summary}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Column="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding !Editor.IsEditing}">
+                <StackPanel Margin="28,24,28,28" Spacing="16" MaxWidth="1100" HorizontalAlignment="Stretch" IsVisible="{Binding HasSelection}">
+
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="{Binding Selected.Id, FallbackValue=''}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                            <SelectableTextBlock Text="{Binding Selected.DisplayFolder, FallbackValue=''}" FontSize="12"
+                                                 FontFamily="Cascadia Mono,Consolas,monospace" Foreground="{StaticResource MutedBrush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                                <TextBlock Text="Used by" FontSize="13" Foreground="{StaticResource FgBrush}" IsVisible="{Binding HasUsedBy}" />
+                                <ItemsControl ItemsSource="{Binding UsedBy}" IsVisible="{Binding HasUsedBy}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Button Classes="link" Content="{Binding}" CommandParameter="{Binding}"
+                                                    Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).OpenTrellisByIdCommand}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="No trellis uses it yet" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasUsedBy}" />
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Grid.Column="1" Classes="small" Content="Open definition" Command="{Binding EditCommand}" VerticalAlignment="Top"
+                                IsEnabled="{Binding !Selected.Missing, FallbackValue=False}" />
+                        <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
+                                Background="Transparent" Foreground="{StaticResource DangerBrush}"
+                                BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
+                    </Grid>
+
+                    <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding ConfirmingRemove}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="cell" Text="Take it off the Repos list? Sprig's copy of its definition goes with it; the folder's own sprig.cs is left where it is. Trellises that use it will say it's missing." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Classes="small" Content="Keep it" Command="{Binding CancelRemoveCommand}" />
+                                <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
+                                        Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Where the file lives: one switch -->
+                    <Border Classes="panel">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                            <Border Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="9" Padding="3" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <ToggleButton Classes="seg" Content="In the repo" IsChecked="{Binding !InSprig, Mode=OneWay}"
+                                                  Command="{Binding SetKeptCommand}" CommandParameter="repo" />
+                                    <ToggleButton Classes="seg" Content="In sprig" IsChecked="{Binding InSprig, Mode=OneWay}"
+                                                  Command="{Binding SetKeptCommand}" CommandParameter="sprig" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                <TextBlock Classes="cell" Text="{Binding KeptExplanation}" />
+                                <TextBlock Text="{Binding SwitchNote}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Running it, or why it doesn't -->
+                    <StackPanel Spacing="8" IsVisible="{Binding Check, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Classes="msg" Text="{Binding Check}" FontSize="13" TextWrapping="Wrap" Classes.bad="{Binding CheckBad}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding NeedsApproval}">
+                            <Button Classes="small" Content="Read it" Command="{Binding EditCommand}" />
+                            <Button Content="Approve" Command="{Binding ApproveCommand}" Background="{StaticResource WarnBrush}"
+                                    Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <UniformGrid Columns="2" IsVisible="{Binding HasModel}">
+                        <Border Classes="panel" Margin="0,0,7,14">
+                            <StackPanel Spacing="9">
+                                <TextBlock Classes="phead" Text="RUNS" />
+                                <ItemsControl ItemsSource="{Binding Runs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoFact">
+                                            <Grid ColumnDefinitions="110,*" Margin="0,3">
+                                                <TextBlock Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Detail}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="panel" Margin="7,0,0,14">
+                            <StackPanel Spacing="9">
+                                <TextBlock Classes="phead" Text="INFRA" />
+                                <TextBlock Classes="cell" Text="None" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasInfra}" />
+                                <ItemsControl ItemsSource="{Binding Infra}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoFact">
+                                            <Grid ColumnDefinitions="110,*" Margin="0,3">
+                                                <TextBlock Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Detail}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="panel" Margin="0,0,7,0">
+                            <StackPanel Spacing="9">
+                                <TextBlock Classes="phead" Text="OFFERS" />
+                                <TextBlock Classes="cell" Text="Nothing" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasOffers}" />
+                                <ItemsControl ItemsSource="{Binding Offers}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoFact">
+                                            <Grid ColumnDefinitions="110,*" Margin="0,3">
+                                                <TextBlock Classes="name" Text="{Binding Name}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Detail}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="panel" Margin="7,0,0,0">
+                            <StackPanel Spacing="9">
+                                <TextBlock Classes="phead" Text="NEEDS" />
+                                <TextBlock Classes="cell" Text="Nothing" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasNeeds}" />
+                                <ItemsControl ItemsSource="{Binding Needs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoFact">
+                                            <Grid ColumnDefinitions="110,*" Margin="0,3">
+                                                <TextBlock Classes="name" Text="{Binding Name}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Detail}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+                </StackPanel>
+            </ScrollViewer>
+
+            <ContentControl Content="{Binding Editor}" IsVisible="{Binding Editor.IsEditing}" Margin="24,20,24,16" />
+        </Grid>
+
+        <!-- Adding a repo: a folder and the ID trellises call it by -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelAddCommand}" />
+                <KeyBinding Gesture="Enter" Command="{Binding AddCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="640" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Add a repo" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="A folder with its own sprig.cs uses it. One without gets a definition kept in sprig, drafted from what's in the folder, so nothing is written to the repo. Switch where it's kept at any time." />
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="phead" Text="REPO FOLDER" />
+                        <controls:PathBox x:Name="AddPath" Path="{Binding AddFolder}" PickFolder="True" PickerTitle="Choose the repo's folder"
+                                          Placeholder="path/to/a/repo" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="phead" Text="ID" />
+                        <TextBox Text="{Binding AddId}" PlaceholderText="e.g. shop-web" />
+                        <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="What trellises call it: trellis.UseRepo(&quot;the-id&quot;). Several can describe the same folder." />
+                    </StackPanel>
+                    <TextBlock Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
+                               IsVisible="{Binding AddFailed}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button Classes="small" Content="Cancel" Command="{Binding CancelAddCommand}" />
+                        <Button Content="Add to Repos" Command="{Binding AddCommand}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

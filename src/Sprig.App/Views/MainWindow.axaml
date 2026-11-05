@@ -127,8 +127,11 @@
                                         CommandParameter="{Binding}">
                                     <Border Classes="navitem" Classes.active="{Binding IsActive}">
                                         <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="14"
-                                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                                            <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}" FontSize="14" Foreground="{StaticResource FgBrush}" />
+                                                <TextBlock Text="{Binding NavSubtitle}" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                                           IsVisible="{Binding HasNavSubtitle}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
                                             <Border Grid.Column="1" IsVisible="{Binding ShowNavCount}"
                                                     Background="{StaticResource ButtonBgBrush}" CornerRadius="10"
                                                     Padding="7,1" VerticalAlignment="Center">
@@ -148,8 +151,10 @@
                                                 AutomationProperties.AutomationId="nav:Sprouts">
                                             <Border Classes="navitem" Classes.active="{Binding OverviewIsCurrent}">
                                                 <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Text="Sprouts" FontSize="14" VerticalAlignment="Center"
-                                                               Foreground="{StaticResource FgBrush}" />
+                                                    <StackPanel Spacing="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="Sprouts" FontSize="14" Foreground="{StaticResource FgBrush}" />
+                                                        <TextBlock Text="running copies" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                                    </StackPanel>
                                                     <TextBlock Grid.Column="1" Text="{Binding Count}" FontSize="11" VerticalAlignment="Center"
                                                                Foreground="{StaticResource MutedBrush}" />
                                                 </Grid>

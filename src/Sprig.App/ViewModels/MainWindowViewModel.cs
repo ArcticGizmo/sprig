@@ -16,6 +16,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public IReadOnlyList<object> NavItems { get; }
 
     public HomeViewModel Home { get; }
+    public ReposViewModel Repos { get; }
     public TrellisesViewModel Trellises { get; }
     public SproutsViewModel Sprouts { get; }
     public SproutsNavViewModel SproutsNav { get; }
@@ -49,18 +50,39 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         HostStatus = services.HostStatus;
         Home = new HomeViewModel();
+        Repos = new ReposViewModel(services);
         Trellises = new TrellisesViewModel(services);
         Sprouts = new SproutsViewModel(services);
         EditorSpike = new EditorSpikeViewModel();
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
 
-        Pages = [Home, Trellises, Sprouts, EditorSpike, Settings, About];
+        // The pages link to each other: a trellis to its repos, a repo to the trellises that use it, and a trellis to
+        // the form that starts a sprout of it.
+        Repos.OpenTrellis = id =>
+        {
+            CurrentPage = Trellises;
+            Trellises.Show(id);
+        };
+        Trellises.OpenRepo = id =>
+        {
+            CurrentPage = Repos;
+            Repos.Show(id);
+        };
+        Trellises.StartSprout = id =>
+        {
+            CurrentPage = Sprouts;
+            Sprouts.NewTrellis = id;
+            Sprouts.OpenAddCommand.Execute(null);
+        };
+
+        Pages = [Home, Repos, Trellises, Sprouts, EditorSpike, Settings, About];
         SproutsNav = new SproutsNavViewModel(services, Sprouts, () => CurrentPage = Sprouts);
         NavItems =
         [
             Home,
             new NavHeaderViewModel("DEFINE"),
+            Repos,
             Trellises,
             new NavHeaderViewModel("RUN"),
             SproutsNav,

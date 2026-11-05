@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -7,6 +8,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
+using Sprig.Engine.Sprouts;
 using Sprig.Engine.Store;
 using Sprig.Engine.Trellises;
 using Sprig.Model;
@@ -16,49 +18,12 @@ namespace Sprig.App.ViewModels;
 /// <param name="Name">Its registered ID, which its sprouts are keyed by.</param>
 /// <param name="NeedsApproval">The file's current content isn't approved, so it hasn't run yet.</param>
 /// <param name="InSprig">Kept in sprig's store rather than a folder of the user's.</param>
-public sealed record TrellisItem(string Name, string Path, bool NeedsApproval = false, bool InSprig = false)
+/// <param name="Caption">Its sprouts at a glance, or why it can't run yet.</param>
+public sealed record TrellisItem(string Name, string Path, bool NeedsApproval = false, bool InSprig = false, string Caption = "", bool CaptionIsGood = false)
 {
-    public string DisplayPath => InSprig ? "in sprig" : Path.Replace('\\', '/');
-    public string Folder => InSprig ? "in sprig" : System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? "";
+    public string DisplayPath => Path.Replace('\\', '/');
+    public string Kept => InSprig ? "in sprig" : "in a folder";
     public bool Missing => !File.Exists(Path);
-}
-
-/// <summary>One repo of the selected trellis, and where its definition comes from.</summary>
-/// <param name="Path">The repo as the trellis names it.</param>
-/// <param name="File">The definition file it uses, when there is one.</param>
-/// <param name="Use">The Repos-list entry it comes from, when the trellis names it with <c>UseRepo</c>.</param>
-/// <param name="InRepo">Its definition is the folder's own sprig.cs, rather than one kept in sprig.</param>
-public sealed record TrellisRepoRow(string Path, string Dir, string? File, string? Use, bool InRepo)
-{
-    public string Name => Use ?? System.IO.Path.GetFileName(Dir.TrimEnd('/', '\\'));
-    public string DisplayDir => Dir.Replace('\\', '/');
-    public string Source => (Use, File) switch
-    {
-        ({ } use, null) => $"'{use}' isn't in the Repos list",
-        (_, null) => "No sprig.cs yet",
-        _ => InRepo ? "in repo" : "in sprig",
-    };
-    public bool InSprig => File is not null && !InRepo;
-    public bool Undescribed => File is null;
-    public bool CanEdit => File is not null && System.IO.File.Exists(File);
-    /// <summary>Only an entry on the Repos list can switch where its file is kept.</summary>
-    public bool CanSwitch => Use is not null && File is not null;
-    public string SwitchLabel => InRepo ? "Keep in sprig" : "Put in the repo";
-    public string SwitchTip => InRepo
-        ? "Use a copy kept in sprig, to try changes without committing them. Every trellis that uses this repo follows."
-        : "Use the folder's own sprig.cs; if it has none, sprig's copy is written there, uncommitted. Every trellis that uses this repo follows.";
-    public bool CanAddToRepos => Use is null && System.IO.Directory.Exists(Dir);
-}
-
-/// <summary>One repo in sprig's Repos list.</summary>
-public sealed record RepoItem(string Id, string Folder, bool InRepo, string DefinitionFile)
-{
-    public string DisplayFolder => Folder.Replace('\\', '/');
-    public string DisplayFile => DefinitionFile.Replace('\\', '/');
-    public string Kind => InRepo ? "in repo" : "in sprig";
-    public string Usage => $"trellis.UseRepo(\"{Id}\")";
-    public bool Missing => !File.Exists(DefinitionFile);
-    public string SwitchLabel => InRepo ? "Keep in sprig" : "Put in the repo";
 }
 
 /// <param name="Changed">An earlier version was approved; this content wasn't.</param>
@@ -75,10 +40,14 @@ public sealed record PendingTrustItem(string Path, string Sha256, bool Changed, 
     };
 }
 
+public enum TrellisTab { Overview, Values, Ports, Code }
+
+public enum StatusKind { None, Good, Warn, Bad }
+
 /// <summary>
-/// The Trellises page: register trellis files, and see what a sprout of the selected one would get. Definitions only
-/// run once their exact content is approved; anything that isn't is listed for the user to approve first. Registering
-/// doesn't need approval, so a trellis is in the list (and can be read) before anything in it has run.
+/// The Trellises page. A trellis opens on a summary: what it runs, whether it can run, how its sprouts run, and a way
+/// to start one. What every app gets, each port, and the code sit in their own tabs. Definitions only run once their
+/// exact content is approved; anything that isn't is listed for the user to approve first.
 /// </summary>
 public partial class TrellisesViewModel : PageViewModel
 {
@@ -87,37 +56,49 @@ public partial class TrellisesViewModel : PageViewModel
     bool _quietSelection;
 
     public override string Title => "Trellises";
+    public override string? NavSubtitle => "repos run together";
 
     public ObservableCollection<TrellisItem> Trellises { get; } = [];
     public ObservableCollection<PendingTrustItem> PendingTrust { get; } = [];
     public ObservableCollection<ProblemRow> LoadProblems { get; } = [];
-    public ObservableCollection<TrellisRepoRow> Repos { get; } = [];
+    public ObservableCollection<RepoCard> Cards { get; } = [];
+    public ObservableCollection<AddedRow> Added { get; } = [];
+    public ObservableCollection<PolicyRow> Policies { get; } = [];
+    public ObservableCollection<SproutRow> SproutsOfIt { get; } = [];
     public ObservableCollection<string> NewRepoDirs { get; } = [];
 
-    [ObservableProperty] private bool _hasRepos;
+    public DefinitionEditorViewModel Editor { get; }
 
-    // ---- editing a definition ----
+    /// <summary>Opens a repo on the Repos page, by ID.</summary>
+    public Action<string>? OpenRepo { get; set; }
+
+    /// <summary>Opens the new-sprout form with this trellis chosen, by ID.</summary>
+    public Action<string>? StartSprout { get; set; }
+
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDirty))]
-    private bool _isEditing;
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDirty))]
-    private string _editorText = "";
-    [ObservableProperty] private string _editingTitle = "";
-    [ObservableProperty] private string _editingPath = "";
-    [ObservableProperty] private string _editingNote = "";
-    [ObservableProperty] private string _editorStatus = "";
-    [ObservableProperty] private bool _editorStatusBad;
-    [ObservableProperty] private bool _confirmingDiscard;
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDirty))]
-    private string _savedText = "";
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(NothingSelected))]
+    private TrellisItem? _selected;
 
-    public bool IsDirty => IsEditing && EditorText != SavedText;
+    [ObservableProperty] private TrellisTab _tab;
+    [ObservableProperty] private string _description = "";
+    [ObservableProperty] private string _status = "";
+    [ObservableProperty] private StatusKind _statusKind;
+    [ObservableProperty] private bool _canStart;
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private PlanView? _plan;
+    [ObservableProperty] private bool _hasPendingTrust;
+    [ObservableProperty] private bool _pendingIsTrellis;
+    [ObservableProperty] private bool _hasLoadProblems;
+    [ObservableProperty] private bool _hasAdded;
+    [ObservableProperty] private bool _hasSprouts;
+    [ObservableProperty] private bool _confirmingRemove;
 
-    public Sprig.App.Authoring.LanguageHostClient Language => _services.Language;
+    // ---- adding a trellis ----
+    [ObservableProperty] private bool _isAddOpen;
+    [ObservableProperty] private string _newPath = "";
+    [ObservableProperty] private string _addMessage = "";
+    [ObservableProperty] private bool _addFailed;
 
-    // ---- a new trellis kept in sprig ----
     [ObservableProperty] private bool _isNewOpen;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string _newRepoPath = "";
@@ -127,85 +108,73 @@ public partial class TrellisesViewModel : PageViewModel
     [ObservableProperty] private string _newMessage = "";
     [ObservableProperty] private bool _newFailed;
 
-    [ObservableProperty] private bool _confirmingRemove;
-
-    // ---- the Repos list ----
-    public ObservableCollection<RepoItem> RepoEntries { get; } = [];
-    public ObservableCollection<string> RepoUsedBy { get; } = [];
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasRepoSelection), nameof(NothingSelected))]
-    private RepoItem? _selectedRepo;
-    [ObservableProperty] private string _repoCheck = "";
-    [ObservableProperty] private bool _repoCheckBad;
-    [ObservableProperty] private bool _hasRepoUsedBy;
-    [ObservableProperty] private bool _confirmingRepoDelete;
-
-    [ObservableProperty] private bool _isRepoFormOpen;
-    [ObservableProperty] private string _repoFormFolder = "";
-    [ObservableProperty] private string _repoFormId = "";
-    [ObservableProperty] private string _repoFormMessage = "";
-    [ObservableProperty] private bool _repoFormFailed;
-
-    public bool HasRepoSelection => SelectedRepo is not null;
-    public bool NothingSelected => Selected is null && SelectedRepo is null;
-    public bool HasRepoEntries => RepoEntries.Count > 0;
-    public string RepoFormTitle => "Add a repo";
-    public string RepoFormHelp =>
-        "A folder with its own sprig.cs uses it. One without gets a definition kept in sprig, drafted from what's in the folder, so nothing is written to the repo. Switch where it's kept at any time.";
-
-    // The ID follows the folder until it's typed over.
-    string _suggestedRepoId = "";
-
-    partial void OnRepoFormFolderChanged(string value)
-    {
-        var name = Path.GetFileName(value.Trim().TrimEnd('/', '\\'));
-        if (name.Length == 0 || (RepoFormId.Length > 0 && RepoFormId != _suggestedRepoId)) return;
-        _suggestedRepoId = _services.Stored.UnusedRepoId(name);
-        RepoFormId = _suggestedRepoId;
-    }
-
-    [ObservableProperty] private TrellisItem? _selected;
-    [ObservableProperty] private bool _isAddOpen;
-    [ObservableProperty] private string _newPath = "";
-    [ObservableProperty] private string _addMessage = "";
-    [ObservableProperty] private bool _addFailed;
-    [ObservableProperty] private bool _isBusy;
-    [ObservableProperty] private string _busyText = "";
-    [ObservableProperty] private PlanView? _plan;
-    [ObservableProperty] private bool _hasPendingTrust;
-    [ObservableProperty] private bool _pendingIsTrellis;
-    [ObservableProperty] private bool _hasLoadProblems;
-
     public bool IsEmpty => Trellises.Count == 0;
     public bool HasSelection => Selected is not null;
+    public bool NothingSelected => Selected is null;
+    public bool HasCards => Cards.Count > 0;
+    public bool ShowsPlan => Plan is not null;
+    public bool IsOverview => Tab == TrellisTab.Overview;
+    public bool IsValues => Tab == TrellisTab.Values;
+    public bool IsPorts => Tab == TrellisTab.Ports;
+    public bool IsCode => Tab == TrellisTab.Code;
+    public bool StatusGood => StatusKind == StatusKind.Good;
+    public bool StatusWarn => StatusKind == StatusKind.Warn;
+    public bool StatusBad => StatusKind == StatusKind.Bad;
+    public string ValuesTabLabel => Plan is { } p ? $"Values  {p.Apps.Sum(a => a.Rows.Count)}" : "Values";
+    public string PortsTabLabel => Plan is { } p ? $"Ports  {p.Ports.Count}" : "Ports";
+
+    partial void OnStatusKindChanged(StatusKind value)
+    {
+        OnPropertyChanged(nameof(StatusGood));
+        OnPropertyChanged(nameof(StatusWarn));
+        OnPropertyChanged(nameof(StatusBad));
+    }
 
     public TrellisesViewModel(AppServices services)
     {
         _services = services;
-        Refresh();
+        Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
+        Editor.Closed += () => Tab = TrellisTab.Overview;
+        Refresh(null, replan: true);
     }
 
-    protected override void OnActivated() => Refresh();
+    protected override void OnActivated() => Refresh(Selected?.Name, replan: !Editor.IsDirty);
 
-    void Refresh()
+    /// <summary>Show one trellis, by ID.</summary>
+    public void Show(string id)
     {
-        RefreshRepoEntries();
-        if (SelectedRepo is null) Refresh(Selected?.Name, replan: true);
+        if (Editor.IsDirty) return;
+        if (Editor.IsEditing) Editor.CloseCommand.Execute(null);
+        Tab = TrellisTab.Overview;
+        Refresh(id, replan: true);
     }
 
     /// <param name="replan">False when the caller shows what goes with the selection itself.</param>
     void Refresh(string? keep, bool replan)
     {
-        var previous = Selected;
-        Trellises.Clear();
-        foreach (var e in _services.Trellises.List())
-            Trellises.Add(new TrellisItem(e.Id, e.Path, NeedsApproval(e.Path), _services.Stored.IsKept(e.Path)));
-        NavCount = Trellises.Count;
-        OnPropertyChanged(nameof(IsEmpty));
-        _quietSelection = !replan;
-        try { Selected = Trellises.FirstOrDefault(t => t.Name == keep) ?? previous ?? Trellises.FirstOrDefault(); }
+        var previous = Selected?.Name;
+        var sprouts = _services.Sprouts.List();
+        _quietSelection = true;
+        try
+        {
+            Trellises.Clear();
+            foreach (var e in _services.Trellises.List())
+            {
+                var needsApproval = NeedsApproval(e.Path);
+                var mine = sprouts.Where(s => s.Trellis == e.Id).ToArray();
+                var up = mine.Count(s => s.State == SproutState.Up);
+                var caption = needsApproval ? "not approved yet"
+                    : mine.Length == 0 ? "no sprouts"
+                    : up > 0 ? $"{Count(up, "sprout")} up"
+                    : $"{Count(mine.Length, "sprout")}, none up";
+                Trellises.Add(new TrellisItem(e.Id, e.Path, needsApproval, _services.Stored.IsKept(e.Path), caption, up > 0));
+            }
+            NavCount = Trellises.Count;
+            OnPropertyChanged(nameof(IsEmpty));
+            Selected = Trellises.FirstOrDefault(t => t.Name == keep) ?? Trellises.FirstOrDefault(t => t.Name == previous) ?? Trellises.FirstOrDefault();
+        }
         finally { _quietSelection = false; }
+        if (replan && Selected is not null) _ = PlanSelectedAsync();
     }
 
     bool NeedsApproval(string path)
@@ -217,188 +186,258 @@ public partial class TrellisesViewModel : PageViewModel
 
     partial void OnSelectedChanged(TrellisItem? value)
     {
-        OnPropertyChanged(nameof(HasSelection));
-        OnPropertyChanged(nameof(NothingSelected));
-        if (value is not null) SelectedRepo = null;
+        ConfirmingRemove = false;
         if (value is not null && !_quietSelection) _ = PlanSelectedAsync();
     }
 
-    partial void OnSelectedRepoChanged(RepoItem? value)
+    partial void OnTabChanged(TrellisTab value)
     {
-        ConfirmingRepoDelete = false;
-        if (value is null) return;
-        Selected = null;
+        OnPropertyChanged(nameof(IsOverview));
+        OnPropertyChanged(nameof(IsValues));
+        OnPropertyChanged(nameof(IsPorts));
+        OnPropertyChanged(nameof(IsCode));
+        if (value == TrellisTab.Code && !Editor.IsEditing) OpenTrellisCode();
+    }
+
+    [RelayCommand]
+    private void ShowTab(TrellisTab tab) => Tab = tab;
+
+    partial void OnPlanChanged(PlanView? value)
+    {
+        OnPropertyChanged(nameof(ShowsPlan));
+        OnPropertyChanged(nameof(ValuesTabLabel));
+        OnPropertyChanged(nameof(PortsTabLabel));
+    }
+
+    // ---- planning ----
+
+    [RelayCommand]
+    private Task Replan() => PlanSelectedAsync();
+
+    int _planVersion;
+
+    async Task PlanSelectedAsync()
+    {
+        if (Selected is not { } trellis) return;
+        var version = ++_planVersion;
         ClearResults();
-        Repos.Clear();
-        HasRepos = false;
-        RepoUsedBy.Clear();
-        foreach (var id in _services.Authoring.UsedBy(value.Id)) RepoUsedBy.Add(id);
-        HasRepoUsedBy = RepoUsedBy.Count > 0;
-        _ = CheckRepoAsync(value);
-    }
-
-    void RefreshRepoEntries(string? keep = null)
-    {
-        var selected = keep ?? SelectedRepo?.Id;
-        RepoEntries.Clear();
-        foreach (var e in _services.Stored.Repos()) RepoEntries.Add(new RepoItem(e.Id, e.Folder, e.InRepo, e.DefinitionFile));
-        OnPropertyChanged(nameof(HasRepoEntries));
-        if (selected is not null) SelectedRepo = RepoEntries.FirstOrDefault(r => r.Id == selected);
-    }
-
-    /// <summary>Run the repo's definition on its own and say what it describes, so a mistake shows before any trellis
-    /// uses it.</summary>
-    async Task CheckRepoAsync(RepoItem repo)
-    {
-        if (repo.Missing)
+        Description = "";
+        if (trellis.Missing)
         {
-            SayRepoCheck($"{repo.DefinitionFile.Replace('\\', '/')} isn't there.", bad: true);
+            ShowSummary(null, null);
+            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, "the trellis file has moved or been deleted; remove it and add it again", new SourceLocation(trellis.Path, 0))], trellis.Path);
+            SetStatus();
             return;
         }
-        SayRepoCheck("Running it…", bad: false);
-        var result = await AppServices.RunAsync(() => _services.Definitions.Evaluate(repo.DefinitionFile));
-        if (SelectedRepo?.Id != repo.Id) return;
-        switch (result)
-        {
-            case Evaluated { Model: RepoModel model }:
-                var apps = model.Apps.Count(a => !a.Job);
-                var jobs = model.Apps.Count(a => a.Job);
-                SayRepoCheck($"It runs: '{model.Name}' with {apps} app{(apps == 1 ? "" : "s")}"
-                    + (jobs > 0 ? $", {jobs} job{(jobs == 1 ? "" : "s")}" : "")
-                    + (model.Containers.Count > 0 ? $", {model.Containers.Count} container{(model.Containers.Count == 1 ? "" : "s")}" : "")
-                    + (model.Imports.Count > 0 ? $"; it imports {string.Join(", ", model.Imports.Select(i => i.Name))}" : "") + ".", bad: false);
-                break;
-            case Evaluated:
-                SayRepoCheck("It describes a trellis, not a repo (it calls Trellis.Describe).", bad: true);
-                break;
-            case NeedsTrust:
-                SayRepoCheck("Not approved yet, so it hasn't run. Open it to read it; saving it from the editor approves it.", bad: true);
-                break;
-            case Failed failed:
-                SayRepoCheck($"It doesn't run: {failed.Reason}. {FirstError(failed.Output)}", bad: true);
-                break;
-            case Rejected rejected:
-                SayRepoCheck(string.Join(" ", rejected.Violations.Select(v => $"Line {v.Line}: {v.Reason}.")), bad: true);
-                break;
-        }
-    }
 
-    void SayRepoCheck(string message, bool bad)
-    {
-        RepoCheck = message;
-        RepoCheckBad = bad;
-    }
-
-    [RelayCommand]
-    private void EditSelectedRepo()
-    {
-        if (SelectedRepo is not { Missing: false } repo) return;
-        OpenEditor(repo.DefinitionFile, $"{repo.Id}: {repo.Kind}",
-            repo.InRepo
-                ? "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved."
-                : "In sprig, so no branch can change it. Saving approves what you saved.");
-    }
-
-    /// <summary>Switch where the selected repo's definition is kept; every trellis that uses it follows.</summary>
-    [RelayCommand]
-    private async Task SwitchSelectedRepo()
-    {
-        if (SelectedRepo is not { } repo) return;
-        if (await SwitchStorage(repo.Id, repo.InRepo) is { } error)
-        {
-            SayRepoCheck(error, bad: true);
-            return;
-        }
-        RefreshRepoEntries(repo.Id);
-    }
-
-    async Task<string?> SwitchStorage(string id, bool toSprig)
-    {
+        IsBusy = true;
+        SetStatus();
         try
         {
-            await AppServices.RunAsync(() => toSprig ? _services.Authoring.KeepInSprig(id) : _services.Authoring.PutInRepo(id));
-            return null;
+            var loaded = await AppServices.RunAsync(() => _services.Loader.Load(trellis.Path));
+            if (version != _planVersion) return;
+            Description = loaded.Trellis is null ? "" : TrellisSummary.Description(loaded);
+            if (loaded.Untrusted.Count > 0)
+            {
+                ShowSummary(loaded, null);
+                AskForTrust(loaded.Untrusted, PlanSelectedAsync);
+                return;
+            }
+            if (loaded.Trellis is null || loaded.Problems.Count > 0)
+            {
+                ShowSummary(loaded, null);
+                ShowLoadProblems(loaded.Problems, trellis.Path);
+                return;
+            }
+            var settings = _services.Settings.Get();
+            var plan = await AppServices.RunAsync(() =>
+            {
+                var problems = new List<PlanProblem>();
+                var built = Planner.Build(new PlanInput(loaded.Trellis, loaded.Repos, "plan", settings, PortAllocator.Listening(),
+                    ComposeFiles: loaded.ComposeFiles(problems)));
+                if (!built.HasErrors) problems.AddRange(_services.Sprouts.CheckFiles(built, loaded.RepoDirs));
+                return built with { Problems = [.. problems, .. built.Problems] };
+            });
+            if (version != _planVersion) return;
+            Plan = new PlanView(plan, Path.GetDirectoryName(trellis.Path)!);
+            ShowSummary(loaded, plan);
         }
-        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        finally
         {
-            return e.Message;
+            if (version == _planVersion)
+            {
+                IsBusy = false;
+                SetStatus();
+            }
         }
     }
 
-    [RelayCommand]
-    private void OpenRepoForm()
+    void ShowSummary(LoadedTrellis? loaded, Plan? plan)
     {
-        _suggestedRepoId = "";
-        RepoFormId = "";
-        RepoFormFolder = "";
-        RepoFormMessage = "";
-        RepoFormFailed = false;
-        IsRepoFormOpen = true;
+        Cards.Clear();
+        if (loaded is not null)
+            foreach (var card in TrellisSummary.Cards(loaded, plan, _services.Stored)) Cards.Add(card);
+        OnPropertyChanged(nameof(HasCards));
+        Added.Clear();
+        Policies.Clear();
+        if (plan is not null)
+        {
+            foreach (var row in TrellisSummary.Added(plan)) Added.Add(row);
+            foreach (var row in TrellisSummary.Policies(plan)) Policies.Add(row);
+        }
+        HasAdded = Added.Count > 0;
+        SproutsOfIt.Clear();
+        if (Selected is { } trellis)
+            foreach (var s in _services.Sprouts.List().Where(s => s.Trellis == trellis.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+                SproutsOfIt.Add(new SproutRow(s.Name, s.State switch
+                {
+                    SproutState.Up => "up",
+                    SproutState.Starting => "coming up",
+                    SproutState.Failed => $"failed{(s.Error is { } e ? $": {e.Split('\n')[0]}" : "")}",
+                    _ => "down",
+                }, s.State == SproutState.Up, s.State == SproutState.Failed));
+        HasSprouts = SproutsOfIt.Count > 0;
+    }
+
+    /// <summary>The line under the header: whether a sprout can start, and if not, the one thing in the way.</summary>
+    void SetStatus()
+    {
+        var errors = Plan?.Problems.Count(p => p.IsError) ?? 0;
+        var warnings = Plan?.Problems.Count(p => !p.IsError) ?? 0;
+        (Status, StatusKind) = this switch
+        {
+            { Selected: null } => ("", StatusKind.None),
+            { IsBusy: true } => ("Checking…", StatusKind.None),
+            { HasPendingTrust: true } => ("Needs approval: its code hasn't run yet.", StatusKind.Warn),
+            { HasLoadProblems: true } => ($"Can't plan: {Count(LoadProblems.Count, "problem")} below.", StatusKind.Bad),
+            _ when errors > 0 => ($"{Count(errors, "problem")} to fix before a sprout can start; see Values.", StatusKind.Bad),
+            { Plan: not null } => ($"Ready to start{(warnings > 0 ? $", with {Count(warnings, "warning")} on Values" : "")}. Checked at {DateTime.Now:HH:mm}.", StatusKind.Good),
+            _ => ("", StatusKind.None),
+        };
+        CanStart = StatusKind == StatusKind.Good;
+    }
+
+    static string Count(int n, string what) => $"{n} {what}{(n == 1 ? "" : "s")}";
+
+    void AskForTrust(IEnumerable<NeedsTrust> pending, Func<Task> then)
+    {
+        PendingTrust.Clear();
+        foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
+        HasPendingTrust = PendingTrust.Count > 0;
+        // Only a trellis that has run can say which repos it uses, so their definitions are a second ask.
+        PendingIsTrellis = Selected is { } trellis && PendingTrust.Any(p => string.Equals(p.Path, trellis.DisplayPath, StringComparison.OrdinalIgnoreCase));
+        _afterApproval = then;
     }
 
     [RelayCommand]
-    private void CancelRepoForm() => IsRepoFormOpen = false;
+    private async Task ApproveAll()
+    {
+        foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        Refresh(Selected?.Name, replan: false);
+        if (_afterApproval is { } next)
+        {
+            _afterApproval = null;
+            await next();
+        }
+    }
+
+    void ShowLoadProblems(IEnumerable<PlanProblem> problems, string trellisPath)
+    {
+        LoadProblems.Clear();
+        foreach (var row in PlanView.Rows(problems, Path.GetDirectoryName(trellisPath)!)) LoadProblems.Add(row);
+        HasLoadProblems = LoadProblems.Count > 0;
+    }
+
+    void ClearResults()
+    {
+        Plan = null;
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        LoadProblems.Clear();
+        HasLoadProblems = false;
+    }
+
+    // ---- what the header and cards offer ----
 
     [RelayCommand]
-    private async Task SubmitRepoForm()
+    private void Start()
     {
-        RepoFormMessage = "";
-        RepoFormFailed = false;
-        var folder = RepoFormFolder.Trim();
-        var id = RepoFormId.Trim();
-        if (folder.Length == 0 || !Directory.Exists(folder))
+        if (Selected is { } trellis && CanStart) StartSprout?.Invoke(trellis.Name);
+    }
+
+    [RelayCommand]
+    private void EditCode() => Tab = TrellisTab.Code;
+
+    [RelayCommand]
+    private void OpenRepoById(string? id)
+    {
+        if (id is not null) OpenRepo?.Invoke(id);
+    }
+
+    /// <summary>A repo the trellis names by folder: its own sprig.cs, opened here.</summary>
+    [RelayCommand]
+    private void EditRepoFile(RepoCard? card)
+    {
+        if (card is null) return;
+        var file = Path.Combine(card.Folder, TrellisLoader.RepoDefinitionFile);
+        if (!File.Exists(file)) return;
+        OpenInEditor(file, $"{card.Name}: in repo", "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved.");
+    }
+
+    /// <summary>Bring a repo the trellis names by folder in through the Repos list, so where its file is kept can be
+    /// switched.</summary>
+    [RelayCommand]
+    private async Task AddToRepos(RepoCard? card)
+    {
+        if (card is null || Selected is not { } trellis) return;
+        try { await AppServices.RunAsync(() => _services.Authoring.UseFromRepos(trellis.Path, card.Path)); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException)
         {
-            FailRepoForm("Choose the repo's folder.");
+            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, e.Message, new SourceLocation(trellis.Path, 0))], trellis.Path);
+            SetStatus();
             return;
         }
-        if (Ids.Check(id, "a repo ID") is { } bad)
-        {
-            FailRepoForm(bad);
-            return;
-        }
-        RepoEntry entry;
-        try
-        {
-            entry = await AppServices.RunAsync(() => _services.Authoring.AddRepo(folder, id));
-        }
-        catch (Exception e) when (e is ArgumentException or IOException)
-        {
-            FailRepoForm(e.Message);
-            return;
-        }
-        IsRepoFormOpen = false;
-        RefreshRepoEntries(entry.Id);
-        if (!entry.InRepo) EditSelectedRepo();
+        await PlanSelectedAsync();
     }
 
-    void FailRepoForm(string message)
+    // ---- the code ----
+
+    void OpenTrellisCode()
     {
-        RepoFormFailed = true;
-        RepoFormMessage = message;
+        if (Selected is not { } trellis || trellis.Missing) return;
+        OpenInEditor(trellis.Path, $"{trellis.Name}: the trellis",
+            trellis.InSprig ? "In sprig. Saving approves what you saved, and checks it again." : "In your folder, so saving changes the file there. Saving approves what you saved, and checks it again.");
     }
 
-    /// <summary>Taking a repo written in sprig off the list deletes it, so that asks first.</summary>
-    [RelayCommand]
-    private void DeleteSelectedRepo()
+    void OpenInEditor(string file, string title, string note)
     {
-        if (SelectedRepo is not { } repo) return;
-        if (!ConfirmingRepoDelete)
+        if (Editor.Open(file, title, note) is { } error && Selected is { } trellis)
         {
-            ConfirmingRepoDelete = true;
+            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, error, new SourceLocation(file, 0))], trellis.Path);
+            SetStatus();
             return;
         }
-        ConfirmingRepoDelete = false;
-        _services.Authoring.DeleteRepo(repo.Id);
-        SelectedRepo = null;
-        RefreshRepoEntries();
+        Tab = TrellisTab.Code;
     }
 
-    [RelayCommand]
-    private void CancelRepoDelete() => ConfirmingRepoDelete = false;
+    async Task<(string, bool)> AfterSaveAsync()
+    {
+        await PlanSelectedAsync();
+        var errors = Plan?.Problems.Count(p => p.IsError) ?? 0;
+        if (HasPendingTrust) return ("Saved. Something it uses needs approving: see Overview.", true);
+        if (HasLoadProblems) return ($"Saved, but it doesn't plan: {LoadProblems.FirstOrDefault()?.Message}", true);
+        if (errors > 0) return ($"Saved. The plan has {Count(errors, "problem")}: see Values.", true);
+        return ($"Saved, and it plans. {Plan?.Summary}", false);
+    }
+
+    // ---- adding and removing trellises ----
 
     [RelayCommand]
     private void OpenAdd()
     {
+        IsNewOpen = false;
         NewPath = "";
         AddMessage = "";
         AddFailed = false;
@@ -407,54 +446,6 @@ public partial class TrellisesViewModel : PageViewModel
 
     [RelayCommand]
     private void CancelAdd() => IsAddOpen = false;
-
-    [RelayCommand]
-    private Task Replan() => PlanSelectedAsync();
-
-    async Task PlanSelectedAsync()
-    {
-        if (Selected is not { } trellis) return;
-        ClearResults();
-        if (trellis.Missing)
-        {
-            Repos.Clear();
-            HasRepos = false;
-            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, "the trellis file has moved or been deleted; remove it and add it again", new SourceLocation(trellis.Path, 0))], trellis.Path);
-            return;
-        }
-
-        IsBusy = true;
-        BusyText = "Running the definitions…";
-        try
-        {
-            var loaded = await AppServices.RunAsync(() => _services.Loader.Load(trellis.Path));
-            ShowRepos(loaded);
-            if (loaded.Untrusted.Count > 0)
-            {
-                AskForTrust(loaded.Untrusted, PlanSelectedAsync);
-                return;
-            }
-            if (loaded.Trellis is null || loaded.Problems.Count > 0)
-            {
-                ShowLoadProblems(loaded.Problems, trellis.Path);
-                return;
-            }
-            var settings = _services.Settings.Get();
-            var plan = await AppServices.RunAsync(() =>
-            {
-                var problems = new System.Collections.Generic.List<PlanProblem>();
-                var built = Planner.Build(new PlanInput(loaded.Trellis, loaded.Repos, "plan", settings, PortAllocator.Listening(),
-                    ComposeFiles: loaded.ComposeFiles(problems)));
-                if (!built.HasErrors) problems.AddRange(_services.Sprouts.CheckFiles(built, loaded.RepoDirs));
-                return built with { Problems = [.. problems, .. built.Problems] };
-            });
-            Plan = new PlanView(plan, Path.GetDirectoryName(trellis.Path)!);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
 
     [RelayCommand]
     private async Task Add()
@@ -470,7 +461,6 @@ public partial class TrellisesViewModel : PageViewModel
         path = LongPath.Of(path);
 
         IsBusy = true;
-        BusyText = "Reading the trellis…";
         DefinitionResult result;
         try { result = await AppServices.RunAsync(() => _services.Definitions.Evaluate(path)); }
         finally { IsBusy = false; }
@@ -482,7 +472,10 @@ public partial class TrellisesViewModel : PageViewModel
                 CloseAdd();
                 Refresh(guessed.Id, replan: false);
                 ClearResults();
+                Description = "";
+                ShowSummary(null, null);
                 AskForTrust([pending], PlanSelectedAsync);
+                SetStatus();
                 return;
             case Evaluated { Model: TrellisModel model }:
                 var entry = _services.Trellises.Add(_services.Trellises.UnusedId(model.Name, path), path);
@@ -501,24 +494,25 @@ public partial class TrellisesViewModel : PageViewModel
         }
     }
 
-    [RelayCommand]
-    private async Task ApproveAll()
+    void CloseAdd()
     {
-        foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
-        PendingTrust.Clear();
-        HasPendingTrust = false;
-        Refresh(Selected?.Name, replan: false);
-        if (_afterApproval is { } next)
-        {
-            _afterApproval = null;
-            await next();
-        }
+        IsAddOpen = false;
+        NewPath = "";
+        AddMessage = "";
+        AddFailed = false;
+    }
+
+    void Fail(string message)
+    {
+        AddFailed = true;
+        AddMessage = message;
     }
 
     /// <summary>A trellis kept in sprig exists nowhere else, so removing one asks first.</summary>
     [RelayCommand]
     private void Remove(TrellisItem? item)
     {
+        item ??= Selected;
         if (item is null) return;
         if (item.InSprig && !ConfirmingRemove)
         {
@@ -529,171 +523,12 @@ public partial class TrellisesViewModel : PageViewModel
         _services.Authoring.RemoveTrellis(item.Name);
         if (Selected == item) Selected = null;
         ClearResults();
-        Repos.Clear();
-        HasRepos = false;
-        Refresh();
+        ShowSummary(null, null);
+        Refresh(null, replan: true);
     }
 
     [RelayCommand]
     private void CancelRemove() => ConfirmingRemove = false;
-
-    void ShowRepos(LoadedTrellis loaded)
-    {
-        Repos.Clear();
-        foreach (var reference in loaded.Trellis?.Repos ?? [])
-        {
-            if (reference.Use is { } use)
-            {
-                var entry = _services.Stored.Repo(use);
-                Repos.Add(new TrellisRepoRow(reference.Path, entry?.Folder ?? "", entry?.DefinitionFile, use, entry?.InRepo ?? false));
-                continue;
-            }
-            var dir = loaded.RepoDirs.GetValueOrDefault(reference.Path) ?? reference.Path;
-            var own = Path.Combine(dir, TrellisLoader.RepoDefinitionFile);
-            Repos.Add(new TrellisRepoRow(reference.Path, dir, File.Exists(own) ? own : null, null, InRepo: true));
-        }
-        HasRepos = Repos.Count > 0;
-    }
-
-    // ---- editing ----
-
-    [RelayCommand]
-    private void EditTrellis()
-    {
-        if (Selected is not { } trellis || trellis.Missing) return;
-        OpenEditor(trellis.Path, $"{trellis.Name}: the trellis",
-            trellis.InSprig ? "Kept in sprig. Saving approves what you saved." : "In your folder, so saving changes the file there. Saving approves what you saved.");
-    }
-
-    [RelayCommand]
-    private void EditRepo(TrellisRepoRow? row)
-    {
-        if (row?.File is not { } file || !row.CanEdit) return;
-        OpenEditor(file, $"{row.Name}: {row.Source}",
-            row.InSprig
-                ? "In sprig, so no branch can change it. Saving approves what you saved."
-                : "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved.");
-    }
-
-    /// <summary>Switch where one of the trellis's repos keeps its definition; every trellis that uses it follows.</summary>
-    [RelayCommand]
-    private async Task SwitchRepo(TrellisRepoRow? row)
-    {
-        if (row?.Use is not { } id || Selected is not { } trellis) return;
-        if (await SwitchStorage(id, row.InRepo) is { } error)
-        {
-            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, error, new SourceLocation(trellis.Path, 0))], trellis.Path);
-            return;
-        }
-        RefreshRepoEntries();
-        await PlanSelectedAsync();
-    }
-
-    /// <summary>Bring a repo the trellis names by folder in through the Repos list, so where its file is kept can be
-    /// switched.</summary>
-    [RelayCommand]
-    private async Task AddToRepos(TrellisRepoRow? row)
-    {
-        if (row is null || Selected is not { } trellis) return;
-        try { await AppServices.RunAsync(() => _services.Authoring.UseFromRepos(trellis.Path, row.Path)); }
-        catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException)
-        {
-            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, e.Message, new SourceLocation(trellis.Path, 0))], trellis.Path);
-            return;
-        }
-        RefreshRepoEntries();
-        await PlanSelectedAsync();
-    }
-
-    void OpenEditor(string file, string title, string note)
-    {
-        string text;
-        try { text = File.ReadAllText(file); }
-        catch (IOException e)
-        {
-            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, e.Message, new SourceLocation(file, 0))], file);
-            return;
-        }
-        EditingPath = file;
-        EditingTitle = title;
-        EditingNote = note;
-        SavedText = text;
-        EditorText = text;
-        EditorStatus = "";
-        EditorStatusBad = false;
-        ConfirmingDiscard = false;
-        IsEditing = true;
-        OnPropertyChanged(nameof(IsDirty));
-    }
-
-    /// <summary>Save, approve and plan again, saying in the editor whether it now plans.</summary>
-    [RelayCommand]
-    private async Task Save()
-    {
-        if (!IsEditing) return;
-        var text = EditorText;
-        try { await AppServices.RunAsync(() => _services.Authoring.Save(EditingPath, text)); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            SayEditor($"Couldn't save: {e.Message}", bad: true);
-            return;
-        }
-        SavedText = text;
-        if (Selected is null && SelectedRepo is { } repo)
-        {
-            // No trellis to plan: run the repo's definition on its own and say how that went.
-            SayEditor("Saved. Running it…", bad: false);
-            await CheckRepoAsync(repo);
-            SayEditor($"Saved. {RepoCheck}", RepoCheckBad);
-            if (!RepoCheckBad) _ = ClearEditorStatusSoon();
-            return;
-        }
-        SayEditor("Saved. Planning…", bad: false);
-        await PlanSelectedAsync();
-        var errors = Plan?.Problems.Count(p => p.IsError) ?? 0;
-        if (HasPendingTrust) SayEditor("Saved. Something it uses needs approving: close the editor to see what.", bad: true);
-        else if (HasLoadProblems) SayEditor($"Saved, but it doesn't plan: {LoadProblems.FirstOrDefault()?.Message}", bad: true);
-        else if (errors > 0) SayEditor($"Saved. The plan has {errors} problem{(errors == 1 ? "" : "s")}: close the editor to see {(errors == 1 ? "it" : "them")}.", bad: true);
-        else
-        {
-            SayEditor($"Saved, and it plans. {Plan?.Summary}", bad: false);
-            _ = ClearEditorStatusSoon();
-        }
-    }
-
-    int _editorStatusVersion;
-
-    void SayEditor(string message, bool bad)
-    {
-        _editorStatusVersion++;
-        EditorStatus = message;
-        EditorStatusBad = bad;
-    }
-
-    /// <summary>Good news only needs a glance; a problem stays until the next save says otherwise.</summary>
-    async Task ClearEditorStatusSoon()
-    {
-        var version = _editorStatusVersion;
-        await Task.Delay(TimeSpan.FromSeconds(3));
-        if (version == _editorStatusVersion && !EditorStatusBad) SayEditor("", bad: false);
-    }
-
-    [RelayCommand]
-    private void CloseEditor()
-    {
-        if (IsDirty && !ConfirmingDiscard)
-        {
-            ConfirmingDiscard = true;
-            return;
-        }
-        ConfirmingDiscard = false;
-        IsEditing = false;
-        EditorText = "";
-        SavedText = "";
-    }
-
-    [RelayCommand]
-    private void KeepEditing() => ConfirmingDiscard = false;
 
     // ---- a new trellis kept in sprig ----
 
@@ -772,7 +607,6 @@ public partial class TrellisesViewModel : PageViewModel
         }
 
         IsBusy = true;
-        BusyText = "Writing the trellis…";
         TrellisEntry entry;
         try
         {
@@ -792,7 +626,6 @@ public partial class TrellisesViewModel : PageViewModel
             IsBusy = false;
         }
         IsNewOpen = false;
-        RefreshRepoEntries();
         Refresh(entry.Id, replan: true);
     }
 
@@ -800,46 +633,6 @@ public partial class TrellisesViewModel : PageViewModel
     {
         NewFailed = true;
         NewMessage = message;
-    }
-
-    void AskForTrust(System.Collections.Generic.IEnumerable<NeedsTrust> pending, Func<Task> then)
-    {
-        PendingTrust.Clear();
-        foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
-        HasPendingTrust = PendingTrust.Count > 0;
-        // Only a trellis that has run can say which repos it uses, so their definitions are a second ask.
-        PendingIsTrellis = Selected is { } trellis && PendingTrust.Any(p => string.Equals(p.Path, trellis.DisplayPath, StringComparison.OrdinalIgnoreCase));
-        _afterApproval = then;
-    }
-
-    void ShowLoadProblems(System.Collections.Generic.IEnumerable<PlanProblem> problems, string trellisPath)
-    {
-        LoadProblems.Clear();
-        foreach (var row in PlanView.Rows(problems, Path.GetDirectoryName(trellisPath)!)) LoadProblems.Add(row);
-        HasLoadProblems = LoadProblems.Count > 0;
-    }
-
-    void ClearResults()
-    {
-        Plan = null;
-        PendingTrust.Clear();
-        HasPendingTrust = false;
-        LoadProblems.Clear();
-        HasLoadProblems = false;
-    }
-
-    void CloseAdd()
-    {
-        IsAddOpen = false;
-        NewPath = "";
-        AddMessage = "";
-        AddFailed = false;
-    }
-
-    void Fail(string message)
-    {
-        AddFailed = true;
-        AddMessage = message;
     }
 
     static string FirstError(string output)

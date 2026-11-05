@@ -11,6 +11,11 @@ public abstract partial class PageViewModel : ViewModelBase
     /// <summary>Nav label / header for the page.</summary>
     public abstract string Title { get; }
 
+    /// <summary>A few words under the nav label saying what the page holds; null for none.</summary>
+    public virtual string? NavSubtitle => null;
+
+    public bool HasNavSubtitle => NavSubtitle is not null;
+
     /// <summary>True when this is the page currently shown — drives the left-nav highlight.</summary>
     [ObservableProperty] private bool _isActive;
 

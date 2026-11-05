@@ -1,0 +1,400 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Sprig.Engine.Definitions;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Store;
+using Sprig.Model;
+
+namespace Sprig.App.ViewModels;
+
+/// <summary>One repo in the Repos list. Its summary arrives once its definition has run.</summary>
+public partial class RepoItem(RepoEntry entry) : ObservableObject
+{
+    public RepoEntry Entry { get; } = entry;
+    public string Id => Entry.Id;
+    public bool InRepo => Entry.InRepo;
+    public string DisplayFolder => Entry.Folder.Replace('\\', '/');
+    public string DisplayFile => Entry.DefinitionFile.Replace('\\', '/');
+    public string Kept => InRepo ? "in repo" : "in sprig";
+    public bool Missing => !File.Exists(Entry.DefinitionFile);
+
+    [ObservableProperty] private string _summary = "";
+}
+
+/// <summary>A line in one of a repo's sections: what it runs, its infra, what it offers or needs.</summary>
+public sealed record RepoFact(string Name, string Detail);
+
+/// <summary>
+/// The Repos page: every repo sprig knows by ID, what each one runs, offers and needs, and where its definition is
+/// kept. A repo is described here once; trellises only pick repos and fill what they need.
+/// </summary>
+public partial class ReposViewModel : PageViewModel
+{
+    readonly AppServices _services;
+
+    public override string Title => "Repos";
+    public override string? NavSubtitle => "what each repo runs";
+
+    public ObservableCollection<RepoItem> Repos { get; } = [];
+    public ObservableCollection<string> UsedBy { get; } = [];
+    public ObservableCollection<RepoFact> Runs { get; } = [];
+    public ObservableCollection<RepoFact> Infra { get; } = [];
+    public ObservableCollection<RepoFact> Offers { get; } = [];
+    public ObservableCollection<RepoFact> Needs { get; } = [];
+
+    public DefinitionEditorViewModel Editor { get; }
+
+    /// <summary>Opens a trellis on the Trellises page, by ID.</summary>
+    public Action<string>? OpenTrellis { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(InSprig), nameof(KeptExplanation), nameof(SwitchNote))]
+    private RepoItem? _selected;
+
+    [ObservableProperty] private string _check = "";
+    [ObservableProperty] private bool _checkBad;
+    [ObservableProperty] private bool _hasModel;
+    [ObservableProperty] private bool _needsApproval;
+    [ObservableProperty] private bool _hasUsedBy;
+    [ObservableProperty] private bool _confirmingRemove;
+
+    [ObservableProperty] private bool _isAddOpen;
+    [ObservableProperty] private string _addFolder = "";
+    [ObservableProperty] private string _addId = "";
+    [ObservableProperty] private string _addMessage = "";
+    [ObservableProperty] private bool _addFailed;
+
+    NeedsTrust? _pending;
+
+    public bool HasSelection => Selected is not null;
+    public bool IsEmpty => Repos.Count == 0;
+    public bool InSprig => Selected is { InRepo: false };
+    public bool HasOffers => Offers.Count > 0;
+    public bool HasNeeds => Needs.Count > 0;
+    public bool HasInfra => Infra.Count > 0;
+
+    public string KeptExplanation => Selected switch
+    {
+        null => "",
+        { InRepo: true } => "Committed as sprig.cs. Sprouts run their branch's version, and sprig asks before running one you haven't approved.",
+        _ => "Kept on this machine, so nothing is written to the repo. The same for every sprout, since no branch can change it.",
+    };
+
+    public string SwitchNote => Selected switch
+    {
+        null => "",
+        { InRepo: true } => "Switching to In sprig copies it into sprig (or restores sprig's earlier copy); the repo's file is left as it is.",
+        _ => "Switching to In the repo uses the folder's own sprig.cs; if it has none, sprig's copy is written there, uncommitted.",
+    };
+
+    public ReposViewModel(AppServices services)
+    {
+        _services = services;
+        Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
+        Refresh();
+    }
+
+    protected override void OnActivated() => Refresh();
+
+    /// <summary>Show one repo, by ID.</summary>
+    public void Show(string id)
+    {
+        Refresh();
+        Selected = Repos.FirstOrDefault(r => r.Id == id) ?? Selected;
+    }
+
+    void Refresh(string? keep = null)
+    {
+        keep ??= Selected?.Id;
+        Repos.Clear();
+        foreach (var entry in _services.Stored.Repos()) Repos.Add(new RepoItem(entry));
+        NavCount = Repos.Count;
+        OnPropertyChanged(nameof(IsEmpty));
+        Selected = Repos.FirstOrDefault(r => r.Id == keep) ?? Repos.FirstOrDefault();
+        _ = SummariseAsync([.. Repos]);
+    }
+
+    /// <summary>Each row's "3 apps · 3 infra". Definitions are cached by content, so this only runs what changed, and
+    /// never one that isn't approved.</summary>
+    async Task SummariseAsync(IReadOnlyList<RepoItem> items)
+    {
+        foreach (var item in items)
+        {
+            var result = await AppServices.RunAsync(() => _services.Definitions.Evaluate(item.Entry.DefinitionFile));
+            item.Summary = Summary(result);
+        }
+    }
+
+    static string Summary(DefinitionResult result) => result switch
+    {
+        Evaluated { Model: RepoModel m } => Count(m.Apps.Count, "app") + (InfraCount(m) is > 0 and var n ? $" · {n} infra" : ""),
+        Evaluated => "describes a trellis",
+        NeedsTrust => "not approved yet",
+        _ => "doesn't run",
+    };
+
+    static int InfraCount(RepoModel m) => m.Containers.Count + m.ComposeFiles.Sum(f => f.Services.Count);
+
+    static string Count(int n, string what) => $"{n} {what}{(n == 1 ? "" : "s")}";
+
+    partial void OnSelectedChanged(RepoItem? value)
+    {
+        ConfirmingRemove = false;
+        UsedBy.Clear();
+        ClearModel();
+        if (value is null) return;
+        foreach (var id in _services.Authoring.UsedBy(value.Id)) UsedBy.Add(id);
+        HasUsedBy = UsedBy.Count > 0;
+        _ = CheckAsync(value);
+    }
+
+    void ClearModel()
+    {
+        Runs.Clear();
+        Infra.Clear();
+        Offers.Clear();
+        Needs.Clear();
+        HasModel = false;
+        NeedsApproval = false;
+        _pending = null;
+        RaiseSections();
+    }
+
+    void RaiseSections()
+    {
+        OnPropertyChanged(nameof(HasOffers));
+        OnPropertyChanged(nameof(HasNeeds));
+        OnPropertyChanged(nameof(HasInfra));
+    }
+
+    /// <summary>Run the repo's definition on its own and show what it describes, so a mistake shows before any trellis
+    /// uses it.</summary>
+    async Task CheckAsync(RepoItem repo)
+    {
+        if (repo.Missing)
+        {
+            Say($"{repo.DisplayFile} isn't there.", bad: true);
+            return;
+        }
+        Say("Running it…", bad: false);
+        var result = await AppServices.RunAsync(() => _services.Definitions.Evaluate(repo.Entry.DefinitionFile));
+        if (Selected?.Id != repo.Id) return;
+        repo.Summary = Summary(result);
+        ClearModel();
+        switch (result)
+        {
+            case Evaluated { Model: RepoModel model }:
+                Show(model);
+                Say("", bad: false);
+                break;
+            case Evaluated:
+                Say("Its definition describes a trellis, not a repo (it calls Trellis.Describe).", bad: true);
+                break;
+            case NeedsTrust pending:
+                _pending = pending;
+                NeedsApproval = true;
+                Say("Not approved yet, so it hasn't run. It's C# that sprig runs as you: read it, then approve it.", bad: true);
+                break;
+            case Failed failed:
+                Say($"It doesn't run: {failed.Reason}. {FirstError(failed.Output)}", bad: true);
+                break;
+            case Rejected rejected:
+                Say(string.Join(" ", rejected.Violations.Select(v => $"Line {v.Line}: {v.Reason}.")), bad: true);
+                break;
+        }
+    }
+
+    void Show(RepoModel model)
+    {
+        foreach (var app in model.Apps)
+            Runs.Add(new RepoFact(app.Name, string.Join(" · ", RunDetail(app))));
+        foreach (var c in model.Containers)
+            Infra.Add(new RepoFact(c.Name, $"{c.Image} · {Endpoints(c.Endpoints)}"));
+        foreach (var file in model.ComposeFiles)
+            foreach (var service in file.Services)
+                Infra.Add(new RepoFact(service.Name, $"from {file.File} · {Endpoints(service.Endpoints)}"));
+        foreach (var export in model.Exports)
+            Offers.Add(new RepoFact(export.Name, $"{Describe(export.Value)} · a {export.Type}"));
+        foreach (var import in model.Imports)
+            Needs.Add(new RepoFact(import.Name, $"a {import.Type}; each trellis that uses this repo fills it"));
+        HasModel = true;
+        RaiseSections();
+    }
+
+    static IEnumerable<string> RunDetail(AppModel app)
+    {
+        yield return app.Kind switch { "dotnet" => ".NET", "node" => "Node", var k => k };
+        yield return app.Path;
+        if (app.Job) yield return "a job: runs to the end, then what waits for it starts";
+        var health = app.Endpoints.FirstOrDefault(e => e.Health is not null)?.Health;
+        if (health is not null) yield return $"ready on {health}";
+        else if (app.ReadyLog is not null) yield return "ready on a log line";
+        if (app.WaitFor.Count > 0) yield return $"after {string.Join(", ", app.WaitFor)}";
+    }
+
+    static string Endpoints(IReadOnlyList<EndpointModel> endpoints)
+        => endpoints.Count == 0 ? "no ports" : string.Join(", ", endpoints.Select(e => e.Name));
+
+    /// <summary>"{catalog-api.http.url}" → "catalog-api's url"; literal text is kept, with passwords masked.</summary>
+    public static string Describe(string template)
+    {
+        IReadOnlyList<TemplatePart> parts;
+        try { parts = TemplateText.Parse(template); }
+        catch (FormatException) { return template; }
+        return string.Concat(parts.Select(p => p switch
+        {
+            TextPart t => ValueMask.Apply(t.Text),
+            RefPart { Path: var path } when path.StartsWith("import.", StringComparison.Ordinal) => $"its import {path["import.".Length..]}",
+            RefPart { Path: var path } when path.Split('.') is [var resource, _, var what] => $"{resource}'s {what}",
+            RefPart r => r.Path,
+            _ => "",
+        }));
+    }
+
+    void Say(string message, bool bad)
+    {
+        Check = message;
+        CheckBad = bad;
+    }
+
+    async Task<(string, bool)> AfterSaveAsync()
+    {
+        if (Selected is not { } repo) return ("Saved.", false);
+        await CheckAsync(repo);
+        return CheckBad ? ($"Saved. {Check}", true) : ("Saved, and it runs.", false);
+    }
+
+    // ---- actions ----
+
+    [RelayCommand]
+    private void Edit()
+    {
+        if (Selected is not { Missing: false } repo) return;
+        var error = Editor.Open(repo.Entry.DefinitionFile, $"{repo.Id}: {repo.Kept}",
+            repo.InRepo
+                ? "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved."
+                : "In sprig, so no branch can change it. Saving approves what you saved.");
+        if (error is not null) Say(error, bad: true);
+    }
+
+    [RelayCommand]
+    private async Task Approve()
+    {
+        if (_pending is not { } pending || Selected is not { } repo) return;
+        _services.Trust.Approve(pending.TrustPath, pending.Sha256);
+        await CheckAsync(repo);
+    }
+
+    /// <summary>Switch where the selected repo's definition is kept; every trellis that uses it follows.</summary>
+    [RelayCommand]
+    private async Task SetKept(string? where)
+    {
+        if (Selected is not { } repo) return;
+        var toSprig = where == "sprig";
+        if (toSprig == !repo.InRepo) return;
+        try { await AppServices.RunAsync(() => toSprig ? _services.Authoring.KeepInSprig(repo.Id) : _services.Authoring.PutInRepo(repo.Id)); }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            Say(e.Message, bad: true);
+            return;
+        }
+        Refresh(repo.Id);
+    }
+
+    [RelayCommand]
+    private void OpenTrellisById(string? id)
+    {
+        if (id is not null) OpenTrellis?.Invoke(id);
+    }
+
+    /// <summary>Taking a repo off the list deletes sprig's copy of its definition, so it asks first.</summary>
+    [RelayCommand]
+    private void Remove()
+    {
+        if (Selected is not { } repo) return;
+        if (!ConfirmingRemove)
+        {
+            ConfirmingRemove = true;
+            return;
+        }
+        ConfirmingRemove = false;
+        _services.Authoring.DeleteRepo(repo.Id);
+        Selected = null;
+        Refresh();
+    }
+
+    [RelayCommand]
+    private void CancelRemove() => ConfirmingRemove = false;
+
+    // ---- adding ----
+
+    // The ID follows the folder until it's typed over.
+    string _suggestedId = "";
+
+    partial void OnAddFolderChanged(string value)
+    {
+        var name = Path.GetFileName(value.Trim().TrimEnd('/', '\\'));
+        if (name.Length == 0 || (AddId.Length > 0 && AddId != _suggestedId)) return;
+        _suggestedId = _services.Stored.UnusedRepoId(name);
+        AddId = _suggestedId;
+    }
+
+    [RelayCommand]
+    private void OpenAdd()
+    {
+        _suggestedId = "";
+        AddId = "";
+        AddFolder = "";
+        AddMessage = "";
+        AddFailed = false;
+        IsAddOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelAdd() => IsAddOpen = false;
+
+    [RelayCommand]
+    private async Task Add()
+    {
+        AddMessage = "";
+        AddFailed = false;
+        var folder = AddFolder.Trim();
+        var id = AddId.Trim();
+        if (folder.Length == 0 || !Directory.Exists(folder))
+        {
+            FailAdd("Choose the repo's folder.");
+            return;
+        }
+        if (Ids.Check(id, "a repo ID") is { } bad)
+        {
+            FailAdd(bad);
+            return;
+        }
+        RepoEntry entry;
+        try { entry = await AppServices.RunAsync(() => _services.Authoring.AddRepo(folder, id)); }
+        catch (Exception e) when (e is ArgumentException or IOException)
+        {
+            FailAdd(e.Message);
+            return;
+        }
+        IsAddOpen = false;
+        Refresh(entry.Id);
+        // A draft is a starting point; open it so it can be finished.
+        if (!entry.InRepo) Edit();
+    }
+
+    void FailAdd(string message)
+    {
+        AddFailed = true;
+        AddMessage = message;
+    }
+
+    static string FirstError(string output)
+        => output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Contains(": error ", StringComparison.Ordinal)) ?? "";
+}

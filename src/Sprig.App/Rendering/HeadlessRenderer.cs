@@ -158,17 +158,24 @@ internal static partial class HeadlessRenderer
             Save(window, outFile);
             var planned = vm.Trellises.Plan is not null;
 
-            if (vm.Trellises.RepoEntries.FirstOrDefault(r => !r.InRepo) is { } written)
+            foreach (var tab in new[] { TrellisTab.Values, TrellisTab.Ports })
             {
-                vm.Trellises.SelectedRepo = written;
-                clock.Restart();
-                Pump(TimeSpan.FromMilliseconds(200));
-                while (vm.Trellises.RepoCheck.EndsWith('…') && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                vm.Trellises.Tab = tab;
                 Pump(TimeSpan.FromMilliseconds(300));
-                Save(window, Sibling(outFile, "repo"));
-                vm.Trellises.Selected = vm.Trellises.Trellises.FirstOrDefault();
-                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, tab.ToString().ToLowerInvariant()));
             }
+            vm.Trellises.Tab = TrellisTab.Overview;
+
+            // The Repos page, on the repo kept in sprig.
+            vm.NavigateCommand.Execute(vm.Repos);
+            vm.Repos.Show("shop-services-local");
+            clock.Restart();
+            Pump(TimeSpan.FromMilliseconds(200));
+            while (vm.Repos.Check.EndsWith('…') && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo"));
+            vm.NavigateCommand.Execute(vm.Trellises);
+            Pump(TimeSpan.FromMilliseconds(300));
 
             vm.Trellises.OpenAddCommand.Execute(null);
             vm.Trellises.NewPath = Sprig.App.Controls.PathCompletion.ToPosix(Path.GetFullPath(trellisFile));

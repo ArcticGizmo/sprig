@@ -1,6 +1,6 @@
 # Trellis page redesign: plan
 
-Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05 (278 tests pass); phase 3 is next.
+Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3, 4 and 6 done together the same day (286 tests pass), checked with headless renders, not yet hand-tested. Phase 7 is next, then 5.
 
 The options and the reasoning are on the canvas at https://claude.ai/artifact/QqNHSoEZhiQ5B5zjwgBqhy, with a copy in [artefacts/trellis-options/](artefacts/trellis-options/). This plan builds the blend: names and badges from the Model board, a Repos page (C), a summary trellis page (A) with the picture at its centre (B), and the checklist (D) only while something blocks a first sprout.
 
@@ -43,23 +43,23 @@ Each phase leaves the app building and the tests passing. Sizes: S is under a da
 - [x] Interim UI so the app keeps working until phases 3 and 4: the Repos column has one "+ Add"; a trellis's repo rows offer "Keep in sprig" / "Put in the repo" (Repos entries) or "Add to Repos" (repos named by folder); the selected repo has the same switch.
 - [x] Data: the dev store had no `repos/` or `trellises/` folders and both registered testbed trellises use `Repo(path)`, so there was nothing to purge.
 
-### 3. Nav and the Repos page (M)
+### 3. Nav and the Repos page (M) ✅ done 2026-11-05
 
-- [ ] Nav: DEFINE holds **Repos** then **Trellises**, each with a one-line subtitle ("what each repo runs", "repos run together"); RUN's Sprouts gets "running copies".
-- [ ] Extract the editor pane from `TrellisesViewModel` into a `DefinitionEditorViewModel` (open, save-approves-and-rechecks, discard guard, status line) that both pages host.
-- [ ] `ReposViewModel` and `ReposView`: the list (name, badge, "3 apps · 3 infra"), "+ Add" (one modal: folder and ID), and the selected repo: folder (the only place a path shows), "Used by" links, the In repo / In sprig switch with what it means, then Runs, Infra, Offers and Needs from its evaluated model. Open definition, Remove.
-- [ ] A repo that isn't approved, fails, or describes a trellis says so where the sections would be.
-- [ ] Tests: the list, the switch calling authoring and re-reading, Used by, and each failure state.
+- [x] Nav: DEFINE holds **Repos** then **Trellises**, each with a one-line subtitle ("what each repo runs", "repos run together"); RUN's Sprouts gets "running copies". Pages give theirs through `PageViewModel.NavSubtitle`.
+- [x] The editor pane is `DefinitionEditorViewModel` and `DefinitionEditorView` (open, save-approves, discard guard, status line); the page that opens it says what a save means through `AfterSave`.
+- [x] `ReposViewModel` and `ReposView`: the list (ID, badge, "3 apps · 3 infra" once its definition has run), "+ Add" (folder and ID), and the selected repo: its folder (the only place a path shows), "Used by" links to each trellis, the In the repo / In sprig switch with what each means, then Runs, Infra, Offers and Needs from its model. Open definition, Remove (asks first).
+- [x] A repo that isn't approved says so with Read it and Approve; one that fails or describes a trellis says why where the sections would be.
+- [x] Tests: a repo not yet approved, switching it into sprig (the copy stays unapproved), and describing offers in words. Used by is covered by the authoring tests.
 
-### 4. The trellis page: summary first (M)
+### 4. The trellis page: summary first (M) ✅ done 2026-11-05
 
-- [ ] The Trellises column is one list: name, badge, "3 repos · 1 sprout up". "+ Add" opens one modal: new in sprig (name and repos, as now) or an existing `.trellis.cs`.
-- [ ] Header: name, badge, a one-line description ("Runs shop-services, shop-web and shop-mobile together"), **Start a sprout** (opens the Sprouts page's new-sprout modal with this trellis chosen), Edit code, and a "⋯" menu for Plan again and Remove.
-- [ ] Status line: ready, needs approval, or N problems, with when it was last checked.
-- [ ] Tabs: **Overview**, **Values**, **Ports**, **Code**.
-- [ ] Overview, until phase 5 puts the picture there: repo cards (badge, runs, infra, offers, needs with what fills each), How sprouts run (worktrees, ports, groups in words), Added by the trellis, and Sprouts of it (from `HostStatus` and the sprout store).
-- [ ] A `Repo(path)` repo's card offers "Add to Repos" (`UseFromRepos`); a `UseRepo` card links to the Repos page.
-- [ ] Tests: the description, status for each state, card contents from a plan, and Start a sprout choosing the trellis.
+- [x] The Trellises column is one list: name, badge (in sprig / in a folder) and its sprouts ("1 sprout up", "no sprouts", "not approved yet"). "+ Add" opens the new-trellis modal, which links to adding an existing `.trellis.cs`. The repo count is in the description instead, since it's only known once the trellis has run.
+- [x] Header: name, badge, a one-line description ("Runs shop-services, shop-web and shop-mobile together."), **Start a sprout** (opens the Sprouts page's new-sprout modal with this trellis chosen; disabled unless it's ready), Edit code, and a "⋯" menu for Check again and Remove.
+- [x] Status line: checking, ready (with any warnings), needs approval, can't plan, or N problems, with the time it was checked.
+- [x] Tabs: **Overview**, **Values** (with its count of values), **Ports** (with its count) and **Code**.
+- [x] Overview: approval and problem panels when they apply, then repo cards (badge, runs, infra, offers, and each need with what fills it, amber when nothing does), How sprouts run (worktrees, ports, groups naming a whole repo once), Added by the trellis, and Sprouts of it (from the sprout store).
+- [x] A `Repo(path)` card offers "Open its definition" (in the Code tab) and "Add to Repos"; a `UseRepo` card offers "Open on Repos".
+- [x] Tests: the description, card contents and needs from a plan (filled by a repo, by the trellis, and unfilled), what the trellis adds, its policies, and a card for a repo that hasn't run. The status line and Start a sprout are checked in renders only so far.
 
 ### 5. The picture (L)
 
@@ -70,11 +70,11 @@ Each phase leaves the app building and the tests passing. Sizes: S is under a da
 - [ ] Group chips (Everything, then each group) dim what a group doesn't start.
 - [ ] Tests: graph building from the testbed plan, layering, the unfilled-need wire, and group dimming. A headless render of `storefront`.
 
-### 6. Values, Ports and Code tabs (S)
+### 6. Values, Ports and Code tabs (S) ✅ done 2026-11-05, with phase 4
 
-- [ ] Values: today's per-app panels, containers, compose changes and groups, with a filter by repo or app.
-- [ ] Ports: today's ports table, grouped by owner, with the trellis's own ports labelled as such.
-- [ ] Code: the trellis's file in the shared editor, with the status line saying whether it plans after a save; the tabs stay, so Overview shows the result.
+- [x] Values: the per-app panels, what the repos need and what fills it (formerly Wiring), containers and compose changes. A filter by repo or app waits until it's missed.
+- [x] Ports: the ports table, with a line saying it's a preview.
+- [x] Code: the trellis's file (or a repo's, opened from its card) in the shared editor; a save plans again and says whether it plans, and the other tabs show the result. Closing the editor goes back to Overview.
 
 ### 7. The checklist, only while something blocks (S)
 
@@ -85,7 +85,7 @@ Each phase leaves the app building and the tests passing. Sizes: S is under a da
 ### 8. Names, testbed, data and docs (S)
 
 - [ ] Sweep the app's text for "virtual", "written in sprig", "referenced", "binding" and "wiring"; use in repo / in sprig, needs and offers.
-- [ ] Testbed: trellises stay on `Repo(path)`; add one that uses `UseRepo` so both forms are covered. `HeadlessRenderer` gets `render-repos` and an updated `render-trellises`.
+- [ ] Testbed: trellises stay on `Repo(path)`; add one that uses `UseRepo` so both forms are covered. (Done: `render-trellises` also renders the Values and Ports tabs and the Repos page. The testbed builds against this checkout's SDK project, so schema 7 needed no change there.)
 - [x] Delete the dev store's `repos/` and `trellises/` folders and their registrations (decision 6), after listing what's there. Checked in phase 2: nothing to delete.
 - [ ] Update the hand-test checklist, the roadmap's M7 section and the changelog's Unreleased notes.
 

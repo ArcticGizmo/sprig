@@ -406,27 +406,50 @@ public static class Planner
 
         // ---- resolution ----
 
+        /// <summary>A reference filled in: its text, how it was reached for people to read, and what it reached.</summary>
+        readonly record struct Resolved(string Value, IReadOnlyList<string> Via, IReadOnlyList<ValueSource> Sources);
+
         PlannedValue Resolve(Scope scope, string template, SourceLocation location)
         {
             IReadOnlyList<TemplatePart> parts;
             try { parts = TemplateText.Parse(template); }
-            catch (FormatException e) { Problem(e.Message, location); return new PlannedValue(template, null, []); }
+            catch (FormatException e) { Problem(e.Message, location); return new PlannedValue(template, null, [], []); }
 
             var value = new System.Text.StringBuilder();
             var via = new List<string>();
+            var sources = new List<ValueSource>();
             var ok = true;
             foreach (var part in parts)
             {
                 if (part is TextPart text) { value.Append(text.Text); continue; }
-                var resolved = ResolveRef(scope, ((RefPart)part).Path, location, []);
-                if (resolved is null) { ok = false; continue; }
-                value.Append(resolved.Value.value);
-                via.AddRange(resolved.Value.via);
+                var path = ((RefPart)part).Path;
+                var resolved = ResolveRef(scope, path, location, []);
+                if (resolved is null)
+                {
+                    ok = false;
+                    if (path.StartsWith("import.", StringComparison.Ordinal) && Unfilled(scope, path["import.".Length..]))
+                        sources.Add(new ValueSource(null, null, null, path["import.".Length..]));
+                    continue;
+                }
+                value.Append(resolved.Value.Value);
+                via.AddRange(resolved.Value.Via);
+                sources.AddRange(resolved.Value.Sources);
             }
-            return new PlannedValue(template, ok ? value.ToString() : null, via);
+            return new PlannedValue(template, ok ? value.ToString() : null, via, sources.Distinct().ToArray());
         }
 
-        (string value, IReadOnlyList<string> via)? ResolveRef(Scope scope, string path, SourceLocation location, HashSet<string> visiting)
+        /// <summary>Nothing answers the import: no trellis binding, and no other repo exports it.</summary>
+        bool Unfilled(Scope scope, string name)
+            => scope.Repo is not null
+               && input.Trellis.Bindings.All(b => b.Import != name)
+               && !_scopes.Any(s => s != scope && s.Repo?.Exports.Any(e => e.Name == name) == true);
+
+        /// <summary>What crossed an import is labelled with it, as the asking app names it. A literal value still came
+        /// from somewhere: the repo or trellis that supplied it.</summary>
+        static IReadOnlyList<ValueSource> Crossed(IReadOnlyList<ValueSource> sources, string owner, string import)
+            => sources.Count == 0 ? [new ValueSource(owner, null, null, import)] : sources.Select(s => s with { Import = import }).ToArray();
+
+        Resolved? ResolveRef(Scope scope, string path, SourceLocation location, HashSet<string> visiting)
         {
             var key = scope.Owner + "|" + path;
             if (!visiting.Add(key))
@@ -437,7 +460,7 @@ public static class Planner
 
             try
             {
-                if (path == "sprout.name") return (input.Sprout, ["sprout name"]);
+                if (path == "sprout.name") return new Resolved(input.Sprout, ["sprout name"], []);
                 if (path.StartsWith("import.", StringComparison.Ordinal)) return ResolveImport(scope, path["import.".Length..], location, visiting);
                 if (path.StartsWith("export.", StringComparison.Ordinal)) return ResolveNamedExport(scope, path["export.".Length..], location, visiting);
                 return ResolveEndpoint(scope, path, location);
@@ -448,7 +471,7 @@ public static class Planner
             }
         }
 
-        (string, IReadOnlyList<string>)? ResolveEndpoint(Scope scope, string path, SourceLocation location)
+        Resolved? ResolveEndpoint(Scope scope, string path, SourceLocation location)
         {
             var bits = path.Split('.');
             if (bits.Length != 3 || bits[2] is not ("port" or "url"))
@@ -472,16 +495,17 @@ public static class Planner
             if (resource.Kind == "app") _referenced?.Add($"{scope.Owner}/{resourceName}");
 
             var label = $"{resourceName}.{endpointName} port {port}";
-            if (what == "port") return (port.ToString(), [label]);
+            ValueSource[] reached = [new(scope.Owner, resourceName, endpointName, null)];
+            if (what == "port") return new Resolved(port.ToString(), [label], reached);
             if (endpoint.Model.Scheme is not { } scheme)
             {
                 Problem($"'{resourceName}.{endpointName}' has no url (give the endpoint a scheme)", location);
                 return null;
             }
-            return ($"{scheme}://localhost:{port}", [label]);
+            return new Resolved($"{scheme}://localhost:{port}", [label], reached);
         }
 
-        (string, IReadOnlyList<string>)? ResolveImport(Scope scope, string name, SourceLocation location, HashSet<string> visiting)
+        Resolved? ResolveImport(Scope scope, string name, SourceLocation location, HashSet<string> visiting)
         {
             if (scope.Repo is null)
             {
@@ -496,7 +520,7 @@ public static class Planner
             {
                 var bound = Resolve(_trellis, binding.Value, binding.Location);
                 if (bound.Value is null) return null;
-                return (bound.Value, [$"import {name} ← trellis binding", .. bound.Via]);
+                return new Resolved(bound.Value, [$"import {name} ← trellis binding", .. bound.Via], Crossed(bound.Sources ?? [], _trellis.Owner, name));
             }
 
             var exporters = _scopes
@@ -524,10 +548,10 @@ public static class Planner
             }
             var value = ResolveTemplate(owner, export.Value, export.Location, visiting);
             if (value is null) return null;
-            return (value.Value.value, [$"import {name} ← {owner.Owner}", .. value.Value.via]);
+            return new Resolved(value.Value.Value, [$"import {name} ← {owner.Owner}", .. value.Value.Via], Crossed(value.Value.Sources, owner.Owner, name));
         }
 
-        (string, IReadOnlyList<string>)? ResolveNamedExport(Scope scope, string rest, SourceLocation location, HashSet<string> visiting)
+        Resolved? ResolveNamedExport(Scope scope, string rest, SourceLocation location, HashSet<string> visiting)
         {
             var dot = rest.LastIndexOf('.');
             var (repoPath, name) = dot > 0 ? (rest[..dot], rest[(dot + 1)..]) : (rest, "");
@@ -545,10 +569,11 @@ public static class Planner
             }
             var value = ResolveTemplate(owner, export.Value, export.Location, visiting);
             if (value is null) return null;
-            return (value.Value.value, [$"{owner.Owner} export {name}", .. value.Value.via]);
+            var sources = value.Value.Sources.Count > 0 ? value.Value.Sources : [new ValueSource(owner.Owner, null, null, null)];
+            return new Resolved(value.Value.Value, [$"{owner.Owner} export {name}", .. value.Value.Via], sources);
         }
 
-        (string value, IReadOnlyList<string> via)? ResolveTemplate(Scope scope, string template, SourceLocation location, HashSet<string> visiting)
+        Resolved? ResolveTemplate(Scope scope, string template, SourceLocation location, HashSet<string> visiting)
         {
             IReadOnlyList<TemplatePart> parts;
             try { parts = TemplateText.Parse(template); }
@@ -556,15 +581,17 @@ public static class Planner
 
             var value = new System.Text.StringBuilder();
             var via = new List<string>();
+            var sources = new List<ValueSource>();
             foreach (var part in parts)
             {
                 if (part is TextPart text) { value.Append(text.Text); continue; }
                 var resolved = ResolveRef(scope, ((RefPart)part).Path, location, visiting);
                 if (resolved is null) return null;
-                value.Append(resolved.Value.value);
-                via.AddRange(resolved.Value.via);
+                value.Append(resolved.Value.Value);
+                via.AddRange(resolved.Value.Via);
+                sources.AddRange(resolved.Value.Sources);
             }
-            return (value.ToString(), via);
+            return new Resolved(value.ToString(), via, sources);
         }
 
         IEnumerable<ContainerModel> Containers(Scope scope)

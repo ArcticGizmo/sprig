@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option A: summary first</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#181820}
+a{color:#60A5FA}a:hover{color:#93C5FD}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 900px; display: flex; flex-wrap: wrap; background: #181820; color: #E1E1EB; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 13px">
+
+  <nav aria-label="Main" style="flex: 1 0 216px; max-width: 216px; box-sizing: border-box; background: #1F1F2A; border-right: 1px solid #2D2D3C; display: flex; flex-direction: column; gap: 2px; padding: 18px 10px 12px">
+    <div style="display: flex; align-items: baseline; gap: 8px; padding: 0 8px 10px"><span style="font-size: 22px; font-weight: 600; color: #F5F5FA">sprig</span><span style="font-size: 11px; color: #FBBF24">experimental</span></div>
+    <button style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Home</button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0; padding: 14px 10px 4px">DEFINE</div>
+    <button style="display: flex; justify-content: space-between; text-align: left; background: #2D2D3C; border: 0; color: #F5F5FA; font-size: 14px; padding: 8px 10px; border-radius: 8px"><span>Trellises</span><span style="font-size: 11px; color: #A5A5B8">2</span></button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0; padding: 14px 10px 4px">RUN</div>
+    <button style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Sprouts</button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.2px; color: #8C8CA0; padding: 6px 12px 2px">STOREFRONT <span style="color: #4ADE80">1 up</span></div>
+    <button style="display: flex; align-items: center; gap: 8px; text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 13px; padding: 4px 14px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ADE80"></span>feat-a</button>
+    <div style="flex-grow: 1"></div>
+    <button style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Settings</button>
+  </nav>
+
+  <!-- One list: trellises, with where each is kept and whether it's running -->
+  <div style="flex: 1 0 250px; max-width: 250px; box-sizing: border-box; border-right: 1px solid #2D2D3C; padding: 22px 14px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 6px">
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #F5F5FA">Trellises</h2>
+      <button style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 7px; padding: 6px 12px; font-weight: 600; font-size: 13px">+ Add</button>
+    </div>
+    <button style="text-align: left; background: #3B2D63; border: 0; border-radius: 8px; padding: 9px 10px; color: #E1E1EB; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 14px; font-weight: 600; color: #F5F5FA">storefront</span>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #CFCFE0">3 repos · <span style="color: #4ADE80">1 sprout up</span></span>
+    </button>
+    <button style="text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 9px 10px; color: #E1E1EB; display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 14px; font-weight: 600; color: #F5F5FA">services</span>
+      <span style="font-size: 11.5px; color: #A5A5B8">1 repo · no sprouts</span>
+    </button>
+  </div>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 26px 32px; display: flex; flex-direction: column; gap: 16px">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px">
+      <div style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 5px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #F5F5FA">storefront</h1>
+          <span style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #5B4A92; background: #2A2340; color: #CFC2FF; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 19c0-8 6-14 14-14 0 8-6 14-14 14z"></path><path d="M5 19l7-7"></path></svg>in sprig</span>
+        </div>
+        <div style="color: #A5A5B8; font-size: 13.5px">Runs shop-services, shop-web and shop-mobile together.</div>
+      </div>
+      <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 8px; padding: 9px 14px; font-size: 13px">Edit code</button>
+      <button aria-label="More actions" style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 8px; padding: 9px 12px; font-size: 13px">⋯</button>
+      <button style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 8px; padding: 9px 16px; font-size: 13.5px; font-weight: 600">Start a sprout</button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span>
+      <span style="color: #E1E1EB">Ready to start.</span>
+      <span style="color: #A5A5B8">Checked 2 minutes ago, every need filled, nothing waiting for approval.</span>
+      <a href="#" style="font-size: 13px">Check again</a>
+    </div>
+
+    <div role="tablist" aria-label="Trellis views" style="display: flex; gap: 4px; border-bottom: 1px solid #2D2D3C">
+      <button role="tab" aria-selected="true" style="background: transparent; border: 0; border-bottom: 2px solid #60A5FA; color: #F5F5FA; font-size: 13.5px; font-weight: 600; padding: 8px 12px">Overview</button>
+      <button role="tab" aria-selected="false" style="background: transparent; border: 0; border-bottom: 2px solid transparent; color: #A5A5B8; font-size: 13.5px; padding: 8px 12px">Values <span style="color: #8C8CA0">38</span></button>
+      <button role="tab" aria-selected="false" style="background: transparent; border: 0; border-bottom: 2px solid transparent; color: #A5A5B8; font-size: 13.5px; padding: 8px 12px">Ports <span style="color: #8C8CA0">11</span></button>
+      <button role="tab" aria-selected="false" style="background: transparent; border: 0; border-bottom: 2px solid transparent; color: #A5A5B8; font-size: 13.5px; padding: 8px 12px">Code</button>
+    </div>
+
+    <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">REPOS</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px">
+
+      <div style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <span style="font-size: 15px; font-weight: 600; color: #F5F5FA">shop-services</span>
+          <span style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #4A4A5E; color: #D4D4E0; font-size: 11.5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"></path></svg>in repo</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 52px 1fr; row-gap: 5px; font-size: 12.5px">
+          <span style="color: #8C8CA0">Runs</span><span>catalog-api, orders-api, then migrate first</span>
+          <span style="color: #8C8CA0">Infra</span><span>postgres, redis, rabbitmq</span>
+          <span style="color: #8C8CA0">Offers</span><span>catalog-url, orders-url</span>
+          <span style="color: #8C8CA0">Needs</span><span>mail-smtp <span style="color: #4ADE80">← mail, added by the trellis</span></span>
+        </div>
+        <button style="align-self: flex-start; background: transparent; border: 0; padding: 0; color: #60A5FA; font-size: 12.5px">Open its definition</button>
+      </div>
+
+      <div style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <span style="font-size: 15px; font-weight: 600; color: #F5F5FA">shop-web</span>
+          <span style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #5B4A92; background: #2A2340; color: #CFC2FF; font-size: 11.5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 19c0-8 6-14 14-14 0 8-6 14-14 14z"></path><path d="M5 19l7-7"></path></svg>in sprig</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 52px 1fr; row-gap: 5px; font-size: 12.5px">
+          <span style="color: #8C8CA0">Runs</span><span>web</span>
+          <span style="color: #8C8CA0">Infra</span><span style="color: #8C8CA0">none</span>
+          <span style="color: #8C8CA0">Offers</span><span style="color: #8C8CA0">nothing</span>
+          <span style="color: #8C8CA0">Needs</span><span>catalog-url, orders-url <span style="color: #4ADE80">← shop-services</span></span>
+        </div>
+        <button style="align-self: flex-start; background: transparent; border: 0; padding: 0; color: #60A5FA; font-size: 12.5px">Open its definition</button>
+      </div>
+
+      <div style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px">
+          <span style="font-size: 15px; font-weight: 600; color: #F5F5FA">shop-mobile</span>
+          <span style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #4A4A5E; color: #D4D4E0; font-size: 11.5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"></path></svg>in repo</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 52px 1fr; row-gap: 5px; font-size: 12.5px">
+          <span style="color: #8C8CA0">Runs</span><span>mobile</span>
+          <span style="color: #8C8CA0">Infra</span><span style="color: #8C8CA0">none</span>
+          <span style="color: #8C8CA0">Offers</span><span style="color: #8C8CA0">nothing</span>
+          <span style="color: #8C8CA0">Needs</span><span>catalog-url <span style="color: #4ADE80">← shop-services</span></span>
+        </div>
+        <button style="align-self: flex-start; background: transparent; border: 0; padding: 0; color: #60A5FA; font-size: 12.5px">Open its definition</button>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 6px">
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">HOW SPROUTS RUN</div>
+        <div style="display: grid; grid-template-columns: 82px 1fr; row-gap: 8px; font-size: 12.5px; line-height: 1.4">
+          <span style="color: #8C8CA0">Worktrees</span><span>Each sprout gets its own, on a new branch from <b style="color: #F5F5FA">main</b></span>
+          <span style="color: #8C8CA0">Ports</span><span>Stable: each sprout keeps the ports it was given</span>
+          <span style="color: #8C8CA0">Groups</span><span><b style="color: #F5F5FA">web</b> shop-web with shop-services<br><b style="color: #F5F5FA">mobile</b> shop-mobile with catalog-api</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">ADDED BY THE TRELLIS</div>
+        <div style="display: grid; grid-template-columns: 82px 1fr; row-gap: 8px; font-size: 12.5px; line-height: 1.4">
+          <span style="color: #F5F5FA; font-weight: 600">mail</span><span>A Mailpit per sprout. Fills <b style="color: #F5F5FA">mail-smtp</b>, which shop-services needs and no repo offers.</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">SPROUTS OF IT</div>
+        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12.5px">
+          <div style="display: flex; align-items: center; gap: 8px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ADE80"></span><b style="color: #F5F5FA">feat-a</b><span style="color: #A5A5B8">4 of 4 apps running</span></div>
+          <div style="display: flex; align-items: center; gap: 8px"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1px solid #8C8CA0"></span><b style="color: #F5F5FA">feat-b</b><span style="color: #A5A5B8">down for 3 days</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

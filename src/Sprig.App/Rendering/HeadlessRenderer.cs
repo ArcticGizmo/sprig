@@ -135,11 +135,14 @@ internal static partial class HeadlessRenderer
                          .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.cs")).Where(File.Exists)))
                 services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
             services.Trellises.Add("storefront", trellisFile);
-            // One repo of each kind in the Repos list.
+            // One repo of each kind in the Repos list: its file in the repo, and in sprig.
             if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.cs")))
-                services.Authoring.ReferenceRepo(web, "shop-web");
+                services.Authoring.AddRepo(web, "shop-web");
             if (Path.Combine(root, "shop-services") is var services_ && Directory.Exists(services_))
-                services.Authoring.WriteRepo(services_, "shop-services-local");
+            {
+                services.Authoring.AddRepo(services_, "shop-services-local");
+                services.Authoring.KeepInSprig("shop-services-local");
+            }
 
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
             vm.NavigateCommand.Execute(vm.Trellises);

@@ -15,52 +15,50 @@ namespace Sprig.App.ViewModels;
 
 /// <param name="Name">Its registered ID, which its sprouts are keyed by.</param>
 /// <param name="NeedsApproval">The file's current content isn't approved, so it hasn't run yet.</param>
-/// <param name="IsVirtual">Kept in sprig's store rather than a folder of the user's.</param>
-public sealed record TrellisItem(string Name, string Path, bool NeedsApproval = false, bool IsVirtual = false)
+/// <param name="InSprig">Kept in sprig's store rather than a folder of the user's.</param>
+public sealed record TrellisItem(string Name, string Path, bool NeedsApproval = false, bool InSprig = false)
 {
-    public string DisplayPath => IsVirtual ? "Kept in sprig" : Path.Replace('\\', '/');
-    public string Folder => IsVirtual ? "kept in sprig" : System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? "";
+    public string DisplayPath => InSprig ? "in sprig" : Path.Replace('\\', '/');
+    public string Folder => InSprig ? "in sprig" : System.IO.Path.GetDirectoryName(Path)?.Replace('\\', '/') ?? "";
     public bool Missing => !File.Exists(Path);
 }
 
 /// <summary>One repo of the selected trellis, and where its definition comes from.</summary>
 /// <param name="Path">The repo as the trellis names it.</param>
-/// <param name="Definition">The ID of the definition sprig keeps for it, when the trellis names one with
-/// <c>definition:</c>.</param>
 /// <param name="File">The definition file it uses, when there is one.</param>
 /// <param name="Use">The Repos-list entry it comes from, when the trellis names it with <c>UseRepo</c>.</param>
-/// <param name="UseInRepo">That entry uses the folder's own sprig.cs.</param>
-public sealed record TrellisRepoRow(string Path, string Dir, string? Definition, bool HasOwn, string? File,
-    string? Use = null, bool UseInRepo = false)
+/// <param name="InRepo">Its definition is the folder's own sprig.cs, rather than one kept in sprig.</param>
+public sealed record TrellisRepoRow(string Path, string Dir, string? File, string? Use, bool InRepo)
 {
     public string Name => Use ?? System.IO.Path.GetFileName(Dir.TrimEnd('/', '\\'));
     public string DisplayDir => Dir.Replace('\\', '/');
-    public string Source => (Use, Definition) switch
+    public string Source => (Use, File) switch
     {
-        ({ } use, _) when File is null => $"'{use}' isn't in the Repos list",
-        (not null, _) => UseInRepo ? "From the Repos list: its own sprig.cs" : "From the Repos list: written in sprig",
-        (null, { } id) => $"Written in sprig as '{id}'",
-        _ => HasOwn ? "Its own sprig.cs" : "No sprig.cs yet",
+        ({ } use, null) => $"'{use}' isn't in the Repos list",
+        (_, null) => "No sprig.cs yet",
+        _ => InRepo ? "in repo" : "in sprig",
     };
-    public bool IsVirtual => Definition is not null || (Use is not null && !UseInRepo);
-    public bool Undescribed => File is null || (Definition is null && Use is null && !HasOwn);
+    public bool InSprig => File is not null && !InRepo;
+    public bool Undescribed => File is null;
     public bool CanEdit => File is not null && System.IO.File.Exists(File);
-    public bool CanDescribe => Use is null ? Definition is null : UseInRepo || (File is null && System.IO.Directory.Exists(Dir));
-    public string DescribeLabel => HasOwn ? "Copy into sprig" : "Write in sprig";
-    public string DescribeTip => HasOwn
-        ? "Use a copy written in sprig instead, to try changes without committing them"
-        : "Write a definition for it in sprig, starting from what's in its folder";
-    public bool CanUseOwn => HasOwn && IsVirtual;
+    /// <summary>Only an entry on the Repos list can switch where its file is kept.</summary>
+    public bool CanSwitch => Use is not null && File is not null;
+    public string SwitchLabel => InRepo ? "Keep in sprig" : "Put in the repo";
+    public string SwitchTip => InRepo
+        ? "Use a copy kept in sprig, to try changes without committing them. Every trellis that uses this repo follows."
+        : "Use the folder's own sprig.cs; if it has none, sprig's copy is written there, uncommitted. Every trellis that uses this repo follows.";
+    public bool CanAddToRepos => Use is null && System.IO.Directory.Exists(Dir);
 }
 
 /// <summary>One repo in sprig's Repos list.</summary>
-public sealed record RepoItem(string Id, string? Folder, bool InRepo, string DefinitionFile)
+public sealed record RepoItem(string Id, string Folder, bool InRepo, string DefinitionFile)
 {
-    public string DisplayFolder => Folder?.Replace('\\', '/') ?? "no folder given";
+    public string DisplayFolder => Folder.Replace('\\', '/');
     public string DisplayFile => DefinitionFile.Replace('\\', '/');
-    public string Kind => InRepo ? "its own sprig.cs" : "written in sprig";
+    public string Kind => InRepo ? "in repo" : "in sprig";
     public string Usage => $"trellis.UseRepo(\"{Id}\")";
     public bool Missing => !File.Exists(DefinitionFile);
+    public string SwitchLabel => InRepo ? "Keep in sprig" : "Put in the repo";
 }
 
 /// <param name="Changed">An earlier version was approved; this content wasn't.</param>
@@ -144,7 +142,6 @@ public partial class TrellisesViewModel : PageViewModel
     [ObservableProperty] private bool _confirmingRepoDelete;
 
     [ObservableProperty] private bool _isRepoFormOpen;
-    [ObservableProperty] private bool _repoFormReference;
     [ObservableProperty] private string _repoFormFolder = "";
     [ObservableProperty] private string _repoFormId = "";
     [ObservableProperty] private string _repoFormMessage = "";
@@ -153,16 +150,9 @@ public partial class TrellisesViewModel : PageViewModel
     public bool HasRepoSelection => SelectedRepo is not null;
     public bool NothingSelected => Selected is null && SelectedRepo is null;
     public bool HasRepoEntries => RepoEntries.Count > 0;
-    public string RepoFormTitle => RepoFormReference ? "Reference a repo's own sprig.cs" : "Write a repo definition in sprig";
-    public string RepoFormHelp => RepoFormReference
-        ? "Lists a repo whose sprig.cs is committed, so trellises can use it by ID and you can open it here. Nothing is copied."
-        : "Kept in sprig, so nothing is written to the repo. It starts from the repo's own sprig.cs if it has one, or else from what's in its folder.";
-
-    partial void OnRepoFormReferenceChanged(bool value)
-    {
-        OnPropertyChanged(nameof(RepoFormTitle));
-        OnPropertyChanged(nameof(RepoFormHelp));
-    }
+    public string RepoFormTitle => "Add a repo";
+    public string RepoFormHelp =>
+        "A folder with its own sprig.cs uses it. One without gets a definition kept in sprig, drafted from what's in the folder, so nothing is written to the repo. Switch where it's kept at any time.";
 
     // The ID follows the folder until it's typed over.
     string _suggestedRepoId = "";
@@ -171,7 +161,7 @@ public partial class TrellisesViewModel : PageViewModel
     {
         var name = Path.GetFileName(value.Trim().TrimEnd('/', '\\'));
         if (name.Length == 0 || (RepoFormId.Length > 0 && RepoFormId != _suggestedRepoId)) return;
-        _suggestedRepoId = _services.Virtuals.UnusedRepoId(name);
+        _suggestedRepoId = _services.Stored.UnusedRepoId(name);
         RepoFormId = _suggestedRepoId;
     }
 
@@ -210,7 +200,7 @@ public partial class TrellisesViewModel : PageViewModel
         var previous = Selected;
         Trellises.Clear();
         foreach (var e in _services.Trellises.List())
-            Trellises.Add(new TrellisItem(e.Id, e.Path, NeedsApproval(e.Path), _services.Virtuals.IsVirtual(e.Path)));
+            Trellises.Add(new TrellisItem(e.Id, e.Path, NeedsApproval(e.Path), _services.Stored.IsKept(e.Path)));
         NavCount = Trellises.Count;
         OnPropertyChanged(nameof(IsEmpty));
         _quietSelection = !replan;
@@ -251,7 +241,7 @@ public partial class TrellisesViewModel : PageViewModel
     {
         var selected = keep ?? SelectedRepo?.Id;
         RepoEntries.Clear();
-        foreach (var e in _services.Virtuals.Repos()) RepoEntries.Add(new RepoItem(e.Id, e.Folder, e.InRepo, e.DefinitionFile));
+        foreach (var e in _services.Stored.Repos()) RepoEntries.Add(new RepoItem(e.Id, e.Folder, e.InRepo, e.DefinitionFile));
         OnPropertyChanged(nameof(HasRepoEntries));
         if (selected is not null) SelectedRepo = RepoEntries.FirstOrDefault(r => r.Id == selected);
     }
@@ -306,18 +296,38 @@ public partial class TrellisesViewModel : PageViewModel
         OpenEditor(repo.DefinitionFile, $"{repo.Id}: {repo.Kind}",
             repo.InRepo
                 ? "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved."
-                : "Written in sprig, so no branch can change it. Saving approves what you saved.");
+                : "In sprig, so no branch can change it. Saving approves what you saved.");
+    }
+
+    /// <summary>Switch where the selected repo's definition is kept; every trellis that uses it follows.</summary>
+    [RelayCommand]
+    private async Task SwitchSelectedRepo()
+    {
+        if (SelectedRepo is not { } repo) return;
+        if (await SwitchStorage(repo.Id, repo.InRepo) is { } error)
+        {
+            SayRepoCheck(error, bad: true);
+            return;
+        }
+        RefreshRepoEntries(repo.Id);
+    }
+
+    async Task<string?> SwitchStorage(string id, bool toSprig)
+    {
+        try
+        {
+            await AppServices.RunAsync(() => toSprig ? _services.Authoring.KeepInSprig(id) : _services.Authoring.PutInRepo(id));
+            return null;
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return e.Message;
+        }
     }
 
     [RelayCommand]
-    private void OpenWriteRepo() => OpenRepoForm(reference: false);
-
-    [RelayCommand]
-    private void OpenReferenceRepo() => OpenRepoForm(reference: true);
-
-    void OpenRepoForm(bool reference)
+    private void OpenRepoForm()
     {
-        RepoFormReference = reference;
         _suggestedRepoId = "";
         RepoFormId = "";
         RepoFormFolder = "";
@@ -349,8 +359,7 @@ public partial class TrellisesViewModel : PageViewModel
         RepoEntry entry;
         try
         {
-            var reference = RepoFormReference;
-            entry = await AppServices.RunAsync(() => reference ? _services.Authoring.ReferenceRepo(folder, id) : _services.Authoring.WriteRepo(folder, id));
+            entry = await AppServices.RunAsync(() => _services.Authoring.AddRepo(folder, id));
         }
         catch (Exception e) when (e is ArgumentException or IOException)
         {
@@ -511,7 +520,7 @@ public partial class TrellisesViewModel : PageViewModel
     private void Remove(TrellisItem? item)
     {
         if (item is null) return;
-        if (item.IsVirtual && !ConfirmingRemove)
+        if (item.InSprig && !ConfirmingRemove)
         {
             ConfirmingRemove = true;
             return;
@@ -535,17 +544,13 @@ public partial class TrellisesViewModel : PageViewModel
         {
             if (reference.Use is { } use)
             {
-                var entry = _services.Virtuals.Repo(use);
-                var folder = entry?.Folder ?? loaded.RepoDirs.GetValueOrDefault(reference.Path) ?? "";
-                Repos.Add(new TrellisRepoRow(reference.Path, folder, null, File.Exists(Path.Combine(folder, TrellisLoader.RepoDefinitionFile)),
-                    entry?.DefinitionFile, use, entry?.InRepo ?? false));
+                var entry = _services.Stored.Repo(use);
+                Repos.Add(new TrellisRepoRow(reference.Path, entry?.Folder ?? "", entry?.DefinitionFile, use, entry?.InRepo ?? false));
                 continue;
             }
             var dir = loaded.RepoDirs.GetValueOrDefault(reference.Path) ?? reference.Path;
             var own = Path.Combine(dir, TrellisLoader.RepoDefinitionFile);
-            var hasOwn = File.Exists(own);
-            var file = reference.Definition is { } id ? _services.Virtuals.RepoFile(id) : hasOwn ? own : null;
-            Repos.Add(new TrellisRepoRow(reference.Path, dir, reference.Definition, hasOwn, file));
+            Repos.Add(new TrellisRepoRow(reference.Path, dir, File.Exists(own) ? own : null, null, InRepo: true));
         }
         HasRepos = Repos.Count > 0;
     }
@@ -557,46 +562,46 @@ public partial class TrellisesViewModel : PageViewModel
     {
         if (Selected is not { } trellis || trellis.Missing) return;
         OpenEditor(trellis.Path, $"{trellis.Name}: the trellis",
-            trellis.IsVirtual ? "Kept in sprig. Saving approves what you saved." : "In your folder, so saving changes the file there. Saving approves what you saved.");
+            trellis.InSprig ? "Kept in sprig. Saving approves what you saved." : "In your folder, so saving changes the file there. Saving approves what you saved.");
     }
 
     [RelayCommand]
     private void EditRepo(TrellisRepoRow? row)
     {
         if (row?.File is not { } file || !row.CanEdit) return;
-        OpenEditor(file, $"{row.Name}: {(row.IsVirtual ? $"'{row.Definition}', kept in sprig" : "its own sprig.cs")}",
-            row.IsVirtual
-                ? "Kept in sprig, so no branch can change it. Saving approves what you saved."
+        OpenEditor(file, $"{row.Name}: {row.Source}",
+            row.InSprig
+                ? "In sprig, so no branch can change it. Saving approves what you saved."
                 : "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved.");
     }
 
+    /// <summary>Switch where one of the trellis's repos keeps its definition; every trellis that uses it follows.</summary>
     [RelayCommand]
-    private async Task DescribeInSprig(TrellisRepoRow? row)
+    private async Task SwitchRepo(TrellisRepoRow? row)
+    {
+        if (row?.Use is not { } id || Selected is not { } trellis) return;
+        if (await SwitchStorage(id, row.InRepo) is { } error)
+        {
+            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, error, new SourceLocation(trellis.Path, 0))], trellis.Path);
+            return;
+        }
+        RefreshRepoEntries();
+        await PlanSelectedAsync();
+    }
+
+    /// <summary>Bring a repo the trellis names by folder in through the Repos list, so where its file is kept can be
+    /// switched.</summary>
+    [RelayCommand]
+    private async Task AddToRepos(TrellisRepoRow? row)
     {
         if (row is null || Selected is not { } trellis) return;
-        string file;
-        try { file = await AppServices.RunAsync(() => _services.Authoring.DescribeInSprig(trellis.Path, row.Path, row.Dir, row.Use)); }
+        try { await AppServices.RunAsync(() => _services.Authoring.UseFromRepos(trellis.Path, row.Path)); }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException or IOException)
         {
             ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, e.Message, new SourceLocation(trellis.Path, 0))], trellis.Path);
             return;
         }
         RefreshRepoEntries();
-        await PlanSelectedAsync();
-        if (Repos.FirstOrDefault(r => r.Dir == row.Dir && r.IsVirtual) is { } described) EditRepo(described);
-        else OpenEditor(file, $"{row.Name}: kept in sprig", "Kept in sprig. Saving approves what you saved.");
-    }
-
-    [RelayCommand]
-    private async Task UseOwnDefinition(TrellisRepoRow? row)
-    {
-        if (row is null || Selected is not { } trellis) return;
-        try { await AppServices.RunAsync(() => _services.Authoring.UseOwnDefinition(trellis.Path, row.Path, row.Use, row.Dir)); }
-        catch (Exception e) when (e is InvalidOperationException or IOException)
-        {
-            ShowLoadProblems([new PlanProblem(ProblemSeverity.Error, e.Message, new SourceLocation(trellis.Path, 0))], trellis.Path);
-            return;
-        }
         await PlanSelectedAsync();
     }
 

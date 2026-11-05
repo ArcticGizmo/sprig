@@ -59,12 +59,12 @@ public sealed class TrellisRegistry(ISprigPaths paths)
         => Ids.Unused(Ids.Slug(wanted, "trellis"),
             Load().Where(e => forPath is null || !SamePath(e.Path, forPath)).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
-    /// <summary>The ID a trellis file suggests: its name without <c>.trellis.cs</c>. A virtual trellis's file is always
+    /// <summary>The ID a trellis file suggests: its name without <c>.trellis.cs</c>. A trellis kept in sprig is always
     /// <c>trellis.cs</c>, so its folder (named by its ID) says it instead.</summary>
     public static string IdFromFile(string path)
     {
         var file = System.IO.Path.GetFileName(path);
-        if (file.Equals(Definitions.VirtualDefinitions.TrellisFileName, StringComparison.OrdinalIgnoreCase)
+        if (file.Equals(Definitions.StoredDefinitions.TrellisFileName, StringComparison.OrdinalIgnoreCase)
             && System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path)) is { Length: > 0 } folder)
             return Ids.Slug(folder, "trellis");
         foreach (var suffix in (string[])[".trellis.cs", ".cs"])

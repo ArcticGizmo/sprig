@@ -23,7 +23,7 @@ public sealed class AppServices
     public DefinitionRunner Definitions { get; }
     public TrellisRegistry Trellises { get; }
     public TrellisLoader Loader { get; }
-    public VirtualDefinitions Virtuals { get; }
+    public StoredDefinitions Stored { get; }
     public TrellisAuthoring Authoring { get; }
 
     /// <summary>Completion and errors for the definition editor, from a separate process so Roslyn can't take the app
@@ -42,9 +42,9 @@ public sealed class AppServices
         Trust = new FileTrustStore(Paths);
         Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
         Trellises = new TrellisRegistry(Paths);
-        Virtuals = new VirtualDefinitions(Paths);
-        Loader = new TrellisLoader(Definitions, Trellises, Virtuals);
-        Authoring = new TrellisAuthoring(Virtuals, Trellises, Trust);
+        Stored = new StoredDefinitions(Paths);
+        Loader = new TrellisLoader(Definitions, Trellises, Stored);
+        Authoring = new TrellisAuthoring(Stored, Trellises, Trust);
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         HostStatus = new HostStatus(Host);

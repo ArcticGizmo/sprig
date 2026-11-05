@@ -496,6 +496,69 @@ public class PlannerTests
 
         Assert.Contains("waits for 'ghost'", Assert.Single(f.Plan().Problems).Message);
     }
+
+    // ---- wires: where each value comes from, as data ----
+
+    [Fact]
+    public void An_import_answered_by_an_export_is_a_wire_to_the_app_behind_it()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var pg = repo.Postgres("pg");
+            var catalog = repo.DotNet("catalog-api", ".").Http().Env("Db", pg.Database("catalog"));
+            repo.DotNet("orders-api", ".").Http().Env("Catalog__Url", catalog.Url);
+            repo.Export<Url>("catalog-url", catalog.Url);
+        });
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("VITE_CATALOG_URL", repo.Import<Url>("catalog-url")));
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal([new ValueSource("shop-services", "catalog-api", "http", "catalog-url")], Env(plan, "web", "VITE_CATALOG_URL").Value.Sources);
+        // Values a repo takes from its own resources by name are inside its box, not wires.
+        Assert.Equal([new PlannedWire("shop-web", "web", "VITE_CATALOG_URL", "catalog-url", "shop-services", "catalog-api", "http")], plan.Wires());
+        Assert.Equal([new ValueSource("shop-services", "catalog-api", "http", null)], Env(plan, "orders-api", "Catalog__Url").Value.Sources);
+    }
+
+    [Fact]
+    public void A_trellis_binding_is_a_wire_from_the_trellis_and_names_what_it_points_at()
+    {
+        var f = new Fixture();
+        var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
+        f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
+        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http()
+            .Env("Smtp__Url", repo.Import<Url>("mail-smtp"))
+            .Env("Cache", repo.Import<Url>("cache-url"))
+            .Env("Flag", repo.Import<Text>("flag")));
+        var mail = f.Trellis.Mailpit("mail");
+        f.Trellis.Bind("mail-smtp", mail.SmtpUrl);
+        f.Trellis.Bind("cache-url", a.Export("cache-url"));
+        f.Trellis.Bind("flag", "on");
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal(
+            [
+                new PlannedWire("shop-services", "orders-api", "Smtp__Url", "mail-smtp", "storefront", "mail", "smtp"),
+                new PlannedWire("shop-services", "orders-api", "Cache", "cache-url", "a", null, null),
+                new PlannedWire("shop-services", "orders-api", "Flag", "flag", "storefront", null, null),
+            ],
+            plan.Wires());
+    }
+
+    [Fact]
+    public void An_import_nothing_fills_is_a_wire_with_no_provider()
+    {
+        var f = new Fixture();
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url")));
+
+        var wire = Assert.Single(f.Plan().Wires());
+
+        Assert.False(wire.Filled);
+        Assert.Equal(("web", "API", "api-url"), (wire.Consumer, wire.Key, wire.Import));
+    }
 }
 
 public class TemplateTextTests

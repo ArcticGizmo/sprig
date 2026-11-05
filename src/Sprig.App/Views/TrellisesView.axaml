@@ -107,12 +107,10 @@
                 <!-- Repos: a folder and the definition that describes it, for trellises to use by ID -->
                 <StackPanel Grid.Row="1" Spacing="8" Margin="0,14,0,0">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" />
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                         <TextBlock Text="Repos" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Classes="small" Content="+ Write" Command="{Binding OpenWriteRepoCommand}" IsEnabled="{Binding !IsEditing}"
-                                ToolTip.Tip="Write a definition for a repo, kept in sprig" />
-                        <Button Grid.Column="2" Classes="small" Content="+ Reference" Command="{Binding OpenReferenceRepoCommand}" IsEnabled="{Binding !IsEditing}"
-                                ToolTip.Tip="List a repo's own committed sprig.cs, to use by ID and open here" />
+                        <Button Grid.Column="1" Classes="small" Content="+ Add" Command="{Binding OpenRepoFormCommand}" IsEnabled="{Binding !IsEditing}"
+                                ToolTip.Tip="Add a repo folder: its own sprig.cs if it has one, otherwise a draft kept in sprig" />
                     </Grid>
                     <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding !HasRepoEntries}"
                                Text="None yet. Trellises use these by ID: trellis.UseRepo(&quot;shop-web&quot;)." />
@@ -143,7 +141,7 @@
 
                 <!-- The selected repo -->
                 <StackPanel Spacing="16" IsVisible="{Binding HasRepoSelection}">
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                         <StackPanel Spacing="2">
                             <TextBlock Text="{Binding SelectedRepo.Id}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                             <TextBlock Text="{Binding SelectedRepo.DisplayFolder}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
@@ -151,7 +149,10 @@
                         <Button Grid.Column="1" Content="Edit definition" Command="{Binding EditSelectedRepoCommand}" VerticalAlignment="Top"
                                 IsEnabled="{Binding !SelectedRepo.Missing, FallbackValue=False}"
                                 Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
-                        <Button Grid.Column="2" Content="Remove" Command="{Binding DeleteSelectedRepoCommand}" VerticalAlignment="Top"
+                        <Button Grid.Column="2" Content="{Binding SelectedRepo.SwitchLabel, FallbackValue=''}" Command="{Binding SwitchSelectedRepoCommand}"
+                                VerticalAlignment="Top" ToolTip.Tip="Switch where its definition is kept; every trellis that uses it follows"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                        <Button Grid.Column="3" Content="Remove" Command="{Binding DeleteSelectedRepoCommand}" VerticalAlignment="Top"
                                 Background="Transparent" Foreground="{StaticResource DangerBrush}"
                                 BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
                     </Grid>
@@ -170,7 +171,7 @@
                     <Border Classes="panel">
                         <StackPanel Spacing="10">
                             <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
-                                <TextBlock Classes="cell via" Text="Described by" />
+                                <TextBlock Classes="cell via" Text="Kept" />
                                 <TextBlock Grid.Column="1" Classes="cell" Text="{Binding SelectedRepo.Kind}" />
                                 <TextBlock Grid.Row="1" Classes="cell via" Text="File" />
                                 <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="cell mono" FontSize="12"
@@ -267,18 +268,18 @@
                                                 <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
                                                 <TextBlock Classes="cell via mono" Text="{Binding DisplayDir}" />
                                                 <TextBlock Classes="cell source" Text="{Binding Source}" FontSize="12"
-                                                           Classes.virtual="{Binding IsVirtual}" Classes.missing="{Binding Undescribed}" />
+                                                           Classes.virtual="{Binding InSprig}" Classes.missing="{Binding Undescribed}" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                                 <Button Classes="small" Content="Edit" IsVisible="{Binding CanEdit}" CommandParameter="{Binding}"
                                                         Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).EditRepoCommand}" />
-                                                <Button Classes="small" Content="{Binding DescribeLabel}" IsVisible="{Binding CanDescribe}"
-                                                        ToolTip.Tip="{Binding DescribeTip}" CommandParameter="{Binding}"
-                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).DescribeInSprigCommand}" />
-                                                <Button Classes="small" Content="Use its own sprig.cs" IsVisible="{Binding CanUseOwn}"
-                                                        ToolTip.Tip="Point the trellis back at the repo's committed sprig.cs; the copy in sprig is kept"
+                                                <Button Classes="small" Content="{Binding SwitchLabel}" IsVisible="{Binding CanSwitch}"
+                                                        ToolTip.Tip="{Binding SwitchTip}" CommandParameter="{Binding}"
+                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).SwitchRepoCommand}" />
+                                                <Button Classes="small" Content="Add to Repos" IsVisible="{Binding CanAddToRepos}"
+                                                        ToolTip.Tip="Use this repo through the Repos list, so where its definition is kept can be switched"
                                                         CommandParameter="{Binding}"
-                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).UseOwnDefinitionCommand}" />
+                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).AddToReposCommand}" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>

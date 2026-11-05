@@ -32,16 +32,14 @@ public sealed class TrellisBuilder : DefinitionBuilder
     /// <summary>A repo in this trellis, by its folder relative to this file. The repo describes itself in its own
     /// <c>sprig.cs</c>.</summary>
     /// <param name="path">The repo's folder, relative to this file or absolute.</param>
-    /// <param name="definition">Describe the repo with a definition kept in sprig (made in the app) rather than its own
-    /// committed sprig.cs. Left out, the repo's sprig.cs is used.</param>
-    public RepoRef Repo(string path, string? definition = null, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    public RepoRef Repo(string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
-        _repos.Add(new RepoRefModel(path, new SourceLocation(file, line), definition));
+        _repos.Add(new RepoRefModel(path, new SourceLocation(file, line)));
         return new RepoRef(path);
     }
 
-    /// <summary>A repo from sprig's Repos list, by its ID: the folder and the definition it was set up with there,
-    /// whether written in sprig or the repo's own sprig.cs. Keeps folder paths out of the trellis.</summary>
+    /// <summary>A repo from sprig's Repos list, by its ID: its folder, and its definition, which is kept in the repo or
+    /// in sprig as the Repos list says. Keeps folder paths out of the trellis.</summary>
     public RepoRef UseRepo(string id, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
         _repos.Add(new RepoRefModel(id, new SourceLocation(file, line), Use: id));

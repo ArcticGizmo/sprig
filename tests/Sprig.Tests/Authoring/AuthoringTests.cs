@@ -60,7 +60,7 @@ public sealed class AuthoringTests : IDisposable
     }
 
     [Fact]
-    public void A_trellis_points_a_repo_at_a_definition_in_sprig_and_back_leaving_the_rest_as_written()
+    public void A_trellis_repo_named_by_folder_becomes_one_used_from_the_Repos_list_leaving_the_rest_as_written()
     {
         const string trellis = """
             var trellis = Trellis.Describe("storefront");
@@ -69,64 +69,122 @@ public sealed class AuthoringTests : IDisposable
             return trellis.Emit(args);
             """;
 
-        var pointed = DefinitionEditor.SetRepoDefinition(trellis, "../shop-web", "web-local");
-        Assert.True(pointed.Ok, pointed.Error);
-        Assert.Contains("trellis.Repo(\"../shop-web\", definition: \"web-local\");          // the front end", pointed.Text);
-        Assert.Contains("trellis.Repo(\"../shop-services\");", pointed.Text);
+        var used = DefinitionEditor.RepoToUseRepo(trellis, "../shop-web", "shop-web");
 
-        var renamed = DefinitionEditor.SetRepoDefinition(pointed.Text, "../shop-web", "web-other");
-        Assert.Contains("definition: \"web-other\"", renamed.Text);
-
-        var back = DefinitionEditor.SetRepoDefinition(renamed.Text, "../shop-web", null);
-        Assert.Equal(trellis, back.Text);
-
-        Assert.False(DefinitionEditor.SetRepoDefinition(trellis, "../nope", "x").Ok);
+        Assert.True(used.Ok, used.Error);
+        Assert.Contains("var web = trellis.UseRepo(\"shop-web\");          // the front end", used.Text);
+        Assert.Contains("trellis.Repo(\"../shop-services\");", used.Text);
+        Assert.False(DefinitionEditor.RepoToUseRepo(trellis, "../nope", "x").Ok);
     }
 
+    StoredDefinitions Stored => new(_store.Paths);
+
+    TrellisAuthoring Authoring(ITrustStore trust) => new(Stored, new TrellisRegistry(_store.Paths), trust);
+
+    static bool Approved(ITrustStore trust, string file) => trust.Check(file, DefinitionHash.Of(File.ReadAllText(file))).State == TrustState.Trusted;
+
     [Fact]
-    public void Copying_a_repos_own_definition_into_sprig_keeps_approval_only_if_it_had_it()
+    public void A_new_trellis_uses_each_folders_own_sprig_cs_or_drafts_one_in_sprig_and_reuses_entries()
     {
         var trust = new FileTrustStore(_store.Paths);
-        var virtuals = new VirtualDefinitions(_store.Paths);
-        var authoring = new TrellisAuthoring(virtuals, new TrellisRegistry(_store.Paths), trust);
+        var authoring = Authoring(trust);
         Write("shop-web/sprig.cs", "// shop-web's own");
+
         var entry = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")], "main", "Stable");
-        var trellisText = File.ReadAllText(entry.Path);
+        var text = File.ReadAllText(entry.Path);
 
-        Assert.Contains("var shopWeb = trellis.UseRepo(\"shop-web\");", trellisText);
-        Assert.Contains("var shopServices = trellis.UseRepo(\"shop-services\");", trellisText);
-        Assert.True(virtuals.Repo("shop-web")!.InRepo);
-        Assert.Equal(Path.Combine(Dir("shop-web"), "sprig.cs"), virtuals.Repo("shop-web")!.DefinitionFile);
-        Assert.False(virtuals.Repo("shop-services")!.InRepo);
-        Assert.Equal(TrustState.Trusted, trust.Check(virtuals.RepoFile("shop-services"), DefinitionHash.Of(File.ReadAllText(virtuals.RepoFile("shop-services")))).State);
+        Assert.Contains("var shopWeb = trellis.UseRepo(\"shop-web\");", text);
+        Assert.Contains("var shopServices = trellis.UseRepo(\"shop-services\");", text);
+        Assert.True(Stored.Repo("shop-web")!.InRepo);
+        Assert.Equal(Path.Combine(Dir("shop-web"), "sprig.cs"), Stored.Repo("shop-web")!.DefinitionFile);
+        var services = Stored.Repo("shop-services")!;
+        Assert.False(services.InRepo);
+        Assert.True(Approved(trust, services.DefinitionFile));
+        Assert.False(File.Exists(Path.Combine(Dir("shop-services"), "sprig.cs")));
 
-        // A second trellis over the same folders reuses their entries.
         var second = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")], null, "Stable");
         Assert.Equal("storefront-2", second.Id);
-        Assert.Equal(2, virtuals.Repos().Count);
-
-        var copy = authoring.DescribeInSprig(entry.Path, "shop-web", Dir("shop-web"), use: "shop-web");
-
-        Assert.Equal("// shop-web's own", File.ReadAllText(copy));
-        Assert.NotEqual(TrustState.Trusted, trust.Check(copy, DefinitionHash.Of("// shop-web's own")).State);
-        Assert.Contains("trellis.UseRepo(\"shop-web-2\")", File.ReadAllText(entry.Path));
-        Assert.Equal(TrustState.Trusted, trust.Check(entry.Path, DefinitionHash.Of(File.ReadAllText(entry.Path))).State);
-        Assert.Equal(["storefront"], authoring.UsedBy("shop-web-2"));
-        Assert.Equal(["storefront-2"], authoring.UsedBy("shop-web"));
-
-        authoring.UseOwnDefinition(entry.Path, "shop-web-2", use: "shop-web-2", folder: Dir("shop-web"));
-        Assert.Contains("trellis.UseRepo(\"shop-web\")", File.ReadAllText(entry.Path));
-        Assert.True(File.Exists(copy));
+        Assert.Equal(2, Stored.Repos().Count);
+        Assert.Equal(["storefront", "storefront-2"], authoring.UsedBy("shop-web"));
 
         authoring.RemoveTrellis(entry.Id);
         Assert.False(File.Exists(entry.Path));
         Assert.Equal(["storefront-2"], new TrellisRegistry(_store.Paths).List().Select(e => e.Id));
-        Assert.Equal(3, virtuals.Repos().Count);
+        Assert.Equal(2, Stored.Repos().Count);
 
-        // Taking a referenced repo off the list leaves the repo's own file where it is.
+        // Taking a repo off the list leaves the folder's own file where it is.
         authoring.DeleteRepo("shop-web");
-        Assert.Null(virtuals.Repo("shop-web"));
+        Assert.Null(Stored.Repo("shop-web"));
         Assert.True(File.Exists(Path.Combine(Dir("shop-web"), "sprig.cs")));
+    }
+
+    [Fact]
+    public void Keeping_a_repo_in_sprig_copies_its_own_file_with_the_approval_it_had_and_switching_back_keeps_the_copy()
+    {
+        var trust = new FileTrustStore(_store.Paths);
+        var authoring = Authoring(trust);
+        Write("shop-web/sprig.cs", "// shop-web's own");
+        var own = Path.Combine(Dir("shop-web"), "sprig.cs");
+        authoring.AddRepo(Dir("shop-web"), "web");
+
+        var inSprig = authoring.KeepInSprig("web");
+
+        Assert.False(inSprig.InRepo);
+        Assert.Equal(Stored.CopyFile("web"), inSprig.DefinitionFile);
+        Assert.Equal("// shop-web's own", File.ReadAllText(inSprig.DefinitionFile));
+        // The repo's own file was never approved, so neither is its copy.
+        Assert.False(Approved(trust, inSprig.DefinitionFile));
+
+        File.WriteAllText(inSprig.DefinitionFile, "// tried in sprig");
+        var back = authoring.PutInRepo("web");
+        Assert.True(back.InRepo);
+        Assert.Equal(own, back.DefinitionFile);
+        Assert.Equal("// shop-web's own", File.ReadAllText(own));
+
+        // Switching again restores the copy rather than copying over it.
+        Assert.Equal("// tried in sprig", File.ReadAllText(authoring.KeepInSprig("web").DefinitionFile));
+
+        // With an approved own file and no copy yet, the copy is approved too.
+        trust.Approve(own, DefinitionHash.Of("// shop-web's own"));
+        authoring.AddRepo(Dir("shop-web"), "web-2");
+        Assert.True(Approved(trust, authoring.KeepInSprig("web-2").DefinitionFile));
+    }
+
+    [Fact]
+    public void Putting_a_repo_kept_in_sprig_into_a_folder_with_no_sprig_cs_writes_its_copy_there()
+    {
+        var trust = new FileTrustStore(_store.Paths);
+        var authoring = Authoring(trust);
+        var entry = authoring.AddRepo(Dir("shop-services"), "services");
+        Assert.False(entry.InRepo);
+        var draft = File.ReadAllText(entry.DefinitionFile);
+
+        var inRepo = authoring.PutInRepo("services");
+
+        var own = Path.Combine(Dir("shop-services"), "sprig.cs");
+        Assert.Equal(own, inRepo.DefinitionFile);
+        Assert.Equal(draft, File.ReadAllText(own));
+        Assert.True(Approved(trust, own));
+        Assert.True(inRepo.HasCopy);
+    }
+
+    [Fact]
+    public void A_repo_named_by_folder_moves_onto_the_Repos_list_reusing_the_folders_entry()
+    {
+        var trust = new FileTrustStore(_store.Paths);
+        var authoring = Authoring(trust);
+        Write("shop-web/sprig.cs", "// shop-web's own");
+        authoring.AddRepo(Dir("shop-web"), "web");
+        var trellisFile = Path.Combine(_repos, "storefront.trellis.cs");
+        File.WriteAllText(trellisFile, "var trellis = Trellis.Describe(\"storefront\");\nvar web = trellis.Repo(\"shop-web\");\nreturn trellis.Emit(args);\n");
+        trust.Approve(trellisFile, DefinitionHash.Of(File.ReadAllText(trellisFile)));
+
+        var entry = authoring.UseFromRepos(trellisFile, "shop-web");
+
+        Assert.Equal("web", entry.Id);
+        Assert.Contains("var web = trellis.UseRepo(\"web\");", File.ReadAllText(trellisFile));
+        Assert.True(Approved(trust, trellisFile));
+        Assert.Single(Stored.Repos());
     }
 
     /// <summary>The drafts are only useful if they run, so this one compiles them with the real SDK.</summary>
@@ -135,11 +193,11 @@ public sealed class AuthoringTests : IDisposable
     public void A_trellis_made_in_the_app_over_repos_with_nothing_committed_plans()
     {
         var trust = new FileTrustStore(_store.Paths);
-        var virtuals = new VirtualDefinitions(_store.Paths);
+        var stored = new StoredDefinitions(_store.Paths);
         var registry = new TrellisRegistry(_store.Paths);
-        var authoring = new TrellisAuthoring(virtuals, registry, trust);
+        var authoring = new TrellisAuthoring(stored, registry, trust);
         var loader = new TrellisLoader(new DefinitionRunner(trust, new DotnetRunHost(), _store.Paths,
-            new DefinitionRunnerOptions { Timeout = TimeSpan.FromSeconds(120), AllowLocalSdkProject = true }), registry, virtuals);
+            new DefinitionRunnerOptions { Timeout = TimeSpan.FromSeconds(120), AllowLocalSdkProject = true }), registry, stored);
 
         var entry = authoring.CreateTrellis("trial run", [Dir("shop-web"), Dir("shop-services")], null, "Stable");
         var loaded = loader.Load(entry.Path);

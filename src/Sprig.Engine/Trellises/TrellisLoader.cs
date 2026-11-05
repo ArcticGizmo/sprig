@@ -56,8 +56,8 @@ public sealed record LoadedTrellis(
 /// <summary>Evaluates a trellis and the <c>sprig.cs</c> of every repo it names. Repos are evaluated in parallel; each
 /// goes through the same directive, trust and cache checks as any definition.</summary>
 /// <param name="registry">Gives each trellis its registered ID; without one, the ID comes from the file name.</param>
-/// <param name="virtuals">Where a repo named with <c>definition:</c> finds the definition sprig keeps for it.</param>
-public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? registry = null, VirtualDefinitions? virtuals = null)
+/// <param name="stored">The Repos list, for repos a trellis names with <c>UseRepo</c>.</param>
+public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? registry = null, StoredDefinitions? stored = null)
 {
     public const string RepoDefinitionFile = "sprig.cs";
 
@@ -98,19 +98,9 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
             var file = Path.Combine(readDir, RepoDefinitionFile);
             if (!Directory.Exists(readDir))
                 problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo folder '{readDir}' doesn't exist", reference.Location));
-            else if (reference.Definition is { } definition)
-            {
-                // Kept by sprig, so the same for every sprout: a branch can't change it.
-                if (virtuals is null)
-                    problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{reference.Path}' names the definition '{definition}', which only sprig's app and CLI can find", reference.Location));
-                else if (!virtuals.RepoExists(definition))
-                    problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{reference.Path}' names the definition '{definition}', which sprig doesn't have", reference.Location));
-                else
-                    definitions.Add((reference, virtuals.RepoFile(definition), virtuals.RepoFile(definition)));
-            }
             else if (!File.Exists(file))
                 problems.Add(new PlanProblem(ProblemSeverity.Error, readDir == repoDir
-                    ? $"'{reference.Path}' has no {RepoDefinitionFile} to describe it"
+                    ? $"'{reference.Path}' has no {RepoDefinitionFile} to describe it; commit one, or add the folder on the Repos page and use it with trellis.UseRepo(\"id\")"
                     : $"'{reference.Path}' has no {RepoDefinitionFile} in the sprout's folder {readDir}", reference.Location));
             else
                 definitions.Add((reference, file, Path.Combine(repoDir, RepoDefinitionFile)));
@@ -119,16 +109,12 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
         // A repo from the Repos list: its folder and definition come from its entry, not the trellis.
         void UseEntry(RepoRefModel reference, string use)
         {
-            if (virtuals?.Repo(use) is not { } entry)
+            if (stored?.Repo(use) is not { } entry)
             {
                 problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{use}' isn't in sprig's Repos list", reference.Location));
                 return;
             }
-            if (entry.Folder is not { } folder)
-            {
-                problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo '{use}' doesn't say which folder it describes; give it one in the Repos list", reference.Location));
-                return;
-            }
+            var folder = entry.Folder;
             dirs[reference.Path] = folder;
             var readDir = sproutDirs?.GetValueOrDefault(reference.Path) is { } sproutDir ? LongPath.Of(sproutDir) : folder;
             if (!Directory.Exists(readDir))
@@ -150,7 +136,7 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
             switch (Accept(result, problems, untrusted))
             {
                 case RepoModel repo: repos[reference.Path] = repo; break;
-                case TrellisModel: problems.Add(new PlanProblem(ProblemSeverity.Error, $"{(reference.Definition is { } definition ? $"the definition '{definition}'" : $"'{reference.Path}/{RepoDefinitionFile}'")} describes a trellis, not a repo", reference.Location)); break;
+                case TrellisModel: problems.Add(new PlanProblem(ProblemSeverity.Error, $"{(reference.Use is { } use ? $"the repo '{use}'" : $"'{reference.Path}/{RepoDefinitionFile}'")}'s definition describes a trellis, not a repo", reference.Location)); break;
             }
         }
 

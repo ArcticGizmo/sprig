@@ -87,7 +87,8 @@ public class TrellisesViewModelTests
             [
                 new PlannedApp("shop-web", "shop-web", "web", "node", ".",
                     [new PlannedEnv("VITE_CATALOG_URL", new PlannedValue("{import.catalog-url}", "http://localhost:8000",
-                        ["import catalog-url ← shop-services", "catalog-api.http port 8000"]), ".env.local", at)],
+                        ["import catalog-url ← shop-services", "catalog-api.http port 8000"],
+                        [new ValueSource("shop-services", "catalog-api", "http", "catalog-url")]), ".env.local", at)],
                     null, [], []),
                 new PlannedApp("shop-services", "shop-services", "catalog-api", "dotnet", "src/Catalog.Api",
                     [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", []), null, at)], null, [], []),
@@ -98,7 +99,8 @@ public class TrellisesViewModelTests
 
         var wire = Assert.Single(view.Wiring);
         Assert.Equal("shop-web / web", wire.Consumer);
-        Assert.Equal("shop-services (catalog-url)", wire.Provider);
+        Assert.Equal("shop-services / catalog-api (catalog-url)", wire.Provider);
+        Assert.Equal("http://localhost:8000", wire.Value);
         Assert.Equal("Host=a;Password=***", view.Apps[1].Rows[0].Value);
         Assert.Equal("shop-web/sprig.cs:7", Assert.Single(view.Problems).Where);
         Assert.Equal("Sprout 'plan'  ·  stable ports  ·  worktrees from main", view.Summary);

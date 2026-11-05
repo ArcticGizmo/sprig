@@ -52,11 +52,12 @@ public sealed class PlanView
 
         Groups = plan.Groups.Select(g => new GroupRow(g.Name, string.Join(", ", g.Apps))).ToArray();
 
-        Wiring = plan.Apps
-            .SelectMany(a => a.Env.Select(e => (app: a, env: e)))
-            .Where(x => x.env.Value.Via.Count > 0 && x.env.Value.Via[0].StartsWith("import ", StringComparison.Ordinal))
-            .Select(x => new WiringRow($"{x.app.Owner} / {x.app.Name}", x.env.Key, Provider(x.env.Value.Via[0]),
-                x.env.Value.Value is { } v ? ValueMask.Apply(v) : "unresolved"))
+        var values = plan.Apps.SelectMany(a => a.Env.Select(e => (key: (a.Owner, a.Name, e.Key), e.Value.Value)))
+            .GroupBy(x => x.key).ToDictionary(g => g.Key, g => g.First().Value);
+        Wiring = plan.Wires()
+            .Where(w => w.Import is not null)
+            .Select(w => new WiringRow($"{w.ConsumerOwner} / {w.Consumer}", w.Key, Provider(w),
+                values.GetValueOrDefault((w.ConsumerOwner, w.Consumer, w.Key)) is { } v ? ValueMask.Apply(v) : "unresolved"))
             .ToArray();
 
         Problems = Rows(plan.Problems, root);
@@ -87,14 +88,13 @@ public sealed class PlanView
     static SettingRow Row(string key, string? file, PlannedValue value)
         => new(key, file, value.Value is { } v ? ValueMask.Apply(v) : "unresolved", string.Join(" → ", value.Via), value.Value is null);
 
-    /// <summary>"import catalog-url ← shop-services" → "shop-services (catalog-url)".</summary>
-    static string Provider(string via)
+    /// <summary>"shop-services / catalog-api (catalog-url)", or "nothing fills catalog-url".</summary>
+    static string Provider(PlannedWire wire) => wire switch
     {
-        var arrow = via.IndexOf('←');
-        var name = via["import ".Length..(arrow > 0 ? arrow : via.Length)].Trim();
-        var from = arrow > 0 ? via[(arrow + 1)..].Trim() : "";
-        return $"{from} ({name})";
-    }
+        { Filled: false } => $"nothing fills {wire.Import}",
+        { Provider: { } resource } => $"{wire.ProviderOwner} / {resource} ({wire.Import})",
+        _ => $"{wire.ProviderOwner} ({wire.Import})",
+    };
 
     static string Relative(string file, string root)
     {

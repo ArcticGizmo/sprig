@@ -520,7 +520,7 @@ public static class Planner
             {
                 var bound = Resolve(_trellis, binding.Value, binding.Location);
                 if (bound.Value is null) return null;
-                return new Resolved(bound.Value, [$"import {name} ← trellis binding", .. bound.Via], Crossed(bound.Sources ?? [], _trellis.Owner, name));
+                return new Resolved(bound.Value, [$"import {name} ← the trellis", .. bound.Via], Crossed(bound.Sources ?? [], _trellis.Owner, name));
             }
 
             var exporters = _scopes

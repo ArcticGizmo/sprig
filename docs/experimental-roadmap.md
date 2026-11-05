@@ -318,7 +318,7 @@ Also in M4:
 3. **EDR sign-off.** Ask SecOps whether CrowdStrike or Defender raised non-blocking alerts for `sprig-host` (process trees, and its `--ctrl-c` helper attaching to app consoles). Nothing was blocked on this machine.
 4. **Merge mechanics.** The store moves from `sprig-exp` to `sprig` (the test guarding the released store changes with it), the version leaves `0.100.0-exp`, `Sprig.Host` gets a version, the changelog says `.sprig.json` is gone, and `Sprig.Sdk` is published as a package so definitions stop needing the local `#:project` line.
 
-## M7: Authoring in the app, with virtual trellises and repos (in progress)
+## M7: Authoring in the app, with trellises and repos kept in sprig (in progress)
 
 **Decision (user, 2026-11-04):** sprig should be usable on repos without committing anything. Trellises and repo definitions can both be *virtual*: kept in sprig's store and edited in the app. Several of each can exist, and none may clash with each other or with a definition committed in a repo. The user will judge the details once editing works in the app, so the shape below is a starting point.
 
@@ -326,7 +326,8 @@ Also in M4:
 2. **Virtual trellises and repo definitions live in the store,** each under its own ID: `<store>/trellises/<id>/trellis.cs` and `<store>/repos/<id>/sprig.cs`. There can be any number of each, including several definitions for the same repo folder. Approval stays per file; saving in the app approves what was saved.
 3. **A trellis names the definition it uses for each repo.** `trellis.Repo("C:/src/shop-web")` uses the repo's committed `sprig.cs`; `trellis.Repo("C:/src/shop-web", definition: "shop-web-local")` uses a virtual one. Nothing is picked up because it happens to be there, so a committed file and any number of virtual ones never compete. A virtual definition is the same for every sprout, since no branch can change it.
    - **Repos list (user, 2026-11-05).** A repo is a first-class entry: an ID, a folder, and its definition, either written in sprig or the folder's own `sprig.cs` (referenced, so it can be opened in the app). `trellis.UseRepo("id")` brings in both, keeping paths out of trellis code; the path forms stay, since the user wants more than one way to reference a repo. Entries live at `<store>/repos/<id>/` (`repo.json`, plus `sprig.cs` when written in sprig).
-4. **Editing in the app.** The M1 editor, polished, for trellises and repo definitions; a new definition starts from what the repo has (a `.csproj` becomes `DotNet(...)`, a `package.json` becomes `Node(...)`), and the plan updates beside the code.
+   - **Redesign (user, 2026-11-05).** The Trellises page was too much to take in, so it was redesigned from the options in [artefacts/trellis-options/](artefacts/trellis-options/); the checklist is [trellis-page-plan.md](trellis-page-plan.md). "Virtual" is gone: every repo and trellis is **in repo** or **in sprig**. `Repo(path, definition:)` was removed, leaving `Repo(path)` (the folder's own `sprig.cs`) and `UseRepo(id)` (a Repos entry, whose definition is switched between the folder's file and sprig's copy). Repos have their own page; a trellis opens on a summary with a picture of its repos and the values between them, Start a sprout, and a checklist while something blocks it. Model schema 7.
+4. **Editing in the app.** The M1 editor, polished, for trellises and repo definitions; a new definition starts from what the repo has (a `.csproj` becomes `DotNet(...)`, a `package.json` becomes `Node(...)`), and the plan updates beside the code. The editor is shared by the Repos and Trellises pages; on a trellis it's the Code tab, so the other tabs show what a save changed.
 
 A branch can be checked out in only one worktree, so two trellises making sprouts of the same repo on the same branch still clash; the plan should say which trellis has it.
 
@@ -335,7 +336,7 @@ A branch can be checked out in only one worktree, so two trellises making sprout
 - **In-app editor polish:** the M1 editor works but needs style refinement (completion popup, highlighting, problems list) before it becomes a real feature. Also stop the language host after a few idle minutes.
 - **Smarter worktree branching and refresh:** pooled warm sprouts, refresh from base, rebasing a sprout.
 - **Telemetry:** the standalone Aspire dashboard per sprout, receiving OpenTelemetry (OTLP) data.
-- **Live graph:** a drawn graph of the trellis (the Maps graph on `main`, adapted), then node state colours and click a node to see its logs.
+- **Live graph:** the trellis picture came with M7's redesign; next, a sprout's own picture with each app's state and a click through to its logs.
 - **More languages:** a TypeScript SDK that emits the same `model.json`.
 - **Shared trellises:** cloning a team's trellis repo and registering it in one step.
 

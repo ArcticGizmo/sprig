@@ -407,13 +407,28 @@ public partial class TrellisesViewModel : PageViewModel
         if (HasPendingTrust) SayEditor("Saved. Something it uses needs approving: close the editor to see what.", bad: true);
         else if (HasLoadProblems) SayEditor($"Saved, but it doesn't plan: {LoadProblems.FirstOrDefault()?.Message}", bad: true);
         else if (errors > 0) SayEditor($"Saved. The plan has {errors} problem{(errors == 1 ? "" : "s")}: close the editor to see {(errors == 1 ? "it" : "them")}.", bad: true);
-        else SayEditor($"Saved, and it plans. {Plan?.Summary}", bad: false);
+        else
+        {
+            SayEditor($"Saved, and it plans. {Plan?.Summary}", bad: false);
+            _ = ClearEditorStatusSoon();
+        }
     }
+
+    int _editorStatusVersion;
 
     void SayEditor(string message, bool bad)
     {
+        _editorStatusVersion++;
         EditorStatus = message;
         EditorStatusBad = bad;
+    }
+
+    /// <summary>Good news only needs a glance; a problem stays until the next save says otherwise.</summary>
+    async Task ClearEditorStatusSoon()
+    {
+        var version = _editorStatusVersion;
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (version == _editorStatusVersion && !EditorStatusBad) SayEditor("", bad: false);
     }
 
     [RelayCommand]

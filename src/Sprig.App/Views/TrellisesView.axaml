@@ -407,9 +407,10 @@
                             BorderThickness="1" Padding="10,3" />
                 </Grid>
             </Border>
-            <TextBlock DockPanel.Dock="Top" Classes="msg" Margin="0,10,0,0" Text="{Binding EditorStatus}" FontSize="12.5" TextWrapping="Wrap"
-                       Classes.bad="{Binding EditorStatusBad}"
-                       IsVisible="{Binding EditorStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <!-- Always takes its line, so the editor below doesn't jump when a message comes or goes -->
+            <TextBlock DockPanel.Dock="Top" Classes="msg" Margin="0,8,0,0" Height="18" Text="{Binding EditorStatus}" FontSize="12.5"
+                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding EditorStatus}"
+                       Classes.bad="{Binding EditorStatusBad}" />
             <Border Margin="0,12,0,0" Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1" CornerRadius="10" ClipToBounds="True">
                 <controls:CodeEditor Text="{Binding EditorText}" Host="{Binding Language}" />

@@ -161,6 +161,16 @@ internal static partial class HeadlessRenderer
             if (vm.Trellises.HasLoadProblems && services.Definitions.Evaluate(trellisFile) is Sprig.Engine.Definitions.Failed failed)
                 Console.Error.WriteLine($"the trellis {failed.Reason}:\n{failed.Output}");
 
+            // One app picked, with one group shown: its wires stand out, and what the group doesn't start dims.
+            if (vm.Trellises.Graph?.Boxes.SelectMany(b => b.Items).FirstOrDefault(i => i.Name == "web") is { } picked)
+            {
+                vm.Trellises.SelectAppCommand.Execute(picked);
+                if (vm.Trellises.GroupChips.FirstOrDefault(c => c.Name == "web") is { } group) vm.Trellises.ShowGroupCommand.Execute(group);
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "picked"));
+                vm.Trellises.ShowGroupCommand.Execute(vm.Trellises.GroupChips.FirstOrDefault());
+            }
+
             foreach (var tab in new[] { TrellisTab.Values, TrellisTab.Ports })
             {
                 vm.Trellises.Tab = tab;

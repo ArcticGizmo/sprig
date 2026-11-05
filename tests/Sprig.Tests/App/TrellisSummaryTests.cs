@@ -87,6 +87,63 @@ public sealed class TrellisSummaryTests : IDisposable
     }
 
     [Fact]
+    public void The_picture_puts_what_the_trellis_adds_first_and_each_repo_right_of_what_it_takes_from()
+    {
+        Shop();
+        var (_, plan) = Build();
+
+        var graph = TrellisGraph.Build(plan, new Dictionary<string, string> { ["shop-web"] = "in sprig" });
+
+        var x = graph.Boxes.ToDictionary(b => b.Owner, b => b.X);
+        Assert.True(x["storefront"] < x["shop-services"]);
+        Assert.True(x["shop-services"] < x["shop-web"]);
+        Assert.True(graph.Boxes.Single(b => b.Owner == "storefront").IsTrellis);
+        Assert.True(graph.Boxes.Single(b => b.Owner == "shop-web").InSprig);
+        Assert.Equal("pg", graph.Boxes.Single(b => b.Owner == "shop-services").Infra);
+        Assert.Equal(["catalog-api", "orders-api", "migrate"], graph.Boxes.Single(b => b.Owner == "shop-services").Items.Select(i => i.Name));
+    }
+
+    [Fact]
+    public void Wires_join_what_offers_a_value_to_the_app_that_needs_it_and_a_need_nothing_fills_is_a_stub()
+    {
+        Shop();
+        var (_, plan) = Build();
+        var graph = TrellisGraph.Build(plan);
+
+        var lines = graph.Lines(null, null);
+
+        var mail = lines.Single(l => l.Label == "mail-smtp");
+        Assert.Equal(("shop-services/orders-api", "storefront/mail"), (mail.ConsumerKey, mail.ProviderKey));
+        Assert.True(mail.X1 < mail.X2);
+        var catalog = lines.Single(l => l.Label == "catalog-url");
+        Assert.Equal(("shop-web/web", "shop-services/catalog-api"), (catalog.ConsumerKey, catalog.ProviderKey));
+        var stub = lines.Single(l => !l.Filled);
+        Assert.Equal("nothing fills payments-url", stub.Label);
+        Assert.Equal("shop-web/web", stub.ConsumerKey);
+    }
+
+    [Fact]
+    public void Picking_an_app_lights_its_wires_and_showing_a_group_dims_what_it_does_not_start()
+    {
+        Shop();
+        var (_, plan) = Build();
+        var graph = TrellisGraph.Build(plan);
+        var items = graph.Boxes.SelectMany(b => b.Items).ToDictionary(i => i.Key);
+
+        var lines = graph.Lines("shop-services/catalog-api", plan.Groups.Single(g => g.Name == "api").Apps.ToHashSet());
+
+        Assert.True(items["shop-services/catalog-api"].IsSelected);
+        Assert.True(lines.Single(l => l.Label == "catalog-url").Highlighted);
+        Assert.False(lines.Single(l => l.Label == "mail-smtp").Highlighted);
+        Assert.True(items["shop-web/web"].IsDimmed);
+        Assert.True(items["shop-services/orders-api"].IsDimmed);
+        Assert.False(items["shop-services/catalog-api"].IsDimmed);
+        // What the trellis adds starts with any group.
+        Assert.False(items["storefront/mail"].IsDimmed);
+        Assert.True(lines.Single(l => l.Label == "mail-smtp").Dimmed);
+    }
+
+    [Fact]
     public void A_repo_that_has_not_run_says_why_on_its_card()
     {
         _trellis.UseRepo("nope");

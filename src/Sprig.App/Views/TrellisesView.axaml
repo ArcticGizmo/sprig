@@ -121,6 +121,70 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="FontSize" Value="12.5" />
         </Style>
+        <!-- The picture -->
+        <Style Selector="Border.gbox">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="#3A3A4C" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.gbox.trellis">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#7C6BC4" />
+            <Setter Property="BorderThickness" Value="1.5" />
+        </Style>
+        <Style Selector="Button.boxhead">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.boxtitle">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.boxtitle.trellis">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="LetterSpacing" Value="1.3" />
+            <Setter Property="Foreground" Value="#C4B5FD" />
+        </Style>
+        <Style Selector="Button.gitem">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.gitem.job">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#4A4A5E" />
+        </Style>
+        <Style Selector="Button.gitem.selected">
+            <Setter Property="Background" Value="#1E2638" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.gitem.dimmed">
+            <Setter Property="Opacity" Value="0.3" />
+        </Style>
+        <Style Selector="Button.chip">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#CFCFE0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="12,3" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+        <Style Selector="Button.chip.on">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+            <Setter Property="BorderBrush" Value="#4A4A5E" />
+        </Style>
         <Style Selector="Border.step">
             <Setter Property="BorderBrush" Value="#6E6E82" />
             <Setter Property="Background" Value="Transparent" />
@@ -343,8 +407,144 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Its repos, one card each -->
-                            <StackPanel Spacing="10" IsVisible="{Binding HasCards}">
+                            <!-- The picture: repos, what the trellis adds, and a wire for each value that reaches an app from elsewhere -->
+                            <StackPanel Spacing="10" IsVisible="{Binding HasPicture}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="phead" Text="HOW IT FITS TOGETHER" VerticalAlignment="Center" />
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding GroupChips}" IsVisible="{Binding HasGroups}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:GroupChip">
+                                                <Button Classes="chip" Classes.on="{Binding IsOn}" Content="{Binding Label}" CommandParameter="{Binding}"
+                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).ShowGroupCommand}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                                <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
+                                    <Border Background="#1B1B24" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14"
+                                            VerticalAlignment="Top">
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                            <Grid Width="{Binding Graph.Width, FallbackValue=0}" Height="{Binding Graph.Height, FallbackValue=0}">
+                                                <controls:WireLayer Wires="{Binding GraphLines}" />
+                                                <ItemsControl ItemsSource="{Binding Graph.Boxes, FallbackValue={x:Null}}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.Styles>
+                                                        <Style Selector="ItemsControl > ContentPresenter" x:DataType="vm:GraphBox">
+                                                            <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                                            <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                                        </Style>
+                                                    </ItemsControl.Styles>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:GraphBox">
+                                                            <Border Classes="gbox" Classes.trellis="{Binding IsTrellis}" Width="{Binding Width}" Height="{Binding Height}"
+                                                                    CornerRadius="12" Padding="12">
+                                                                <StackPanel>
+                                                                    <Button Classes="boxhead" Height="44" CommandParameter="{Binding}"
+                                                                            Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).SelectBoxCommand}">
+                                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                                                            <TextBlock Classes="boxtitle" Classes.trellis="{Binding IsTrellis}" Text="{Binding Title}"
+                                                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                            <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding InSprig}" IsVisible="{Binding HasKept}">
+                                                                                <TextBlock Text="{Binding Kept}" />
+                                                                            </Border>
+                                                                        </Grid>
+                                                                    </Button>
+                                                                    <ItemsControl ItemsSource="{Binding Items}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="vm:GraphItem">
+                                                                                <Button Classes="gitem" Classes.job="{Binding IsJob}" Classes.selected="{Binding IsSelected}"
+                                                                                        Classes.dimmed="{Binding IsDimmed}" Height="30" Margin="0,0,0,6" CommandParameter="{Binding}"
+                                                                                        Command="{Binding $parent[UserControl].((vm:TrellisesViewModel)DataContext).SelectAppCommand}">
+                                                                                    <Grid ColumnDefinitions="*,Auto">
+                                                                                        <TextBlock Text="{Binding Name}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                                        <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="11.5" VerticalAlignment="Center"
+                                                                                                   FontFamily="Cascadia Mono,Consolas,monospace" Foreground="{StaticResource MutedBrush}" />
+                                                                                    </Grid>
+                                                                                </Button>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                    <TextBlock Text="{Binding Infra}" IsVisible="{Binding HasInfra}" Height="30" Padding="2,8,0,0"
+                                                                               FontSize="12" Foreground="#CFCFE0" TextTrimming="CharacterEllipsis" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </Viewbox>
+                                    </Border>
+
+                                    <!-- What's picked: an app's values, or a repo's card -->
+                                    <Border Grid.Row="1" Classes="panel" VerticalAlignment="Top">
+                                        <StackPanel Spacing="10">
+                                            <StackPanel Spacing="8" IsVisible="{Binding InspectingApp}">
+                                                <TextBlock Text="{Binding InspectedApp.Title, FallbackValue=''}" FontSize="15" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding InspectedApp.Subtitle, FallbackValue=''}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Classes="phead" Text="ITS VALUES" Margin="0,4,0,0" />
+                                                <ItemsControl ItemsSource="{Binding InspectedApp.Rows, FallbackValue={x:Null}}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:SettingRow">
+                                                            <StackPanel Spacing="1" Margin="0,0,0,9">
+                                                                <TextBlock Classes="cell mono" Text="{Binding Key}" FontSize="12" />
+                                                                <TextBlock Classes="cell mono" Text="{Binding Value}" FontSize="12" Foreground="#CFCFE0" Classes.bad="{Binding Unresolved}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding Via}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                            <StackPanel Spacing="10" IsVisible="{Binding InspectingCard}">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                    <TextBlock Text="{Binding InspectedCard.Name, FallbackValue=''}" FontSize="15" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
+                                                    <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding InspectedCard.InSprig, FallbackValue=False}">
+                                                        <TextBlock Text="{Binding InspectedCard.Kept, FallbackValue=''}" />
+                                                    </Border>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="58,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                                                    <TextBlock Classes="label" Text="Runs" />
+                                                    <TextBlock Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Runs, FallbackValue=''}" />
+                                                    <TextBlock Grid.Row="1" Classes="label" Text="Infra" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Infra, FallbackValue=''}" />
+                                                    <TextBlock Grid.Row="2" Classes="label" Text="Offers" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Offers, FallbackValue=''}" />
+                                                    <TextBlock Grid.Row="3" Classes="label" Text="Needs" />
+                                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding InspectedCard.Needs, FallbackValue={x:Null}}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:NeedRow">
+                                                                <WrapPanel Margin="0,0,0,2">
+                                                                    <TextBlock Classes="cell" Text="{Binding Import}" Margin="0,0,6,0" />
+                                                                    <TextBlock Classes="need" Classes.filled="{Binding Filled}" Text="{Binding FilledBy, StringFormat='← {0}'}" />
+                                                                </WrapPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Grid>
+                                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                                    <Button Classes="link" Content="Open on Repos" IsVisible="{Binding InspectedCard.OnRepos, FallbackValue=False}"
+                                                            CommandParameter="{Binding InspectedCard.Use, FallbackValue={x:Null}}" Command="{Binding OpenRepoByIdCommand}" />
+                                                    <Button Classes="link" Content="Open its definition" IsVisible="{Binding !InspectedCard.OnRepos, FallbackValue=False}"
+                                                            CommandParameter="{Binding InspectedCard}" Command="{Binding EditRepoFileCommand}" />
+                                                    <Button Classes="link" Content="Add to Repos" IsVisible="{Binding InspectedCard.CanAddToRepos, FallbackValue=False}"
+                                                            CommandParameter="{Binding InspectedCard}" Command="{Binding AddToReposCommand}"
+                                                            ToolTip.Tip="Use it through the Repos list, so its definition can be kept in sprig instead" />
+                                                </StackPanel>
+                                                <TextBlock Text="Click an app to see the values it gets." FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Its repos, one card each, while there's no plan to draw -->
+                            <StackPanel Spacing="10" IsVisible="{Binding ShowCards}">
                                 <TextBlock Classes="phead" Text="REPOS" />
                                 <ItemsControl ItemsSource="{Binding Cards}">
                                     <ItemsControl.ItemsPanel>

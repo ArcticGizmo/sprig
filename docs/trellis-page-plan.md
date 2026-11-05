@@ -1,6 +1,6 @@
 # Trellis page redesign: plan
 
-Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3, 4, 6 and 7 done the same day (291 tests pass), checked with headless renders, not yet hand-tested. Phase 5 (the picture) is next.
+Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3 to 7 done the same day (294 tests pass), checked with headless renders, not yet hand-tested. Phase 8 is what's left.
 
 The options and the reasoning are on the canvas at https://claude.ai/artifact/QqNHSoEZhiQ5B5zjwgBqhy, with a copy in [artefacts/trellis-options/](artefacts/trellis-options/). This plan builds the blend: names and badges from the Model board, a Repos page (C), a summary trellis page (A) with the picture at its centre (B), and the checklist (D) only while something blocks a first sprout.
 
@@ -61,14 +61,14 @@ Each phase leaves the app building and the tests passing. Sizes: S is under a da
 - [x] A `Repo(path)` card offers "Open its definition" (in the Code tab) and "Add to Repos"; a `UseRepo` card offers "Open on Repos".
 - [x] Tests: the description, card contents and needs from a plan (filled by a repo, by the trellis, and unfilled), what the trellis adds, its policies, and a card for a repo that hasn't run. The status line and Start a sprout are checked in renders only so far.
 
-### 5. The picture (L)
+### 5. The picture (L) ✅ done 2026-11-05
 
-- [ ] `TrellisGraph` (view model): a box per repo holding its apps, jobs and infra; a dashed box for what the trellis adds; a wire per `PlannedWire`, labelled with its import; a dangling wire for an unfilled need.
-- [ ] Layout: repos in columns by how far they are from what they need (providers left, consumers right), the trellis's box under the column it feeds; rows ordered to reduce crossings. Repos with many apps fold to "and N more".
-- [ ] `TrellisGraphControl`: draws the boxes and curved wires, scales to fit, highlights a selected app's wires.
-- [ ] Clicking an app opens an inspector beside the picture: kind, folder, port, starts after, and its values with where each came from. Clicking a repo selects its card's details.
-- [ ] Group chips (Everything, then each group) dim what a group doesn't start.
-- [ ] Tests: graph building from the testbed plan, layering, the unfilled-need wire, and group dimming. A headless render of `storefront`.
+- [x] `TrellisGraph`: a box per repo holding its apps and jobs (each a line wires attach to) with its infra on one line; a box for what the trellis adds; a wire per `PlannedWire`, labelled with its import; a stub labelled "nothing fills …" for an unfilled need.
+- [x] Layout: what the trellis adds takes the first column (it only ever offers); each repo sits one column right of the furthest-right repo it takes from; within a column a repo sits near the ones it takes from. Folding repos with many apps waits until a trellis needs it.
+- [x] Drawing: boxes are ordinary controls on a canvas; `WireLayer` draws the curves, arrowheads and labels behind them, moving a label down when it would cover another. The picture scales down to fit, never up.
+- [x] Clicking an app lights its wires and shows its values (with where each came from) below the picture; clicking a repo's title shows its card there (runs, infra, offers, needs, and Open on Repos, Open its definition or Add to Repos). The picture replaces the repo cards once the trellis plans; the cards stay while it can't.
+- [x] Group chips (Everything, then each group) dim what a group doesn't start; what the trellis adds never dims.
+- [x] Tests: columns and box contents, wires and the unfilled stub, highlighting a picked app, and group dimming. `render-trellises` also renders a picked app with a group shown.
 
 ### 6. Values, Ports and Code tabs (S) ✅ done 2026-11-05, with phase 4
 

@@ -66,6 +66,28 @@ public partial class TrellisesViewModel : PageViewModel
     public ObservableCollection<PolicyRow> Policies { get; } = [];
     public ObservableCollection<SproutRow> SproutsOfIt { get; } = [];
     public ObservableCollection<ChecklistStep> Steps { get; } = [];
+    public ObservableCollection<GroupChip> GroupChips { get; } = [];
+
+    // ---- the picture ----
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPicture), nameof(ShowCards))]
+    private TrellisGraph? _graph;
+    [ObservableProperty] private IReadOnlyList<GraphWire> _graphLines = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(InspectingApp), nameof(InspectingCard))]
+    private AppSection? _inspectedApp;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(InspectingCard))]
+    private RepoCard? _inspectedCard;
+
+    Plan? _model;
+    string? _selectedAppKey;
+    string? _groupShown;
+
+    public bool HasPicture => Graph is { Boxes.Count: > 0 };
+    public bool ShowCards => !HasPicture && HasCards;
+    public bool InspectingApp => InspectedApp is not null;
+    public bool InspectingCard => InspectedApp is null && InspectedCard is not null;
     public ObservableCollection<string> NewRepoDirs { get; } = [];
 
     public DefinitionEditorViewModel Editor { get; }
@@ -114,6 +136,7 @@ public partial class TrellisesViewModel : PageViewModel
     public bool HasSelection => Selected is not null;
     public bool NothingSelected => Selected is null;
     public bool HasCards => Cards.Count > 0;
+    public bool HasGroups => GroupChips.Count > 0;
     public bool ShowsPlan => Plan is not null;
     public bool IsOverview => Tab == TrellisTab.Overview;
     public bool IsValues => Tab == TrellisTab.Values;
@@ -281,6 +304,7 @@ public partial class TrellisesViewModel : PageViewModel
         if (loaded is not null)
             foreach (var card in TrellisSummary.Cards(loaded, plan, _services.Stored)) Cards.Add(card);
         OnPropertyChanged(nameof(HasCards));
+        ShowPicture(plan);
         Added.Clear();
         Policies.Clear();
         if (plan is not null)
@@ -300,6 +324,73 @@ public partial class TrellisesViewModel : PageViewModel
                     _ => "down",
                 }, s.State == SproutState.Up, s.State == SproutState.Failed));
         HasSprouts = SproutsOfIt.Count > 0;
+    }
+
+    /// <summary>The picture needs a plan; without one, the cards say what's known.</summary>
+    void ShowPicture(Plan? plan)
+    {
+        _model = plan;
+        _selectedAppKey = null;
+        _groupShown = null;
+        InspectedApp = null;
+        GroupChips.Clear();
+        if (plan is null)
+        {
+            Graph = null;
+            GraphLines = [];
+            InspectedCard = null;
+            OnPropertyChanged(nameof(ShowCards));
+            OnPropertyChanged(nameof(HasGroups));
+            return;
+        }
+        var kept = Cards.Where(c => c.InRepo is not null).GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.First().Kept);
+        Graph = TrellisGraph.Build(plan, kept);
+        if (plan.Groups.Count > 0)
+        {
+            GroupChips.Add(new GroupChip(null, "Everything", true));
+            foreach (var g in plan.Groups) GroupChips.Add(new GroupChip(g.Name, $"group {g.Name}", false));
+        }
+        OnPropertyChanged(nameof(HasGroups));
+        OnPropertyChanged(nameof(ShowCards));
+        InspectedCard = Cards.FirstOrDefault();
+        DrawLines();
+    }
+
+    void DrawLines()
+    {
+        var group = _groupShown is { } name ? _model?.Groups.FirstOrDefault(g => g.Name == name)?.Apps.ToHashSet() : null;
+        GraphLines = Graph?.Lines(_selectedAppKey, group) ?? [];
+    }
+
+    /// <summary>An app in the picture: its wires stand out, and the inspector shows its values.</summary>
+    [RelayCommand]
+    private void SelectApp(GraphItem? item)
+    {
+        if (item is null) return;
+        _selectedAppKey = item.Key;
+        InspectedApp = Plan?.Apps.FirstOrDefault(a => a.Title == $"{item.Owner} / {item.Name}");
+        if (InspectedApp is null) InspectedCard = Cards.FirstOrDefault(c => c.Name == item.Owner) ?? InspectedCard;
+        DrawLines();
+    }
+
+    /// <summary>A repo's box: the inspector shows its card.</summary>
+    [RelayCommand]
+    private void SelectBox(GraphBox? box)
+    {
+        if (box is null || box.IsTrellis) return;
+        _selectedAppKey = null;
+        InspectedApp = null;
+        InspectedCard = Cards.FirstOrDefault(c => c.Name == box.Owner);
+        DrawLines();
+    }
+
+    [RelayCommand]
+    private void ShowGroup(GroupChip? chip)
+    {
+        if (chip is null) return;
+        _groupShown = chip.Name;
+        for (var i = 0; i < GroupChips.Count; i++) GroupChips[i] = GroupChips[i] with { IsOn = GroupChips[i].Name == chip.Name };
+        DrawLines();
     }
 
     /// <summary>The line under the header: whether a sprout can start, and if not, the one thing in the way.</summary>

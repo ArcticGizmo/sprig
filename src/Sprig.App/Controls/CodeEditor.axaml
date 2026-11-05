@@ -36,15 +36,16 @@
                            FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace"
                            Foreground="{StaticResource FgBrush}" Background="Transparent"
                            LineNumbersForeground="{StaticResource MutedBrush}" Padding="8" />
-            <!-- What an IDE shows on hover: a problem under the pointer, the symbol's signature and its docs -->
-            <Popup x:Name="HoverPopup" PlacementTarget="{Binding #Editor}" Placement="Pointer" IsLightDismissEnabled="False">
-                <Border Background="#252532" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6"
-                        Padding="10,8" MaxWidth="560">
+            <!-- What an IDE shows on hover: a problem under the pointer, the symbol's signature and its docs. Placed
+                 below the hovered line rather than at the pointer, which would cover what's hovered and close it. -->
+            <Popup x:Name="HoverPopup" Placement="BottomEdgeAlignedLeft" VerticalOffset="2" IsLightDismissEnabled="False">
+                <Border x:Name="HoverCard" Background="#252532" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="10,8" MaxWidth="560">
                     <StackPanel Spacing="6">
-                        <TextBlock x:Name="HoverProblem" FontSize="12.5" TextWrapping="Wrap" />
-                        <TextBlock x:Name="HoverSignature" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource TitleBrush}"
-                                   FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace" />
-                        <TextBlock x:Name="HoverDocs" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+                        <SelectableTextBlock x:Name="HoverProblem" FontSize="12.5" TextWrapping="Wrap" />
+                        <SelectableTextBlock x:Name="HoverSignature" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource TitleBrush}"
+                                             FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace" />
+                        <SelectableTextBlock x:Name="HoverDocs" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
                     </StackPanel>
                 </Border>
             </Popup>

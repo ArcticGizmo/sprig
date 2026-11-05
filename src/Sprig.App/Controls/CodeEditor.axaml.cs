@@ -47,6 +47,7 @@ public partial class CodeEditor : UserControl
     readonly Squiggles _squiggles = new();
     readonly DispatcherTimer _diagnoseDelay = new() { Interval = TimeSpan.FromMilliseconds(400) };
     readonly DispatcherTimer _hoverDelay = new() { Interval = TimeSpan.FromMilliseconds(450) };
+    readonly DispatcherTimer _hideDelay = new() { Interval = TimeSpan.FromMilliseconds(350) };
     CompletionWindow? _completion;
     Point _hoverAt;
     (int Start, int End)? _hoverSpan;
@@ -86,13 +87,17 @@ public partial class CodeEditor : UserControl
         };
 
         Editor.TextArea.TextView.PointerMoved += OnPointerMoved;
-        Editor.TextArea.TextView.PointerExited += (_, _) => { _hoverDelay.Stop(); HideHover(); };
+        // Leaving the text may be on the way into the card below it, so hiding waits a moment.
+        Editor.TextArea.TextView.PointerExited += (_, _) => { _hoverDelay.Stop(); _hideDelay.Start(); };
         Editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => HideHover();
+        HoverCard.PointerEntered += (_, _) => _hideDelay.Stop();
+        HoverCard.PointerExited += (_, _) => _hideDelay.Start();
         _hoverDelay.Tick += async (_, _) =>
         {
             _hoverDelay.Stop();
             await ShowHoverAsync();
         };
+        _hideDelay.Tick += (_, _) => HideHover();
 
         ProblemList.ItemsSource = _problems;
         ProblemsSummary.Text = "Checking…";
@@ -312,8 +317,12 @@ public partial class CodeEditor : UserControl
         _hoverAt = e.GetPosition(Editor);
         // Still over what's shown: leave it up rather than flicker.
         if (HoverPopup.IsOpen && OffsetAt(_hoverAt) is { } offset && _hoverSpan is { } span && offset >= span.Start && offset <= span.End)
+        {
+            _hideDelay.Stop();
             return;
-        HideHover();
+        }
+        // Moved off it, perhaps on the way down into the card: give it a moment before it goes.
+        if (HoverPopup.IsOpen) _hideDelay.Start();
         _hoverDelay.Stop();
         _hoverDelay.Start();
     }
@@ -340,13 +349,29 @@ public partial class CodeEditor : UserControl
         HoverSignature.Text = hover?.Signature;
         HoverDocs.IsVisible = hover?.Docs is not null;
         HoverDocs.Text = hover?.Docs;
-        _hoverSpan = hover is not null ? (hover.Start, hover.End)
+        var span = hover is not null ? (hover.Start, hover.End)
             : (problems.Min(p => p.Start), problems.Max(p => Math.Max(p.End, p.Start + 1)));
+        _hideDelay.Stop();
+        HoverPopup.IsOpen = false;
+        AnchorBelow(span.Item1);
+        _hoverSpan = span;
         HoverPopup.IsOpen = true;
+    }
+
+    /// <summary>Under the line of <paramref name="offset"/>, from where the hovered word starts.</summary>
+    void AnchorBelow(int offset)
+    {
+        var view = Editor.TextArea.TextView;
+        var position = new AvaloniaEdit.TextViewPosition(Editor.Document.GetLocation(Math.Clamp(offset, 0, Editor.Document.TextLength)));
+        var top = view.GetVisualPosition(position, AvaloniaEdit.Rendering.VisualYPosition.LineTop) - view.ScrollOffset;
+        var bottom = view.GetVisualPosition(position, AvaloniaEdit.Rendering.VisualYPosition.LineBottom) - view.ScrollOffset;
+        HoverPopup.PlacementTarget = view;
+        HoverPopup.PlacementRect = new Rect(top.X, top.Y, 1, Math.Max(1, bottom.Y - top.Y));
     }
 
     void HideHover()
     {
+        _hideDelay.Stop();
         HoverPopup.IsOpen = false;
         _hoverSpan = null;
     }

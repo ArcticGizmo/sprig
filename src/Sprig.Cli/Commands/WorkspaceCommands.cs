@@ -8,29 +8,57 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-/// <summary>Settings for commands that name one workspace of an orchestration.</summary>
+/// <summary>Settings for commands that name one workspace of a repo or an orchestration.</summary>
 public class WorkspaceSettings : GlobalSettings
 {
-    [CommandArgument(0, "<id>")]
-    [Description("The orchestration ID, or the repo ID for a repo run on its own")]
+    [CommandArgument(0, "[id]")]
+    [Description("The repo or orchestration ID (default: the repo this folder is, or the workspace whose worktree it's in)")]
     public string Orchestration { get; set; } = "";
 
-    [CommandArgument(1, "<workspace>")]
-    [Description("The workspace's name")]
+    [CommandArgument(1, "[workspace]")]
+    [Description("The workspace's name (default: local)")]
     public string Workspace { get; set; } = "";
+
+    /// <summary>Whether words after the workspace name apps, so one that isn't an ID or a workspace is an app.</summary>
+    protected virtual bool TakesApps => false;
+
+    /// <summary>
+    /// Fills in what was left out: the ID from the current folder, and the workspace from the worktree it's in, else
+    /// <c>local</c>. Words that turn out not to be an ID or one of its workspaces are handed back, for commands whose
+    /// next argument is an app.
+    /// </summary>
+    public IReadOnlyList<string> Resolve(CliContext cli)
+    {
+        var words = new[] { Orchestration, Workspace }.Where(w => !string.IsNullOrEmpty(w)).ToList();
+        string? workspace = null;
+        if (words.Count > 0 && cli.Orchestrations.Resolve(words[0]) is not null && !File.Exists(words[0]))
+        {
+            Orchestration = words[0];
+            words.RemoveAt(0);
+        }
+        else (Orchestration, workspace) = Here.Find(cli);
+
+        if (words.Count > 0 && (!TakesApps || cli.Workspaces.Get(Orchestration, words[0]) is not null))
+        {
+            workspace = words[0];
+            words.RemoveAt(0);
+        }
+        Workspace = workspace ?? "local";
+        return words;
+    }
 }
 
-[Description("Bring a workspace of an orchestration up: worktrees, ports, env files and infra, in one step")]
+[Description("Bring a workspace up: worktrees (or the repo where it is), ports, env files and infra, in one step")]
 public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 {
     public sealed class Settings : TrustingSettings
     {
-        [CommandArgument(0, "<id>")]
-        [Description("An orchestration ID, a repo ID from the Repos list (to run that repo on its own), or an orchestration file")]
-        public string Orchestration { get; set; } = "";
+        [CommandArgument(0, "[id]")]
+        [Description("A repo ID from the Repos list, an orchestration ID, or an orchestration file (default: the repo this folder is)")]
+        public string? Orchestration { get; set; }
 
         [CommandOption("-w|--workspace <name>")]
-        [Description("The workspace's name (default: the branch name, or 'local' when the repos run in place)")]
+        [Description("Name a workspace to give it worktrees of its own (default: 'local', which runs the repos where they're checked out)")]
         public string? Workspace { get; set; }
 
         [CommandOption("--branch <branch>")]
@@ -38,7 +66,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public string? Branch { get; set; }
 
         [CommandOption("--in-place")]
-        [Description("A new workspace runs the repos where they're checked out, rather than in worktrees of its own (its name defaults to 'local')")]
+        [Description("A new named workspace runs the repos where they're checked out, rather than in worktrees of its own")]
         public bool InPlace { get; set; }
 
         [CommandOption("--from <branch>")]
@@ -74,19 +102,23 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; use --detached with --json");
         if (s.InPlace && (s.Branch is not null || s.From is not null))
             throw new InvalidOperationException("--in-place runs the repos where they're checked out, so it takes no --branch or --from");
-        var named = s.Workspace ?? (s.Branch is { } b ? WorkspaceService.NameFromBranch(b) : null) ?? (s.InPlace ? "local" : null);
-        if (OrchestrationLoad.Load(cli, s.Orchestration, s, named) is not { } loaded) return 1;
+        var named = s.Workspace ?? (s.Branch is { } b ? WorkspaceService.NameFromBranch(b) : null);
+        if (named is null && s.From is not null)
+            throw new InvalidOperationException("--from starts a workspace's own branches; name the workspace with -w <name>");
+        var (id, worktreeOf) = s.Orchestration is { } given ? (given, null) : Here.Find(cli);
+        // Run from inside a workspace's worktree, it's that workspace; otherwise the repo in place, as "local".
+        var workspace = named ?? worktreeOf ?? "local";
+        if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
         var root = Path.GetDirectoryName(loaded.OrchestrationPath)!;
 
-        // An in-place workspace is usually the only one, named "local", so bringing it up again needn't name it.
-        var workspace = named
-            ?? (cli.Workspaces.Get(loaded.Id, "local") is { InPlace: true } ? "local" : throw new InvalidOperationException(
-                $"name the workspace: sprig up {s.Orchestration} --workspace <name> (or --in-place to run the repos where they are)"));
+        var options = s.Options;
+        if (named is null && worktreeOf is null && cli.Workspaces.Get(loaded.Id, workspace) is null)
+            options = (options ?? new WorkspaceOptions()) with { InPlace = true };
 
         var progress = new SyncProgress<WorkspaceEvent>(e => Report(e, s.Json));
         try
         {
-            var record = UpApproving(loaded, workspace, s, progress, cancellation);
+            var record = UpApproving(loaded, workspace, options, s, progress, cancellation);
             if (record is null) return 1;
             var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
             var runApps = s.Run || s.Detached;
@@ -123,8 +155,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 
     /// <summary>Up, asking to approve the definitions a new workspace's worktrees bring (its branch can change them), and
     /// for values of settings nothing gives one, and going again. Null when they weren't approved.</summary>
-    WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, Settings s, IProgress<WorkspaceEvent> progress,
-        CancellationToken cancellation)
+    WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, WorkspaceOptions? options, Settings s,
+        IProgress<WorkspaceEvent> progress, CancellationToken cancellation)
     {
         var runApps = s.Run || s.Detached;
         SettingValues.Parse(s.Set, out var given);
@@ -134,7 +166,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             string? held = null;
             try
             {
-                return cli.Workspaces.Up(loaded, workspace, s.Branch, s.Options, progress, cancellation,
+                return cli.Workspaces.Up(loaded, workspace, s.Branch, options, progress, cancellation,
                     runApps ? (record, plan) => held = Prebuild(record, plan) : null, values);
             }
             catch (WorkspaceException e) when (e.Untrusted.Count > 0 && attempt < 3)
@@ -262,6 +294,7 @@ public sealed class DownCommand(CliContext cli) : Command<WorkspaceSettings>
 {
     protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
     {
+        s.Resolve(cli);
         var record = cli.Workspaces.Down(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => Echo(cli, e, s.Json)), cancellation);
         return CliOutput.Ok(s.Json, $"{record.Orchestration}/{record.Name} is down", new { ok = true, workspace = record });
     }
@@ -294,6 +327,7 @@ public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
+        s.Resolve(cli);
         var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
         if (!s.Yes)
         {
@@ -325,10 +359,10 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
         if (s.Json) { CliOutput.Json(workspaces); return 0; }
         if (workspaces.Length == 0)
         {
-            cli.Ansi.MarkupLine("[dim]No workspaces. Make one with: sprig up <id> --workspace <name>[/]");
+            cli.Ansi.MarkupLine("[dim]No workspaces. In a repo's folder, run it in place with: sprig up (or sprig up -w <name> for worktrees of its own)[/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("Orchestration", "Workspace", "Branch", "State", "Folder", "Updated");
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("ID", "Workspace", "Branch", "State", "Folder", "Updated");
         foreach (var r in workspaces)
         {
             var state = r.State switch
@@ -352,13 +386,17 @@ public sealed class EnvCommand(CliContext cli) : Command<EnvCommand.Settings>
 {
     public sealed class Settings : WorkspaceSettings
     {
-        [CommandArgument(2, "<app>")]
+        [CommandArgument(2, "[app]")]
         [Description("The app, as <name> or <repo>/<name>")]
         public string App { get; set; } = "";
+
+        protected override bool TakesApps => true;
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
+        s.App = s.Resolve(cli).FirstOrDefault() ?? s.App;
+        if (s.App.Length == 0) throw new InvalidOperationException("name the app: sprig env [id] [workspace] <app>");
         var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace)
             ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}' that has come up");
         var matches = plan.Apps.Where(a => a.Name == s.App || $"{a.Owner}/{a.Name}" == s.App).ToArray();

@@ -12,6 +12,11 @@ public class AppsSettings : WorkspaceSettings
     [CommandArgument(2, "[apps]")]
     [Description("Only these apps, as <name> or <repo>/<name> (default: all of them)")]
     public string[] Apps { get; set; } = [];
+
+    protected override bool TakesApps => true;
+
+    /// <summary><see cref="WorkspaceSettings.Resolve"/>, with any words it hands back counted as apps.</summary>
+    public void ResolveApps(CliContext cli) => Apps = [.. Resolve(cli), .. Apps];
 }
 
 [Description("Start a workspace's apps and jobs in the background sprig host, in dependency order, and wait until each is ready")]
@@ -30,6 +35,7 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
+        s.ResolveApps(cli);
         var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
         var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} hasn't come up yet; run sprig up first");
         if (record.State != Sprig.Engine.Workspaces.WorkspaceState.Up)
@@ -114,6 +120,7 @@ public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
 {
     protected override int Execute(CommandContext context, AppsSettings s, CancellationToken cancellation)
     {
+        s.ResolveApps(cli);
         var key = Sprig.Engine.Workspaces.WorkspaceRecord.KeyOf(s.Orchestration, s.Workspace);
         if (cli.Host.TrySend(new HostRequest("list")) is not { } list)
             return CliOutput.Ok(s.Json, "nothing is running", new { ok = true, stopped = Array.Empty<string>() });
@@ -145,7 +152,7 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
         if (s.Json) { CliOutput.Json(runners); return 0; }
         if (runners.Count == 0)
         {
-            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start <id> <workspace>[/]");
+            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start [id] [workspace][/]");
             return 0;
         }
         var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");
@@ -170,8 +177,11 @@ public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
 {
     public sealed class Settings : WorkspaceSettings
     {
-        [CommandArgument(2, "<app>")]
+        [CommandArgument(2, "[app]")]
+        [Description("The app, as <name> or <repo>/<name>")]
         public string App { get; set; } = "";
+
+        protected override bool TakesApps => true;
 
         [CommandOption("-n|--lines <count>")]
         public int Lines { get; set; } = 40;
@@ -183,6 +193,8 @@ public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
+        s.App = s.Resolve(cli).FirstOrDefault() ?? s.App;
+        if (s.App.Length == 0) throw new InvalidOperationException("name the app: sprig logs [id] [workspace] <app>");
         var key = Sprig.Engine.Workspaces.WorkspaceRecord.KeyOf(s.Orchestration, s.Workspace);
         var runner = (cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
             .FirstOrDefault(r => r.Workspace == key &&(r.Name == s.App || r.Name.EndsWith("/" + s.App, StringComparison.Ordinal)));

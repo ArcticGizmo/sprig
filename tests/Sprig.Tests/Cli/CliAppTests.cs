@@ -94,4 +94,49 @@ public class CliAppTests
         Assert.Equal(0, Run(store, "repo", "add", web, "--in-sprig").code);
         Assert.Equal("// shop-web's own", File.ReadAllText(stored.Repo("shop-web-sprig")!.DefinitionFile));
     }
+
+    [Fact]
+    public void Init_drafts_a_definition_kept_in_sprig_or_written_into_the_folder_and_running_it_twice_is_harmless()
+    {
+        using var store = new TempStore();
+        var web = Path.Combine(store.Root, "src", "shop-web");
+        var api = Path.Combine(store.Root, "src", "api");
+        Directory.CreateDirectory(web);
+        Directory.CreateDirectory(api);
+        File.WriteAllText(Path.Combine(web, "package.json"), """{ "name": "web", "scripts": { "dev": "vite" } }""");
+        File.WriteAllText(Path.Combine(api, "package.json"), """{ "name": "api", "scripts": { "dev": "node server.js" } }""");
+        var stored = new Sprig.Engine.Definitions.StoredDefinitions(store.Paths);
+
+        var (code, stdout, _) = Run(store, "init", web, "--json");
+        Assert.Equal(0, code);
+        Assert.Contains("\"existed\": false", stdout);
+        Assert.False(stored.Repo("shop-web")!.InRepo);
+        Assert.False(File.Exists(Path.Combine(web, "sprig.cs")));
+        Assert.Contains("\"existed\": true", Run(store, "init", web, "--json").stdout);
+
+        Assert.Equal(0, Run(store, "init", api, "--in-repo").code);
+        Assert.True(stored.Repo("api")!.InRepo);
+        Assert.Contains("Node(", File.ReadAllText(Path.Combine(api, "sprig.cs")));
+        // Sprig wrote it, so it runs without asking.
+        Assert.Equal(Sprig.Engine.Definitions.TrustState.Trusted, new Sprig.Engine.Definitions.FileTrustStore(store.Paths)
+            .Check(Path.Combine(api, "sprig.cs"), Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(Path.Combine(api, "sprig.cs")))).State);
+    }
+
+    [Fact]
+    public void Up_without_an_id_outside_any_listed_repo_says_to_init()
+    {
+        var (code, _, stderr) = Run("up");
+
+        Assert.Equal(1, code);
+        Assert.Contains("sprig init", stderr);
+    }
+
+    [Fact]
+    public void A_bad_value_for_set_is_refused_before_anything_runs()
+    {
+        var (code, _, stderr) = Run("up", "shop-web", "--set", "no-equals-sign");
+
+        Assert.Equal(1, code);
+        Assert.Contains("isn't name=value", stderr);
+    }
 }

@@ -75,8 +75,12 @@ public static class CliApp
 
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
-        config.AddCommand<PlanCommand>("plan");
+        config.AddCommand<InitCommand>("init");
         config.AddCommand<UpCommand>("up");
+        config.AddCommand<PlanCommand>("plan");
+        config.AddCommand<SetCommand>("set");
+        config.AddCommand<UnsetCommand>("unset");
+        config.AddCommand<SettingsCommand>("settings");
         config.AddCommand<DownCommand>("down");
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");

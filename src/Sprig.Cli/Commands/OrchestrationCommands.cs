@@ -178,13 +178,13 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
 {
     public sealed class Settings : TrustingSettings
     {
-        [CommandArgument(0, "<id>")]
-        [Description("An orchestration ID, a repo ID from the Repos list (that repo on its own), or an orchestration file")]
-        public string Orchestration { get; set; } = "";
+        [CommandArgument(0, "[id]")]
+        [Description("A repo ID from the Repos list, an orchestration ID, or an orchestration file (default: the repo this folder is)")]
+        public string? Orchestration { get; set; }
 
         [CommandOption("-w|--workspace <name>")]
-        [Description("The workspace name to plan for (default: plan). An existing workspace's definitions are read from its worktrees, and its values used")]
-        public string Workspace { get; set; } = "plan";
+        [Description("The workspace to plan for (default: 'local', or the one whose worktree this is). An existing workspace's definitions are read from its worktrees, and its values used")]
+        public string? Workspace { get; set; }
 
         [CommandOption("--set <name=value>")]
         [Description("Plan with this value for a setting, over the workspace's own. Repeat for more")]
@@ -196,13 +196,15 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        if (OrchestrationLoad.Load(cli, s.Orchestration, s, s.Workspace) is not { } loaded) return 1;
+        var (id, worktreeOf) = s.Orchestration is { } named ? (named, null) : Here.Find(cli);
+        var workspace = s.Workspace ?? worktreeOf ?? "local";
+        if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
 
         SettingValues.Parse(s.Set, out var given);
-        var values = SettingValues.Merge(cli.Workspaces.Get(loaded.Id, s.Workspace)?.Values, given);
+        var values = SettingValues.Merge(cli.Workspaces.Get(loaded.Id, workspace)?.Values, given);
         var problems = new List<PlanProblem>();
         var compose = loaded.ComposeFiles(problems);
-        var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, s.Workspace, cli.Settings.Get(), PortAllocator.Listening(),
+        var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, workspace, cli.Settings.Get(), PortAllocator.Listening(),
             ComposeFiles: compose, Values: values));
         if (!plan.HasErrors) problems.AddRange(cli.Workspaces.CheckFiles(plan, loaded.ReadFrom));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };

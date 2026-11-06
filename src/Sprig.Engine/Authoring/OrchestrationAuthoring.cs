@@ -66,6 +66,27 @@ public sealed class OrchestrationAuthoring(StoredDefinitions stored, Orchestrati
         return entry;
     }
 
+    /// <summary>
+    /// Make <paramref name="folder"/> runnable: its own sprig.cs if it has one, else a draft from what's in it, kept in
+    /// sprig or, with <paramref name="writeToFolder"/>, written into the folder as sprig.cs (approved, since sprig wrote
+    /// it). A folder already on the list keeps the entry it has. Returns the entry and whether it was already there.
+    /// </summary>
+    public (RepoEntry Entry, bool Existed) Init(string folder, string? id = null, bool writeToFolder = false)
+    {
+        folder = LongPath.Of(folder);
+        if (!Directory.Exists(folder)) throw new ArgumentException($"there's no folder at {folder}");
+        var listed = id is null ? stored.RepoFor(folder) : stored.Repo(id);
+        if (listed is not null && SamePath(listed.Folder, folder)) return (listed, true);
+
+        var own = Path.Combine(folder, OrchestrationLoader.RepoDefinitionFile);
+        if (writeToFolder && !File.Exists(own))
+        {
+            File.WriteAllText(own, Draft(folder));
+            Approve(own);
+        }
+        return (AddRepo(folder, id), false);
+    }
+
     /// <summary>The ID offered for a new entry over <paramref name="folder"/>: its name, with "-sprig" after it for one
     /// kept in sprig beside a sprig.cs of the folder's own, so the two read as a pair.</summary>
     public string SuggestNewId(string folder, bool inRepo)
@@ -161,6 +182,9 @@ public sealed class OrchestrationAuthoring(StoredDefinitions stored, Orchestrati
     }
 
     RepoEntry Entry(string id) => stored.Repo(id) ?? throw new ArgumentException($"'{id}' isn't in the Repos list", nameof(id));
+
+    static bool SamePath(string a, string b) => string.Equals(Path.GetFullPath(a).TrimEnd('\\', '/'), Path.GetFullPath(b).TrimEnd('\\', '/'),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     static string Draft(string folder) => Scaffold.Repo(folder, Ids.Slug(FolderName(folder), "repo"));
 

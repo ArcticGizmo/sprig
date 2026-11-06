@@ -15,7 +15,8 @@ pwsh -File scripts/testbed.ps1 -Path D:\tb -Force
 
 Two orchestrations sit beside the repos:
 
-- `storefront.orchestration.cs` joins all three repos: `sprig up storefront --workspace feat-x` gives the workspace its own worktrees, and `--in-place` runs the repos where they're checked out.
+- `storefront.orchestration.cs` joins all three repos: `sprig up storefront --workspace feat-x` gives the workspace its own worktrees, and `sprig up storefront` runs the repos where they're checked out, as `local`.
+- One repo on its own: in its folder, `sprig init` then `sprig up` runs it in place; `sprig up -w feat-x` gives it worktrees of its own; `sprig settings`, `sprig set name=value` and `sprig unset name` show and change where its values come from.
 - `catalog.orchestration.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`orchestration.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
 
   ```sh

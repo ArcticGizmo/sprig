@@ -80,7 +80,23 @@ Built as planned. All tests pass apart from one host Ctrl+C timing test, which f
   - shop-services' `mail-smtp` uses its own Mailpit as its default.
 - **Done when:** shop-web runs on its own pointed at an in-place shop-services, with no orchestration. `storefront` still plans with the same values as before. Tests cover each step of decision 4, a setting asked for at `up`, and default-only infra being left out.
 
-### 3. One repo from a terminal (M)
+### 3. One repo from a terminal (M) ✅ done 2026-11-06
+
+Built as planned, and all 318 tests pass. Checked on a fresh testbed with a throwaway store, from shop-web's folder:
+- `init` added the folder's own sprig.cs.
+- `up --trust` ran it in place as `local` with its default urls.
+- `set catalog-url=…` rewrote `.env.local` and said to restart `web`.
+- `up -w feat-x --set orders-url=…` made a worktree workspace.
+- `settings` from inside that worktree showed feat-x's values without being told which workspace.
+- `rm feat-x -y` and `rm -y` cleaned up.
+
+Beyond the plan:
+- **Inside a worktree:** the commands work out the workspace from the worktree they're run in.
+- **Positional commands:** `down`, `rm`, `start`, `stop`, `logs` and `env` take `[id] [workspace]`. A first word that isn't an ID means the folder's repo, and a word that isn't one of its workspaces is an app. So `sprig logs web` and `sprig stop catalog-api` work from the repo's folder.
+- **New options commands:** `set`, `unset` and `settings` name the ID and workspace with `--id` and `-w`.
+- **`set` and `unset` on a workspace that's up** bring it up again so its files change, and name the apps to restart.
+- **`init` on a listed folder** says so, and keeps the entry it has.
+- **`init --in-repo`** writes the draft, approved, since sprig wrote it.
 
 - **`sprig init`** in a folder writes a definition from what the folder has, reusing `Scaffold`: a `.csproj` becomes `DotNet(...)`, a `package.json` becomes `Node(...)`, and a compose file becomes `ComposeFile(...)`.
   - It adds a Repos entry with the folder's name as its ID.

@@ -61,10 +61,11 @@ public sealed class SproutServiceTests : IDisposable
 
     void Git(string dir, params string[] args) => _processes.Run("git", ["-C", dir, .. args]).EnsureSuccess();
 
-    LoadedTrellis Load(bool worktrees, params (string path, Action<RepoBuilder> describe)[] repos)
+    static readonly SproutOptions InPlace = new(InPlace: true);
+
+    LoadedTrellis Load(params (string path, Action<RepoBuilder> describe)[] repos)
     {
         var trellis = Trellis.Describe("storefront");
-        if (worktrees) trellis.Worktrees("main");
         var models = new Dictionary<string, RepoModel>();
         var dirs = new Dictionary<string, string>();
         foreach (var (path, describe) in repos)
@@ -92,7 +93,7 @@ public sealed class SproutServiceTests : IDisposable
     {
         Repo("shop-web", ("index.html", "hi"));
         Repo("shop-services", ("src/Api/Program.cs", "// api"));
-        var loaded = Load(true, ("shop-web", Web), ("shop-services", Api));
+        var loaded = Load(("shop-web", Web), ("shop-services", Api));
 
         var record = _sprouts.Up(loaded, "feat-x", null);
 
@@ -123,8 +124,8 @@ public sealed class SproutServiceTests : IDisposable
     {
         Repo("shop-web", ("index.html", "hi"));
         Repo("shop-web-2", ("index.html", "hi"));
-        var committed = Load(true, ("shop-web", Web));
-        var local = Load(true, ("shop-web-2", Web)) with { TrellisPath = Path.Combine(_root, "local", "trellis.cs"), Id = "storefront-local" };
+        var committed = Load(("shop-web", Web));
+        var local = Load(("shop-web-2", Web)) with { TrellisPath = Path.Combine(_root, "local", "trellis.cs"), Id = "storefront-local" };
 
         var a = _sprouts.Up(committed, "feat-x", null);
         var b = _sprouts.Up(local, "feat-x", null);
@@ -139,10 +140,34 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_new_sprouts_branches_start_from_each_repos_default_branch_unless_told_and_its_port_policy_is_its_own()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var services = Repo("shop-services", ("src/Api/Program.cs", "// api"));
+        Git(services, "branch", "-m", "main", "master");
+        Git(services, "branch", "develop");
+        var loaded = Load(("shop-web", Web), ("shop-services", Api));
+
+        var record = _sprouts.Up(loaded, "feat-x", null, new SproutOptions(RandomPorts: true));
+
+        Assert.Equal(("main", "master"), (record.Repos.Single(r => r.Name == "shop-web").From, record.Repos.Single(r => r.Name == "shop-services").From));
+        Assert.Equal("random", record.PortPolicy);
+        var plan = _sprouts.LastPlan("storefront", "feat-x")!;
+        Assert.Equal(("random", "each repo's default branch"), (plan.PortPolicy, plan.WorktreesFrom));
+        Assert.Contains("fresh ports", Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "feat-x", null, new SproutOptions())).Message);
+
+        _sprouts.Remove("storefront", "feat-x", new RemoveOptions(DeleteBranch: true));
+        Git(Path.Combine(_root, "shop-web"), "branch", "develop");
+        var told = _sprouts.Up(loaded, "feat-y", null, new SproutOptions(From: "develop"));
+        Assert.All(told.Repos, r => Assert.Equal("develop", r.From));
+        Assert.Equal(("stable", "develop"), (told.PortPolicy, _sprouts.LastPlan("storefront", "feat-y")!.WorktreesFrom));
+    }
+
+    [Fact]
     public void Two_sprouts_get_their_own_worktrees_and_ports()
     {
         Repo("shop-web", ("index.html", "hi"));
-        var loaded = Load(true, ("shop-web", Web));
+        var loaded = Load(("shop-web", Web));
 
         _sprouts.Up(loaded, "feat-x", null);
         _sprouts.Up(loaded, "feat-y", "feature/y");
@@ -158,7 +183,7 @@ public sealed class SproutServiceTests : IDisposable
     public void Rm_removes_worktrees_and_the_branch_and_frees_the_ports()
     {
         var source = Repo("shop-web", ("index.html", "hi"));
-        var loaded = Load(true, ("shop-web", Web));
+        var loaded = Load(("shop-web", Web));
         var record = _sprouts.Up(loaded, "feat-x", null);
 
         _sprouts.Remove("storefront", "feat-x", new RemoveOptions(DeleteBranch: true));
@@ -173,7 +198,7 @@ public sealed class SproutServiceTests : IDisposable
     public void Rm_refuses_a_worktree_with_uncommitted_changes_unless_forced()
     {
         Repo("shop-web", ("index.html", "hi"));
-        var record = _sprouts.Up(Load(true, ("shop-web", Web)), "feat-x", null);
+        var record = _sprouts.Up(Load(("shop-web", Web)), "feat-x", null);
         File.WriteAllText(Path.Combine(record.Repos[0].Dir, "index.html"), "changed");
 
         var e = Assert.Throws<SproutException>(() => _sprouts.Remove("storefront", "feat-x", new RemoveOptions()));
@@ -188,7 +213,7 @@ public sealed class SproutServiceTests : IDisposable
     {
         Repo("shop-web", ("index.html", "hi"));
         Repo("shop-services", ("src/Api/Program.cs", "// api"));
-        var record = _sprouts.Up(Load(true, ("shop-web", Web), ("shop-services", Api)), "feat-x", null);
+        var record = _sprouts.Up(Load(("shop-web", Web), ("shop-services", Api)), "feat-x", null);
         var web = record.Repos.Single(r => r.Name == "shop-web");
         var services = record.Repos.Single(r => r.Name == "shop-services");
 
@@ -221,7 +246,7 @@ public sealed class SproutServiceTests : IDisposable
     {
         Repo("shop-web", ("index.html", "hi"));
         RepoWith("shop-services", ".env.local\n", ("src/Api/Properties/launchSettings.json", """{ "profiles": {} }"""));
-        var loaded = Load(true, ("shop-web", Web), ("shop-services", Api));
+        var loaded = Load(("shop-web", Web), ("shop-services", Api));
 
         var e = Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "feat-x", null));
 
@@ -237,10 +262,10 @@ public sealed class SproutServiceTests : IDisposable
     public void A_target_the_repo_does_not_ignore_is_refused_with_what_to_add()
     {
         RepoWith("shop-services", "bin/\n", ("src/Api/Program.cs", "// api"));
-        var loaded = Load(false, ("shop-services", repo =>
+        var loaded = Load(("shop-services", repo =>
             repo.DotNet("api", "src/Api").Http(urlEnv: "Urls").Output(EnvOutput.AppSettings("appsettings.Local.json"))));
 
-        var e = Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "local", null));
+        var e = Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "local", null, InPlace));
 
         var problem = Assert.Single(e.Problems);
         Assert.Contains("src/Api/appsettings.Local.json isn't ignored by git", problem.Message);
@@ -254,14 +279,17 @@ public sealed class SproutServiceTests : IDisposable
     {
         var dir = Repo("shop-web", ("index.html", "hi"));
         File.WriteAllText(Path.Combine(dir, ".env.local"), "MINE=1\n");
-        var loaded = Load(false, ("shop-web", Web));
+        var loaded = Load(("shop-web", Web));
 
-        var record = _sprouts.Up(loaded, "local", null);
+        var record = _sprouts.Up(loaded, "local", null, InPlace);
 
         Assert.True(record.InPlace);
         Assert.Equal(dir, record.Repos[0].Dir);
         Assert.Contains("PORT=", File.ReadAllText(Path.Combine(dir, ".env.local")));
-        Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "other", null));
+        Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "other", null, InPlace));
+        // Brought up again, it stays in place without being told; told otherwise, it says so rather than switching.
+        Assert.True(_sprouts.Up(loaded, "local", null).InPlace);
+        Assert.Contains("runs its repos in place", Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "local", null, new SproutOptions())).Message);
 
         _sprouts.Remove("storefront", "local", new RemoveOptions());
         Assert.Equal("MINE=1\n", File.ReadAllText(Path.Combine(dir, ".env.local")));
@@ -271,7 +299,7 @@ public sealed class SproutServiceTests : IDisposable
     public void A_bad_plan_fails_before_any_worktree_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));
-        var loaded = Load(true, ("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url"))));
+        var loaded = Load(("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url"))));
 
         var e = Assert.Throws<SproutException>(() => _sprouts.Up(loaded, "feat-x", null));
 
@@ -312,7 +340,7 @@ public sealed class SproutServiceTests : IDisposable
         var trust = new FileTrustStore(_store.Paths);
         var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
         {
-            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo("shop-web"); return t; },
+            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Repo("shop-web"); return t; },
             ["// web v1"] = () => WebWith("v1"),
             ["// web v2"] = () => WebWith("v2"),
         }), _store.Paths));
@@ -352,9 +380,9 @@ public sealed class SproutServiceTests : IDisposable
         var trust = new FileTrustStore(_store.Paths);
         var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
         {
-            ["// own"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo(source); return t; },
-            ["// uses a"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.UseRepo("web-a"); return t; },
-            ["// uses b"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.UseRepo("web-b"); return t; },
+            ["// own"] = () => { var t = Trellis.Describe("storefront"); t.Repo(source); return t; },
+            ["// uses a"] = () => { var t = Trellis.Describe("storefront"); t.UseRepo("web-a"); return t; },
+            ["// uses b"] = () => { var t = Trellis.Describe("storefront"); t.UseRepo("web-b"); return t; },
             ["// uses missing"] = () => { var t = Trellis.Describe("storefront"); t.UseRepo("nope"); return t; },
             ["// web v1"] = () => WebWith("v1"),
             ["// copy a"] = () => WebWith("a"),
@@ -409,7 +437,7 @@ public sealed class SproutServiceTests : IDisposable
         var trust = new FileTrustStore(_store.Paths);
         var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
         {
-            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.UseRepo("web"); return t; },
+            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.UseRepo("web"); return t; },
             ["// uses nothing"] = () => { var t = Trellis.Describe("storefront"); t.UseRepo("nope"); return t; },
             ["// web v1"] = () => WebWith("v1"),
         }), _store.Paths), stored: stored);
@@ -444,7 +472,7 @@ public sealed class SproutServiceTests : IDisposable
         var trust = new FileTrustStore(_store.Paths);
         var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
         {
-            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Worktrees("main"); t.Repo("shop-web"); return t; },
+            ["// trellis"] = () => { var t = Trellis.Describe("storefront"); t.Repo("shop-web"); return t; },
             ["// web v1"] = () => WebWith("v1"),
         }), _store.Paths));
         var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,

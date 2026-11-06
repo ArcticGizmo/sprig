@@ -11,9 +11,6 @@ var mobile   = trellis.Repo("shop-mobile");
 var mail = trellis.Mailpit("mail");
 trellis.Bind("mail-smtp", mail.SmtpUrl);
 
-trellis.Worktrees(from: "main");
-trellis.Ports(PortPolicy.Stable);
-
 trellis.Group("web", web, services);
 trellis.Group("mobile", mobile, services.Only("catalog-api"));
 

@@ -90,7 +90,7 @@ public sealed class AuthoringTests : IDisposable
         var authoring = Authoring(trust);
         Write("shop-web/sprig.cs", "// shop-web's own");
 
-        var entry = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")], "main", "Stable");
+        var entry = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")]);
         var text = File.ReadAllText(entry.Path);
 
         Assert.Contains("var shopWeb = trellis.UseRepo(\"shop-web\");", text);
@@ -102,7 +102,7 @@ public sealed class AuthoringTests : IDisposable
         Assert.True(Approved(trust, services.DefinitionFile));
         Assert.False(File.Exists(Path.Combine(Dir("shop-services"), "sprig.cs")));
 
-        var second = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")], null, "Stable");
+        var second = authoring.CreateTrellis("storefront", [Dir("shop-web"), Dir("shop-services")]);
         Assert.Equal("storefront-2", second.Id);
         Assert.Equal(2, Stored.Repos().Count);
         Assert.Equal(["storefront", "storefront-2"], authoring.UsedBy("shop-web"));
@@ -238,7 +238,7 @@ public sealed class AuthoringTests : IDisposable
         var loader = new TrellisLoader(new DefinitionRunner(trust, new DotnetRunHost(), _store.Paths,
             new DefinitionRunnerOptions { Timeout = TimeSpan.FromSeconds(120), AllowLocalSdkProject = true }), registry, stored);
 
-        var entry = authoring.CreateTrellis("trial run", [Dir("shop-web"), Dir("shop-services")], null, "Stable");
+        var entry = authoring.CreateTrellis("trial run", [Dir("shop-web"), Dir("shop-services")]);
         var loaded = loader.Load(entry.Path);
 
         Assert.True(loaded.Complete, string.Join("\n", loaded.Problems.Select(p => p.Message)));

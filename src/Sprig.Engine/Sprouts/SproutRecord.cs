@@ -8,7 +8,8 @@ public enum SproutState { Starting, Up, Down, Failed }
 /// <param name="Source">The repo's own checkout.</param>
 /// <param name="Dir">Where this sprout runs it: a worktree, or <see cref="Source"/> when it runs in place.</param>
 /// <param name="BranchCreated">Sprig made the branch for this sprout, rather than checking out one that existed.</param>
-public sealed record SproutRepo(string RepoPath, string Name, string Source, string Dir, bool Worktree, bool BranchCreated);
+/// <param name="From">The branch sprig started the sprout's branch from, when it made it.</param>
+public sealed record SproutRepo(string RepoPath, string Name, string Source, string Dir, bool Worktree, bool BranchCreated, string? From = null);
 
 /// <summary>What sprig knows about one sprout: where its repos are, what it wrote, and the compose projects it
 /// started. Kept in the store so <c>down</c> and <c>rm</c> undo exactly what <c>up</c> did.</summary>

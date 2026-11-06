@@ -1,7 +1,7 @@
 #:package Sprig.Sdk@0.1.0-exp
 using Sprig;
 
-// The monorepo on its own, run where it's checked out: no worktrees, so there's one sprout of it at a time.
+// The monorepo on its own, with a mail catcher for its orders-api.
 var trellis = Trellis.Describe("services");
 
 trellis.Repo("shop-services");

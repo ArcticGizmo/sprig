@@ -16,7 +16,7 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
     /// A new trellis kept in sprig, over <paramref name="repoDirs"/>, naming each repo by its entry in the Repos list.
     /// An entry already there for the folder is reused; otherwise one is added (<see cref="AddRepo"/>).
     /// </summary>
-    public TrellisEntry CreateTrellis(string name, IReadOnlyList<string> repoDirs, string? worktreesFrom, string portPolicy)
+    public TrellisEntry CreateTrellis(string name, IReadOnlyList<string> repoDirs)
     {
         if (repoDirs.Count == 0) throw new ArgumentException("choose at least one repo folder");
         foreach (var dir in repoDirs)
@@ -30,7 +30,7 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
             return new ScaffoldRepo(null, Use: (stored.RepoFor(full) ?? AddRepo(full)).Id);
         }).ToArray();
 
-        var file = stored.CreateTrellis(id, Scaffold.Trellis(name, repos, worktreesFrom, portPolicy));
+        var file = stored.CreateTrellis(id, Scaffold.Trellis(name, repos));
         Approve(file);
         return registry.Add(id, file);
     }

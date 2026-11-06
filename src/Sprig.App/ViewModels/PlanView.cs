@@ -33,8 +33,7 @@ public sealed class PlanView
 {
     public PlanView(Plan plan, string root)
     {
-        Summary = $"Sprout '{plan.Sprout}'  ·  {plan.PortPolicy} ports  ·  " +
-                  (plan.WorktreesFrom is { } from ? $"worktrees from {from}" : "repos run in place");
+        Summary = $"{Count(plan.Apps.Count, "app")}, {Count(plan.Ports.Count, "port")}.";
 
         Ports = plan.Ports.Select(p => new PortRow(p.Owner, p.Resource, p.Endpoint, p.Port?.ToString() ?? "none", p.Pin ?? "", p.Port is null)).ToArray();
 
@@ -101,4 +100,6 @@ public sealed class PlanView
         var relative = Path.GetRelativePath(root, file);
         return relative.StartsWith("..", StringComparison.Ordinal) ? file : relative.Replace('\\', '/');
     }
+
+    static string Count(int n, string what) => $"{n} {what}{(n == 1 ? "" : "s")}";
 }

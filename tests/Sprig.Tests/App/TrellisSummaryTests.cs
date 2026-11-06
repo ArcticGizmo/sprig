@@ -49,7 +49,6 @@ public sealed class TrellisSummaryTests : IDisposable
             .Env("PAY", repo.Import<Url>("payments-url")));
         var mail = _trellis.Mailpit("mail");
         _trellis.Bind("mail-smtp", mail.SmtpUrl);
-        _trellis.Worktrees(from: "main");
         _trellis.Group("web", web, services);
         _trellis.Group("api", services.Only("catalog-api"));
     }
@@ -73,17 +72,14 @@ public sealed class TrellisSummaryTests : IDisposable
     }
 
     [Fact]
-    public void The_trellis_says_what_it_adds_and_how_its_sprouts_run()
+    public void The_trellis_says_what_it_adds_and_its_groups()
     {
         Shop();
         var (_, plan) = Build();
 
         Assert.Equal([new AddedRow("mail", "mailpit, one per sprout. Fills mail-smtp.")], TrellisSummary.Added(plan));
-        var policies = TrellisSummary.Policies(plan).ToDictionary(p => p.Name, p => p.What);
-        Assert.Equal("Each sprout gets its own, on a new branch from main", policies["Worktrees"]);
-        Assert.StartsWith("Stable", policies["Ports"]);
         // A repo whose every app is in a group is named once.
-        Assert.Equal("web: shop-web, shop-services\napi: catalog-api", policies["Groups"]);
+        Assert.Equal([new PolicyRow("web", "shop-web, shop-services"), new PolicyRow("api", "catalog-api")], TrellisSummary.Policies(plan));
     }
 
     [Fact]

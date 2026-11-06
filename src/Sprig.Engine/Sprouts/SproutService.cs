@@ -25,6 +25,16 @@ public sealed class SproutException(string message, IReadOnlyList<PlanProblem>? 
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
 
+/// <summary>How one sprout runs, chosen when it's made and kept for its life.</summary>
+/// <param name="InPlace">Run the repos where they're checked out, rather than in worktrees of the sprout's own.</param>
+/// <param name="From">The branch new worktree branches start from; null for each repo's own default branch.</param>
+/// <param name="RandomPorts">Fresh ports each time it comes up, rather than keeping the ones it was given.</param>
+public sealed record SproutOptions(bool InPlace = false, string? From = null, bool RandomPorts = false)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string PortPolicy => RandomPorts ? "random" : "stable";
+}
+
 /// <param name="Repo">The repo's name.</param>
 /// <param name="Worktree">A worktree sprig made, rather than the repo run in place.</param>
 /// <param name="Unpushed">Commits on the sprout's branch that no other branch or remote has.</param>
@@ -100,12 +110,14 @@ public sealed partial class SproutService(
         return file;
     }
 
-    /// <param name="branch">The branch for the sprout's worktrees; defaults to the sprout's name. Must be null when the
-    /// trellis runs its repos in place.</param>
+    /// <param name="branch">The branch for the sprout's worktrees; defaults to the sprout's name. Must be null when it
+    /// runs its repos in place.</param>
+    /// <param name="options">How a new sprout runs; null for the defaults. An existing sprout keeps what it was made
+    /// with, and options that differ from that are refused.</param>
     /// <param name="beforeInfra">Called once the sprout's files are written and before its infra starts, with the
     /// record so far and the plan; a caller that will start the apps can have them building meanwhile.</param>
-    public SproutRecord Up(LoadedTrellis loaded, string sprout, string? branch, IProgress<SproutEvent>? progress = null,
-        CancellationToken cancellation = default, Action<SproutRecord, Plan>? beforeInfra = null)
+    public SproutRecord Up(LoadedTrellis loaded, string sprout, string? branch, SproutOptions? options = null,
+        IProgress<SproutEvent>? progress = null, CancellationToken cancellation = default, Action<SproutRecord, Plan>? beforeInfra = null)
     {
         if (!loaded.Complete || loaded.Trellis is not { } trellis)
             throw new SproutException($"{Path.GetFileName(loaded.TrellisPath)} isn't ready to sprout", loaded.Problems);
@@ -115,10 +127,13 @@ public sealed partial class SproutService(
         var existing = store.Get(id, sprout);
         if (existing is not null && !SamePath(existing.TrellisPath, loaded.TrellisPath))
             throw new SproutException($"sprout '{sprout}' already belongs to the trellis at {existing.TrellisPath}");
+        if (existing is not null && options is not null && Differs(existing, options) is { } changed)
+            throw new SproutException($"sprout '{sprout}' {changed}; remove it and make a new one to change that");
+        var chosen = existing is null ? options ?? new SproutOptions() : null;
 
-        var inPlace = trellis.Worktrees is null;
+        var inPlace = existing?.InPlace ?? chosen!.InPlace;
         branch = inPlace ? null : branch ?? existing?.Branch ?? sprout;
-        if (inPlace && branch is not null) throw new SproutException($"{id} runs its repos in place, so a sprout can't have its own branch");
+        if (inPlace && branch is not null) throw new SproutException($"sprout '{sprout}' runs its repos in place, so it can't have its own branch");
         if (branch is not null && existing?.Branch is { } had && had != branch)
             throw new SproutException($"sprout '{sprout}' is on branch '{had}'; remove it first to change branch");
         if (branch is not null && !git.IsValidBranchName(branch)) throw new SproutException($"'{branch}' isn't a valid branch name");
@@ -148,11 +163,10 @@ public sealed partial class SproutService(
         if (inPlace) CheckNoOtherInPlace(id, sprout, loaded.RepoDirs.Values);
 
         var now = DateTimeOffset.UtcNow;
-        var record = existing ?? new SproutRecord(id, loaded.TrellisPath, sprout, branch, trellis.PortPolicy,
+        var record = existing ?? new SproutRecord(id, loaded.TrellisPath, sprout, branch, chosen!.PortPolicy,
             [], [], [], SproutState.Starting, now, now);
         record = record with
         {
-            PortPolicy = trellis.PortPolicy,
             State = SproutState.Starting,
             UpdatedAt = now,
             Error = null,
@@ -161,7 +175,7 @@ public sealed partial class SproutService(
 
         try
         {
-            record = record with { Repos = Repos(loaded, record, settingsNow, step, cancellation) };
+            record = record with { Repos = Repos(loaded, record, chosen?.From, step, cancellation) };
             store.Save(record);
 
             var dirs = record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal);
@@ -313,7 +327,19 @@ public sealed partial class SproutService(
 
     // ---- up, step by step ----
 
-    IReadOnlyList<SproutRepo> Repos(LoadedTrellis loaded, SproutRecord record, SprigSettings settingsNow, Steps step, CancellationToken cancellation)
+    /// <summary>What about <paramref name="record"/> differs from <paramref name="options"/>, in words, or null.
+    /// Where worktrees start from only matters when they're made, so it never differs.</summary>
+    static string? Differs(SproutRecord record, SproutOptions options)
+    {
+        if (record.InPlace != options.InPlace)
+            return record.InPlace ? "runs its repos in place" : "has worktrees of its own";
+        if (record.PortPolicy != options.PortPolicy)
+            return record.PortPolicy == "random" ? "takes fresh ports each time" : "keeps the ports it was given";
+        return null;
+    }
+
+    /// <param name="from">The branch new worktree branches start from; null for each repo's default branch.</param>
+    IReadOnlyList<SproutRepo> Repos(LoadedTrellis loaded, SproutRecord record, string? from, Steps step, CancellationToken cancellation)
     {
         var trellis = loaded.Trellis!;
         var repos = new List<SproutRepo>();
@@ -345,10 +371,13 @@ public sealed partial class SproutService(
                 continue;
             }
             if (!git.IsRepo(source)) throw new SproutException($"{source} isn't a git repo, so it can't have a worktree");
+            var start = from ?? git.DefaultBranch(source)
+                ?? throw new SproutException($"{source} has no default branch to start '{branch}' from; choose one to start from");
             Directory.CreateDirectory(Path.GetDirectoryName(dir)!);
-            var created = git.AddWorktree(source, dir, branch, trellis.Worktrees!.From);
-            repos.Add(new SproutRepo(reference.Path, name, source, dir, Worktree: true, created || (before?.BranchCreated ?? false)));
-            step.Done($"{dir} on {branch}{(created ? $" (new, from {trellis.Worktrees.From})" : "")}");
+            var created = git.AddWorktree(source, dir, branch, start);
+            repos.Add(new SproutRepo(reference.Path, name, source, dir, Worktree: true, created || (before?.BranchCreated ?? false),
+                created ? start : before?.From));
+            step.Done($"{dir} on {branch}{(created ? $" (new, from {start})" : "")}");
         }
         return repos;
     }
@@ -369,13 +398,22 @@ public sealed partial class SproutService(
             // A running sprout listens on its own ports; they mustn't count against it.
             var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).Concat(others).ToHashSet();
             var built = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, record.Name, settingsNow, inUse,
-                Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null));
+                Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null,
+                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record)));
             if (built.HasErrors) return (built, null);
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });
         if (plan.HasErrors) throw new SproutException("the plan has errors", plan.Problems);
         // Saved and looked up under the sprout's own key, not the name the trellis gives itself in code.
         return plan with { Trellis = record.Trellis };
+    }
+
+    /// <summary>Where the sprout's worktrees started from, in a few words: the one branch when they share it.</summary>
+    static string? WorktreesFrom(SproutRecord record)
+    {
+        if (record.InPlace) return null;
+        var froms = record.Repos.Select(r => r.From).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+        return froms.Length == 1 ? froms[0] : froms.Length == 0 ? "existing branches" : "each repo's default branch";
     }
 
     /// <summary>A file a sprout writes values into, and the definition line that asked for it.</summary>

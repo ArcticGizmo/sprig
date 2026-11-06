@@ -124,7 +124,7 @@ public class SproutsViewModelTests
 
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task Sprout_it_asks_to_approve_the_definitions_then_brings_an_in_place_trellis_up()
+    public async Task Sprout_it_asks_to_approve_the_definitions_then_brings_an_in_place_sprout_up_and_remembers_the_choice()
     {
         using var store = new TempStore();
         var services = new AppServices(store.Root);
@@ -161,6 +161,9 @@ public class SproutsViewModelTests
         // The trellis is approved first; only then does sprig know which repos' definitions to ask about. Both asks
         // happen in the modal, which closes once the sprouting starts.
         vm.OpenAddCommand.Execute(null);
+        Assert.True(vm.NewHasWorktrees);
+        vm.NewInPlace = true;
+        Assert.Equal("Default: local", vm.NewNameHint);
         await vm.CreateCommand.ExecuteAsync(null);
         Assert.EndsWith("web.trellis.cs", Assert.Single(vm.PendingTrust).Path);
         Assert.True(vm.TrustInModal);
@@ -177,6 +180,10 @@ public class SproutsViewModelTests
         Assert.Equal("web / local", vm.Selected!.Title);
         Assert.True(vm.Selected.IsUp);
         Assert.Matches(@"PORT=95\d\d", File.ReadAllText(Path.Combine(repo, ".env.local")));
+        Assert.True(vm.Selected.Record.InPlace);
+
+        // The next sprout of the trellis starts from the same choices.
+        Assert.True(new SproutsViewModel(new AppServices(store.Root)).NewInPlace);
     }
 
     static string RepoRoot()

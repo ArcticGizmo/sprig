@@ -32,7 +32,7 @@ public sealed record RepoCard(
 /// <summary>Something the trellis adds itself: infra it runs, or a value it supplies.</summary>
 public sealed record AddedRow(string Name, string What);
 
-/// <summary>A line of "How sprouts run".</summary>
+/// <summary>A line of the trellis's Groups.</summary>
 public sealed record PolicyRow(string Name, string What);
 
 /// <summary>A sprout of the selected trellis.</summary>
@@ -126,22 +126,11 @@ public static class TrellisSummary
         return rows;
     }
 
+    /// <summary>The trellis's groups, each with what it starts.</summary>
     public static IReadOnlyList<PolicyRow> Policies(Plan plan)
-    {
-        var rows = new List<PolicyRow>
-        {
-            new("Worktrees", plan.WorktreesFrom is { } from
-                ? $"Each sprout gets its own, on a new branch from {from}"
-                : "None: repos run where they're checked out, so one sprout at a time"),
-            new("Ports", plan.PortPolicy.Equals("random", StringComparison.OrdinalIgnoreCase)
-                ? "Random: fresh ports each time a sprout comes up"
-                : "Stable: each sprout keeps the ports it was given"),
-        };
-        rows.Add(new("Groups", plan.Groups.Count == 0
-            ? "None: starting a sprout starts everything"
-            : string.Join("\n", plan.Groups.Select(g => $"{g.Name}: {GroupMembers(plan, g)}"))));
-        return rows;
-    }
+        => plan.Groups.Count == 0
+            ? [new("None", "Starting a sprout starts everything")]
+            : plan.Groups.Select(g => new PolicyRow(g.Name, GroupMembers(plan, g))).ToArray();
 
     /// <summary>"shop-web, catalog-api": a repo whose every app is in the group is named once, otherwise its apps are.</summary>
     static string GroupMembers(Plan plan, PlannedGroup group)

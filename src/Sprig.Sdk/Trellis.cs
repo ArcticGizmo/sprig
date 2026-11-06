@@ -10,12 +10,13 @@ public static class Trellis
         => new(name, new SourceLocation(file, line));
 }
 
-public enum PortPolicy
+[Obsolete(SproutChoice.Message, error: true)]
+public enum PortPolicy { Stable, Random }
+
+static class SproutChoice
 {
-    /// <summary>Each sprout keeps the ports it was given until it's removed.</summary>
-    Stable,
-    /// <summary>Fresh ports every time a sprout comes up.</summary>
-    Random,
+    public const string Message = "Worktrees and ports are chosen when you make a sprout now (the new-sprout form, or "
+        + "sprig up --in-place / --from / --random-ports). Delete this line.";
 }
 
 public sealed class TrellisBuilder : DefinitionBuilder
@@ -24,8 +25,6 @@ public sealed class TrellisBuilder : DefinitionBuilder
     readonly List<BindingModel> _bindings = [];
     readonly List<GroupModel> _groups = [];
     readonly List<LinkModel> _links = [];
-    WorktreePolicyModel? _worktrees;
-    PortPolicy _ports = PortPolicy.Stable;
 
     internal TrellisBuilder(string name, SourceLocation location) : base(name, location) { }
 
@@ -58,19 +57,12 @@ public sealed class TrellisBuilder : DefinitionBuilder
     public TrellisBuilder Bind(string import, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => Bind(import, value.ToExpr(), file, line);
 
-    /// <summary>Give each sprout its own worktrees, on branches cut from <paramref name="from"/>. Leave this out to run
-    /// the repos where they are.</summary>
-    public TrellisBuilder Worktrees(string from = "main")
-    {
-        _worktrees = new WorktreePolicyModel(from);
-        return this;
-    }
+    // Kept only so code written before the choice moved fails with directions rather than "no such method".
+    [Obsolete(SproutChoice.Message, error: true)]
+    public TrellisBuilder Worktrees(string from = "main") => this;
 
-    public TrellisBuilder Ports(PortPolicy policy)
-    {
-        _ports = policy;
-        return this;
-    }
+    [Obsolete(SproutChoice.Message, error: true)]
+    public TrellisBuilder Ports(PortPolicy policy) => this;
 
     /// <summary>A slice you can start on its own: these repos (or some of their apps) and whatever they depend on.</summary>
     public TrellisBuilder Group(string name, params GroupMember[] members)
@@ -106,8 +98,6 @@ public sealed class TrellisBuilder : DefinitionBuilder
         Repos: _repos.ToArray(),
         Bindings: _bindings.ToArray(),
         Groups: _groups.ToArray(),
-        Worktrees: _worktrees,
-        PortPolicy: _ports.ToString().ToLowerInvariant(),
         Links: _links.Count > 0 ? _links.ToArray() : null);
 }
 

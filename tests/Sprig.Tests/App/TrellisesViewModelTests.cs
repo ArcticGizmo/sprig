@@ -156,7 +156,7 @@ public class TrellisesViewModelTests
         Assert.Equal("http://localhost:8000", wire.Value);
         Assert.Equal("Host=a;Password=***", view.Apps[1].Rows[0].Value);
         Assert.Equal("shop-web/sprig.cs:7", Assert.Single(view.Problems).Where);
-        Assert.Equal("Sprout 'plan'  ·  stable ports  ·  worktrees from main", view.Summary);
+        Assert.Equal("2 apps, 1 port.", view.Summary);
     }
 }
 

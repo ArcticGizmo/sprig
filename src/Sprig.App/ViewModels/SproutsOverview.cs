@@ -274,7 +274,7 @@ public partial class SproutsViewModel
         if (loaded.Untrusted.Count > 0) throw new InvalidOperationException("it has definitions to approve first; open it and bring it up there");
         if (loaded.Trellis is null || loaded.Problems.Count > 0)
             throw new InvalidOperationException("its trellis can't be planned: " + string.Join("; ", loaded.Problems.Take(2).Select(p => p.Message)));
-        _services.Sprouts.Up(loaded, record.Name, record.Branch, progress, cancellation);
+        _services.Sprouts.Up(loaded, record.Name, record.Branch, progress: progress, cancellation: cancellation);
     });
 
     [RelayCommand]

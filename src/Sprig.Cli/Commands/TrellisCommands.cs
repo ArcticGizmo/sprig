@@ -233,8 +233,7 @@ static class PlanPrinter
 {
     public static void Print(IAnsiConsole console, Plan plan, string root)
     {
-        var policy = $"{plan.PortPolicy} ports" + (plan.WorktreesFrom is { } from ? $"  ·  worktrees from {from}" : "  ·  repos run in place");
-        console.MarkupLine($"[bold]{Markup.Escape(plan.Trellis)}[/]  ·  sprout [bold]{Markup.Escape(plan.Sprout)}[/]  ·  {Markup.Escape(policy)}");
+        console.MarkupLine($"[bold]{Markup.Escape(plan.Trellis)}[/]  ·  sprout [bold]{Markup.Escape(plan.Sprout)}[/]");
         console.MarkupLine("[dim]Ports are a preview; they're leased when a sprout comes up.[/]");
         console.WriteLine();
 

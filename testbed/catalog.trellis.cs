@@ -12,7 +12,4 @@ trellis.UseRepo("shop-mobile-sprig");
 var mail = trellis.Mailpit("mail");
 trellis.Bind("mail-smtp", mail.SmtpUrl);
 
-trellis.Worktrees(from: "main");
-trellis.Ports(PortPolicy.Stable);
-
 return trellis.Emit(args);

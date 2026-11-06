@@ -45,8 +45,6 @@ public sealed record TrellisModel(
     IReadOnlyList<RepoRefModel> Repos,
     IReadOnlyList<BindingModel> Bindings,
     IReadOnlyList<GroupModel> Groups,
-    WorktreePolicyModel? Worktrees,
-    string PortPolicy,
     IReadOnlyList<LinkModel>? Links = null)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
 
@@ -138,5 +136,3 @@ public sealed record GroupModel(string Name, IReadOnlyList<GroupMemberModel> Mem
 
 /// <param name="Apps">Only these apps of the repo; null means all of them.</param>
 public sealed record GroupMemberModel(string Repo, IReadOnlyList<string>? Apps);
-
-public sealed record WorktreePolicyModel(string From);

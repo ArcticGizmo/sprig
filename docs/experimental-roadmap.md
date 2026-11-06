@@ -26,6 +26,7 @@ The background and the comparison with Aspire are in [artefacts/authoring-redesi
 | Test system | **Mix of mono and poly.** One monorepo with two .NET APIs, plus separate repos for a Vue web app and an Ionic app. Infra: Postgres, Redis, RabbitMQ, Mailpit. |
 | Old code | **New model, copy helpers as needed.** Delete the old model, wiring, maps, pool and editors. Keep the app shell, theme, graph controls, updater and changelog. Copy small proven helpers (git worktree wrapper, `ProcessRunner`, port allocator) into the new engine when a milestone needs them. |
 | Run experience | **A log pane per runner in the app**, with start, stop and restart. Telemetry (traces, metrics) comes later, probably through the standalone Aspire dashboard. |
+| What a sprout chooses | (User, 2026-11-06.) **Worktrees or in place, the branch to start from, and the port policy belong to each sprout**, chosen when it's made, not to the trellis's code. A repo says what it runs, a trellis which repos run together and how they're wired, and a sprout how this copy runs. Plan: [sprout-choices-plan.md](sprout-choices-plan.md), which also covers sprouting one repo without a trellis. |
 | A sprout's definitions | (User, 2026-11-04.) **Read from the sprout's worktrees, approved by content per repo.** A branch that changes `sprig.cs` takes effect in its sprout straight away. Approvals are kept per repo's own `sprig.cs`, several versions each, so a worktree's copy runs if that exact content was approved for the repo before, and a new version asks once, whichever worktree it's in. |
 
 ---

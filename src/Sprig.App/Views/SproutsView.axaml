@@ -937,11 +937,32 @@
                         </StackPanel>
                         <StackPanel Spacing="4">
                             <TextBlock Classes="phead" Text="NAME" />
-                            <TextBox x:Name="NewNameBox" Text="{Binding NewName}" PlaceholderText="e.g. feat-x" />
+                            <TextBox x:Name="NewNameBox" Text="{Binding NewName}" PlaceholderText="{Binding NewNameHint}" />
                         </StackPanel>
                         <StackPanel Spacing="4">
-                            <TextBlock Classes="phead" Text="BRANCH" />
-                            <TextBox Text="{Binding NewBranch}" PlaceholderText="Default: the sprout's name" />
+                            <TextBlock Classes="phead" Text="WHERE IT RUNS" />
+                            <RadioButton GroupName="new-where" IsChecked="{Binding NewHasWorktrees}"
+                                         Content="In worktrees of its own, on a branch of its own" />
+                            <RadioButton GroupName="new-where" IsChecked="{Binding NewInPlace}"
+                                         Content="In place, where the repos are checked out (one such sprout at a time)" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding NewHasWorktrees}">
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="phead" Text="BRANCH" />
+                                <TextBox Text="{Binding NewBranch}" PlaceholderText="Default: the sprout's name" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Classes="phead" Text="STARTING FROM" />
+                                <TextBox Text="{Binding NewFrom}" PlaceholderText="Each repo's default branch"
+                                         ToolTip.Tip="Used only when the branch doesn't exist yet" />
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="phead" Text="PORTS" />
+                            <RadioButton GroupName="new-ports" IsChecked="{Binding NewStablePorts}"
+                                         Content="Keep the ports it's given until it's removed" />
+                            <RadioButton GroupName="new-ports" IsChecked="{Binding NewRandomPorts}"
+                                         Content="Fresh ports each time it comes up" />
                         </StackPanel>
                     </StackPanel>
                     <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"

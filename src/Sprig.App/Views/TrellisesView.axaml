@@ -584,7 +584,7 @@
 
                             <Grid ColumnDefinitions="*,*,*" ColumnSpacing="24" IsVisible="{Binding ShowsPlan}">
                                 <StackPanel Spacing="10">
-                                    <TextBlock Classes="phead" Text="HOW SPROUTS RUN" />
+                                    <TextBlock Classes="phead" Text="GROUPS" />
                                     <ItemsControl ItemsSource="{Binding Policies}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:PolicyRow">
@@ -884,11 +884,6 @@
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
                         </Grid>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <CheckBox IsChecked="{Binding NewWorktrees}" Content="Give each sprout its own worktrees, branching from" VerticalAlignment="Center" />
-                        <TextBox Text="{Binding NewFrom}" Width="140" IsEnabled="{Binding NewWorktrees}" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <CheckBox IsChecked="{Binding NewRandomPorts}" Content="Fresh random ports each time a sprout comes up (otherwise each keeps its own)" />
                     <TextBlock Classes="msg" Text="{Binding NewMessage}" FontSize="12" TextWrapping="Wrap" Classes.bad="{Binding NewFailed}"
                                IsVisible="{Binding NewMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">

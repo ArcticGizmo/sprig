@@ -60,6 +60,19 @@ public sealed class GitClient(IProcessRunner runner)
             ?? refs.FirstOrDefault();
     }
 
+    /// <summary>The branch a repo's new work starts from: what its origin calls default, else a local <c>main</c> or
+    /// <c>master</c>, else whatever its checkout is on. Null when none of those can be found.</summary>
+    public string? DefaultBranch(string repo)
+    {
+        var originHead = Run(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD");
+        if (originHead.Success && originHead.StdOut.Trim() is { Length: > 0 } head)
+            return head.StartsWith("origin/", StringComparison.Ordinal) ? head["origin/".Length..] : head;
+        foreach (var name in (string[])["main", "master"])
+            if (BranchExists(repo, name)) return name;
+        var current = Run(repo, "symbolic-ref", "--quiet", "--short", "HEAD");
+        return current.Success && current.StdOut.Trim() is { Length: > 0 } branch ? branch : null;
+    }
+
     public bool IsValidBranchName(string name)
         => !string.IsNullOrWhiteSpace(name) && runner.Run("git", ["check-ref-format", "--branch", name]).Success;
 

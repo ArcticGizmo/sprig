@@ -10,6 +10,9 @@ namespace Sprig.Engine.Planning;
 /// <param name="ComposeFiles">What's in each repo compose file, by <see cref="ComposeFileInfo.Key"/>. Without it the
 /// plan can't say which services a sprout leaves out.</param>
 /// <param name="Random">Set for the random port policy: unpinned ports start from a random point in the range.</param>
+/// <param name="PortPolicy">The sprout's port policy, recorded in the plan.</param>
+/// <param name="WorktreesFrom">Where the sprout's worktrees branched from, recorded in the plan; null when it runs its
+/// repos in place, or for a plan that isn't a sprout's.</param>
 public sealed record PlanInput(
     TrellisModel Trellis,
     IReadOnlyDictionary<string, RepoModel> Repos,
@@ -18,7 +21,9 @@ public sealed record PlanInput(
     IReadOnlySet<int> PortsInUse,
     IReadOnlyDictionary<string, int>? Leased = null,
     IReadOnlyDictionary<string, ComposeFileInfo>? ComposeFiles = null,
-    Random? Random = null);
+    Random? Random = null,
+    string PortPolicy = "stable",
+    string? WorktreesFrom = null);
 
 /// <summary>The services in a repo's compose file.</summary>
 /// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between sprouts.</param>
@@ -77,7 +82,7 @@ public static class Planner
             var groups = input.Trellis.Groups.Select(PlanGroup).ToArray();
 
             return new Plan(
-                input.Trellis.Name, input.Sprout, input.Trellis.PortPolicy, input.Trellis.Worktrees?.From,
+                input.Trellis.Name, input.Sprout, input.PortPolicy, input.WorktreesFrom,
                 _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_trellis, input.Trellis.Links));
         }
 

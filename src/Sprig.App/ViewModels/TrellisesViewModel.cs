@@ -131,9 +131,6 @@ public partial class TrellisesViewModel : PageViewModel
     [ObservableProperty] private bool _isNewOpen;
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string _newRepoPath = "";
-    [ObservableProperty] private bool _newWorktrees = true;
-    [ObservableProperty] private string _newFrom = "main";
-    [ObservableProperty] private bool _newRandomPorts;
     [ObservableProperty] private string _newMessage = "";
     [ObservableProperty] private bool _newFailed;
 
@@ -708,9 +705,6 @@ public partial class TrellisesViewModel : PageViewModel
         NewName = "";
         NewRepoPath = "";
         NewRepoDirs.Clear();
-        NewWorktrees = true;
-        NewFrom = "main";
-        NewRandomPorts = false;
         NewMessage = "";
         NewFailed = false;
         IsNewOpen = true;
@@ -761,22 +755,13 @@ public partial class TrellisesViewModel : PageViewModel
             FailNew("Add at least one repo folder.");
             return;
         }
-        var from = NewFrom.Trim();
-        if (NewWorktrees && from.Length == 0)
-        {
-            FailNew("Say which branch new sprouts' branches start from.");
-            return;
-        }
-
         IsBusy = true;
         TrellisEntry entry;
         try
         {
             var dirs = NewRepoDirs.ToArray();
             var name = NewName.Trim();
-            var worktrees = NewWorktrees ? from : null;
-            var ports = NewRandomPorts ? "Random" : "Stable";
-            entry = await AppServices.RunAsync(() => _services.Authoring.CreateTrellis(name, dirs, worktrees, ports));
+            entry = await AppServices.RunAsync(() => _services.Authoring.CreateTrellis(name, dirs));
         }
         catch (Exception e) when (e is ArgumentException or IOException or InvalidOperationException)
         {

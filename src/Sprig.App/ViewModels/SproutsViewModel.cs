@@ -158,6 +158,37 @@ public partial class SproutsViewModel : PageViewModel
     [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string _newBranch = "";
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewHasWorktrees), nameof(NewNameHint))]
+    private bool _newInPlace;
+    [ObservableProperty] private string _newFrom = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewStablePorts))]
+    private bool _newRandomPorts;
+
+    // Each choice's other answer, for the second radio button of its pair.
+    public bool NewHasWorktrees
+    {
+        get => !NewInPlace;
+        set => NewInPlace = !value;
+    }
+
+    public bool NewStablePorts
+    {
+        get => !NewRandomPorts;
+        set => NewRandomPorts = !value;
+    }
+    public string NewNameHint => NewInPlace ? "Default: local" : "e.g. feat-x";
+
+    /// <summary>A trellis's sprouts start from the choices its last one was made with.</summary>
+    partial void OnNewTrellisChanged(string? value)
+    {
+        if (value is null) return;
+        var last = _services.Ui.SproutChoices(value);
+        NewInPlace = last.InPlace;
+        NewFrom = last.From ?? "";
+        NewRandomPorts = last.RandomPorts;
+    }
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MessageInModal), nameof(MessageOnPage))]
     private string _formMessage = "";
     [ObservableProperty] private bool _formFailed;
@@ -438,16 +469,12 @@ public partial class SproutsViewModel : PageViewModel
             return;
         }
 
-        var branch = NewBranch.Trim() is { Length: > 0 } b ? b : null;
-        var sprout = NewName.Trim() is { Length: > 0 } n ? n : branch is null ? null : SproutService.NameFromBranch(branch);
-
-        var loaded = await LoadAsync(path, Create, sprout);
-        if (loaded is null) return;
-
-        sprout ??= loaded.Trellis!.Worktrees is null ? "local" : null;
+        var inPlace = NewInPlace;
+        var branch = !inPlace && NewBranch.Trim() is { Length: > 0 } b ? b : null;
+        var sprout = NewName.Trim() is { Length: > 0 } n ? n : branch is not null ? SproutService.NameFromBranch(branch) : inPlace ? "local" : null;
         if (sprout is null)
         {
-            Fail($"{loaded.Trellis!.Name} gives each sprout its own worktrees, so name the sprout (or give a branch).");
+            Fail("Name the sprout (or give a branch). It gets worktrees of its own on a branch of that name.");
             return;
         }
         if (SproutService.CheckName(sprout) is { } bad)
@@ -456,10 +483,16 @@ public partial class SproutsViewModel : PageViewModel
             return;
         }
 
+        var loaded = await LoadAsync(path, Create, sprout);
+        if (loaded is null) return;
+
+        var options = new SproutOptions(inPlace, !inPlace && NewFrom.Trim() is { Length: > 0 } from ? from : null, NewRandomPorts);
+        _services.Ui.SetSproutChoices(name, options);
+
         // The progress window takes over from here, and reports any failure.
         IsAddOpen = false;
         var ok = await RunAsync($"Sprouting {loaded.Id} / {sprout}",
-            (progress, cancellation) => _services.Sprouts.Up(loaded, sprout, branch, progress, cancellation),
+            (progress, cancellation) => _services.Sprouts.Up(loaded, sprout, branch, options, progress, cancellation),
             $"{loaded.Id} / {sprout} is up.", retry: Create);
         if (ok)
         {
@@ -481,7 +514,7 @@ public partial class SproutsViewModel : PageViewModel
         var loaded = await LoadAsync(record.TrellisPath, retry, record.Name);
         if (loaded is null) return false;
         var ok = await RunAsync($"Bringing {record.Trellis} / {record.Name} up",
-            (progress, cancellation) => _services.Sprouts.Up(loaded, record.Name, record.Branch, progress, cancellation),
+            (progress, cancellation) => _services.Sprouts.Up(loaded, record.Name, record.Branch, progress: progress, cancellation: cancellation),
             $"{record.Trellis} / {record.Name} is up.",
             retry: retry);
         Refresh();

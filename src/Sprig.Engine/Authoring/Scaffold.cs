@@ -20,7 +20,7 @@ public static partial class Scaffold
     static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase)
         { "bin", "obj", "node_modules", ".git", ".vs", ".idea", "dist", "build", "out", "artifacts", "packages" };
 
-    public static string Trellis(string name, IReadOnlyList<ScaffoldRepo> repos, string? worktreesFrom, string portPolicy)
+    public static string Trellis(string name, IReadOnlyList<ScaffoldRepo> repos)
     {
         var text = new StringBuilder();
         Header(text);
@@ -38,10 +38,6 @@ public static partial class Scaffold
             text.Append($"var {variable} = trellis.Repo({Literal(path.Replace('\\', '/'))});\n");
         }
         text.Append('\n');
-        text.Append(worktreesFrom is { } from
-            ? $"trellis.Worktrees(from: {Literal(from)});        // each sprout gets its own worktrees and branch\n"
-            : "// trellis.Worktrees(from: \"main\");      // give each sprout its own worktrees instead of running in place\n");
-        text.Append($"trellis.Ports(PortPolicy.{portPolicy});\n\n");
         text.Append("return trellis.Emit(args);\n");
         return text.ToString();
     }

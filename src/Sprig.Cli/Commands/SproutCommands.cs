@@ -34,8 +34,23 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public string? Sprout { get; set; }
 
         [CommandOption("--branch <branch>")]
-        [Description("The branch for the sprout's worktrees (default: the sprout's name). Made from the trellis's base branch when it doesn't exist")]
+        [Description("The branch for the sprout's worktrees (default: the sprout's name). Made from --from when it doesn't exist")]
         public string? Branch { get; set; }
+
+        [CommandOption("--in-place")]
+        [Description("A new sprout runs the repos where they're checked out, rather than in worktrees of its own (its name defaults to 'local')")]
+        public bool InPlace { get; set; }
+
+        [CommandOption("--from <branch>")]
+        [Description("Where a new sprout's branches start (default: each repo's own default branch)")]
+        public string? From { get; set; }
+
+        [CommandOption("--random-ports")]
+        [Description("A new sprout takes fresh ports each time it comes up, rather than keeping the ones it was given")]
+        public bool RandomPorts { get; set; }
+
+        /// <summary>Only what was asked for: an existing sprout keeps its own choices unless one is named.</summary>
+        public SproutOptions? Options => InPlace || RandomPorts || From is not null ? new SproutOptions(InPlace, From, RandomPorts) : null;
 
         [CommandOption("--run")]
         [Description("Then start every app and follow their logs together. Ctrl+C stops the apps; the infra keeps running")]
@@ -50,14 +65,16 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (s.Json && s.Run && !s.Detached)
             throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; use --detached with --json");
-        var named = s.Sprout ?? (s.Branch is { } b ? SproutService.NameFromBranch(b) : null);
+        if (s.InPlace && (s.Branch is not null || s.From is not null))
+            throw new InvalidOperationException("--in-place runs the repos where they're checked out, so it takes no --branch or --from");
+        var named = s.Sprout ?? (s.Branch is { } b ? SproutService.NameFromBranch(b) : null) ?? (s.InPlace ? "local" : null);
         if (TrellisLoad.Load(cli, s.Trellis, s, named) is not { } loaded) return 1;
-        var trellis = loaded.Trellis!;
         var root = Path.GetDirectoryName(loaded.TrellisPath)!;
 
+        // An in-place sprout is usually the only one, named "local", so bringing it up again needn't name it.
         var sprout = named
-            ?? (trellis.Worktrees is null ? "local" : throw new InvalidOperationException(
-                $"{trellis.Name} gives each sprout its own worktrees; name it: sprig up {trellis.Name} --sprout <name>"));
+            ?? (cli.Sprouts.Get(loaded.Id, "local") is { InPlace: true } ? "local" : throw new InvalidOperationException(
+                $"name the sprout: sprig up {s.Trellis} --sprout <name> (or --in-place to run the repos where they are)"));
 
         var progress = new SyncProgress<SproutEvent>(e => Report(e, s.Json));
         try
@@ -106,7 +123,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             string? held = null;
             try
             {
-                return cli.Sprouts.Up(loaded, sprout, s.Branch, progress, cancellation,
+                return cli.Sprouts.Up(loaded, sprout, s.Branch, s.Options, progress, cancellation,
                     runApps ? (record, plan) => held = Prebuild(record, plan) : null);
             }
             catch (SproutException e) when (e.Untrusted.Count > 0 && attempt < 3)

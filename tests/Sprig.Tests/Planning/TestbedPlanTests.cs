@@ -69,7 +69,6 @@ public sealed class TestbedPlanTests : IDisposable
         Assert.Equal($"smtp://localhost:{smtpPort}", orders.Env.Single(e => e.Key == "Smtp__Url").Value.Value);
 
         Assert.Equal(["shop-mobile/mobile", "shop-services/catalog-api"], plan.Groups.Single(g => g.Name == "mobile").Apps);
-        Assert.Equal("main", plan.WorktreesFrom);
 
         var catalog = plan.Apps.Single(a => a.Name == "catalog-api");
         Assert.Equal(new PlannedHealth("http", "/health"), Assert.Single(catalog.Health!));

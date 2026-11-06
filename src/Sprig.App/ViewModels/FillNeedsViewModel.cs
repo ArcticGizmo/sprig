@@ -28,7 +28,7 @@ public sealed partial class FixOption(NeedFix fix) : ObservableObject
 
 /// <summary>
 /// The dialog behind the checklist's "What the repos need": one unfilled need at a time, the ways to fill it, and the
-/// change each makes to the trellis's code, shown as a diff before anything is written.
+/// change each makes to the orchestration's code, shown as a diff before anything is written.
 /// </summary>
 public sealed partial class FillNeedsViewModel : ViewModelBase
 {
@@ -38,7 +38,7 @@ public sealed partial class FillNeedsViewModel : ViewModelBase
     /// <summary>Writes the chosen change and plans again.</summary>
     public Func<string, string, Task>? Apply { get; init; }
 
-    /// <summary>Opens the trellis's code instead, for a change sprig can't place.</summary>
+    /// <summary>Opens the orchestration's code instead, for a change sprig can't place.</summary>
     public Action? OpenCode { get; init; }
 
     public ObservableCollection<FixOption> Options { get; } = [];
@@ -64,7 +64,7 @@ public sealed partial class FillNeedsViewModel : ViewModelBase
         try { _text = File.ReadAllText(file); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Message = $"The trellis couldn't be read: {e.Message}";
+            Message = $"The orchestration couldn't be read:{e.Message}";
             return;
         }
 
@@ -72,7 +72,7 @@ public sealed partial class FillNeedsViewModel : ViewModelBase
         Title = $"Fill {need.Import}";
         Subtitle = need.Offers.Count > 1
             ? $"{repo} needs {need.Import}, and more than one repo offers it. Pick which, or set it another way."
-            : $"{repo} needs {need.Import} (a {need.Type}), and nothing in the trellis offers it.";
+            : $"{repo} needs {need.Import} (a {need.Type}), and nothing in the orchestration offers it.";
         More = needs.Count > 1 ? $"{needs.Count - 1} more after this one." : "";
         Message = "";
         Options.Clear();

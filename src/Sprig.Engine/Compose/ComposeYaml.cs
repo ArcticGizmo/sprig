@@ -8,8 +8,8 @@ namespace Sprig.Engine.Compose;
 
 public sealed class ComposeException(string message) : Exception(message);
 
-/// <summary>Reads and writes compose files for sprouts. Sprig never edits a repo's own compose file; it writes a copy
-/// into the sprout's store folder and runs that with the repo as the project directory.</summary>
+/// <summary>Reads and writes compose files for workspaces. Sprig never edits a repo's own compose file; it writes a copy
+/// into the workspace's store folder and runs that with the repo as the project directory.</summary>
 public static partial class ComposeYaml
 {
     /// <summary>The services in a compose file, and which of them fix their container name.</summary>
@@ -25,10 +25,10 @@ public static partial class ComposeYaml
     }
 
     /// <summary>
-    /// The repo's compose file as one sprout runs it: only the services the repo names, each on the host ports sprig
+    /// The repo's compose file as one workspace runs it: only the services the repo names, each on the host ports sprig
     /// allocated, with no fixed container names or profiles, and the definition's overrides applied.
     /// </summary>
-    public static string ForSprout(string yaml, PlannedCompose compose)
+    public static string ForWorkspace(string yaml, PlannedCompose compose)
     {
         var root = Load(yaml);
         var services = Services(root);
@@ -66,7 +66,7 @@ public static partial class ComposeYaml
         return Save(root);
     }
 
-    /// <summary>A compose file for the containers a repo or trellis declares in code. Each service is named
+    /// <summary>A compose file for the containers a repo or orchestration declares in code. Each service is named
     /// <c>&lt;owner&gt;-&lt;name&gt;</c>, so two repos can each have a <c>pg</c>.</summary>
     public static string ForContainers(IEnumerable<PlannedContainer> containers)
     {

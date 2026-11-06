@@ -38,14 +38,14 @@
                 <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold"
                            Foreground="{StaticResource TitleBrush}" />
                 <TextBlock Classes="help"
-                           Text="Control how sprig picks host ports for each sprout." />
+                           Text="Control how sprig picks host ports for each workspace." />
             </StackPanel>
 
             <Border Classes="panel">
                 <StackPanel Spacing="16">
                     <TextBlock Classes="phead" Text="PORT RANGE" />
                     <TextBlock Classes="help"
-                               Text="sprig allocates ports from this range. Changes apply to new sprouts; existing ones keep the ports they already hold." />
+                               Text="sprig allocates ports from this range. Changes apply to new workspaces; existing ones keep the ports they already hold." />
                     <StackPanel Orientation="Horizontal" Spacing="16">
                         <StackPanel Spacing="4">
                             <TextBlock Classes="field" Text="Start port" />

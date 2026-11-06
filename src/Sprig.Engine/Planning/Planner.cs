@@ -3,21 +3,21 @@ using Sprig.Model;
 
 namespace Sprig.Engine.Planning;
 
-/// <param name="Repos">Each repo's model, keyed by the path the trellis names it by.</param>
-/// <param name="PortsInUse">Ports to avoid: something listens on them, or another sprout holds them.</param>
-/// <param name="Leased">Ports this sprout already holds, by <see cref="PlannedPort.Key"/>. Each is kept while its pin
+/// <param name="Repos">Each repo's model, keyed by the path the orchestration names it by.</param>
+/// <param name="PortsInUse">Ports to avoid: something listens on them, or another workspace holds them.</param>
+/// <param name="Leased">Ports this workspace already holds, by <see cref="PlannedPort.Key"/>. Each is kept while its pin
 /// still allows it and nothing else has it.</param>
 /// <param name="ComposeFiles">What's in each repo compose file, by <see cref="ComposeFileInfo.Key"/>. Without it the
-/// plan can't say which services a sprout leaves out.</param>
+/// plan can't say which services a workspace leaves out.</param>
 /// <param name="Random">Set for the random port policy: unpinned ports start from a random point in the range.</param>
-/// <param name="PortPolicy">The sprout's port policy, recorded in the plan.</param>
-/// <param name="WorktreesFrom">Where the sprout's worktrees branched from, recorded in the plan; null when it runs its
-/// repos in place, or for a plan that isn't a sprout's.</param>
-/// <param name="Alone">The trellis is one repo run on its own, so a problem says how to fill what it needs alone.</param>
+/// <param name="PortPolicy">The workspace's port policy, recorded in the plan.</param>
+/// <param name="WorktreesFrom">Where the workspace's worktrees branched from, recorded in the plan; null when it runs its
+/// repos in place, or for a plan that isn't a workspace's.</param>
+/// <param name="Alone">The orchestration is one repo run on its own, so a problem says how to fill what it needs alone.</param>
 public sealed record PlanInput(
-    TrellisModel Trellis,
+    OrchestrationModel Orchestration,
     IReadOnlyDictionary<string, RepoModel> Repos,
-    string Sprout,
+    string Workspace,
     SprigSettings Settings,
     IReadOnlySet<int> PortsInUse,
     IReadOnlyDictionary<string, int>? Leased = null,
@@ -28,7 +28,7 @@ public sealed record PlanInput(
     bool Alone = false);
 
 /// <summary>The services in a repo's compose file.</summary>
-/// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between sprouts.</param>
+/// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between workspaces.</param>
 /// <param name="Profiled">Services that only start under a compose profile, so they don't run by default anyway.</param>
 public sealed record ComposeFileInfo(IReadOnlyList<string> Services, IReadOnlyList<string> FixedNames, IReadOnlyList<string> Profiled)
 {
@@ -36,9 +36,10 @@ public sealed record ComposeFileInfo(IReadOnlyList<string> Services, IReadOnlyLi
 }
 
 /// <summary>
-/// Joins a trellis and its repos into a <see cref="Plan"/>. Names are private to the repo (or trellis) that declares
-/// them, so two repos can each have a <c>pg</c>; the only way between repos is an import answered by an export or a
-/// trellis binding. Problems are collected rather than thrown, so one plan reports everything that's wrong.
+/// Joins an orchestration and its repos into a <see cref="Plan"/>. Names are private to the repo (or orchestration)
+/// that declares them, so two repos can each have a <c>pg</c>; the only way between repos is an import answered by an
+/// export or an orchestration binding. Problems are collected rather than thrown, so one plan reports everything
+/// that's wrong.
 /// </summary>
 public static class Planner
 {
@@ -64,7 +65,7 @@ public static class Planner
         readonly List<PlanProblem> _problems = [];
         readonly List<PlannedPort> _ports = [];
         readonly List<Scope> _scopes = [];
-        Scope _trellis = null!;
+        Scope _orchestration = null!;
 
         public Plan Build()
         {
@@ -84,30 +85,30 @@ public static class Planner
             }
 
             CheckUnusedBindings();
-            var groups = input.Trellis.Groups.Select(PlanGroup).ToArray();
+            var groups = input.Orchestration.Groups.Select(PlanGroup).ToArray();
 
             return new Plan(
-                input.Trellis.Name, input.Sprout, input.PortPolicy, input.WorktreesFrom,
-                _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_trellis, input.Trellis.Links));
+                input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
+                _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links));
         }
 
         // ---- scopes and names ----
 
         void CollectScopes()
         {
-            _trellis = new Scope(input.Trellis.Name, null, null);
+            _orchestration = new Scope(input.Orchestration.Name, null, null);
             var seenNames = new Dictionary<string, string>(StringComparer.Ordinal);
 
-            foreach (var reference in input.Trellis.Repos)
+            foreach (var reference in input.Orchestration.Repos)
             {
                 if (_scopes.Any(s => s.RepoPath == reference.Path))
                 {
-                    Problem($"the trellis names the repo '{reference.Path}' twice", reference.Location);
+                    Problem($"the orchestration names the repo '{reference.Path}' twice", reference.Location);
                     continue;
                 }
                 if (!input.Repos.TryGetValue(reference.Path, out var repo)) continue; // the loader reported why
                 if (seenNames.TryGetValue(repo.Name, out var other))
-                    Problem($"'{reference.Path}' and '{other}' both call themselves '{repo.Name}'; repo names must be unique in a trellis", repo.Location);
+                    Problem($"'{reference.Path}' and '{other}' both call themselves '{repo.Name}'; repo names must be unique in an orchestration", repo.Location);
                 seenNames[repo.Name] = reference.Path;
 
                 var scope = new Scope(repo.Name, reference.Path, repo) { LeftOut = UnneededFallbackInfra(reference.Path, repo) };
@@ -119,8 +120,8 @@ public static class Planner
                 _scopes.Add(scope);
             }
 
-            foreach (var c in input.Trellis.Containers) AddResource(_trellis, c.Name, "container", c.Location, c.Endpoints);
-            _scopes.Add(_trellis);
+            foreach (var c in input.Orchestration.Containers) AddResource(_orchestration, c.Name, "container", c.Location, c.Endpoints);
+            _scopes.Add(_orchestration);
         }
 
         void AddResource(Scope scope, string name, string kind, SourceLocation location, IReadOnlyList<EndpointModel> endpoints)
@@ -147,7 +148,7 @@ public static class Planner
             var allocator = new PortAllocator(input.Settings, input.PortsInUse, input.Random);
             var all = _scopes.SelectMany(s => s.Resources.Values.SelectMany(r => r.Endpoints.Values.Select(e => (s, r, e)))).ToList();
 
-            // Kept leases are claimed before anything new, so a fresh allocation can't take a port this sprout holds.
+            // Kept leases are claimed before anything new, so a fresh allocation can't take a port this workspace holds.
             var kept = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var (scope, resource, endpoint) in all)
             {
@@ -356,8 +357,8 @@ public static class Planner
             return new PlannedCompose(scope.Owner, scope.RepoPath!, file.File, overrides, services);
         }
 
-        /// <summary>A sprout keeps only the services the repo names: the others would start on the file's fixed host
-        /// ports and clash with the same service in another sprout.</summary>
+        /// <summary>A workspace keeps only the services the repo names: the others would start on the file's fixed host
+        /// ports and clash with the same service in another workspace.</summary>
         void CheckComposeFile(Scope scope, ComposeFileModel file, List<PlannedOverride> overrides)
         {
             if (input.ComposeFiles?.TryGetValue(ComposeFileInfo.Key(scope.RepoPath!, file.File), out var info) != true) return;
@@ -371,7 +372,7 @@ public static class Planner
             {
                 var (them, they) = left.Length == 1 ? ("it", "it") : ("them", "them");
                 Warn($"{scope.Owner}'s {file.File} also has {string.Join(", ", left.Select(s => $"'{s}'"))}, which its sprig.cs doesn't name, " +
-                     $"so sprouts leave {them} out. Name {they} with compose.Service(...) to keep {them}.", file.Location);
+                     $"so workspaces leave {them} out. Name {they} with compose.Service(...) to keep {them}.", file.Location);
             }
 
             foreach (var name in info.FixedNames.Where(named.Contains))
@@ -379,7 +380,7 @@ public static class Planner
                 var path = $"services.{name}.container_name";
                 if (overrides.Any(o => o.Path == path)) continue;
                 overrides.Add(new PlannedOverride(path,
-                    new PlannedValue("", "(removed)", ["a fixed container name would clash between sprouts"]), Generated: true));
+                    new PlannedValue("", "(removed)", ["a fixed container name would clash between workspaces"]), Generated: true));
             }
         }
 
@@ -396,7 +397,7 @@ public static class Planner
                 var scope = _scopes.FirstOrDefault(s => s.RepoPath == member.Repo);
                 if (scope?.Repo is not { } repo)
                 {
-                    Problem($"group '{group.Name}' names '{member.Repo}', which isn't a repo in this trellis", group.Location);
+                    Problem($"group '{group.Name}' names '{member.Repo}', which isn't a repo in this orchestration", group.Location);
                     continue;
                 }
                 foreach (var name in member.Apps ?? repo.Apps.Select(a => a.Name).ToArray())
@@ -411,8 +412,8 @@ public static class Planner
         void CheckUnusedBindings()
         {
             var imported = _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Imports.Select(i => i.Name)).ToHashSet();
-            foreach (var binding in input.Trellis.Bindings.Where(b => !imported.Contains(b.Import)))
-                Warn($"the trellis binds '{binding.Import}', but no repo imports it", binding.Location);
+            foreach (var binding in input.Orchestration.Bindings.Where(b => !imported.Contains(b.Import)))
+                Warn($"the orchestration binds '{binding.Import}', but no repo imports it", binding.Location);
         }
 
         // ---- resolution ----
@@ -449,22 +450,22 @@ public static class Planner
             return new PlannedValue(template, ok ? value.ToString() : null, via, sources.Distinct().ToArray());
         }
 
-        /// <summary>Nothing answers the import: no trellis binding, no other repo exports it, and the repo has no
+        /// <summary>Nothing answers the import: no orchestration binding, no other repo exports it, and the repo has no
         /// fallback of its own.</summary>
         bool Unfilled(Scope scope, string name)
             => scope.Repo is not null
                && scope.Repo.Imports.FirstOrDefault(i => i.Name == name)?.OrElse is null
                && !FilledElsewhere(scope.RepoPath!, name);
 
-        /// <summary>The trellis binds the import, or another repo exports it.</summary>
+        /// <summary>The orchestration binds the import, or another repo exports it.</summary>
         bool FilledElsewhere(string repoPath, string name)
-            => input.Trellis.Bindings.Any(b => b.Import == name)
+            => input.Orchestration.Bindings.Any(b => b.Import == name)
                || input.Repos.Any(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == name));
 
         /// <summary>
         /// Containers of <paramref name="repo"/> that only its fallbacks use, where something else fills every import
-        /// those fallbacks are for. A repo can bring its own mail catcher for when it runs alone without a sprout of a
-        /// trellis that brings one running two.
+        /// those fallbacks are for. A repo can bring its own mail catcher for when it runs alone without a workspace of an
+        /// orchestration that brings one running two.
         /// </summary>
         HashSet<string> UnneededFallbackInfra(string repoPath, RepoModel repo)
         {
@@ -509,12 +510,12 @@ public static class Planner
             catch (FormatException) { return []; }
             return parts.OfType<RefPart>()
                 .Select(p => p.Path)
-                .Where(p => !p.StartsWith("import.", StringComparison.Ordinal) && !p.StartsWith("export.", StringComparison.Ordinal) && !p.StartsWith("sprout.", StringComparison.Ordinal))
+                .Where(p => !p.StartsWith("import.", StringComparison.Ordinal) && !p.StartsWith("export.", StringComparison.Ordinal) && !p.StartsWith("workspace.", StringComparison.Ordinal))
                 .Select(p => p.Split('.')[0]);
         }
 
         /// <summary>What crossed an import is labelled with it, as the asking app names it. A literal value still came
-        /// from somewhere: the repo or trellis that supplied it.</summary>
+        /// from somewhere: the repo or orchestration that supplied it.</summary>
         static IReadOnlyList<ValueSource> Crossed(IReadOnlyList<ValueSource> sources, string owner, string import)
             => sources.Count == 0 ? [new ValueSource(owner, null, null, import)] : sources.Select(s => s with { Import = import }).ToArray();
 
@@ -529,7 +530,7 @@ public static class Planner
 
             try
             {
-                if (path == "sprout.name") return new Resolved(input.Sprout, ["sprout name"], []);
+                if (path == "workspace.name") return new Resolved(input.Workspace, ["workspace name"], []);
                 if (path.StartsWith("import.", StringComparison.Ordinal)) return ResolveImport(scope, path["import.".Length..], location, visiting);
                 if (path.StartsWith("export.", StringComparison.Ordinal)) return ResolveNamedExport(scope, path["export.".Length..], location, visiting);
                 return ResolveEndpoint(scope, path, location);
@@ -578,18 +579,18 @@ public static class Planner
         {
             if (scope.Repo is null)
             {
-                Problem($"the trellis can't import '{name}'; bind it to a value instead", location);
+                Problem($"the orchestration can't import '{name}'; bind it to a value instead", location);
                 return null;
             }
             var declared = scope.Repo.Imports.FirstOrDefault(i => i.Name == name);
             var at = declared?.Location ?? location;
 
-            var binding = input.Trellis.Bindings.FirstOrDefault(b => b.Import == name);
+            var binding = input.Orchestration.Bindings.FirstOrDefault(b => b.Import == name);
             if (binding is not null)
             {
-                var bound = Resolve(_trellis, binding.Value, binding.Location);
+                var bound = Resolve(_orchestration, binding.Value, binding.Location);
                 if (bound.Value is null) return null;
-                return new Resolved(bound.Value, [$"import {name} ← the trellis", .. bound.Via], Crossed(bound.Sources ?? [], _trellis.Owner, name));
+                return new Resolved(bound.Value, [$"import {name} ← the orchestration", .. bound.Via], Crossed(bound.Sources ?? [], _orchestration.Owner, name));
             }
 
             var exporters = _scopes
@@ -606,14 +607,14 @@ public static class Planner
             if (exporters.Count == 0)
             {
                 Problem(input.Alone
-                    ?$"{scope.Owner} imports '{name}', and nothing fills it when it runs alone: run it in a trellis that does, or give it a fallback, as in repo.Import<…>(\"{name}\").OrElse(…)"
-                    : $"{scope.Owner} imports '{name}', but no repo in the trellis exports it and the trellis doesn't bind it", at);
+                    ?$"{scope.Owner} imports '{name}', and nothing fills it when it runs alone: run it in an orchestration that does, or give it a fallback, as in repo.Import<…>(\"{name}\").OrElse(…)"
+                    : $"{scope.Owner} imports '{name}', but no repo in the orchestration exports it and the orchestration doesn't bind it", at);
                 return null;
             }
             if (exporters.Count > 1)
             {
                 var names = string.Join(" and ", exporters.Select(x => x.scope.Owner));
-                Problem($"{names} all export '{name}'; pick one in the trellis with trellis.Bind(\"{name}\", <repo>.Export(\"{name}\"))", at);
+                Problem($"{names} all export '{name}'; pick one in the orchestration with orchestration.Bind(\"{name}\", <repo>.Export(\"{name}\"))", at);
                 return null;
             }
 
@@ -635,7 +636,7 @@ public static class Planner
             var owner = _scopes.FirstOrDefault(s => s.RepoPath == repoPath);
             if (owner?.Repo is null)
             {
-                Problem($"'{repoPath}' isn't a repo in this trellis", location);
+                Problem($"'{repoPath}' isn't a repo in this orchestration", location);
                 return null;
             }
             var export = owner.Repo.Exports.FirstOrDefault(e => e.Name == name);
@@ -672,7 +673,7 @@ public static class Planner
         }
 
         IEnumerable<ContainerModel> Containers(Scope scope)
-            => scope.Repo?.Containers.Where(c => !scope.LeftOut.Contains(c.Name)) ?? (scope == _trellis ? input.Trellis.Containers : []);
+            => scope.Repo?.Containers.Where(c => !scope.LeftOut.Contains(c.Name)) ?? (scope == _orchestration ? input.Orchestration.Containers : []);
 
         void Problem(string message, SourceLocation? location) => _problems.Add(new PlanProblem(ProblemSeverity.Error, message, location));
 

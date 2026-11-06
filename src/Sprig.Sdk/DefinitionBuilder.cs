@@ -5,7 +5,7 @@ using Sprig.Model;
 
 namespace Sprig;
 
-/// <summary>What a repo and a trellis have in common: they can own containers, and they hand their description to
+/// <summary>What a repo and an orchestration have in common: they can own containers, and they hand their description to
 /// sprig with <see cref="Emit"/>.</summary>
 public abstract class DefinitionBuilder
 {
@@ -70,16 +70,16 @@ public static class Sdk
 {
     /// <summary>The model's shape. Raised whenever <see cref="ModelJsonContext"/>'s records change, so the engine can
     /// refuse (and never cache) a model it would misread.</summary>
-    public const int Schema = 9;
+    public const int Schema = 10;
 
     public static string Version { get; } =
         typeof(Sdk).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
         ?? "0.0.0";
 }
 
-/// <summary>Values about the sprout being built, for names that must differ between sprouts.</summary>
-public static class Sprout
+/// <summary>Values about the workspace being built, for names that must differ between workspaces.</summary>
+public static class Workspace
 {
-    /// <summary>The sprout's name, e.g. <c>feat-x</c>.</summary>
-    public static Ref Name { get; } = new("sprout.name");
+    /// <summary>The workspace's name, e.g. <c>feat-x</c>.</summary>
+    public static Ref Name { get; } = new("workspace.name");
 }

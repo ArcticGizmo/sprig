@@ -17,7 +17,7 @@ public sealed record AppSection(string Title, string Subtitle, IReadOnlyList<Set
 
 public sealed record ContainerRow(string Owner, string Name, string Image, string Ports, string Volumes);
 
-/// <summary>One value crossing from one repo (or the trellis) to an app in another.</summary>
+/// <summary>One value crossing from one repo (or the orchestration) to an app in another.</summary>
 public sealed record WiringRow(string Consumer, string Key, string Provider, string Value);
 
 public sealed record GroupRow(string Name, string Apps);
@@ -27,7 +27,7 @@ public sealed record ProblemRow(string Severity, string Where, string Message)
     public bool IsError => Severity == "error";
 }
 
-/// <summary>A <see cref="Plan"/> flattened into rows the Trellises page can show. Values are masked; the plan keeps
+/// <summary>A <see cref="Plan"/> flattened into rows the Orchestrations page can show. Values are masked; the plan keeps
 /// the real ones.</summary>
 public sealed class PlanView
 {

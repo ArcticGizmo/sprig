@@ -56,13 +56,13 @@ public class CodeReviewViewModelTests
     public async Task The_dialog_closes_once_all_is_approved_but_stays_open_for_files_that_turn_up_next()
     {
         using var store = new TempStore();
-        var trellis = Write(store.Root, "storefront.trellis.cs", "// trellis");
+        var orchestration = Write(store.Root, "storefront.orchestration.cs", "// orchestration");
         var web = Write(store.Root, "shop-web/sprig.cs", "// web");
         var review = new CodeReviewViewModel(new AppServices(store.Root).Trust);
         var rounds = new Queue<PendingTrustItem[]>([[Pending(web)], []]);
         review.AllApproved = () => { review.Load(rounds.Dequeue()); return Task.CompletedTask; };
 
-        review.Load([Pending(trellis)]);
+        review.Load([Pending(orchestration)]);
         review.OpenCommand.Execute(null);
         await review.ApproveCurrentCommand.ExecuteAsync(null);
 

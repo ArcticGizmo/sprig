@@ -11,7 +11,7 @@ public class PlannerTests
 
     sealed class Fixture
     {
-        public TrellisBuilder Trellis { get; } = Sprig.Trellis.Describe("storefront");
+        public OrchestrationBuilder Orchestration { get; } = Sprig.Orchestration.Describe("storefront");
         readonly Dictionary<string, RepoModel> _repos = [];
 
         public RepoRef Add(string path, Action<RepoBuilder> describe)
@@ -19,14 +19,14 @@ public class PlannerTests
             var repo = Repo.Describe(Path.GetFileName(path));
             describe(repo);
             _repos[path] = repo.BuildRepo();
-            return Trellis.Repo(path);
+            return Orchestration.Repo(path);
         }
 
         public Plan Plan(SprigSettings? settings = null, IReadOnlySet<int>? inUse = null)
-            => Planner.Build(new PlanInput(Trellis.BuildTrellis(), _repos, "feat-x", settings ?? Settings, inUse ?? new HashSet<int>()));
+            => Planner.Build(new PlanInput(Orchestration.BuildOrchestration(), _repos, "feat-x", settings ?? Settings, inUse ?? new HashSet<int>()));
 
         public Plan PlanWith(Func<PlanInput, PlanInput> change)
-            => Planner.Build(change(new PlanInput(Trellis.BuildTrellis(), _repos, "feat-x", Settings, new HashSet<int>())));
+            => Planner.Build(change(new PlanInput(Orchestration.BuildOrchestration(), _repos, "feat-x", Settings, new HashSet<int>())));
     }
 
     static IReadOnlyList<string> DependsOn(Plan plan, string app) => plan.Apps.Single(a => a.Name == app).DependsOn!;
@@ -75,19 +75,19 @@ public class PlannerTests
     }
 
     [Fact]
-    public void A_trellis_that_fills_the_import_wins_and_the_fallbacks_own_infra_is_left_out()
+    public void An_orchestration_that_fills_the_import_wins_and_the_fallbacks_own_infra_is_left_out()
     {
         var f = new Fixture();
         f.Add("../shop-services", Orders);
-        var mail = f.Trellis.Mailpit("mail");
-        f.Trellis.Bind("mail-smtp", mail.SmtpUrl);
+        var mail = f.Orchestration.Mailpit("mail");
+        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
 
         var plan = f.Plan();
 
         Assert.Empty(plan.Problems);
         Assert.Equal("storefront", Assert.Single(plan.Containers).Owner);
         Assert.DoesNotContain(plan.Ports, p => p.Owner == "shop-services" && p.Resource == "mail");
-        Assert.StartsWith("import mail-smtp ← the trellis", plan.Apps.Single().Env.Single().Value.Via[0]);
+        Assert.StartsWith("import mail-smtp ← the orchestration", plan.Apps.Single().Env.Single().Value.Via[0]);
     }
 
     [Fact]
@@ -100,10 +100,10 @@ public class PlannerTests
             repo.Node("orders", ".").Http().Env("SMTP", repo.Import<Url>("mail-smtp").OrElse(mail.SmtpUrl)).WaitFor(mail);
             repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url"));
         });
-        f.Trellis.Bind("mail-smtp", "smtp://elsewhere:25");
+        f.Orchestration.Bind("mail-smtp", "smtp://elsewhere:25");
 
         Assert.Single(f.Plan().Containers);
-        Assert.Contains("no repo in the trellis exports it", Assert.Single(f.Plan().Problems).Message);
+        Assert.Contains("no repo in the orchestration exports it", Assert.Single(f.Plan().Problems).Message);
         Assert.Contains("nothing fills it when it runs alone", Assert.Single(f.PlanWith(i => i with { Alone = true }).Problems).Message);
     }
 
@@ -150,7 +150,7 @@ public class PlannerTests
     }
 
     [Fact]
-    public void Quick_links_resolve_to_each_sprouts_ports_without_making_one_app_wait_for_another()
+    public void Quick_links_resolve_to_each_workspaces_ports_without_making_one_app_wait_for_another()
     {
         var f = new Fixture();
         var services = f.Add("../shop-services", repo =>
@@ -165,8 +165,8 @@ public class PlannerTests
                 .Link("Docs", "https://example.com/docs");
             repo.Node("admin", ".").Http().Link("Web's cart", $"{web.Url}/cart?seed=demo");
         });
-        var mail = f.Trellis.Container("mail", "mailpit").Endpoint("ui", 8025, scheme: "http");
-        f.Trellis.Link("Mail inbox", mail.UrlOf("ui")).Link("Catalog", $"{services.Export("catalog-url")}/products");
+        var mail = f.Orchestration.Container("mail", "mailpit").Endpoint("ui", 8025, scheme: "http");
+        f.Orchestration.Link("Mail inbox", mail.UrlOf("ui")).Link("Catalog", $"{services.Export("catalog-url")}/products");
 
         var plan = f.Plan();
 
@@ -236,7 +236,7 @@ public class PlannerTests
     }
 
     [Fact]
-    public void A_sprout_keeps_its_leased_ports_and_only_new_endpoints_get_new_ones()
+    public void A_workspace_keeps_its_leased_ports_and_only_new_endpoints_get_new_ones()
     {
         var f = new Fixture();
         f.Add("../r", repo =>
@@ -288,7 +288,7 @@ public class PlannerTests
 
         var warning = Assert.Single(plan.Problems);
         Assert.Equal(ProblemSeverity.Warning, warning.Severity);
-        Assert.Contains("also has 'mailpit', 'seq', which its sprig.cs doesn't name, so sprouts leave them out", warning.Message);
+        Assert.Contains("also has 'mailpit', 'seq', which its sprig.cs doesn't name, so workspaces leave them out", warning.Message);
         var compose = Assert.Single(plan.Compose);
         Assert.Equal(["postgres", "redis"], compose.Services.Select(s => s.Name));
         Assert.Contains(compose.Overrides, o => o.Path == "services.postgres.container_name" && o.Generated);
@@ -355,7 +355,7 @@ public class PlannerTests
     }
 
     [Fact]
-    public void Two_exporters_of_a_name_is_an_error_until_the_trellis_picks_one()
+    public void Two_exporters_of_a_name_is_an_error_until_the_orchestration_picks_one()
     {
         var f = new Fixture();
         var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
@@ -365,9 +365,9 @@ public class PlannerTests
         var ambiguous = f.Plan();
         var problem = Assert.Single(ambiguous.Problems);
         Assert.Contains("a and b all export 'cache-url'", problem.Message);
-        Assert.Contains("trellis.Bind(\"cache-url\"", problem.Message);
+        Assert.Contains("orchestration.Bind(\"cache-url\"", problem.Message);
 
-        f.Trellis.Bind("cache-url", a.Export("cache-url"));
+        f.Orchestration.Bind("cache-url", a.Export("cache-url"));
         var settled = f.Plan();
         Assert.Empty(settled.Problems);
         Assert.Equal("redis://a", Env(settled, "web", "CACHE").Value.Value);
@@ -381,7 +381,7 @@ public class PlannerTests
 
         var problem = Assert.Single(f.Plan().Problems);
 
-        Assert.Contains("imports 'api-url', but no repo in the trellis exports it", problem.Message);
+        Assert.Contains("imports 'api-url', but no repo in the orchestration exports it", problem.Message);
         Assert.EndsWith("PlannerTests.cs", problem.Location!.File);
         Assert.Null(Env(f.Plan(), "web", "API").Value.Value);
     }
@@ -397,12 +397,12 @@ public class PlannerTests
     }
 
     [Fact]
-    public void Infra_the_trellis_owns_can_answer_an_import()
+    public void Infra_the_orchestration_owns_can_answer_an_import()
     {
         var f = new Fixture();
         f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Import<Url>("mail-smtp")));
-        var mail = f.Trellis.Mailpit("mail");
-        f.Trellis.Bind("mail-smtp", mail.SmtpUrl);
+        var mail = f.Orchestration.Mailpit("mail");
+        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
 
         var plan = f.Plan();
 
@@ -494,7 +494,7 @@ public class PlannerTests
         {
             var compose = repo.ComposeFile("docker-compose.yml");
             var pg = compose.Service("postgres").Endpoint("tcp", 5432);
-            compose.Set("services.postgres.container_name", $"shop-pg-{Sprout.Name}");
+            compose.Set("services.postgres.container_name", $"shop-pg-{Workspace.Name}");
             repo.DotNet("api", ".").Http().Env("Db", $"Host=localhost;Port={pg.Port}");
         });
 
@@ -513,9 +513,9 @@ public class PlannerTests
     {
         var f = new Fixture();
         var services = f.Add("../shop-services", repo => { repo.DotNet("catalog-api", ".").Http(); repo.DotNet("orders-api", ".").Http(); });
-        f.Trellis.Group("mobile", services.Only("catalog-api"));
-        f.Trellis.Group("all", services);
-        f.Trellis.Group("typo", services.Only("catalgo-api"));
+        f.Orchestration.Group("mobile", services.Only("catalog-api"));
+        f.Orchestration.Group("all", services);
+        f.Orchestration.Group("typo", services.Only("catalgo-api"));
 
         var plan = f.Plan();
 
@@ -529,7 +529,7 @@ public class PlannerTests
     {
         var f = new Fixture();
         f.Add("../r", repo => repo.Node("web", ".").Http());
-        f.Trellis.Bind("unused", "x");
+        f.Orchestration.Bind("unused", "x");
 
         var plan = f.Plan();
 
@@ -575,7 +575,7 @@ public class PlannerTests
     }
 
     [Fact]
-    public void A_trellis_binding_is_a_wire_from_the_trellis_and_names_what_it_points_at()
+    public void An_orchestration_binding_is_a_wire_from_the_orchestration_and_names_what_it_points_at()
     {
         var f = new Fixture();
         var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
@@ -584,10 +584,10 @@ public class PlannerTests
             .Env("Smtp__Url", repo.Import<Url>("mail-smtp"))
             .Env("Cache", repo.Import<Url>("cache-url"))
             .Env("Flag", repo.Import<Text>("flag")));
-        var mail = f.Trellis.Mailpit("mail");
-        f.Trellis.Bind("mail-smtp", mail.SmtpUrl);
-        f.Trellis.Bind("cache-url", a.Export("cache-url"));
-        f.Trellis.Bind("flag", "on");
+        var mail = f.Orchestration.Mailpit("mail");
+        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
+        f.Orchestration.Bind("cache-url", a.Export("cache-url"));
+        f.Orchestration.Bind("flag", "on");
 
         var plan = f.Plan();
 

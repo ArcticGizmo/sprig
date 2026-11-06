@@ -6,8 +6,8 @@ using Sprig.Engine.Hosting;
 namespace Sprig.App;
 
 /// <summary>
-/// What the sprig host says about every runner, of every sprout, asked once for the whole app so the nav and the
-/// Sprouts page show the same thing without each asking the host on its own timer.
+/// What the sprig host says about every runner, of every workspace, asked once for the whole app so the nav and the
+/// Workspaces page show the same thing without each asking the host on its own timer.
 /// </summary>
 public sealed class HostStatus(HostClient host)
 {

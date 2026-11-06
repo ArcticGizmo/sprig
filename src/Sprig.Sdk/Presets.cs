@@ -2,7 +2,7 @@ using Sprig.Model;
 
 namespace Sprig;
 
-/// <summary>Postgres on an allocated port, with a data volume per sprout.</summary>
+/// <summary>Postgres on an allocated port, with a data volume per workspace.</summary>
 public sealed class PostgresResource : ContainerResource
 {
     public const string User = "sprig";

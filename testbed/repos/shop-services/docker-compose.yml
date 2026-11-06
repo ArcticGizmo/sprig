@@ -1,6 +1,6 @@
 # Infra for running shop-services by hand on the default ports. Each host port can be moved with an env var
 # (e.g. PG_PORT=15432) when something else already uses the default. Mailpit is a shared dev tool, so it's only
-# started with the "standalone" profile; under sprig the storefront trellis supplies one per sprout.
+# started with the "standalone" profile; under sprig the storefront orchestration supplies one per workspace.
 services:
   postgres:
     image: postgres:17

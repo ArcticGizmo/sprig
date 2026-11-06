@@ -62,7 +62,7 @@
                     <TextBlock Text="{Binding Message}" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding Message, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding CanApply}"
-                               Text="It's written into the trellis file and checked again. Nothing else in the file changes." />
+                               Text="It's written into the orchestration file and checked again. Nothing else in the file changes." />
                     <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}" IsVisible="{Binding Unplaced}"
                                Text="Sprig can't tell where this goes in this file. Copy the lines and paste them in the code." />
                 </StackPanel>

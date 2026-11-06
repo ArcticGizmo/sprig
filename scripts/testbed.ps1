@@ -109,12 +109,12 @@ foreach ($template in Get-ChildItem -LiteralPath $templates -Directory) {
     Write-Host "  $($template.Name)  ->  $repo  (origin: remotes/$($template.Name).git)"
 }
 
-# The trellis sits beside the repos it names, the way a team might keep one next to its checkouts.
-foreach ($trellis in Get-ChildItem -LiteralPath (Join-Path $root 'testbed') -Filter '*.trellis.cs') {
-    $dest = Join-Path $Path $trellis.Name
-    Copy-Item -LiteralPath $trellis.FullName -Destination $dest
+# An orchestration sits beside the repos it names, the way a team might keep one next to its checkouts.
+foreach ($orchestration in Get-ChildItem -LiteralPath (Join-Path $root 'testbed') -Filter '*.orchestration.cs') {
+    $dest = Join-Path $Path $orchestration.Name
+    Copy-Item -LiteralPath $orchestration.FullName -Destination $dest
     Set-SdkReference $dest
-    Write-Host "  $($trellis.Name)  ->  $dest"
+    Write-Host "  $($orchestration.Name)  ->  $dest"
 }
 
 # The same system as an Aspire AppHost, for comparison (docs/spikes/m6-aspire.md). Copied out so the sprig repo's
@@ -129,11 +129,11 @@ if (Test-Path -LiteralPath $aspire) {
 
 Write-Host ""
 Write-Host "Testbed ready at $Path"
-Write-Host "Plan it:      sprig trellis add `"$(Join-Path $Path 'storefront.trellis.cs')`" ; sprig plan storefront"
+Write-Host "Plan it:      sprig orchestration add `"$(Join-Path $Path 'storefront.orchestration.cs')`" ; sprig plan storefront"
 Write-Host "Run by hand:  see each repo's README."
 Write-Host ""
-Write-Host "catalog.trellis.cs names its repos by ID, so it plans once they're on the Repos list:"
+Write-Host "catalog.orchestration.cs names its repos by ID, so it plans once they're on the Repos list:"
 Write-Host "  sprig repo add `"$(Join-Path $Path 'shop-services')`""
 Write-Host "  sprig repo add `"$(Join-Path $Path 'shop-mobile')`""
 Write-Host "  sprig repo copy shop-mobile --id shop-mobile-sprig"
-Write-Host "  sprig trellis add `"$(Join-Path $Path 'catalog.trellis.cs')`" ; sprig plan catalog"
+Write-Host "  sprig orchestration add `"$(Join-Path $Path 'catalog.orchestration.cs')`" ; sprig plan catalog"

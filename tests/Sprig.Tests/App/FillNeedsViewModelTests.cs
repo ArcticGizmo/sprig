@@ -9,18 +9,18 @@ public sealed class FillNeedsViewModelTests : IDisposable
 
     public void Dispose() => _store.Dispose();
 
-    string Trellis()
+    string Orchestration()
     {
         Directory.CreateDirectory(_store.Root);
-        var file = Path.Combine(_store.Root, "storefront.trellis.cs");
-        File.WriteAllText(file, "using Sprig;\n\nvar trellis = Trellis.Describe(\"storefront\");\n\ntrellis.UseRepo(\"shop-services\");\n\nreturn trellis.Emit(args);\n");
+        var file = Path.Combine(_store.Root, "storefront.orchestration.cs");
+        File.WriteAllText(file, "using Sprig;\n\nvar orchestration = Orchestration.Describe(\"storefront\");\n\norchestration.UseRepo(\"shop-services\");\n\nreturn orchestration.Emit(args);\n");
         return file;
     }
 
     [Fact]
     public async Task It_shows_the_first_need_with_the_likeliest_fix_as_a_diff_and_writes_only_once_asked()
     {
-        var file = Trellis();
+        var file = Orchestration();
         string? written = null;
         var opened = 0;
         var vm = new FillNeedsViewModel { Apply = (_, text) => { written = text; return Task.CompletedTask; }, OpenCode = () => opened++ };
@@ -31,16 +31,16 @@ public sealed class FillNeedsViewModelTests : IDisposable
         Assert.Equal("Fill mail-smtp", vm.Title);
         Assert.Contains("shop-services needs mail-smtp (a url)", vm.Subtitle);
         Assert.Equal("1 more after this one.", vm.More);
-        Assert.Equal("Add Mailpit to the trellis", vm.Selected!.Label);
+        Assert.Equal("Add Mailpit to the orchestration", vm.Selected!.Label);
         Assert.True(vm.Selected.IsSelected);
         Assert.Equal(["+", "+", "+"], vm.Diff.Where(d => d.Mark != " ").Select(d => d.Mark));
-        Assert.Contains(vm.Diff, d => d.IsAdded && d.Text == "var mail = trellis.Mailpit(\"mail\");");
-        Assert.Contains(vm.Diff, d => d.Mark == " " && d.Text == "trellis.UseRepo(\"shop-services\");");
+        Assert.Contains(vm.Diff, d => d.IsAdded && d.Text == "var mail = orchestration.Mailpit(\"mail\");");
+        Assert.Contains(vm.Diff, d => d.Mark == " " && d.Text == "orchestration.UseRepo(\"shop-services\");");
         Assert.Null(written);
 
         await vm.AddToCodeCommand.ExecuteAsync(null);
         Assert.False(vm.IsOpen);
-        Assert.Contains("trellis.Bind(\"mail-smtp\", mail.SmtpUrl);", written);
+        Assert.Contains("orchestration.Bind(\"mail-smtp\", mail.SmtpUrl);", written);
         Assert.Equal(0, opened);
 
         // A value to fill in opens the code once it's written.

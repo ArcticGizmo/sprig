@@ -79,10 +79,10 @@ public class CliAppTests
         Assert.Equal("// edited in sprig", File.ReadAllText(stored.CopyFile("web-sprig")));
         Assert.Contains("\"inRepo\": false", Run(store, "repo", "ls", "--json").stdout);
 
-        // A repo a trellis uses stays unless removal is forced.
-        var trellis = Path.Combine(store.Root, "src", "shop.trellis.cs");
-        File.WriteAllText(trellis, "var trellis = Trellis.Describe(\"shop\");\ntrellis.UseRepo(\"web-sprig\");\nreturn trellis.Emit(args);\n");
-        new Sprig.Engine.Trellises.TrellisRegistry(store.Paths).Add("shop", trellis);
+        // A repo an orchestration uses stays unless removal is forced.
+        var orchestration = Path.Combine(store.Root, "src", "shop.orchestration.cs");
+        File.WriteAllText(orchestration, "var orchestration = Orchestration.Describe(\"shop\");\norchestration.UseRepo(\"web-sprig\");\nreturn orchestration.Emit(args);\n");
+        new Sprig.Engine.Orchestrations.OrchestrationRegistry(store.Paths).Add("shop", orchestration);
         var (refused, _, why) = Run(store, "repo", "rm", "web-sprig");
         Assert.Equal(1, refused);
         Assert.Contains("used by shop", why);

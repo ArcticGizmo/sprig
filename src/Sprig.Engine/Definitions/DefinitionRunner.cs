@@ -13,7 +13,7 @@ public sealed record Evaluated(string Path, string Sha256, TimeSpan Elapsed, Def
 
 /// <summary>Not run: this exact content hasn't been approved. <paramref name="ApprovedSha256"/> is set when an earlier
 /// version was. Approve it under <paramref name="TrustPath"/>, which differs from <paramref name="Path"/> for a copy of a
-/// repo's definition in a sprout's worktree.</summary>
+/// repo's definition in a workspace's worktree.</summary>
 public sealed record NeedsTrust(string Path, string Sha256, TimeSpan Elapsed, string? ApprovedSha256, string TrustPath)
     : DefinitionResult(Path, Sha256, Elapsed)
 {

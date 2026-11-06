@@ -14,10 +14,10 @@ public class MainWindowViewModelTests
         Assert.Same(vm.Home, vm.CurrentPage);
         Assert.True(vm.Home.IsActive);
 
-        vm.NavigateCommand.Execute(vm.Trellises);
+        vm.NavigateCommand.Execute(vm.Orchestrations);
 
-        Assert.Same(vm.Trellises, vm.CurrentPage);
-        Assert.True(vm.Trellises.IsActive);
+        Assert.Same(vm.Orchestrations, vm.CurrentPage);
+        Assert.True(vm.Orchestrations.IsActive);
         Assert.False(vm.Home.IsActive);
         Assert.Single(vm.Pages, p => p.IsActive);
     }
@@ -28,23 +28,23 @@ public class MainWindowViewModelTests
         using var store = new TempStore();
         var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
 
-        Assert.Equal(["Home", "Repos", "Trellises", "Sprouts"], vm.NavItems.Select(p => p.Title));
-        Assert.Contains(vm.Sprouts, vm.NavItems);
+        Assert.Equal(["Home", "Repos", "Workspaces", "Orchestrations"], vm.NavItems.Select(p => p.Title));
+        Assert.Contains(vm.Workspaces, vm.NavItems);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);
     }
 
     [Fact]
-    public void Sprouts_in_the_nav_opens_the_list_of_them()
+    public void Workspaces_in_the_nav_opens_the_list_of_them()
     {
         using var store = new TempStore();
         var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
 
-        vm.NavigateCommand.Execute(vm.Sprouts);
+        vm.NavigateCommand.Execute(vm.Workspaces);
 
-        Assert.Same(vm.Sprouts, vm.CurrentPage);
-        Assert.Null(vm.Sprouts.Selected);
-        Assert.Equal("running copies", vm.Sprouts.NavSubtitle);
+        Assert.Same(vm.Workspaces, vm.CurrentPage);
+        Assert.Null(vm.Workspaces.Selected);
+        Assert.Equal("running copies", vm.Workspaces.NavSubtitle);
     }
 
     [Fact]

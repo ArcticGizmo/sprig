@@ -60,7 +60,7 @@
     <Application.Resources>
         <!-- Max width of the list pane on every page; past this only the detail pane grows. -->
         <sys:Double x:Key="ListPaneMaxWidth">600</sys:Double>
-        <!-- The list column on Repos and Trellises, the same on both so switching pages doesn't shift the content. -->
+        <!-- The list column on Repos and Orchestrations, the same on both so switching pages doesn't shift the content. -->
         <GridLength x:Key="SideListWidth">290</GridLength>
 
         <!-- Dark palette (shared with perch's look). -->

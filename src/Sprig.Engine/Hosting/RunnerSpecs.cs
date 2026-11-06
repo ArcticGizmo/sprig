@@ -1,21 +1,21 @@
 using Sprig.Engine.Planning;
-using Sprig.Engine.Sprouts;
+using Sprig.Engine.Workspaces;
 
 namespace Sprig.Engine.Hosting;
 
-/// <summary>Turns a sprout's apps and jobs into what the host runs: the command for each kind, its folder in the
-/// sprout, its process env vars, the port that says it's ready, and what it waits for.</summary>
+/// <summary>Turns a workspace's apps and jobs into what the host runs: the command for each kind, its folder in the
+/// workspace, its process env vars, the port that says it's ready, and what it waits for.</summary>
 public static class RunnerSpecs
 {
     /// <summary>
     /// The runners for <paramref name="names"/> (as <c>name</c> or <c>owner/name</c>; null for every app and job) plus
     /// everything they depend on, dependencies first.
     /// </summary>
-    public static IReadOnlyList<RunnerSpec> For(SproutRecord record, Plan plan, IReadOnlyCollection<string>? names = null)
+    public static IReadOnlyList<RunnerSpec> For(WorkspaceRecord record, Plan plan, IReadOnlyCollection<string>? names = null)
         => Closure(plan, Resolve(record, plan, names)).Select(app => For(record, plan, app)).ToArray();
 
     /// <summary>The apps <paramref name="names"/> pick out, by their <see cref="PlannedApp.Key"/>.</summary>
-    public static IReadOnlyList<string> Resolve(SproutRecord record, Plan plan, IReadOnlyCollection<string>? names)
+    public static IReadOnlyList<string> Resolve(WorkspaceRecord record, Plan plan, IReadOnlyCollection<string>? names)
     {
         if (names is null) return plan.Apps.Select(a => a.Key).ToArray();
         var keys = new List<string>();
@@ -25,7 +25,7 @@ public static class RunnerSpecs
             keys.Add(matches.Length switch
             {
                 1 => matches[0].Key,
-                0 => throw new InvalidOperationException($"{record.Trellis} has no app '{name}'; it has {string.Join(", ", plan.Apps.Select(a => a.Key))}"),
+                0 => throw new InvalidOperationException($"{record.Orchestration} has no app '{name}'; it has {string.Join(", ", plan.Apps.Select(a => a.Key))}"),
                 _ => throw new InvalidOperationException($"'{name}' is in more than one repo; name it as <repo>/{name}"),
             });
         }
@@ -48,7 +48,7 @@ public static class RunnerSpecs
         }
     }
 
-    static RunnerSpec For(SproutRecord record, Plan plan, PlannedApp app)
+    static RunnerSpec For(WorkspaceRecord record, Plan plan, PlannedApp app)
     {
         var repo = record.Repos.Single(r => r.RepoPath == app.RepoPath);
         var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));

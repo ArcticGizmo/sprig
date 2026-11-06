@@ -154,7 +154,7 @@ public sealed partial class CodeReviewViewModel(ITrustStore trust) : ViewModelBa
         Approved?.Invoke();
     }
 
-    /// <summary>What carries on may turn up more to approve (a trellis names its repos only once it has run), so the
+    /// <summary>What carries on may turn up more to approve (an orchestration names its repos only once it has run), so the
     /// dialog stays open for those rather than closing and asking to be opened again.</summary>
     async Task FinishAsync()
     {

@@ -2,8 +2,8 @@ using System.ComponentModel;
 using System.Text.Json;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Settings;
-using Sprig.Engine.Sprouts;
-using Sprig.Engine.Trellises;
+using Sprig.Engine.Workspaces;
+using Sprig.Engine.Orchestrations;
 using Sprig.Engine.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -17,8 +17,8 @@ public sealed record CliContext(
     ISettingsStore Settings,
     ITrustStore Trust,
     DefinitionRunner Definitions,
-    TrellisRegistry Trellises,
-    SproutService Sprouts,
+    OrchestrationRegistry Orchestrations,
+    WorkspaceService Workspaces,
     Sprig.Engine.Hosting.HostClient Host,
     IAnsiConsole Ansi)
 {

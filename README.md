@@ -39,7 +39,7 @@ dotnet run --project src/Sprig.Cli -- --help
 | Project | Purpose |
 |---|---|
 | `Sprig.Sdk` | What `sprig.cs` definitions reference (`#:package Sprig.Sdk`). |
-| `Sprig.Engine` | Evaluates definitions, resolves values, materialises sprouts and supervises runners. |
+| `Sprig.Engine` | Evaluates definitions, resolves values, materialises workspaces and supervises runners. |
 | `Sprig.App` | The Avalonia desktop app. |
 | `Sprig.Cli` | The `sprig` command. |
 
@@ -49,4 +49,4 @@ The design of the released model is kept in [docs/history/main](docs/history/mai
 
 - .NET 10 SDK
 - git (on `PATH`)
-- Docker Desktop, for sprouts that run infra
+- Docker Desktop, for workspaces that run infra

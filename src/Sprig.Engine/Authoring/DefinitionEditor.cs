@@ -111,23 +111,23 @@ public static class DefinitionEditor
         return Apply(text, InsertionPointAfter(text, after), insert);
     }
 
-    /// <summary>Turn a trellis's <c>Repo("path")</c> into <c>UseRepo("id")</c>, so the repo comes from its entry in
-    /// the Repos list. The variable it's assigned to, and everything else on the line, stays.</summary>
+    /// <summary>Turn an orchestration's <c>Repo("path")</c> into <c>UseRepo("id")</c>, so the repo comes from its
+    /// entry in the Repos list. The variable it's assigned to, and everything else on the line, stays.</summary>
     public static EditResult RepoToUseRepo(string text, string repoPath, string id)
     {
         var call = Parse(text).DescendantNodes().OfType<InvocationExpressionSyntax>()
             .FirstOrDefault(i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "Repo" } && FirstStringArg(i) == repoPath);
-        if (call is null) return EditResult.Fail(text, $"no trellis.Repo(\"{repoPath}\") to change");
+        if (call is null) return EditResult.Fail(text, $"no orchestration.Repo(\"{repoPath}\") to change");
         var name = ((MemberAccessExpressionSyntax)call.Expression).Name;
         return Apply(text, TextSpan.FromBounds(name.SpanStart, call.ArgumentList.Span.End), $"UseRepo({Literal(id)})");
     }
 
-    /// <summary>Change which Repos-list entry a trellis's <c>UseRepo("id")</c> names.</summary>
+    /// <summary>Change which Repos-list entry an orchestration's <c>UseRepo("id")</c> names.</summary>
     public static EditResult SetUseRepo(string text, string from, string to)
     {
         var call = Parse(text).DescendantNodes().OfType<InvocationExpressionSyntax>()
             .FirstOrDefault(i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "UseRepo" } && FirstStringArg(i) == from);
-        if (call is null) return EditResult.Fail(text, $"no trellis.UseRepo(\"{from}\") to change");
+        if (call is null) return EditResult.Fail(text, $"no orchestration.UseRepo(\"{from}\") to change");
         return Apply(text, call.ArgumentList.Arguments[0].Expression.Span, Literal(to));
     }
 

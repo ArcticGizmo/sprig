@@ -13,22 +13,22 @@ pwsh -File scripts/testbed.ps1 -Path D:\tb -Force
 | `shop-web` | Vue + Vite storefront: lists the catalog, places orders | 5173 |
 | `shop-mobile` | Ionic Vue app run in the browser: reads the catalog | 8100 |
 
-Two trellises sit beside the repos:
+Two orchestrations sit beside the repos:
 
-- `storefront.trellis.cs` joins all three repos: `sprig up storefront --sprout feat-x` gives the sprout its own worktrees, and `--in-place` runs the repos where they're checked out.
-- `catalog.trellis.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`trellis.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
+- `storefront.orchestration.cs` joins all three repos: `sprig up storefront --workspace feat-x` gives the workspace its own worktrees, and `--in-place` runs the repos where they're checked out.
+- `catalog.orchestration.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`orchestration.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
 
   ```sh
   sprig repo add <testbed>/shop-services          # in repo: uses the folder's own sprig.cs
   sprig repo add <testbed>/shop-mobile
   sprig repo copy shop-mobile --id shop-mobile-sprig   # in sprig: a copy to change without touching the repo
-  sprig trellis add <testbed>/catalog.trellis.cs
+  sprig orchestration add <testbed>/catalog.orchestration.cs
   sprig plan catalog
   ```
 
   Running them again is harmless: an ID already listed for the same folder is left as it is.
 
-A repo on the Repos list also runs on its own, with no trellis: `sprig up shop-services --in-place`. `shop-services` brings its own Mailpit for that (`repo.Import<Url>("mail-smtp").OrElse(...)`), which storefront's sprouts leave out, since storefront supplies one.
+A repo on the Repos list also runs on its own, with no orchestration: `sprig up shop-services --in-place`. `shop-services` brings its own Mailpit for that (`repo.Import<Url>("mail-smtp").OrElse(...)`), which storefront's workspaces leave out, since storefront supplies one.
 
 ## What proves the wiring
 

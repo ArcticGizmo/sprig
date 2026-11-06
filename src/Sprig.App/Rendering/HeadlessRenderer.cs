@@ -131,9 +131,9 @@ internal static partial class HeadlessRenderer
         }
     }
 
-    /// <summary>The Trellises page planning <paramref name="trellisFile"/>, in a throwaway store where the trellis and
+    /// <summary>The Orchestrations page planning <paramref name="orchestrationFile"/>, in a throwaway store where the orchestration and
     /// its repos' definitions are approved up front (this is a dev tool, not a user path).</summary>
-    public static int RenderTrellises(string outFile, string trellisFile)
+    public static int RenderOrchestrations(string outFile, string orchestrationFile)
     {
         var store = Path.Combine(Path.GetTempPath(), "sprig-render-" + Guid.NewGuid().ToString("N"));
         try
@@ -145,11 +145,11 @@ internal static partial class HeadlessRenderer
                 .SetupWithoutStarting();
 
             var services = new AppServices(store);
-            var root = Path.GetDirectoryName(Path.GetFullPath(trellisFile))!;
-            foreach (var file in Directory.EnumerateFiles(root, "*.trellis.cs")
+            var root = Path.GetDirectoryName(Path.GetFullPath(orchestrationFile))!;
+            foreach (var file in Directory.EnumerateFiles(root, "*.orchestration.cs")
                          .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.cs")).Where(File.Exists)))
                 services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
-            services.Trellises.Add("storefront", trellisFile);
+            services.Orchestrations.Add("storefront", orchestrationFile);
             // One repo of each kind in the Repos list: its file in the repo, and a copy of one kept in sprig.
             if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.cs")))
                 services.Authoring.AddRepo(web, "shop-web");
@@ -160,39 +160,39 @@ internal static partial class HeadlessRenderer
             }
 
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
-            vm.NavigateCommand.Execute(vm.Trellises);
+            vm.NavigateCommand.Execute(vm.Orchestrations);
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1000 };
             window.Show();
 
             var clock = Stopwatch.StartNew();
             Pump(TimeSpan.FromMilliseconds(300));
-            while ((vm.Trellises.IsBusy || vm.Trellises.Plan is null) && !vm.Trellises.HasLoadProblems && clock.Elapsed < TimeSpan.FromSeconds(60))
+            while ((vm.Orchestrations.IsBusy || vm.Orchestrations.Plan is null) && !vm.Orchestrations.HasLoadProblems && clock.Elapsed < TimeSpan.FromSeconds(60))
                 Pump(TimeSpan.FromMilliseconds(100));
             Pump(TimeSpan.FromMilliseconds(500));
 
             Save(window, outFile);
-            var planned = vm.Trellises.Plan is not null;
+            var planned = vm.Orchestrations.Plan is not null;
             // A failed definition's output is the only clue to why the render didn't plan.
-            if (vm.Trellises.HasLoadProblems && services.Definitions.Evaluate(trellisFile) is Sprig.Engine.Definitions.Failed failed)
-                Console.Error.WriteLine($"the trellis {failed.Reason}:\n{failed.Output}");
+            if (vm.Orchestrations.HasLoadProblems && services.Definitions.Evaluate(orchestrationFile) is Sprig.Engine.Definitions.Failed failed)
+                Console.Error.WriteLine($"the orchestration {failed.Reason}:\n{failed.Output}");
 
             // One app picked, with one group shown: its wires stand out, and what the group doesn't start dims.
-            if (vm.Trellises.Graph?.Boxes.SelectMany(b => b.Items).FirstOrDefault(i => i.Name == "web") is { } picked)
+            if (vm.Orchestrations.Graph?.Boxes.SelectMany(b => b.Items).FirstOrDefault(i => i.Name == "web") is { } picked)
             {
-                vm.Trellises.SelectAppCommand.Execute(picked);
-                if (vm.Trellises.GroupChips.FirstOrDefault(c => c.Name == "web") is { } group) vm.Trellises.ShowGroupCommand.Execute(group);
+                vm.Orchestrations.SelectAppCommand.Execute(picked);
+                if (vm.Orchestrations.GroupChips.FirstOrDefault(c => c.Name == "web") is { } group) vm.Orchestrations.ShowGroupCommand.Execute(group);
                 Pump(TimeSpan.FromMilliseconds(300));
                 Save(window, Sibling(outFile, "picked"));
-                vm.Trellises.ShowGroupCommand.Execute(vm.Trellises.GroupChips.FirstOrDefault());
+                vm.Orchestrations.ShowGroupCommand.Execute(vm.Orchestrations.GroupChips.FirstOrDefault());
             }
 
-            foreach (var tab in new[] { TrellisTab.Values, TrellisTab.Ports })
+            foreach (var tab in new[] { OrchestrationTab.Values, OrchestrationTab.Ports })
             {
-                vm.Trellises.Tab = tab;
+                vm.Orchestrations.Tab = tab;
                 Pump(TimeSpan.FromMilliseconds(300));
                 Save(window, Sibling(outFile, tab.ToString().ToLowerInvariant()));
             }
-            vm.Trellises.Tab = TrellisTab.Overview;
+            vm.Orchestrations.Tab = OrchestrationTab.Overview;
 
             // The Repos page, on the repo kept in sprig.
             vm.NavigateCommand.Execute(vm.Repos);
@@ -216,56 +216,56 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo-add-sprig"));
             vm.Repos.CancelAddCommand.Execute(null);
-            // Start a sprout from a repo: the new-sprout form, with the repo chosen and the sprout's own choices.
+            // Start a workspace from a repo: the new-workspace form, with the repo chosen and the workspace's own choices.
             vm.Repos.Show("shop-services");
             clock.Restart();
             while (!vm.Repos.HasModel && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
             Save(window, Sibling(outFile, "repo-ready"));
             vm.Repos.StartCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(300));
-            Save(window, Sibling(outFile, "new-sprout"));
-            vm.Sprouts.NewInPlace = true;
+            Save(window, Sibling(outFile, "new-workspace"));
+            vm.Workspaces.NewInPlace = true;
             Pump(TimeSpan.FromMilliseconds(200));
-            Save(window, Sibling(outFile, "new-sprout-in-place"));
-            vm.Sprouts.CancelAddCommand.Execute(null);
+            Save(window, Sibling(outFile, "new-workspace-in-place"));
+            vm.Workspaces.CancelAddCommand.Execute(null);
 
-            // A trellis whose repos need what none of them offers: the checklist's step, then the dialog that writes the
+            // An orchestration whose repos need what none of them offers: the checklist's step, then the dialog that writes the
             // line, on a need one of the presets fills.
             if (Path.Combine(root, "shop-mobile") is var mobile && Directory.Exists(mobile))
             {
-                var trial = services.Authoring.CreateTrellis("trial", [Path.Combine(root, "shop-web"), mobile]);
-                vm.NavigateCommand.Execute(vm.Trellises);
-                vm.Trellises.Show(trial.Id);
+                var trial = services.Authoring.CreateOrchestration("trial", [Path.Combine(root, "shop-web"), mobile]);
+                vm.NavigateCommand.Execute(vm.Orchestrations);
+                vm.Orchestrations.Show(trial.Id);
                 clock.Restart();
                 Pump(TimeSpan.FromMilliseconds(300));
-                while ((vm.Trellises.IsBusy || vm.Trellises.Plan is null) && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                while ((vm.Orchestrations.IsBusy || vm.Orchestrations.Plan is null) && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
                 Pump(TimeSpan.FromMilliseconds(300));
                 Save(window, Sibling(outFile, "needs"));
-                vm.Trellises.FillNeeds.Open(trial.Path, [("shop-services", new Sprig.Engine.Authoring.UnfilledNeed("mail-smtp", "url", []))]);
+                vm.Orchestrations.FillNeeds.Open(trial.Path, [("shop-services", new Sprig.Engine.Authoring.UnfilledNeed("mail-smtp", "url", []))]);
                 Pump(TimeSpan.FromMilliseconds(300));
                 Save(window, Sibling(outFile, "fill"));
-                vm.Trellises.FillNeeds.CloseCommand.Execute(null);
-                services.Authoring.RemoveTrellis(trial.Id);
+                vm.Orchestrations.FillNeeds.CloseCommand.Execute(null);
+                services.Authoring.RemoveOrchestration(trial.Id);
             }
-            vm.NavigateCommand.Execute(vm.Trellises);
-            vm.Trellises.Show("storefront");
+            vm.NavigateCommand.Execute(vm.Orchestrations);
+            vm.Orchestrations.Show("storefront");
             Pump(TimeSpan.FromMilliseconds(300));
 
-            vm.Trellises.OpenAddCommand.Execute(null);
-            vm.Trellises.NewPath = Sprig.App.Controls.PathCompletion.ToPosix(Path.GetFullPath(trellisFile));
+            vm.Orchestrations.OpenAddCommand.Execute(null);
+            vm.Orchestrations.NewPath = Sprig.App.Controls.PathCompletion.ToPosix(Path.GetFullPath(orchestrationFile));
             Pump(TimeSpan.FromMilliseconds(400));
             var addFile = Sibling(outFile, "add");
             Save(window, addFile);
 
-            // The same file, added again once its approval is revoked, shows what a not-yet-approved trellis looks like.
-            services.Trust.Revoke(trellisFile);
-            Wait(vm.Trellises.AddCommand.ExecuteAsync(null));
+            // The same file, added again once its approval is revoked, shows what a not-yet-approved orchestration looks like.
+            services.Trust.Revoke(orchestrationFile);
+            Wait(vm.Orchestrations.AddCommand.ExecuteAsync(null));
             Pump(TimeSpan.FromMilliseconds(400));
             var unapprovedFile = Sibling(outFile, "unapproved");
             Save(window, unapprovedFile);
             window.Close();
 
-            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (plan: {planned}, problems: {vm.Trellises.LoadProblems.Count}, took {clock.Elapsed.TotalSeconds:0.0}s), {Path.GetFullPath(addFile)} and {Path.GetFullPath(unapprovedFile)}");
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (plan: {planned}, problems: {vm.Orchestrations.LoadProblems.Count}, took {clock.Elapsed.TotalSeconds:0.0}s), {Path.GetFullPath(addFile)} and {Path.GetFullPath(unapprovedFile)}");
             return 0;
         }
         catch (Exception ex)
@@ -280,11 +280,11 @@ internal static partial class HeadlessRenderer
     }
 
     /// <summary>
-    /// The Sprouts page over the current store (<c>SPRIG_STORE</c>), read only, with its first sprout selected, its apps'
+    /// The Workspaces page over the current store (<c>SPRIG_STORE</c>), read only, with its first workspace selected, its apps'
     /// states from the host and the first app's log open; and the progress window part way through a sample up, failing
     /// on a compose step, so both states of a row show.
     /// </summary>
-    public static int RenderSprouts(string pageFile, string progressFile)
+    public static int RenderWorkspaces(string pageFile, string progressFile)
     {
         try
         {
@@ -296,39 +296,39 @@ internal static partial class HeadlessRenderer
 
             var services = new AppServices();
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
-            vm.NavigateCommand.Execute(vm.Sprouts);
-            vm.Sprouts.Show(vm.Sprouts.Sprouts.FirstOrDefault()?.Record.Key);
+            vm.NavigateCommand.Execute(vm.Workspaces);
+            vm.Workspaces.Show(vm.Workspaces.Workspaces.FirstOrDefault()?.Record.Key);
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1400 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(500));
 
             // Timers don't tick here, so poll as the window's and the page's timers would, then open a log that has something in it.
             Wait(services.HostStatus.PollAsync());
-            Wait(vm.Sprouts.PollAsync());
-            if ((vm.Sprouts.Apps.FirstOrDefault(a => a.IsAlive && !a.IsJob) ?? vm.Sprouts.Apps.FirstOrDefault()) is { } app)
+            Wait(vm.Workspaces.PollAsync());
+            if ((vm.Workspaces.Apps.FirstOrDefault(a => a.IsAlive && !a.IsJob) ?? vm.Workspaces.Apps.FirstOrDefault()) is { } app)
             {
-                vm.Sprouts.OpenApp(app);
-                Wait(vm.Sprouts.Logs.PollAsync());
+                vm.Workspaces.OpenApp(app);
+                Wait(vm.Workspaces.Logs.PollAsync());
             }
             Pump(TimeSpan.FromMilliseconds(600));
             Save(window, pageFile);
             window.Close();
 
-            var progress = new OperationProgressViewModel("Sprouting storefront / feat-x");
-            Sprig.Engine.Sprouts.SproutEvent[] sample =
+            var progress = new OperationProgressViewModel("Starting storefront / feat-x");
+            Sprig.Engine.Workspaces.WorkspaceEvent[] sample =
             [
-                new("Plan", Sprig.Engine.Sprouts.StepState.Running),
-                new("Plan", Sprig.Engine.Sprouts.StepState.Done, "4 apps, 1 containers, 1 compose files"),
-                new("Worktree shop-services", Sprig.Engine.Sprouts.StepState.Running),
-                new("Worktree shop-services", Sprig.Engine.Sprouts.StepState.Done, "../storefront--feat-x/shop-services on feat-x (new, from main)"),
-                new("Ports", Sprig.Engine.Sprouts.StepState.Running),
-                new("Ports", Sprig.Engine.Sprouts.StepState.Done, "catalog-api.http 8000, postgres.tcp 8002"),
-                new("Start sprig-storefront-feat-x", Sprig.Engine.Sprouts.StepState.Running),
-                new("Start sprig-storefront-feat-x", Sprig.Engine.Sprouts.StepState.Output, "Container sprig-storefront-feat-x-storefront-mail-1 Waiting"),
-                new("Start sprig-storefront-feat-x", Sprig.Engine.Sprouts.StepState.Done, "running; healthy: mail"),
-                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Sprouts.StepState.Running),
-                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Sprouts.StepState.Output, "Container sprig-storefront-feat-x-shop-services-postgres-1 Starting"),
-                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Sprouts.StepState.Output, "Error response from daemon: port is already allocated"),
+                new("Plan", Sprig.Engine.Workspaces.StepState.Running),
+                new("Plan", Sprig.Engine.Workspaces.StepState.Done, "4 apps, 1 containers, 1 compose files"),
+                new("Worktree shop-services", Sprig.Engine.Workspaces.StepState.Running),
+                new("Worktree shop-services", Sprig.Engine.Workspaces.StepState.Done, "../storefront--feat-x/shop-services on feat-x (new, from main)"),
+                new("Ports", Sprig.Engine.Workspaces.StepState.Running),
+                new("Ports", Sprig.Engine.Workspaces.StepState.Done, "catalog-api.http 8000, postgres.tcp 8002"),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Workspaces.StepState.Running),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Workspaces.StepState.Output, "Container sprig-storefront-feat-x-storefront-mail-1 Waiting"),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Workspaces.StepState.Done, "running; healthy: mail"),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Workspaces.StepState.Running),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Workspaces.StepState.Output, "Container sprig-storefront-feat-x-shop-services-postgres-1 Starting"),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Workspaces.StepState.Output, "Error response from daemon: port is already allocated"),
             ];
             foreach (var e in sample) progress.Apply(e);
             progress.Finish("command failed (exit 1): docker compose up (a sample failure, rendered for review)", ProgressState.Error);
@@ -339,7 +339,7 @@ internal static partial class HeadlessRenderer
             Save(dialog, progressFile);
             dialog.Close();
 
-            Console.WriteLine($"rendered {Path.GetFullPath(pageFile)} ({vm.Sprouts.Sprouts.Count} sprouts) and {Path.GetFullPath(progressFile)}");
+            Console.WriteLine($"rendered {Path.GetFullPath(pageFile)} ({vm.Workspaces.Workspaces.Count} workspaces) and {Path.GetFullPath(progressFile)}");
             return 0;
         }
         catch (Exception ex)

@@ -5,8 +5,8 @@
 #:package Aspire.Hosting.RabbitMQ@13.6.1
 #:package Aspire.Hosting.JavaScript@13.6.1
 
-// The storefront testbed under Aspire, for comparison with storefront.trellis.cs. Aspire has no notion of separate
-// repos, so this one file names all three by folder. ShopRoot moves it onto another set of checkouts (worktrees made
+// The storefront testbed under Aspire, for comparison with storefront.orchestration.cs. Aspire has no notion of
+// separate repos, so this one file names all three by folder. ShopRoot moves it onto another set of checkouts (worktrees made
 // by hand), e.g. `aspire run --isolated -- --ShopRoot ../storefront--feat-a`.
 
 var builder = DistributedApplication.CreateBuilder(args);

@@ -193,7 +193,7 @@ static class RestartPolicies
     };
 }
 
-/// <summary>A one-off command, such as migrations, that runs to completion each time its sprout's apps start. Apps that
+/// <summary>A one-off command, such as migrations, that runs to completion each time its workspace's apps start. Apps that
 /// <see cref="AppResource.WaitFor"/> it start only after it exits with code 0.</summary>
 public sealed class JobResource : IResource
 {
@@ -348,7 +348,7 @@ public class ContainerResource : IResource
         return this;
     }
 
-    /// <summary>Keep <paramref name="target"/> in a volume, one per sprout.</summary>
+    /// <summary>Keep <paramref name="target"/> in a volume, one per workspace.</summary>
     public ContainerResource Volume(string name, string target)
     {
         _volumes.Add(new VolumeModel(name, target));
@@ -356,7 +356,7 @@ public class ContainerResource : IResource
     }
 
     /// <summary>A shell command run inside the container that exits 0 once it's ready, e.g. <c>"pg_isready"</c>. Sprig
-    /// waits for it before calling the sprout up.</summary>
+    /// waits for it before calling the workspace up.</summary>
     public ContainerResource Health(string command)
     {
         _health = command;

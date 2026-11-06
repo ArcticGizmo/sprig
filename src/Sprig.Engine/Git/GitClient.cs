@@ -2,7 +2,7 @@ using Sprig.Engine.Processes;
 
 namespace Sprig.Engine.Git;
 
-/// <summary>The git operations a sprout needs, by shelling out to <c>git</c>.</summary>
+/// <summary>The git operations a workspace needs, by shelling out to <c>git</c>.</summary>
 public sealed class GitClient(IProcessRunner runner)
 {
     public bool IsRepo(string path)

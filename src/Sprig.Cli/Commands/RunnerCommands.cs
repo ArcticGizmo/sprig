@@ -6,21 +6,21 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-/// <summary>Settings for commands that act on some or all of a sprout's apps.</summary>
-public class AppsSettings : SproutSettings
+/// <summary>Settings for commands that act on some or all of a workspace's apps.</summary>
+public class AppsSettings : WorkspaceSettings
 {
     [CommandArgument(2, "[apps]")]
     [Description("Only these apps, as <name> or <repo>/<name> (default: all of them)")]
     public string[] Apps { get; set; } = [];
 }
 
-[Description("Start a sprout's apps and jobs in the background sprig host, in dependency order, and wait until each is ready")]
+[Description("Start a workspace's apps and jobs in the background sprig host, in dependency order, and wait until each is ready")]
 public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings>
 {
     public sealed class Settings : AppsSettings
     {
         [CommandOption("--group <name>")]
-        [Description("Start one of the trellis's groups (and what its apps depend on)")]
+        [Description("Start one of the orchestration's groups (and what its apps depend on)")]
         public string? Group { get; set; }
 
         [CommandOption("--no-wait")]
@@ -30,17 +30,17 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var record = cli.Sprouts.Get(s.Trellis, s.Sprout) ?? throw new InvalidOperationException($"{s.Trellis} has no sprout named '{s.Sprout}'");
-        var plan = cli.Sprouts.LastPlan(s.Trellis, s.Sprout) ?? throw new InvalidOperationException($"{s.Trellis}/{s.Sprout} hasn't come up yet; run sprig up first");
-        if (record.State != Sprig.Engine.Sprouts.SproutState.Up)
-            throw new InvalidOperationException($"{record.Key} is {record.State.ToString().ToLowerInvariant()}; bring its infra up first: sprig up {s.Trellis} --sprout {s.Sprout}");
+        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
+        var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} hasn't come up yet; run sprig up first");
+        if (record.State != Sprig.Engine.Workspaces.WorkspaceState.Up)
+            throw new InvalidOperationException($"{record.Key} is {record.State.ToString().ToLowerInvariant()}; bring its infra up first: sprig up {s.Orchestration} --workspace {s.Workspace}");
 
         IReadOnlyCollection<string>? names = s.Apps.Length > 0 ? s.Apps : null;
         if (s.Group is { } group)
         {
             if (names is not null) throw new InvalidOperationException("name apps or a group, not both");
             names = plan.Groups.FirstOrDefault(g => g.Name == group)?.Apps
-                ?? throw new InvalidOperationException($"{s.Trellis} has no group '{group}'; it has {string.Join(", ", plan.Groups.Select(g => g.Name))}");
+                ?? throw new InvalidOperationException($"{s.Orchestration} has no group '{group}';it has {string.Join(", ", plan.Groups.Select(g => g.Name))}");
         }
         var specs = RunnerSpecs.For(record, plan, names);
         // Apps named outright start afresh; everything else, including what they depend on, is left alone if it's going.
@@ -66,7 +66,7 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     /// Until each of <paramref name="specs"/> is ready (or, for a job, finished) or has settled some other way, printing
     /// each change of state, and where to read the log of each that didn't make it. Gives up after five minutes.
     /// </summary>
-    internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string sprout, IReadOnlyList<RunnerSpec> specs, bool json,
+    internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string workspace, IReadOnlyList<RunnerSpec> specs, bool json,
         CancellationToken cancellation)
     {
         var watched = specs.Select(x => x.Name).ToHashSet();
@@ -75,7 +75,7 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         IReadOnlyList<RunnerStatus> mine = [];
         while (!cancellation.IsCancellationRequested)
         {
-            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Sprout == sprout && watched.Contains(r.Name)).ToArray();
+            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Workspace == workspace && watched.Contains(r.Name)).ToArray();
             foreach (var r in mine.Where(r => !seen.TryGetValue(r.Name, out var was) || was != r.State))
             {
                 seen[r.Name] = r.State;
@@ -109,17 +109,17 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     }
 }
 
-[Description("Stop a sprout's apps (its infra keeps running; sprig down stops that)")]
+[Description("Stop a workspace's apps (its infra keeps running; sprig down stops that)")]
 public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
 {
     protected override int Execute(CommandContext context, AppsSettings s, CancellationToken cancellation)
     {
-        var key = Sprig.Engine.Sprouts.SproutRecord.KeyOf(s.Trellis, s.Sprout);
+        var key = Sprig.Engine.Workspaces.WorkspaceRecord.KeyOf(s.Orchestration, s.Workspace);
         if (cli.Host.TrySend(new HostRequest("list")) is not { } list)
             return CliOutput.Ok(s.Json, "nothing is running", new { ok = true, stopped = Array.Empty<string>() });
 
         var targets = (list.Runners ?? [])
-            .Where(r => r.Sprout == key && (r.State.IsAlive() || r.State == RunnerState.Stopping))
+            .Where(r => r.Workspace == key && (r.State.IsAlive() || r.State == RunnerState.Stopping))
             .Where(r => s.Apps.Length == 0 || s.Apps.Any(a => r.Name == a || r.Name.EndsWith("/" + a, StringComparison.Ordinal)))
             .Select(r => r.Name).ToArray();
         if (targets.Length == 0) return CliOutput.Ok(s.Json, "nothing to stop", new { ok = true, stopped = Array.Empty<string>() });
@@ -145,12 +145,12 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
         if (s.Json) { CliOutput.Json(runners); return 0; }
         if (runners.Count == 0)
         {
-            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a sprout's apps with: sprig start <trellis> <sprout>[/]");
+            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start <id> <workspace>[/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("Sprout", "App", "State", "Port", "Pid", "Since");
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");
         foreach (var r in runners)
-            table.AddRow(Markup.Escape(r.Sprout), Markup.Escape(r.Name), r.State switch
+            table.AddRow(Markup.Escape(r.Workspace),Markup.Escape(r.Name), r.State switch
                 {
                     RunnerState.Ready => "[green]ready[/]",
                     RunnerState.Completed => "[green]finished[/]",
@@ -168,7 +168,7 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
 [Description("Print the end of an app's log")]
 public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
 {
-    public sealed class Settings : SproutSettings
+    public sealed class Settings : WorkspaceSettings
     {
         [CommandArgument(2, "<app>")]
         public string App { get; set; } = "";
@@ -183,13 +183,13 @@ public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var key = Sprig.Engine.Sprouts.SproutRecord.KeyOf(s.Trellis, s.Sprout);
+        var key = Sprig.Engine.Workspaces.WorkspaceRecord.KeyOf(s.Orchestration, s.Workspace);
         var runner = (cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
-            .FirstOrDefault(r => r.Sprout == key && (r.Name == s.App || r.Name.EndsWith("/" + s.App, StringComparison.Ordinal)));
+            .FirstOrDefault(r => r.Workspace == key &&(r.Name == s.App || r.Name.EndsWith("/" + s.App, StringComparison.Ordinal)));
         var file = runner?.LogFile;
         if (file is null)
         {
-            var plan = cli.Sprouts.LastPlan(s.Trellis, s.Sprout);
+            var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace);
             var app = plan?.Apps.FirstOrDefault(a => a.Name == s.App || $"{a.Owner}/{a.Name}" == s.App)
                 ?? throw new InvalidOperationException($"no app '{s.App}' in {key}");
             file = HostProtocol.LogFile(cli.Paths, key, $"{app.Owner}/{app.Name}");

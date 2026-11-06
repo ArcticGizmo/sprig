@@ -2,7 +2,7 @@ using Sprig.Engine.Processes;
 
 namespace Sprig.Engine.Compose;
 
-/// <summary>One compose project: a generated file, run under its own project name so each sprout gets its own
+/// <summary>One compose project: a generated file, run under its own project name so each workspace gets its own
 /// containers, networks and volumes.</summary>
 /// <param name="ProjectDirectory">Where relative paths in the file resolve, and where compose reads its <c>.env</c>.</param>
 public sealed record ComposeProject(string Name, string File, string ProjectDirectory);

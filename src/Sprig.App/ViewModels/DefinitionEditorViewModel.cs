@@ -8,7 +8,7 @@ namespace Sprig.App.ViewModels;
 
 /// <summary>
 /// One definition open in the editor. Saving approves what was saved (the user is its author), then asks the page that
-/// opened it what that save means, such as whether the trellis now plans, and says so on the status line.
+/// opened it what that save means, such as whether the orchestration now plans, and says so on the status line.
 /// </summary>
 public partial class DefinitionEditorViewModel(AppServices services) : ViewModelBase
 {

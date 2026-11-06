@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Sprig.Engine.Authoring;
 
-/// <summary>One way to fill a need, as the trellis file would read after it.</summary>
+/// <summary>One way to fill a need, as the orchestration file would read after it.</summary>
 /// <param name="Label">What it does, in a few words.</param>
 /// <param name="Why">When it's the right choice.</param>
 /// <param name="Text">The whole file with the change made; the file as it was when it can't be placed.</param>
@@ -18,15 +18,15 @@ public sealed record NeedFix(string Label, string Why, string Text, IReadOnlyLis
     public bool Placed => Error is null;
 }
 
-/// <summary>A need nothing in the trellis fills, or that several repos offer.</summary>
+/// <summary>A need nothing in the orchestration fills, or that several repos offer.</summary>
 /// <param name="Type">The value type the repo imports it as: <c>url</c>, <c>connectionstring</c>, ...</param>
-/// <param name="Offers">The trellis's repos that export it, by the path or ID the trellis names them with.</param>
+/// <param name="Offers">The orchestration's repos that export it, by the path or ID the orchestration names them with.</param>
 public sealed record UnfilledNeed(string Import, string Type, IReadOnlyList<string> Offers);
 
 /// <summary>
-/// The lines that would fill a need in a trellis, written into its C# where they belong: a binding after the trellis's
-/// other bindings (or its repo lines), with infra from the presets declared just before. Repos are named by the variables
-/// the file already gives them. Everything is found from the syntax alone, so it works on a file that doesn't compile
+/// The lines that would fill a need in an orchestration, written into its C# where they belong: a binding after the
+/// orchestration's other bindings (or its repo lines), with infra from the presets declared just before. Repos are named
+/// by the variables the file already gives them. Everything is found from the syntax alone, so it works on a file that doesn't compile
 /// yet, and the rest of the file is left exactly as written.
 /// </summary>
 public static partial class NeedFixes
@@ -57,7 +57,7 @@ public static partial class NeedFixes
         foreach (var preset in Presets.Where(p => p.Fits.IsMatch(need.Import) || (p.Method == "Postgres" && need.Type == "connectionstring")))
             fixes.Add(AddInfra(text, need, preset));
 
-        fixes.Add(Bind(text, need.Import, "\"\"", "Set it to a value", "When it's something outside the trellis, or a fixed setting. The code opens so you can fill it in.")
+        fixes.Add(Bind(text, need.Import, "\"\"", "Set it to a value", "When it's something outside the orchestration, or a fixed setting. The code opens so you can fill it in.")
             with { FillIn = true });
         return fixes;
     }
@@ -65,7 +65,7 @@ public static partial class NeedFixes
     static NeedFix BindExport(string text, string import, string repo)
     {
         var (named, variable, error) = NameRepo(text, repo);
-        if (error is not null) return Unplaced($"Use {repo}'s", text, [$"trellis.Bind({Literal(import)}, <{repo}>.Export({Literal(import)}));"], error);
+        if (error is not null) return Unplaced($"Use {repo}'s", text, [$"orchestration.Bind({Literal(import)}, <{repo}>.Export({Literal(import)}));"], error);
         return Bind(named, import, $"{variable}.Export({Literal(import)})", $"Use {repo}'s",
             $"{repo} is one of the repos that offer {import}; this picks it.");
     }
@@ -73,21 +73,21 @@ public static partial class NeedFixes
     static NeedFix AddInfra(string text, UnfilledNeed need, Preset preset)
     {
         var root = Parse(text);
-        var trellis = TrellisVariable(root);
+        var orchestration = OrchestrationVariable(root);
         var existing = Statements(root).OfType<LocalDeclarationStatementSyntax>()
             .FirstOrDefault(s => s.Declaration.Variables[0].Initializer?.Value is InvocationExpressionSyntax
                 { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: var m, Expression: IdentifierNameSyntax { Identifier.Text: var on } } }
-                && m == preset.Method && on == trellis);
-        var label = $"Add {preset.Method} to the trellis";
-        var why = $"One {preset.Method} per sprout, run by the trellis for every repo that needs it.";
+                && m == preset.Method && on == orchestration);
+        var label = $"Add {preset.Method} to the orchestration";
+        var why = $"One {preset.Method} per workspace, run by the orchestration for every repo that needs it.";
         if (existing is not null)
         {
             var v = existing.Declaration.Variables[0].Identifier.Text;
-            return Bind(text, need.Import, Value(preset, v, need.Import), $"Use the trellis's {v}", $"The trellis already runs a {preset.Method} as {v}.");
+            return Bind(text, need.Import, Value(preset, v, need.Import), $"Use the orchestration's {v}", $"The orchestration already runs a {preset.Method} as {v}.");
         }
 
         var variable = Unused(root, preset.Name);
-        var declare = $"var {variable} = {trellis}.{preset.Method}({Literal(preset.Name == variable ? preset.Name : variable)});";
+        var declare = $"var {variable} = {orchestration}.{preset.Method}({Literal(preset.Name == variable ? preset.Name : variable)});";
         return Bind(text, need.Import, Value(preset, variable, need.Import), label, why, declare);
     }
 
@@ -97,23 +97,23 @@ public static partial class NeedFixes
             ? $"{variable}.Database({Literal(Regex.Replace(Regex.Replace(import, "(?i)[-_.]?(db|database|conn(ection)?(string)?)$", ""), "[^A-Za-z0-9]+", "_").Trim('_') is { Length: > 0 } db ? db : "app")})"
             : preset.Value(variable);
 
-    /// <summary><c>trellis.Bind(import, value);</c>, with <paramref name="before"/> first when given, placed after the
-    /// trellis's last binding, else its last repo, else <c>Trellis.Describe</c>.</summary>
+    /// <summary><c>orchestration.Bind(import, value);</c>, with <paramref name="before"/> first when given, placed after the
+    /// orchestration's last binding, else its last repo, else <c>Orchestration.Describe</c>.</summary>
     static NeedFix Bind(string text, string import, string valueCode, string label, string why, string? before = null)
     {
         var root = Parse(text);
-        var trellis = TrellisVariable(root);
-        var bind = $"{trellis}.Bind({Literal(import)}, {valueCode});";
+        var orchestration = OrchestrationVariable(root);
+        var bind = $"{orchestration}.Bind({Literal(import)}, {valueCode});";
         IReadOnlyList<string> lines = before is null ? [bind] : [before, bind];
 
         var statements = Statements(root).ToList();
-        var describe = statements.FirstOrDefault(s => Calls(s, trellis: null, "Describe"));
-        if (describe is null) return Unplaced(label, text, lines, "there's no Trellis.Describe(...) to add it after");
-        if (statements.Any(s => Calls(s, trellis, "Bind") && s.DescendantNodes().OfType<LiteralExpressionSyntax>().Any(l => l.Token.ValueText == import)))
-            return Unplaced(label, text, lines, $"the trellis already binds '{import}'");
+        var describe = statements.FirstOrDefault(s => Calls(s, orchestration: null, "Describe"));
+        if (describe is null) return Unplaced(label, text, lines, "there's no Orchestration.Describe(...) to add it after");
+        if (statements.Any(s => Calls(s, orchestration, "Bind") && s.DescendantNodes().OfType<LiteralExpressionSyntax>().Any(l => l.Token.ValueText == import)))
+            return Unplaced(label, text, lines, $"the orchestration already binds '{import}'");
 
-        var lastBind = statements.LastOrDefault(s => Calls(s, trellis, "Bind"));
-        var lastRepo = statements.LastOrDefault(s => Calls(s, trellis, "Repo") || Calls(s, trellis, "UseRepo"));
+        var lastBind = statements.LastOrDefault(s => Calls(s, orchestration, "Bind"));
+        var lastRepo = statements.LastOrDefault(s => Calls(s, orchestration, "Repo") || Calls(s, orchestration, "UseRepo"));
         var after = lastBind ?? lastRepo ?? describe;
         var nl = text.Contains("\r\n") ? "\r\n" : "\n";
         // Beside other bindings it joins their paragraph; otherwise it starts its own.
@@ -126,11 +126,11 @@ public static partial class NeedFixes
     static (string Text, string Variable, string? Error) NameRepo(string text, string repo)
     {
         var root = Parse(text);
-        var trellis = TrellisVariable(root);
+        var orchestration = OrchestrationVariable(root);
         var call = root.DescendantNodes().OfType<InvocationExpressionSyntax>().FirstOrDefault(i =>
             i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "Repo" or "UseRepo", Expression: IdentifierNameSyntax { Identifier.Text: var on } }
-            && on == trellis && FirstString(i) == repo);
-        if (call is null) return (text, "", $"there's no {trellis}.Repo or UseRepo line for '{repo}'");
+            && on == orchestration && FirstString(i) == repo);
+        if (call is null) return (text, "", $"there's no {orchestration}.Repo or UseRepo line for '{repo}'");
 
         if (call.Parent is EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator })
             return (text, declarator.Identifier.Text, null);
@@ -145,21 +145,21 @@ public static partial class NeedFixes
     static NeedFix Unplaced(string label, string text, IReadOnlyList<string> lines, string error)
         => new(label, "Couldn't be placed in this file, so paste it where it belongs.", text, lines, error);
 
-    static string TrellisVariable(CompilationUnitSyntax root)
+    static string OrchestrationVariable(CompilationUnitSyntax root)
         => Statements(root).OfType<LocalDeclarationStatementSyntax>()
             .FirstOrDefault(s => s.Declaration.Variables[0].Initializer?.Value is InvocationExpressionSyntax
-                { Expression: MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.Text: "Trellis" }, Name.Identifier.Text: "Describe" } })
-            ?.Declaration.Variables[0].Identifier.Text ?? "trellis";
+                { Expression: MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.Text: "Orchestration" }, Name.Identifier.Text: "Describe" } })
+            ?.Declaration.Variables[0].Identifier.Text ?? "orchestration";
 
     static IEnumerable<StatementSyntax> Statements(CompilationUnitSyntax root)
         => root.Members.OfType<GlobalStatementSyntax>().Select(g => g.Statement);
 
-    /// <summary>Whether <paramref name="statement"/> calls <paramref name="method"/> on <paramref name="trellis"/>
-    /// (any receiver when null) as its first call, as in <c>trellis.Bind(...)</c> or <c>var x = trellis.Repo(...)</c>.</summary>
-    static bool Calls(StatementSyntax statement, string? trellis, string method)
+    /// <summary>Whether <paramref name="statement"/> calls <paramref name="method"/> on <paramref name="orchestration"/>
+    /// (any receiver when null) as its first call, as in <c>orchestration.Bind(...)</c> or <c>var x = orchestration.Repo(...)</c>.</summary>
+    static bool Calls(StatementSyntax statement, string? orchestration, string method)
         => statement.DescendantNodes().OfType<InvocationExpressionSyntax>().Any(i =>
             i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: var m, Expression: var on } && m == method
-            && (trellis is null || on is IdentifierNameSyntax { Identifier.Text: var name } && name == trellis));
+            && (orchestration is null || on is IdentifierNameSyntax { Identifier.Text: var name } && name == orchestration));
 
     static string? FirstString(InvocationExpressionSyntax invocation)
         => invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression is LiteralExpressionSyntax literal

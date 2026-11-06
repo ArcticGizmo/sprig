@@ -6,7 +6,7 @@ using Avalonia.Media;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Sprig.Engine.Sprouts;
+using Sprig.Engine.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
@@ -60,7 +60,7 @@ public partial class OperationProgressViewModel(string heading) : ViewModelBase
 
     public bool HasSummary => !string.IsNullOrWhiteSpace(Summary);
 
-    public void Apply(SproutEvent e)
+    public void Apply(WorkspaceEvent e)
     {
         if (e.State == StepState.Output)
         {

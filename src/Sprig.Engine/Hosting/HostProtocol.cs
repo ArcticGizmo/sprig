@@ -6,21 +6,21 @@ using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Hosting;
 
-/// <summary>How to run one app for a sprout.</summary>
-/// <param name="Sprout">The sprout's key, <c>&lt;trellis&gt;/&lt;sprout&gt;</c>.</param>
+/// <summary>How to run one app for a workspace.</summary>
+/// <param name="Workspace">The workspace's key, <c>&lt;orchestration&gt;/&lt;workspace&gt;</c>.</param>
 /// <param name="Name">The app, as <c>&lt;repo&gt;/&lt;app&gt;</c>.</param>
 /// <param name="Build">Run first and must succeed; runs one at a time per <see cref="BuildKey"/>.</param>
 /// <param name="BuildKey">Builds sharing a key (the repo folder) never overlap, since they share output folders.</param>
 /// <param name="Port">The app is ready once something accepts connections on this port, unless
 /// <see cref="HealthUrls"/> or <see cref="ReadyLog"/> say otherwise.</param>
-/// <param name="WaitFor">Runners of the same sprout (by name) that must be ready, or for jobs finished, before this
+/// <param name="WaitFor">Runners of the same workspace (by name) that must be ready, or for jobs finished, before this
 /// one starts. Its build doesn't wait.</param>
 /// <param name="Job">Runs to completion: exit code 0 is success, and it's never "ready".</param>
 /// <param name="HealthUrls">Each must answer with a success status before the app is ready.</param>
 /// <param name="ReadyLog">A regular expression a line of the app's output must match before it's ready.</param>
 /// <param name="Restart">Null to leave it exited when it exits on its own.</param>
 public sealed record RunnerSpec(
-    string Sprout,
+    string Workspace,
     string Name,
     CommandSpec Command,
     string WorkingDirectory,
@@ -74,16 +74,16 @@ public static class RunnerStates
 
 /// <param name="Exit">The exit code once it has ended.</param>
 /// <param name="Restarts">How many times it has been started again since it was asked to start.</param>
-public sealed record RunnerStatus(string Sprout, string Name, RunnerState State, int? Pid, int? Port, int? Exit, string LogFile,
+public sealed record RunnerStatus(string Workspace, string Name, RunnerState State, int? Pid, int? Port, int? Exit, string LogFile,
     DateTimeOffset Since, string? Error = null, int Restarts = 0);
 
 /// <summary>One request to the host, one JSON line each way.</summary>
 /// <param name="Specs">For <c>start</c>: the runners to have going.</param>
 /// <param name="Restart">For <c>start</c>: names among <see cref="Specs"/> to start afresh even if running. The others
 /// start only if they aren't already going (or, for a job, already finished).</param>
-/// <param name="Hold">For <c>start</c>: build now, but run nothing until a <c>start</c> for the same sprout without it.
+/// <param name="Hold">For <c>start</c>: build now, but run nothing until a <c>start</c> for the same workspace without it.
 /// <c>up</c> sends it before the infra starts, so builds and containers come up together.</param>
-public sealed record HostRequest(string Op, IReadOnlyList<RunnerSpec>? Specs = null, string? Sprout = null, string? Name = null,
+public sealed record HostRequest(string Op, IReadOnlyList<RunnerSpec>? Specs = null, string? Workspace = null, string? Name = null,
     IReadOnlyList<string>? Restart = null, bool? Hold = null);
 
 public sealed record HostResponse(bool Ok, string? Error = null, int? Pid = null, string? Version = null,
@@ -106,8 +106,8 @@ public static class HostProtocol
 
     public static string LogFolder(ISprigPaths paths) => Path.Combine(paths.Root, "logs");
 
-    public static string LogFile(ISprigPaths paths, string sprout, string name)
-        => Path.Combine(LogFolder(paths), Safe(sprout), Safe(name) + ".log");
+    public static string LogFile(ISprigPaths paths, string workspace, string name)
+        => Path.Combine(LogFolder(paths), Safe(workspace), Safe(name) + ".log");
 
     public static string StoreId(ISprigPaths paths)
     {

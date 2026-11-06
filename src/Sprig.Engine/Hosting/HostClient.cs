@@ -33,16 +33,16 @@ public sealed class HostClient(ISprigPaths paths)
     }
 
     /// <summary>
-    /// Stop a sprout's apps (or one of them) and wait until they've gone, so a caller can then remove what they were
+    /// Stop a workspace's apps (or one of them) and wait until they've gone, so a caller can then remove what they were
     /// using. Returns the final state of each one stopped; empty when nothing was running or no host is.
     /// </summary>
-    public IReadOnlyList<RunnerStatus> StopAndWait(string sprout, string? name = null, CancellationToken cancellation = default)
+    public IReadOnlyList<RunnerStatus> StopAndWait(string workspace, string? name = null, CancellationToken cancellation = default)
     {
-        bool Mine(RunnerStatus r) => r.Sprout == sprout && (name is null || r.Name == name);
+        bool Mine(RunnerStatus r) => r.Workspace == workspace && (name is null || r.Name == name);
         var before = TrySend(new HostRequest("list"))?.Runners?.Where(Mine).Where(r => r.State.IsAlive() || r.State == RunnerState.Stopping).ToArray();
         if (before is not { Length: > 0 }) return [];
 
-        TrySend(new HostRequest("stop", Sprout: sprout, Name: name));
+        TrySend(new HostRequest("stop", Workspace: workspace, Name: name));
         var deadline = Stopwatch.StartNew();
         var last = before.Select(r => r with { State = RunnerState.Stopping }).ToDictionary(r => r.Name);
         while (deadline.Elapsed < Supervisor.Grace + TimeSpan.FromSeconds(15))
@@ -58,7 +58,7 @@ public sealed class HostClient(ISprigPaths paths)
                 break;
             }
             foreach (var r in before.Where(b => now.ContainsKey(b.Name))) last[r.Name] = now[r.Name];
-            // A whole-sprout stop forgets each runner once it has stopped, so gone counts as stopped.
+            // A whole-workspace stop forgets each runner once it has stopped, so gone counts as stopped.
             foreach (var r in before.Where(b => !now.ContainsKey(b.Name))) last[r.Name] = last[r.Name] with { State = RunnerState.Stopped };
             if (last.Values.All(r => r.State != RunnerState.Stopping)) break;
             Thread.Sleep(150);
@@ -68,11 +68,11 @@ public sealed class HostClient(ISprigPaths paths)
 
     static bool Alive(RunnerStatus r) => r.State.IsAlive() || r.State == RunnerState.Stopping;
 
-    /// <summary>Stop every app of every sprout, waiting for each to go, then end the host itself.</summary>
+    /// <summary>Stop every app of every workspace, waiting for each to go, then end the host itself.</summary>
     public IReadOnlyList<RunnerStatus> StopAllAndShutdown()
     {
-        var sprouts = TrySend(new HostRequest("list"))?.Runners?.Where(Alive).Select(r => r.Sprout).Distinct().ToArray() ?? [];
-        var stopped = sprouts.AsParallel().SelectMany(s => StopAndWait(s)).ToArray();
+        var workspaces = TrySend(new HostRequest("list"))?.Runners?.Where(Alive).Select(r => r.Workspace).Distinct().ToArray() ?? [];
+        var stopped = workspaces.AsParallel().SelectMany(s => StopAndWait(s)).ToArray();
         TrySend(new HostRequest("shutdown"));
         return stopped;
     }

@@ -9,7 +9,7 @@ using Sprig.App.ViewModels;
 namespace Sprig.App.Controls;
 
 /// <summary>
-/// Draws the trellis picture's wires behind its boxes: a curve from what offers a value to the app that needs it, with
+/// Draws the orchestration picture's wires behind its boxes: a curve from what offers a value to the app that needs it, with
 /// an arrowhead and the import's name, or a dashed stub for a need nothing fills.
 /// </summary>
 public sealed class WireLayer : Control

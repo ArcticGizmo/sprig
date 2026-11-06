@@ -6,11 +6,11 @@ public enum ProblemSeverity { Error, Warning }
 
 public sealed record PlanProblem(ProblemSeverity Severity, string Message, SourceLocation? Location);
 
-/// <summary>Everything a sprout of a trellis would get: ports, env vars, containers and compose changes, each with the
-/// value it resolves to and where that value came from.</summary>
+/// <summary>Everything a workspace of an orchestration would get: ports, env vars, containers and compose changes, each
+/// with the value it resolves to and where that value came from.</summary>
 public sealed record Plan(
-    string Trellis,
-    string Sprout,
+    string Orchestration,
+    string Workspace,
     string PortPolicy,
     string? WorktreesFrom,
     IReadOnlyList<PlannedPort> Ports,
@@ -23,7 +23,7 @@ public sealed record Plan(
 {
     public bool HasErrors => Problems.Any(p => p.Severity == ProblemSeverity.Error);
 
-    /// <summary>Each app value that reaches it from another repo or the trellis, or through an import, once per
+    /// <summary>Each app value that reaches it from another repo or the orchestration, or through an import, once per
     /// provider. Values an app takes from its own repo's resources by name aren't wires.</summary>
     public IReadOnlyList<PlannedWire> Wires() => Apps
         .SelectMany(app => app.Env.SelectMany(env => (env.Value.Sources ?? [])
@@ -35,7 +35,7 @@ public sealed record Plan(
 
 /// <summary>A value that reaches an app from somewhere else.</summary>
 /// <param name="Import">The import it came through; null for a reference that doesn't cross one.</param>
-/// <param name="ProviderOwner">The repo (or trellis) it comes from; null when nothing fills the import.</param>
+/// <param name="ProviderOwner">The repo (or orchestration) it comes from; null when nothing fills the import.</param>
 /// <param name="Provider">The app, container or service it comes from; null for a literal value.</param>
 public sealed record PlannedWire(string ConsumerOwner, string Consumer, string Key, string? Import, string? ProviderOwner, string? Provider, string? Endpoint)
 {
@@ -43,16 +43,16 @@ public sealed record PlannedWire(string ConsumerOwner, string Consumer, string K
 }
 
 /// <summary>Something a value reached while it was filled in.</summary>
-/// <param name="Owner">The repo (or trellis) that has it; null when the value needs an import nothing fills.</param>
+/// <param name="Owner">The repo (or orchestration) that has it; null when the value needs an import nothing fills.</param>
 /// <param name="Resource">The app, container or service whose endpoint it reached; null for a literal value supplied
 /// through an import.</param>
 /// <param name="Import">The import it crossed through, as the app that asked for it names it.</param>
 public sealed record ValueSource(string? Owner, string? Resource, string? Endpoint, string? Import);
 
-/// <param name="Owner">The repo (or trellis) the resource belongs to.</param>
+/// <param name="Owner">The repo (or orchestration) the resource belongs to.</param>
 public sealed record PlannedPort(string Owner, string Resource, string Endpoint, int? Port, string? Pin, int? TargetPort)
 {
-    /// <summary>Names the endpoint in a sprout's port leases.</summary>
+    /// <summary>Names the endpoint in a workspace's port leases.</summary>
     public string Key => LeaseKey(Owner, Resource, Endpoint);
 
     public static string LeaseKey(string owner, string resource, string endpoint) => $"{owner}/{resource}.{endpoint}";
@@ -66,7 +66,7 @@ public sealed record PlannedValue(string Template, string? Value, IReadOnlyList<
 
 public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, SourceLocation Location);
 
-/// <param name="RepoPath">The repo, as the trellis names it.</param>
+/// <param name="RepoPath">The repo, as the orchestration names it.</param>
 /// <param name="Outputs">Files that also get the app's process env vars.</param>
 /// <param name="Job">Runs to completion rather than staying up.</param>
 /// <param name="DependsOn">Apps and jobs (as <c>owner/name</c>) to have ready first: the ones it waits for, plus apps
@@ -123,7 +123,7 @@ public sealed record PlannedContainer(
 /// <param name="Generated">Sprig's own change (such as the ports it maps), shown with the definition's overrides.</param>
 public sealed record PlannedOverride(string Path, PlannedValue Value, bool Generated = false);
 
-/// <param name="Services">The services the repo names, which a sprout keeps; the file's other services are left out.</param>
+/// <param name="Services">The services the repo names, which a workspace keeps; the file's other services are left out.</param>
 public sealed record PlannedCompose(
     string Owner,
     string RepoPath,

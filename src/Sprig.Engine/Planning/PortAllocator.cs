@@ -41,7 +41,7 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
     readonly HashSet<int> _taken = [];
 
     /// <summary>Claim a port held from before, if it's still allowed and free. A kept port may lie outside the
-    /// current range: moving the range shouldn't move a sprout that's already working.</summary>
+    /// current range: moving the range shouldn't move a workspace that's already working.</summary>
     public bool TryKeep(string? pin, int port)
     {
         if (_taken.Contains(port) || inUse.Contains(port) || settings.RestrictedPorts.Contains(port)) return false;

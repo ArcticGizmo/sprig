@@ -23,35 +23,35 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     /// enough that a CLI that died mid-up doesn't leave runners waiting for good.</summary>
     public static readonly TimeSpan HoldLimit = TimeSpan.FromMinutes(15);
 
-    readonly ConcurrentDictionary<(string Sprout, string Name), Runner> _runners = new();
+    readonly ConcurrentDictionary<(string Workspace, string Name), Runner> _runners = new();
     readonly ConcurrentDictionary<string, SemaphoreSlim> _buildLocks = new(StringComparer.OrdinalIgnoreCase);
     readonly ConcurrentDictionary<string, TaskCompletionSource> _holds = new();
     readonly Lock _startGate = new();
 
     public bool AnyAlive => _runners.Values.Any(r => r.Status.State.IsAlive() || r.Status.State == RunnerState.Stopping);
 
-    public IReadOnlyList<RunnerStatus> List() => _runners.Values.Select(r => r.Status).OrderBy(s => s.Sprout).ThenBy(s => s.Name).ToArray();
+    public IReadOnlyList<RunnerStatus> List() => _runners.Values.Select(r => r.Status).OrderBy(s => s.Workspace).ThenBy(s => s.Name).ToArray();
 
     /// <summary>
     /// Have <paramref name="specs"/> going. A runner named in <paramref name="restart"/> starts afresh; any other starts
     /// only when it isn't already going or (for a job) finished, so starting one app doesn't bounce what it depends on.
     /// Returns at once; builds, waits and starts carry on in the background and show in <see cref="List"/>.
     /// </summary>
-    /// <param name="hold">Build, then wait until a start for the same sprout without a hold releases them.</param>
+    /// <param name="hold">Build, then wait until a start for the same workspace without a hold releases them.</param>
     public IReadOnlyList<RunnerStatus> Start(IReadOnlyList<RunnerSpec> specs, IReadOnlyCollection<string> restart, bool hold = false)
     {
         lock (_startGate)
         {
-            foreach (var sprout in specs.Select(s => s.Sprout).Distinct())
+            foreach (var workspace in specs.Select(s => s.Workspace).Distinct())
             {
-                if (hold) _holds.GetOrAdd(sprout, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-                else Release(sprout);
+                if (hold) _holds.GetOrAdd(workspace, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                else Release(workspace);
             }
 
             var started = new List<Runner>();
             foreach (var spec in specs)
             {
-                var key = (spec.Sprout, spec.Name);
+                var key = (spec.Workspace, spec.Name);
                 Runner? previous = null;
                 if (_runners.TryGetValue(key, out var existing))
                 {
@@ -60,11 +60,11 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     _ = existing.StopAsync(Grace);
                     previous = existing;
                 }
-                var runner = new Runner(spec, HostProtocol.LogFile(paths, spec.Sprout, spec.Name),
+                var runner = new Runner(spec, HostProtocol.LogFile(paths, spec.Workspace, spec.Name),
                     spec.BuildKey is { } k ? _buildLocks.GetOrAdd(k, _ => new SemaphoreSlim(1, 1)) : null,
-                    name => _runners.TryGetValue((spec.Sprout, name), out var r) ? r.Status : null,
+                    name => _runners.TryGetValue((spec.Workspace, name), out var r) ? r.Status : null,
                     previous,
-                    () => _holds.TryGetValue(spec.Sprout, out var held) ? held.Task : Task.CompletedTask);
+                    () => _holds.TryGetValue(spec.Workspace, out var held) ? held.Task : Task.CompletedTask);
                 _runners[key] = runner;
                 started.Add(runner);
             }
@@ -74,35 +74,35 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     }
 
     /// <summary>
-    /// Stop one app, which stays listed as stopped; or, with no <paramref name="name"/>, the whole sprout, whose
+    /// Stop one app, which stays listed as stopped; or, with no <paramref name="name"/>, the whole workspace, whose
     /// runners are forgotten once they've stopped (it's going down or away). Returns at once; each runner shows
     /// <see cref="RunnerState.Stopping"/> until it has.
     /// </summary>
-    public bool Stop(string sprout, string? name)
+    public bool Stop(string workspace, string? name)
     {
-        var targets = _runners.Where(kv => kv.Key.Sprout == sprout && (name is null || kv.Key.Name == name)).ToArray();
+        var targets = _runners.Where(kv => kv.Key.Workspace == workspace && (name is null || kv.Key.Name == name)).ToArray();
         foreach (var (key, runner) in targets)
         {
             var stopping = runner.StopAsync(Grace);
             if (name is null) _ = stopping.ContinueWith(_ => _runners.TryRemove(new KeyValuePair<(string, string), Runner>(key, runner)));
         }
         // Only once they're all marked as stopping, or a held runner could wake and start.
-        if (name is null) Release(sprout);
+        if (name is null) Release(workspace);
         return targets.Length > 0;
     }
 
     public async ValueTask DisposeAsync()
         => await Task.WhenAll(_runners.Values.Select(r => r.StopAsync(Grace)));
 
-    void Release(string sprout)
+    void Release(string workspace)
     {
-        if (_holds.TryRemove(sprout, out var held)) held.TrySetResult();
+        if (_holds.TryRemove(workspace, out var held)) held.TrySetResult();
     }
 
-    /// <param name="peer">Another runner of the same sprout, by name, for waiting on.</param>
+    /// <param name="peer">Another runner of the same workspace, by name, for waiting on.</param>
     /// <param name="previous">The runner this one replaces; it has to be gone before this one builds, since a running
     /// app locks the files its build would overwrite.</param>
-    /// <param name="held">Completes once the sprout's hold (if any) is released.</param>
+    /// <param name="held">Completes once the workspace's hold (if any) is released.</param>
     sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer, Runner? previous,
         Func<Task> held)
     {
@@ -159,7 +159,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         Task? _stopping;
         int _restarts;
 
-        public RunnerStatus Status { get; private set; } = new(spec.Sprout, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
+        public RunnerStatus Status { get; private set; } = new(spec.Workspace, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
 
         bool Stopping => _stopping is not null;
 
@@ -195,12 +195,12 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 if (!hold.IsCompleted)
                 {
                     Set(RunnerState.Waiting);
-                    Write("sprig: waiting for the sprout's infra");
+                    Write("sprig: waiting for the workspace's infra");
                     var first = await Task.WhenAny(hold, _stopAsked.Task, Task.Delay(HoldLimit));
                     if (Stopping) return;
                     if (first != hold)
                     {
-                        var why = $"the sprout's infra didn't come up within {HoldLimit.TotalMinutes:0} minutes";
+                        var why = $"the workspace's infra didn't come up within {HoldLimit.TotalMinutes:0} minutes";
                         Write($"sprig: {why}");
                         Set(RunnerState.Failed, error: why);
                         return;

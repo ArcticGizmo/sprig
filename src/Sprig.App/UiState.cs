@@ -5,17 +5,17 @@ using Sprig.Engine.Store;
 namespace Sprig.App;
 
 /// <summary>How the app was left: what's folded away and what's pinned. Not settings, so it isn't on the Settings page.</summary>
-/// <param name="Pins">Pinned apps (<c>repo/app</c>) per trellis, so a pin applies to every sprout of it.</param>
+/// <param name="Pins">Pinned apps (<c>repo/app</c>) per orchestration, so a pin applies to every workspace of it.</param>
 /// <param name="DetailsClosed">The app details beside the log were folded away.</param>
 /// <param name="LogTimesHidden">The log's time column was turned off.</param>
 /// <param name="LogWrapOff">The log's long lines run on past the edge rather than wrapping.</param>
-/// <param name="SproutChoices">The new-sprout form's last answers per trellis, so the next sprout of it starts there.</param>
+/// <param name="WorkspaceChoices">The new-workspace form's last answers per orchestration, so the next workspace of it starts there.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool DetailsClosed = false,
     bool LogTimesHidden = false,
     bool LogWrapOff = false,
-    Dictionary<string, Sprig.Engine.Sprouts.SproutOptions>? SproutChoices = null);
+    Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -44,20 +44,20 @@ public sealed class UiState(ISprigPaths paths)
         set => Save(Data with { LogWrapOff = !value });
     }
 
-    public IReadOnlyList<string> Pins(string trellis) => Data.Pins?.GetValueOrDefault(trellis) ?? [];
+    public IReadOnlyList<string> Pins(string orchestration) => Data.Pins?.GetValueOrDefault(orchestration) ?? [];
 
-    public void SetPins(string trellis, IEnumerable<string> apps)
+    public void SetPins(string orchestration, IEnumerable<string> apps)
     {
-        var pins = new Dictionary<string, List<string>>(Data.Pins ?? []) { [trellis] = [.. apps] };
-        if (pins[trellis].Count == 0) pins.Remove(trellis);
+        var pins = new Dictionary<string, List<string>>(Data.Pins ?? []) { [orchestration] = [.. apps] };
+        if (pins[orchestration].Count == 0) pins.Remove(orchestration);
         Save(Data with { Pins = pins });
     }
 
-    public Sprig.Engine.Sprouts.SproutOptions SproutChoices(string trellis)
-        => Data.SproutChoices?.GetValueOrDefault(trellis) ?? new Sprig.Engine.Sprouts.SproutOptions();
+    public Sprig.Engine.Workspaces.WorkspaceOptions WorkspaceChoices(string orchestration)
+        => Data.WorkspaceChoices?.GetValueOrDefault(orchestration) ?? new Sprig.Engine.Workspaces.WorkspaceOptions();
 
-    public void SetSproutChoices(string trellis, Sprig.Engine.Sprouts.SproutOptions options)
-        => Save(Data with { SproutChoices = new(Data.SproutChoices ?? []) { [trellis] = options } });
+    public void SetWorkspaceChoices(string orchestration, Sprig.Engine.Workspaces.WorkspaceOptions options)
+        => Save(Data with { WorkspaceChoices = new(Data.WorkspaceChoices ?? []) { [orchestration] = options } });
 
     void Save(UiStateData data)
     {

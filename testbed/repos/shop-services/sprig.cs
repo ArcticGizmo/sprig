@@ -3,7 +3,7 @@ using Sprig;
 
 var repo = Repo.Describe("shop-services");
 
-// Infra comes from the repo's own compose file; sprig gives each service its own host ports per sprout.
+// Infra comes from the repo's own compose file; sprig gives each service its own host ports per workspace.
 var compose = repo.ComposeFile("docker-compose.yml");
 var pg     = compose.Service("postgres").Endpoint("tcp", 5432).Health("pg_isready -h 127.0.0.1 -U shop");
 var redis  = compose.Service("redis").Endpoint("tcp", 6379).Health("redis-cli ping");
@@ -12,7 +12,8 @@ var redis  = compose.Service("redis").Endpoint("tcp", 6379).Health("redis-cli pi
 var rabbit = compose.Service("rabbitmq").Endpoint("amqp", 5672).Endpoint("ui", 15672, scheme: "http")
     .Health("test -f /var/lib/rabbitmq/.erlang.cookie && rabbitmq-diagnostics -q ping");
 
-// A trellis can supply the mail server; run on its own, the repo brings one, which a trellis's sprouts leave out.
+// An orchestration can supply the mail server; run on its own, the repo brings one, which an orchestration's
+// workspaces leave out.
 var smtp = repo.Import<Url>("mail-smtp").OrElse(repo.Mailpit("mail").SmtpUrl);
 
 // Runs to completion each time the apps start; the APIs wait for it to succeed. Retried, since Postgres can still be

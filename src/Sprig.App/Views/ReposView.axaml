@@ -125,17 +125,17 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="x:String">
                                             <Button Classes="link" Content="{Binding}" CommandParameter="{Binding}"
-                                                    Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).OpenTrellisByIdCommand}" />
+                                                    Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).OpenOrchestrationByIdCommand}" />
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <TextBlock Text="No trellis uses it yet" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasUsedBy}" />
+                                <TextBlock Text="No orchestration uses it yet" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasUsedBy}" />
                             </StackPanel>
                         </StackPanel>
                         <Button Grid.Column="1" Classes="small" Content="Open definition" Command="{Binding EditCommand}" VerticalAlignment="Top"
                                 IsEnabled="{Binding !Selected.Missing, FallbackValue=False}" />
-                        <Button Grid.Column="2" Content="Start a sprout" Command="{Binding StartCommand}" VerticalAlignment="Top"
-                                IsEnabled="{Binding HasModel}" ToolTip.Tip="Run this repo on its own, without a trellis"
+                        <Button Grid.Column="2" Content="Start a workspace" Command="{Binding StartCommand}" VerticalAlignment="Top"
+                                IsEnabled="{Binding HasModel}" ToolTip.Tip="Run this repo on its own, without an orchestration"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
                         <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
                                 Background="Transparent" Foreground="{StaticResource DangerBrush}"
@@ -272,7 +272,7 @@
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="It has a sprig.cs" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                               Text="Use the one committed in the repo. Each sprout runs its own branch's version." />
+                                               Text="Use the one committed in the repo. Each workspace runs its own branch's version." />
                                 </StackPanel>
                             </Border>
                         </Button>
@@ -292,7 +292,7 @@
             </Border>
         </Border>
 
-        <!-- Adding a repo of the chosen kind: a folder and the ID trellises call it by -->
+        <!-- Adding a repo of the chosen kind: a folder and the ID orchestrations call it by -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">
             <Border.KeyBindings>
                 <KeyBinding Gesture="Escape" Command="{Binding CancelAddCommand}" />
@@ -313,7 +313,7 @@
                         <TextBlock Classes="phead" Text="ID" />
                         <TextBox Text="{Binding AddId}" PlaceholderText="e.g. shop-web" />
                         <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="What trellises call it: trellis.UseRepo(&quot;the-id&quot;). Several can describe the same folder." />
+                                   Text="What orchestrations call it: orchestration.UseRepo(&quot;the-id&quot;). Several can describe the same folder." />
                     </StackPanel>
                     <TextBlock Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding AddFailed}" />
@@ -344,7 +344,7 @@
                         <TextBlock Classes="phead" Text="NEW ID" />
                         <TextBox Text="{Binding DeriveId}" PlaceholderText="e.g. shop-web" />
                         <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="What trellises call it: trellis.UseRepo(&quot;the-id&quot;). Point a trellis at it yourself when you want it to switch." />
+                                   Text="What orchestrations call it: orchestration.UseRepo(&quot;the-id&quot;). Point an orchestration at it yourself when you want it to switch." />
                     </StackPanel>
                     <TextBlock Text="{Binding DeriveMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding DeriveFailed}" />

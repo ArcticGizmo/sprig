@@ -20,25 +20,25 @@ public static partial class Scaffold
     static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase)
         { "bin", "obj", "node_modules", ".git", ".vs", ".idea", "dist", "build", "out", "artifacts", "packages" };
 
-    public static string Trellis(string name, IReadOnlyList<ScaffoldRepo> repos)
+    public static string Orchestration(string name, IReadOnlyList<ScaffoldRepo> repos)
     {
         var text = new StringBuilder();
         Header(text);
-        text.Append($"var trellis = Trellis.Describe({Literal(name)});\n\n");
-        var used = new HashSet<string>(StringComparer.Ordinal) { "trellis", "args" };
+        text.Append($"var orchestration = Orchestration.Describe({Literal(name)});\n\n");
+        var used = new HashSet<string>(StringComparer.Ordinal) { "orchestration", "args" };
         foreach (var repo in repos)
         {
             if (repo.Use is { } use)
             {
-                text.Append($"var {Variable(use, used)} = trellis.UseRepo({Literal(use)});\n");
+                text.Append($"var {Variable(use, used)} = orchestration.UseRepo({Literal(use)});\n");
                 continue;
             }
             var path = repo.Path ?? throw new ArgumentException("a repo needs a path or an entry to use");
             var variable = Variable(System.IO.Path.GetFileName(path.TrimEnd('/', '\\')), used);
-            text.Append($"var {variable} = trellis.Repo({Literal(path.Replace('\\', '/'))});\n");
+            text.Append($"var {variable} = orchestration.Repo({Literal(path.Replace('\\', '/'))});\n");
         }
         text.Append('\n');
-        text.Append("return trellis.Emit(args);\n");
+        text.Append("return orchestration.Emit(args);\n");
         return text.ToString();
     }
 

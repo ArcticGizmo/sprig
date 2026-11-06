@@ -5,8 +5,8 @@ using Sprig.Engine.Git;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Processes;
 using Sprig.Engine.Settings;
-using Sprig.Engine.Sprouts;
-using Sprig.Engine.Trellises;
+using Sprig.Engine.Workspaces;
+using Sprig.Engine.Orchestrations;
 using Sprig.Engine.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -36,11 +36,11 @@ public static class CliApp
         var processes = new ProcessRunner();
         var host = new HostClient(paths);
         var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths);
-        var trellises = new TrellisRegistry(paths);
-        var sprouts = new SproutService(new SproutStore(paths), new PortLeases(paths), settings,
+        var orchestrations = new OrchestrationRegistry(paths);
+        var workspaces = new WorkspaceService(new WorkspaceStore(paths), new PortLeases(paths), settings,
             new GitClient(processes), new DockerCompose(processes), host: host,
-            loader: new TrellisLoader(definitions, trellises, new StoredDefinitions(paths)));
-        var context = new CliContext(paths, settings, trust, definitions, trellises, sprouts, host, ansi);
+            loader: new OrchestrationLoader(definitions, orchestrations, new StoredDefinitions(paths)));
+        var context = new CliContext(paths, settings, trust, definitions, orchestrations, workspaces, host, ansi);
 
         var registrar = new TypeRegistrar(new Dictionary<Type, object>
         {
@@ -79,7 +79,7 @@ public static class CliApp
         config.AddCommand<UpCommand>("up");
         config.AddCommand<DownCommand>("down");
         config.AddCommand<RmCommand>("rm");
-        config.AddCommand<SproutsCommand>("sprouts");
+        config.AddCommand<WorkspacesCommand>("workspaces");
         config.AddCommand<EnvCommand>("env");
         config.AddCommand<StartCommand>("start");
         config.AddCommand<StopCommand>("stop");
@@ -88,22 +88,22 @@ public static class CliApp
 
         config.AddBranch("host", host =>
         {
-            host.SetDescription("The background process that runs sprouts' apps");
+            host.SetDescription("The background process that runs workspaces' apps");
             host.AddCommand<HostStatusCommand>("status");
             host.AddCommand<HostStopCommand>("stop");
         });
 
-        config.AddBranch("trellis", trellis =>
+        config.AddBranch("orchestration", orchestration =>
         {
-            trellis.SetDescription("Register the trellis files that put repos together");
-            trellis.AddCommand<TrellisAddCommand>("add");
-            trellis.AddCommand<TrellisLsCommand>("ls");
-            trellis.AddCommand<TrellisRmCommand>("rm");
+            orchestration.SetDescription("Register the orchestration files that put repos together");
+            orchestration.AddCommand<OrchestrationAddCommand>("add");
+            orchestration.AddCommand<OrchestrationLsCommand>("ls");
+            orchestration.AddCommand<OrchestrationRmCommand>("rm");
         });
 
         config.AddBranch("repo", repo =>
         {
-            repo.SetDescription("The Repos list: repo folders that trellises use by ID");
+            repo.SetDescription("The Repos list: repo folders that orchestrations use by ID");
             repo.AddCommand<RepoAddCommand>("add");
             repo.AddCommand<RepoCopyCommand>("copy");
             repo.AddCommand<RepoLsCommand>("ls");

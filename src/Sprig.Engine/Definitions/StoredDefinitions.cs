@@ -3,7 +3,7 @@ using Sprig.Engine.Store;
 namespace Sprig.Engine.Definitions;
 
 /// <summary>One repo in sprig's Repos list: a folder, and the definition that describes it. An ID is one or the other
-/// for good, so what a trellis using it runs never changes under it.</summary>
+/// for good, so what an orchestration using it runs never changes under it.</summary>
 /// <param name="InRepo">Described by the folder's own sprig.cs; otherwise by a definition kept in sprig.</param>
 /// <param name="DefinitionFile">The file that describes it.</param>
 public sealed record RepoEntry(string Id, string Folder, bool InRepo, string DefinitionFile)
@@ -12,32 +12,32 @@ public sealed record RepoEntry(string Id, string Folder, bool InRepo, string Def
 }
 
 /// <summary>
-/// Trellises and the Repos list, kept in sprig's store rather than in a repo, so sprig can be tried on repos without
+/// Orchestrations and the Repos list, kept in sprig's store rather than in a repo, so sprig can be tried on repos without
 /// committing anything to them. Each lives in a folder named by its ID. A repo is only ever used through its entry,
 /// so a copy kept in sprig never stands in for a repo's own sprig.cs unless the entry says so.
 /// </summary>
 public sealed class StoredDefinitions(ISprigPaths paths)
 {
-    public const string TrellisFileName = "trellis.cs";
+    public const string OrchestrationFileName = "orchestration.cs";
     public const string RepoFileName = "sprig.cs";
     const string EntryFileName = "repo.json";
 
     string ReposRoot => Path.Combine(paths.Root, "repos");
-    string TrellisesRoot => Path.Combine(paths.Root, "trellises");
+    string OrchestrationsRoot => Path.Combine(paths.Root, "orchestrations");
 
     /// <summary>Where sprig keeps the definition of a repo kept in sprig.</summary>
     public string CopyFile(string id) => LongPath.Of(Path.Combine(ReposRoot, id, RepoFileName));
 
-    public string TrellisFile(string id) => LongPath.Of(Path.Combine(TrellisesRoot, id, TrellisFileName));
+    public string OrchestrationFile(string id) => LongPath.Of(Path.Combine(OrchestrationsRoot, id, OrchestrationFileName));
 
-    /// <summary>The file that records a Repos entry. It also stands for the repo run on its own, as the trellis path
-    /// of its sprouts.</summary>
+    /// <summary>The file that records a Repos entry. It also stands for the repo run on its own, as the orchestration path
+    /// of its workspaces.</summary>
     public string EntryFile(string id) => EntryFile(paths, id);
 
     public static string EntryFile(ISprigPaths paths, string id) => LongPath.Of(Path.Combine(paths.Root, "repos", id, EntryFileName));
 
     /// <summary>The repo ID whose entry file <paramref name="path"/> is, or null for any other file. An entry since
-    /// taken off the list still answers, so its sprouts can say the repo is gone rather than fail to read.</summary>
+    /// taken off the list still answers, so its workspaces can say the repo is gone rather than fail to read.</summary>
     public string? RepoIdOf(string path)
     {
         if (!Path.GetFileName(path).Equals(EntryFileName, StringComparison.OrdinalIgnoreCase)) return null;
@@ -62,7 +62,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
         return new RepoEntry(id, folder, stored.InRepo, stored.InRepo ? Path.Combine(folder, RepoFileName) : CopyFile(id));
     }
 
-    /// <summary>The entry a new trellis over <paramref name="folder"/> reuses: the one using its own sprig.cs if there
+    /// <summary>The entry a new orchestration over <paramref name="folder"/> reuses: the one using its own sprig.cs if there
     /// is one, else the first kept in sprig.</summary>
     public RepoEntry? RepoFor(string folder)
     {
@@ -80,7 +80,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
     {
         if (Ids.Check(id, "a repo ID") is { } bad) throw new ArgumentException(bad, nameof(id));
         var dir = Path.Combine(ReposRoot, id);
-        if (Directory.Exists(dir) || TrellisIdsTaken().Contains(id)) throw new ArgumentException($"'{id}' is already taken", nameof(id));
+        if (Directory.Exists(dir) || OrchestrationIdsTaken().Contains(id)) throw new ArgumentException($"'{id}' is already taken", nameof(id));
         if (!inRepo && definition is null) throw new ArgumentException("a repo kept in sprig needs its definition", nameof(definition));
         Directory.CreateDirectory(dir);
         if (!inRepo) File.WriteAllText(CopyFile(id), definition);
@@ -91,9 +91,9 @@ public sealed class StoredDefinitions(ISprigPaths paths)
     static bool SamePath(string a, string b) => string.Equals(Path.GetFullPath(a).TrimEnd('\\', '/'), Path.GetFullPath(b).TrimEnd('\\', '/'),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
-    public IReadOnlyList<string> TrellisIds() => Directory.Exists(TrellisesRoot)
-        ? Directory.EnumerateDirectories(TrellisesRoot)
-            .Where(d => File.Exists(Path.Combine(d, TrellisFileName)))
+    public IReadOnlyList<string> OrchestrationIds() => Directory.Exists(OrchestrationsRoot)
+        ? Directory.EnumerateDirectories(OrchestrationsRoot)
+            .Where(d => File.Exists(Path.Combine(d, OrchestrationFileName)))
             .Select(d => Path.GetFileName(d))
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray()
@@ -103,26 +103,26 @@ public sealed class StoredDefinitions(ISprigPaths paths)
     public bool IsKept(string file)
     {
         var full = Path.GetFullPath(file);
-        return IsUnder(full, ReposRoot) || IsUnder(full, TrellisesRoot);
+        return IsUnder(full, ReposRoot) || IsUnder(full, OrchestrationsRoot);
     }
 
-    /// <summary>An unused repo ID: <paramref name="wanted"/>, or with -2, -3… after it. A repo can be sprouted on its
-    /// own, keyed by its ID like a trellis, so IDs are unique across both.</summary>
+    /// <summary>An unused repo ID: <paramref name="wanted"/>, or with -2, -3… after it. A repo can run on its own,
+    /// keyed by its ID like an orchestration, so IDs are unique across both.</summary>
     public string UnusedRepoId(string wanted)
-        => Ids.Unused(Ids.Slug(wanted, "repo"), RepoIdsTaken().Concat(TrellisIdsTaken()).ToHashSet(StringComparer.OrdinalIgnoreCase));
+        => Ids.Unused(Ids.Slug(wanted, "repo"), RepoIdsTaken().Concat(OrchestrationIdsTaken()).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
     /// <summary>The folder names under the Repos list, including any without a readable entry.</summary>
     public IReadOnlySet<string> RepoIdsTaken() => Directory.Exists(ReposRoot)
         ? Directory.EnumerateDirectories(ReposRoot).Select(d => Path.GetFileName(d)).ToHashSet(StringComparer.OrdinalIgnoreCase)
         : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    HashSet<string> TrellisIdsTaken()
-        => new Trellises.TrellisRegistry(paths).List().Select(e => e.Id).Concat(TrellisIds()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    HashSet<string> OrchestrationIdsTaken()
+        => new Orchestrations.OrchestrationRegistry(paths).List().Select(e => e.Id).Concat(OrchestrationIds()).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    public string CreateTrellis(string id, string text)
+    public string CreateOrchestration(string id, string text)
     {
-        if (Ids.Check(id, "a trellis ID") is { } bad) throw new ArgumentException(bad, nameof(id));
-        var file = TrellisFile(id);
+        if (Ids.Check(id, "an orchestration ID") is { } bad) throw new ArgumentException(bad, nameof(id));
+        var file = OrchestrationFile(id);
         if (File.Exists(file)) throw new ArgumentException($"'{id}' is already taken", nameof(id));
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, text);
@@ -131,7 +131,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
 
     public void DeleteRepo(string id) => DeleteFolder(Path.Combine(ReposRoot, id));
 
-    public void DeleteTrellis(string id) => DeleteFolder(Path.GetDirectoryName(TrellisFile(id))!);
+    public void DeleteOrchestration(string id) => DeleteFolder(Path.GetDirectoryName(OrchestrationFile(id))!);
 
     static void DeleteFolder(string folder)
     {

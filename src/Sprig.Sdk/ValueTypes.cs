@@ -21,9 +21,9 @@ public sealed record Import<T>(string Name) : Ref("import." + Name) where T : Va
     internal Action<Expr>? SetOrElse { get; init; }
 
     /// <summary>
-    /// What to use when nothing else fills this import: no other repo exports it and no trellis binds it, as when the
+    /// What to use when nothing else fills this import: no other repo exports it and no orchestration binds it, as when the
     /// repo runs on its own. Usually something of the repo's own, such as <c>repo.Mailpit("mail").SmtpUrl</c>; infra
-    /// declared only for this is left out of a sprout where something else fills the import.
+    /// declared only for this is left out of a workspace where something else fills the import.
     /// </summary>
     public Import<T> OrElse(Expr value)
     {

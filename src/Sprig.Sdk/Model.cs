@@ -13,10 +13,10 @@ public sealed partial class ModelJsonContext : JsonSerializerContext;
 
 public sealed record SourceLocation(string File, int Line);
 
-/// <summary>Either a repo's <c>sprig.cs</c> or a trellis. Both can own containers.</summary>
+/// <summary>Either a repo's <c>sprig.cs</c> or an orchestration. Both can own containers.</summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(RepoModel), "repo")]
-[JsonDerivedType(typeof(TrellisModel), "trellis")]
+[JsonDerivedType(typeof(OrchestrationModel), "orchestration")]
 public abstract record DefinitionModel(
     int Schema,
     string Name,
@@ -36,7 +36,7 @@ public sealed record RepoModel(
     IReadOnlyList<ExportModel> Exports)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
 
-public sealed record TrellisModel(
+public sealed record OrchestrationModel(
     int Schema,
     string Name,
     string SdkVersion,
@@ -125,12 +125,12 @@ public sealed record ComposeServiceModel(string Name, SourceLocation Location, I
 /// <param name="Path">A dotted path into the compose file, e.g. <c>services.postgres.container_name</c>.</param>
 public sealed record ComposeOverrideModel(string Path, string Value, SourceLocation Location);
 
-/// <param name="Path">The repo's folder (or later a git URL), relative to the trellis file; for <see cref="Use"/>, the
+/// <param name="Path">The repo's folder (or later a git URL), relative to the orchestration file; for <see cref="Use"/>, the
 /// entry's ID, which keys the repo the same way.</param>
 /// <param name="Use">A repo from sprig's Repos list, by ID: its folder and definition both come from there.</param>
 public sealed record RepoRefModel(string Path, SourceLocation Location, string? Use = null);
 
-/// <summary>The trellis's answer for an import: a value it supplies, or a named repo's export.</summary>
+/// <summary>The orchestration's answer for an import: a value it supplies, or a named repo's export.</summary>
 public sealed record BindingModel(string Import, string Value, SourceLocation Location);
 
 public sealed record GroupModel(string Name, IReadOnlyList<GroupMemberModel> Members, SourceLocation Location);

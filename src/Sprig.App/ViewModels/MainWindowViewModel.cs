@@ -17,8 +17,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public HomeViewModel Home { get; }
     public ReposViewModel Repos { get; }
-    public TrellisesViewModel Trellises { get; }
-    public SproutsViewModel Sprouts { get; }
+    public WorkspacesViewModel Workspaces { get; }
+    public OrchestrationsViewModel Orchestrations { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
 
@@ -49,34 +49,34 @@ public partial class MainWindowViewModel : ViewModelBase
         HostStatus = services.HostStatus;
         Home = new HomeViewModel();
         Repos = new ReposViewModel(services);
-        Trellises = new TrellisesViewModel(services);
-        Sprouts = new SproutsViewModel(services);
+        Workspaces = new WorkspacesViewModel(services);
+        Orchestrations = new OrchestrationsViewModel(services);
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
 
-        // The pages link to each other: a trellis to its repos, a repo to the trellises that use it, and a trellis or a
-        // repo to the form that starts a sprout of it.
-        Repos.OpenTrellis = id =>
+        // The pages link to each other: an orchestration to its repos, a repo to the orchestrations that use it, and an
+        // orchestration or a repo to the form that starts a workspace of it.
+        Repos.OpenOrchestration = id =>
         {
-            CurrentPage = Trellises;
-            Trellises.Show(id);
+            CurrentPage = Orchestrations;
+            Orchestrations.Show(id);
         };
-        Trellises.OpenRepo = id =>
+        Orchestrations.OpenRepo = id =>
         {
             CurrentPage = Repos;
             Repos.Show(id);
         };
-        void StartSprout(string id)
+        void StartWorkspace(string id)
         {
-            CurrentPage = Sprouts;
-            Sprouts.NewTrellis = id;
-            Sprouts.OpenAddCommand.Execute(null);
+            CurrentPage = Workspaces;
+            Workspaces.NewOrchestration = id;
+            Workspaces.OpenAddCommand.Execute(null);
         }
-        Trellises.StartSprout = StartSprout;
-        Repos.StartSprout = StartSprout;
+        Orchestrations.StartWorkspace = StartWorkspace;
+        Repos.StartWorkspace = StartWorkspace;
 
-        Pages = [Home, Repos, Trellises, Sprouts, Settings, About];
-        NavItems = [Home, Repos, Trellises, Sprouts];
+        Pages = [Home, Repos, Workspaces, Orchestrations, Settings, About];
+        NavItems = [Home, Repos, Workspaces, Orchestrations];
 
         _currentPage = Home;
         Home.IsActive = true;
@@ -84,12 +84,12 @@ public partial class MainWindowViewModel : ViewModelBase
         if (checkForUpdates) _ = CheckForUpdatesAsync();
     }
 
-    /// <summary>Sprouts in the nav always lands on the list of them, the one place a sprout is picked from.</summary>
+    /// <summary>Workspaces in the nav always lands on the list of them, the one place a workspace is picked from.</summary>
     [RelayCommand]
     private void Navigate(PageViewModel page)
     {
         CurrentPage = page;
-        if (page == Sprouts) Sprouts.Show(null);
+        if (page == Workspaces) Workspaces.Show(null);
     }
 
     /// <summary>Install the available update, then restart. Only returns when the install failed.</summary>

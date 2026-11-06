@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
-using Sprig.Engine.Sprouts;
+using Sprig.Engine.Workspaces;
 using Sprig.Model;
 
 namespace Sprig.Tests.Hosting;
@@ -81,7 +81,7 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
-    public void A_failed_build_stops_the_app_from_starting_and_stopping_a_sprout_forgets_it()
+    public void A_failed_build_stops_the_app_from_starting_and_stopping_a_workspace_forgets_it()
     {
         var spec = new RunnerSpec("storefront/feat-x", "shop/web", Wait(30), _store.Root, new Dictionary<string, string>(), Build: Exit(3), BuildKey: "shop");
 
@@ -90,7 +90,7 @@ public sealed class HostTests : IDisposable
         var failed = Await("shop/web", r => r.State == RunnerState.Failed);
         Assert.Equal("the build exited with code 3", failed.Error);
 
-        _client.Send(new HostRequest("stop", Sprout: "storefront/feat-x"));
+        _client.Send(new HostRequest("stop", Workspace: "storefront/feat-x"));
         var clock = Stopwatch.StartNew();
         while (_client.Send(new HostRequest("list")).Runners!.Count > 0 && clock.Elapsed < TimeSpan.FromSeconds(10)) Thread.Sleep(100);
         Assert.Empty(_client.Send(new HostRequest("list")).Runners!);
@@ -129,7 +129,7 @@ public sealed class HostTests : IDisposable
 
         _client.Send(new HostRequest("start", [spec], Hold: true));
 
-        var held = Await("shop/migrate", r => ReadShared(r.LogFile).Contains("waiting for the sprout's infra"));
+        var held = Await("shop/migrate", r => ReadShared(r.LogFile).Contains("waiting for the workspace's infra"));
         Assert.Equal(RunnerState.Waiting, held.State);
         Thread.Sleep(500);
         Assert.Equal(RunnerState.Waiting, Await("shop/migrate", _ => true).State);
@@ -139,7 +139,7 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
-    public void Stopping_a_held_sprout_ends_its_runners_without_starting_them()
+    public void Stopping_a_held_workspace_ends_its_runners_without_starting_them()
     {
         _client.Send(new HostRequest("start", [Spec("shop/migrate", Exit(0), job: true)], Hold: true));
         Await("shop/migrate", r => r.State == RunnerState.Waiting);
@@ -176,10 +176,10 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
-    public void Stopping_everything_ends_every_sprouts_apps_and_then_the_host()
+    public void Stopping_everything_ends_every_workspaces_apps_and_then_the_host()
     {
         _client.Send(new HostRequest("start", [Spec("shop/api", Wait(30))]));
-        _client.Send(new HostRequest("start", [Spec("shop/web", Wait(30)) with { Sprout = "storefront/feat-y" }]));
+        _client.Send(new HostRequest("start", [Spec("shop/web", Wait(30)) with { Workspace = "storefront/feat-y" }]));
         Await("shop/api", r => r.State == RunnerState.Ready);
         Await("shop/web", r => r.State == RunnerState.Ready);
 
@@ -310,7 +310,7 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
-    public async Task Following_a_sprouts_apps_streams_their_logs_and_ctrl_c_stops_them()
+    public async Task Following_a_workspaces_apps_streams_their_logs_and_ctrl_c_stops_them()
     {
         var output = new StringWriter();
         var ansi = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings
@@ -324,11 +324,11 @@ public sealed class HostTests : IDisposable
         var trust = new Sprig.Engine.Definitions.FileTrustStore(_store.Paths);
         var cli = new Sprig.Cli.CliContext(_store.Paths, settings, trust,
             new Sprig.Engine.Definitions.DefinitionRunner(trust, new Sprig.Engine.Definitions.DotnetRunHost(), _store.Paths),
-            new Sprig.Engine.Trellises.TrellisRegistry(_store.Paths),
-            new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), settings,
+            new Sprig.Engine.Orchestrations.OrchestrationRegistry(_store.Paths),
+            new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), settings,
                 new Sprig.Engine.Git.GitClient(processes), new Sprig.Engine.Compose.DockerCompose(processes), host: _client),
             _client, ansi);
-        var record = new SproutRecord("storefront", _store.Root, "feat-x", null, "stable", [], [], [], SproutState.Up,
+        var record = new WorkspaceRecord("storefront", _store.Root, "feat-x", null, "stable", [], [], [], WorkspaceState.Up,
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         using var stop = new CancellationTokenSource();
 
@@ -343,7 +343,7 @@ public sealed class HostTests : IDisposable
         var alive = _client.TrySend(new HostRequest("ping"), TimeSpan.FromSeconds(2)) is { } pong ? $"host alive (pid {pong.Pid})" : "host gone";
         foreach (var expected in new[] { "api | hello from shop/api", "web | hello from shop/web", "Stopping the apps", "shop/api stopped", "shop/web stopped" })
             Assert.True(text.Contains(expected), $"no '{expected}' ({alive}) in:\n{text}");
-        // A whole-sprout stop forgets each runner a moment after it reports stopped.
+        // A whole-workspace stop forgets each runner a moment after it reports stopped.
         var clock = Stopwatch.StartNew();
         while (_client.Send(new HostRequest("list")).Runners!.Count > 0 && clock.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(100);
         Assert.Empty(_client.Send(new HostRequest("list")).Runners!);
@@ -400,8 +400,8 @@ public class RunnerSpecsTests
     [Fact]
     public void Apps_run_by_kind_with_their_process_env_and_port()
     {
-        var repo = new SproutRepo("../shop-services", "shop-services", @"C:\tb\shop-services", @"C:\tb\sf--x\shop-services", true, true);
-        var record = new SproutRecord("storefront", @"C:\tb\sf.trellis.cs", "x", "x", "stable", [repo], [], [], SproutState.Up,
+        var repo = new WorkspaceRepo("../shop-services", "shop-services", @"C:\tb\shop-services", @"C:\tb\sf--x\shop-services", true, true);
+        var record = new WorkspaceRecord("storefront", @"C:\tb\sf.orchestration.cs", "x", "x", "stable", [repo], [], [], WorkspaceState.Up,
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         PlannedEnv Env(string key, string value, string? file = null) => new(key, new PlannedValue(value, value, []), file, At);
         var plan = new Plan("storefront", "x", "stable", "main",
@@ -425,7 +425,7 @@ public class RunnerSpecsTests
         Assert.Equal("Development", api.Env["ASPNETCORE_ENVIRONMENT"]);
         Assert.False(api.Env.ContainsKey("A"));
         Assert.Equal(8001, api.Port);
-        Assert.Equal("storefront/x", api.Sprout);
+        Assert.Equal("storefront/x", api.Workspace);
         Assert.Equal(["http://localhost:8001/health"], api.HealthUrls);
         Assert.Equal(new RestartSpec(Always: true, Max: 2), api.Restart);
         Assert.Null(specs.Single(s => s.Name == "shop-services/web").Restart);
@@ -440,8 +440,8 @@ public class RunnerSpecsTests
     [Fact]
     public void Starting_one_app_brings_what_it_depends_on_first()
     {
-        var repo = new SproutRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);
-        var record = new SproutRecord("storefront", @"C:\tb\sf.trellis.cs", "local", null, "stable", [repo], [], [], SproutState.Up,
+        var repo = new WorkspaceRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);
+        var record = new WorkspaceRecord("storefront", @"C:\tb\sf.orchestration.cs", "local", null, "stable", [repo], [], [], WorkspaceState.Up,
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         PlannedApp App(string name, bool job = false, params string[] dependsOn)
             => new("shop", "../shop", name, "app", ".", [], new PlannedValue("x", "x", []), [], [], job, dependsOn);

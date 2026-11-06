@@ -3,6 +3,6 @@ obj/
 .vs/
 *.user
 
-# Local values, never committed. sprig writes sprouts' values into these.
+# Local values, never committed. sprig writes workspaces' values into these.
 **/Properties/launchSettings.json
 appsettings.Local.json

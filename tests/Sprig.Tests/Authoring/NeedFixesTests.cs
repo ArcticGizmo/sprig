@@ -8,12 +8,12 @@ public class NeedFixesTests
         #:package Sprig.Sdk@0.1.0
         using Sprig;
 
-        var trellis = Trellis.Describe("storefront");
+        var orchestration = Orchestration.Describe("storefront");
 
-        var services = trellis.UseRepo("shop-services");   // the APIs
-        trellis.UseRepo("shop-web");
+        var services = orchestration.UseRepo("shop-services");   // the APIs
+        orchestration.UseRepo("shop-web");
 
-        return trellis.Emit(args);
+        return orchestration.Emit(args);
         """;
 
     static NeedFix Fix(string text, UnfilledNeed need, string label) => NeedFixes.For(text, need).Single(f => f.Label == label);
@@ -23,34 +23,34 @@ public class NeedFixesTests
     {
         var fixes = NeedFixes.For(Storefront, new UnfilledNeed("mail-smtp", "url", []));
 
-        Assert.Equal(["Add Mailpit to the trellis", "Set it to a value"], fixes.Select(f => f.Label));
+        Assert.Equal(["Add Mailpit to the orchestration", "Set it to a value"], fixes.Select(f => f.Label));
         var mail = fixes[0];
         Assert.True(mail.Placed);
         Assert.Contains("""
-            trellis.UseRepo("shop-web");
+            orchestration.UseRepo("shop-web");
 
-            var mail = trellis.Mailpit("mail");
-            trellis.Bind("mail-smtp", mail.SmtpUrl);
+            var mail = orchestration.Mailpit("mail");
+            orchestration.Bind("mail-smtp", mail.SmtpUrl);
 
-            return trellis.Emit(args);
+            return orchestration.Emit(args);
             """.ReplaceLineEndings("\n"), mail.Text.ReplaceLineEndings("\n"));
-        Assert.Contains("var services = trellis.UseRepo(\"shop-services\");   // the APIs", mail.Text);
-        Assert.Contains("trellis.Bind(\"mail-smtp\", \"\");", fixes[1].Text);
+        Assert.Contains("var services = orchestration.UseRepo(\"shop-services\");   // the APIs", mail.Text);
+        Assert.Contains("orchestration.Bind(\"mail-smtp\", \"\");", fixes[1].Text);
     }
 
     [Fact]
-    public void Infra_the_trellis_already_runs_is_reused_and_a_new_binding_joins_the_others()
+    public void Infra_the_orchestration_already_runs_is_reused_and_a_new_binding_joins_the_others()
     {
-        var text = Storefront.Replace("trellis.UseRepo(\"shop-web\");", """
-            trellis.UseRepo("shop-web");
+        var text = Storefront.Replace("orchestration.UseRepo(\"shop-web\");", """
+            orchestration.UseRepo("shop-web");
 
-            var mail = trellis.Mailpit("mail");
-            trellis.Bind("mail-smtp", mail.SmtpUrl);
+            var mail = orchestration.Mailpit("mail");
+            orchestration.Bind("mail-smtp", mail.SmtpUrl);
             """);
 
-        var fix = Fix(text, new UnfilledNeed("notify-smtp", "url", []), "Use the trellis's mail");
+        var fix = Fix(text, new UnfilledNeed("notify-smtp", "url", []), "Use the orchestration's mail");
 
-        Assert.Contains("trellis.Bind(\"mail-smtp\", mail.SmtpUrl);\ntrellis.Bind(\"notify-smtp\", mail.SmtpUrl);", fix.Text.ReplaceLineEndings("\n"));
+        Assert.Contains("orchestration.Bind(\"mail-smtp\", mail.SmtpUrl);\norchestration.Bind(\"notify-smtp\", mail.SmtpUrl);", fix.Text.ReplaceLineEndings("\n"));
         Assert.DoesNotContain("mail2", fix.Text);
     }
 
@@ -59,10 +59,10 @@ public class NeedFixesTests
     {
         var text = Storefront.Replace("var services", "var pg = 1;\nvar services");
 
-        var fix = Fix(text, new UnfilledNeed("orders-db", "connectionstring", []), "Add Postgres to the trellis");
+        var fix = Fix(text, new UnfilledNeed("orders-db", "connectionstring", []), "Add Postgres to the orchestration");
 
-        Assert.Contains("var pg2 = trellis.Postgres(\"pg2\");", fix.Text);
-        Assert.Contains("trellis.Bind(\"orders-db\", pg2.Database(\"orders\"));", fix.Text);
+        Assert.Contains("var pg2 = orchestration.Postgres(\"pg2\");", fix.Text);
+        Assert.Contains("orchestration.Bind(\"orders-db\", pg2.Database(\"orders\"));", fix.Text);
     }
 
     [Fact]
@@ -71,22 +71,22 @@ public class NeedFixesTests
         var fixes = NeedFixes.For(Storefront, new UnfilledNeed("catalog-url", "url", ["shop-services", "shop-web"]));
 
         Assert.Equal(["Use shop-services's", "Use shop-web's", "Set it to a value"], fixes.Select(f => f.Label));
-        Assert.Contains("trellis.Bind(\"catalog-url\", services.Export(\"catalog-url\"));", fixes[0].Text);
-        Assert.Contains("var shopWeb = trellis.UseRepo(\"shop-web\");", fixes[1].Text);
-        Assert.Contains("trellis.Bind(\"catalog-url\", shopWeb.Export(\"catalog-url\"));", fixes[1].Text);
+        Assert.Contains("orchestration.Bind(\"catalog-url\", services.Export(\"catalog-url\"));", fixes[0].Text);
+        Assert.Contains("var shopWeb = orchestration.UseRepo(\"shop-web\");", fixes[1].Text);
+        Assert.Contains("orchestration.Bind(\"catalog-url\", shopWeb.Export(\"catalog-url\"));", fixes[1].Text);
     }
 
     [Fact]
     public void A_file_it_cannot_place_the_lines_in_still_offers_them_to_paste()
     {
-        const string odd = "using Sprig;\nreturn Build().Emit(args);\nstatic TrellisBuilder Build() => Trellis.Describe(\"x\");\n";
-        var fix = NeedFixes.For(odd.Replace("Trellis.Describe", "Make"), new UnfilledNeed("mail-smtp", "url", []))[0];
+        const string odd = "using Sprig;\nreturn Build().Emit(args);\nstatic OrchestrationBuilder Build() => Orchestration.Describe(\"x\");\n";
+        var fix = NeedFixes.For(odd.Replace("Orchestration.Describe", "Make"), new UnfilledNeed("mail-smtp", "url", []))[0];
 
         Assert.False(fix.Placed);
         Assert.Contains("Describe", fix.Error);
-        Assert.Equal(["var mail = trellis.Mailpit(\"mail\");", "trellis.Bind(\"mail-smtp\", mail.SmtpUrl);"], fix.Lines);
+        Assert.Equal(["var mail = orchestration.Mailpit(\"mail\");", "orchestration.Bind(\"mail-smtp\", mail.SmtpUrl);"], fix.Lines);
 
-        var bound = NeedFixes.For(Storefront.Replace("trellis.UseRepo(\"shop-web\");", "trellis.UseRepo(\"shop-web\");\ntrellis.Bind(\"mail-smtp\", \"x\");"),
+        var bound = NeedFixes.For(Storefront.Replace("orchestration.UseRepo(\"shop-web\");", "orchestration.UseRepo(\"shop-web\");\norchestration.Bind(\"mail-smtp\", \"x\");"),
             new UnfilledNeed("mail-smtp", "url", []));
         Assert.All(bound, f => Assert.Contains("already binds", f.Error));
     }

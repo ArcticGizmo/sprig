@@ -31,14 +31,14 @@ internal static class Program
         if (args.Length > 1 && args[0] == "render-code-editor-cases")
             return Rendering.HeadlessRenderer.RenderCodeEditorCases(args[1]);
 
-        if (args.Length > 2 && args[0] == "render-trellises")
-            return Rendering.HeadlessRenderer.RenderTrellises(args[1], args[2]);
+        if (args.Length > 2 && args[0] == "render-orchestrations")
+            return Rendering.HeadlessRenderer.RenderOrchestrations(args[1], args[2]);
 
-        if (args.Length > 2 && args[0] == "render-sprouts")
-            return Rendering.HeadlessRenderer.RenderSprouts(args[1], args[2]);
+        if (args.Length > 2 && args[0] == "render-workspaces")
+            return Rendering.HeadlessRenderer.RenderWorkspaces(args[1], args[2]);
 
-        if (args.Length > 1 && args[0] == "render-sprouts-sample")
-            return Rendering.HeadlessRenderer.RenderSproutsSample(args[1]);
+        if (args.Length > 1 && args[0] == "render-workspaces-sample")
+            return Rendering.HeadlessRenderer.RenderWorkspacesSample(args[1]);
 
         // A headless probe of the same update check the UI runs on launch (honours SPRIG_UPDATE_FEED).
         if (args.Length > 0 && args[0] == "check-update")

@@ -32,7 +32,7 @@ public sealed record RepoFact(string Name, string Detail);
 
 /// <summary>
 /// The Repos page: every repo sprig knows by ID, what each one runs, offers and needs, and where its definition is
-/// kept. A repo is described here once; trellises only pick repos and fill what they need.
+/// kept. A repo is described here once; orchestrations only pick repos and fill what they need.
 /// </summary>
 public partial class ReposViewModel : PageViewModel
 {
@@ -50,11 +50,11 @@ public partial class ReposViewModel : PageViewModel
 
     public DefinitionEditorViewModel Editor { get; }
 
-    /// <summary>Opens a trellis on the Trellises page, by ID.</summary>
-    public Action<string>? OpenTrellis { get; set; }
+    /// <summary>Opens an orchestration on the Orchestrations page, by ID.</summary>
+    public Action<string>? OpenOrchestration { get; set; }
 
-    /// <summary>Opens the new-sprout form for a repo, to run it on its own.</summary>
-    public Action<string>? StartSprout { get; set; }
+    /// <summary>Opens the new-workspace form for a repo, to run it on its own.</summary>
+    public Action<string>? StartWorkspace { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection), nameof(KeptExplanation), nameof(DeriveLabel), nameof(DeriveNote), nameof(RemoveNote))]
@@ -94,8 +94,8 @@ public partial class ReposViewModel : PageViewModel
     public string KeptExplanation => Selected switch
     {
         null => "",
-        { InRepo: true } => "Uses the repo's own sprig.cs. Sprouts run their branch's version, and sprig asks before running one you haven't approved.",
-        _ => "Kept on this machine, so nothing is written to the repo. The same for every sprout, since no branch can change it.",
+        { InRepo: true } => "Uses the repo's own sprig.cs. Workspaces run their branch's version, and sprig asks before running one you haven't approved.",
+        _ => "Kept on this machine, so nothing is written to the repo. The same for every workspace, since no branch can change it.",
     };
 
     /// <summary>The one way to get the other kind: a new entry made from this one, which stays as it is.</summary>
@@ -113,21 +113,21 @@ public partial class ReposViewModel : PageViewModel
     public string DeriveExplanation => Selected switch
     {
         null => "",
-        { InRepo: true } => $"Copies {Selected.DisplayFile} into sprig as a new repo, kept on this machine. '{Selected.Id}' keeps using the repo's file, and so do the trellises that use it.",
-        _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.cs, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the trellises that use it.",
+        { InRepo: true } => $"Copies {Selected.DisplayFile} into sprig as a new repo, kept on this machine. '{Selected.Id}' keeps using the repo's file, and so do the orchestrations that use it.",
+        _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.cs, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the orchestrations that use it.",
     };
 
     public string AddTitle => AddInRepo ? "Use the repo's sprig.cs" : "Write one in sprig";
 
     public string AddExplanation => AddInRepo
-        ? "Choose a repo folder that has a sprig.cs. Sprouts run their branch's version, and nothing in it runs until you approve it."
+        ? "Choose a repo folder that has a sprig.cs. Workspaces run their branch's version, and nothing in it runs until you approve it."
         : "Kept in sprig, so nothing is written to the repo. It starts from the folder's sprig.cs if it has one, or else a draft from its projects, and opens for editing.";
 
     public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.cs" : "Choose the repo's folder";
 
     public string RemoveNote => Selected is { InRepo: true }
-        ? "Take it off the Repos list? The folder's own sprig.cs is left where it is. Trellises that use it will say it's missing."
-        : "Take it off the Repos list? The definition sprig keeps for it goes with it. Trellises that use it will say it's missing.";
+        ? "Take it off the Repos list? The folder's own sprig.cs is left where it is. Orchestrations that use it will say it's missing."
+        : "Take it off the Repos list? The definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.";
 
     public ReposViewModel(AppServices services)
     {
@@ -174,7 +174,7 @@ public partial class ReposViewModel : PageViewModel
     static string Summary(DefinitionResult result) => result switch
     {
         Evaluated { Model: RepoModel m } => Count(m.Apps.Count, "app") + (InfraCount(m) is > 0 and var n ? $" · {n} infra" : ""),
-        Evaluated => "describes a trellis",
+        Evaluated => "describes an orchestration",
         NeedsTrust => "not approved yet",
         _ => "doesn't run",
     };
@@ -213,8 +213,8 @@ public partial class ReposViewModel : PageViewModel
         OnPropertyChanged(nameof(HasInfra));
     }
 
-    /// <summary>Run the repo's definition on its own and show what it describes, so a mistake shows before any trellis
-    /// uses it.</summary>
+    /// <summary>Run the repo's definition on its own and show what it describes, so a mistake shows before any
+    /// orchestration uses it.</summary>
     async Task CheckAsync(RepoItem repo)
     {
         if (repo.Missing)
@@ -234,7 +234,7 @@ public partial class ReposViewModel : PageViewModel
                 Say("", bad: false);
                 break;
             case Evaluated:
-                Say("Its definition describes a trellis, not a repo (it calls Trellis.Describe).", bad: true);
+                Say("Its definition describes an orchestration, not a repo (it calls Orchestration.Describe).", bad: true);
                 break;
             case NeedsTrust pending:
                 _pending = pending;
@@ -263,8 +263,8 @@ public partial class ReposViewModel : PageViewModel
             Offers.Add(new RepoFact(export.Name, $"{Describe(export.Value)} · a {export.Type}"));
         foreach (var import in model.Imports)
             Needs.Add(new RepoFact(import.Name, import.OrElse is { } own
-                ? $"a {import.Type}; a trellis can fill it, else it uses {Fallback(own)}"
-                : $"a {import.Type}; each trellis that uses this repo fills it, so it can't run alone"));
+                ? $"a {import.Type}; an orchestration can fill it, else it uses {Fallback(own)}"
+                : $"a {import.Type}; each orchestration that uses this repo fills it, so it can't run alone"));
         HasModel = true;
         RaiseSections();
     }
@@ -399,17 +399,17 @@ public partial class ReposViewModel : PageViewModel
     [RelayCommand]
     private void Start()
     {
-        if (Selected is { } repo && HasModel) StartSprout?.Invoke(repo.Id);
+        if (Selected is { } repo && HasModel) StartWorkspace?.Invoke(repo.Id);
     }
 
     [RelayCommand]
-    private void OpenTrellisById(string? id)
+    private void OpenOrchestrationById(string? id)
     {
-        if (id is not null) OpenTrellis?.Invoke(id);
+        if (id is not null) OpenOrchestration?.Invoke(id);
     }
 
-    /// <summary>Taking a repo kept in sprig off the list deletes its definition, and trellises using either kind break,
-    /// so it asks first.</summary>
+    /// <summary>Taking a repo kept in sprig off the list deletes its definition, and orchestrations using either kind
+    /// break, so it asks first.</summary>
     [RelayCommand]
     private void Remove()
     {

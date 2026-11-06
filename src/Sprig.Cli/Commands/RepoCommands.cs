@@ -11,7 +11,7 @@ static class RepoList
 {
     public static StoredDefinitions Stored(CliContext cli) => new(cli.Paths);
 
-    public static TrellisAuthoring Authoring(CliContext cli) => new(Stored(cli), cli.Trellises, cli.Trust);
+    public static OrchestrationAuthoring Authoring(CliContext cli) => new(Stored(cli), cli.Orchestrations, cli.Trust);
 
     public static object Payload(RepoEntry e) => new { ok = true, id = e.Id, folder = e.Folder, inRepo = e.InRepo, definition = e.DefinitionFile };
 
@@ -20,7 +20,7 @@ static class RepoList
     public static string Kind(RepoEntry e) => e.InRepo ? "in repo" : "in sprig";
 }
 
-[Description("Put a repo folder on the Repos list, so trellises can use it with UseRepo(\"id\")")]
+[Description("Put a repo folder on the Repos list, so orchestrations can use it with UseRepo(\"id\")")]
 public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
@@ -30,7 +30,7 @@ public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Sett
         public string Folder { get; set; } = "";
 
         [CommandOption("--id <id>")]
-        [Description("The ID trellises use for it (default: the folder's name, with -2, -3… when taken)")]
+        [Description("The ID orchestrations use for it (default: the folder's name, with -2, -3… when taken)")]
         public string? Id { get; set; }
 
         [CommandOption("--in-sprig")]
@@ -60,7 +60,7 @@ public sealed class RepoCopyCommand(CliContext cli) : Command<RepoCopyCommand.Se
     public sealed class Settings : GlobalSettings
     {
         [CommandArgument(0, "<id>")]
-        [Description("The in-repo entry to copy. It and the trellises using it are left as they are")]
+        [Description("The in-repo entry to copy. It and the orchestrations using it are left as they are")]
         public string Id { get; set; } = "";
 
         [CommandOption("--id <new-id>")]
@@ -117,7 +117,7 @@ public sealed class RepoRmCommand(CliContext cli) : Command<RepoRmCommand.Settin
         public string Id { get; set; } = "";
 
         [CommandOption("--force")]
-        [Description("Remove it even though trellises use it (they stop planning until it's back)")]
+        [Description("Remove it even though orchestrations use it (they stop planning until it's back)")]
         public bool Force { get; set; }
     }
 

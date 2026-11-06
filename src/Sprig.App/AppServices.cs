@@ -5,9 +5,9 @@ using Sprig.Engine.Git;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Processes;
 using Sprig.Engine.Settings;
-using Sprig.Engine.Sprouts;
+using Sprig.Engine.Workspaces;
 using Sprig.Engine.Store;
-using Sprig.Engine.Trellises;
+using Sprig.Engine.Orchestrations;
 
 namespace Sprig.App;
 
@@ -21,15 +21,15 @@ public sealed class AppServices
     public ISettingsStore Settings { get; }
     public ITrustStore Trust { get; }
     public DefinitionRunner Definitions { get; }
-    public TrellisRegistry Trellises { get; }
-    public TrellisLoader Loader { get; }
+    public OrchestrationRegistry Orchestrations { get; }
+    public OrchestrationLoader Loader { get; }
     public StoredDefinitions Stored { get; }
-    public TrellisAuthoring Authoring { get; }
+    public OrchestrationAuthoring Authoring { get; }
 
     /// <summary>Completion and errors for the definition editor, from a separate process so Roslyn can't take the app
     /// down. Started on first use.</summary>
     public Sprig.App.Authoring.LanguageHostClient Language { get; } = new();
-    public SproutService Sprouts { get; }
+    public WorkspaceService Workspaces { get; }
     public HostClient Host { get; }
     public HostStatus HostStatus { get; }
     public UiState Ui { get; }
@@ -41,15 +41,15 @@ public sealed class AppServices
         Settings = new FileSettingsStore(Paths, dev: root is null && AppProfile.IsDev);
         Trust = new FileTrustStore(Paths);
         Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
-        Trellises = new TrellisRegistry(Paths);
+        Orchestrations = new OrchestrationRegistry(Paths);
         Stored = new StoredDefinitions(Paths);
-        Loader = new TrellisLoader(Definitions, Trellises, Stored);
-        Authoring = new TrellisAuthoring(Stored, Trellises, Trust);
+        Loader = new OrchestrationLoader(Definitions, Orchestrations, Stored);
+        Authoring = new OrchestrationAuthoring(Stored, Orchestrations, Trust);
         var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         HostStatus = new HostStatus(Host);
         Ui = new UiState(Paths);
-        Sprouts = new SproutService(new SproutStore(Paths), new PortLeases(Paths), Settings,
+        Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
             new GitClient(processes), new DockerCompose(processes), host: Host, loader: Loader);
     }
 

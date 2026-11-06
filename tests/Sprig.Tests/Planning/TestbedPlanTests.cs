@@ -1,11 +1,11 @@
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Settings;
-using Sprig.Engine.Trellises;
+using Sprig.Engine.Orchestrations;
 
 namespace Sprig.Tests.Planning;
 
-/// <summary>Plans the testbed's real definitions (testbed/*.trellis.cs and each repo's sprig.cs), compiled with
+/// <summary>Plans the testbed's real definitions (testbed/*.orchestration.cs and each repo's sprig.cs), compiled with
 /// <c>dotnet run</c>. Only the definition files are copied; the apps themselves aren't needed to plan.</summary>
 [Collection("dotnet-run")]
 [Trait("Category", "Integration")]
@@ -14,12 +14,12 @@ public sealed class TestbedPlanTests : IDisposable
     readonly TempStore _store = new();
     readonly string _root;
     readonly FileTrustStore _trust;
-    readonly TrellisLoader _loader;
+    readonly OrchestrationLoader _loader;
 
     public TestbedPlanTests()
     {
         _trust = new FileTrustStore(_store.Paths);
-        _loader = new TrellisLoader(new DefinitionRunner(_trust, new DotnetRunHost(), _store.Paths,
+        _loader = new OrchestrationLoader(new DefinitionRunner(_trust, new DotnetRunHost(), _store.Paths,
             new DefinitionRunnerOptions { Timeout = TimeSpan.FromSeconds(120), AllowLocalSdkProject = true }));
         _root = Path.Combine(_store.Root, "testbed");
 
@@ -27,12 +27,12 @@ public sealed class TestbedPlanTests : IDisposable
         var sdk = Path.Combine(repoRoot, "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
         foreach (var repo in new[] { "shop-services", "shop-web", "shop-mobile" })
             Copy(Path.Combine(repoRoot, "testbed", "repos", repo, "sprig.cs"), Path.Combine(_root, repo, "sprig.cs"), sdk);
-        Copy(Path.Combine(repoRoot, "testbed", "storefront.trellis.cs"), TrellisFile, sdk);
+        Copy(Path.Combine(repoRoot, "testbed", "storefront.orchestration.cs"), OrchestrationFile, sdk);
     }
 
     public void Dispose() => _store.Dispose();
 
-    string TrellisFile => Path.Combine(_root, "storefront.trellis.cs");
+    string OrchestrationFile => Path.Combine(_root, "storefront.orchestration.cs");
 
     void Copy(string from, string to, string sdk)
     {
@@ -52,10 +52,10 @@ public sealed class TestbedPlanTests : IDisposable
     [Fact]
     public void The_storefront_plans_with_no_problems_and_every_import_resolved()
     {
-        var loaded = _loader.Load(TrellisFile);
+        var loaded = _loader.Load(OrchestrationFile);
         Assert.True(loaded.Complete, string.Join("\n", loaded.Problems.Select(p => p.Message)));
 
-        var plan = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, "feat-x",
+        var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, "feat-x",
             new SprigSettings { PortRangeStart = 20000, PortRangeEndExclusive = 20100 }, new HashSet<int>()));
 
         Assert.Empty(plan.Problems);
@@ -85,7 +85,7 @@ public sealed class TestbedPlanTests : IDisposable
         File.WriteAllText(web, broken);
         _trust.Approve(web, DefinitionHash.Of(broken));
 
-        var loaded = _loader.Load(TrellisFile);
+        var loaded = _loader.Load(OrchestrationFile);
 
         var problem = Assert.Single(loaded.Problems);
         Assert.Contains("Imprt", problem.Message);

@@ -95,7 +95,7 @@ public partial class SettingsViewModel : PageViewModel
         // Re-read so the fields show the normalised (deduped, sorted) values.
         LoadFromStore();
         SaveFailed = false;
-        SaveMessage = $"Saved. New sprouts will use ports {start}–{endInclusive}" +
+        SaveMessage = $"Saved. New workspaces will use ports {start}–{endInclusive}" +
             (restricted.Count > 0 ? $", skipping {restricted.Count} restricted." : ".");
     }
 

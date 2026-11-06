@@ -61,9 +61,9 @@ public sealed class Tray
     {
         var alive = runners?.Where(r => r.State.IsAlive() || r.State == RunnerState.Stopping).ToArray() ?? [];
         _alive = alive.Length;
-        var sprouts = alive.Select(r => r.Sprout).Distinct().Count();
+        var workspaces = alive.Select(r => r.Workspace).Distinct().Count();
         var summary = _alive == 0 ? "No apps running"
-            : $"{_alive} app{(_alive == 1 ? "" : "s")} running in {sprouts} sprout{(sprouts == 1 ? "" : "s")}";
+            : $"{_alive} app{(_alive == 1 ? "" : "s")} running in {workspaces} workspace{(workspaces == 1 ? "" : "s")}";
         _status.Header = summary;
         _icon.ToolTipText = $"sprig · {summary.ToLowerInvariant()}";
         _stopAll.IsEnabled = _alive > 0;

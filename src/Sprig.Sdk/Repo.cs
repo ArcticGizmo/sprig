@@ -50,8 +50,8 @@ public sealed class RepoBuilder : DefinitionBuilder
         return compose;
     }
 
-    /// <summary>Ask the trellis for a value. It binds to an export of the same name from another repo, or to a value
-    /// the trellis supplies itself; <see cref="Import{T}.OrElse(Expr)"/> says what to use when neither does.</summary>
+    /// <summary>Ask the orchestration for a value. It binds to an export of the same name from another repo, or to a value
+    /// the orchestration supplies itself; <see cref="Import{T}.OrElse(Expr)"/> says what to use when neither does.</summary>
     public Import<T> Import<T>(string name, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
     {
         var index = _imports.Count;
@@ -59,7 +59,7 @@ public sealed class RepoBuilder : DefinitionBuilder
         return new Import<T>(name) { SetOrElse = value => _imports[index] = _imports[index] with { OrElse = value.ToTemplate() } };
     }
 
-    /// <summary>Make a value available to other repos in the trellis under <paramref name="name"/>.</summary>
+    /// <summary>Make a value available to other repos in the orchestration under <paramref name="name"/>.</summary>
     public void Export<T>(string name, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
         => _exports.Add(new ExportModel(name, ValueType.NameOf<T>(), value.ToTemplate(), new SourceLocation(file, line)));
 

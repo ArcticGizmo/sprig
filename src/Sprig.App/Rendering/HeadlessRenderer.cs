@@ -222,12 +222,36 @@ internal static partial class HeadlessRenderer
             while (!vm.Repos.HasModel && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
             Save(window, Sibling(outFile, "repo-ready"));
             vm.Repos.StartCommand.Execute(null);
+            clock.Restart();
+            while (!vm.Workspaces.HasNewSettings && clock.Elapsed < TimeSpan.FromSeconds(30)) Pump(TimeSpan.FromMilliseconds(100));
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "new-workspace"));
-            vm.Workspaces.NewInPlace = true;
+            vm.Workspaces.NewHasWorktrees = true;
             Pump(TimeSpan.FromMilliseconds(200));
-            Save(window, Sibling(outFile, "new-workspace-in-place"));
+            Save(window, Sibling(outFile, "new-workspace-worktrees"));
             vm.Workspaces.CancelAddCommand.Execute(null);
+
+            // shop-web run in place with one value of its own, so its page lists a workspace and the workspace's Settings
+            // dialog has something to show. It has no infra, so this needs no docker.
+            if (services.Orchestrations.Resolve("shop-web") is { } webEntry)
+            {
+                var loaded = services.Loader.Load(webEntry);
+                services.Workspaces.Up(loaded, "local", null, new Sprig.Engine.Workspaces.WorkspaceOptions(InPlace: true),
+                    values: new Dictionary<string, string> { ["catalog-url"] = "https://catalog.example.com" });
+                vm.NavigateCommand.Execute(vm.Repos);
+                vm.Repos.Show("shop-web");
+                clock.Restart();
+                while (!vm.Repos.HasModel && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "repo-workspaces"));
+                vm.Repos.OpenWorkspaceRowCommand.Execute(vm.Repos.WorkspacesOfIt.First());
+                Pump(TimeSpan.FromMilliseconds(300));
+                Wait(vm.Workspaces.OpenSettingsCommand.ExecuteAsync(null));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "workspace-settings"));
+                vm.Workspaces.CancelSettingsCommand.Execute(null);
+                services.Workspaces.Remove("shop-web", "local", new Sprig.Engine.Workspaces.RemoveOptions());
+            }
 
             // An orchestration whose repos have settings none of them offers: they're asked for, so it can still start.
             if (Path.Combine(root, "shop-mobile") is var mobile && Directory.Exists(mobile))

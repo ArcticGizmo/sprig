@@ -161,8 +161,8 @@ public class WorkspacesViewModelTests
         // The orchestration is approved first; only then does sprig know which repos' definitions to ask about. Both asks
         // happen in the modal, which closes once the workspace starts coming up.
         vm.OpenAddCommand.Execute(null);
-        Assert.True(vm.NewHasWorktrees);
-        vm.NewInPlace = true;
+        // The first workspace of anything runs in place unless asked otherwise, as sprig up does.
+        Assert.True(vm.NewInPlace);
         Assert.Equal("Default: local", vm.NewNameHint);
         await vm.CreateCommand.ExecuteAsync(null);
         Assert.EndsWith("web.orchestration.cs", Assert.Single(vm.PendingTrust).Path);
@@ -184,6 +184,79 @@ public class WorkspacesViewModelTests
 
         // The next workspace of the orchestration starts from the same choices.
         Assert.True(new WorkspacesViewModel(new AppServices(store.Root)).NewInPlace);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task A_setting_nothing_gives_is_asked_for_in_the_form_and_a_workspaces_settings_change_its_files()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        services.Settings.Save(new Sprig.Engine.Settings.SprigSettings { PortRangeStart = 9600, PortRangeEndExclusive = 9700 });
+
+        var sdk = Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
+        var repo = Path.Combine(store.Root, "work", "shop-web");
+        Directory.CreateDirectory(repo);
+        File.WriteAllText(Path.Combine(repo, ".gitignore"), ".env.local\n");
+        File.WriteAllText(Path.Combine(repo, "sprig.cs"), $$"""
+            #:project {{sdk}}
+            using Sprig;
+            var repo = Repo.Describe("shop-web");
+            var web = repo.Node("web", ".").Http();
+            web.EnvFile(".env.local", e => e
+                .Set("API", repo.Setting<Url>("api-url", "http://localhost:5100"))
+                .Set("KEY", repo.Setting<Secret>("api-key")));
+            return repo.Emit(args);
+            """);
+        new Sprig.Engine.Processes.ProcessRunner().Run("git", ["-C", repo, "init", "-q", "-b", "main"]).EnsureSuccess();
+        var entry = services.Authoring.AddRepo(repo, "shop-web");
+        services.Trust.Approve(entry.DefinitionFile, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(entry.DefinitionFile)));
+
+        var vm = new WorkspacesViewModel(services);
+        vm.ProgressStarted += _ => { };
+        vm.NewOrchestration = "shop-web";
+        vm.OpenAddCommand.Execute(null);
+        await WaitFor(() => vm.HasNewSettings);
+
+        var key = vm.NewSettings.Single(s => s.Name == "api-key");
+        var url = vm.NewSettings.Single(s => s.Name == "api-url");
+        Assert.True(key.Required);
+        Assert.True(key.IsSecret);
+        Assert.False(url.Required);
+        Assert.Equal("Empty: http://localhost:5100", url.Hint);
+
+        // Left empty, it's asked for and nothing is made.
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.True(vm.IsAddOpen);
+        Assert.Contains("Give api-key a value", vm.FormMessage);
+        Assert.Empty(services.Workspaces.List());
+
+        key.Value = "k1";
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.False(vm.IsAddOpen);
+        Assert.True(vm.Selected!.IsUp);
+        var env = Path.Combine(repo, ".env.local");
+        Assert.Contains("KEY=k1", File.ReadAllText(env));
+        Assert.Contains("API=http://localhost:5100", File.ReadAllText(env));
+
+        await vm.OpenSettingsCommand.ExecuteAsync(null);
+        Assert.True(vm.IsSettingsOpen);
+        Assert.Equal("k1", vm.WorkspaceSettings.Single(s => s.Name == "api-key").Kept);
+        vm.WorkspaceSettings.Single(s => s.Name == "api-url").Value = "https://api.example.com";
+        await vm.SaveSettingsCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsSettingsOpen);
+        Assert.Contains("API=https://api.example.com", File.ReadAllText(env));
+        Assert.Equal("Its files have the new values. Restart web to use them.", vm.AppsMessage);
+        Assert.Equal("https://api.example.com", services.Workspaces.Get("shop-web", "local")!.Values!["api-url"]);
+
+        services.Workspaces.Remove("shop-web", "local", new RemoveOptions());
+    }
+
+    static async Task WaitFor(Func<bool> condition)
+    {
+        for (var i = 0; i < 600 && !condition(); i++) await Task.Delay(100);
+        Assert.True(condition());
     }
 
     static string RepoRoot()

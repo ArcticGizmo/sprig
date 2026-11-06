@@ -227,6 +227,35 @@ public class OrchestrationChecklistTests
 public class ReposViewModelTests
 {
     [Fact]
+    public async Task A_repos_own_workspaces_are_listed_on_its_page_and_each_opens_on_the_Workspaces_page()
+    {
+        using var store = new TempStore();
+        var folder = Path.Combine(store.Root, "src", "shop-web");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "sprig.cs"), "// never approved");
+        var services = new AppServices(store.Root);
+        services.Authoring.AddRepo(folder, "shop-web");
+        var workspaces = new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths);
+        var now = DateTimeOffset.UtcNow;
+        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "local", null, "stable", [], [], [],
+            Sprig.Engine.Workspaces.WorkspaceState.Up, now, now));
+        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "feat-x", "feat-x", "stable", [], [], [],
+            Sprig.Engine.Workspaces.WorkspaceState.Down, now, now));
+        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("storefront", "y", "local", null, "stable", [], [], [],
+            Sprig.Engine.Workspaces.WorkspaceState.Up, now, now));
+
+        var vm = new ReposViewModel(services);
+        string? opened = null;
+        vm.OpenWorkspace = key => opened = key;
+        vm.IsActive = true;
+        await WaitFor(() => vm.NeedsApproval);
+
+        Assert.Equal([("feat-x", "on feat-x", "down"), ("local", "in place", "up")], vm.WorkspacesOfIt.Select(w => (w.Name, w.Where, w.State)));
+        vm.OpenWorkspaceRowCommand.Execute(vm.WorkspacesOfIt[1]);
+        Assert.Equal("shop-web/local", opened);
+    }
+
+    [Fact]
     public async Task A_repo_not_yet_approved_shows_it_and_copying_it_into_sprig_adds_a_new_unapproved_entry()
     {
         using var store = new TempStore();

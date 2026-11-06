@@ -187,6 +187,7 @@ public partial class WorkspacesViewModel : PageViewModel
         NewInPlace = last.InPlace;
         NewFrom = last.From ?? "";
         NewRandomPorts = last.RandomPorts;
+        if (IsAddOpen) _ = LoadNewSettingsAsync(value);
     }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MessageInModal), nameof(MessageOnPage))]
@@ -448,6 +449,7 @@ public partial class WorkspacesViewModel : PageViewModel
         PendingTrust.Clear();
         HasPendingTrust = false;
         IsAddOpen = true;
+        _ = LoadNewSettingsAsync(NewOrchestration);
     }
 
     [RelayCommand]
@@ -487,6 +489,7 @@ public partial class WorkspacesViewModel : PageViewModel
 
         var loaded = await LoadAsync(path, Create, workspace);
         if (loaded is null) return;
+        if (NewValues(loaded) is not { } values) return;
 
         var options = new WorkspaceOptions(inPlace, !inPlace && NewFrom.Trim() is { Length: > 0 } from ? from : null, NewRandomPorts);
         _services.Ui.SetWorkspaceChoices(name, options);
@@ -494,12 +497,13 @@ public partial class WorkspacesViewModel : PageViewModel
         // The progress window takes over from here, and reports any failure.
         IsAddOpen = false;
         var ok = await RunAsync($"Starting {loaded.Id} / {workspace}",
-            (progress, cancellation) => _services.Workspaces.Up(loaded, workspace, branch, options, progress, cancellation),
+            (progress, cancellation) => _services.Workspaces.Up(loaded, workspace, branch, options, progress, cancellation, values: values),
             $"{loaded.Id} / {workspace} is up.", retry: Create);
         if (ok)
         {
             NewName = "";
             NewBranch = "";
+            foreach (var input in NewSettings) input.Value = "";
         }
         Refresh();
         Selected = Workspaces.FirstOrDefault(s => s.Record.Orchestration == loaded.Id && s.Record.Name == workspace) ?? Selected;
@@ -651,6 +655,12 @@ public partial class WorkspacesViewModel : PageViewModel
             window.Finish("The workspace's branch changes these definitions, so they need approving first:\n"
                 + string.Join("\n", e.Untrusted.Select(u => u.Path.Replace('\\', '/')))
                 + "\nReview them in the main window and it carries on.", ProgressState.Error);
+            return false;
+        }
+        catch (WorkspaceException e) when (e.Asks.Count > 0)
+        {
+            window.Finish($"{Headline(e.Message)}.\nGive {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Settings, then bring it up again.",
+                ProgressState.Error);
             return false;
         }
         catch (Exception e)

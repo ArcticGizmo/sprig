@@ -74,6 +74,11 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         Orchestrations.StartWorkspace = StartWorkspace;
         Repos.StartWorkspace = StartWorkspace;
+        Repos.OpenWorkspace = key =>
+        {
+            CurrentPage = Workspaces;
+            Workspaces.Show(key);
+        };
 
         Pages = [Home, Repos, Workspaces, Orchestrations, Settings, About];
         NavItems = [Home, Repos, Workspaces, Orchestrations];

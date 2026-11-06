@@ -108,7 +108,15 @@ Beyond the plan:
 - `plan`, `start`, `stop`, `ps`, `logs` and `env` also default to the folder's repo and `local`.
 - **Done when:** in a fresh testbed copy of shop-web, `sprig init` then `sprig up` brings the app up in place, asking nothing, because every setting has a default. `sprig up -w feat-x --set catalog-url=...` makes an isolated copy pointed elsewhere.
 
-### 4. One repo in the app (L)
+### 4. One repo in the app (L) ✅ done 2026-11-06, with one change
+
+All 320 tests pass. Checked with view-model tests and headless renders (in `captures/`, `*-repo-first-*.png`).
+
+- **Changed from the plan:** a repo's workspaces are listed on its page (state, in place or which branch, **Open**), but their runner rows stay on the Workspaces page, one click away. Copying the runner rows, log pane and host polling onto the Repos page would have meant two copies of the most involved page. Whether that's the right split is for the hand pass.
+- **The new-workspace form** starts in place the first time, as `sprig up` does. It lists the chosen repo's or orchestration's settings once their definitions are approved. A setting that nothing else gives a value must be filled in; the others say what they'll get when left empty ("Empty: its own mail"). Settings it couldn't show before approval are added when **Run it** is pressed, which then asks for any it still needs.
+- **The workspace header** has **Settings** (left of ⋯). It opens a dialog with each setting, the workspace's own value, and what applies when that's empty. Saving keeps the values. If the workspace is up, it comes up again and names the apps to restart.
+- **Up with a setting still to ask** (a branch can add one) fails in the progress window and points at Settings.
+- **The Repos page's button** is **New workspace**.
 
 The Repos page becomes where a repo is run, not just described. The existing layout rules apply: focused tasks open in a large dialog, a ⋯ menu is always the rightmost control, nav rows stay plain, and page headings have no subtext.
 

@@ -27,8 +27,12 @@ public partial class RepoItem(RepoEntry entry) : ObservableObject
     [ObservableProperty] private string _summary = "";
 }
 
-/// <summary>A line in one of a repo's sections: what it runs, its infra, what it offers or needs.</summary>
+/// <summary>A line in one of a repo's sections: what it runs, its infra, what it offers, its settings.</summary>
 public sealed record RepoFact(string Name, string Detail);
+
+/// <summary>One of the repo's own workspaces, on its page.</summary>
+/// <param name="Where">"in place", or the branch its worktree is on.</param>
+public sealed record RepoWorkspaceRow(string Key, string Name, string Where, string State, bool IsUp, bool IsFailed);
 
 /// <summary>
 /// The Repos page: every repo sprig knows by ID, what each one runs, offers and needs, and where its definition is
@@ -47,6 +51,9 @@ public partial class ReposViewModel : PageViewModel
     public ObservableCollection<RepoFact> Infra { get; } = [];
     public ObservableCollection<RepoFact> Offers { get; } = [];
     public ObservableCollection<RepoFact> Settings { get; } = [];
+    public ObservableCollection<RepoWorkspaceRow> WorkspacesOfIt { get; } = [];
+
+    public bool HasWorkspaces => WorkspacesOfIt.Count > 0;
 
     public DefinitionEditorViewModel Editor { get; }
 
@@ -55,6 +62,30 @@ public partial class ReposViewModel : PageViewModel
 
     /// <summary>Opens the new-workspace form for a repo, to run it on its own.</summary>
     public Action<string>? StartWorkspace { get; set; }
+
+    /// <summary>Opens a workspace on the Workspaces page, by its key, where its apps are started, stopped and followed.</summary>
+    public Action<string>? OpenWorkspace { get; set; }
+
+    [RelayCommand]
+    private void OpenWorkspaceRow(RepoWorkspaceRow? row)
+    {
+        if (row is not null) OpenWorkspace?.Invoke(row.Key);
+    }
+
+    void ListWorkspaces(RepoItem? repo)
+    {
+        WorkspacesOfIt.Clear();
+        if (repo is not null)
+            foreach (var w in _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase))
+                WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.Name, w.InPlace ? "in place" : $"on {w.Branch}", w.State switch
+                {
+                    Sprig.Engine.Workspaces.WorkspaceState.Up => "up",
+                    Sprig.Engine.Workspaces.WorkspaceState.Starting => "coming up",
+                    Sprig.Engine.Workspaces.WorkspaceState.Failed => "failed",
+                    _ => "down",
+                }, w.State == Sprig.Engine.Workspaces.WorkspaceState.Up, w.State == Sprig.Engine.Workspaces.WorkspaceState.Failed));
+        OnPropertyChanged(nameof(HasWorkspaces));
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection), nameof(KeptExplanation), nameof(DeriveLabel), nameof(DeriveNote), nameof(RemoveNote))]
@@ -188,6 +219,7 @@ public partial class ReposViewModel : PageViewModel
         ConfirmingRemove = false;
         UsedBy.Clear();
         ClearModel();
+        ListWorkspaces(value);
         if (value is null) return;
         foreach (var id in _services.Authoring.UsedBy(value.Id)) UsedBy.Add(id);
         HasUsedBy = UsedBy.Count > 0;
@@ -263,7 +295,7 @@ public partial class ReposViewModel : PageViewModel
             Offers.Add(new RepoFact(export.Name, $"{Describe(export.Value)} · a {export.Type}"));
         foreach (var setting in model.Settings)
             Settings.Add(new RepoFact(setting.Name, setting.Default is { } own
-                ? $"a {setting.Type}; {Fallback(own)} unless a workspace or orchestration gives another"
+                ? $"a {setting.Type}; {DescribeDefault(own)} unless a workspace or orchestration gives another"
                 : $"a {setting.Type}; asked for when a workspace is made"));
         HasModel = true;
         RaiseSections();
@@ -299,8 +331,8 @@ public partial class ReposViewModel : PageViewModel
         }));
     }
 
-    /// <summary>"its own mail" for a fallback built from the repo's infra, else the value in words.</summary>
-    static string Fallback(string template)
+    /// <summary>"its own mail" for a default built from the repo's infra, else the value in words.</summary>
+    public static string DescribeDefault(string template)
     {
         IReadOnlyList<TemplatePart> parts;
         try { parts = TemplateText.Parse(template); }

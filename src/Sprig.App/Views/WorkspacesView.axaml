@@ -250,6 +250,19 @@
     </UserControl.Styles>
 
     <UserControl.Resources>
+        <!-- One setting: its name and where it's used, and a box for the workspace's own value. -->
+        <DataTemplate x:Key="SettingInputRow" x:DataType="vm:SettingInput">
+            <Grid ColumnDefinitions="200,*" ColumnSpacing="12" Margin="0,0,0,8">
+                <StackPanel Spacing="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontFamily="Cascadia Mono,Consolas,monospace" FontSize="12.5"
+                               Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBox Grid.Column="1" Text="{Binding Value}" PlaceholderText="{Binding Hint}" PasswordChar="{Binding PasswordChar}"
+                         AutomationProperties.AutomationId="{Binding Name, StringFormat='setting:{0}'}" />
+            </Grid>
+        </DataTemplate>
+
         <!-- Shown in the new-workspace modal while it's open, and under the workspace's header otherwise. -->
         <DataTemplate x:Key="TrustPanel" x:DataType="vm:WorkspacesViewModel">
             <Border Classes="panel" BorderBrush="{StaticResource WarnBrush}" Padding="14,12">
@@ -441,6 +454,10 @@
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding ShowBringUp}" ToolTip.Tip="Its worktrees, env files and infra, without starting its apps."
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
+                            <Button Content="Settings" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    ToolTip.Tip="The values its repos take, and where each comes from"
+                                    AutomationProperties.AutomationId="workspace:settings"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="⋯" Padding="10,6" FontSize="12.5" ToolTip.Tip="More"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}">
@@ -965,6 +982,12 @@
                             <RadioButton GroupName="new-ports" IsChecked="{Binding NewRandomPorts}"
                                          Content="Fresh ports each time it comes up" />
                         </StackPanel>
+                        <StackPanel Spacing="6" IsVisible="{Binding HasNewSettings}">
+                            <TextBlock Classes="phead" Text="SETTINGS" />
+                            <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding NewSettings}" ItemTemplate="{StaticResource SettingInputRow}" />
+                            </ScrollViewer>
+                        </StackPanel>
                     </StackPanel>
                     <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
                                Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageInModal}" />
@@ -973,6 +996,35 @@
                         <Button Content="Cancel" Command="{Binding CancelAddCommand}"
                                 Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
                         <Button Content="Run it" Command="{Binding CreateCommand}" IsVisible="{Binding HasOrchestrations}"
+                                IsEnabled="{Binding !IsWorking}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- The selected workspace's settings -->
+        <Border ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsSettingsOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelSettingsCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="640" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding Selected.Record.Name, StringFormat='Settings of {0}', FallbackValue='Settings'}"
+                               FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding HasWorkspaceSettings}"
+                               Text="A value here is this workspace's own, and wins over the orchestration's and the repo's default. Leave one empty to use what's shown." />
+                    <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto" IsVisible="{Binding HasWorkspaceSettings}">
+                        <ItemsControl ItemsSource="{Binding WorkspaceSettings}" ItemTemplate="{StaticResource SettingInputRow}" />
+                    </ScrollViewer>
+                    <TextBlock Classes="msg bad" Text="{Binding SettingsMessage}" FontSize="12.5" TextWrapping="Wrap"
+                               IsVisible="{Binding SettingsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button Content="Cancel" Command="{Binding CancelSettingsCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Content="Save" Command="{Binding SaveSettingsCommand}" IsVisible="{Binding HasWorkspaceSettings}"
                                 IsEnabled="{Binding !IsWorking}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
                     </StackPanel>

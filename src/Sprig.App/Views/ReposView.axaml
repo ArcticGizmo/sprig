@@ -32,6 +32,12 @@
         <Style Selector="TextBlock.msg">
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
         </Style>
+        <Style Selector="TextBlock.state.up">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.state.failed">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
         <Style Selector="TextBlock.bad">
             <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
         </Style>
@@ -134,8 +140,8 @@
                         </StackPanel>
                         <Button Grid.Column="1" Classes="small" Content="Open definition" Command="{Binding EditCommand}" VerticalAlignment="Top"
                                 IsEnabled="{Binding !Selected.Missing, FallbackValue=False}" />
-                        <Button Grid.Column="2" Content="Start a workspace" Command="{Binding StartCommand}" VerticalAlignment="Top"
-                                IsEnabled="{Binding HasModel}" ToolTip.Tip="Run this repo on its own, without an orchestration"
+                        <Button Grid.Column="2" Content="New workspace" Command="{Binding StartCommand}" VerticalAlignment="Top"
+                                IsEnabled="{Binding HasModel}" ToolTip.Tip="Run this repo on its own: in place, or in worktrees of its own"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
                         <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
                                 Background="Transparent" Foreground="{StaticResource DangerBrush}"
@@ -150,6 +156,32 @@
                                 <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
                                         Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                             </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Its own workspaces: the repo run on its own. Each opens on the Workspaces page, where its apps run. -->
+                    <Border Classes="panel">
+                        <StackPanel Spacing="9">
+                            <TextBlock Classes="phead" Text="WORKSPACES" />
+                            <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasWorkspaces}"
+                                       Text="None yet. New workspace runs it where it's checked out, or in worktrees of its own." />
+                            <ItemsControl ItemsSource="{Binding WorkspacesOfIt}" IsVisible="{Binding HasWorkspaces}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:RepoWorkspaceRow">
+                                        <Grid ColumnDefinitions="140,*,Auto" ColumnSpacing="12" Margin="0,3">
+                                            <TextBlock Classes="name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock Classes="cell state" Text="{Binding State}"
+                                                           Classes.up="{Binding IsUp}" Classes.failed="{Binding IsFailed}" />
+                                                <TextBlock Classes="cell" Text="{Binding Where}" Foreground="{StaticResource MutedBrush}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Classes="link" Content="Open" CommandParameter="{Binding}"
+                                                    AutomationProperties.AutomationId="{Binding Name, StringFormat='repo-workspace:{0}'}"
+                                                    Command="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).OpenWorkspaceRowCommand}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
 

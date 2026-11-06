@@ -229,9 +229,9 @@
                         </Border>
                         <Border Classes="panel" Margin="7,0,0,0">
                             <StackPanel Spacing="9">
-                                <TextBlock Classes="phead" Text="NEEDS" />
-                                <TextBlock Classes="cell" Text="Nothing" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasNeeds}" />
-                                <ItemsControl ItemsSource="{Binding Needs}">
+                                <TextBlock Classes="phead" Text="SETTINGS" />
+                                <TextBlock Classes="cell" Text="None" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasSettings}" />
+                                <ItemsControl ItemsSource="{Binding Settings}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:RepoFact">
                                             <Grid ColumnDefinitions="110,*" Margin="0,3">

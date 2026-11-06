@@ -22,7 +22,7 @@ public ref struct ExprHandler
 
     public void AppendFormatted(string? value) => AppendLiteral(value ?? "");
 
-    // C# prefers this exact-type generic over AppendFormatted(Expr) for any Expr subtype (PortRef, Import<T>), so
+    // C# prefers this exact-type generic over AppendFormatted(Expr) for any Expr subtype (PortRef, Setting<T>), so
     // it has to recognise placeholders itself or they'd be escaped into literal text.
     public void AppendFormatted<T>(T value)
     {

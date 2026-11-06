@@ -299,13 +299,46 @@ public sealed class WorkspaceServiceTests : IDisposable
     public void A_bad_plan_fails_before_any_worktree_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));
-        var loaded = Load(("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url"))));
+        var loaded = Load(("shop-web", repo => repo.Node("web", ".").Http().WaitFor(Sprig.Repo.Describe("elsewhere").Postgres("ghost"))));
 
         var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "feat-x", null));
 
-        Assert.Contains(e.Problems, p => p.Message.Contains("imports 'api-url'"));
+        Assert.Contains(e.Problems, p => p.Message.Contains("waits for 'ghost'"));
         Assert.False(Directory.Exists(Path.Combine(_root, "storefront--feat-x")));
         Assert.Null(_workspaces.Get("storefront", "feat-x"));
+    }
+
+    static void WebWithKey(RepoBuilder repo)
+    {
+        var web = repo.Node("web", ".").Http();
+        web.EnvFile(".env.local", e => e.Set("PORT", web.Port).Set("API_KEY", repo.Setting<Secret>("api-key")).Set("API", repo.Setting<Url>("api-url", "http://localhost:5100")));
+    }
+
+    [Fact]
+    public void A_setting_with_no_value_is_asked_for_before_anything_is_made_and_a_value_given_is_kept()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", WebWithKey));
+
+        var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "feat-x", null));
+        Assert.Equal(("api-key", "secret", "shop-web"), (Assert.Single(e.Asks).Name, e.Asks[0].Type, e.Asks[0].Owner));
+        Assert.Empty(e.Problems);
+        Assert.False(Directory.Exists(Path.Combine(_root, "storefront--feat-x")));
+
+        var record = _workspaces.Up(loaded, "feat-x", null, values: new Dictionary<string, string> { ["api-key"] = "k1" });
+        var envLocal = Path.Combine(record.Repos.Single().Dir, ".env.local");
+        Assert.Contains("API_KEY=k1", File.ReadAllText(envLocal));
+        Assert.Contains("API=http://localhost:5100", File.ReadAllText(envLocal));
+
+        // Kept: the next up needs nothing more, and a value set later replaces the default.
+        _workspaces.SetValues("storefront", "feat-x", new Dictionary<string, string> { ["api-url"] = "https://api.example.com" });
+        var again = _workspaces.Up(loaded, "feat-x", null);
+        Assert.Equal(new Dictionary<string, string> { ["api-key"] = "k1", ["api-url"] = "https://api.example.com" }, again.Values);
+        Assert.Contains("API=https://api.example.com", File.ReadAllText(envLocal));
+
+        _workspaces.SetValues("storefront", "feat-x", new Dictionary<string, string>(), unset: ["api-url"]);
+        _workspaces.Up(loaded, "feat-x", null);
+        Assert.Contains("API=http://localhost:5100", File.ReadAllText(envLocal));
     }
 
     /// <summary>Stands in for <c>dotnet run</c>: each definition's text names the builder whose model it emits.</summary>

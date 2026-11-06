@@ -45,17 +45,17 @@ public sealed class OrchestrationBuilder : DefinitionBuilder
         return new RepoRef(id);
     }
 
-    /// <summary>Answer a repo's import with a value: one this orchestration supplies (often from its own infra), or a
-    /// particular repo's export when more than one repo exports that name.</summary>
-    public OrchestrationBuilder Bind(string import, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    /// <summary>Give the repos' setting a value: one this orchestration supplies (often from its own infra), or a
+    /// particular repo's export when more than one repo exports that name. A value set on a workspace still wins.</summary>
+    public OrchestrationBuilder Bind(string setting, Expr value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
-        _bindings.Add(new BindingModel(import, value.ToTemplate(), new SourceLocation(file, line)));
+        _bindings.Add(new BindingModel(setting, value.ToTemplate(), new SourceLocation(file, line)));
         return this;
     }
 
     /// <inheritdoc cref="Bind(string, Expr, string, int)"/>
-    public OrchestrationBuilder Bind(string import, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
-        => Bind(import, value.ToExpr(), file, line);
+    public OrchestrationBuilder Bind(string setting, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+        => Bind(setting, value.ToExpr(), file, line);
 
     // Kept only so code written before the choice moved fails with directions rather than "no such method".
     [Obsolete(WorkspaceChoice.Message, error: true)]
@@ -106,7 +106,7 @@ public sealed class RepoRef(string path)
 {
     public string Path { get; } = path;
 
-    /// <summary>This repo's export named <paramref name="name"/>, to settle which of several repos answers an import.</summary>
+    /// <summary>This repo's export named <paramref name="name"/>, to settle which of several repos gives a setting.</summary>
     public Ref Export(string name) => new($"export.{Path}.{name}");
 
     /// <summary>Only some of this repo's apps, for a group.</summary>

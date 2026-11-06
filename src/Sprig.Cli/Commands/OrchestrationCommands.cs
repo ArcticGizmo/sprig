@@ -183,18 +183,27 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         public string Orchestration { get; set; } = "";
 
         [CommandOption("-w|--workspace <name>")]
-        [Description("The workspace name to plan for (default: plan). An existing workspace's definitions are read from its worktrees")]
+        [Description("The workspace name to plan for (default: plan). An existing workspace's definitions are read from its worktrees, and its values used")]
         public string Workspace { get; set; } = "plan";
+
+        [CommandOption("--set <name=value>")]
+        [Description("Plan with this value for a setting, over the workspace's own. Repeat for more")]
+        public string[] Set { get; set; } = [];
     }
+
+    protected override ValidationResult Validate(CommandContext context, Settings s)
+        => SettingValues.Parse(s.Set, out _) is { } error ? ValidationResult.Error(error) : ValidationResult.Success();
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
         if (OrchestrationLoad.Load(cli, s.Orchestration, s, s.Workspace) is not { } loaded) return 1;
 
+        SettingValues.Parse(s.Set, out var given);
+        var values = SettingValues.Merge(cli.Workspaces.Get(loaded.Id, s.Workspace)?.Values, given);
         var problems = new List<PlanProblem>();
         var compose = loaded.ComposeFiles(problems);
         var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, s.Workspace, cli.Settings.Get(), PortAllocator.Listening(),
-            ComposeFiles: compose, Alone: loaded.Alone));
+            ComposeFiles: compose, Values: values));
         if (!plan.HasErrors) problems.AddRange(cli.Workspaces.CheckFiles(plan, loaded.ReadFrom));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };
         if (s.Json) CliOutput.Json(plan);
@@ -236,6 +245,17 @@ static class PlanPrinter
         console.MarkupLine($"[bold]{Markup.Escape(plan.Orchestration)}[/]  ·  workspace [bold]{Markup.Escape(plan.Workspace)}[/]");
         console.MarkupLine("[dim]Ports are a preview; they're leased when a workspace comes up.[/]");
         console.WriteLine();
+
+        if (plan.ToAsk.Count > 0)
+        {
+            var asks = new Table().Border(TableBorder.Rounded).Title("[bold]To ask[/]").AddColumns("Setting", "Type", "For", "Declared at");
+            foreach (var a in plan.ToAsk)
+                asks.AddRow(Markup.Escape(a.Name), Markup.Escape(a.Type), Markup.Escape(a.Owner),
+                    Markup.Escape($"{Relative(a.Location.File, root)}{(a.Location.Line > 0 ? $":{a.Location.Line}" : "")}"));
+            console.Write(asks);
+            console.MarkupLine("[dim]Nothing gives these a value. Give them one when the workspace comes up: sprig up <id> --set name=value[/]");
+            console.WriteLine();
+        }
 
         var ports = new Table().Border(TableBorder.Rounded).Title("[bold]Ports[/]").AddColumns("Owner", "Resource", "Endpoint", "Port", "Pin");
         foreach (var p in plan.Ports)
@@ -315,7 +335,14 @@ static class PlanPrinter
         }
     }
 
-    static SpectreText Value(PlannedValue v) => v.Value is null ? new SpectreText("unresolved", new Style(Color.Red)) : new SpectreText(ValueMask.Apply(v.Value));
+    static SpectreText Value(PlannedValue v)
+    {
+        if (v.Value is not null) return new SpectreText(ValueMask.Apply(v.Value));
+        var asked = (v.Sources ?? []).Where(x => x.Owner is null && x.Setting is not null).Select(x => x.Setting!).ToArray();
+        return asked.Length > 0
+            ? new SpectreText($"to ask: {string.Join(", ", asked)}", new Style(Color.Yellow))
+            : new SpectreText("unresolved", new Style(Color.Red));
+    }
 
     static SpectreText Via(PlannedValue v) => new(string.Join(" → ", v.Via), new Style(Color.Grey));
 

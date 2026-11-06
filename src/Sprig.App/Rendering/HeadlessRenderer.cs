@@ -229,8 +229,7 @@ internal static partial class HeadlessRenderer
             Save(window, Sibling(outFile, "new-workspace-in-place"));
             vm.Workspaces.CancelAddCommand.Execute(null);
 
-            // An orchestration whose repos need what none of them offers: the checklist's step, then the dialog that writes the
-            // line, on a need one of the presets fills.
+            // An orchestration whose repos have settings none of them offers: they're asked for, so it can still start.
             if (Path.Combine(root, "shop-mobile") is var mobile && Directory.Exists(mobile))
             {
                 var trial = services.Authoring.CreateOrchestration("trial", [Path.Combine(root, "shop-web"), mobile]);
@@ -240,11 +239,7 @@ internal static partial class HeadlessRenderer
                 Pump(TimeSpan.FromMilliseconds(300));
                 while ((vm.Orchestrations.IsBusy || vm.Orchestrations.Plan is null) && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
                 Pump(TimeSpan.FromMilliseconds(300));
-                Save(window, Sibling(outFile, "needs"));
-                vm.Orchestrations.FillNeeds.Open(trial.Path, [("shop-services", new Sprig.Engine.Authoring.UnfilledNeed("mail-smtp", "url", []))]);
-                Pump(TimeSpan.FromMilliseconds(300));
-                Save(window, Sibling(outFile, "fill"));
-                vm.Orchestrations.FillNeeds.CloseCommand.Execute(null);
+                Save(window, Sibling(outFile, "settings"));
                 services.Authoring.RemoveOrchestration(trial.Id);
             }
             vm.NavigateCommand.Execute(vm.Orchestrations);

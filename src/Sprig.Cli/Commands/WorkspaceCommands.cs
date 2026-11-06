@@ -59,7 +59,14 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         [CommandOption("-d|--detached")]
         [Description("Then start every app, wait until they're ready, and leave them running in the background")]
         public bool Detached { get; set; }
+
+        [CommandOption("--set <name=value>")]
+        [Description("Give a setting this value in the workspace, over the orchestration's and the repo's default. Kept for next time. Repeat for more")]
+        public string[] Set { get; set; } = [];
     }
+
+    protected override ValidationResult Validate(CommandContext context, Settings s)
+        => SettingValues.Parse(s.Set, out _) is { } error ? ValidationResult.Error(error) : ValidationResult.Success();
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
@@ -102,33 +109,47 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         }
         catch (WorkspaceException e)
         {
-            if (s.Json) CliOutput.Json(new { ok = false, error = e.Message, problems = e.Problems });
+            if (s.Json) CliOutput.Json(new { ok = false, error = e.Message, problems = e.Problems, asks = e.Asks });
             else
             {
                 Console.Error.WriteLine($"error: {e.Message}");
                 if (e.Problems.Count > 0) PlanPrinter.Problems(cli.Ansi, e.Problems, root);
+                if (e.Asks.Count > 0)
+                    cli.Ansi.MarkupLine($"[dim]Give {(e.Asks.Count == 1 ? "it" : "them")} a value with {Markup.Escape(string.Join(" ", e.Asks.Select(a => $"--set {a.Name}=...")))}[/]");
             }
             return 1;
         }
     }
 
-    /// <summary>Up, asking to approve the definitions a new workspace's worktrees bring (its branch can change them) and
-    /// going again. Null when they weren't approved.</summary>
+    /// <summary>Up, asking to approve the definitions a new workspace's worktrees bring (its branch can change them), and
+    /// for values of settings nothing gives one, and going again. Null when they weren't approved.</summary>
     WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, Settings s, IProgress<WorkspaceEvent> progress,
         CancellationToken cancellation)
     {
         var runApps = s.Run || s.Detached;
+        SettingValues.Parse(s.Set, out var given);
+        var values = new Dictionary<string, string>(given, StringComparer.Ordinal);
         for (var attempt = 1; ; attempt++)
         {
             string? held = null;
             try
             {
                 return cli.Workspaces.Up(loaded, workspace, s.Branch, s.Options, progress, cancellation,
-                    runApps ? (record, plan) => held = Prebuild(record, plan) : null);
+                    runApps ? (record, plan) => held = Prebuild(record, plan) : null, values);
             }
             catch (WorkspaceException e) when (e.Untrusted.Count > 0 && attempt < 3)
             {
                 if (!TrustFlow.Approve(cli, e.Untrusted, s)) return null;
+            }
+            catch (WorkspaceException e) when (e.Asks.Count > 0 && attempt < 3 && cli.Interactive(s.Json))
+            {
+                cli.Ansi.MarkupLine($"[yellow]{(e.Asks.Count == 1 ? "A setting has" : "Some settings have")} no value yet.[/] It's kept on the workspace.");
+                foreach (var ask in e.Asks.Where(a => !values.ContainsKey(a.Name)))
+                {
+                    var prompt = new TextPrompt<string>($"  [bold]{Markup.Escape(ask.Name)}[/] [dim]({Markup.Escape(ask.Type)}, for {Markup.Escape(ask.Owner)})[/]:");
+                    if (ask.Type == "secret") prompt = prompt.Secret();
+                    values[ask.Name] = cli.Ansi.Prompt(prompt);
+                }
             }
             catch (Exception) when (held is not null)
             {

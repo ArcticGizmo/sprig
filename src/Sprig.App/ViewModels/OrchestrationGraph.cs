@@ -181,9 +181,9 @@ public sealed class OrchestrationGraph
             var dimmed = consumer.item.IsDimmed || (providerKey is not null && _items.TryGetValue(providerKey, out var p) && p.item.IsDimmed);
             var highlighted = selectedKey is not null && (consumerKey == selectedKey || providerKey == selectedKey);
             if (From(wire) is { } from)
-                lines.Add(new GraphWire(from.x, from.y, toX, toY, wire.Import, true, highlighted, dimmed && !highlighted, consumerKey, providerKey));
+                lines.Add(new GraphWire(from.x, from.y, toX, toY, wire.Setting, true, highlighted, dimmed && !highlighted, consumerKey, providerKey));
             else if (!wire.Filled)
-                lines.Add(new GraphWire(toX - Stub, toY, toX, toY, $"nothing fills {wire.Import}", false, highlighted, dimmed && !highlighted, consumerKey, null));
+                lines.Add(new GraphWire(toX - Stub, toY, toX, toY, $"asked for: {wire.Setting}", false, highlighted, dimmed && !highlighted, consumerKey, null));
         }
         // The same provider can feed one app through several values; one line says it.
         return lines.GroupBy(l => (l.ConsumerKey, l.ProviderKey, l.Label, l.X1, l.Y1)).Select(g => g.First()).ToArray();

@@ -41,12 +41,12 @@ public sealed class OrchestrationSummaryTests : IDisposable
             var pg = repo.Postgres("pg");
             var migrate = repo.DotNetJob("migrate", "tools/Migrate").WaitFor(pg);
             var catalog = repo.DotNet("catalog-api", ".").Http().WaitFor(pg, migrate);
-            repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Import<Url>("mail-smtp"));
+            repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Setting<Url>("mail-smtp"));
             repo.Export<Url>("catalog-url", catalog.Url);
         });
         var web = Add("shop-web", repo => repo.Node("web", ".").Http()
-            .Env("API", repo.Import<Url>("catalog-url"))
-            .Env("PAY", repo.Import<Url>("payments-url")));
+            .Env("API", repo.Setting<Url>("catalog-url"))
+            .Env("PAY", repo.Setting<Url>("payments-url")));
         var mail = _orchestration.Mailpit("mail");
         _orchestration.Bind("mail-smtp", mail.SmtpUrl);
         _orchestration.Group("web", web, services);
@@ -54,7 +54,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     }
 
     [Fact]
-    public void Cards_say_what_each_repo_runs_and_what_fills_each_need()
+    public void Cards_say_what_each_repo_runs_and_where_each_setting_comes_from()
     {
         Shop();
         var (loaded, plan) = Build();
@@ -65,9 +65,9 @@ public sealed class OrchestrationSummaryTests : IDisposable
         Assert.Equal("catalog-api, orders-api, then migrate first", services.Runs);
         Assert.Equal("pg", services.Infra);
         Assert.Equal("catalog-url", services.Offers);
-        Assert.Equal([new NeedRow("mail-smtp", "mail, added by the orchestration", true)], services.Needs);
+        Assert.Equal([new RepoSettingRow("mail-smtp", "mail, added by the orchestration", true)], services.Settings);
         var web = cards.Single(c => c.Name == "shop-web");
-        Assert.Equal([new NeedRow("catalog-url", "shop-services", true), new NeedRow("payments-url", "nothing fills it", false)], web.Needs);
+        Assert.Equal([new RepoSettingRow("catalog-url", "shop-services", true), new RepoSettingRow("payments-url", "asked for when a workspace is made", false)], web.Settings);
         Assert.Equal("Runs shop-services and shop-web together.", OrchestrationSummary.Description(loaded));
     }
 
@@ -77,7 +77,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
         Shop();
         var (_, plan) = Build();
 
-        Assert.Equal([new AddedRow("mail", "mailpit, one per workspace. Fills mail-smtp.")], OrchestrationSummary.Added(plan));
+        Assert.Equal([new AddedRow("mail", "mailpit, one per workspace. Gives mail-smtp.")], OrchestrationSummary.Added(plan));
         // A repo whose every app is in a group is named once.
         Assert.Equal([new PolicyRow("web", "shop-web, shop-services"), new PolicyRow("api", "catalog-api")], OrchestrationSummary.Policies(plan));
     }
@@ -100,7 +100,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     }
 
     [Fact]
-    public void Wires_join_what_offers_a_value_to_the_app_that_needs_it_and_a_need_nothing_fills_is_a_stub()
+    public void Wires_join_what_offers_a_value_to_the_app_that_takes_it_and_a_setting_to_ask_for_is_a_stub()
     {
         Shop();
         var (_, plan) = Build();
@@ -114,7 +114,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
         var catalog = lines.Single(l => l.Label == "catalog-url");
         Assert.Equal(("shop-web/web", "shop-services/catalog-api"), (catalog.ConsumerKey, catalog.ProviderKey));
         var stub = lines.Single(l => !l.Filled);
-        Assert.Equal("nothing fills payments-url", stub.Label);
+        Assert.Equal("asked for: payments-url", stub.Label);
         Assert.Equal("shop-web/web", stub.ConsumerKey);
     }
 
@@ -140,24 +140,24 @@ public sealed class OrchestrationSummaryTests : IDisposable
     }
 
     [Fact]
-    public void A_need_several_repos_offer_is_unfilled_and_one_the_repo_fills_itself_says_so()
+    public void A_setting_several_repos_offer_has_no_value_and_defaults_say_what_they_use()
     {
         Add("shop-services", repo =>
         {
-            repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Import<Url>("mail-smtp").OrElse(repo.Mailpit("mail").SmtpUrl));
+            repo.DotNet("orders-api", ".").Http()
+                .Env("Smtp__Url", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl))
+                .Env("Flag", repo.Setting<Text>("flag", "on"));
             repo.Export<Url>("catalog-url", "http://a");
         });
         Add("shop-legacy", repo => repo.Export<Url>("catalog-url", "http://b"));
-        Add("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("catalog-url")));
+        Add("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url")));
         var (loaded, plan) = Build();
 
         var cards = OrchestrationSummary.Cards(loaded, plan, new StoredDefinitions(_store.Paths));
 
-        Assert.Equal([new NeedRow("mail-smtp", "its own mail", true)], cards.Single(c => c.Name == "shop-services").Needs);
-        Assert.Equal([new NeedRow("catalog-url", "shop-services and shop-legacy all offer it", false)], cards.Single(c => c.Name == "shop-web").Needs);
-        var (repo, need) = Assert.Single(OrchestrationSummary.Unfilled(loaded, cards));
-        Assert.Equal(("shop-web", "catalog-url", "url"), (repo, need.Import, need.Type));
-        Assert.Equal(["shop-services", "shop-legacy"], need.Offers);
+        Assert.Equal([new RepoSettingRow("mail-smtp", "its own mail", true), new RepoSettingRow("flag", "its default", true)],
+            cards.Single(c => c.Name == "shop-services").Settings);
+        Assert.Equal([new RepoSettingRow("catalog-url", "shop-services and shop-legacy all offer it", false)], cards.Single(c => c.Name == "shop-web").Settings);
     }
 
     [Fact]
@@ -176,8 +176,8 @@ public sealed class OrchestrationSummaryTests : IDisposable
 
 public class OrchestrationChecklistTests
 {
-    static RepoCard Card(string name, string? problem = null, params NeedRow[] needs)
-        => new(name, name, null, true, "", "web", "none", "nothing", needs, problem);
+    static RepoCard Card(string name, string? problem = null, params RepoSettingRow[] settings)
+        => new(name, name, null, true, "", "web", "none", "nothing", settings, problem);
 
     static ChecklistState[] States(IReadOnlyList<ChecklistStep> steps) => steps.Select(s => s.State).ToArray();
 
@@ -186,7 +186,7 @@ public class OrchestrationChecklistTests
     {
         var steps = OrchestrationChecklist.Steps(pendingApprovals: 2, loadProblems: 0, cards: [], planned: false, otherErrors: 0);
 
-        Assert.Equal([ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
+        Assert.Equal([ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
         Assert.Equal(StepAction.Review, steps[0].Action);
         Assert.Equal("Review 2 files", steps[0].ActionLabel);
         Assert.Contains("2 files to read and approve", steps[0].Detail);
@@ -194,13 +194,12 @@ public class OrchestrationChecklistTests
     }
 
     [Fact]
-    public void A_need_nothing_fills_is_its_own_step_naming_the_repo_and_why_with_a_button_that_fills_it()
+    public void A_setting_to_ask_for_does_not_stand_in_the_way_of_a_workspace()
     {
-        var steps = OrchestrationChecklist.Steps(0, 0, [Card("shop-services", null, new NeedRow("mail-smtp", "nothing fills it", false))], planned: true, otherErrors: 0);
+        var steps = OrchestrationChecklist.Steps(0, 0, [Card("shop-services", null, new RepoSettingRow("payments-key", "asked for when a workspace is made", false))], planned: true, otherErrors: 0);
 
-        Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
-        Assert.StartsWith("mail-smtp (for shop-services): nothing fills it.", steps[2].Detail);
-        Assert.Equal((StepAction.FillNeeds, "Fill it…"), (steps[2].Action, steps[2].ActionLabel));
+        Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Done, ChecklistState.Open], States(steps));
+        Assert.False(OrchestrationChecklist.Blocks(steps));
     }
 
     [Fact]
@@ -211,8 +210,8 @@ public class OrchestrationChecklistTests
         Assert.StartsWith("shop-web: Its definition doesn't run", notRun[1].Detail);
 
         var errors = OrchestrationChecklist.Steps(0, 0, [Card("shop-web")], planned: true, otherErrors: 3);
-        Assert.Equal(ChecklistState.Open, errors[3].State);
-        Assert.Equal(StepAction.ShowValues, errors[3].Action);
+        Assert.Equal(ChecklistState.Open, errors[2].State);
+        Assert.Equal(StepAction.ShowValues, errors[2].Action);
     }
 
     [Fact]
@@ -220,7 +219,7 @@ public class OrchestrationChecklistTests
     {
         var steps = OrchestrationChecklist.Steps(0, 0, [Card("shop-web")], planned: true, otherErrors: 0);
 
-        Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Done, ChecklistState.Done, ChecklistState.Open], States(steps));
+        Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Done, ChecklistState.Open], States(steps));
         Assert.False(OrchestrationChecklist.Blocks(steps));
     }
 }
@@ -320,7 +319,7 @@ public class ReposViewModelTests
     [Theory]
     [InlineData("{catalog-api.http.url}", "catalog-api's url")]
     [InlineData("http://localhost:{web.http.port}/cart", "http://localhost:web's port/cart")]
-    [InlineData("{import.mail-smtp}", "its import mail-smtp")]
+    [InlineData("{setting.mail-smtp}", "its setting mail-smtp")]
     [InlineData("Host=x;Password=hunter2", "Host=x;Password=***")]
     public void Offers_are_described_in_words(string template, string expected) => Assert.Equal(expected, ReposViewModel.Describe(template));
 

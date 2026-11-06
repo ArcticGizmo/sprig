@@ -13,7 +13,7 @@ public static class SampleDefinition
         var pg = repo.Container("pg", "postgres:17")
             .Endpoint("tcp", targetPort: 5432);
 
-        var smtp = repo.Import<Url>("mail-smtp");                // filled in by the system
+        var smtp = repo.Setting<Url>("mail-smtp", "smtp://localhost:1025");
 
         // The catalog owns stock levels.
         var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")

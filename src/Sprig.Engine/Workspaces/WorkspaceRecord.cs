@@ -16,6 +16,8 @@ public sealed record WorkspaceRepo(string RepoPath, string Name, string Source, 
 /// <param name="Branch">Null when the repos run in place.</param>
 /// <param name="Folder">The folder holding the workspace's worktrees; null when the repos run in place.</param>
 /// <param name="LastUpAt">When it last finished coming up; null for a record from before this was kept.</param>
+/// <param name="Values">Values set on this workspace, by setting name. They win over the orchestration's and the repos'
+/// defaults.</param>
 public sealed record WorkspaceRecord(
     string Orchestration,
     string OrchestrationPath,
@@ -30,7 +32,8 @@ public sealed record WorkspaceRecord(
     DateTimeOffset UpdatedAt,
     string? Folder = null,
     string? Error = null,
-    DateTimeOffset? LastUpAt = null)
+    DateTimeOffset? LastUpAt = null,
+    IReadOnlyDictionary<string, string>? Values = null)
 {
     public bool InPlace => Branch is null;
 

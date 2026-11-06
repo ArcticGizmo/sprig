@@ -46,7 +46,7 @@ public partial class ReposViewModel : PageViewModel
     public ObservableCollection<RepoFact> Runs { get; } = [];
     public ObservableCollection<RepoFact> Infra { get; } = [];
     public ObservableCollection<RepoFact> Offers { get; } = [];
-    public ObservableCollection<RepoFact> Needs { get; } = [];
+    public ObservableCollection<RepoFact> Settings { get; } = [];
 
     public DefinitionEditorViewModel Editor { get; }
 
@@ -88,7 +88,7 @@ public partial class ReposViewModel : PageViewModel
     public bool HasSelection => Selected is not null;
     public bool IsEmpty => Repos.Count == 0;
     public bool HasOffers => Offers.Count > 0;
-    public bool HasNeeds => Needs.Count > 0;
+    public bool HasSettings => Settings.Count > 0;
     public bool HasInfra => Infra.Count > 0;
 
     public string KeptExplanation => Selected switch
@@ -199,7 +199,7 @@ public partial class ReposViewModel : PageViewModel
         Runs.Clear();
         Infra.Clear();
         Offers.Clear();
-        Needs.Clear();
+        Settings.Clear();
         HasModel = false;
         NeedsApproval = false;
         _pending = null;
@@ -209,7 +209,7 @@ public partial class ReposViewModel : PageViewModel
     void RaiseSections()
     {
         OnPropertyChanged(nameof(HasOffers));
-        OnPropertyChanged(nameof(HasNeeds));
+        OnPropertyChanged(nameof(HasSettings));
         OnPropertyChanged(nameof(HasInfra));
     }
 
@@ -261,10 +261,10 @@ public partial class ReposViewModel : PageViewModel
                 Infra.Add(new RepoFact(service.Name, $"from {file.File} · {Endpoints(service.Endpoints)}"));
         foreach (var export in model.Exports)
             Offers.Add(new RepoFact(export.Name, $"{Describe(export.Value)} · a {export.Type}"));
-        foreach (var import in model.Imports)
-            Needs.Add(new RepoFact(import.Name, import.OrElse is { } own
-                ? $"a {import.Type}; an orchestration can fill it, else it uses {Fallback(own)}"
-                : $"a {import.Type}; each orchestration that uses this repo fills it, so it can't run alone"));
+        foreach (var setting in model.Settings)
+            Settings.Add(new RepoFact(setting.Name, setting.Default is { } own
+                ? $"a {setting.Type}; {Fallback(own)} unless a workspace or orchestration gives another"
+                : $"a {setting.Type}; asked for when a workspace is made"));
         HasModel = true;
         RaiseSections();
     }
@@ -292,7 +292,7 @@ public partial class ReposViewModel : PageViewModel
         return string.Concat(parts.Select(p => p switch
         {
             TextPart t => ValueMask.Apply(t.Text),
-            RefPart { Path: var path } when path.StartsWith("import.", StringComparison.Ordinal) => $"its import {path["import.".Length..]}",
+            RefPart { Path: var path } when path.StartsWith("setting.", StringComparison.Ordinal) => $"its setting {path["setting.".Length..]}",
             RefPart { Path: var path } when path.Split('.') is [var resource, _, var what] => $"{resource}'s {what}",
             RefPart r => r.Path,
             _ => "",

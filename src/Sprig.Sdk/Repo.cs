@@ -16,7 +16,7 @@ public sealed class RepoBuilder : DefinitionBuilder
     readonly List<AppResource> _apps = [];
     readonly List<JobResource> _jobs = [];
     readonly List<ComposeFileResource> _compose = [];
-    readonly List<ImportModel> _imports = [];
+    readonly List<SettingModel> _settings = [];
     readonly List<ExportModel> _exports = [];
 
     internal RepoBuilder(string name, SourceLocation location) : base(name, location) { }
@@ -50,13 +50,29 @@ public sealed class RepoBuilder : DefinitionBuilder
         return compose;
     }
 
-    /// <summary>Ask the orchestration for a value. It binds to an export of the same name from another repo, or to a value
-    /// the orchestration supplies itself; <see cref="Import{T}.OrElse(Expr)"/> says what to use when neither does.</summary>
-    public Import<T> Import<T>(string name, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
+    /// <summary>
+    /// A value the repo takes from outside, and what to use when nothing else gives one, so the repo runs on its own.
+    /// A value set on the workspace wins, then an orchestration's binding or another repo's export of the same name.
+    /// The default can be the repo's own infra, such as <c>repo.Mailpit("mail").SmtpUrl</c>; infra only a default uses is
+    /// left out of a workspace where something else gives the value. Without a default, sprig asks for a value when a
+    /// workspace is made.
+    /// </summary>
+    // One method with an optional default, not two overloads: with a default-less overload, a string default would be
+    // taken as the caller file path.
+    public Setting<T> Setting<T>(string name, Expr? @default = null, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
+        => AddSetting<T>(name, @default?.ToTemplate(), file, line);
+
+    /// <inheritdoc cref="Setting{T}(string, Expr?, string, int)"/>
+    public Setting<T> Setting<T>(string name, [InterpolatedStringHandlerArgument] ExprHandler @default, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
+        => AddSetting<T>(name, @default.ToExpr().ToTemplate(), file, line);
+
+    [Obsolete("Import is Setting now, with what to use on its own as a second argument: repo.Setting<Url>(\"name\", default). Leave the default out to be asked for a value when a workspace is made.", error: true)]
+    public Setting<T> Import<T>(string name) where T : ValueType => throw new NotSupportedException();
+
+    Setting<T> AddSetting<T>(string name, string? @default, string file, int line) where T : ValueType
     {
-        var index = _imports.Count;
-        _imports.Add(new ImportModel(name, ValueType.NameOf<T>(), new SourceLocation(file, line)));
-        return new Import<T>(name) { SetOrElse = value => _imports[index] = _imports[index] with { OrElse = value.ToTemplate() } };
+        _settings.Add(new SettingModel(name, ValueType.NameOf<T>(), new SourceLocation(file, line), @default));
+        return new Setting<T>(name);
     }
 
     /// <summary>Make a value available to other repos in the orchestration under <paramref name="name"/>.</summary>
@@ -77,7 +93,7 @@ public sealed class RepoBuilder : DefinitionBuilder
         Containers: Containers.Select(c => c.Build()).ToArray(),
         Apps: [.. _apps.Select(a => a.Build()), .. _jobs.Select(j => j.Build())],
         ComposeFiles: _compose.Select(c => c.Build()).ToArray(),
-        Imports: _imports.ToArray(),
+        Settings: _settings.ToArray(),
         Exports: _exports.ToArray());
 
     AppResource AddApp(string name, string kind, string path, string file, int line)

@@ -29,16 +29,22 @@ public class ExprTests
     }
 
     [Fact]
-    public void Imports_and_exports_carry_their_type_and_the_line_they_were_written_on()
+    public void Settings_and_exports_carry_their_type_default_and_the_line_they_were_written_on()
     {
         var model = Describe(repo =>
         {
             var api = repo.DotNet("api", "src/Api").Http();
-            repo.Import<Url>("mail-smtp");
+            var mail = repo.Mailpit("mail");
+            repo.Setting<Url>("mail-smtp", mail.SmtpUrl);
+            repo.Setting<Url>("catalog-url", "http://localhost:5100");
+            repo.Setting<Secret>("payments-key");
             repo.Export<Url>("api-url", api.Url);
         });
 
-        Assert.Equal(new ImportModel("mail-smtp", "url", model.Imports[0].Location), model.Imports[0]);
+        Assert.Equal(new SettingModel("mail-smtp", "url", model.Settings[0].Location, "smtp://localhost:{mail.smtp.port}"), model.Settings[0]);
+        Assert.Equal("http://localhost:5100", model.Settings[1].Default);
+        Assert.Equal(("secret", null), (model.Settings[2].Type, model.Settings[2].Default));
+        Assert.True(model.Settings[0].Location.Line > 0);
         Assert.Equal("{api.http.url}", model.Exports[0].Value);
         Assert.True(model.Exports[0].Location.Line > 0);
         Assert.EndsWith("ExprTests.cs", model.Exports[0].Location.File);

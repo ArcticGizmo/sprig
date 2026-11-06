@@ -147,7 +147,7 @@ public sealed class AppResource : IResource
     }
 
     /// <summary>A quick link to any url this repo can reach: another of its resources (<c>queue.UrlOf("ui")</c>), an
-    /// import, or a page outside sprig.</summary>
+    /// setting, or a page outside sprig.</summary>
     public AppResource Link(string label, Expr url, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
     {
         _links.Add(new LinkModel(label, url.ToTemplate(), new SourceLocation(file, line)));

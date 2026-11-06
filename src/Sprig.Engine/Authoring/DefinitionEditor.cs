@@ -83,31 +83,31 @@ public static class DefinitionEditor
         return Apply(text, args.CloseParenToken.SpanStart, $"{prefix}pin: {Literal(pin)}");
     }
 
-    /// <summary>Add <c>var variable = repo.Import&lt;Type&gt;("name");</c> after the last import, or after
+    /// <summary>Add <c>var variable = repo.Setting&lt;Type&gt;("name");</c> after the last setting, or after
     /// <c>Repo.Describe</c>.</summary>
-    public static EditResult AddImport(string text, string name, string type, string variable)
+    public static EditResult AddSetting(string text, string name, string type, string variable)
     {
         var root = Parse(text);
         var statements = root.Members.OfType<GlobalStatementSyntax>().Select(g => g.Statement).ToList();
 
         var describe = statements.FirstOrDefault(s => s.DescendantNodes().OfType<InvocationExpressionSyntax>()
             .Any(i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "Describe" }));
-        if (describe is null) return EditResult.Fail(text, "no Repo.Describe(...) to add the import after");
+        if (describe is null) return EditResult.Fail(text, "no Repo.Describe(...) to add the setting after");
 
         var repoVariable = (describe as LocalDeclarationStatementSyntax)?.Declaration.Variables[0].Identifier.Text ?? "repo";
-        var imports = statements.Where(s => s.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Any(i => i.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax { Identifier.Text: "Import" } })).ToList();
+        var settings = statements.Where(s => s.DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .Any(i => i.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax { Identifier.Text: "Setting" } })).ToList();
 
-        if (imports.Any(s => s.DescendantNodes().OfType<LiteralExpressionSyntax>().Any(l => l.Token.ValueText == name)))
-            return EditResult.Fail(text, $"the definition already imports '{name}'");
+        if (settings.Any(s => s.DescendantNodes().OfType<LiteralExpressionSyntax>().Any(l => l.Token.ValueText == name)))
+            return EditResult.Fail(text, $"the definition already has a setting '{name}'");
         if (statements.OfType<LocalDeclarationStatementSyntax>().Any(s => s.Declaration.Variables.Any(v => v.Identifier.Text == variable)))
             return EditResult.Fail(text, $"a variable named '{variable}' already exists");
 
-        var after = imports.LastOrDefault() ?? describe;
+        var after = settings.LastOrDefault() ?? describe;
         var nl = NewLine(text);
-        var statement = $"var {variable} = {repoVariable}.Import<{type}>({Literal(name)});";
-        // Directly under the last import, or as its own paragraph under Describe.
-        var insert = imports.Count > 0 ? nl + statement : nl + nl + statement;
+        var statement = $"var {variable} = {repoVariable}.Setting<{type}>({Literal(name)});";
+        // Directly under the last setting, or as its own paragraph under Describe.
+        var insert = settings.Count > 0 ? nl + statement : nl + nl + statement;
         return Apply(text, InsertionPointAfter(text, after), insert);
     }
 

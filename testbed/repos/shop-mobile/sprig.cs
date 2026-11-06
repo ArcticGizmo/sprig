@@ -3,7 +3,8 @@ using Sprig;
 
 var repo = Repo.Describe("shop-mobile");
 
-var catalog = repo.Import<Url>("catalog-url");
+// shop-services' catalog-api when it runs in place; a workspace or an orchestration can point it elsewhere.
+var catalog = repo.Setting<Url>("catalog-url", "http://localhost:5100");
 
 // Ready when Vite says so, rather than when its port first opens.
 var mobile = repo.Node("mobile", ".").Http().ReadyOnLog(@"ready in \d+");

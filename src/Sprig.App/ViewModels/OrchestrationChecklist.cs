@@ -6,7 +6,7 @@ namespace Sprig.App.ViewModels;
 public enum ChecklistState { Done, Open, Waiting }
 
 /// <summary>What a step's button does; the page turns it into a command.</summary>
-public enum StepAction { None, Review, EditCode, FillNeeds, ShowValues, Start }
+public enum StepAction { None, Review, EditCode, ShowValues, Start }
 
 /// <summary>One step on the way to an orchestration's first workspace.</summary>
 public sealed record ChecklistStep(int Number, string Title, string Detail, ChecklistState State, StepAction Action = StepAction.None, string ActionLabel = "")
@@ -28,7 +28,7 @@ public static class OrchestrationChecklist
     /// <param name="loadProblems">Problems that stopped the orchestration from planning at all.</param>
     /// <param name="cards">The orchestration's repos, as far as they're known.</param>
     /// <param name="planned">Whether it got as far as a plan.</param>
-    /// <param name="otherErrors">Plan errors besides needs nothing fills.</param>
+    /// <param name="otherErrors">The plan's errors.</param>
     public static IReadOnlyList<ChecklistStep> Steps(int pendingApprovals, int loadProblems, IReadOnlyList<RepoCard> cards, bool planned, int otherErrors)
     {
         var steps = new List<ChecklistStep>();
@@ -58,12 +58,6 @@ public static class OrchestrationChecklist
                 ? $"{string.Join(", ", notRun.Select(c => c.Name))}: {notRun[0].Problem}."
                 : $"{Count(loadProblems, "problem")} {(loadProblems == 1 ? "stops" : "stop")} it planning; see below.",
             StepAction.EditCode, "Open the code");
-
-        var unfilled = cards.SelectMany(c => c.Needs.Where(n => !n.Filled).Select(n => (repo: c.Name, need: n))).ToArray();
-        Add("What the repos need", unfilled.Length == 0,
-            "Every need is filled.",
-            string.Join("; ", unfilled.Select(u => $"{u.need.Import} (for {u.repo}): {u.need.FilledBy}")) + ". Sprig can write the line that fills it.",
-            StepAction.FillNeeds, unfilled.Select(u => u.need.Import).Distinct().Count() is var n && n == 1 ? "Fill it…" : $"Fill {n}…");
 
         Add("The plan checks out", planned && otherErrors == 0,
             "No problems.",

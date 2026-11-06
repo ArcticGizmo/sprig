@@ -28,7 +28,7 @@ Two orchestrations sit beside the repos:
 
   Running them again is harmless: an ID already listed for the same folder is left as it is.
 
-A repo on the Repos list also runs on its own, with no orchestration: `sprig up shop-services --in-place`. `shop-services` brings its own Mailpit for that (`repo.Import<Url>("mail-smtp").OrElse(...)`), which storefront's workspaces leave out, since storefront supplies one.
+A repo on the Repos list also runs on its own, with no orchestration: `sprig up shop-services --in-place`. `shop-services` brings its own Mailpit for that (`repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl)`), which storefront's workspaces leave out, since storefront supplies one. `shop-web` and `shop-mobile` run on their own too: their API urls default to shop-services' usual ports (5100 and 5200), so they work against shop-services run in place, and `--set catalog-url=...` points a workspace elsewhere.
 
 ## What proves the wiring
 

@@ -32,7 +32,7 @@ public sealed record RepoModel(
     IReadOnlyList<ContainerModel> Containers,
     IReadOnlyList<AppModel> Apps,
     IReadOnlyList<ComposeFileModel> ComposeFiles,
-    IReadOnlyList<ImportModel> Imports,
+    IReadOnlyList<SettingModel> Settings,
     IReadOnlyList<ExportModel> Exports)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
 
@@ -106,8 +106,8 @@ public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, st
 /// <summary>One env var. <see cref="File"/> is null for a process env var, else the env file it's written to.</summary>
 public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location);
 
-/// <param name="OrElse">A template for the value to use when nothing else fills the import; null to need one.</param>
-public sealed record ImportModel(string Name, string Type, SourceLocation Location, string? OrElse = null);
+/// <param name="Default">A template for the value to use when nothing else gives one; null to be asked for one.</param>
+public sealed record SettingModel(string Name, string Type, SourceLocation Location, string? Default = null);
 
 public sealed record ExportModel(string Name, string Type, string Value, SourceLocation Location);
 
@@ -130,8 +130,8 @@ public sealed record ComposeOverrideModel(string Path, string Value, SourceLocat
 /// <param name="Use">A repo from sprig's Repos list, by ID: its folder and definition both come from there.</param>
 public sealed record RepoRefModel(string Path, SourceLocation Location, string? Use = null);
 
-/// <summary>The orchestration's answer for an import: a value it supplies, or a named repo's export.</summary>
-public sealed record BindingModel(string Import, string Value, SourceLocation Location);
+/// <summary>The orchestration's answer for a setting: a value it supplies, or a named repo's export.</summary>
+public sealed record BindingModel(string Setting, string Value, SourceLocation Location);
 
 public sealed record GroupModel(string Name, IReadOnlyList<GroupMemberModel> Members, SourceLocation Location);
 

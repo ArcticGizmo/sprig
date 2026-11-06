@@ -13,7 +13,8 @@ namespace Sprig.Engine.Planning;
 /// <param name="PortPolicy">The workspace's port policy, recorded in the plan.</param>
 /// <param name="WorktreesFrom">Where the workspace's worktrees branched from, recorded in the plan; null when it runs its
 /// repos in place, or for a plan that isn't a workspace's.</param>
-/// <param name="Alone">The orchestration is one repo run on its own, so a problem says how to fill what it needs alone.</param>
+/// <param name="Values">Values set on the workspace, by setting name. They win over everything else, for every repo
+/// with a setting of that name.</param>
 public sealed record PlanInput(
     OrchestrationModel Orchestration,
     IReadOnlyDictionary<string, RepoModel> Repos,
@@ -25,7 +26,7 @@ public sealed record PlanInput(
     Random? Random = null,
     string PortPolicy = "stable",
     string? WorktreesFrom = null,
-    bool Alone = false);
+    IReadOnlyDictionary<string, string>? Values = null);
 
 /// <summary>The services in a repo's compose file.</summary>
 /// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between workspaces.</param>
@@ -37,7 +38,7 @@ public sealed record ComposeFileInfo(IReadOnlyList<string> Services, IReadOnlyLi
 
 /// <summary>
 /// Joins an orchestration and its repos into a <see cref="Plan"/>. Names are private to the repo (or orchestration)
-/// that declares them, so two repos can each have a <c>pg</c>; the only way between repos is an import answered by an
+/// that declares them, so two repos can each have a <c>pg</c>; the only way between repos is a setting given by an
 /// export or an orchestration binding. Problems are collected rather than thrown, so one plan reports everything
 /// that's wrong.
 /// </summary>
@@ -63,6 +64,7 @@ public static class Planner
     sealed class Run(PlanInput input)
     {
         readonly List<PlanProblem> _problems = [];
+        readonly List<PlannedAsk> _asks = [];
         readonly List<PlannedPort> _ports = [];
         readonly List<Scope> _scopes = [];
         Scope _orchestration = null!;
@@ -89,7 +91,8 @@ public static class Planner
 
             return new Plan(
                 input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
-                _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links));
+                _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links),
+                _asks.Count > 0 ? _asks : null);
         }
 
         // ---- scopes and names ----
@@ -411,9 +414,9 @@ public static class Planner
 
         void CheckUnusedBindings()
         {
-            var imported = _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Imports.Select(i => i.Name)).ToHashSet();
-            foreach (var binding in input.Orchestration.Bindings.Where(b => !imported.Contains(b.Import)))
-                Warn($"the orchestration binds '{binding.Import}', but no repo imports it", binding.Location);
+            var settings = _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Settings.Select(i => i.Name)).ToHashSet();
+            foreach (var binding in input.Orchestration.Bindings.Where(b => !settings.Contains(b.Setting)))
+                Warn($"the orchestration binds '{binding.Setting}', but no repo has that setting", binding.Location);
         }
 
         // ---- resolution ----
@@ -439,8 +442,8 @@ public static class Planner
                 if (resolved is null)
                 {
                     ok = false;
-                    if (path.StartsWith("import.", StringComparison.Ordinal) && Unfilled(scope, path["import.".Length..]))
-                        sources.Add(new ValueSource(null, null, null, path["import.".Length..]));
+                    if (path.StartsWith(SettingPrefix, StringComparison.Ordinal) && Unfilled(scope, path[SettingPrefix.Length..]))
+                        sources.Add(new ValueSource(null, null, null, path[SettingPrefix.Length..]));
                     continue;
                 }
                 value.Append(resolved.Value.Value);
@@ -450,26 +453,29 @@ public static class Planner
             return new PlannedValue(template, ok ? value.ToString() : null, via, sources.Distinct().ToArray());
         }
 
-        /// <summary>Nothing answers the import: no orchestration binding, no other repo exports it, and the repo has no
-        /// fallback of its own.</summary>
+        const string SettingPrefix = "setting.";
+
+        /// <summary>Nothing gives the setting a value: not the workspace, the orchestration, another repo's export or
+        /// the repo's default.</summary>
         bool Unfilled(Scope scope, string name)
             => scope.Repo is not null
-               && scope.Repo.Imports.FirstOrDefault(i => i.Name == name)?.OrElse is null
+               && scope.Repo.Settings.FirstOrDefault(i => i.Name == name)?.Default is null
                && !FilledElsewhere(scope.RepoPath!, name);
 
-        /// <summary>The orchestration binds the import, or another repo exports it.</summary>
+        /// <summary>The workspace sets it, the orchestration binds it, or another repo exports it.</summary>
         bool FilledElsewhere(string repoPath, string name)
-            => input.Orchestration.Bindings.Any(b => b.Import == name)
+            => input.Values?.ContainsKey(name) == true
+               || input.Orchestration.Bindings.Any(b => b.Setting == name)
                || input.Repos.Any(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == name));
 
         /// <summary>
-        /// Containers of <paramref name="repo"/> that only its fallbacks use, where something else fills every import
-        /// those fallbacks are for. A repo can bring its own mail catcher for when it runs alone without a workspace of an
+        /// Containers of <paramref name="repo"/> that only its defaults use, where something else gives every setting
+        /// those defaults are for. A repo can bring its own mail catcher for when it runs alone without a workspace of an
         /// orchestration that brings one running two.
         /// </summary>
         HashSet<string> UnneededFallbackInfra(string repoPath, RepoModel repo)
         {
-            var fallbacks = repo.Imports.Where(i => i.OrElse is not null).ToArray();
+            var fallbacks = repo.Settings.Where(i => i.Default is not null).ToArray();
             if (fallbacks.Length == 0) return [];
 
             var usedElsewhere = new HashSet<string>(StringComparer.Ordinal);
@@ -492,10 +498,10 @@ public static class Planner
 
             var needed = new HashSet<string>(StringComparer.Ordinal);
             var fallbackOnly = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var import in fallbacks)
+            foreach (var setting in fallbacks)
             {
-                var named = ResourcesIn(import.OrElse!).Where(r => repo.Containers.Any(c => c.Name == r) && !usedElsewhere.Contains(r));
-                if (FilledElsewhere(repoPath, import.Name)) fallbackOnly.UnionWith(named);
+                var named = ResourcesIn(setting.Default!).Where(r => repo.Containers.Any(c => c.Name == r) && !usedElsewhere.Contains(r));
+                if (FilledElsewhere(repoPath, setting.Name)) fallbackOnly.UnionWith(named);
                 else needed.UnionWith(named);
             }
             fallbackOnly.ExceptWith(needed);
@@ -510,28 +516,28 @@ public static class Planner
             catch (FormatException) { return []; }
             return parts.OfType<RefPart>()
                 .Select(p => p.Path)
-                .Where(p => !p.StartsWith("import.", StringComparison.Ordinal) && !p.StartsWith("export.", StringComparison.Ordinal) && !p.StartsWith("workspace.", StringComparison.Ordinal))
+                .Where(p => !p.StartsWith(SettingPrefix, StringComparison.Ordinal) && !p.StartsWith("export.", StringComparison.Ordinal) && !p.StartsWith("workspace.", StringComparison.Ordinal))
                 .Select(p => p.Split('.')[0]);
         }
 
-        /// <summary>What crossed an import is labelled with it, as the asking app names it. A literal value still came
-        /// from somewhere: the repo or orchestration that supplied it.</summary>
-        static IReadOnlyList<ValueSource> Crossed(IReadOnlyList<ValueSource> sources, string owner, string import)
-            => sources.Count == 0 ? [new ValueSource(owner, null, null, import)] : sources.Select(s => s with { Import = import }).ToArray();
+        /// <summary>What crossed a setting is labelled with it, as the asking app names it. A literal value still came
+        /// from somewhere: the repo, orchestration or workspace that supplied it.</summary>
+        static IReadOnlyList<ValueSource> Crossed(IReadOnlyList<ValueSource> sources, string owner, string setting)
+            => sources.Count == 0 ? [new ValueSource(owner, null, null, setting)] : sources.Select(s => s with { Setting = setting }).ToArray();
 
         Resolved? ResolveRef(Scope scope, string path, SourceLocation location, HashSet<string> visiting)
         {
             var key = scope.Owner + "|" + path;
             if (!visiting.Add(key))
             {
-                Problem($"'{path}' refers back to itself through an import or export", location);
+                Problem($"'{path}' refers back to itself through a setting or export", location);
                 return null;
             }
 
             try
             {
                 if (path == "workspace.name") return new Resolved(input.Workspace, ["workspace name"], []);
-                if (path.StartsWith("import.", StringComparison.Ordinal)) return ResolveImport(scope, path["import.".Length..], location, visiting);
+                if (path.StartsWith(SettingPrefix, StringComparison.Ordinal)) return ResolveSetting(scope, path[SettingPrefix.Length..], location, visiting);
                 if (path.StartsWith("export.", StringComparison.Ordinal)) return ResolveNamedExport(scope, path["export.".Length..], location, visiting);
                 return ResolveEndpoint(scope, path, location);
             }
@@ -553,7 +559,7 @@ public static class Planner
             if (!scope.Resources.TryGetValue(resourceName, out var resource))
             {
                 Problem($"'{resourceName}' isn't declared in {scope.Owner}" +
-                        (scope.Repo is not null ? "; to use something from another repo, import it" : ""), location);
+                        (scope.Repo is not null ? "; to use something from another repo, make it a setting" : ""), location);
                 return null;
             }
             if (!resource.Endpoints.TryGetValue(endpointName, out var endpoint))
@@ -575,22 +581,30 @@ public static class Planner
             return new Resolved($"{scheme}://localhost:{port}", [label], reached);
         }
 
-        Resolved? ResolveImport(Scope scope, string name, SourceLocation location, HashSet<string> visiting)
+        /// <summary>
+        /// A setting's value, from the first of: the workspace, the orchestration's binding, the one other repo that
+        /// exports the name, the repo's default. With none of them it's asked for, which isn't a problem: the workspace
+        /// is given a value before it comes up.
+        /// </summary>
+        Resolved? ResolveSetting(Scope scope, string name, SourceLocation location, HashSet<string> visiting)
         {
             if (scope.Repo is null)
             {
-                Problem($"the orchestration can't import '{name}'; bind it to a value instead", location);
+                Problem($"the orchestration has no setting '{name}'; bind it to a value instead", location);
                 return null;
             }
-            var declared = scope.Repo.Imports.FirstOrDefault(i => i.Name == name);
+            var declared = scope.Repo.Settings.FirstOrDefault(i => i.Name == name);
             var at = declared?.Location ?? location;
 
-            var binding = input.Orchestration.Bindings.FirstOrDefault(b => b.Import == name);
+            if (input.Values?.TryGetValue(name, out var set) == true)
+                return new Resolved(set, [$"setting {name} ← this workspace"], [new ValueSource(ValueSource.Workspace, null, null, name)]);
+
+            var binding = input.Orchestration.Bindings.FirstOrDefault(b => b.Setting == name);
             if (binding is not null)
             {
                 var bound = Resolve(_orchestration, binding.Value, binding.Location);
                 if (bound.Value is null) return null;
-                return new Resolved(bound.Value, [$"import {name} ← the orchestration", .. bound.Via], Crossed(bound.Sources ?? [], _orchestration.Owner, name));
+                return new Resolved(bound.Value, [$"setting {name} ← the orchestration", .. bound.Via], Crossed(bound.Sources ?? [], _orchestration.Owner, name));
             }
 
             var exporters = _scopes
@@ -598,17 +612,16 @@ public static class Planner
                 .SelectMany(s => s.Repo!.Exports.Where(e => e.Name == name).Select(e => (scope: s, export: e)))
                 .ToList();
 
-            if (exporters.Count == 0 && declared?.OrElse is { } fallback)
+            if (exporters.Count == 0 && declared?.Default is { } fallback)
             {
                 var own = ResolveTemplate(scope, fallback, at, visiting);
                 if (own is null) return null;
-                return new Resolved(own.Value.Value, [$"import {name} ← {scope.Owner}'s own (OrElse)", .. own.Value.Via], Crossed(own.Value.Sources, scope.Owner, name));
+                return new Resolved(own.Value.Value, [$"setting {name} ← {scope.Owner}'s default", .. own.Value.Via], Crossed(own.Value.Sources, scope.Owner, name));
             }
             if (exporters.Count == 0)
             {
-                Problem(input.Alone
-                    ?$"{scope.Owner} imports '{name}', and nothing fills it when it runs alone: run it in an orchestration that does, or give it a fallback, as in repo.Import<…>(\"{name}\").OrElse(…)"
-                    : $"{scope.Owner} imports '{name}', but no repo in the orchestration exports it and the orchestration doesn't bind it", at);
+                if (!_asks.Any(a => a.Owner == scope.Owner && a.Name == name))
+                    _asks.Add(new PlannedAsk(scope.Owner, name, declared?.Type ?? "text", at));
                 return null;
             }
             if (exporters.Count > 1)
@@ -621,12 +634,12 @@ public static class Planner
             var (owner, export) = exporters[0];
             if (declared is not null && declared.Type != export.Type)
             {
-                Problem($"{scope.Owner} imports '{name}' as {declared.Type}, but {owner.Owner} exports it as {export.Type}", at);
+                Problem($"{scope.Owner}'s setting '{name}' is a {declared.Type}, but {owner.Owner} exports it as {export.Type}", at);
                 return null;
             }
             var value = ResolveTemplate(owner, export.Value, export.Location, visiting);
             if (value is null) return null;
-            return new Resolved(value.Value.Value, [$"import {name} ← {owner.Owner}", .. value.Value.Via], Crossed(value.Value.Sources, owner.Owner, name));
+            return new Resolved(value.Value.Value, [$"setting {name} ← {owner.Owner}", .. value.Value.Via], Crossed(value.Value.Sources, owner.Owner, name));
         }
 
         Resolved? ResolveNamedExport(Scope scope, string rest, SourceLocation location, HashSet<string> visiting)

@@ -54,7 +54,7 @@ public sealed class PlanView
         var values = plan.Apps.SelectMany(a => a.Env.Select(e => (key: (a.Owner, a.Name, e.Key), e.Value.Value)))
             .GroupBy(x => x.key).ToDictionary(g => g.Key, g => g.First().Value);
         Wiring = plan.Wires()
-            .Where(w => w.Import is not null)
+            .Where(w => w.Setting is not null)
             .Select(w => new WiringRow($"{w.ConsumerOwner} / {w.Consumer}", w.Key, Provider(w),
                 values.GetValueOrDefault((w.ConsumerOwner, w.Consumer, w.Key)) is { } v ? ValueMask.Apply(v) : "unresolved"))
             .ToArray();
@@ -85,14 +85,19 @@ public sealed class PlanView
         .ToArray();
 
     static SettingRow Row(string key, string? file, PlannedValue value)
-        => new(key, file, value.Value is { } v ? ValueMask.Apply(v) : "unresolved", string.Join(" → ", value.Via), value.Value is null);
+        => new(key, file, value.Value is { } v ? ValueMask.Apply(v) : Asked(value) is { } asked ? $"asked for: {asked}" : "unresolved",
+            string.Join(" → ", value.Via), value.Value is null);
 
-    /// <summary>"shop-services / catalog-api (catalog-url)", or "nothing fills catalog-url".</summary>
+    static string? Asked(PlannedValue value)
+        => (value.Sources ?? []).Where(s => s.Owner is null && s.Setting is not null).Select(s => s.Setting!).ToArray() is { Length: > 0 } names
+            ? string.Join(", ", names) : null;
+
+    /// <summary>"shop-services / catalog-api (catalog-url)", or "asked for: catalog-url".</summary>
     static string Provider(PlannedWire wire) => wire switch
     {
-        { Filled: false } => $"nothing fills {wire.Import}",
-        { Provider: { } resource } => $"{wire.ProviderOwner} / {resource} ({wire.Import})",
-        _ => $"{wire.ProviderOwner} ({wire.Import})",
+        { Filled: false } => $"asked for: {wire.Setting}",
+        { Provider: { } resource } => $"{wire.ProviderOwner} / {resource} ({wire.Setting})",
+        _ => $"{wire.ProviderOwner} ({wire.Setting})",
     };
 
     static string Relative(string file, string root)

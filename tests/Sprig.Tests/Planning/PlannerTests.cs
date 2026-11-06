@@ -42,7 +42,7 @@ public class PlannerTests
             var catalog = repo.DotNet("catalog-api", ".").Http(urlEnv: "Urls").WaitFor(pg, migrate);
             repo.Export<Url>("catalog-url", catalog.Url);
         });
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("catalog-url")));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url")));
 
         var plan = f.Plan();
 
@@ -55,10 +55,10 @@ public class PlannerTests
     }
 
     static void Orders(RepoBuilder repo)
-        => repo.Node("orders", ".").Http().Env("SMTP", repo.Import<Url>("mail-smtp").OrElse(repo.Mailpit("mail").SmtpUrl));
+        => repo.Node("orders", ".").Http().Env("SMTP", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl));
 
     [Fact]
-    public void An_import_nothing_fills_uses_its_fallback_and_its_infra()
+    public void A_setting_nothing_else_gives_uses_its_default_and_its_infra()
     {
         var f = new Fixture();
         f.Add("../shop-services", Orders);
@@ -66,16 +66,29 @@ public class PlannerTests
         var plan = f.Plan();
 
         Assert.Empty(plan.Problems);
+        Assert.Empty(plan.ToAsk);
         var mail = Assert.Single(plan.Containers);
         Assert.Equal(("shop-services", "mail"), (mail.Owner, mail.Name));
         var smtp = plan.Apps.Single().Env.Single().Value;
         Assert.Equal($"smtp://localhost:{plan.Ports.Single(p => p.Endpoint == "smtp").Port}", smtp.Value);
-        Assert.StartsWith("import mail-smtp ← shop-services's own", smtp.Via[0]);
-        Assert.Equal("mail-smtp", Assert.Single(plan.Wires()).Import);
+        Assert.StartsWith("setting mail-smtp ← shop-services's default", smtp.Via[0]);
+        Assert.Equal("mail-smtp", Assert.Single(plan.Wires()).Setting);
     }
 
     [Fact]
-    public void An_orchestration_that_fills_the_import_wins_and_the_fallbacks_own_infra_is_left_out()
+    public void A_literal_default_is_used_as_it_is()
+    {
+        var f = new Fixture();
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url", "http://localhost:5100")));
+
+        var value = f.Plan().Apps.Single().Env.Single().Value;
+
+        Assert.Equal("http://localhost:5100", value.Value);
+        Assert.Equal(("shop-web", "catalog-url"), (Assert.Single(value.Sources!).Owner, value.Sources![0].Setting));
+    }
+
+    [Fact]
+    public void An_orchestration_that_gives_the_setting_wins_and_the_defaults_own_infra_is_left_out()
     {
         var f = new Fixture();
         f.Add("../shop-services", Orders);
@@ -87,24 +100,65 @@ public class PlannerTests
         Assert.Empty(plan.Problems);
         Assert.Equal("storefront", Assert.Single(plan.Containers).Owner);
         Assert.DoesNotContain(plan.Ports, p => p.Owner == "shop-services" && p.Resource == "mail");
-        Assert.StartsWith("import mail-smtp ← the orchestration", plan.Apps.Single().Env.Single().Value.Via[0]);
+        Assert.StartsWith("setting mail-smtp ← the orchestration", plan.Apps.Single().Env.Single().Value.Via[0]);
     }
 
     [Fact]
-    public void Fallback_infra_the_repo_also_uses_itself_is_kept_and_a_lone_repos_unfilled_import_says_how_to_fill_it()
+    public void A_value_set_on_the_workspace_beats_the_orchestration_and_the_default_and_leaves_their_infra_out()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", Orders);
+        var mail = f.Orchestration.Mailpit("mail");
+        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
+
+        var plan = f.PlanWith(i => i with { Values = new Dictionary<string, string> { ["mail-smtp"] = "smtp://staging:25" } });
+
+        Assert.Empty(plan.Problems);
+        var smtp = plan.Apps.Single().Env.Single().Value;
+        Assert.Equal("smtp://staging:25", smtp.Value);
+        Assert.Equal("setting mail-smtp ← this workspace", smtp.Via[0]);
+        Assert.Equal(ValueSource.Workspace, Assert.Single(plan.Wires()).ProviderOwner);
+        Assert.DoesNotContain(plan.Ports, p => p.Owner == "shop-services" && p.Resource == "mail");
+    }
+
+    [Fact]
+    public void A_value_set_on_the_workspace_beats_another_repos_export()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo => repo.Export<Url>("catalog-url", repo.DotNet("catalog-api", ".").Http().Url));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url", "http://localhost:5100")));
+
+        Assert.StartsWith("http://localhost:9", f.Plan().Apps.Single(a => a.Name == "web").Env.Single().Value.Value);
+        var pointed = f.PlanWith(i => i with { Values = new Dictionary<string, string> { ["catalog-url"] = "https://catalog.example.com" } });
+        Assert.Equal("https://catalog.example.com", pointed.Apps.Single(a => a.Name == "web").Env.Single().Value.Value);
+        Assert.DoesNotContain("shop-services/catalog-api", DependsOn(pointed, "web"));
+    }
+
+    [Fact]
+    public void A_setting_with_no_value_from_anywhere_is_asked_for_rather_than_a_problem()
     {
         var f = new Fixture();
         f.Add("../shop-services", repo =>
         {
             var mail = repo.Mailpit("mail");
-            repo.Node("orders", ".").Http().Env("SMTP", repo.Import<Url>("mail-smtp").OrElse(mail.SmtpUrl)).WaitFor(mail);
-            repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url"));
+            repo.Node("orders", ".").Http().Env("SMTP", repo.Setting<Url>("mail-smtp", mail.SmtpUrl)).WaitFor(mail);
+            var key = repo.Setting<Secret>("payments-key");
+            repo.Node("web", ".").Http().Env("KEY", key).Env("KEY_AGAIN", key);
         });
         f.Orchestration.Bind("mail-smtp", "smtp://elsewhere:25");
 
-        Assert.Single(f.Plan().Containers);
-        Assert.Contains("no repo in the orchestration exports it", Assert.Single(f.Plan().Problems).Message);
-        Assert.Contains("nothing fills it when it runs alone", Assert.Single(f.PlanWith(i => i with { Alone = true }).Problems).Message);
+        var plan = f.Plan();
+
+        Assert.Single(plan.Containers);
+        Assert.Empty(plan.Problems);
+        var ask = Assert.Single(plan.ToAsk);
+        Assert.Equal(("shop-services", "payments-key", "secret"), (ask.Owner, ask.Name, ask.Type));
+        Assert.Null(plan.Apps.Single(a => a.Name == "web").Env.First().Value.Value);
+        Assert.False(Assert.Single(plan.Wires(), w => w.Key == "KEY").Filled);
+
+        var given = f.PlanWith(i => i with { Values = new Dictionary<string, string> { ["payments-key"] = "k" } });
+        Assert.Empty(given.ToAsk);
+        Assert.Equal("k", given.Apps.Single(a => a.Name == "web").Env.First().Value.Value);
     }
 
     [Fact]
@@ -329,7 +383,7 @@ public class PlannerTests
         => plan.Ports.Single(p => p.Resource == resource && p.Endpoint == endpoint).Port!.Value;
 
     [Fact]
-    public void An_import_binds_to_the_one_export_of_that_name_and_says_how_it_got_there()
+    public void A_setting_binds_to_the_one_export_of_that_name_and_says_how_it_got_there()
     {
         var f = new Fixture();
         f.Add("../shop-services", repo =>
@@ -339,7 +393,7 @@ public class PlannerTests
         });
         f.Add("../shop-web", repo =>
         {
-            var catalog = repo.Import<Url>("catalog-url");
+            var catalog = repo.Setting<Url>("catalog-url", "http://localhost:5100");
             repo.Node("web", ".").Http(pin: "5170-5173").EnvFile(".env.local", e => e.Set("VITE_CATALOG_URL", catalog));
         });
 
@@ -350,7 +404,7 @@ public class PlannerTests
         var env = Env(plan, "web", "VITE_CATALOG_URL");
         Assert.Equal($"http://localhost:{catalogPort}", env.Value.Value);
         Assert.Equal(".env.local", env.File);
-        Assert.Equal(["import catalog-url ← shop-services", $"catalog-api.http port {catalogPort}"], env.Value.Via);
+        Assert.Equal(["setting catalog-url ← shop-services", $"catalog-api.http port {catalogPort}"], env.Value.Via);
         Assert.Equal($"http://localhost:{catalogPort}", Env(plan, "catalog-api", "ASPNETCORE_URLS").Value.Value);
     }
 
@@ -360,7 +414,7 @@ public class PlannerTests
         var f = new Fixture();
         var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
         f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("CACHE", repo.Import<Url>("cache-url")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("CACHE", repo.Setting<Url>("cache-url")));
 
         var ambiguous = f.Plan();
         var problem = Assert.Single(ambiguous.Problems);
@@ -374,33 +428,33 @@ public class PlannerTests
     }
 
     [Fact]
-    public void An_import_nobody_answers_is_reported_where_it_was_imported()
+    public void A_setting_to_ask_for_says_where_it_was_declared()
     {
         var f = new Fixture();
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("api-url")));
 
-        var problem = Assert.Single(f.Plan().Problems);
+        var ask = Assert.Single(f.Plan().ToAsk);
 
-        Assert.Contains("imports 'api-url', but no repo in the orchestration exports it", problem.Message);
-        Assert.EndsWith("PlannerTests.cs", problem.Location!.File);
+        Assert.Equal(("web", "api-url", "url"), (ask.Owner, ask.Name, ask.Type));
+        Assert.EndsWith("PlannerTests.cs", ask.Location.File);
         Assert.Null(Env(f.Plan(), "web", "API").Value.Value);
     }
 
     [Fact]
-    public void An_import_of_the_wrong_type_is_refused()
+    public void A_setting_of_the_wrong_type_is_refused()
     {
         var f = new Fixture();
         f.Add("../db", repo => repo.Export<ConnectionString>("orders-db", "Host=x"));
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("DB", repo.Import<Url>("orders-db")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("DB", repo.Setting<Url>("orders-db")));
 
-        Assert.Contains("imports 'orders-db' as url, but db exports it as connectionstring", Assert.Single(f.Plan().Problems).Message);
+        Assert.Contains("web's setting 'orders-db' is a url, but db exports it as connectionstring", Assert.Single(f.Plan().Problems).Message);
     }
 
     [Fact]
-    public void Infra_the_orchestration_owns_can_answer_an_import()
+    public void Infra_the_orchestration_owns_can_give_a_setting()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Import<Url>("mail-smtp")));
+        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Setting<Url>("mail-smtp")));
         var mail = f.Orchestration.Mailpit("mail");
         f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
 
@@ -483,7 +537,7 @@ public class PlannerTests
         Assert.Equal(2, plan.Containers.Count(c => c.Name == "pg"));
         Assert.NotEqual(plan.Ports.First(p => p.Owner == "a" && p.Resource == "pg").Port, plan.Ports.First(p => p.Owner == "b" && p.Resource == "pg").Port);
         var problem = Assert.Single(plan.Problems);
-        Assert.Contains("'api' isn't declared in b; to use something from another repo, import it", problem.Message);
+        Assert.Contains("'api' isn't declared in b; to use something from another repo, make it a setting", problem.Message);
     }
 
     [Fact]
@@ -525,7 +579,7 @@ public class PlannerTests
     }
 
     [Fact]
-    public void A_binding_nothing_imports_is_a_warning_not_an_error()
+    public void A_binding_no_repo_has_a_setting_for_is_a_warning_not_an_error()
     {
         var f = new Fixture();
         f.Add("../r", repo => repo.Node("web", ".").Http());
@@ -553,7 +607,7 @@ public class PlannerTests
     // ---- wires: where each value comes from, as data ----
 
     [Fact]
-    public void An_import_answered_by_an_export_is_a_wire_to_the_app_behind_it()
+    public void A_setting_given_by_an_export_is_a_wire_to_the_app_behind_it()
     {
         var f = new Fixture();
         f.Add("../shop-services", repo =>
@@ -563,7 +617,7 @@ public class PlannerTests
             repo.DotNet("orders-api", ".").Http().Env("Catalog__Url", catalog.Url);
             repo.Export<Url>("catalog-url", catalog.Url);
         });
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("VITE_CATALOG_URL", repo.Import<Url>("catalog-url")));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("VITE_CATALOG_URL", repo.Setting<Url>("catalog-url")));
 
         var plan = f.Plan();
 
@@ -581,9 +635,9 @@ public class PlannerTests
         var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
         f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
         f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http()
-            .Env("Smtp__Url", repo.Import<Url>("mail-smtp"))
-            .Env("Cache", repo.Import<Url>("cache-url"))
-            .Env("Flag", repo.Import<Text>("flag")));
+            .Env("Smtp__Url", repo.Setting<Url>("mail-smtp"))
+            .Env("Cache", repo.Setting<Url>("cache-url"))
+            .Env("Flag", repo.Setting<Text>("flag")));
         var mail = f.Orchestration.Mailpit("mail");
         f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
         f.Orchestration.Bind("cache-url", a.Export("cache-url"));
@@ -602,15 +656,15 @@ public class PlannerTests
     }
 
     [Fact]
-    public void An_import_nothing_fills_is_a_wire_with_no_provider()
+    public void A_setting_to_ask_for_is_a_wire_with_no_provider()
     {
         var f = new Fixture();
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("api-url")));
 
         var wire = Assert.Single(f.Plan().Wires());
 
         Assert.False(wire.Filled);
-        Assert.Equal(("web", "API", "api-url"), (wire.Consumer, wire.Key, wire.Import));
+        Assert.Equal(("web", "API", "api-url"), (wire.Consumer, wire.Key, wire.Setting));
     }
 }
 

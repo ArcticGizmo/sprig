@@ -4,7 +4,7 @@ namespace Sprig;
 
 /// <summary>
 /// A value that may not be known until sprig resolves the system: a literal, a reference to something another
-/// part of the system produces (a port, a url, an import), or a template mixing both. Definitions run before
+/// part of the system produces (a port, a url, a setting), or a template mixing both. Definitions run before
 /// any port is allocated, so they build these instead of strings.
 /// </summary>
 public abstract record Expr
@@ -25,7 +25,7 @@ public sealed record Literal(string Value) : Expr
 }
 
 /// <summary>A placeholder for a value resolved later, addressed by a dotted path such as
-/// <c>catalog-api.http.port</c> or <c>import.catalog-url</c>.</summary>
+/// <c>catalog-api.http.port</c> or <c>setting.catalog-url</c>.</summary>
 public record Ref(string Path) : Expr
 {
     public override string ToTemplate() => "{" + Path + "}";

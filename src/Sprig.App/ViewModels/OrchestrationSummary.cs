@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Sprig.Engine.Authoring;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Orchestrations;
@@ -9,8 +8,10 @@ using Sprig.Model;
 
 namespace Sprig.App.ViewModels;
 
-/// <summary>One thing a repo needs, and what fills it.</summary>
-public sealed record NeedRow(string Import, string FilledBy, bool Filled);
+/// <summary>One of a repo's settings, and where its value comes from.</summary>
+/// <param name="HasValue">False when a workspace will be asked for it, or when several repos offer it and the
+/// orchestration has to pick.</param>
+public sealed record RepoSettingRow(string Name, string From, bool HasValue);
 
 /// <summary>A repo of the selected orchestration, as its card on the Overview shows it.</summary>
 /// <param name="Path">The repo as the orchestration names it.</param>
@@ -19,13 +20,13 @@ public sealed record NeedRow(string Import, string FilledBy, bool Filled);
 /// <param name="Problem">Why it has no model: not approved, doesn't run, or no definition.</param>
 public sealed record RepoCard(
     string Name, string Path, string? Use, bool? InRepo, string Folder,
-    string Runs, string Infra, string Offers, IReadOnlyList<NeedRow> Needs, string? Problem)
+    string Runs, string Infra, string Offers, IReadOnlyList<RepoSettingRow> Settings, string? Problem)
 {
     public string Kept => InRepo switch { true => "in repo", false => "in sprig", null => "no definition" };
     public bool InSprig => InRepo == false;
     public bool HasModel => Problem is null;
     public bool HasProblem => Problem is not null;
-    public bool HasNeeds => Needs.Count > 0;
+    public bool HasSettings => Settings.Count > 0;
     public bool OnRepos => Use is not null;
     public bool CanAddToRepos => Use is null && System.IO.Directory.Exists(Folder);
 }
@@ -81,10 +82,10 @@ public static class OrchestrationSummary
             var jobs = repo.Apps.Where(a => a.Job).Select(a => a.Name).ToList();
             var runs = string.Join(", ", apps) + (jobs.Count > 0 ? (apps.Count > 0 ? ", " : "") + $"then {string.Join(", ", jobs)} first" : "");
             var infra = repo.Containers.Select(c => c.Name).Concat(repo.ComposeFiles.SelectMany(f => f.Services.Select(s => s.Name))).ToArray();
-            var needs = repo.Imports.Select(i => Need(i.Name, reference.Path, repo.Name, loaded, wires, orchestrationName)).ToArray();
+            var settings = repo.Settings.Select(i => Setting(i.Name, reference.Path, repo.Name, loaded, wires, orchestrationName)).ToArray();
             cards.Add(new RepoCard(name, reference.Path, reference.Use, inRepo, folder,
                 runs.Length > 0 ? runs : "nothing", infra.Length > 0 ? string.Join(", ", infra) : "none",
-                repo.Exports.Count > 0 ? string.Join(", ", repo.Exports.Select(e => e.Name)) : "nothing", needs, null));
+                repo.Exports.Count > 0 ? string.Join(", ", repo.Exports.Select(e => e.Name)) : "nothing", settings, null));
         }
         return cards;
     }
@@ -100,52 +101,38 @@ public static class OrchestrationSummary
 
     static bool SameFile(string a, string b) => string.Equals(System.IO.Path.GetFullPath(a), System.IO.Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
-    static NeedRow Need(string import, string repoPath, string owner, LoadedOrchestration loaded, IReadOnlyList<PlannedWire> wires, string? orchestrationName)
+    static RepoSettingRow Setting(string name, string repoPath, string owner, LoadedOrchestration loaded, IReadOnlyList<PlannedWire> wires, string? orchestrationName)
     {
-        // Several repos offering it is as unfilled as none: the plan can't pick, so the orchestration has to.
-        var offers = Offers(loaded, repoPath, import);
-        if (offers.Count > 1 && loaded.Orchestration?.Bindings.Any(b => b.Import == import) != true)
-            return new NeedRow(import, $"{string.Join(" and ", offers.Select(o => loaded.Repos[o].Name))} all offer it", false);
+        // The plan can't pick between several, so the orchestration has to.
+        var offers = loaded.Repos.Where(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == name)).Select(r => r.Value.Name).ToArray();
+        if (offers.Length > 1 && loaded.Orchestration?.Bindings.Any(b => b.Setting == name) != true)
+            return new RepoSettingRow(name, $"{string.Join(" and ", offers)} all offer it", false);
 
-        var wire = wires.FirstOrDefault(w => w.ConsumerOwner == owner && w.Import == import);
+        var wire = wires.FirstOrDefault(w => w.ConsumerOwner == owner && w.Setting == name);
         return wire switch
         {
-            null => new NeedRow(import, "none of its apps use it", true),
-            { Filled: false } => new NeedRow(import, "nothing fills it", false),
-            { ProviderOwner: var p, Provider: { } r } when p == orchestrationName => new NeedRow(import, $"{r}, added by the orchestration", true),
-            { ProviderOwner: var p } when p == orchestrationName => new NeedRow(import, "a value the orchestration sets", true),
-            { ProviderOwner: var p, Provider: { } r } when p == owner => new NeedRow(import, $"its own {r}", true),
-            { ProviderOwner: var p } => new NeedRow(import, p!, true),
+            null => new RepoSettingRow(name, "none of its apps use it", true),
+            { Filled: false } => new RepoSettingRow(name, "asked for when a workspace is made", false),
+            { ProviderOwner: var p, Provider: { } r } when p == orchestrationName => new RepoSettingRow(name, $"{r}, added by the orchestration", true),
+            { ProviderOwner: var p } when p == orchestrationName => new RepoSettingRow(name, "a value the orchestration sets", true),
+            { ProviderOwner: ValueSource.Workspace } => new RepoSettingRow(name, "set on the workspace", true),
+            { ProviderOwner: var p, Provider: { } r } when p == owner => new RepoSettingRow(name, $"its own {r}", true),
+            { ProviderOwner: var p } when p == owner => new RepoSettingRow(name, "its default", true),
+            { ProviderOwner: var p } => new RepoSettingRow(name, p!, true),
         };
     }
-
-    /// <summary>The orchestration's other repos that export <paramref name="import"/>, by the path the orchestration names
-    /// them with.</summary>
-    static IReadOnlyList<string> Offers(LoadedOrchestration loaded, string repoPath, string import)
-        => loaded.Repos.Where(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == import)).Select(r => r.Key).ToArray();
-
-    /// <summary>Each need nothing fills, or several repos offer, with what's needed to suggest how to fill it.</summary>
-    public static IReadOnlyList<(string Repo, UnfilledNeed Need)> Unfilled(LoadedOrchestration loaded, IReadOnlyList<RepoCard> cards)
-        => cards.SelectMany(card => card.Needs.Where(n => !n.Filled).Select(n =>
-            {
-                var import = loaded.Repos.GetValueOrDefault(card.Path)?.Imports.FirstOrDefault(i => i.Name == n.Import);
-                return (card.Name, new UnfilledNeed(n.Import, import?.Type ?? "text", Offers(loaded, card.Path, n.Import)));
-            }))
-            .GroupBy(x => x.Item2.Import)
-            .Select(g => g.First())
-            .ToArray();
 
     public static IReadOnlyList<AddedRow> Added(Plan plan)
     {
         var wires = plan.Wires().Where(w => w.ProviderOwner == plan.Orchestration).ToArray();
         var rows = plan.Containers.Where(c => c.Owner == plan.Orchestration).Select(c =>
         {
-            var fills = wires.Where(w => w.Provider == c.Name).Select(w => w.Import).OfType<string>().Distinct().ToArray();
+            var fills = wires.Where(w => w.Provider == c.Name).Select(w => w.Setting).OfType<string>().Distinct().ToArray();
             var image = c.Image.Split(':')[0].Split('/')[^1];
-            return new AddedRow(c.Name, fills.Length > 0 ? $"{image}, one per workspace. Fills {string.Join(", ", fills)}." : $"{image}, one per workspace.");
+            return new AddedRow(c.Name, fills.Length > 0 ? $"{image}, one per workspace. Gives {string.Join(", ", fills)}." : $"{image}, one per workspace.");
         }).ToList();
-        foreach (var import in wires.Where(w => w.Provider is null).Select(w => w.Import).OfType<string>().Distinct())
-            rows.Add(new AddedRow(import, "a value the orchestration sets"));
+        foreach (var setting in wires.Where(w => w.Provider is null).Select(w => w.Setting).OfType<string>().Distinct())
+            rows.Add(new AddedRow(setting, "a value the orchestration sets"));
         return rows;
     }
 

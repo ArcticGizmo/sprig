@@ -50,7 +50,7 @@ public sealed class TestbedPlanTests : IDisposable
     }
 
     [Fact]
-    public void The_storefront_plans_with_no_problems_and_every_import_resolved()
+    public void The_storefront_plans_with_no_problems_and_every_setting_resolved()
     {
         var loaded = _loader.Load(OrchestrationFile);
         Assert.True(loaded.Complete, string.Join("\n", loaded.Problems.Select(p => p.Message)));
@@ -75,13 +75,48 @@ public sealed class TestbedPlanTests : IDisposable
         Assert.Equal(("onFailure", 5), (catalog.Restart!.Policy, catalog.Restart.Max));
         Assert.Equal(3, plan.Apps.Single(a => a.Name == "migrate").Restart!.Max);
         Assert.Equal(@"ready in \d+", plan.Apps.Single(a => a.Name == "mobile").ReadyLog);
+        Assert.Empty(plan.ToAsk);
+        // The orchestration's Mailpit gives mail-smtp, so shop-services' own isn't started.
+        Assert.DoesNotContain(plan.Containers, c => c.Owner == "shop-services");
+    }
+
+    [Fact]
+    public void Shop_web_runs_on_its_own_against_the_apis_by_their_usual_ports()
+    {
+        var file = Path.Combine(_root, "web-only.orchestration.cs");
+        Copy(WriteOrchestration(file, "shop-web"), file, Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj"));
+
+        var loaded = _loader.Load(file);
+        Assert.True(loaded.Complete, string.Join("\n", loaded.Problems.Select(p => p.Message)));
+        var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, "local",
+            new SprigSettings { PortRangeStart = 20000, PortRangeEndExclusive = 20100 }, new HashSet<int>()));
+
+        Assert.Empty(plan.Problems);
+        Assert.Empty(plan.ToAsk);
+        var web = plan.Apps.Single();
+        Assert.Equal("http://localhost:5100", web.Env.Single(e => e.Key == "VITE_CATALOG_URL").Value.Value);
+        Assert.Equal("http://localhost:5200", web.Env.Single(e => e.Key == "VITE_ORDERS_URL").Value.Value);
+    }
+
+    static string WriteOrchestration(string file, string repo)
+    {
+        var source = file + ".src";
+        File.WriteAllText(source, $"""
+            #:package Sprig.Sdk@0.1.0-exp
+            using Sprig;
+
+            var orchestration = Orchestration.Describe("{Path.GetFileName(file).Split('.')[0]}");
+            orchestration.Repo("{repo}");
+            return orchestration.Emit(args);
+            """);
+        return source;
     }
 
     [Fact]
     public void A_compile_error_in_one_repo_is_reported_with_its_file_and_line()
     {
         var web = Path.Combine(_root, "shop-web", "sprig.cs");
-        var broken = File.ReadAllText(web).Replace("repo.Import<Url>(\"orders-url\")", "repo.Imprt<Url>(\"orders-url\")");
+        var broken = File.ReadAllText(web).Replace("repo.Setting<Url>(\"orders-url\"", "repo.Imprt<Url>(\"orders-url\"");
         File.WriteAllText(web, broken);
         _trust.Approve(web, DefinitionHash.Of(broken));
 

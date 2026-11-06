@@ -56,7 +56,9 @@ This step is mechanical but touches a lot: about 750 uses across 53 files, plus 
 - **No migration:** dev store data under the old folders is deleted. The changelog note that will go with the merge to `main` says so.
 - **Done when:** nothing a user sees says trellis or sprout, the testbed's orchestrations plan and run under the new names, and every test passes.
 
-### 2. Settings with defaults (M)
+### 2. Settings with defaults (M) ✅ done 2026-11-06
+
+Built as planned. All tests pass apart from one host Ctrl+C timing test, which failed once under a full run and passed 20 of 20 on its own. The model schema is 11. `repo.Setting<T>(name, default?)` is one method with an optional default, because with a separate no-default overload a string default was taken as the caller's file path. A value set on the workspace counts as "this workspace" in the plan's sources. `--set name=value` came forward from step 3 onto `up` and `plan`. An interactive `up` prompts for each value it's missing (secrets masked), then goes again. `PlanInput.Alone` is gone; `LoadedOrchestration.Alone` stays, since the Workspaces page uses it. `DefinitionEditor.AddImport` became `AddSetting`. Retired as planned: `NeedFixes`, the Fill-it dialog and the checklist's needs step, so the checklist now has four steps.
 
 - **SDK:**
   - `repo.Setting<T>(name, default?)` replaces `repo.Import<T>(...)`.

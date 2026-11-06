@@ -10,7 +10,7 @@ public class DefinitionEditorTests
 
         var repo = Repo.Describe("shop-services");
 
-        var smtp = repo.Import<Url>("mail-smtp");                // filled in by the system
+        var smtp = repo.Setting<Url>("mail-smtp");                // asked for when a workspace is made
 
         // The catalog owns stock levels.
         var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
@@ -104,22 +104,22 @@ public class DefinitionEditorTests
     }
 
     [Fact]
-    public void AddImport_goes_under_the_last_import_and_keeps_its_comment()
+    public void AddSetting_goes_under_the_last_setting_and_keeps_its_comment()
     {
-        var result = DefinitionEditor.AddImport(Source, "billing-url", "Url", "billing");
+        var result = DefinitionEditor.AddSetting(Source, "billing-url", "Url", "billing");
 
         Assert.True(result.Ok, result.Error);
         Assert.Contains("""
-            var smtp = repo.Import<Url>("mail-smtp");                // filled in by the system
-            var billing = repo.Import<Url>("billing-url");
+            var smtp = repo.Setting<Url>("mail-smtp");                // asked for when a workspace is made
+            var billing = repo.Setting<Url>("billing-url");
             """, result.Text);
     }
 
     [Fact]
-    public void AddImport_refuses_duplicates()
+    public void AddSetting_refuses_duplicates()
     {
-        Assert.Contains("already imports", DefinitionEditor.AddImport(Source, "mail-smtp", "Url", "x").Error);
-        Assert.Contains("already exists", DefinitionEditor.AddImport(Source, "new", "Url", "catalog").Error);
+        Assert.Contains("already has a setting", DefinitionEditor.AddSetting(Source, "mail-smtp", "Url", "x").Error);
+        Assert.Contains("already exists", DefinitionEditor.AddSetting(Source, "new", "Url", "catalog").Error);
     }
 
     [Fact]

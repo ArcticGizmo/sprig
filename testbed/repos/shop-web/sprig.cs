@@ -3,8 +3,9 @@ using Sprig;
 
 var repo = Repo.Describe("shop-web");
 
-var catalog = repo.Import<Url>("catalog-url");
-var orders  = repo.Import<Url>("orders-url");
+// shop-services' APIs when it runs in place; a workspace or an orchestration can point them elsewhere.
+var catalog = repo.Setting<Url>("catalog-url", "http://localhost:5100");
+var orders  = repo.Setting<Url>("orders-url", "http://localhost:5200");
 
 // Pinned, the way an auth provider's registered callback ports would be.
 var web = repo.Node("web", ".").Http(pin: "9170-9179");

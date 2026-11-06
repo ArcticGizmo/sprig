@@ -498,13 +498,13 @@
                                                     <TextBlock Grid.Row="1" Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Infra, FallbackValue=''}" />
                                                     <TextBlock Grid.Row="2" Classes="label" Text="Offers" />
                                                     <TextBlock Grid.Row="2" Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Offers, FallbackValue=''}" />
-                                                    <TextBlock Grid.Row="3" Classes="label" Text="Needs" />
-                                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding InspectedCard.Needs, FallbackValue={x:Null}}">
+                                                    <TextBlock Grid.Row="3" Classes="label" Text="Settings" />
+                                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding InspectedCard.Settings, FallbackValue={x:Null}}">
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="vm:NeedRow">
+                                                            <DataTemplate x:DataType="vm:RepoSettingRow">
                                                                 <WrapPanel Margin="0,0,0,2">
-                                                                    <TextBlock Classes="cell" Text="{Binding Import}" Margin="0,0,6,0" />
-                                                                    <TextBlock Classes="need" Classes.filled="{Binding Filled}" Text="{Binding FilledBy, StringFormat='← {0}'}" />
+                                                                    <TextBlock Classes="cell" Text="{Binding Name}" Margin="0,0,6,0" />
+                                                                    <TextBlock Classes="need" Classes.filled="{Binding HasValue}" Text="{Binding From, StringFormat='← {0}'}" />
                                                                 </WrapPanel>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
@@ -552,15 +552,15 @@
                                                         <TextBlock Grid.Row="1" Grid.Column="1" Classes="cell" Text="{Binding Infra}" />
                                                         <TextBlock Grid.Row="2" Classes="label" Text="Offers" />
                                                         <TextBlock Grid.Row="2" Grid.Column="1" Classes="cell" Text="{Binding Offers}" />
-                                                        <TextBlock Grid.Row="3" Classes="label" Text="Needs" />
-                                                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="cell" Text="nothing" Foreground="{StaticResource MutedBrush}"
-                                                                   IsVisible="{Binding !HasNeeds}" />
-                                                        <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding Needs}" IsVisible="{Binding HasNeeds}">
+                                                        <TextBlock Grid.Row="3" Classes="label" Text="Settings" />
+                                                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="cell" Text="none" Foreground="{StaticResource MutedBrush}"
+                                                                   IsVisible="{Binding !HasSettings}" />
+                                                        <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding Settings}" IsVisible="{Binding HasSettings}">
                                                             <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="vm:NeedRow">
+                                                                <DataTemplate x:DataType="vm:RepoSettingRow">
                                                                     <WrapPanel Margin="0,0,0,2">
-                                                                        <TextBlock Classes="cell" Text="{Binding Import}" Margin="0,0,6,0" />
-                                                                        <TextBlock Classes="need" Classes.filled="{Binding Filled}" Text="{Binding FilledBy, StringFormat='← {0}'}" />
+                                                                        <TextBlock Classes="cell" Text="{Binding Name}" Margin="0,0,6,0" />
+                                                                        <TextBlock Classes="need" Classes.filled="{Binding HasValue}" Text="{Binding From, StringFormat='← {0}'}" />
                                                                     </WrapPanel>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -804,9 +804,6 @@
 
         <!-- The files waiting for approval, read one at a time, opened from the checklist's first step -->
         <ContentControl Grid.Column="0" Grid.ColumnSpan="2" ZIndex="60" Content="{Binding Review}" IsVisible="{Binding Review.IsOpen}" />
-
-        <!-- The line that fills a need, written for you, opened from the checklist's "What the repos need" -->
-        <ContentControl Grid.Column="0" Grid.ColumnSpan="2" ZIndex="60" Content="{Binding FillNeeds}" IsVisible="{Binding FillNeeds.IsOpen}" />
 
         <!-- + Add starts with a choice, so neither form's fields show until you've said which you want. -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsChooseOpen}">

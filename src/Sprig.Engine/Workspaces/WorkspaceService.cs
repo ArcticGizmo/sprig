@@ -14,13 +14,19 @@ public enum StepState { Running, Done, Skipped, Failed, Output }
 /// <summary>Progress from <see cref="WorkspaceService"/>: a step starting or ending, or a line of a tool's output.</summary>
 public sealed record WorkspaceEvent(string Step, StepState State, string? Detail = null);
 
-/// <summary>A workspace couldn't come up. <see cref="Problems"/> holds the plan's problems when that's why, and
-/// <see cref="Untrusted"/> the definitions in its worktrees that need approving first.</summary>
+/// <summary>A workspace couldn't come up. <see cref="Problems"/> holds the plan's problems when that's why,
+/// <see cref="Untrusted"/> the definitions in its worktrees that need approving first, and <see cref="Asks"/> the
+/// settings it needs values for.</summary>
 public sealed class WorkspaceException(string message, IReadOnlyList<PlanProblem>? problems = null,
-    IReadOnlyList<Definitions.NeedsTrust>? untrusted = null) : Exception(message)
+    IReadOnlyList<Definitions.NeedsTrust>? untrusted = null, IReadOnlyList<PlannedAsk>? asks = null) : Exception(message)
 {
     public IReadOnlyList<PlanProblem> Problems { get; } = problems ?? [];
     public IReadOnlyList<Definitions.NeedsTrust> Untrusted { get; } = untrusted ?? [];
+    public IReadOnlyList<PlannedAsk> Asks { get; } = asks ?? [];
+
+    public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks)
+        => new($"{(asks.Count == 1 ? "a setting needs" : "settings need")} a value first: " +
+               string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})")), asks: asks);
 }
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
@@ -116,8 +122,10 @@ public sealed partial class WorkspaceService(
     /// with, and options that differ from that are refused.</param>
     /// <param name="beforeInfra">Called once the workspace's files are written and before its infra starts, with the
     /// record so far and the plan; a caller that will start the apps can have them building meanwhile.</param>
+    /// <param name="values">Setting values to keep on the workspace, added to (or replacing) what it has.</param>
     public WorkspaceRecord Up(LoadedOrchestration loaded, string workspace, string? branch, WorkspaceOptions? options = null,
-        IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null)
+        IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null,
+        IReadOnlyDictionary<string, string>? values = null)
     {
         if (!loaded.Complete || loaded.Orchestration is not { } orchestration)
             throw new WorkspaceException($"{Path.GetFileName(loaded.OrchestrationPath)} isn't ready to run", loaded.Problems);
@@ -149,13 +157,15 @@ public sealed partial class WorkspaceService(
             catch (WorkspaceException e) { throw step.Fail(e); }
         }
         var problems = new List<PlanProblem>();
+        var allValues = MergeValues(existing?.Values, values);
         var dryPlan = Planner.Build(new PlanInput(orchestration, loaded.Repos, workspace, settingsNow, _listening(),
-            ComposeFiles: loaded.ComposeFiles(problems), Alone: loaded.Alone));
+            ComposeFiles: loaded.ComposeFiles(problems), Values: allValues));
         problems.AddRange(dryPlan.Problems);
         if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
         var filesCheckedFor = loaded;
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new WorkspaceException("the plan has errors", problems));
+        if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk));
         var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
         if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new WorkspaceException(why));
         step.Done($"{dryPlan.Apps.Count} apps, {dryPlan.Containers.Count} containers, {dryPlan.Compose.Count} compose files");
@@ -171,6 +181,7 @@ public sealed partial class WorkspaceService(
             UpdatedAt = now,
             Error = null,
             Folder = inPlace ? null : record.Folder ?? WorkspaceFolder(loaded, id, workspace, settingsNow),
+            Values = allValues,
         };
 
         try
@@ -399,13 +410,40 @@ public sealed partial class WorkspaceService(
             var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).Concat(others).ToHashSet();
             var built = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, record.Name, settingsNow, inUse,
                 Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null,
-                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Alone: loaded.Alone));
-            if (built.HasErrors) return (built, null);
+                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values));
+            if (built.HasErrors || built.ToAsk.Count > 0) return (built, null);
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });
         if (plan.HasErrors) throw new WorkspaceException("the plan has errors", plan.Problems);
+        // A branch's definitions, read from its worktrees, can ask for more than the main checkouts' did.
+        if (plan.ToAsk.Count > 0) throw WorkspaceException.NeedsValues(plan.ToAsk);
         // Saved and looked up under the workspace's own key, not the name the orchestration gives itself in code.
         return plan with { Orchestration = record.Orchestration };
+    }
+
+    static IReadOnlyDictionary<string, string>? MergeValues(IReadOnlyDictionary<string, string>? kept, IReadOnlyDictionary<string, string>? given)
+    {
+        if (given is null || given.Count == 0) return kept;
+        var merged = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (k, v) in kept ?? new Dictionary<string, string>()) merged[k] = v;
+        foreach (var (k, v) in given) merged[k] = v;
+        return merged;
+    }
+
+    /// <summary>
+    /// Set or clear values kept on the workspace. They take effect the next time it comes up, which rewrites only the
+    /// files whose content changed.
+    /// </summary>
+    public WorkspaceRecord SetValues(string orchestration, string workspace, IReadOnlyDictionary<string, string> set, IReadOnlyCollection<string>? unset = null)
+    {
+        var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
+        var merged = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (k, v) in record.Values ?? new Dictionary<string, string>()) merged[k] = v;
+        foreach (var k in unset ?? []) merged.Remove(k);
+        foreach (var (k, v) in set) merged[k] = v;
+        record = record with { Values = merged.Count > 0 ? merged : null, UpdatedAt = DateTimeOffset.UtcNow };
+        store.Save(record);
+        return record;
     }
 
     /// <summary>Where the workspace's worktrees started from, in a few words: the one branch when they share it.</summary>

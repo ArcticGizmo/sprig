@@ -140,6 +140,27 @@ public sealed class TrellisSummaryTests : IDisposable
     }
 
     [Fact]
+    public void A_need_several_repos_offer_is_unfilled_and_one_the_repo_fills_itself_says_so()
+    {
+        Add("shop-services", repo =>
+        {
+            repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Import<Url>("mail-smtp").OrElse(repo.Mailpit("mail").SmtpUrl));
+            repo.Export<Url>("catalog-url", "http://a");
+        });
+        Add("shop-legacy", repo => repo.Export<Url>("catalog-url", "http://b"));
+        Add("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Import<Url>("catalog-url")));
+        var (loaded, plan) = Build();
+
+        var cards = TrellisSummary.Cards(loaded, plan, new StoredDefinitions(_store.Paths));
+
+        Assert.Equal([new NeedRow("mail-smtp", "its own mail", true)], cards.Single(c => c.Name == "shop-services").Needs);
+        Assert.Equal([new NeedRow("catalog-url", "shop-services and shop-legacy all offer it", false)], cards.Single(c => c.Name == "shop-web").Needs);
+        var (repo, need) = Assert.Single(TrellisSummary.Unfilled(loaded, cards));
+        Assert.Equal(("shop-web", "catalog-url", "url"), (repo, need.Import, need.Type));
+        Assert.Equal(["shop-services", "shop-legacy"], need.Offers);
+    }
+
+    [Fact]
     public void A_repo_that_has_not_run_says_why_on_its_card()
     {
         _trellis.UseRepo("nope");
@@ -173,14 +194,13 @@ public class TrellisChecklistTests
     }
 
     [Fact]
-    public void A_need_nothing_fills_is_its_own_step_naming_the_repo_and_how_to_fill_it()
+    public void A_need_nothing_fills_is_its_own_step_naming_the_repo_and_why_with_a_button_that_fills_it()
     {
         var steps = TrellisChecklist.Steps(0, 0, [Card("shop-services", null, new NeedRow("mail-smtp", "nothing fills it", false))], planned: true, otherErrors: 0);
 
         Assert.Equal([ChecklistState.Done, ChecklistState.Done, ChecklistState.Open, ChecklistState.Waiting, ChecklistState.Waiting], States(steps));
-        Assert.Contains("mail-smtp (for shop-services)", steps[2].Detail);
-        Assert.Contains("trellis.Bind(\"mail-smtp\"", steps[2].Detail);
-        Assert.Equal(StepAction.EditCode, steps[2].Action);
+        Assert.StartsWith("mail-smtp (for shop-services): nothing fills it.", steps[2].Detail);
+        Assert.Equal((StepAction.FillNeeds, "Fill it…"), (steps[2].Action, steps[2].ActionLabel));
     }
 
     [Fact]

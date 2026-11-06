@@ -95,6 +95,11 @@ public partial class TrellisesViewModel : PageViewModel
     /// <summary>The files waiting for approval, read and approved one at a time.</summary>
     public CodeReviewViewModel Review { get; }
 
+    /// <summary>The dialog that writes the line filling a need, opened from the checklist.</summary>
+    public FillNeedsViewModel FillNeeds { get; }
+
+    IReadOnlyList<(string Repo, Sprig.Engine.Authoring.UnfilledNeed Need)> _unfilled = [];
+
     /// <summary>Opens a repo on the Repos page, by ID.</summary>
     public Action<string>? OpenRepo { get; set; }
 
@@ -163,6 +168,15 @@ public partial class TrellisesViewModel : PageViewModel
         Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
         Editor.Closed += () => Tab = TrellisTab.Overview;
         Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
+        FillNeeds = new FillNeedsViewModel
+        {
+            Apply = async (file, text) =>
+            {
+                await AppServices.RunAsync(() => _services.Authoring.ApplyEdit(file, text));
+                await PlanSelectedAsync();
+            },
+            OpenCode = () => Tab = TrellisTab.Code,
+        };
         Review.Approved += SetStatus;
         // Only listed here, for the nav's count; planning runs definitions, so it waits until the page is shown.
         Refresh(null, replan: false);
@@ -322,6 +336,7 @@ public partial class TrellisesViewModel : PageViewModel
         Cards.Clear();
         if (loaded is not null)
             foreach (var card in TrellisSummary.Cards(loaded, plan, _services.Stored)) Cards.Add(card);
+        _unfilled = loaded is null ? [] : TrellisSummary.Unfilled(loaded, [.. Cards]);
         OnPropertyChanged(nameof(HasCards));
         ShowPicture(plan);
         Added.Clear();
@@ -440,14 +455,17 @@ public partial class TrellisesViewModel : PageViewModel
             ShowChecklist = false;
             return;
         }
-        var unfilledErrors = Plan?.Problems.Count(p => p.IsError && p.Message.Contains(UnfilledMessage, StringComparison.Ordinal)) ?? 0;
+        var unfilledErrors = Plan?.Problems.Count(p => p.IsError && (p.Message.Contains(UnfilledMessage, StringComparison.Ordinal)
+            || p.Message.Contains(SeveralOfferMessage, StringComparison.Ordinal))) ?? 0;
         foreach (var step in TrellisChecklist.Steps(HasPendingTrust ? Review.Remaining : 0, LoadProblems.Count, [.. Cards], Plan is not null, errors - unfilledErrors))
             Steps.Add(step);
         ShowChecklist = TrellisChecklist.Blocks(Steps);
     }
 
-    // How the planner words an import nothing answers; the checklist counts those under its own step.
+    // How the planner words an import nothing answers, or several repos answer; the checklist counts those under its
+    // own step.
     const string UnfilledMessage = "but no repo in the trellis exports it";
+    const string SeveralOfferMessage = "; pick one in the trellis with trellis.Bind(";
 
     [RelayCommand]
     private async Task RunStep(ChecklistStep? step)
@@ -456,6 +474,7 @@ public partial class TrellisesViewModel : PageViewModel
         {
             case StepAction.Review: Review.OpenCommand.Execute(null); break;
             case StepAction.EditCode: Tab = TrellisTab.Code; break;
+            case StepAction.FillNeeds when Selected is { } trellis: FillNeeds.Open(trellis.Path, _unfilled); break;
             case StepAction.ShowValues: Tab = TrellisTab.Values; break;
             case StepAction.Start: Start(); break;
         }

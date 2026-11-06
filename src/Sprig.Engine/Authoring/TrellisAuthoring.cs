@@ -173,14 +173,19 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
 
     static string FolderName(string folder) => Path.GetFileName(folder.TrimEnd('/', '\\'));
 
-    /// <summary>A one-line change sprig makes keeps the file approved only if it was before: the rest of it is still
-    /// code the user may not have read.</summary>
     void EditTrellis(string trellisFile, EditResult edit)
     {
         if (!edit.Ok) throw new InvalidOperationException(edit.Error);
-        var wasApproved = trust.Check(trellisFile, DefinitionHash.Of(File.ReadAllText(trellisFile))).State == TrustState.Trusted;
-        File.WriteAllText(trellisFile, edit.Text);
-        if (wasApproved) Approve(trellisFile);
+        ApplyEdit(trellisFile, edit.Text);
+    }
+
+    /// <summary>A change sprig wrote and the user accepted. It keeps the file approved only if it was before: the rest
+    /// of it is still code the user may not have read.</summary>
+    public void ApplyEdit(string file, string text)
+    {
+        var wasApproved = trust.Check(file, DefinitionHash.Of(File.ReadAllText(file))).State == TrustState.Trusted;
+        File.WriteAllText(file, text);
+        if (wasApproved) Approve(file);
     }
 
     void Approve(string file) => trust.Approve(file, DefinitionHash.Of(File.ReadAllText(file)));

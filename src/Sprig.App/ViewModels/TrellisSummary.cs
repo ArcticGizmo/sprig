@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Sprig.Engine.Authoring;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Trellises;
@@ -80,7 +81,7 @@ public static class TrellisSummary
             var jobs = repo.Apps.Where(a => a.Job).Select(a => a.Name).ToList();
             var runs = string.Join(", ", apps) + (jobs.Count > 0 ? (apps.Count > 0 ? ", " : "") + $"then {string.Join(", ", jobs)} first" : "");
             var infra = repo.Containers.Select(c => c.Name).Concat(repo.ComposeFiles.SelectMany(f => f.Services.Select(s => s.Name))).ToArray();
-            var needs = repo.Imports.Select(i => Need(i.Name, repo.Name, wires, trellisName)).ToArray();
+            var needs = repo.Imports.Select(i => Need(i.Name, reference.Path, repo.Name, loaded, wires, trellisName)).ToArray();
             cards.Add(new RepoCard(name, reference.Path, reference.Use, inRepo, folder,
                 runs.Length > 0 ? runs : "nothing", infra.Length > 0 ? string.Join(", ", infra) : "none",
                 repo.Exports.Count > 0 ? string.Join(", ", repo.Exports.Select(e => e.Name)) : "nothing", needs, null));
@@ -99,8 +100,13 @@ public static class TrellisSummary
 
     static bool SameFile(string a, string b) => string.Equals(System.IO.Path.GetFullPath(a), System.IO.Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
-    static NeedRow Need(string import, string owner, IReadOnlyList<PlannedWire> wires, string? trellisName)
+    static NeedRow Need(string import, string repoPath, string owner, LoadedTrellis loaded, IReadOnlyList<PlannedWire> wires, string? trellisName)
     {
+        // Several repos offering it is as unfilled as none: the plan can't pick, so the trellis has to.
+        var offers = Offers(loaded, repoPath, import);
+        if (offers.Count > 1 && loaded.Trellis?.Bindings.Any(b => b.Import == import) != true)
+            return new NeedRow(import, $"{string.Join(" and ", offers.Select(o => loaded.Repos[o].Name))} all offer it", false);
+
         var wire = wires.FirstOrDefault(w => w.ConsumerOwner == owner && w.Import == import);
         return wire switch
         {
@@ -108,9 +114,25 @@ public static class TrellisSummary
             { Filled: false } => new NeedRow(import, "nothing fills it", false),
             { ProviderOwner: var p, Provider: { } r } when p == trellisName => new NeedRow(import, $"{r}, added by the trellis", true),
             { ProviderOwner: var p } when p == trellisName => new NeedRow(import, "a value the trellis sets", true),
+            { ProviderOwner: var p, Provider: { } r } when p == owner => new NeedRow(import, $"its own {r}", true),
             { ProviderOwner: var p } => new NeedRow(import, p!, true),
         };
     }
+
+    /// <summary>The trellis's other repos that export <paramref name="import"/>, by the path the trellis names them with.</summary>
+    static IReadOnlyList<string> Offers(LoadedTrellis loaded, string repoPath, string import)
+        => loaded.Repos.Where(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == import)).Select(r => r.Key).ToArray();
+
+    /// <summary>Each need nothing fills, or several repos offer, with what's needed to suggest how to fill it.</summary>
+    public static IReadOnlyList<(string Repo, UnfilledNeed Need)> Unfilled(LoadedTrellis loaded, IReadOnlyList<RepoCard> cards)
+        => cards.SelectMany(card => card.Needs.Where(n => !n.Filled).Select(n =>
+            {
+                var import = loaded.Repos.GetValueOrDefault(card.Path)?.Imports.FirstOrDefault(i => i.Name == n.Import);
+                return (card.Name, new UnfilledNeed(n.Import, import?.Type ?? "text", Offers(loaded, card.Path, n.Import)));
+            }))
+            .GroupBy(x => x.Item2.Import)
+            .Select(g => g.First())
+            .ToArray();
 
     public static IReadOnlyList<AddedRow> Added(Plan plan)
     {

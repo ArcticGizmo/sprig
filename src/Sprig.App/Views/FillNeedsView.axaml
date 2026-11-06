@@ -1,0 +1,118 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.FillNeedsView"
+             x:DataType="vm:FillNeedsViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.card.picked">
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="Border.line">
+            <Setter Property="Padding" Value="10,1" />
+        </Style>
+        <Style Selector="Border.line.added">
+            <Setter Property="Background" Value="#1F4ADE80" />
+        </Style>
+        <Style Selector="Border.line.removed">
+            <Setter Property="Background" Value="#1FF87171" />
+        </Style>
+        <Style Selector="SelectableTextBlock.code">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="TextBlock.mark">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.mark.added">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.mark.removed">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <!-- A dialog over the whole page, like the code review: the ways to fill it on the left, the change on the right. -->
+    <Border Background="#B3060A12">
+        <Border.KeyBindings>
+            <KeyBinding Gesture="Escape" Command="{Binding CloseCommand}" />
+        </Border.KeyBindings>
+    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="24,20" Margin="32" MaxWidth="1240" MaxHeight="760" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,16">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding More}" FontSize="12.5" Foreground="{StaticResource MutedBrush}"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="CloseButton" Grid.Column="2" Content="Close" Command="{Binding CloseCommand}" VerticalAlignment="Center"
+                            ToolTip.Tip="Leave the code as it is (Esc)"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,6" />
+                </Grid>
+                <TextBlock Text="{Binding Subtitle}" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+            </StackPanel>
+
+            <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,16,0,0">
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="{Binding Message}" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
+                               IsVisible="{Binding Message, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding CanApply}"
+                               Text="It's written into the trellis file and checked again. Nothing else in the file changes." />
+                    <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}" IsVisible="{Binding Unplaced}"
+                               Text="Sprig can't tell where this goes in this file. Copy the lines and paste them in the code." />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Open the code" Command="{Binding ShowCodeCommand}" VerticalAlignment="Center"
+                        Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                <Button Grid.Column="2" Content="Add to the code" Command="{Binding AddToCodeCommand}" IsEnabled="{Binding CanApply}"
+                        VerticalAlignment="Center" AutomationProperties.AutomationId="fill:apply"
+                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+            </Grid>
+
+            <Grid ColumnDefinitions="320,*" ColumnSpacing="16">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Options}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FixOption">
+                                <Button Classes="choice" Margin="0,0,0,8" CommandParameter="{Binding}"
+                                        Command="{Binding $parent[UserControl].((vm:FillNeedsViewModel)DataContext).PickCommand}">
+                                    <Border Classes="card" Classes.picked="{Binding IsSelected}" Padding="14,12">
+                                        <StackPanel Spacing="4">
+                                                    <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                            <TextBlock Text="{Binding Why}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- The change, as a diff -->
+                <Border Grid.Column="1" Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Padding="0,8">
+                        <ItemsControl ItemsSource="{Binding Diff}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DiffLine">
+                                    <Border Classes="line" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}">
+                                        <Grid ColumnDefinitions="18,*">
+                                            <TextBlock Classes="mark" Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}"
+                                                       Text="{Binding Mark}" />
+                                            <SelectableTextBlock Grid.Column="1" Classes="code" Text="{Binding Text}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </DockPanel>
+    </Border>
+    </Border>
+</UserControl>

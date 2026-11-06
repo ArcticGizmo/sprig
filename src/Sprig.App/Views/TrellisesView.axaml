@@ -805,6 +805,9 @@
         <!-- The files waiting for approval, read one at a time, opened from the checklist's first step -->
         <ContentControl Grid.Column="0" Grid.ColumnSpan="2" ZIndex="60" Content="{Binding Review}" IsVisible="{Binding Review.IsOpen}" />
 
+        <!-- The line that fills a need, written for you, opened from the checklist's "What the repos need" -->
+        <ContentControl Grid.Column="0" Grid.ColumnSpan="2" ZIndex="60" Content="{Binding FillNeeds}" IsVisible="{Binding FillNeeds.IsOpen}" />
+
         <!-- + Add starts with a choice, so neither form's fields show until you've said which you want. -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsChooseOpen}">
             <Border.KeyBindings>

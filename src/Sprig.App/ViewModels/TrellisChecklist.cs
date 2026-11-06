@@ -6,7 +6,7 @@ namespace Sprig.App.ViewModels;
 public enum ChecklistState { Done, Open, Waiting }
 
 /// <summary>What a step's button does; the page turns it into a command.</summary>
-public enum StepAction { None, Review, EditCode, ShowValues, Start }
+public enum StepAction { None, Review, EditCode, FillNeeds, ShowValues, Start }
 
 /// <summary>One step on the way to a trellis's first sprout.</summary>
 public sealed record ChecklistStep(int Number, string Title, string Detail, ChecklistState State, StepAction Action = StepAction.None, string ActionLabel = "")
@@ -59,11 +59,11 @@ public static class TrellisChecklist
                 : $"{Count(loadProblems, "problem")} {(loadProblems == 1 ? "stops" : "stop")} it planning; see below.",
             StepAction.EditCode, "Open the code");
 
-        var unfilled = cards.SelectMany(c => c.Needs.Where(n => !n.Filled).Select(n => (repo: c.Name, n.Import))).ToArray();
+        var unfilled = cards.SelectMany(c => c.Needs.Where(n => !n.Filled).Select(n => (repo: c.Name, need: n))).ToArray();
         Add("What the repos need", unfilled.Length == 0,
             "Every need is filled.",
-            $"Nothing fills {string.Join(", ", unfilled.Select(u => $"{u.Import} (for {u.repo})"))}. Add infra that offers it, or bind it in the trellis: trellis.Bind(\"{unfilled.FirstOrDefault().Import}\", …).",
-            StepAction.EditCode, "Fill it in code");
+            string.Join("; ", unfilled.Select(u => $"{u.need.Import} (for {u.repo}): {u.need.FilledBy}")) + ". Sprig can write the line that fills it.",
+            StepAction.FillNeeds, unfilled.Select(u => u.need.Import).Distinct().Count() is var n && n == 1 ? "Fill it…" : $"Fill {n}…");
 
         Add("The plan checks out", planned && otherErrors == 0,
             "No problems.",

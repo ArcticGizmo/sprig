@@ -228,7 +228,27 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(200));
             Save(window, Sibling(outFile, "new-sprout-in-place"));
             vm.Sprouts.CancelAddCommand.Execute(null);
+
+            // A trellis whose repos need what none of them offers: the checklist's step, then the dialog that writes the
+            // line, on a need one of the presets fills.
+            if (Path.Combine(root, "shop-mobile") is var mobile && Directory.Exists(mobile))
+            {
+                var trial = services.Authoring.CreateTrellis("trial", [Path.Combine(root, "shop-web"), mobile]);
+                vm.NavigateCommand.Execute(vm.Trellises);
+                vm.Trellises.Show(trial.Id);
+                clock.Restart();
+                Pump(TimeSpan.FromMilliseconds(300));
+                while ((vm.Trellises.IsBusy || vm.Trellises.Plan is null) && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "needs"));
+                vm.Trellises.FillNeeds.Open(trial.Path, [("shop-services", new Sprig.Engine.Authoring.UnfilledNeed("mail-smtp", "url", []))]);
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "fill"));
+                vm.Trellises.FillNeeds.CloseCommand.Execute(null);
+                services.Authoring.RemoveTrellis(trial.Id);
+            }
             vm.NavigateCommand.Execute(vm.Trellises);
+            vm.Trellises.Show("storefront");
             Pump(TimeSpan.FromMilliseconds(300));
 
             vm.Trellises.OpenAddCommand.Execute(null);

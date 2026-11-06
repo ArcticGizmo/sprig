@@ -29,7 +29,9 @@ Checked on a fresh testbed in a throwaway store: `sprig repo add shop-services`,
 - **SDK:** `repo.Import<Url>("mail-smtp").OrElse(value)` says what to use when nothing else fills the import, typically the repo's own infra (`.OrElse(repo.Mailpit("mail").SmtpUrl)`); a trellis's binding or another repo's export still wins. A repo whose needs aren't all filled can't sprout alone, and says which.
 - **Testbed:** `shop-services` fills `mail-smtp` with `OrElse`, and `services.trellis.cs` goes.
 
-## 3. Fill it in code, with the line written for you (M)
+## 3. Fill it in code, with the line written for you (M) ✅ done 2026-11-06
+
+Built as planned (`NeedFixes` in the engine, `FillNeedsViewModel`/`FillNeedsView` in the app), with: a need several repos offer now counts as unfilled on the cards and the checklist, rather than "none of its apps use it"; a need the repo's own `OrElse` fills reads "its own mail"; a preset the trellis already runs is reused rather than declared twice; **Set it to a value** opens the code after writing, since the value is still to fill in; the change keeps the trellis approved only if it was before (`TrellisAuthoring.ApplyEdit`). One need at a time: once it's written and planned, the step offers the next. Checked with view-model tests and headless renders of the step and the dialog.
 
 - For each unfilled need, offer concrete lines, built from the syntax tree (no semantic model): infra from the presets that offers it (Mailpit for SMTP, Postgres for a connection string, Redis, RabbitMQ), a binding to one repo's export when several offer it (naming the repo's variable, adding one when the repo line has none), or a literal to fill in.
 - A dialog shows the change as a diff with **Add to the code**; saving goes through the usual save, so it plans again and the step ticks itself off. Code it can't place a line in opens with the line ready to paste.

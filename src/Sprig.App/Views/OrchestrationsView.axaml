@@ -302,7 +302,7 @@
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
-                    <Button Grid.Column="2" Content="Start a workspace" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"
+                    <Button Grid.Column="2" Content="New workspace" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"
                             VerticalAlignment="Top" ToolTip.Tip="Make a new workspace of this orchestration"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="16,8" />
                 </Grid>

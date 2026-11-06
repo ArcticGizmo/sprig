@@ -1,6 +1,6 @@
 # Repo first: settings with defaults, plain names, and one repo made easy: plan
 
-Branch: `experimental`. Written 2026-11-06. Status: proposed, for the user to agree. Breaking changes allowed: no migration for definitions or store data.
+Branch: `experimental`. Written 2026-11-06. Status: agreed (user, 2026-11-06), and all five steps done the same day. Waiting on the user's hand pass. Breaking changes allowed: no migration for definitions or store data.
 
 ## Why
 
@@ -135,7 +135,15 @@ The Repos page becomes where a repo is run, not just described. The existing lay
 - **Checked with:** view-model tests and headless renders. The hand pass waits until the structure is done.
 - **Done when:** a repo can be added, started in place, given a worktree workspace with one setting changed, and have one app stopped and restarted, all from the Repos page.
 
-### 5. Orchestrations, frozen (S)
+### 5. Orchestrations, frozen (S) ✅ done 2026-11-06
+
+On a fresh testbed with a throwaway store:
+- `sprig plan storefront` and `sprig plan catalog` showed no problems. `mail-smtp` came from the orchestration and `catalog-url` from shop-services.
+- `sprig up storefront -w s5 -d` had all five apps ready in 21 s, with only the orchestration's Mailpit running (shop-services' own was left out).
+- `sprig stop` and then `start` on catalog-api brought it back healthy.
+- `rm --delete-branch` left no containers or volumes.
+
+The app's Orchestrations page planned storefront with no problems in the headless render. Its button now says **New workspace**, as the Repos page's does. The changelog's Unreleased section uses the new names and describes settings in place of Fill-it and `OrElse`.
 
 - The Orchestrations page keeps its Overview, Values, Ports and Code tabs under the new names. It loses the needs checklist (step 2), and each repo card shows its settings with where each came from.
 - No new orchestration features until the later plan.

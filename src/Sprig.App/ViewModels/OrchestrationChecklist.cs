@@ -64,7 +64,7 @@ public static class OrchestrationChecklist
             planned ? $"{Count(otherErrors, "problem")} to fix; each says where." : "It hasn't planned yet.",
             StepAction.ShowValues, "See them on Values");
 
-        Add("Start a workspace", false, "", "Ready: make a workspace of it.", StepAction.Start, "Start a workspace");
+        Add("Start a workspace", false, "", "Ready: make a workspace of it.", StepAction.Start, "New workspace");
         return steps;
     }
 

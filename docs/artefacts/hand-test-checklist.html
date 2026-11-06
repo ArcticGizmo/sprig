@@ -195,6 +195,14 @@ const SECTIONS = [
       { id: "RP5", title: "A new trellis from folders",
         how: [`On Trellises, click <b>+ Add</b>, then the <b>Build one from repos</b> card. Name it <code>trial</code>, add the <code>${T}/shop-web</code> and <code>${T}/shop-services</code> folders and click <b>Create trellis</b>.`],
         expect: `trial is listed "in sprig". Nothing in it offers mail-smtp, so its checklist stops at <b>What the repos need</b>: "Nothing fills mail-smtp (for shop-services)", with <b>Fill it in code</b>; the picture shows a dashed "nothing fills mail-smtp" stub on orders-api. The Repos list reuses shop-web and adds shop-services, "in repo", rather than making copies.` },
+      { id: "RP6", title: "Repos by ID from the CLI, and a trellis that uses them",
+        how: [`Run these, using the <code>sprig</code> alias from the top of the page. If <code>${T}/catalog.trellis.cs</code> is missing, the testbed is older than it: rebuild it with the reset command at the top.<div class="cmd" style="margin-top:6px"><pre id="cmd-repos">sprig repo add "${T}/shop-services"
+sprig repo add "${T}/shop-mobile"
+sprig repo copy shop-mobile --id shop-mobile-sprig
+sprig repo ls
+sprig trellis add "${T}/catalog.trellis.cs"
+sprig plan catalog</pre><button type="button" data-copy="cmd-repos">Copy</button></div>`, `Run the first three lines again, then <code>sprig repo rm shop-mobile-sprig</code>.`, `In the app, open <b>Trellises</b> and pick catalog, then open <b>Repos</b> and pick shop-mobile-sprig.`],
+        expect: `shop-services says it's already on the list (RP5 added it); shop-mobile is added "in repo" and copied as shop-mobile-sprig, "in sprig". <code>repo ls</code> shows all of them with their kind. <code>trellis add</code> asks only for <code>catalog.trellis.cs</code>, and the plan asks nothing (the copy keeps shop-mobile's approval) and ends "No problems", with VITE_CATALOG_URL coming from catalog-api. Running the lines again changes nothing. <code>repo rm</code> is refused: used by catalog. In the app, catalog's picture shows shop-services and shop-mobile with the catalog-url wire, and shop-mobile-sprig says "Used by catalog".` },
     ]
   },
   {

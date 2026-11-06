@@ -91,7 +91,6 @@ public sealed class HostTests : IDisposable
         Assert.Equal("the build exited with code 3", failed.Error);
 
         _client.Send(new HostRequest("stop", Sprout: "storefront/feat-x"));
-        Await("shop/web", _ => true);
         var clock = Stopwatch.StartNew();
         while (_client.Send(new HostRequest("list")).Runners!.Count > 0 && clock.Elapsed < TimeSpan.FromSeconds(10)) Thread.Sleep(100);
         Assert.Empty(_client.Send(new HostRequest("list")).Runners!);

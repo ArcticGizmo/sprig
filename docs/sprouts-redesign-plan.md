@@ -1,6 +1,6 @@
 # Sprouts page redesign: plan
 
-Branch: `experimental`. Written 2026-11-04. Status: decisions agreed (user, 2026-11-04: each recommendation below as written). Phases 1 to 8 built on 2026-11-04, not yet hand-tested; the host tests still need a run against the changed log format.
+Branch: `experimental`. Written 2026-11-04. Status: decisions agreed (user, 2026-11-04: each recommendation below as written). Phases 1 to 8 built on 2026-11-04, not yet hand-tested. The host tests pass against the timed log format (full suite, 2026-11-06).
 
 Where the build differs from the plan below:
 

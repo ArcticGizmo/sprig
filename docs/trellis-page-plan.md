@@ -1,6 +1,6 @@
 # Trellis page redesign: plan
 
-Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3 to 8 done the same day (294 tests pass), checked with headless renders. Waiting on the user's hand pass (the updated hand-test checklist), and one item left open in phase 8.
+Branch: `experimental`. Written 2026-11-05. Status: agreed direction (user, 2026-11-05: the recommended blend from the options canvas). Breaking changes allowed: no migration for old definitions or store data. Phases 1 and 2 done 2026-11-05; phases 3 to 8 done the same day (294 tests pass), checked with headless renders. Waiting on the user's hand pass (the updated hand-test checklist). Phase 8's last item, a testbed trellis that uses `UseRepo`, was done 2026-11-06.
 
 The options and the reasoning are on the canvas at https://claude.ai/artifact/QqNHSoEZhiQ5B5zjwgBqhy, with a copy in [artefacts/trellis-options/](artefacts/trellis-options/). This plan builds the blend: names and badges from the Model board, a Repos page (C), a summary trellis page (A) with the picture at its centre (B), and the checklist (D) only while something blocks a first sprout.
 
@@ -83,10 +83,10 @@ Each phase leaves the app building and the tests passing. Sizes: S is under a da
 - [x] Tests: each step's state for unapproved code, a repo that didn't run, an unfilled need, other plan errors, and nothing in the way.
 - [x] Found on the way: the page planned once when built and again when shown, running the same trellis twice at once, and two `dotnet run`s of one file clash in dotnet's build output (seen only when the SDK had just been rebuilt). Pages now run definitions only when shown, and `DefinitionRunner` runs one file at a time; a second caller waits and reads the cache.
 
-### 8. Names, testbed, data and docs (S) ✅ done 2026-11-05, one item open
+### 8. Names, testbed, data and docs (S) ✅ done 2026-11-05 (the testbed item 2026-11-06)
 
 - [x] Swept the app's text: "virtual", "written in sprig", "referenced" and "wiring" are gone; the Values tab's "trellis binding" now reads "the trellis". "Kept in sprig" stays where it explains the "in sprig" badge.
-- [ ] Testbed: a trellis that uses `UseRepo`. Left open: it can't plan without Repos entries in the user's store, and nothing can make those from a script yet. A `sprig repo add|ls` CLI command would let `testbed.ps1` set them up. Until then, `UseRepo` is covered by the authoring and sprout tests and by the hand-test steps that add repos in the app. `render-trellises` renders the Overview, a picked app with a group shown, Values, Ports, the Repos page, the add modal and an unapproved trellis.
+- [x] Testbed: a trellis that uses `UseRepo` (done 2026-11-06). `testbed/catalog.trellis.cs` uses `shop-services` (in repo) and `shop-mobile-sprig` (in sprig) by ID. A new `sprig repo add|copy|ls|rm` CLI puts them on the Repos list; adding or copying an ID that's already listed for the same folder does nothing, so setup can run twice. `testbed.ps1` prints those commands but doesn't run them, so a fresh store stays empty for the hand-test checklist (RP6 runs them). In a throwaway store, `catalog` planned with no problems, and a sprout of it came up with worktrees, `migrate` finished, both APIs and mobile were ready, mobile's `.env.local` had the catalog url from the in-sprig definition, and `rm --delete-branch` left nothing behind. `render-trellises` renders the Overview, a picked app with a group shown, Values, Ports, the Repos page, the add modal and an unapproved trellis.
 - [x] Data: nothing to delete (checked in phase 2).
 - [x] The hand-test checklist's Trellises section is rewritten for the new pages (new item IDs TP1 to TP8), with a new Repos section (RP1 to RP5). The roadmap's M7 section and the changelog's Unreleased notes describe the redesign.
 

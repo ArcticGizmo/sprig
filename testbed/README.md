@@ -17,6 +17,17 @@ Two trellises sit beside the repos:
 
 - `storefront.trellis.cs` joins all three repos and gives each sprout its own worktrees: `sprig up storefront --sprout feat-x`.
 - `services.trellis.cs` runs `shop-services` alone, in place in its checkout: `sprig up services`.
+- `catalog.trellis.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`trellis.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
+
+  ```sh
+  sprig repo add <testbed>/shop-services          # in repo: uses the folder's own sprig.cs
+  sprig repo add <testbed>/shop-mobile
+  sprig repo copy shop-mobile --id shop-mobile-sprig   # in sprig: a copy to change without touching the repo
+  sprig trellis add <testbed>/catalog.trellis.cs
+  sprig plan catalog
+  ```
+
+  Running them again is harmless: an ID already listed for the same folder is left as it is.
 
 ## What proves the wiring
 

@@ -101,6 +101,15 @@ public static class CliApp
             trellis.AddCommand<TrellisRmCommand>("rm");
         });
 
+        config.AddBranch("repo", repo =>
+        {
+            repo.SetDescription("The Repos list: repo folders that trellises use by ID");
+            repo.AddCommand<RepoAddCommand>("add");
+            repo.AddCommand<RepoCopyCommand>("copy");
+            repo.AddCommand<RepoLsCommand>("ls");
+            repo.AddCommand<RepoRmCommand>("rm");
+        });
+
         config.AddBranch("trust", trust =>
         {
             trust.SetDescription("Approve definition files to run (by exact content)");

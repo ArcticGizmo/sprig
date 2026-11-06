@@ -8,6 +8,11 @@ public class CliAppTests
     static (int code, string stdout, string stderr) Run(params string[] args)
     {
         using var store = new TempStore();
+        return Run(store, args);
+    }
+
+    static (int code, string stdout, string stderr) Run(TempStore store, params string[] args)
+    {
         var (prevOut, prevErr) = (Console.Out, Console.Error);
         var (stdout, stderr) = (new StringWriter(), new StringWriter());
         Console.SetOut(stdout);
@@ -44,5 +49,45 @@ public class CliAppTests
 
         Assert.Equal(1, code);
         Assert.Contains("\"ok\": false", stdout);
+    }
+
+    [Fact]
+    public void Repos_are_added_copied_into_sprig_and_removed_from_the_command_line_and_adding_twice_is_harmless()
+    {
+        using var store = new TempStore();
+        var web = Path.Combine(store.Root, "src", "shop-web");
+        var mobile = Path.Combine(store.Root, "src", "shop-mobile");
+        Directory.CreateDirectory(web);
+        Directory.CreateDirectory(mobile);
+        File.WriteAllText(Path.Combine(web, "sprig.cs"), "// shop-web's own");
+        File.WriteAllText(Path.Combine(mobile, "package.json"), """{ "name": "mobile", "scripts": { "dev": "vite" } }""");
+        var stored = new Sprig.Engine.Definitions.StoredDefinitions(store.Paths);
+
+        Assert.Equal(0, Run(store, "repo", "add", web).code);
+        Assert.Equal(0, Run(store, "repo", "add", web).code);
+        Assert.Equal(0, Run(store, "repo", "add", web, "--id", "shop-web").code);
+        Assert.Equal(1, Run(store, "repo", "add", web, "--id", "web-again").code);
+        Assert.Equal(0, Run(store, "repo", "add", mobile, "--id", "mobile").code);
+        Assert.Equal(0, Run(store, "repo", "copy", "shop-web", "--id", "web-sprig").code);
+        File.WriteAllText(stored.CopyFile("web-sprig"), "// edited in sprig");
+        Assert.Equal(0, Run(store, "repo", "copy", "shop-web", "--id", "web-sprig").code);
+
+        Assert.Equal(["mobile", "shop-web", "web-sprig"], stored.Repos().Select(e => e.Id));
+        Assert.True(stored.Repo("shop-web")!.InRepo);
+        Assert.False(stored.Repo("mobile")!.InRepo);
+        Assert.True(File.Exists(stored.CopyFile("mobile")));
+        Assert.Equal("// edited in sprig", File.ReadAllText(stored.CopyFile("web-sprig")));
+        Assert.Contains("\"inRepo\": false", Run(store, "repo", "ls", "--json").stdout);
+
+        // A repo a trellis uses stays unless removal is forced.
+        var trellis = Path.Combine(store.Root, "src", "shop.trellis.cs");
+        File.WriteAllText(trellis, "var trellis = Trellis.Describe(\"shop\");\ntrellis.UseRepo(\"web-sprig\");\nreturn trellis.Emit(args);\n");
+        new Sprig.Engine.Trellises.TrellisRegistry(store.Paths).Add("shop", trellis);
+        var (refused, _, why) = Run(store, "repo", "rm", "web-sprig");
+        Assert.Equal(1, refused);
+        Assert.Contains("used by shop", why);
+        Assert.Equal(0, Run(store, "repo", "rm", "web-sprig", "--force").code);
+        Assert.Null(stored.Repo("web-sprig"));
+        Assert.True(File.Exists(Path.Combine(web, "sprig.cs")));
     }
 }

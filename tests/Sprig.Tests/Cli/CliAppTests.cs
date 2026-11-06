@@ -89,5 +89,9 @@ public class CliAppTests
         Assert.Equal(0, Run(store, "repo", "rm", "web-sprig", "--force").code);
         Assert.Null(stored.Repo("web-sprig"));
         Assert.True(File.Exists(Path.Combine(web, "sprig.cs")));
+
+        // --in-sprig keeps a copy of the folder's own file, even with that file already listed.
+        Assert.Equal(0, Run(store, "repo", "add", web, "--in-sprig").code);
+        Assert.Equal("// shop-web's own", File.ReadAllText(stored.Repo("shop-web-sprig")!.DefinitionFile));
     }
 }

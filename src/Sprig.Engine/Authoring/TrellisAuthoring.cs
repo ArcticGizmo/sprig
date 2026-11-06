@@ -35,22 +35,43 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
         return registry.Add(id, file);
     }
 
-    /// <summary>A repo on the Repos list. A folder with its own sprig.cs uses it; one without gets a definition kept
-    /// in sprig, drafted from what's in the folder.</summary>
-    public RepoEntry AddRepo(string folder, string? id = null)
+    /// <summary>A repo on the Repos list.</summary>
+    /// <param name="inRepo">True to use the folder's own sprig.cs, which must exist. False for a definition kept in
+    /// sprig, starting from a copy of the folder's sprig.cs if it has one, else a draft from what's in the folder.
+    /// Null picks for you: the folder's own sprig.cs if it has one, else a draft kept in sprig.</param>
+    public RepoEntry AddRepo(string folder, string? id = null, bool? inRepo = null)
     {
         folder = LongPath.Of(folder);
         if (!Directory.Exists(folder)) throw new ArgumentException($"there's no folder at {folder}");
-        id ??= stored.UnusedRepoId(FolderName(folder));
-        if (HasOwn(folder))
+        var own = Path.Combine(folder, TrellisLoader.RepoDefinitionFile);
+        var hasOwn = File.Exists(own);
+        if (inRepo == true && !hasOwn) throw new ArgumentException($"there's no sprig.cs in {folder}");
+        id ??= SuggestNewId(folder, inRepo ?? hasOwn);
+
+        if (inRepo ?? hasOwn)
         {
             if (stored.InRepoFor(folder) is { } existing)
                 throw new ArgumentException($"its sprig.cs is already on the list as '{existing.Id}'");
             return stored.AddRepo(id, folder, inRepo: true, definition: null);
         }
+        if (hasOwn)
+        {
+            var text = File.ReadAllText(own);
+            var copy = stored.AddRepo(id, folder, inRepo: false, text);
+            CarryApproval(own, copy.DefinitionFile, text);
+            return copy;
+        }
         var entry = stored.AddRepo(id, folder, inRepo: false, Draft(folder));
         Approve(entry.DefinitionFile);
         return entry;
+    }
+
+    /// <summary>The ID offered for a new entry over <paramref name="folder"/>: its name, with "-sprig" after it for one
+    /// kept in sprig beside a sprig.cs of the folder's own, so the two read as a pair.</summary>
+    public string SuggestNewId(string folder, bool inRepo)
+    {
+        var name = FolderName(folder);
+        return stored.UnusedRepoId(!inRepo && HasOwn(folder) ? $"{name}-sprig" : name);
     }
 
     /// <summary>
@@ -148,7 +169,7 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
         if (trust.Check(from, DefinitionHash.Of(text)).State == TrustState.Trusted) Approve(to);
     }
 
-    static bool HasOwn(string folder) => File.Exists(Path.Combine(folder, TrellisLoader.RepoDefinitionFile));
+    static bool HasOwn(string folder) => folder.Length > 0 && File.Exists(Path.Combine(folder, TrellisLoader.RepoDefinitionFile));
 
     static string FolderName(string folder) => Path.GetFileName(folder.TrimEnd('/', '\\'));
 

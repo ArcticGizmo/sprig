@@ -121,38 +121,6 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="FontSize" Value="12.5" />
         </Style>
-        <!-- The two ways to add a trellis: chromeless buttons whose inner card carries hover. -->
-        <Style Selector="Button.choice">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="VerticalAlignment" Value="Stretch" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="VerticalContentAlignment" Value="Stretch" />
-        </Style>
-        <Style Selector="Button.choice /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="Button.choice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="Button.choice:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="Border.card">
-            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
-            <Setter Property="BorderThickness" Value="1.5" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="18,16" />
-        </Style>
-        <Style Selector="Button.choice:pointerover Border.card">
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-        </Style>
-        <Style Selector="Button.choice:focus-visible Border.card">
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-        </Style>
         <!-- The picture -->
         <Style Selector="Border.gbox">
             <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
@@ -260,7 +228,11 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="280,*">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{StaticResource SideListWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
         <!-- One list: the trellises, each with where it's kept and its sprouts -->
         <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
@@ -273,8 +245,6 @@
                                 IsEnabled="{Binding !Editor.IsDirty}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                     </Grid>
-                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="Repos run together, and how their sprouts run." />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
                                Text="None yet. + Add makes one from a few repo folders, with nothing committed to them, or adds a .trellis.cs." />
                 </StackPanel>

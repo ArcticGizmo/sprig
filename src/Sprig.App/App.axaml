@@ -22,11 +22,46 @@
         <Style Selector=":is(Button):disabled, ComboBox:disabled, MenuItem:disabled, ListBoxItem:disabled">
             <Setter Property="Cursor" Value="Arrow" />
         </Style>
+
+        <!-- The cards an + Add opens on, one per way to add something: chromeless buttons whose inner card carries hover. -->
+        <Style Selector="Button.choice">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.choice /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.choice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.choice:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource ButtonBgBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+        <Style Selector="Button.choice:pointerover Border.card">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.choice:focus-visible Border.card">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
     </Application.Styles>
 
     <Application.Resources>
         <!-- Max width of the list pane on every page; past this only the detail pane grows. -->
         <sys:Double x:Key="ListPaneMaxWidth">600</sys:Double>
+        <!-- The list column on Repos and Trellises, the same on both so switching pages doesn't shift the content. -->
+        <GridLength x:Key="SideListWidth">290</GridLength>
 
         <!-- Dark palette (shared with perch's look). -->
         <SolidColorBrush x:Key="FormBgBrush" Color="#181820" />

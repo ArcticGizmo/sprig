@@ -67,7 +67,11 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="290,*">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{StaticResource SideListWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
         <!-- The Repos list -->
         <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
@@ -75,13 +79,12 @@
                 <StackPanel DockPanel.Dock="Top" Spacing="10">
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Text="Repos" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenAddCommand}" IsEnabled="{Binding !Editor.IsEditing}"
+                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenChooseCommand}" IsEnabled="{Binding !Editor.IsEditing}"
+                                VerticalAlignment="Center"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                     </Grid>
-                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="What each repo runs, offers and needs. Trellises use them by ID: trellis.UseRepo(&quot;shop-web&quot;)." />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
-                               Text="None yet. + Add takes a repo folder: its own sprig.cs if it has one, or a draft kept in sprig." />
+                               Text="None yet. + Add uses a repo's own sprig.cs, or writes one kept in sprig." />
                 </StackPanel>
                 <!-- Locked while a definition is open, so unsaved edits can't be left behind by picking another. -->
                 <ListBox ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,10,0,0"
@@ -245,22 +248,62 @@
             <ContentControl Content="{Binding Editor}" IsVisible="{Binding Editor.IsEditing}" Margin="24,20,24,16" />
         </Grid>
 
-        <!-- Adding a repo: a folder and the ID trellises call it by -->
+        <!-- + Add starts with a choice, so neither form's fields show until you've said which you want. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsChooseOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelChooseCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Add a repo" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="Does the repo have a sprig.cs already, or are you writing one?" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <Button x:Name="ChooseInRepo" Classes="choice" Command="{Binding OpenAddInRepoCommand}"
+                                AutomationProperties.AutomationId="repo-add:in-repo">
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="It has a sprig.cs" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Use the one committed in the repo. Each sprout runs its own branch's version." />
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                        <Button Grid.Column="1" Classes="choice" Command="{Binding OpenAddInSprigCommand}"
+                                AutomationProperties.AutomationId="repo-add:in-sprig">
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Write one in sprig" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Kept in sprig, so nothing is written to the repo. Starts from the folder's sprig.cs, or a draft of its projects." />
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                    </Grid>
+                    <Button Classes="small" Content="Cancel" Command="{Binding CancelChooseCommand}" HorizontalAlignment="Right" Padding="14,7" />
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Adding a repo of the chosen kind: a folder and the ID trellises call it by -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">
             <Border.KeyBindings>
                 <KeyBinding Gesture="Escape" Command="{Binding CancelAddCommand}" />
                 <KeyBinding Gesture="Enter" Command="{Binding AddCommand}" />
             </Border.KeyBindings>
             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="640" Margin="32"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
                     HorizontalAlignment="Stretch" VerticalAlignment="Center">
                 <StackPanel Spacing="12">
-                    <TextBlock Text="Add a repo" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
-                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="A folder with its own sprig.cs uses it. One without gets a definition kept in sprig, drafted from what's in the folder, so nothing is written to the repo. An ID stays the kind it's added as; Copy into sprig and Write to the repo make a new one." />
+                    <TextBlock Text="{Binding AddTitle}" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="{Binding AddExplanation}" />
                     <StackPanel Spacing="4">
                         <TextBlock Classes="phead" Text="REPO FOLDER" />
-                        <controls:PathBox x:Name="AddPath" Path="{Binding AddFolder}" PickFolder="True" PickerTitle="Choose the repo's folder"
+                        <controls:PathBox x:Name="AddPath" Path="{Binding AddFolder}" PickFolder="True" PickerTitle="{Binding AddPickerTitle}"
                                           Placeholder="path/to/a/repo" />
                     </StackPanel>
                     <StackPanel Spacing="4">
@@ -271,11 +314,13 @@
                     </StackPanel>
                     <TextBlock Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding AddFailed}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <Button Classes="small" Content="Cancel" Command="{Binding CancelAddCommand}" />
-                        <Button Content="Add to Repos" Command="{Binding AddCommand}"
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                        <Button Content="← Back" Command="{Binding BackToChooseCommand}" HorizontalAlignment="Left"
+                                Background="Transparent" Foreground="{StaticResource MutedBrush}" Padding="6,7" />
+                        <Button Grid.Column="1" Classes="small" Content="Cancel" Command="{Binding CancelAddCommand}" Padding="14,7" />
+                        <Button Grid.Column="2" Content="Add to Repos" Command="{Binding AddCommand}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
-                    </StackPanel>
+                    </Grid>
                 </StackPanel>
             </Border>
         </Border>

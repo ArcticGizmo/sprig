@@ -64,7 +64,11 @@ public partial class ReposViewModel : PageViewModel
     [ObservableProperty] private bool _hasUsedBy;
     [ObservableProperty] private bool _confirmingRemove;
 
+    [ObservableProperty] private bool _isChooseOpen;
     [ObservableProperty] private bool _isAddOpen;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AddTitle), nameof(AddExplanation), nameof(AddPickerTitle))]
+    private bool _addInRepo;
     [ObservableProperty] private string _addFolder = "";
     [ObservableProperty] private string _addId = "";
     [ObservableProperty] private string _addMessage = "";
@@ -109,6 +113,14 @@ public partial class ReposViewModel : PageViewModel
         { InRepo: true } => $"Copies {Selected.DisplayFile} into sprig as a new repo, kept on this machine. '{Selected.Id}' keeps using the repo's file, and so do the trellises that use it.",
         _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.cs, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the trellises that use it.",
     };
+
+    public string AddTitle => AddInRepo ? "Use the repo's sprig.cs" : "Write one in sprig";
+
+    public string AddExplanation => AddInRepo
+        ? "Choose a repo folder that has a sprig.cs. Sprouts run their branch's version, and nothing in it runs until you approve it."
+        : "Kept in sprig, so nothing is written to the repo. It starts from the folder's sprig.cs if it has one, or else a draft from its projects, and opens for editing.";
+
+    public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.cs" : "Choose the repo's folder";
 
     public string RemoveNote => Selected is { InRepo: true }
         ? "Take it off the Repos list? The folder's own sprig.cs is left where it is. Trellises that use it will say it's missing."
@@ -401,15 +413,36 @@ public partial class ReposViewModel : PageViewModel
 
     partial void OnAddFolderChanged(string value)
     {
-        var name = Path.GetFileName(value.Trim().TrimEnd('/', '\\'));
-        if (name.Length == 0 || (AddId.Length > 0 && AddId != _suggestedId)) return;
-        _suggestedId = _services.Stored.UnusedRepoId(name);
+        var folder = value.Trim().TrimEnd('/', '\\');
+        if (Path.GetFileName(folder).Length == 0 || (AddId.Length > 0 && AddId != _suggestedId)) return;
+        _suggestedId = _services.Authoring.SuggestNewId(folder, AddInRepo);
         AddId = _suggestedId;
     }
 
+    /// <summary>+ Add starts with a choice, so neither form's fields show until it's made.</summary>
     [RelayCommand]
-    private void OpenAdd()
+    private void OpenChoose()
     {
+        IsAddOpen = false;
+        IsChooseOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelChoose() => IsChooseOpen = false;
+
+    [RelayCommand]
+    private void BackToChoose() => OpenChoose();
+
+    [RelayCommand]
+    private void OpenAddInRepo() => OpenAdd(inRepo: true);
+
+    [RelayCommand]
+    private void OpenAddInSprig() => OpenAdd(inRepo: false);
+
+    void OpenAdd(bool inRepo)
+    {
+        IsChooseOpen = false;
+        AddInRepo = inRepo;
         _suggestedId = "";
         AddId = "";
         AddFolder = "";
@@ -433,13 +466,19 @@ public partial class ReposViewModel : PageViewModel
             FailAdd("Choose the repo's folder.");
             return;
         }
+        if (AddInRepo && !File.Exists(Path.Combine(folder, StoredDefinitions.RepoFileName)))
+        {
+            FailAdd("That folder has no sprig.cs. Go back and choose Write one in sprig to start one.");
+            return;
+        }
         if (Ids.Check(id, "a repo ID") is { } bad)
         {
             FailAdd(bad);
             return;
         }
         RepoEntry entry;
-        try { entry = await AppServices.RunAsync(() => _services.Authoring.AddRepo(folder, id)); }
+        var inRepo = AddInRepo;
+        try { entry = await AppServices.RunAsync(() => _services.Authoring.AddRepo(folder, id, inRepo)); }
         catch (Exception e) when (e is ArgumentException or IOException)
         {
             FailAdd(e.Message);

@@ -32,6 +32,10 @@ public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Sett
         [CommandOption("--id <id>")]
         [Description("The ID trellises use for it (default: the folder's name, with -2, -3… when taken)")]
         public string? Id { get; set; }
+
+        [CommandOption("--in-sprig")]
+        [Description("Keep its definition in sprig: a copy of the folder's sprig.cs if it has one, else a draft")]
+        public bool InSprig { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
@@ -40,12 +44,12 @@ public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Sett
         var stored = RepoList.Stored(cli);
 
         // Adding the same folder again is a no-op, so a setup script can run twice.
-        if (File.Exists(Path.Combine(folder, StoredDefinitions.RepoFileName))
+        if (!s.InSprig && File.Exists(Path.Combine(folder, StoredDefinitions.RepoFileName))
             && stored.InRepoFor(folder) is { } existing && (s.Id is null || s.Id == existing.Id))
             return CliOutput.Ok(s.Json, $"'{existing.Id}' is already on the list, using {existing.DefinitionFile}", RepoList.Payload(existing));
 
-        var entry = RepoList.Authoring(cli).AddRepo(folder, s.Id);
-        var how = entry.InRepo ? $"using {entry.DefinitionFile}" : $"with a drafted definition kept in sprig at {entry.DefinitionFile}";
+        var entry = RepoList.Authoring(cli).AddRepo(folder, s.Id, s.InSprig ? false : null);
+        var how = entry.InRepo ? $"using {entry.DefinitionFile}" : $"with its definition kept in sprig at {entry.DefinitionFile}";
         return CliOutput.Ok(s.Json, $"added '{entry.Id}' ({RepoList.Kind(entry)}), {how}", RepoList.Payload(entry));
     }
 }

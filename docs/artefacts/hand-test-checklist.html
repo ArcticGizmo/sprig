@@ -203,6 +203,9 @@ sprig repo ls
 sprig trellis add "${T}/catalog.trellis.cs"
 sprig plan catalog</pre><button type="button" data-copy="cmd-repos">Copy</button></div>`, `Run the first three lines again, then <code>sprig repo rm shop-mobile-sprig</code>.`, `In the app, open <b>Trellises</b> and pick catalog, then open <b>Repos</b> and pick shop-mobile-sprig.`],
         expect: `shop-services says it's already on the list (RP5 added it); shop-mobile is added "in repo" and copied as shop-mobile-sprig, "in sprig". <code>repo ls</code> shows all of them with their kind. <code>trellis add</code> asks only for <code>catalog.trellis.cs</code>, and the plan asks nothing (the copy keeps shop-mobile's approval) and ends "No problems", with VITE_CATALOG_URL coming from catalog-api. Running the lines again changes nothing. <code>repo rm</code> is refused: used by catalog. In the app, catalog's picture shows shop-services and shop-mobile with the catalog-url wire, and shop-mobile-sprig says "Used by catalog".` },
+      { id: "RP7", title: "+ Add a repo, both ways",
+        how: [`On Repos, click <b>+ Add</b>. Pick <b>It has a sprig.cs</b>, enter <code>${T}/aspire</code> and click <b>Add to Repos</b>.`, `Click <b>← Back</b>, pick <b>Write one in sprig</b>, enter <code>${T}/shop-web</code> and click <b>Add to Repos</b>.`, `Close the editor, then <b>Remove</b> the new entry.`],
+        expect: `+ Add shows two cards first, like Trellises. The first is refused: the folder has no sprig.cs, and nothing is added. The second suggests the ID <code>shop-web-sprig-2</code> (RP3 took <code>shop-web-sprig</code>), adds it "in sprig" and opens its definition: a copy of shop-web's <code>sprig.cs</code>, with nothing asking for approval. Neither page has a line of text under its heading, and the Repos and Trellises list columns are the same width, so switching pages doesn't move the content.` },
     ]
   },
   {

@@ -207,6 +207,15 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo-write"));
             vm.Repos.CancelDeriveCommand.Execute(null);
+            // + Add's two cards, then the in-sprig form over a folder that has its own sprig.cs.
+            vm.Repos.OpenChooseCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo-add"));
+            vm.Repos.OpenAddInSprigCommand.Execute(null);
+            vm.Repos.AddFolder = Sprig.App.Controls.PathCompletion.ToPosix(Path.Combine(root, "shop-web"));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo-add-sprig"));
+            vm.Repos.CancelAddCommand.Execute(null);
             vm.NavigateCommand.Execute(vm.Trellises);
             Pump(TimeSpan.FromMilliseconds(300));
 

@@ -254,6 +254,53 @@ public class ReposViewModelTests
         Assert.Contains("'shop-web'", vm.DeriveMessage);
     }
 
+    [Fact]
+    public async Task Add_asks_which_kind_first_and_each_kind_makes_that_kind_of_entry()
+    {
+        using var store = new TempStore();
+        var web = Path.Combine(store.Root, "src", "shop-web");
+        var mobile = Path.Combine(store.Root, "src", "shop-mobile");
+        Directory.CreateDirectory(web);
+        Directory.CreateDirectory(mobile);
+        File.WriteAllText(Path.Combine(web, "sprig.cs"), "// shop-web's own");
+        File.WriteAllText(Path.Combine(mobile, "package.json"), """{ "name": "mobile", "scripts": { "dev": "vite" } }""");
+        var services = new AppServices(store.Root);
+        var vm = new ReposViewModel(services);
+
+        vm.OpenChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsAddOpen);
+
+        // "It has a sprig.cs" refuses a folder without one, before anything is added.
+        vm.OpenAddInRepoCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+        Assert.Equal("Use the repo's sprig.cs", vm.AddTitle);
+        vm.AddFolder = mobile;
+        Assert.Equal("shop-mobile", vm.AddId);
+        await vm.AddCommand.ExecuteAsync(null);
+        Assert.True(vm.AddFailed);
+        Assert.Contains("no sprig.cs", vm.AddMessage);
+        Assert.Empty(services.Stored.Repos());
+
+        vm.AddFolder = web;
+        vm.AddId = "shop-web";
+        await vm.AddCommand.ExecuteAsync(null);
+        Assert.False(vm.IsAddOpen);
+        Assert.True(services.Stored.Repo("shop-web")!.InRepo);
+
+        // "Write one in sprig" over a folder with its own sprig.cs starts from a copy of it, and opens it.
+        vm.BackToChooseCommand.Execute(null);
+        vm.OpenAddInSprigCommand.Execute(null);
+        Assert.Equal("Write one in sprig", vm.AddTitle);
+        vm.AddFolder = web;
+        Assert.Equal("shop-web-sprig", vm.AddId);
+        await vm.AddCommand.ExecuteAsync(null);
+        var copy = services.Stored.Repo("shop-web-sprig")!;
+        Assert.False(copy.InRepo);
+        Assert.Equal("// shop-web's own", File.ReadAllText(copy.DefinitionFile));
+        Assert.True(vm.Editor.IsEditing);
+    }
+
     [Theory]
     [InlineData("{catalog-api.http.url}", "catalog-api's url")]
     [InlineData("http://localhost:{web.http.port}/cart", "http://localhost:web's port/cart")]

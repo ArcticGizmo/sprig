@@ -25,5 +25,7 @@ public partial class ReposView : UserControl
     {
         if (e.PropertyName == nameof(ReposViewModel.IsAddOpen) && _vm?.IsAddOpen == true)
             Dispatcher.UIThread.Post(() => AddPath.FocusInput(), DispatcherPriority.Loaded);
+        if (e.PropertyName == nameof(ReposViewModel.IsChooseOpen) && _vm?.IsChooseOpen == true)
+            Dispatcher.UIThread.Post(() => ChooseInRepo.Focus(), DispatcherPriority.Loaded);
     }
 }

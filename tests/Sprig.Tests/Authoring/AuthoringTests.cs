@@ -150,6 +150,32 @@ public sealed class AuthoringTests : IDisposable
     }
 
     [Fact]
+    public void A_repo_added_as_a_named_kind_is_that_kind_and_one_kept_in_sprig_starts_from_the_folders_file()
+    {
+        var trust = new FileTrustStore(_store.Paths);
+        var authoring = Authoring(trust);
+        var own = Path.Combine(Dir("shop-web"), "sprig.cs");
+
+        Assert.Throws<ArgumentException>(() => authoring.AddRepo(Dir("shop-web"), "web", inRepo: true));
+        var drafted = authoring.AddRepo(Dir("shop-web"), inRepo: false);
+        Assert.Equal("shop-web", drafted.Id);
+        Assert.Contains("repo.Node(\"web\"", File.ReadAllText(drafted.DefinitionFile));
+        Assert.True(Approved(trust, drafted.DefinitionFile));
+
+        Write("shop-web/sprig.cs", "// shop-web's own");
+        trust.Approve(own, DefinitionHash.Of("// shop-web's own"));
+        Assert.Equal("shop-web-sprig", authoring.SuggestNewId(Dir("shop-web"), inRepo: false));
+        var copy = authoring.AddRepo(Dir("shop-web"), inRepo: false);
+        Assert.Equal("shop-web-sprig", copy.Id);
+        Assert.False(copy.InRepo);
+        Assert.Equal("// shop-web's own", File.ReadAllText(copy.DefinitionFile));
+        Assert.True(Approved(trust, copy.DefinitionFile));
+
+        Assert.True(authoring.AddRepo(Dir("shop-web"), "web", inRepo: true).InRepo);
+        Assert.Equal(own, Stored.Repo("web")!.DefinitionFile);
+    }
+
+    [Fact]
     public void Writing_a_repo_kept_in_sprig_to_its_folder_adds_a_separate_entry_and_never_writes_over_a_sprig_cs()
     {
         var trust = new FileTrustStore(_store.Paths);

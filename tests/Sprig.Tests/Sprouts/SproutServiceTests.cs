@@ -464,6 +464,49 @@ public sealed class SproutServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_repo_on_the_list_sprouts_on_its_own_under_its_id_and_ids_are_shared_with_trellises()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));
+        var stored = new StoredDefinitions(_store.Paths);
+        var registry = new TrellisRegistry(_store.Paths);
+        var trust = new FileTrustStore(_store.Paths);
+        var loader = new TrellisLoader(new DefinitionRunner(trust, new ScriptedHost(new()
+        {
+            ["// web v1"] = () => WebWith("v1"),
+        }), _store.Paths), registry, stored);
+        var sprouts = new SproutService(new SproutStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
+        stored.AddRepo("web", source, inRepo: true, definition: null);
+        trust.Approve(Path.Combine(source, "sprig.cs"), DefinitionHash.Of("// web v1"));
+
+        var entry = registry.Resolve("web");
+        Assert.Equal(stored.EntryFile("web"), entry);
+        var loaded = loader.Load(entry!);
+        Assert.True(loaded.Complete, string.Join("\n", loaded.Problems.Select(p => p.Message)));
+        Assert.True(loaded.Alone);
+        Assert.Equal("web", loaded.Id);
+
+        var record = sprouts.Up(loaded, "feat-x", null);
+        Assert.Equal("web/feat-x", record.Key);
+        Assert.Equal(Path.Combine(_root, "web--feat-x", "shop-web"), Assert.Single(record.Repos).Dir);
+        Assert.Contains("FEATURE=v1", File.ReadAllText(Path.Combine(record.Repos[0].Dir, ".env.local")));
+        // Brought up again by its trellis path, as the app does, it reads its definition from its worktree.
+        Assert.Equal(record.Repos[0].Dir, sprouts.Worktrees(entry!, "feat-x")!["web"]);
+        Assert.Equal(SproutState.Up, sprouts.Up(loader.Load(entry!, sprouts.Worktrees(entry!, "feat-x")), "feat-x", null).State);
+
+        // A trellis can't take a repo's ID, nor a repo a trellis's.
+        Assert.Throws<ArgumentException>(() => registry.Add("web", Path.Combine(_root, "x.trellis.cs")));
+        Assert.Equal("web-2", registry.UnusedId("web"));
+        registry.Add("storefront", Path.Combine(_root, "storefront.trellis.cs"));
+        Assert.Equal("storefront-2", stored.UnusedRepoId("storefront"));
+        Assert.Throws<ArgumentException>(() => stored.AddRepo("storefront", source, inRepo: true, definition: null));
+
+        // Once the repo is off the list, its sprout says so rather than failing to read.
+        stored.DeleteRepo("web");
+        Assert.Contains("'web' isn't in sprig's Repos list", Assert.Single(loader.Load(entry!).Problems).Message);
+    }
+
+    [Fact]
     public void A_new_branch_from_main_needs_no_new_approval()
     {
         var source = Repo("shop-web", ("index.html", "hi"), ("sprig.cs", "// web v1"));

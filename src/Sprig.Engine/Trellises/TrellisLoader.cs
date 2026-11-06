@@ -25,6 +25,9 @@ public sealed record LoadedTrellis(
 
     public bool Complete => Trellis is not null && Untrusted.Count == 0 && Problems.Count == 0;
 
+    /// <summary>A repo from the Repos list run on its own, rather than a trellis file.</summary>
+    public bool Alone { get; init; }
+
     /// <summary>Where the repos' definitions were read from, so where their other files belong too.</summary>
     public IReadOnlyDictionary<string, string> ReadFrom => SproutDirs ?? RepoDirs;
 
@@ -63,25 +66,32 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
 
     /// <param name="sproutDirs">A sprout's folder for each repo, keyed by the trellis's repo path. Its definitions are
     /// read from there, so a branch's changes count, and approved as the repo's own.</param>
+    /// <param name="trellisPath">A trellis file, or a Repos entry's file for that repo run on its own.</param>
     public LoadedTrellis Load(string trellisPath, IReadOnlyDictionary<string, string>? sproutDirs = null)
     {
         var path = LongPath.Of(trellisPath);
-        var id = registry?.IdFor(path) ?? TrellisRegistry.IdFromFile(path);
+        var alone = stored?.RepoIdOf(path);
+        var id = alone ?? registry?.IdFor(path) ?? TrellisRegistry.IdFromFile(path);
         var problems = new List<PlanProblem>();
         var results = new List<DefinitionResult>();
         var untrusted = new List<NeedsTrust>();
         var repos = new Dictionary<string, RepoModel>(StringComparer.Ordinal);
         var dirs = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var trellisResult = runner.Evaluate(path);
-        results.Add(trellisResult);
-        var trellis = Accept(trellisResult, problems, untrusted) switch
+        TrellisModel? trellis;
+        if (alone is not null) trellis = Alone(alone, path);
+        else
         {
-            TrellisModel t => t,
-            RepoModel => Fail($"{Path.GetFileName(path)} describes a repo, not a trellis (it calls Repo.Describe)", path, problems),
-            _ => null,
-        };
-        if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results, dirs) { Id = id };
+            var trellisResult = runner.Evaluate(path);
+            results.Add(trellisResult);
+            trellis = Accept(trellisResult, problems, untrusted) switch
+            {
+                TrellisModel t => t,
+                RepoModel => Fail($"{Path.GetFileName(path)} describes a repo, not a trellis (it calls Repo.Describe)", path, problems),
+                _ => null,
+            };
+        }
+        if (trellis is null) return new LoadedTrellis(path, null, repos, untrusted, problems, results, dirs) { Id = id, Alone = alone is not null };
 
         var dir = Path.GetDirectoryName(path)!;
         var definitions = new List<(RepoRefModel reference, string file, string trustAs)>();
@@ -142,7 +152,16 @@ public sealed class TrellisLoader(DefinitionRunner runner, TrellisRegistry? regi
 
         IReadOnlyDictionary<string, string>? readFrom = sproutDirs is null ? null
             : trellis.Repos.ToDictionary(r => r.Path, r => sproutDirs.GetValueOrDefault(r.Path) is { } d ? LongPath.Of(d) : dirs.GetValueOrDefault(r.Path) ?? r.Path, StringComparer.Ordinal);
-        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs, readFrom) { Id = id };
+        return new LoadedTrellis(path, trellis, repos, untrusted, problems, results, dirs, readFrom) { Id = id, Alone = alone is not null };
+    }
+
+    /// <summary>A trellis of one repo from the Repos list, with nothing of its own, so the repo can sprout without a
+    /// trellis file. Its name differs from the repo's, so the trellis and the repo are never mistaken for each other.</summary>
+    static TrellisModel Alone(string repoId, string entryFile)
+    {
+        var at = new SourceLocation(entryFile, 0);
+        return new TrellisModel(Sdk.Schema, $"{repoId}, on its own", Sdk.Version, at, Containers: [],
+            Repos: [new RepoRefModel(repoId, at, Use: repoId)], Bindings: [], Groups: []);
     }
 
     static DefinitionModel? Accept(DefinitionResult result, List<PlanProblem> problems, List<NeedsTrust> untrusted)

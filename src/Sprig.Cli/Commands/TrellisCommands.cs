@@ -179,7 +179,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
     public sealed class Settings : TrustingSettings
     {
         [CommandArgument(0, "<trellis>")]
-        [Description("A registered trellis name, or a trellis file")]
+        [Description("A trellis ID, a repo ID from the Repos list (that repo on its own), or a trellis file")]
         public string Trellis { get; set; } = "";
 
         [CommandOption("--sprout <name>")]
@@ -194,7 +194,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         var problems = new List<PlanProblem>();
         var compose = loaded.ComposeFiles(problems);
         var plan = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, s.Sprout, cli.Settings.Get(), PortAllocator.Listening(),
-            ComposeFiles: compose));
+            ComposeFiles: compose, Alone: loaded.Alone));
         if (!plan.HasErrors) problems.AddRange(cli.Sprouts.CheckFiles(plan, loaded.ReadFrom));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };
         if (s.Json) CliOutput.Json(plan);
@@ -211,7 +211,7 @@ static class TrellisLoad
     public static LoadedTrellis? Load(CliContext cli, string nameOrPath, TrustingSettings s, string? sprout = null)
     {
         var path = cli.Trellises.Resolve(nameOrPath)
-            ?? throw new InvalidOperationException($"no trellis named '{nameOrPath}'. Register one with: sprig trellis add <file>");
+            ?? throw new InvalidOperationException($"no trellis or repo named '{nameOrPath}'. Register a trellis with: sprig trellis add <file>, or a repo with: sprig repo add <folder>");
 
         var loader = new TrellisLoader(cli.Definitions, cli.Trellises, new StoredDefinitions(cli.Paths));
         var worktrees = sprout is null ? null : cli.Sprouts.Worktrees(path, sprout);

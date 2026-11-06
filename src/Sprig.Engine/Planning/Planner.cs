@@ -13,6 +13,7 @@ namespace Sprig.Engine.Planning;
 /// <param name="PortPolicy">The sprout's port policy, recorded in the plan.</param>
 /// <param name="WorktreesFrom">Where the sprout's worktrees branched from, recorded in the plan; null when it runs its
 /// repos in place, or for a plan that isn't a sprout's.</param>
+/// <param name="Alone">The trellis is one repo run on its own, so a problem says how to fill what it needs alone.</param>
 public sealed record PlanInput(
     TrellisModel Trellis,
     IReadOnlyDictionary<string, RepoModel> Repos,
@@ -23,7 +24,8 @@ public sealed record PlanInput(
     IReadOnlyDictionary<string, ComposeFileInfo>? ComposeFiles = null,
     Random? Random = null,
     string PortPolicy = "stable",
-    string? WorktreesFrom = null);
+    string? WorktreesFrom = null,
+    bool Alone = false);
 
 /// <summary>The services in a repo's compose file.</summary>
 /// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between sprouts.</param>
@@ -52,6 +54,9 @@ public static class Planner
         public string? RepoPath { get; } = repoPath;
         public RepoModel? Repo { get; } = repo;
         public Dictionary<string, Resource> Resources { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Containers the repo declares that this plan leaves out.</summary>
+        public HashSet<string> LeftOut { get; init; } = [];
     }
 
     sealed class Run(PlanInput input)
@@ -105,9 +110,10 @@ public static class Planner
                     Problem($"'{reference.Path}' and '{other}' both call themselves '{repo.Name}'; repo names must be unique in a trellis", repo.Location);
                 seenNames[repo.Name] = reference.Path;
 
-                var scope = new Scope(repo.Name, reference.Path, repo);
+                var scope = new Scope(repo.Name, reference.Path, repo) { LeftOut = UnneededFallbackInfra(reference.Path, repo) };
                 foreach (var app in repo.Apps) AddResource(scope, app.Name, app.Job ? "job" : "app", app.Location, app.Endpoints);
-                foreach (var c in repo.Containers) AddResource(scope, c.Name, "container", c.Location, c.Endpoints);
+                foreach (var c in repo.Containers.Where(c => !scope.LeftOut.Contains(c.Name)))
+                    AddResource(scope, c.Name, "container", c.Location, c.Endpoints);
                 foreach (var file in repo.ComposeFiles)
                     foreach (var service in file.Services) AddResource(scope, service.Name, "compose service", service.Location, service.Endpoints);
                 _scopes.Add(scope);
@@ -443,11 +449,69 @@ public static class Planner
             return new PlannedValue(template, ok ? value.ToString() : null, via, sources.Distinct().ToArray());
         }
 
-        /// <summary>Nothing answers the import: no trellis binding, and no other repo exports it.</summary>
+        /// <summary>Nothing answers the import: no trellis binding, no other repo exports it, and the repo has no
+        /// fallback of its own.</summary>
         bool Unfilled(Scope scope, string name)
             => scope.Repo is not null
-               && input.Trellis.Bindings.All(b => b.Import != name)
-               && !_scopes.Any(s => s != scope && s.Repo?.Exports.Any(e => e.Name == name) == true);
+               && scope.Repo.Imports.FirstOrDefault(i => i.Name == name)?.OrElse is null
+               && !FilledElsewhere(scope.RepoPath!, name);
+
+        /// <summary>The trellis binds the import, or another repo exports it.</summary>
+        bool FilledElsewhere(string repoPath, string name)
+            => input.Trellis.Bindings.Any(b => b.Import == name)
+               || input.Repos.Any(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == name));
+
+        /// <summary>
+        /// Containers of <paramref name="repo"/> that only its fallbacks use, where something else fills every import
+        /// those fallbacks are for. A repo can bring its own mail catcher for when it runs alone without a sprout of a
+        /// trellis that brings one running two.
+        /// </summary>
+        HashSet<string> UnneededFallbackInfra(string repoPath, RepoModel repo)
+        {
+            var fallbacks = repo.Imports.Where(i => i.OrElse is not null).ToArray();
+            if (fallbacks.Length == 0) return [];
+
+            var usedElsewhere = new HashSet<string>(StringComparer.Ordinal);
+            void Uses(string? template)
+            {
+                if (template is not null) usedElsewhere.UnionWith(ResourcesIn(template));
+            }
+            foreach (var app in repo.Apps)
+            {
+                foreach (var env in app.Env) Uses(env.Value);
+                Uses(app.Run);
+                foreach (var link in app.Links ?? []) Uses(link.Url);
+                usedElsewhere.UnionWith(app.WaitFor);
+            }
+            foreach (var c in repo.Containers)
+                foreach (var env in c.Env) Uses(env.Value);
+            foreach (var export in repo.Exports) Uses(export.Value);
+            foreach (var file in repo.ComposeFiles)
+                foreach (var o in file.Overrides) Uses(o.Value);
+
+            var needed = new HashSet<string>(StringComparer.Ordinal);
+            var fallbackOnly = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var import in fallbacks)
+            {
+                var named = ResourcesIn(import.OrElse!).Where(r => repo.Containers.Any(c => c.Name == r) && !usedElsewhere.Contains(r));
+                if (FilledElsewhere(repoPath, import.Name)) fallbackOnly.UnionWith(named);
+                else needed.UnionWith(named);
+            }
+            fallbackOnly.ExceptWith(needed);
+            return fallbackOnly;
+        }
+
+        /// <summary>The resources a template names, like <c>mail</c> in <c>{mail.smtp.url}</c>.</summary>
+        static IEnumerable<string> ResourcesIn(string template)
+        {
+            IReadOnlyList<TemplatePart> parts;
+            try { parts = TemplateText.Parse(template); }
+            catch (FormatException) { return []; }
+            return parts.OfType<RefPart>()
+                .Select(p => p.Path)
+                .Where(p => !p.StartsWith("import.", StringComparison.Ordinal) && !p.StartsWith("export.", StringComparison.Ordinal) && !p.StartsWith("sprout.", StringComparison.Ordinal))
+                .Select(p => p.Split('.')[0]);
+        }
 
         /// <summary>What crossed an import is labelled with it, as the asking app names it. A literal value still came
         /// from somewhere: the repo or trellis that supplied it.</summary>
@@ -533,9 +597,17 @@ public static class Planner
                 .SelectMany(s => s.Repo!.Exports.Where(e => e.Name == name).Select(e => (scope: s, export: e)))
                 .ToList();
 
+            if (exporters.Count == 0 && declared?.OrElse is { } fallback)
+            {
+                var own = ResolveTemplate(scope, fallback, at, visiting);
+                if (own is null) return null;
+                return new Resolved(own.Value.Value, [$"import {name} ← {scope.Owner}'s own (OrElse)", .. own.Value.Via], Crossed(own.Value.Sources, scope.Owner, name));
+            }
             if (exporters.Count == 0)
             {
-                Problem($"{scope.Owner} imports '{name}', but no repo in the trellis exports it and the trellis doesn't bind it", at);
+                Problem(input.Alone
+                    ?$"{scope.Owner} imports '{name}', and nothing fills it when it runs alone: run it in a trellis that does, or give it a fallback, as in repo.Import<…>(\"{name}\").OrElse(…)"
+                    : $"{scope.Owner} imports '{name}', but no repo in the trellis exports it and the trellis doesn't bind it", at);
                 return null;
             }
             if (exporters.Count > 1)
@@ -600,7 +672,7 @@ public static class Planner
         }
 
         IEnumerable<ContainerModel> Containers(Scope scope)
-            => scope.Repo?.Containers ?? (scope == _trellis ? input.Trellis.Containers : []);
+            => scope.Repo?.Containers.Where(c => !scope.LeftOut.Contains(c.Name)) ?? (scope == _trellis ? input.Trellis.Containers : []);
 
         void Problem(string message, SourceLocation? location) => _problems.Add(new PlanProblem(ProblemSeverity.Error, message, location));
 

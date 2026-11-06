@@ -54,8 +54,8 @@ public partial class MainWindowViewModel : ViewModelBase
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
 
-        // The pages link to each other: a trellis to its repos, a repo to the trellises that use it, and a trellis to
-        // the form that starts a sprout of it.
+        // The pages link to each other: a trellis to its repos, a repo to the trellises that use it, and a trellis or a
+        // repo to the form that starts a sprout of it.
         Repos.OpenTrellis = id =>
         {
             CurrentPage = Trellises;
@@ -66,12 +66,14 @@ public partial class MainWindowViewModel : ViewModelBase
             CurrentPage = Repos;
             Repos.Show(id);
         };
-        Trellises.StartSprout = id =>
+        void StartSprout(string id)
         {
             CurrentPage = Sprouts;
             Sprouts.NewTrellis = id;
             Sprouts.OpenAddCommand.Execute(null);
-        };
+        }
+        Trellises.StartSprout = StartSprout;
+        Repos.StartSprout = StartSprout;
 
         Pages = [Home, Repos, Trellises, Sprouts, Settings, About];
         NavItems = [Home, Repos, Trellises, Sprouts];

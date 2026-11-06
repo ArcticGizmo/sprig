@@ -53,6 +53,9 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>Opens a trellis on the Trellises page, by ID.</summary>
     public Action<string>? OpenTrellis { get; set; }
 
+    /// <summary>Opens the new-sprout form for a repo, to run it on its own.</summary>
+    public Action<string>? StartSprout { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection), nameof(KeptExplanation), nameof(DeriveLabel), nameof(DeriveNote), nameof(RemoveNote))]
     private RepoItem? _selected;
@@ -259,7 +262,9 @@ public partial class ReposViewModel : PageViewModel
         foreach (var export in model.Exports)
             Offers.Add(new RepoFact(export.Name, $"{Describe(export.Value)} · a {export.Type}"));
         foreach (var import in model.Imports)
-            Needs.Add(new RepoFact(import.Name, $"a {import.Type}; each trellis that uses this repo fills it"));
+            Needs.Add(new RepoFact(import.Name, import.OrElse is { } own
+                ? $"a {import.Type}; a trellis can fill it, else it uses {Fallback(own)}"
+                : $"a {import.Type}; each trellis that uses this repo fills it, so it can't run alone"));
         HasModel = true;
         RaiseSections();
     }
@@ -292,6 +297,16 @@ public partial class ReposViewModel : PageViewModel
             RefPart r => r.Path,
             _ => "",
         }));
+    }
+
+    /// <summary>"its own mail" for a fallback built from the repo's infra, else the value in words.</summary>
+    static string Fallback(string template)
+    {
+        IReadOnlyList<TemplatePart> parts;
+        try { parts = TemplateText.Parse(template); }
+        catch (FormatException) { return template; }
+        var own = parts.OfType<RefPart>().Select(p => p.Path.Split('.')).Where(bits => bits.Length == 3).Select(bits => bits[0]).Distinct().ToArray();
+        return own.Length > 0 ? $"its own {string.Join(" and ", own)}" : Describe(template);
     }
 
     void Say(string message, bool bad)
@@ -378,6 +393,13 @@ public partial class ReposViewModel : PageViewModel
     {
         DeriveFailed = true;
         DeriveMessage = message;
+    }
+
+    /// <summary>Only once its definition runs: the form would only say why it can't.</summary>
+    [RelayCommand]
+    private void Start()
+    {
+        if (Selected is { } repo && HasModel) StartSprout?.Invoke(repo.Id);
     }
 
     [RelayCommand]

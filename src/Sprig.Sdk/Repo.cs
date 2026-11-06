@@ -51,11 +51,12 @@ public sealed class RepoBuilder : DefinitionBuilder
     }
 
     /// <summary>Ask the trellis for a value. It binds to an export of the same name from another repo, or to a value
-    /// the trellis supplies itself.</summary>
+    /// the trellis supplies itself; <see cref="Import{T}.OrElse(Expr)"/> says what to use when neither does.</summary>
     public Import<T> Import<T>(string name, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
     {
+        var index = _imports.Count;
         _imports.Add(new ImportModel(name, ValueType.NameOf<T>(), new SourceLocation(file, line)));
-        return new Import<T>(name);
+        return new Import<T>(name) { SetOrElse = value => _imports[index] = _imports[index] with { OrElse = value.ToTemplate() } };
     }
 
     /// <summary>Make a value available to other repos in the trellis under <paramref name="name"/>.</summary>

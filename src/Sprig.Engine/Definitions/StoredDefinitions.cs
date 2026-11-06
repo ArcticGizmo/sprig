@@ -30,6 +30,21 @@ public sealed class StoredDefinitions(ISprigPaths paths)
 
     public string TrellisFile(string id) => LongPath.Of(Path.Combine(TrellisesRoot, id, TrellisFileName));
 
+    /// <summary>The file that records a Repos entry. It also stands for the repo run on its own, as the trellis path
+    /// of its sprouts.</summary>
+    public string EntryFile(string id) => EntryFile(paths, id);
+
+    public static string EntryFile(ISprigPaths paths, string id) => LongPath.Of(Path.Combine(paths.Root, "repos", id, EntryFileName));
+
+    /// <summary>The repo ID whose entry file <paramref name="path"/> is, or null for any other file. An entry since
+    /// taken off the list still answers, so its sprouts can say the repo is gone rather than fail to read.</summary>
+    public string? RepoIdOf(string path)
+    {
+        if (!Path.GetFileName(path).Equals(EntryFileName, StringComparison.OrdinalIgnoreCase)) return null;
+        var folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        return SamePath(Path.GetDirectoryName(folder)!, ReposRoot) ? Path.GetFileName(folder) : null;
+    }
+
     sealed record StoredEntry(string Folder, bool InRepo);
 
     /// <summary>Every repo in the Repos list.</summary>
@@ -65,7 +80,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
     {
         if (Ids.Check(id, "a repo ID") is { } bad) throw new ArgumentException(bad, nameof(id));
         var dir = Path.Combine(ReposRoot, id);
-        if (Directory.Exists(dir)) throw new ArgumentException($"'{id}' is already taken", nameof(id));
+        if (Directory.Exists(dir) || TrellisIdsTaken().Contains(id)) throw new ArgumentException($"'{id}' is already taken", nameof(id));
         if (!inRepo && definition is null) throw new ArgumentException("a repo kept in sprig needs its definition", nameof(definition));
         Directory.CreateDirectory(dir);
         if (!inRepo) File.WriteAllText(CopyFile(id), definition);
@@ -91,11 +106,18 @@ public sealed class StoredDefinitions(ISprigPaths paths)
         return IsUnder(full, ReposRoot) || IsUnder(full, TrellisesRoot);
     }
 
-    /// <summary>An unused repo ID: <paramref name="wanted"/>, or with -2, -3… after it.</summary>
+    /// <summary>An unused repo ID: <paramref name="wanted"/>, or with -2, -3… after it. A repo can be sprouted on its
+    /// own, keyed by its ID like a trellis, so IDs are unique across both.</summary>
     public string UnusedRepoId(string wanted)
-        => Ids.Unused(Ids.Slug(wanted, "repo"), Directory.Exists(ReposRoot)
-            ? Directory.EnumerateDirectories(ReposRoot).Select(d => Path.GetFileName(d)).ToHashSet(StringComparer.OrdinalIgnoreCase)
-            : []);
+        => Ids.Unused(Ids.Slug(wanted, "repo"), RepoIdsTaken().Concat(TrellisIdsTaken()).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The folder names under the Repos list, including any without a readable entry.</summary>
+    public IReadOnlySet<string> RepoIdsTaken() => Directory.Exists(ReposRoot)
+        ? Directory.EnumerateDirectories(ReposRoot).Select(d => Path.GetFileName(d)).ToHashSet(StringComparer.OrdinalIgnoreCase)
+        : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    HashSet<string> TrellisIdsTaken()
+        => new Trellises.TrellisRegistry(paths).List().Select(e => e.Id).Concat(TrellisIds()).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     public string CreateTrellis(string id, string text)
     {

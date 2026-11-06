@@ -15,8 +15,7 @@ pwsh -File scripts/testbed.ps1 -Path D:\tb -Force
 
 Two trellises sit beside the repos:
 
-- `storefront.trellis.cs` joins all three repos and gives each sprout its own worktrees: `sprig up storefront --sprout feat-x`.
-- `services.trellis.cs` runs `shop-services` alone, in place in its checkout: `sprig up services`.
+- `storefront.trellis.cs` joins all three repos: `sprig up storefront --sprout feat-x` gives the sprout its own worktrees, and `--in-place` runs the repos where they're checked out.
 - `catalog.trellis.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`trellis.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
 
   ```sh
@@ -28,6 +27,8 @@ Two trellises sit beside the repos:
   ```
 
   Running them again is harmless: an ID already listed for the same folder is left as it is.
+
+A repo on the Repos list also runs on its own, with no trellis: `sprig up shop-services --in-place`. `shop-services` brings its own Mailpit for that (`repo.Import<Url>("mail-smtp").OrElse(...)`), which storefront's sprouts leave out, since storefront supplies one.
 
 ## What proves the wiring
 

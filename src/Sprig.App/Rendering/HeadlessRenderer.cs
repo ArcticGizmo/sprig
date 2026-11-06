@@ -216,6 +216,18 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo-add-sprig"));
             vm.Repos.CancelAddCommand.Execute(null);
+            // Start a sprout from a repo: the new-sprout form, with the repo chosen and the sprout's own choices.
+            vm.Repos.Show("shop-services");
+            clock.Restart();
+            while (!vm.Repos.HasModel && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+            Save(window, Sibling(outFile, "repo-ready"));
+            vm.Repos.StartCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "new-sprout"));
+            vm.Sprouts.NewInPlace = true;
+            Pump(TimeSpan.FromMilliseconds(200));
+            Save(window, Sibling(outFile, "new-sprout-in-place"));
+            vm.Sprouts.CancelAddCommand.Execute(null);
             vm.NavigateCommand.Execute(vm.Trellises);
             Pump(TimeSpan.FromMilliseconds(300));
 

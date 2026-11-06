@@ -106,7 +106,8 @@ public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, st
 /// <summary>One env var. <see cref="File"/> is null for a process env var, else the env file it's written to.</summary>
 public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location);
 
-public sealed record ImportModel(string Name, string Type, SourceLocation Location);
+/// <param name="OrElse">A template for the value to use when nothing else fills the import; null to need one.</param>
+public sealed record ImportModel(string Name, string Type, SourceLocation Location, string? OrElse = null);
 
 public sealed record ExportModel(string Name, string Type, string Value, SourceLocation Location);
 

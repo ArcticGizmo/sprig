@@ -20,7 +20,9 @@ Checked on a fresh testbed in a throwaway store: an old trellis fails at its `Wo
 - **App:** the new-sprout form asks: own worktrees (branch, start from) or run in place; same ports each time or fresh ones. The last answers are remembered per trellis. The new-trellis form loses both questions, and the trellis Overview's "How sprouts run" keeps only its groups.
 - **Testbed:** the trellises drop their `Worktrees`/`Ports` lines.
 
-## 2. A repo on its own (M)
+## 2. A repo on its own (M) ✅ done 2026-11-06
+
+Checked on a fresh testbed in a throwaway store: `sprig repo add shop-services`, then `sprig up shop-services --in-place -d` brought up the repo's compose services and its own Mailpit, and both APIs were ready; an order's email reached that Mailpit; `sprig plan storefront` had only storefront's `mail`, not the repo's; `rm` left no containers or changed files. Built as planned, plus: an entry taken off the Repos list still loads as a lone repo, so its sprouts say "isn't in sprig's Repos list" rather than failing to read; `LoadedTrellis.Alone` and `PlanInput.Alone` carry the fact, so only a lone repo's unfilled import names `OrElse`; the Repos page's Needs says what a fallback uses ("else it uses its own mail").
 
 - **Start a sprout** on the Repos page, and repos in the new-sprout form's picker. `sprig up <repo-id> --sprout x` works too.
 - **Engine:** the loader treats a Repos entry's `repo.json` path as a trellis of that one repo, so every place that reloads a sprout's trellis by path works unchanged. The sprout is keyed by the repo's ID, so IDs are one namespace: a trellis can't take a repo's ID or the reverse.

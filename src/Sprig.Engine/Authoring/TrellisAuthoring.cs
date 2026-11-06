@@ -22,7 +22,7 @@ public sealed class TrellisAuthoring(StoredDefinitions stored, TrellisRegistry r
         foreach (var dir in repoDirs)
             if (!Directory.Exists(dir)) throw new ArgumentException($"there's no folder at {dir}");
 
-        var takenIds = registry.List().Select(e => e.Id).Concat(stored.TrellisIds()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var takenIds = registry.List().Select(e => e.Id).Concat(stored.TrellisIds()).Concat(stored.RepoIdsTaken()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var id = Ids.Unused(Ids.Slug(name, "trellis"), takenIds);
         var repos = repoDirs.Select(dir =>
         {

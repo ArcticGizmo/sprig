@@ -334,7 +334,7 @@
             </Border>
 
             <TextBlock DockPanel.Dock="Top" Margin="24,24" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding IsEmpty}"
-                       Text="No sprouts yet. + New sprout makes one from a trellis." />
+                       Text="No sprouts yet. + New sprout makes one of a trellis, or of a repo on its own." />
             <TextBlock DockPanel.Dock="Top" Margin="24,24" FontSize="13" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding NoOverviewMatches}"
                        Text="No sprouts match. Clear the search or pick All to see them all." />
 
@@ -343,7 +343,8 @@
                     <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12" Margin="24,8,24,6">
                         <CheckBox IsChecked="{Binding AllChecked, Mode=OneWay}" Command="{Binding ToggleAllCheckedCommand}" ToolTip.Tip="Tick every one shown" />
                         <TextBlock Grid.Column="1" Classes="phead" Text="SPROUT" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="2" Classes="phead" Text="TRELLIS" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Classes="phead" Text="OF" VerticalAlignment="Center"
+                                   ToolTip.Tip="The trellis it's a sprout of, or the repo it runs on its own" />
                         <TextBlock Grid.Column="3" Classes="phead" Text="STATE" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="4" Classes="phead" Text="APPS" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="5" Classes="phead" Text="PORTS" VerticalAlignment="Center" />
@@ -929,10 +930,10 @@
                 <StackPanel Spacing="12">
                     <TextBlock Text="New sprout" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding !HasTrellises}"
-                               Text="Add a trellis on the Trellises page first." />
+                               Text="Add a repo on the Repos page, or a trellis on the Trellises page, first." />
                     <StackPanel Spacing="10" IsVisible="{Binding HasTrellises}">
                         <StackPanel Spacing="4">
-                            <TextBlock Classes="phead" Text="TRELLIS" />
+                            <TextBlock Classes="phead" Text="TRELLIS OR REPO" />
                             <ComboBox ItemsSource="{Binding TrellisNames}" SelectedItem="{Binding NewTrellis}" HorizontalAlignment="Stretch" />
                         </StackPanel>
                         <StackPanel Spacing="4">

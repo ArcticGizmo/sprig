@@ -111,7 +111,7 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding !Editor.IsEditing}">
                 <StackPanel Margin="28,24,28,28" Spacing="16" MaxWidth="1100" HorizontalAlignment="Stretch" IsVisible="{Binding HasSelection}">
 
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                         <StackPanel Spacing="3">
                             <TextBlock Text="{Binding Selected.Id, FallbackValue=''}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                             <SelectableTextBlock Text="{Binding Selected.DisplayFolder, FallbackValue=''}" FontSize="12"
@@ -134,7 +134,10 @@
                         </StackPanel>
                         <Button Grid.Column="1" Classes="small" Content="Open definition" Command="{Binding EditCommand}" VerticalAlignment="Top"
                                 IsEnabled="{Binding !Selected.Missing, FallbackValue=False}" />
-                        <Button Grid.Column="2" Content="Remove" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
+                        <Button Grid.Column="2" Content="Start a sprout" Command="{Binding StartCommand}" VerticalAlignment="Top"
+                                IsEnabled="{Binding HasModel}" ToolTip.Tip="Run this repo on its own, without a trellis"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
+                        <Button Grid.Column="3" Content="Remove" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
                                 Background="Transparent" Foreground="{StaticResource DangerBrush}"
                                 BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
                     </Grid>

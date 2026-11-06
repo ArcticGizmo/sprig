@@ -242,6 +242,8 @@ public partial class SproutsViewModel : PageViewModel
         var trellis = NewTrellis;
         TrellisNames.Clear();
         foreach (var entry in _services.Trellises.List()) TrellisNames.Add(entry.Id);
+        // A repo can sprout on its own; IDs are unique across trellises and repos, so the names don't collide.
+        foreach (var repo in _services.Stored.Repos()) TrellisNames.Add(repo.Id);
         NewTrellis = TrellisNames.Contains(trellis ?? "") ? trellis : TrellisNames.FirstOrDefault();
 
         OnPropertyChanged(nameof(IsEmpty));
@@ -465,7 +467,7 @@ public partial class SproutsViewModel : PageViewModel
         FormFailed = false;
         if (NewTrellis is not { } name || _services.Trellises.Resolve(name) is not { } path)
         {
-            Fail("Choose a trellis. Add one on the Trellises page first.");
+            Fail("Choose a trellis or a repo. Add one on the Trellises or Repos page first.");
             return;
         }
 
@@ -580,15 +582,16 @@ public partial class SproutsViewModel : PageViewModel
             }
             if (loaded.Trellis is null || loaded.Problems.Count > 0)
             {
-                Fail("The trellis can't be planned: " + string.Join("; ", loaded.Problems.Take(3).Select(p => p.Message)) +
-                     ". The Trellises page shows the details.");
+                var page = loaded.Alone ? "Repos" : "Trellises";
+                Fail("It can't be planned: " + string.Join("; ", loaded.Problems.Take(3).Select(p => p.Message)) +
+                     $". The {page} page shows the details.");
                 return null;
             }
             return loaded;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Fail($"The trellis couldn't be read: {e.Message}");
+            Fail($"It couldn't be read: {e.Message}");
             return null;
         }
         finally

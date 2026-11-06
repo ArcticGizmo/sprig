@@ -54,6 +54,59 @@ public class PlannerTests
         Assert.DoesNotContain(plan.Ports, p => p.Resource == "migrate");
     }
 
+    static void Orders(RepoBuilder repo)
+        => repo.Node("orders", ".").Http().Env("SMTP", repo.Import<Url>("mail-smtp").OrElse(repo.Mailpit("mail").SmtpUrl));
+
+    [Fact]
+    public void An_import_nothing_fills_uses_its_fallback_and_its_infra()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", Orders);
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        var mail = Assert.Single(plan.Containers);
+        Assert.Equal(("shop-services", "mail"), (mail.Owner, mail.Name));
+        var smtp = plan.Apps.Single().Env.Single().Value;
+        Assert.Equal($"smtp://localhost:{plan.Ports.Single(p => p.Endpoint == "smtp").Port}", smtp.Value);
+        Assert.StartsWith("import mail-smtp ← shop-services's own", smtp.Via[0]);
+        Assert.Equal("mail-smtp", Assert.Single(plan.Wires()).Import);
+    }
+
+    [Fact]
+    public void A_trellis_that_fills_the_import_wins_and_the_fallbacks_own_infra_is_left_out()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", Orders);
+        var mail = f.Trellis.Mailpit("mail");
+        f.Trellis.Bind("mail-smtp", mail.SmtpUrl);
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal("storefront", Assert.Single(plan.Containers).Owner);
+        Assert.DoesNotContain(plan.Ports, p => p.Owner == "shop-services" && p.Resource == "mail");
+        Assert.StartsWith("import mail-smtp ← the trellis", plan.Apps.Single().Env.Single().Value.Via[0]);
+    }
+
+    [Fact]
+    public void Fallback_infra_the_repo_also_uses_itself_is_kept_and_a_lone_repos_unfilled_import_says_how_to_fill_it()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo =>
+        {
+            var mail = repo.Mailpit("mail");
+            repo.Node("orders", ".").Http().Env("SMTP", repo.Import<Url>("mail-smtp").OrElse(mail.SmtpUrl)).WaitFor(mail);
+            repo.Node("web", ".").Http().Env("API", repo.Import<Url>("api-url"));
+        });
+        f.Trellis.Bind("mail-smtp", "smtp://elsewhere:25");
+
+        Assert.Single(f.Plan().Containers);
+        Assert.Contains("no repo in the trellis exports it", Assert.Single(f.Plan().Problems).Message);
+        Assert.Contains("nothing fills it when it runs alone", Assert.Single(f.PlanWith(i => i with { Alone = true }).Problems).Message);
+    }
+
     [Fact]
     public void Two_apps_that_call_each_other_start_in_order_instead_of_waiting_forever()
     {

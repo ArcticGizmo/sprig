@@ -26,6 +26,8 @@ public sealed class TrellisRegistry(ISprigPaths paths)
         if (CheckId(id) is { } bad) throw new ArgumentException(bad, nameof(id));
         if (entries.Any(e => e.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException($"a trellis is already registered as '{id}'", nameof(id));
+        if (RepoIds().Contains(id))
+            throw new ArgumentException($"'{id}' is a repo on the Repos list; a trellis needs an ID of its own", nameof(id));
         var entry = new TrellisEntry(id, full, DateTimeOffset.UtcNow);
         entries.Add(entry);
         Save(entries);
@@ -41,13 +43,18 @@ public sealed class TrellisRegistry(ISprigPaths paths)
         return true;
     }
 
-    /// <summary>A registered trellis by ID, or the path itself when it names an existing file.</summary>
+    /// <summary>A registered trellis by ID; a repo on the Repos list, run on its own, by ID; or the path itself when it
+    /// names an existing file.</summary>
     public string? Resolve(string idOrPath)
     {
         var entry = Load().FirstOrDefault(e => e.Id.Equals(idOrPath, StringComparison.OrdinalIgnoreCase));
         if (entry is not null) return entry.Path;
+        if (CheckId(idOrPath) is null && Definitions.StoredDefinitions.EntryFile(paths, idOrPath) is var repo && System.IO.File.Exists(repo))
+            return repo;
         return System.IO.File.Exists(idOrPath) ? LongPath.Of(idOrPath) : null;
     }
+
+    HashSet<string> RepoIds() => new Definitions.StoredDefinitions(paths).RepoIdsTaken().ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The ID of the trellis at <paramref name="path"/>: its registered one, or for a file that was never
     /// registered, the one it would be offered.</summary>
@@ -57,7 +64,7 @@ public sealed class TrellisRegistry(ISprigPaths paths)
     /// <summary><paramref name="wanted"/>, or the first <c>wanted-2</c>, <c>wanted-3</c>… that no other file has.</summary>
     public string UnusedId(string wanted, string? forPath = null)
         => Ids.Unused(Ids.Slug(wanted, "trellis"),
-            Load().Where(e => forPath is null || !SamePath(e.Path, forPath)).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            Load().Where(e => forPath is null || !SamePath(e.Path, forPath)).Select(e => e.Id).Concat(RepoIds()).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
     /// <summary>The ID a trellis file suggests: its name without <c>.trellis.cs</c>. A trellis kept in sprig is always
     /// <c>trellis.cs</c>, so its folder (named by its ID) says it instead.</summary>

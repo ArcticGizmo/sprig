@@ -12,7 +12,8 @@ var redis  = compose.Service("redis").Endpoint("tcp", 6379).Health("redis-cli pi
 var rabbit = compose.Service("rabbitmq").Endpoint("amqp", 5672).Endpoint("ui", 15672, scheme: "http")
     .Health("test -f /var/lib/rabbitmq/.erlang.cookie && rabbitmq-diagnostics -q ping");
 
-var smtp = repo.Import<Url>("mail-smtp");                 // the trellis supplies the mail server
+// A trellis can supply the mail server; run on its own, the repo brings one, which a trellis's sprouts leave out.
+var smtp = repo.Import<Url>("mail-smtp").OrElse(repo.Mailpit("mail").SmtpUrl);
 
 // Runs to completion each time the apps start; the APIs wait for it to succeed. Retried, since Postgres can still be
 // settling in the first second after it reports healthy.

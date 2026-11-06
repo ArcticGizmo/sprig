@@ -26,7 +26,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     public sealed class Settings : TrustingSettings
     {
         [CommandArgument(0, "<trellis>")]
-        [Description("A registered trellis name, or a trellis file")]
+        [Description("A trellis ID, a repo ID from the Repos list (to run that repo on its own), or a trellis file")]
         public string Trellis { get; set; } = "";
 
         [CommandOption("--sprout <name>")]

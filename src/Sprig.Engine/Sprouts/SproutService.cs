@@ -150,7 +150,7 @@ public sealed partial class SproutService(
         }
         var problems = new List<PlanProblem>();
         var dryPlan = Planner.Build(new PlanInput(trellis, loaded.Repos, sprout, settingsNow, _listening(),
-            ComposeFiles: loaded.ComposeFiles(problems)));
+            ComposeFiles: loaded.ComposeFiles(problems), Alone: loaded.Alone));
         problems.AddRange(dryPlan.Problems);
         if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
         var filesCheckedFor = loaded;
@@ -399,7 +399,7 @@ public sealed partial class SproutService(
             var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).Concat(others).ToHashSet();
             var built = Planner.Build(new PlanInput(loaded.Trellis!, loaded.Repos, record.Name, settingsNow, inUse,
                 Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null,
-                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record)));
+                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Alone: loaded.Alone));
             if (built.HasErrors) return (built, null);
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });

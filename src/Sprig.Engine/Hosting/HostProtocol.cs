@@ -107,7 +107,10 @@ public static class HostProtocol
     public static string LogFolder(ISprigPaths paths) => Path.Combine(paths.Root, "logs");
 
     public static string LogFile(ISprigPaths paths, string workspace, string name)
-        => Path.Combine(LogFolder(paths), Safe(workspace), Safe(name) + ".log");
+        => Path.Combine(WorkspaceLogFolder(paths, workspace), Safe(name) + ".log");
+
+    /// <summary>Every log of one workspace, by its key.</summary>
+    public static string WorkspaceLogFolder(ISprigPaths paths, string workspace) => Path.Combine(LogFolder(paths), Safe(workspace));
 
     public static string StoreId(ISprigPaths paths)
     {

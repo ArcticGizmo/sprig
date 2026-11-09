@@ -46,7 +46,19 @@ public sealed record WorkspaceOptions(bool InPlace = false, string? From = null,
 /// one.</param>
 /// <param name="From">Where a branch that doesn't exist yet starts; null for each repo's own default branch.</param>
 /// <param name="EmptyData">Reusing a free slot, remove its infra's volumes first, rather than keep the data in them.</param>
-public sealed record CheckOutOptions(int? Slot = null, string? From = null, bool EmptyData = false);
+/// <param name="FixSlot">When the slot is broken (see <see cref="WorkspaceService.BrokenSlotFor"/>), delete the folders in
+/// its way and make it again, rather than refuse.</param>
+public sealed record CheckOutOptions(int? Slot = null, string? From = null, bool EmptyData = false, bool FixSlot = false);
+
+/// <summary>A slot that can't take a branch as it stands: where its worktrees go, there are folders that aren't
+/// worktrees of their repos (left from a slot that was removed, or made by hand).</summary>
+/// <param name="Next">The lowest slot number that's fine to use instead.</param>
+public sealed record BrokenSlot(string Slot, string SlotName, IReadOnlyList<string> InTheWay, string Next, string NextName)
+{
+    public string Why => InTheWay.Count == 1
+        ? $"{SlotName} is broken: {InTheWay[0]} is there, but isn't a worktree sprig can use"
+        : $"{SlotName} is broken: {string.Join(", ", InTheWay)} are there, but aren't worktrees sprig can use";
+}
 
 /// <param name="Repo">The repo's name.</param>
 /// <param name="Worktree">A worktree sprig made, rather than the repo run in place.</param>
@@ -191,6 +203,9 @@ public sealed partial class WorkspaceService(
         if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk));
         var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
         if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new WorkspaceException(why));
+        // Before anything is made, so a folder in the way doesn't leave half a slot behind.
+        if (!inPlace && SlotBlocker(loaded, existing?.Folder ?? WorkspaceFolder(loaded, id, workspace, settingsNow), branch!) is { } blocked)
+            throw step.Fail(new WorkspaceException(blocked));
         step.Done($"{dryPlan.Apps.Count} apps, {dryPlan.Containers.Count} containers, {dryPlan.Compose.Count} compose files");
 
         if (inPlace) CheckNoOtherInPlace(id, workspace, loaded.RepoDirs.Values);
@@ -283,6 +298,7 @@ public sealed partial class WorkspaceService(
         if (!options.Force && RemovalBlockers(record, options.DeleteBranch) is [var first, ..]) throw new WorkspaceException(first);
 
         StopApps(record, step, cancellation);
+        store.DeleteLogs(record.Key);
         foreach (var project in record.Compose)
         {
             step.Start($"Remove {project.Name}");
@@ -361,12 +377,99 @@ public sealed partial class WorkspaceService(
         if (!git.IsValidBranchName(branch)) throw new WorkspaceException($"'{branch}' isn't a valid branch name");
         var (slot, record) = SlotFor(loaded.Id, branch, options.Slot);
 
+        if (BrokenSlotFor(loaded, branch, options.Slot) is { } broken)
+        {
+            if (!options.FixSlot)
+                throw new WorkspaceException($"{broken.Why}. Fix it (deleting what's in the way), or use {broken.NextName} instead");
+            FixSlot(loaded, broken, new Steps(progress));
+        }
+        // A new branch in the slot starts with no logs; the last one's would only mislead.
+        if (record is null or { IsFree: true }) store.DeleteLogs(WorkspaceRecord.KeyOf(loaded.Id, slot));
         if (record is { IsFree: true })
         {
             if (options.EmptyData) WipeData(record, new Steps(progress), cancellation);
             if (unset is { Count: > 0 }) SetValues(record.Orchestration, record.Name, new Dictionary<string, string>(), unset);
         }
         return Up(loaded, slot, branch, new WorkspaceOptions(From: options.From), progress, cancellation, beforeInfra, values);
+    }
+
+    /// <summary>
+    /// The slot a check-out of <paramref name="branch"/> would use (see <see cref="SlotFor"/>) when it's broken, with the
+    /// slot to use instead; null when it's fine. Only a new or free slot counts: one the branch is already in is its own.
+    /// </summary>
+    public BrokenSlot? BrokenSlotFor(LoadedOrchestration loaded, string branch, int? slot = null)
+    {
+        if (loaded.Orchestration is null) return null;
+        var (name, record) = SlotFor(loaded.Id, branch, slot);
+        if (record is { IsFree: false }) return null;
+        var settingsNow = settings.Get();
+        var inTheWay = InTheWay(loaded, record?.Folder ?? WorkspaceFolder(loaded, loaded.Id, name, settingsNow));
+        if (inTheWay.Count == 0) return null;
+        var next = NextUsableSlot(loaded, name, settingsNow);
+        return new BrokenSlot(name, $"{loaded.Id}--{name}", inTheWay, next, $"{loaded.Id}--{next}");
+    }
+
+    /// <summary>The folders where the slot at <paramref name="root"/> puts its worktrees that are there but aren't
+    /// worktrees of their repos.</summary>
+    IReadOnlyList<string> InTheWay(LoadedOrchestration loaded, string root)
+        => SlotDirs(loaded, root)
+            .Where(d => Directory.Exists(d.Dir) && git.IsRepo(d.Source) && !git.Worktrees(d.Source).Any(w => SamePath(w, d.Dir)))
+            .Select(d => d.Dir)
+            .ToArray();
+
+    /// <summary>The lowest free slot, else the lowest unused number, that isn't <paramref name="skip"/> and has nothing in
+    /// its way.</summary>
+    string NextUsableSlot(LoadedOrchestration loaded, string skip, SprigSettings settingsNow)
+    {
+        var mine = store.List().Where(r => r.Orchestration == loaded.Id && IsSlot(r.Name)).ToArray();
+        foreach (var free in mine.Where(r => r.IsFree && r.Name != skip).OrderBy(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)))
+            if (InTheWay(loaded, free.Folder ?? WorkspaceFolder(loaded, loaded.Id, free.Name, settingsNow)).Count == 0) return free.Name;
+        var used = mine.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        for (var n = 1; ; n++)
+        {
+            var name = Number(n);
+            if (name == skip || used.Contains(name)) continue;
+            if (InTheWay(loaded, WorkspaceFolder(loaded, loaded.Id, name, settingsNow)).Count == 0) return name;
+        }
+    }
+
+    void FixSlot(LoadedOrchestration loaded, BrokenSlot broken, Steps step)
+    {
+        foreach (var dir in broken.InTheWay)
+        {
+            step.Start($"Clear {dir}");
+            try { DeleteTree(dir); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                throw step.Fail(new WorkspaceException($"{dir} couldn't be deleted ({e.Message}); close whatever has it open, or delete it by hand"));
+            }
+            step.Done("deleted");
+        }
+        // A worktree whose folder went with it is still listed by git until it's pruned, and git won't add it again.
+        foreach (var source in loaded.RepoDirs.Values.Where(git.IsRepo)) git.PruneWorktrees(source);
+    }
+
+    /// <summary>Deletes the folder and everything in it, read-only files included (git makes its objects read-only), but
+    /// never what a link inside it points at: a link (a junction pnpm made, say) is removed, not followed.</summary>
+    static void DeleteTree(string dir)
+    {
+        var info = new DirectoryInfo(dir);
+        if (info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            info.Delete();
+            return;
+        }
+        foreach (var entry in info.EnumerateFileSystemInfos())
+        {
+            if (entry is DirectoryInfo sub) DeleteTree(sub.FullName);
+            else
+            {
+                entry.Attributes = FileAttributes.Normal;
+                entry.Delete();
+            }
+        }
+        info.Attributes = FileAttributes.Directory;
+        info.Delete();
     }
 
     /// <summary>
@@ -387,6 +490,7 @@ public sealed partial class WorkspaceService(
 
         var step = new Steps(progress);
         StopApps(record, step, cancellation);
+        store.DeleteLogs(record.Key);
         foreach (var project in record.Compose)
         {
             step.Start($"Stop {project.Name}");
@@ -505,25 +609,16 @@ public sealed partial class WorkspaceService(
         }
 
         var root = record.Folder ?? throw new InvalidOperationException("a worktree workspace has a folder");
-        var common = CommonParent(loaded.RepoDirs.Values);
-        foreach (var reference in orchestration.Repos)
+        foreach (var (reference, source, dir) in SlotDirs(loaded, root))
         {
             cancellation.ThrowIfCancellationRequested();
-            var source = loaded.RepoDirs[reference.Path];
             var name = loaded.Repos[reference.Path].Name;
-            // A repo on its own is the slot's folder itself; an orchestration's slot holds its repos as they're laid out.
-            var dir = loaded.Alone ? LongPath.Of(root) : LongPath.Of(Path.Combine(root, Path.GetRelativePath(common, source)));
             step.Start($"Worktree {name}");
 
             var before = record.Repos.FirstOrDefault(r => r.RepoPath == reference.Path);
-            if (git.IsRepo(source) && git.WorktreeOn(source, branch) is { } elsewhere && !SamePath(elsewhere, dir))
-                throw new WorkspaceException(SamePath(elsewhere, source)
-                    ? $"'{branch}' is checked out in {name}'s own folder, {elsewhere}; switch that to another branch first"
-                    : $"'{branch}' is already checked out at {elsewhere}; release it there first");
+            if (WorktreeBlocker(name, source, dir, branch) is { } blocked) throw new WorkspaceException(blocked);
             if (Directory.Exists(dir))
             {
-                if (!git.Worktrees(source).Any(w => SamePath(w, dir)))
-                    throw new WorkspaceException($"{dir} already exists and isn't a worktree of {source}");
                 if (git.CurrentBranch(dir) == branch)
                 {
                     repos.Add(new WorkspaceRepo(reference.Path, name, source, dir, Worktree: true, before?.BranchCreated ?? false, before?.From));
@@ -539,6 +634,8 @@ public sealed partial class WorkspaceService(
                 continue;
             }
             if (!git.IsRepo(source)) throw new WorkspaceException($"{source} isn't a git repo, so it can't have a worktree");
+            // A worktree folder deleted by hand stays listed by git, which then won't add one there again.
+            if (git.Worktrees(source).Any(w => SamePath(w, dir))) git.PruneWorktrees(source);
             var start = from ?? git.DefaultBranch(source)
                 ?? throw new WorkspaceException($"{source} has no default branch to start '{branch}' from; choose one to start from");
             Directory.CreateDirectory(Path.GetDirectoryName(dir)!);
@@ -549,6 +646,59 @@ public sealed partial class WorkspaceService(
         }
         return repos;
     }
+
+    /// <summary>Where each repo's worktree goes in the slot at <paramref name="root"/>: a repo on its own is the slot's
+    /// folder itself; an orchestration's slot holds its repos as they're laid out.</summary>
+    static IEnumerable<(RepoRefModel Reference, string Source, string Dir)> SlotDirs(LoadedOrchestration loaded, string root)
+    {
+        var common = CommonParent(loaded.RepoDirs.Values);
+        foreach (var reference in loaded.Orchestration!.Repos)
+        {
+            var source = loaded.RepoDirs[reference.Path];
+            yield return (reference, source, loaded.Alone ? LongPath.Of(root) : LongPath.Of(Path.Combine(root, Path.GetRelativePath(common, source))));
+        }
+    }
+
+    /// <summary>Why <paramref name="branch"/> can't have a worktree at <paramref name="dir"/>, or null when it can.</summary>
+    /// <param name="clearing">The folder is about to be deleted (see <see cref="CheckOutOptions.FixSlot"/>), so what's
+    /// there doesn't count.</param>
+    string? WorktreeBlocker(string name, string source, string dir, string branch, bool clearing = false)
+    {
+        if (git.IsRepo(source) && git.WorktreeOn(source, branch) is { } elsewhere && !SamePath(elsewhere, dir))
+            return SamePath(elsewhere, source)
+                ? $"'{branch}' is checked out in {name}'s own folder, {elsewhere}; switch that to another branch first"
+                : $"'{branch}' is already checked out at {elsewhere}; release it there first";
+        if (!clearing && Directory.Exists(dir) && !git.Worktrees(source).Any(w => SamePath(w, dir)))
+            return $"{dir} already exists and isn't a worktree of {source}. Move or delete it, then try again.";
+        return null;
+    }
+
+    /// <summary>
+    /// What would stop <paramref name="branch"/> being checked out in a slot of <paramref name="loaded"/> (see
+    /// <see cref="SlotFor"/>), found without creating anything: a folder in the way, or the branch checked out somewhere
+    /// else. Null when nothing would. Quick enough to ask before handing over to a progress window.
+    /// </summary>
+    /// <param name="fixSlot">The check-out will fix a broken slot (see <see cref="CheckOutOptions.FixSlot"/>), so folders
+    /// in its way don't count.</param>
+    public string? CheckOutBlocker(LoadedOrchestration loaded, string branch, int? slot = null, bool fixSlot = false)
+    {
+        if (loaded.Orchestration is null) return null;
+        if (!git.IsValidBranchName(branch)) return $"'{branch}' isn't a valid branch name";
+        try
+        {
+            var (name, record) = SlotFor(loaded.Id, branch, slot);
+            return SlotBlocker(loaded, record?.Folder ?? WorkspaceFolder(loaded, loaded.Id, name, settings.Get()), branch, fixSlot);
+        }
+        catch (WorkspaceException e)
+        {
+            return e.Message;
+        }
+    }
+
+    string? SlotBlocker(LoadedOrchestration loaded, string root, string branch, bool clearing = false)
+        => SlotDirs(loaded, root)
+            .Select(d => WorktreeBlocker(loaded.Repos.TryGetValue(d.Reference.Path, out var repo) ? repo.Name : d.Reference.Path, d.Source, d.Dir, branch, clearing))
+            .FirstOrDefault(b => b is not null);
 
     Plan LeasePorts(LoadedOrchestration loaded, WorkspaceRecord record, WorkspaceRecord? existing, IReadOnlyDictionary<string, string> dirs, SprigSettings settingsNow)
     {

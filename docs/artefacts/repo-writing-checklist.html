@@ -231,6 +231,13 @@ web.EnvFile(".env.local", e => e
       { id: "V8", title: "Remove it by branch from anywhere",
         how: [`<code>cd C:/Users/JonHowell</code>, then <code>sprig rm feat-w -y --delete-branch</code>.`],
         expect: `The branch is enough, since only shop-web has feat-w checked out. The <code>shop-web--1</code> folder and the feat-w branch are gone. feat-x is still a branch in the repo.` },
+      { id: "V9", title: "A new branch in a slot starts with no logs", isNew: true,
+        how: [`<code>cd ${T}/shop-web</code>, then <code>sprig up -b feat-l</code> and <code>sprig logs feat-l web</code>.`, `<code>sprig release feat-l</code>, then <code>sprig up -b feat-m --no-apps</code>.`, `In the app, open <b>Workspaces</b>, then <code>shop-web--1</code>.`],
+        expect: `The first <code>logs</code> shows web's start-up. After the release, <code>C:/Users/JonHowell/Documents/git/personal/sprig-store-writing/logs/shop-web/1</code> is gone. feat-m reuses <code>shop-web--1</code>, and its log pane is empty, with none of feat-l's lines, until you click <b>Start all</b>.` },
+      { id: "V10", title: "A broken slot asks what to do", isNew: true,
+        how: [`<code>sprig rm feat-m -y</code>. Then make a folder where slot 1 goes, as a removal that went wrong would leave:${block("stray", `mkdir ${T}/shop-web--1; Set-Content ${T}/shop-web--1/left-over.txt "not a worktree"
+sprig up -b feat-n`)}`, `Pick <b>Use shop-web--2 instead</b>.`, `In the app, click <b>New workspace</b>, pick shop-web and type the branch <code>feat-o</code>. Pick <b>Fix shop-web--1</b> and click <b>Run it</b>.`],
+        expect: `The terminal says <code>shop-web--1</code> is broken, names the folder, and asks what now, with the two choices. Using the next one puts feat-n in <code>shop-web--2</code> and leaves <code>left-over.txt</code> where it was. The form shows the same line in red, with a BROKEN SLOT choice that starts on <b>Use shop-web--3 instead</b>. Fixing deletes the folder (the progress window shows "Clear …") and brings feat-o up in <code>shop-web--1</code>. With another stray folder at <code>${T}/shop-web--3</code>, <code>sprig up -b feat-p --json</code> has no terminal to ask in, so it refuses, naming <code>--fix-slot</code> and <code>--slot 4</code>. Afterwards remove feat-n and feat-o, and delete <code>shop-web--3</code>.` },
     ]
   },
   {

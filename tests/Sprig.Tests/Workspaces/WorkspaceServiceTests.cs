@@ -193,6 +193,34 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_folder_in_the_way_of_a_slot_is_found_before_anything_is_made()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var services = Repo("shop-services", ("src/Api/Program.cs", "// api"));
+        var loaded = Load(("shop-web", Web), ("shop-services", Api));
+        // Left over from something else: not a worktree of the repo.
+        var stray = Path.Combine(_root, "storefront--1", "shop-services");
+        Directory.CreateDirectory(stray);
+        File.WriteAllText(Path.Combine(stray, "notes.txt"), "mine");
+
+        var blocker = _workspaces.CheckOutBlocker(loaded, "feat-x");
+
+        Assert.Equal($"{stray} already exists and isn't a worktree of {services}. Move or delete it, then try again.", blocker);
+        var e = Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-x"));
+        Assert.Equal($"storefront--1 is broken: {stray} is there, but isn't a worktree sprig can use. Fix it (deleting what's in the way), or use storefront--2 instead", e.Message);
+        // shop-web comes first, but nothing was made for it, and there's no workspace to clean up.
+        Assert.False(Directory.Exists(Path.Combine(_root, "storefront--1", "shop-web")));
+        Assert.False(_git.BranchExists(Path.Combine(_root, "shop-web"), "feat-x"));
+        Assert.Empty(_workspaces.List());
+        Assert.True(File.Exists(Path.Combine(stray, "notes.txt")));
+
+        // A branch checked out in the repo's own folder is found the same way, and a clear slot has nothing to say.
+        Assert.Contains("checked out in shop-web's own folder", _workspaces.CheckOutBlocker(loaded, "main"));
+        Directory.Delete(Path.Combine(_root, "storefront--1"), recursive: true);
+        Assert.Null(_workspaces.CheckOutBlocker(loaded, "feat-x"));
+    }
+
+    [Fact]
     public void A_released_slot_is_reused_with_its_folder_ports_values_and_what_was_built_in_it()
     {
         var source = Repo("shop-web", ("index.html", "hi"), (".gitignore", LocalFiles + "node_modules/\n"));
@@ -228,6 +256,97 @@ public sealed class WorkspaceServiceTests : IDisposable
         _workspaces.Release("shop-web", "1");
         _workspaces.CheckOut(loaded, "feat-z", unset: ["api-url"]);
         Assert.Contains("API=http://localhost:5100", File.ReadAllText(Path.Combine(dir, ".env.local")));
+    }
+
+    [Fact]
+    public void A_slot_drops_its_logs_when_released_removed_or_taken_by_a_new_branch()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web));
+        var log = Sprig.Engine.Hosting.HostProtocol.LogFile(_store.Paths, "storefront/1", "shop-web/web");
+        void Run(string text)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+            File.WriteAllText(log, text);
+        }
+
+        // Left by a slot 1 that was removed before logs went with it.
+        Run("an old slot's run");
+        _workspaces.CheckOut(loaded, "feat-x");
+        Assert.False(File.Exists(log));
+
+        // The same branch coming up again is the same workspace, logs and all.
+        Run("feat-x's run");
+        _workspaces.CheckOut(loaded, "feat-x");
+        Assert.True(File.Exists(log));
+
+        _workspaces.Release("storefront", "1");
+        Assert.False(File.Exists(log));
+        Assert.False(Directory.Exists(Path.Combine(Sprig.Engine.Hosting.HostProtocol.LogFolder(_store.Paths), "storefront")));
+
+        _workspaces.CheckOut(loaded, "feat-y");
+        Run("feat-y's run");
+        _workspaces.Remove("storefront", "1", new RemoveOptions());
+        Assert.False(File.Exists(log));
+    }
+
+    [Fact]
+    public void A_broken_slot_is_fixed_when_asked_or_passed_over_for_the_next_one()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web)) with { Id = "shop-web", Alone = true };
+        // Left from a slot whose record went: not a worktree any more, with read-only files (as git leaves) and a link
+        // (as pnpm makes) to something outside it.
+        var stray = Path.Combine(_root, "shop-web--1");
+        Directory.CreateDirectory(Path.Combine(stray, "objects"));
+        var readOnly = Path.Combine(stray, "objects", "pack");
+        File.WriteAllText(readOnly, "x");
+        File.SetAttributes(readOnly, FileAttributes.ReadOnly);
+        var outside = Path.Combine(_root, "store");
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "kept.txt"), "not the slot's");
+        Link(Path.Combine(stray, "node_modules"), outside);
+
+        var broken = _workspaces.BrokenSlotFor(loaded, "feat-x");
+
+        Assert.NotNull(broken);
+        Assert.Equal(("1", "shop-web--1", "2", "shop-web--2"), (broken.Slot, broken.SlotName, broken.Next, broken.NextName));
+        Assert.Equal([stray], broken.InTheWay);
+        Assert.Contains("use shop-web--2 instead", Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-x")).Message);
+
+        // Passed over: the next slot, and the broken one left as it was.
+        Assert.Equal("2", _workspaces.CheckOut(loaded, "feat-x", new CheckOutOptions(Slot: int.Parse(broken.Next))).Name);
+        Assert.True(File.Exists(readOnly));
+
+        // Fixed: made again where it was, without touching what the link pointed at.
+        var fixedSlot = _workspaces.CheckOut(loaded, "feat-y", new CheckOutOptions(FixSlot: true));
+        Assert.Equal("1", fixedSlot.Name);
+        Assert.Equal("feat-y", _git.CurrentBranch(stray));
+        Assert.False(File.Exists(readOnly));
+        Assert.True(File.Exists(Path.Combine(outside, "kept.txt")));
+        Assert.Null(_workspaces.BrokenSlotFor(loaded, "feat-z"));
+    }
+
+    void Link(string link, string target)
+    {
+        if (OperatingSystem.IsWindows()) _processes.Run("cmd.exe", ["/d", "/c", "mklink", "/J", link, target]).EnsureSuccess();
+        else Directory.CreateSymbolicLink(link, target);
+    }
+
+    [Fact]
+    public void A_free_slot_whose_folder_was_deleted_by_hand_is_made_again()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web)) with { Id = "shop-web", Alone = true };
+        var dir = _workspaces.CheckOut(loaded, "feat-x").Repos.Single().Dir;
+        _workspaces.Release("shop-web", "1");
+        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+        Directory.Delete(dir, recursive: true);
+
+        var again = _workspaces.CheckOut(loaded, "feat-y");
+
+        Assert.Equal("1", again.Name);
+        Assert.Equal("feat-y", _git.CurrentBranch(dir));
     }
 
     [Fact]

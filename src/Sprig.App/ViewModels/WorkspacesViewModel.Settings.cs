@@ -68,23 +68,45 @@ public partial class WorkspacesViewModel
     async Task LoadNewSettingsAsync(string? id)
     {
         var version = ++_newSettingsVersion;
-        NewSettings.Clear();
-        OnPropertyChanged(nameof(HasNewSettings));
-        if (id is null || _services.Orchestrations.Resolve(id) is not { } path) return;
-        IReadOnlyList<SettingInput> inputs;
-        try
+        if (id is null || _services.Orchestrations.Resolve(id) is not { } path)
         {
-            var loaded = await AppServices.RunAsync(() => _services.Loader.Load(path));
-            if (loaded.Orchestration is null || loaded.Untrusted.Count > 0 || loaded.Problems.Count > 0) return;
-            // A slot being reused starts from the values it kept, each of which can be changed or cleared.
-            var kept = _newSlotRecord?.Values;
-            inputs = await AppServices.RunAsync(() => SettingInputs(loaded, kept));
-        }
-        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
-        {
+            ReplaceNewSettings([]);
             return;
         }
+        IReadOnlyList<SettingInput> inputs = [];
+        try
+        {
+            var loaded = _newLoadedFor == id ? _newLoaded : null;
+            if (loaded is null)
+            {
+                loaded = await AppServices.RunAsync(() => _services.Loader.Load(path));
+                if (version != _newSettingsVersion) return;
+                _newLoaded = loaded.Orchestration is null ? null : loaded;
+                _newLoadedFor = id;
+                // Now the slot's folders can be looked at too.
+                CheckSlotSoon(immediately: true);
+            }
+            if (loaded.Orchestration is not null && loaded.Untrusted.Count == 0 && loaded.Problems.Count == 0)
+            {
+                // A slot being reused starts from the values it kept, each of which can be changed or cleared.
+                var kept = _newSlotRecord?.Values;
+                inputs = await AppServices.RunAsync(() => SettingInputs(loaded, kept));
+            }
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { }
         if (version != _newSettingsVersion) return;
+        ReplaceNewSettings(inputs);
+    }
+
+    /// <summary>Swap the form's settings in one go, and only when they differ, so the list doesn't collapse and regrow
+    /// while it's reloaded. A value typed into a box carries over to the same setting.</summary>
+    void ReplaceNewSettings(IReadOnlyList<SettingInput> inputs)
+    {
+        if (inputs.Select(i => (i.Name, i.Kept)).SequenceEqual(NewSettings.Select(i => (i.Name, i.Kept)))) return;
+        var typed = NewSettings.Where(s => s.Value != (s.Kept ?? "")).ToDictionary(s => s.Name, s => s.Value);
+        foreach (var input in inputs)
+            if (typed.TryGetValue(input.Name, out var value)) input.Value = value;
+        NewSettings.Clear();
         foreach (var input in inputs) NewSettings.Add(input);
         OnPropertyChanged(nameof(HasNewSettings));
     }

@@ -55,6 +55,12 @@
         <Style Selector="TextBlock.busy">
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         </Style>
+        <Style Selector="TextBlock.slotline">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.slotline.bad">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
         <Style Selector="Ellipse.dot">
             <Setter Property="Fill" Value="#6E6E82" />
         </Style>
@@ -993,9 +999,11 @@
                 <KeyBinding Gesture="Escape" Command="{Binding CancelAddCommand}" />
                 <KeyBinding Gesture="Enter" Command="{Binding CreateCommand}" />
             </Border.KeyBindings>
+            <!-- Held at the top, so a line that grows or a section that appears pushes what's below it rather than
+                 moving the whole form. -->
             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
-                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32,96,32,32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Top">
                 <StackPanel Spacing="12">
                     <TextBlock Text="New workspace" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding !HasOrchestrations}"
@@ -1017,9 +1025,14 @@
                             </StackPanel>
                         </Grid>
                         <!-- Which slot the branch goes in, so a reused one's data and values are a choice, not a surprise. -->
-                        <TextBlock Text="{Binding NewSlotLine}" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
-                                   IsVisible="{Binding !NewSlotBad}" />
-                        <TextBlock Classes="bad" Text="{Binding NewSlotLine}" FontSize="12.5" TextWrapping="Wrap" IsVisible="{Binding NewSlotBad}" />
+                        <!-- One line that changes colour, keeping its place while the check runs. -->
+                        <TextBlock Classes="slotline" Classes.bad="{Binding NewSlotBad}" Text="{Binding NewSlotLine}" FontSize="12.5"
+                                   TextWrapping="Wrap" MinHeight="17" />
+                        <StackPanel Spacing="4" IsVisible="{Binding NewSlotBroken}">
+                            <TextBlock Classes="phead" Text="THE BROKEN SLOT" />
+                            <RadioButton GroupName="new-broken" IsChecked="{Binding NewUseNextSlot}" Content="{Binding NewNextSlotLabel}" />
+                            <RadioButton GroupName="new-broken" IsChecked="{Binding NewFixSlot}" Content="{Binding NewFixSlotLabel}" />
+                        </StackPanel>
                         <StackPanel Spacing="4" IsVisible="{Binding NewReusesSlot}">
                             <TextBlock Classes="phead" Text="ITS DATA" />
                             <RadioButton GroupName="new-data" IsChecked="{Binding NewKeepData}" Content="Keep the data the last branch left" />

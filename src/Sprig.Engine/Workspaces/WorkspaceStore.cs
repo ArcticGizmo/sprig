@@ -48,6 +48,37 @@ public sealed class WorkspaceStore(ISprigPaths paths)
         if (Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any()) Directory.Delete(parent);
     }
 
+    /// <summary>
+    /// Remove the logs the workspace's apps wrote. A slot keeps its key from one branch to the next, so without this the
+    /// next branch in it would open on the last one's logs. A log still held open is left; its app's next run starts it
+    /// afresh anyway.
+    /// </summary>
+    public void DeleteLogs(string key)
+    {
+        var folder = Hosting.HostProtocol.WorkspaceLogFolder(paths, key);
+        if (!Directory.Exists(folder)) return;
+        foreach (var file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+        {
+            try { File.Delete(file); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        // Up to the logs folder itself, each folder that's now empty.
+        var logs = Path.GetFullPath(Hosting.HostProtocol.LogFolder(paths));
+        foreach (var dir in Directory.EnumerateDirectories(folder, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).Append(folder))
+            DeleteIfEmpty(dir);
+        for (var parent = Path.GetDirectoryName(Path.GetFullPath(folder)); parent is not null && parent.Length > logs.Length; parent = Path.GetDirectoryName(parent))
+            DeleteIfEmpty(parent);
+    }
+
+    static void DeleteIfEmpty(string dir)
+    {
+        try
+        {
+            if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     static T? Read<T>(string path)
     {
         try { return JsonFile.Read<T>(path, Options); }

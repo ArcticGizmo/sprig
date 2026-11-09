@@ -100,6 +100,21 @@ internal static partial class HeadlessRenderer
             Save(window, Sibling(outFile, "folded"));
             vm.Workspaces.ToggleDetailsCommand.Execute(null);
 
+            // The new-workspace form when the slot the branch would take is broken. Nothing is registered in the sample
+            // store, so the form is given a name to show.
+            vm.Workspaces.OrchestrationNames.Add("storefront");
+            vm.Workspaces.NewOrchestration = "storefront";
+            vm.Workspaces.OpenAddCommand.Execute(null);
+            vm.Workspaces.NewBranch = "feat-q";
+            Pump(TimeSpan.FromMilliseconds(600));
+            var stray = Path.Combine(services.Paths.Root, "tb", "storefront--3", "shop-web");
+            vm.Workspaces.NewBroken = new BrokenSlot("3", "storefront--3", [stray], "4", "storefront--4");
+            vm.Workspaces.NewSlotLine = $"{vm.Workspaces.NewBroken.Why}.";
+            vm.Workspaces.NewSlotBad = true;
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "new-broken"));
+            vm.Workspaces.CancelAddCommand.Execute(null);
+
             // Unwrapped, the failure and its stack trace picked by dragging over them and copied, as a user would.
             vm.Workspaces.ToggleLogWrapCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(400));

@@ -77,6 +77,12 @@ The app's form, **Release**, the free slot's actions and the slot rows were chec
   - In-place `local` workspaces are unchanged.
 - **Hand pass:** `docs/artefacts/repo-writing-checklist.html` covers slots: V5 to V8, and I7 to I9.
 
+## After the user's first use (2026-11-09)
+
+Feedback from trying slots on a real repo, built the same day:
+- **Logs go with the branch.** A slot keeps its key from one branch to the next, so its logs used to carry over. Release and remove delete them, and a check-out into a new or free slot clears any left behind. The app's log pane treats a new branch in the same slot as a different workspace, so lines it already read go too.
+- **A broken slot asks.** A slot is broken when, where its worktrees go, there are folders that aren't worktrees of their repos. Only a new or free slot counts. The form asks whether to use the next slot or fix this one (BROKEN SLOT, starting on the choice that deletes nothing). `sprig up -b` asks in a terminal, takes `--fix-slot`, or refuses without a terminal and names both ways. Fixing deletes the folders, removing any link inside them without following it, then prunes git's worktree list. A free slot whose folder was deleted by hand is pruned and made again without asking, since there's nothing to lose.
+
 ## For later
 
 - Each repo's checkout as a fixed `main` slot (decision 7).

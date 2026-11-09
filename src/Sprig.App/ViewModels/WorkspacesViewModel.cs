@@ -192,53 +192,114 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>The slot the branch would reuse; its kept values fill the form's settings.</summary>
     WorkspaceRecord? _newSlotRecord;
 
+    /// <summary>The slot the branch would go in is broken, so the form asks whether to fix it or use the next one.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewSlotBroken), nameof(NewFixSlotLabel), nameof(NewNextSlotLabel))]
+    private BrokenSlot? _newBroken;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewUseNextSlot))]
+    private bool _newFixSlot;
+
+    public bool NewUseNextSlot
+    {
+        get => !NewFixSlot;
+        set => NewFixSlot = !value;
+    }
+
+    public bool NewSlotBroken => NewBroken is not null;
+    public string NewFixSlotLabel => NewBroken is { } b ? $"Fix {b.SlotName}: delete what's in the way and make it again" : "";
+    public string NewNextSlotLabel => NewBroken is { } b ? $"Use {b.NextName} instead" : "";
+
     /// <summary>An orchestration's workspaces start from the branch its last one started from.</summary>
     partial void OnNewOrchestrationChanged(string? value)
     {
         if (value is null) return;
         NewFrom = _services.Ui.WorkspaceChoices(value).From ?? "";
         if (!IsAddOpen) return;
-        UpdateSlotPreview();
+        CheckSlotSoon(immediately: true);
         _ = LoadNewSettingsAsync(value);
     }
 
     partial void OnNewBranchChanged(string value)
     {
-        if (!IsAddOpen) return;
-        var before = _newSlotRecord?.Key;
-        UpdateSlotPreview();
-        if (_newSlotRecord?.Key != before) _ = LoadNewSettingsAsync(NewOrchestration);
+        if (IsAddOpen) CheckSlotSoon();
     }
 
-    /// <summary>Say which slot the branch would go in: the one it's in already, a free one to reuse, or a new one.</summary>
-    void UpdateSlotPreview()
+    static readonly TimeSpan SlotCheckDelay = TimeSpan.FromMilliseconds(300);
+    CancellationTokenSource? _slotCheck;
+
+    /// <summary>The definitions of the form's orchestration or repo, once read, so checking a slot can look at its
+    /// folders. Kept per ID, since reading them can take a while.</summary>
+    LoadedOrchestration? _newLoaded;
+    string? _newLoadedFor;
+
+    /// <summary>Check the slot once typing pauses, off the UI thread. The line keeps saying what it said until the
+    /// answer arrives, so the form doesn't flicker on every keystroke.</summary>
+    void CheckSlotSoon(bool immediately = false)
     {
-        _newSlotRecord = null;
-        NewReusesSlot = false;
-        NewSlotBad = false;
+        _slotCheck?.Cancel();
+        _slotCheck = new CancellationTokenSource();
+        _ = CheckSlotAsync(immediately ? TimeSpan.Zero : SlotCheckDelay, _slotCheck.Token);
+    }
+
+    async Task CheckSlotAsync(TimeSpan delay, CancellationToken cancel)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, cancel);
+        }
+        catch (OperationCanceledException) { return; }
         if (NewOrchestration is not { } id)
         {
-            NewSlotLine = "";
+            ShowSlot("", bad: false, null);
             return;
         }
         var branch = NewBranch.Trim();
+        var slot = _newSlot;
+        var loaded = _newLoadedFor == id ? _newLoaded : null;
+        var (line, bad, record, broken) = await AppServices.RunAsync(() => SlotPreview(id, branch, slot, loaded));
+        if (cancel.IsCancellationRequested) return;
+
+        var before = _newSlotRecord?.Key;
+        ShowSlot(line, bad, record, broken);
+        if (record?.Key != before) _ = LoadNewSettingsAsync(id);
+    }
+
+    /// <summary>Which slot the branch would go in (the one it's in already, a free one to reuse, or a new one), or what
+    /// stands in the way of it: a broken slot (which the form then asks about), or the branch checked out somewhere
+    /// else.</summary>
+    (string Line, bool Bad, WorkspaceRecord? Record, BrokenSlot? Broken) SlotPreview(string id, string branch, int? slot, LoadedOrchestration? loaded)
+    {
         try
         {
-            var (slot, record) = _services.Workspaces.SlotFor(id, branch, _newSlot);
-            _newSlotRecord = record;
-            NewReusesSlot = record?.IsFree == true;
-            NewSlotLine = record switch
+            var (name, record) = _services.Workspaces.SlotFor(id, branch, slot);
+            if (loaded is not null && _services.Workspaces.BrokenSlotFor(loaded, branch, slot) is { } broken)
+                return ($"{broken.Why}.", true, record, broken);
+            if (branch.Length > 0 && loaded is not null && _services.Workspaces.CheckOutBlocker(loaded, branch, slot) is { } blocked)
+                return (blocked, true, record, null);
+            return (record switch
             {
-                null => $"Goes in {id}--{slot}, a new slot.",
+                null => $"Goes in {id}--{name}, a new slot.",
                 { IsFree: true } => $"Reuses {record.SlotName}, which is free: its folders, installed packages, ports and values carry over.",
                 _ => $"'{branch}' is already in {record.SlotName}, so it comes up there again.",
-            };
+            }, false, record, null);
         }
         catch (WorkspaceException e)
         {
-            NewSlotLine = e.Message;
-            NewSlotBad = true;
+            return (e.Message, true, null, null);
         }
+    }
+
+    void ShowSlot(string line, bool bad, WorkspaceRecord? record, BrokenSlot? broken = null)
+    {
+        _newSlotRecord = record;
+        NewReusesSlot = record?.IsFree == true;
+        NewSlotLine = line;
+        NewSlotBad = bad;
+        // A different broken slot asks afresh, starting from the choice that deletes nothing.
+        if (broken?.SlotName != NewBroken?.SlotName) NewFixSlot = false;
+        NewBroken = broken;
     }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MessageInModal), nameof(MessageOnPage))]
@@ -271,6 +332,7 @@ public partial class WorkspacesViewModel : PageViewModel
         _services = services;
         Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
         _services.HostStatus.Changed += ApplyRunners;
+        OrchestrationNames.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOrchestrations));
         _lastRunners = _services.HostStatus.Runners;
         DetailsOpen = _services.Ui.DetailsOpen;
         Logs.ShowTimes = _services.Ui.LogTimes;
@@ -310,7 +372,6 @@ public partial class WorkspacesViewModel : PageViewModel
         NewOrchestration = OrchestrationNames.Contains(orchestration ?? "") ? orchestration : OrchestrationNames.FirstOrDefault();
 
         OnPropertyChanged(nameof(IsEmpty));
-        OnPropertyChanged(nameof(HasOrchestrations));
         Selected = Workspaces.FirstOrDefault(s => s.Record.Key == keep);
         BuildOverview();
         if (Selected is null && IsActive) _ = LoadOverviewStatusAsync();
@@ -531,14 +592,19 @@ public partial class WorkspacesViewModel : PageViewModel
         PendingTrust.Clear();
         HasPendingTrust = false;
         NewEmptyData = false;
+        NewBroken = null;
+        NewFixSlot = false;
+        _newLoaded = null;
+        _newLoadedFor = null;
         IsAddOpen = true;
-        UpdateSlotPreview();
+        CheckSlotSoon(immediately: true);
         _ = LoadNewSettingsAsync(NewOrchestration);
     }
 
     [RelayCommand]
     private void CancelAdd()
     {
+        _slotCheck?.Cancel();
         IsAddOpen = false;
         FormMessage = "";
         PendingTrust.Clear();
@@ -563,23 +629,48 @@ public partial class WorkspacesViewModel : PageViewModel
             Fail("Give the branch to check out. One that doesn't exist yet starts from where it says.");
             return;
         }
-        string slot;
-        try { slot = _services.Workspaces.SlotFor(name, branch, _newSlot).Slot; }
+        var loaded = await LoadAsync(path, Create);
+        if (loaded is null) return;
+        _newLoaded = loaded;
+        _newLoadedFor = name;
+        // Checked again, since the folders may have changed since the line under the branch last looked. Said there, with
+        // the form still open, rather than partway through in the progress window.
+        var newSlot = _newSlot;
+        _slotCheck?.Cancel();
+        BrokenSlot? broken;
+        try { broken = await AppServices.RunAsync(() => _services.Workspaces.BrokenSlotFor(loaded, branch, newSlot)); }
         catch (WorkspaceException e)
         {
             Fail(e.Message);
             return;
         }
-
-        var loaded = await LoadAsync(path, Create);
-        if (loaded is null) return;
+        if (broken is not null && broken.SlotName != NewBroken?.SlotName)
+        {
+            // Newly broken since the form last looked: ask before doing either.
+            ShowSlot($"{broken.Why}.", bad: true, _newSlotRecord, broken);
+            return;
+        }
+        var fixSlot = broken is not null && NewFixSlot;
+        if (broken is not null && !fixSlot) newSlot = int.Parse(broken.Next, System.Globalization.CultureInfo.InvariantCulture);
+        if (await AppServices.RunAsync(() => _services.Workspaces.CheckOutBlocker(loaded, branch, newSlot, fixSlot)) is { } blocked)
+        {
+            ShowSlot(blocked, bad: true, _newSlotRecord, broken);
+            return;
+        }
+        string slot;
+        try { slot = _services.Workspaces.SlotFor(name, branch, newSlot).Slot; }
+        catch (WorkspaceException e)
+        {
+            Fail(e.Message);
+            return;
+        }
         if (NewValues(loaded) is not { } values) return;
         // A box emptied of a value the slot kept clears it, so the default applies again.
         var unset = NewSettings.Where(s => s.Value.Length == 0 && s.Kept is not null).Select(s => s.Name).ToArray();
 
         var from = NewFrom.Trim() is { Length: > 0 } f ? f : null;
         _services.Ui.SetWorkspaceChoices(name, new WorkspaceOptions(From: from));
-        var options = new CheckOutOptions(_newSlot, from, NewEmptyData);
+        var options = new CheckOutOptions(newSlot, from, NewEmptyData, fixSlot);
         var slotName = $"{loaded.Id}--{slot}";
 
         // The progress window takes over from here, and reports any failure.

@@ -86,6 +86,10 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         [Description("Reusing a free slot, start its infra with empty data rather than the data the last branch left")]
         public bool EmptyData { get; set; }
 
+        [CommandOption("--fix-slot")]
+        [Description("When the slot is broken (folders in its way that aren't worktrees), delete them and make the slot again, rather than be asked")]
+        public bool FixSlot { get; set; }
+
         [CommandOption("--unset <name>")]
         [Description("Reusing a free slot, clear a value it kept so the default applies again. Repeat for more")]
         public string[] Unset { get; set; } = [];
@@ -114,8 +118,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (s.Json && s.Run)
             throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; leave it off with --json and the apps run in the background");
-        if (s.Branch is null && (s.From is not null || s.EmptyData || s.Unset.Length > 0))
-            throw new InvalidOperationException("--from, --empty-data and --unset are for checking a branch out; name it with -b <branch>");
+        if (s.Branch is null && (s.From is not null || s.EmptyData || s.Unset.Length > 0 || s.FixSlot))
+            throw new InvalidOperationException("--from, --empty-data, --unset and --fix-slot are for checking a branch out; name it with -b <branch>");
         var (id, slotHere) = s.Orchestration is { } given ? (given, null) : Here.Find(cli, s.Branch);
         // Without a branch: the slot named, or the one this folder is in, else the repos in place as "local".
         var workspace = s.Slot is { } slot ? slot.ToString(System.Globalization.CultureInfo.InvariantCulture) : slotHere ?? "local";
@@ -170,6 +174,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         // A new workspace with no branch is the repos where they're checked out.
         var options = s.Branch is null && workspace == "local" && cli.Workspaces.Get(loaded.Id, workspace) is null ? new WorkspaceOptions(InPlace: true) : null;
         IReadOnlyCollection<string>? unset = s.Unset;
+        var (slot, fixSlot) = s.Branch is { } wanted ? AskAboutBrokenSlot(loaded, wanted, s) : (s.Slot, false);
         for (var attempt = 1; ; attempt++)
         {
             string? held = null;
@@ -177,7 +182,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             {
                 Action<WorkspaceRecord, Plan>? beforeInfra = runApps ? (record, plan) => held = Prebuild(record, plan) : null;
                 var record = s.Branch is { } branch
-                    ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(s.Slot, s.From, s.EmptyData), progress, cancellation, beforeInfra, values, unset)
+                    ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(slot, s.From, s.EmptyData, fixSlot), progress, cancellation, beforeInfra, values, unset)
                     : cli.Workspaces.Up(loaded, workspace, null, options, progress, cancellation, beforeInfra, values);
                 return record;
             }
@@ -201,6 +206,22 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
                 throw;
             }
         }
+    }
+
+    /// <summary>
+    /// The slot to use and whether to fix it, asking when the one the branch would go in is broken. <c>--fix-slot</c>
+    /// answers without asking; without a terminal to ask in, it's refused, naming both ways on.
+    /// </summary>
+    (int? Slot, bool Fix) AskAboutBrokenSlot(LoadedOrchestration loaded, string branch, Settings s)
+    {
+        if (s.FixSlot || cli.Workspaces.BrokenSlotFor(loaded, branch, s.Slot) is not { } broken) return (s.Slot, s.FixSlot);
+        if (!cli.Interactive(s.Json))
+            throw new WorkspaceException($"{broken.Why}. Fix it with --fix-slot (deleting what's in the way), or use --slot {broken.Next} for {broken.NextName}");
+        cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(broken.Why)}.[/]");
+        var next = $"Use {broken.NextName} instead";
+        var fix = $"Fix {broken.SlotName}: delete what's in the way and make it again";
+        var answer = cli.Ansi.Prompt(new SelectionPrompt<string>().Title("What now?").AddChoices(next, fix));
+        return answer == fix ? (s.Slot, true) : (int.Parse(broken.Next, System.Globalization.CultureInfo.InvariantCulture), false);
     }
 
     /// <summary>

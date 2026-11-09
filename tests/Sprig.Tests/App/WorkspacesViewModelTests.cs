@@ -164,7 +164,7 @@ public class WorkspacesViewModelTests
         // happen in the modal, which closes once the workspace starts coming up.
         vm.OpenAddCommand.Execute(null);
         vm.NewBranch = "feat-x";
-        Assert.Equal("Goes in web--1, a new slot.", vm.NewSlotLine);
+        await WaitFor(() => vm.NewSlotLine == "Goes in web--1, a new slot.");
         await vm.CreateCommand.ExecuteAsync(null);
         Assert.EndsWith("web.orchestration.cs", Assert.Single(vm.PendingTrust).Path);
         Assert.True(vm.TrustInModal);
@@ -187,6 +187,20 @@ public class WorkspacesViewModelTests
         Assert.Matches(@"PORT=95\d\d", File.ReadAllText(env));
         Assert.False(File.Exists(Path.Combine(repo, ".env.local")));
 
+        // A folder in the way of the next slot is said under the branch while typing, and Run it keeps the form open.
+        var stray = Path.Combine(store.Root, "work", "web--2", "shop-web");
+        Directory.CreateDirectory(stray);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewBranch = "feat-z";
+        await WaitFor(() => vm.NewSlotBad && vm.NewSlotLine.Contains("already exists and isn't a worktree"));
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.True(vm.IsAddOpen);
+        Assert.True(vm.NewSlotBad);
+        Directory.Delete(Path.Combine(store.Root, "work", "web--2"), recursive: true);
+        vm.NewBranch = "feat-zz";
+        await WaitFor(() => vm.NewSlotLine == "Goes in web--2, a new slot." && !vm.NewSlotBad);
+        vm.CancelAddCommand.Execute(null);
+
         // Released, the slot is free; the form then offers it, with its data to keep or empty.
         await vm.ReleaseCommand.ExecuteAsync(null);
         Assert.True(vm.Selected!.IsFree);
@@ -194,7 +208,7 @@ public class WorkspacesViewModelTests
         Assert.False(vm.ShowRunControls);
         vm.CheckOutHereCommand.Execute(null);
         vm.NewBranch = "feat-y";
-        Assert.StartsWith("Reuses web--1, which is free", vm.NewSlotLine);
+        await WaitFor(() => vm.NewSlotLine.StartsWith("Reuses web--1, which is free", StringComparison.Ordinal));
         Assert.True(vm.NewReusesSlot);
         Assert.True(vm.NewKeepData);
         await vm.CreateCommand.ExecuteAsync(null);

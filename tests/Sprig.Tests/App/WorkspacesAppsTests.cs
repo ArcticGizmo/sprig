@@ -116,6 +116,24 @@ public class WorkspacesAppsTests
     }
 
     [Fact]
+    public async Task A_new_branch_in_the_same_slot_drops_the_lines_read_from_the_last_ones_logs()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out var services);
+        await vm.Logs.PollAsync();
+        Assert.NotEmpty(vm.Logs.Lines);
+
+        var workspaces = new WorkspaceStore(services.Paths);
+        workspaces.Save(workspaces.Get("storefront", "feat-x")! with { Branch = "feat-y", UpdatedAt = DateTimeOffset.Now });
+        foreach (var file in Directory.EnumerateFiles(HostProtocol.WorkspaceLogFolder(services.Paths, Key), "*", SearchOption.AllDirectories))
+            File.Delete(file);
+        vm.RefreshCommand.Execute(null);
+        await vm.Logs.PollAsync();
+
+        Assert.Empty(vm.Logs.Lines);
+    }
+
+    [Fact]
     public async Task All_apps_interleaves_the_lines_the_list_shows_and_a_name_opens_that_apps_own_log()
     {
         using var store = new TempStore();

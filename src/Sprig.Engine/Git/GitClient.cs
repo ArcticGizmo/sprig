@@ -158,6 +158,9 @@ public sealed class GitClient(IProcessRunner runner)
         => Run(repo, "rev-list", "--count", branch, "--not", $"--exclude={branch}", "--branches", "--remotes") is { Success: true } r
            && int.TryParse(r.StdOut.Trim(), out var n) ? n : 0;
 
+    /// <summary>Forget worktrees whose folders are gone.</summary>
+    public void PruneWorktrees(string repo) => Run(repo, "worktree", "prune").EnsureSuccess();
+
     public void RemoveWorktree(string repo, string path, bool force)
     {
         string[] args = force ? ["worktree", "remove", "--force", path] : ["worktree", "remove", path];

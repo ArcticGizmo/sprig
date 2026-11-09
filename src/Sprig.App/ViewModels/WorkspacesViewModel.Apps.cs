@@ -139,8 +139,12 @@ public partial class WorkspacesViewModel
             foreach (var filter in Enum.GetValues<AppStateFilter>()) Chips.Add(new StateChip(filter, PickChipCommand));
 
         // The same workspace read afresh (after bringing it up, say) keeps where the user was; another one starts clean.
-        var same = record is not null && record.Key == _workspaceKey;
+        // A slot keeps its key from one branch to the next, so a new branch in it counts as another workspace.
+        var same = record is not null && record.Key == _workspaceKey && record.Branch == _workspaceBranch;
         _workspaceKey = record?.Key;
+        _workspaceBranch = record?.Branch;
+        // Its logs are read from the same files, so the lines already read would otherwise stay.
+        if (!same) Logs.SetApps([]);
         _orchestration = record?.Orchestration ?? "";
         _pins = record is null ? [] : [.. _services.Ui.Pins(_orchestration)];
         _listShape = "";
@@ -168,6 +172,7 @@ public partial class WorkspacesViewModel
     }
 
     string? _workspaceKey;
+    string? _workspaceBranch;
 
     bool InStream(string app) => StreamPinned ? _pins.Contains(app) : Visible(Apps.FirstOrDefault(a => a.Key == app));
 

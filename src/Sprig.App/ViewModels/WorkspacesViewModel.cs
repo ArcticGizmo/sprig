@@ -79,6 +79,9 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
 
     /// <summary>Its log is the one showing.</summary>
     [ObservableProperty] private bool _isSelected;
+
+    /// <summary>Ctrl- or Shift-clicked, so one menu acts on it and the others marked with it.</summary>
+    [ObservableProperty] private bool _isMarked;
     [ObservableProperty] private bool _isPinned;
 
     public bool HasDetail => Detail.Length > 0;
@@ -553,39 +556,40 @@ public partial class WorkspacesViewModel : PageViewModel
     private async Task StartApps() => await StartAsync(null);
 
     [RelayCommand]
-    private async Task StartApp(WorkspaceAppRow row) => await StartAsync(row);
+    private async Task StartApp(WorkspaceAppRow row) => await StartAsync([row.Key], open: true);
 
-    /// <summary>What Start's choice picks (every app, or a group), leaving alone what's already going; or one app, started
-    /// afresh, after what it depends on. Starting means everything it needs too: a workspace that isn't up is brought up
-    /// first.</summary>
-    async Task StartAsync(WorkspaceAppRow? row)
+    /// <summary>What Start's choice picks (every app, or a group), leaving alone what's already going; or the apps
+    /// <paramref name="keys"/> names, started afresh, after what they depend on. Starting means everything they need too:
+    /// a workspace that isn't up is brought up first.</summary>
+    /// <param name="open">Show the one app's log once it's starting.</param>
+    async Task StartAsync(IReadOnlyList<string>? keys, bool open = false)
     {
-        if (Selected?.Record is not { } record) return;
+        if (Selected?.Record is not { } record || keys is { Count: 0 }) return;
         // Taken now: bringing the workspace up reads it afresh, choices and all.
-        var group = row is null ? StartChoice?.Group : null;
+        var group = keys is null ? StartChoice?.Group : null;
         if (record.State != WorkspaceState.Up)
         {
-            var key = row?.Key;
-            if (!await UpAsync(retry: () => StartAsync(key is null ? null : Apps.FirstOrDefault(a => a.Key == key)))) return;
+            if (!await UpAsync(retry: () => StartAsync(keys, open))) return;
             if (Selected?.Record is not { State: WorkspaceState.Up } up) return;
             record = up;
-            // Bringing it up reads the workspace afresh, so the row is a new one.
-            if (key is not null) row = Apps.FirstOrDefault(a => a.Key == key);
         }
         if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
         try
         {
-            var names = row is not null ? new[] { row.Key } : group is not null ? RunnerSpecs.Group(plan, group) : null;
+            var names = keys ?? (group is not null ? RunnerSpecs.Group(plan, group) : null);
             await AppServices.RunAsync(() =>
             {
                 var specs = RunnerSpecs.For(record, plan, names);
-                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: row is null ? [] : names!));
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: keys ?? []));
                 if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
             });
-            SayApps(row is not null ? $"Starting {row.Name}."
+            // Looked up after, since bringing the workspace up reads it afresh and its rows are new ones.
+            var one = keys is [var key] ? Apps.FirstOrDefault(a => a.Key == key) : null;
+            SayApps(one is not null ? $"Starting {one.Name}."
+                : keys is not null ? $"Starting {keys.Count} apps, each after what it depends on."
                 : group is not null ? $"Starting the {group} group, each app after what it depends on."
                 : "Starting the apps, each after what it depends on.", bad: false);
-            if (row is not null) OpenApp(row);
+            if (open && one is not null) OpenApp(one);
             await RefreshRunnersAsync();
         }
         catch (Exception e)
@@ -631,18 +635,25 @@ public partial class WorkspacesViewModel : PageViewModel
     private async Task StopApps() => await StopAsync(null);
 
     [RelayCommand]
-    private async Task StopApp(WorkspaceAppRow row) => await StopAsync(row);
+    private async Task StopApp(WorkspaceAppRow row) => await StopAsync([row]);
 
-    async Task StopAsync(WorkspaceAppRow? row)
+    /// <param name="rows">Null for every app in the workspace.</param>
+    async Task StopAsync(IReadOnlyList<WorkspaceAppRow>? rows)
     {
-        if (Selected?.Record is not { } record) return;
-        SayApps(row is null ? "Stopping the apps…" : $"Stopping {row.Name}…", bad: false);
+        if (Selected?.Record is not { } record || rows is { Count: 0 }) return;
+        var one = rows is [var only] ? only : null;
+        SayApps(rows is null ? "Stopping the apps…" : one is not null ? $"Stopping {one.Name}…" : $"Stopping {rows.Count} apps…", bad: false);
         // Shown at once; the stop itself can take up to the grace period.
-        foreach (var r in Apps.Where(a => (row is null || a == row) && a.IsAlive)) r.MarkStopping();
-        var stopped = await AppServices.RunAsync(() => _services.Host.StopAndWait(record.Key, row?.Key));
+        foreach (var r in Apps.Where(a => (rows is null || rows.Contains(a)) && a.IsAlive)) r.MarkStopping();
+        var keys = rows?.Select(r => r.Key).ToArray();
+        var stopped = await AppServices.RunAsync(() => keys is null
+            ? _services.Host.StopAndWait(record.Key)
+            : keys.AsParallel().SelectMany(key => _services.Host.StopAndWait(record.Key, key)).ToArray());
         var forced = stopped.Where(s => s.Error is not null).Select(s => $"{s.Name}: {s.Error}").ToArray();
         SayApps(forced.Length > 0 ? string.Join("; ", forced)
-            : stopped.Count == 0 ? "Nothing was running." : row is null ? "The apps have stopped. The infra is still up." : $"{row.Name} has stopped.",
+            : stopped.Count == 0 ? "Nothing was running."
+            : rows is null ? "The apps have stopped. The infra is still up."
+            : one is not null ? $"{one.Name} has stopped." : $"{stopped.Count} apps have stopped.",
             bad: forced.Length > 0);
         await RefreshRunnersAsync();
     }

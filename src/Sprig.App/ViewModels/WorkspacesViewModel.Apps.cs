@@ -157,6 +157,7 @@ public partial class WorkspacesViewModel
             Worktrees = [];
             WrittenFiles = [];
         }
+        if (!same) ClearMarks();
         foreach (var row in Apps) row.IsPinned = _pins.Contains(row.Key);
         PinnedCount = Apps.Count(a => a.IsPinned);
         if (!same || PinnedCount == 0) StreamPinned = false;
@@ -256,7 +257,11 @@ public partial class WorkspacesViewModel
         }
 
         var what = StateFilter == AppStateFilter.All ? "" : $" ({Chips.First(c => c.Filter == StateFilter).Label.Split(' ', 2)[^1]})";
-        ListCaption = $"Showing {visible.Length} of {Apps.Count} apps{what}";
+        _showingCaption = $"Showing {visible.Length} of {Apps.Count} apps{what}";
+        // An app filtered or folded out of sight can't be seen to be marked, so a menu shouldn't act on it.
+        var listed = ListRows.OfType<AppListEntry>().Select(e => e.Row.Key).ToHashSet(StringComparer.Ordinal);
+        _marked.RemoveAll(key => !listed.Contains(key));
+        ShowMarks();
         FoldLabel = _closedRepos.Count > 0 ? "Expand repos" : "Collapse repos";
         UpdateCounts();
         Logs.SetStream(InStream);
@@ -287,6 +292,15 @@ public partial class WorkspacesViewModel
             app.Links ?? []);
     }
 
+    /// <summary>What the app's menu offers to open: its own url, then the quick links its details list.</summary>
+    public IReadOnlyList<PlannedLink> LinksOf(WorkspaceAppRow row)
+    {
+        var links = _plan?.Apps.FirstOrDefault(a => a.Key == row.Key)?.Links ?? [];
+        if (row.Url.Length == 0) return links;
+        var label = Uri.TryCreate(row.Url, UriKind.Absolute, out var uri) ? uri.Authority : row.Url;
+        return [new PlannedLink(label, row.Url), .. links];
+    }
+
     void MarkSelected()
     {
         foreach (var row in Apps) row.IsSelected = !Logs.IsAll && row.Key == Logs.Key;
@@ -312,11 +326,97 @@ public partial class WorkspacesViewModel
         MarkSelected();
     }
 
+    /// <summary>A plain click, which lets go of any marked apps, as it would in a file list.</summary>
     [RelayCommand]
-    private void OpenAppRow(WorkspaceAppRow row) => OpenApp(row);
+    private void OpenAppRow(WorkspaceAppRow row)
+    {
+        ClearMarks();
+        OpenApp(row);
+    }
 
     [RelayCommand]
-    private void OpenAllApps() => OpenAll();
+    private void OpenAllApps()
+    {
+        ClearMarks();
+        OpenAll();
+    }
+
+    // ---- marking several apps, for one menu to act on them all ----
+
+    readonly List<string> _marked = [];
+    string? _markAnchor;
+    string _showingCaption = "";
+
+    /// <summary>In the order they were marked; empty when none are.</summary>
+    public IReadOnlyList<WorkspaceAppRow> MarkedApps => _marked.Select(k => Apps.FirstOrDefault(a => a.Key == k)).OfType<WorkspaceAppRow>().ToArray();
+
+    public bool HasMarks => _marked.Count > 0;
+
+    /// <summary>Ctrl+click. The first one takes the app whose log is open with it, since that row already looks picked.</summary>
+    public void ToggleMark(WorkspaceAppRow row)
+    {
+        if (_marked.Count == 0 && LogApp is { } open && open.Key != row.Key) _marked.Add(open.Key);
+        if (!_marked.Remove(row.Key)) _marked.Add(row.Key);
+        _markAnchor = row.Key;
+        ShowMarks();
+    }
+
+    /// <summary>Shift+click: every app listed from the one last clicked to <paramref name="to"/>.</summary>
+    public void MarkRange(AppListEntry to)
+    {
+        var entries = ListRows.OfType<AppListEntry>().ToList();
+        var end = entries.IndexOf(to);
+        var anchor = _markAnchor ?? LogApp?.Key;
+        // A pinned app is listed twice; the range runs from its entry in the same part of the list as the click.
+        var start = entries.FindIndex(e => e.Row.Key == anchor && e.InPinned == to.InPinned);
+        if (start < 0) start = entries.FindIndex(e => e.Row.Key == anchor);
+        if (start < 0 || end < 0)
+        {
+            ToggleMark(to.Row);
+            return;
+        }
+        _marked.Clear();
+        foreach (var entry in entries.GetRange(Math.Min(start, end), Math.Abs(end - start) + 1))
+            if (!_marked.Contains(entry.Row.Key)) _marked.Add(entry.Row.Key);
+        ShowMarks();
+    }
+
+    public void ClearMarks()
+    {
+        _marked.Clear();
+        _markAnchor = null;
+        ShowMarks();
+    }
+
+    void ShowMarks()
+    {
+        foreach (var row in Apps) row.IsMarked = _marked.Contains(row.Key);
+        ListCaption = _marked.Count > 0 ? $"{_marked.Count} marked · right-click for all, Esc clears" : _showingCaption;
+        OnPropertyChanged(nameof(HasMarks));
+        OnPropertyChanged(nameof(MarkedApps));
+    }
+
+    /// <summary>The marked apps that aren't going, each started after what it depends on.</summary>
+    [RelayCommand]
+    private Task StartMarked() => StartAsync(MarkedApps.Where(a => !a.IsAlive).Select(a => a.Key).ToArray());
+
+    [RelayCommand]
+    private Task RestartMarked() => StartAsync(MarkedApps.Where(a => a.IsAlive).Select(a => a.Key).ToArray());
+
+    [RelayCommand]
+    private Task StopMarked() => StopAsync(MarkedApps.Where(a => a.IsAlive).ToArray());
+
+    /// <summary>Pins every marked app, or, when they're all pinned already, unpins them.</summary>
+    [RelayCommand]
+    private void PinMarked()
+    {
+        var marked = MarkedApps;
+        if (marked.Any(a => !a.IsPinned))
+            _pins.AddRange(marked.Where(a => !_pins.Contains(a.Key)).Select(a => a.Key));
+        else
+            _pins.RemoveAll(key => marked.Any(a => a.Key == key));
+        PinsChanged();
+    }
 
     /// <summary>From a name in the interleaved log.</summary>
     [RelayCommand]
@@ -353,7 +453,12 @@ public partial class WorkspacesViewModel
     private void TogglePin(WorkspaceAppRow row)
     {
         if (!_pins.Remove(row.Key)) _pins.Add(row.Key);
-        row.IsPinned = _pins.Contains(row.Key);
+        PinsChanged();
+    }
+
+    void PinsChanged()
+    {
+        foreach (var row in Apps) row.IsPinned = _pins.Contains(row.Key);
         PinnedCount = _pins.Count;
         if (_orchestration.Length > 0) _services.Ui.SetPins(_orchestration, _pins);
         if (PinnedCount == 0) StreamPinned = false;

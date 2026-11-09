@@ -107,6 +107,21 @@ internal static partial class HeadlessRenderer
             Console.WriteLine("start choices: " + string.Join(" | ", vm.Workspaces.StartChoices.Select(c => $"{c.Label} ({c.Apps})")));
             vm.Workspaces.PickStartChoiceCommand.Execute(vm.Workspaces.StartChoices.First());
 
+            // Three apps marked with Ctrl+click, then one of them right-clicked: one menu for them all.
+            vm.Workspaces.OpenApp(vm.Workspaces.Apps.First(a => a.App == "catalog-api"));
+            foreach (var name in new[] { "orders-api", "payments-api" }) vm.Workspaces.ToggleMark(vm.Workspaces.Apps.First(a => a.App == name));
+            Pump(TimeSpan.FromMilliseconds(300));
+            RightClickApp(window, "orders-api");
+            Save(window, Sibling(outFile, "marked"));
+            CloseMenus(window);
+            vm.Workspaces.ClearMarks();
+
+            // One app's own menu, with its url and quick links.
+            RightClickApp(window, "payments-api");
+            Save(window, Sibling(outFile, "app-menu"));
+            CloseMenus(window);
+            vm.Workspaces.OpenApp(vm.Workspaces.Apps.First(a => a.App == "payments-api"));
+
             // The new-workspace form when the slot the branch would take is broken. Nothing is registered in the sample
             // store, so the form is given a name to show.
             vm.Workspaces.OrchestrationNames.Add("storefront");
@@ -200,6 +215,22 @@ internal static partial class HeadlessRenderer
         {
             try { Directory.Delete(store, recursive: true); } catch { /* temp store */ }
         }
+    }
+
+    static void RightClickApp(Window window, string app)
+    {
+        var row = window.GetVisualDescendants().OfType<Border>()
+            .First(b => b.Classes.Contains("approw") && b.DataContext is AppListEntry { InPinned: false } e && e.Row.App == app);
+        var at = row.TranslatePoint(new Point(60, row.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(at, MouseButton.Right);
+        window.MouseUp(at, MouseButton.Right);
+        Pump(TimeSpan.FromMilliseconds(400));
+    }
+
+    static void CloseMenus(Window window)
+    {
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Pump(TimeSpan.FromMilliseconds(200));
     }
 
     /// <summary>Two orchestrations' worth of workspaces, the first with the sample apps' plan and logs; returns what the host

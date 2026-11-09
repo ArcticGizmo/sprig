@@ -34,7 +34,8 @@ public class WorkspacesAppsTests
                 a.App == "catalog-api" ? [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", ["postgres.tcp port 8002"]), null, at)] : [],
                 null, [], Job: a.App == "migrate",
                 DependsOn: a.App == "catalog-api" ? ["shop-services/migrate"] : null,
-                Health: a.App == "catalog-api" ? [new PlannedHealth("http", "/health")] : null))],
+                Health: a.App == "catalog-api" ? [new PlannedHealth("http", "/health")] : null,
+                Links: a.App == "catalog-api" ? [new PlannedLink("Swagger", "http://localhost:8000/swagger")] : null))],
             [], [], groups ?? [], []));
 
         var day = LogLineFormat.DateMarker(DateOnly.FromDateTime(DateTime.Now)) + "\n";
@@ -113,6 +114,47 @@ public class WorkspacesAppsTests
         Assert.Equal(1, vm.AllApps.Count);
         vm.TogglePinCommand.Execute(web);
         Assert.False(vm.StreamPinned);
+    }
+
+    [Fact]
+    public void Ctrl_and_shift_clicks_mark_apps_for_one_menu_and_a_plain_click_lets_go()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out var services);
+        var catalog = vm.Apps.Single(a => a.App == "catalog-api");
+        vm.OpenAppRowCommand.Execute(catalog);
+
+        vm.ToggleMark(vm.Apps.Single(a => a.App == "web"));
+        Assert.Equal(["catalog-api", "web"], vm.MarkedApps.Select(a => a.App));
+        Assert.True(catalog.IsMarked);
+        Assert.StartsWith("2 marked", vm.ListCaption);
+
+        vm.MarkRange(vm.ListRows.OfType<AppListEntry>().Single(e => e.Row.App == "payments-api"));
+        Assert.Equal(["payments-api", "migrate", "web"], vm.MarkedApps.Select(a => a.App));
+
+        vm.PinMarkedCommand.Execute(null);
+        Assert.Equal(["shop-services/payments-api", "shop-services/migrate", "shop-web/web"], services.Ui.Pins("storefront"));
+        vm.PinMarkedCommand.Execute(null);
+        Assert.Empty(services.Ui.Pins("storefront"));
+
+        vm.AppFilter = "web";
+        Assert.Equal(["web"], vm.MarkedApps.Select(a => a.App));
+
+        vm.OpenAppRowCommand.Execute(catalog);
+        Assert.False(vm.HasMarks);
+        Assert.False(catalog.IsMarked);
+        Assert.StartsWith("Showing", vm.ListCaption);
+    }
+
+    [Fact]
+    public void An_apps_menu_offers_its_url_then_its_quick_links()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out _);
+
+        Assert.Equal([new PlannedLink("localhost:8000", "http://localhost:8000"), new PlannedLink("Swagger", "http://localhost:8000/swagger")],
+            vm.LinksOf(vm.Apps.Single(a => a.App == "catalog-api")));
+        Assert.Empty(vm.LinksOf(vm.Apps.Single(a => a.App == "migrate")));
     }
 
     [Fact]

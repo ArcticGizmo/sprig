@@ -83,8 +83,15 @@ public partial class WorkspacesView : UserControl
         {
             if (_menuApp is { } app) _vm?.TogglePinCommand.Execute(app);
         };
-        _appMenu = new ContextMenu { Items = { _appStart, _appStop, new Separator(), _appPin } };
+        _appMenu = new ContextMenu();
         AppList.AddHandler(ContextRequestedEvent, OnAppContext, RoutingStrategies.Tunnel);
+        AppList.AddHandler(PointerPressedEvent, OnAppPressed, RoutingStrategies.Tunnel);
+
+        _marksStart.Click += (_, _) => _vm?.StartMarkedCommand.Execute(null);
+        _marksRestart.Click += (_, _) => _vm?.RestartMarkedCommand.Execute(null);
+        _marksStop.Click += (_, _) => _vm?.StopMarkedCommand.Execute(null);
+        _marksPin.Click += (_, _) => _vm?.PinMarkedCommand.Execute(null);
+        _marksMenu = new ContextMenu { Items = { _marksStart, _marksRestart, _marksStop, new Separator(), _marksPin } };
     }
 
     readonly ContextMenu _linkMenu;
@@ -96,6 +103,12 @@ public partial class WorkspacesView : UserControl
     readonly MenuItem _appStop = new() { Header = "Stop" };
     readonly MenuItem _appPin = new();
     WorkspaceAppRow? _menuApp;
+
+    readonly ContextMenu _marksMenu;
+    readonly MenuItem _marksStart = new();
+    readonly MenuItem _marksRestart = new();
+    readonly MenuItem _marksStop = new();
+    readonly MenuItem _marksPin = new();
 
     /// <summary>Built each time it opens, from the workspace's plan as it is now, with the current choice ticked.</summary>
     void OpenStartChoices(object? sender, RoutedEventArgs e)
@@ -117,9 +130,22 @@ public partial class WorkspacesView : UserControl
         menu.Open(StartChoiceButton);
     }
 
-    static WorkspaceAppRow? AppAt(object? source)
+    static AppListEntry? EntryAt(object? source)
         => (source as Visual)?.GetSelfAndVisualAncestors().OfType<Control>().Select(c => c.DataContext)
-            .OfType<AppListEntry>().FirstOrDefault()?.Row;
+            .OfType<AppListEntry>().FirstOrDefault();
+
+    static WorkspaceAppRow? AppAt(object? source) => EntryAt(source)?.Row;
+
+    /// <summary>Ctrl (or Cmd) and Shift clicks mark rows as in a file list; handled before the row's button sees the
+    /// press, so they don't also open the app's log.</summary>
+    void OnAppPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_vm is null || !e.GetCurrentPoint(AppList).Properties.IsLeftButtonPressed || EntryAt(e.Source) is not { } entry) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) _vm.MarkRange(entry);
+        else if (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)) _vm.ToggleMark(entry.Row);
+        else return;
+        e.Handled = true;
+    }
 
     void OnAppContext(object? sender, ContextRequestedEventArgs e)
     {
@@ -133,15 +159,56 @@ public partial class WorkspacesView : UserControl
         if (sender is Control button && AppAt(button) is { } app) ShowAppMenu(app, button, PlacementMode.BottomEdgeAlignedRight);
     }
 
+    /// <summary>A marked row's menu is for every marked app; any other row's is for it alone, and lets go of the marks,
+    /// as a right-click outside a file list's selection does.</summary>
     void ShowAppMenu(WorkspaceAppRow app, Control at, PlacementMode placement)
     {
+        if (_vm is { HasMarks: true } && app.IsMarked && _vm.MarkedApps is { Count: > 1 } marked)
+        {
+            ShowMarksMenu(marked, at, placement);
+            return;
+        }
+        _vm?.ClearMarks();
         _menuApp = app;
         _appStart.Header = app.IsAlive ? "Restart" : "Start";
         _appStop.IsVisible = app.IsAlive;
         _appPin.Header = app.IsPinned ? "Unpin" : "Pin";
+        _appMenu.Items.Clear();
+        _appMenu.Items.Add(_appStart);
+        _appMenu.Items.Add(_appStop);
+        _appMenu.Items.Add(new Separator());
+        _appMenu.Items.Add(_appPin);
+        // Its links too, so a page can be opened from the row without picking the app for its details first.
+        var links = _vm?.LinksOf(app) ?? [];
+        if (links.Count > 0) _appMenu.Items.Add(new Separator());
+        foreach (var link in links)
+        {
+            var item = new MenuItem { Header = $"{link.Label} ↗" };
+            ToolTip.SetTip(item, link.Url);
+            item.Click += (_, _) => OpenLink(link.Url, newWindow: false);
+            _appMenu.Items.Add(item);
+        }
         _appMenu.Placement = placement;
         _appMenu.Open(at);
     }
+
+    void ShowMarksMenu(System.Collections.Generic.IReadOnlyList<WorkspaceAppRow> marked, Control at, PlacementMode placement)
+    {
+        var alive = marked.Count(a => a.IsAlive);
+        var stopped = marked.Count - alive;
+        // A mix says which part each item is for; all alike, it's simply that many apps.
+        _marksStart.Header = alive == 0 ? $"Start {Apps(stopped)}" : $"Start {stopped} not running";
+        _marksStart.IsVisible = stopped > 0;
+        _marksRestart.Header = stopped == 0 ? $"Restart {Apps(alive)}" : $"Restart {alive} running";
+        _marksRestart.IsVisible = alive > 0;
+        _marksStop.Header = stopped == 0 ? $"Stop {Apps(alive)}" : $"Stop {alive} running";
+        _marksStop.IsVisible = alive > 0;
+        _marksPin.Header = marked.Any(a => !a.IsPinned) ? $"Pin {Apps(marked.Count)}" : $"Unpin {Apps(marked.Count)}";
+        _marksMenu.Placement = placement;
+        _marksMenu.Open(at);
+    }
+
+    static string Apps(int n) => n == 1 ? "1 app" : $"{n} apps";
 
     /// <summary>A <c>link</c> text with its url in <see cref="Control.Tag"/>, under the pointer.</summary>
     static TextBlock? LinkAt(object? source)
@@ -401,8 +468,8 @@ public partial class WorkspacesView : UserControl
             .FirstOrDefault();
     }
 
-    /// <summary>Up and Down move through the apps, Ctrl+F searches the log, End jumps to its latest line. Typing in a box
-    /// keeps its keys.</summary>
+    /// <summary>Up and Down move through the apps, Ctrl+F searches the log, End jumps to its latest line, Esc lets go of
+    /// marked apps. Typing in a box keeps its keys.</summary>
     void OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (_vm is not { HasSelection: true, OnAppsTab: true } || _vm.IsAddOpen || _vm.ConfirmingRemove) return;
@@ -433,6 +500,10 @@ public partial class WorkspacesView : UserControl
                 break;
             case Key.End:
                 _vm.Logs.JumpToLatestCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.Escape when _vm.HasMarks:
+                _vm.ClearMarks();
                 e.Handled = true;
                 break;
         }

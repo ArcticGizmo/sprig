@@ -129,6 +129,13 @@
         <Style Selector="Border.approw.selected TextBlock.appname">
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
+        <!-- Marked for the shared menu: tinted rather than edged, so the row whose log is open still shows which it is. -->
+        <Style Selector="Border.approw.marked">
+            <Setter Property="Background" Value="#22324A" />
+        </Style>
+        <Style Selector="Border.approw.marked:pointerover">
+            <Setter Property="Background" Value="#2A3D5A" />
+        </Style>
         <!-- Always there so the menu can be found, but faint until the row is pointed at. -->
         <Style Selector="Button.more">
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
@@ -244,6 +251,10 @@
         </Style>
         <Style Selector="Border.tab.on TextBlock.tablabel">
             <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <!-- Start and the ▾ that picks what it starts, drawn as one split button. -->
+        <Style Selector="Button.splitleft">
+            <Setter Property="CornerRadius" Value="4,0,0,4" />
         </Style>
         <Style Selector="ListBox.log">
             <Setter Property="Background" Value="#14141B" />
@@ -729,8 +740,9 @@
                                     </Button>
                                 </DataTemplate>
                                 <DataTemplate DataType="vm:AppListEntry" x:DataType="vm:AppListEntry">
-                                    <!-- Start, stop and pin are on a menu the view opens: right-click the row, or click its ⋮ -->
-                                    <Border Classes="approw" Classes.selected="{Binding Row.IsSelected}" Padding="0,0,4,0">
+                                    <!-- Start, stop and pin are on a menu the view opens: right-click the row, or click its ⋮.
+                                         Ctrl- and Shift-clicks mark rows, and the menu then acts on every marked one. -->
+                                    <Border Classes="approw" Classes.selected="{Binding Row.IsSelected}" Classes.marked="{Binding Row.IsMarked}" Padding="0,0,4,0">
                                         <Grid ColumnDefinitions="*,Auto">
                                         <Button Classes="flat" CommandParameter="{Binding Row}"
                                                 Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenAppRowCommand}">

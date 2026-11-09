@@ -459,21 +459,23 @@ public sealed class WorkspaceGraphCanvas : Control
     static readonly IBrush TagFill = new SolidColorBrush(Color.Parse("#262634"));
     static readonly IBrush TagLine = new SolidColorBrush(Color.Parse("#34344A"));
 
-    /// <summary>A small picture of what it is: a window for an app, a play mark for a job, a cylinder for a store, a box
-    /// for other containers and compose services, a globe for an outside value, a question mark for one missing.</summary>
+    /// <summary>
+    /// A small picture of what it is. Its role first (<see cref="NodeRoles"/>): a cylinder for a database, a bolt for a
+    /// cache, a line of items for a queue, a magnifier for search, an envelope for mail, a bucket for storage, a key for
+    /// identity, crossed arrows for a proxy, a window for a web app, braces for an API, a cog for a worker. Without one: a
+    /// window for an app, a play mark for a job, a box for a container, a globe for an outside value. A setting with no
+    /// value is a question mark, whatever it is.
+    /// </summary>
     static void DrawIcon(DrawingContext context, GraphNode node, Point c, double r)
     {
         var s = r / 22;
         var pen = new Pen(Icon, 1.6 * s);
+        if (node.Kind != TopologyKind.Missing && node.Kind != TopologyKind.Job && node.Role is { } role && DrawRole(context, role, c, s, pen)) return;
         switch (node.Kind)
         {
             case TopologyKind.App:
-            {
-                var box = new Rect(c.X - 9 * s, c.Y - 7 * s, 18 * s, 14 * s);
-                context.DrawRectangle(null, pen, box, 2 * s, 2 * s);
-                context.DrawLine(pen, new Point(box.X, box.Y + 4 * s), new Point(box.Right, box.Y + 4 * s));
+                Window(context, c, s, pen);
                 break;
-            }
             case TopologyKind.Job:
             {
                 var g = new StreamGeometry();
@@ -483,22 +485,6 @@ public sealed class WorkspaceGraphCanvas : Control
                     ctx.LineTo(new Point(c.X + 7 * s, c.Y));
                     ctx.LineTo(new Point(c.X - 5 * s, c.Y + 7 * s));
                     ctx.EndFigure(true);
-                }
-                context.DrawGeometry(null, pen, g);
-                break;
-            }
-            case TopologyKind.Container or TopologyKind.ComposeService when node.IsStore:
-            {
-                var w = 8 * s;
-                context.DrawEllipse(null, pen, new Point(c.X, c.Y - 6 * s), w, 3 * s);
-                context.DrawLine(pen, new Point(c.X - w, c.Y - 6 * s), new Point(c.X - w, c.Y + 6 * s));
-                context.DrawLine(pen, new Point(c.X + w, c.Y - 6 * s), new Point(c.X + w, c.Y + 6 * s));
-                var g = new StreamGeometry();
-                using (var ctx = g.Open())
-                {
-                    ctx.BeginFigure(new Point(c.X - w, c.Y + 6 * s), false);
-                    ctx.ArcTo(new Point(c.X + w, c.Y + 6 * s), new Size(w, 3 * s), 0, false, SweepDirection.CounterClockwise);
-                    ctx.EndFigure(false);
                 }
                 context.DrawGeometry(null, pen, g);
                 break;
@@ -537,6 +523,100 @@ public sealed class WorkspaceGraphCanvas : Control
                 context.DrawText(q, new Point(c.X - q.Width / 2, c.Y - q.Height / 2));
                 break;
             }
+        }
+    }
+
+    static void Window(DrawingContext context, Point c, double s, Pen pen)
+    {
+        var box = new Rect(c.X - 9 * s, c.Y - 7 * s, 18 * s, 14 * s);
+        context.DrawRectangle(null, pen, box, 2 * s, 2 * s);
+        context.DrawLine(pen, new Point(box.X, box.Y + 4 * s), new Point(box.Right, box.Y + 4 * s));
+    }
+
+    static void Shape(DrawingContext context, Pen pen, bool closed, params Point[] points)
+    {
+        var g = new StreamGeometry();
+        using (var ctx = g.Open())
+        {
+            ctx.BeginFigure(points[0], false);
+            foreach (var p in points.Skip(1)) ctx.LineTo(p);
+            ctx.EndFigure(closed);
+        }
+        context.DrawGeometry(null, pen, g);
+    }
+
+    /// <summary>The picture for a role; false for one with none, which falls back to the node's kind.</summary>
+    static bool DrawRole(DrawingContext context, string role, Point c, double s, Pen pen)
+    {
+        Point P(double x, double y) => new(c.X + x * s, c.Y + y * s);
+        switch (role)
+        {
+            case NodeRoles.Database:
+            {
+                var w = 8 * s;
+                context.DrawEllipse(null, pen, P(0, -6), w, 3 * s);
+                context.DrawLine(pen, P(-8, -6), P(-8, 6));
+                context.DrawLine(pen, P(8, -6), P(8, 6));
+                var g = new StreamGeometry();
+                using (var ctx = g.Open())
+                {
+                    ctx.BeginFigure(P(-8, 6), false);
+                    ctx.ArcTo(P(8, 6), new Size(w, 3 * s), 0, false, SweepDirection.CounterClockwise);
+                    ctx.EndFigure(false);
+                }
+                context.DrawGeometry(null, pen, g);
+                return true;
+            }
+            case NodeRoles.Cache:
+                Shape(context, pen, true, P(2, -9), P(-6, 1), P(-0.5, 1), P(-2, 9), P(6, -1), P(0.5, -1));
+                return true;
+            case NodeRoles.Queue:
+                foreach (var x in new[] { -9.0, -3.5, 2 })
+                    context.DrawRectangle(null, pen, new Rect(P(x, -4), new Size(4 * s, 8 * s)), 1 * s, 1 * s);
+                Shape(context, pen, false, P(7.5, -4), P(10, 0), P(7.5, 4));
+                return true;
+            case NodeRoles.Search:
+                context.DrawEllipse(null, pen, P(-2, -2), 6 * s, 6 * s);
+                context.DrawLine(new Pen(Icon, 2.2 * s), P(2.5, 2.5), P(8, 8));
+                return true;
+            case NodeRoles.Mail:
+                context.DrawRectangle(null, pen, new Rect(P(-9, -6), new Size(18 * s, 12 * s)), 1.5 * s, 1.5 * s);
+                Shape(context, pen, false, P(-9, -6), P(0, 1), P(9, -6));
+                return true;
+            case NodeRoles.Storage:
+                context.DrawEllipse(null, pen, P(0, -6), 8 * s, 2.5 * s);
+                Shape(context, pen, false, P(-8, -6), P(-5.5, 8), P(5.5, 8), P(8, -6));
+                return true;
+            case NodeRoles.Identity:
+                context.DrawEllipse(null, pen, P(-4, 0), 4.5 * s, 4.5 * s);
+                Shape(context, pen, false, P(0.5, 0), P(9, 0), P(9, 3.5));
+                context.DrawLine(pen, P(5.5, 0), P(5.5, 3));
+                return true;
+            case NodeRoles.Proxy:
+                Shape(context, pen, false, P(-8, -3.5), P(8, -3.5));
+                Shape(context, pen, false, P(4.5, -7), P(8, -3.5), P(4.5, 0));
+                Shape(context, pen, false, P(8, 3.5), P(-8, 3.5));
+                Shape(context, pen, false, P(-4.5, 0), P(-8, 3.5), P(-4.5, 7));
+                return true;
+            case NodeRoles.Web:
+                Window(context, c, s, pen);
+                return true;
+            case NodeRoles.Api:
+                Shape(context, pen, false, P(-4, -8), P(-6.5, -8), P(-6.5, -2), P(-9, 0), P(-6.5, 2), P(-6.5, 8), P(-4, 8));
+                Shape(context, pen, false, P(4, -8), P(6.5, -8), P(6.5, -2), P(9, 0), P(6.5, 2), P(6.5, 8), P(4, 8));
+                context.DrawEllipse(Icon, null, P(0, 0), 1.3 * s, 1.3 * s);
+                return true;
+            case NodeRoles.Worker:
+                context.DrawEllipse(null, pen, c, 5 * s, 5 * s);
+                context.DrawEllipse(null, pen, c, 1.8 * s, 1.8 * s);
+                for (var i = 0; i < 8; i++)
+                {
+                    var a = i * Math.PI / 4;
+                    context.DrawLine(new Pen(Icon, 2.2 * s), P(Math.Cos(a) * 5, Math.Sin(a) * 5), P(Math.Cos(a) * 8, Math.Sin(a) * 8));
+                }
+                return true;
+            default:
+                return false;
         }
     }
 

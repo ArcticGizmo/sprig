@@ -73,7 +73,13 @@ public sealed class RepoBuilder : DefinitionBuilder
     Setting<T> AddSetting<T>(string name, string? @default, string file, int line) where T : ValueType
     {
         _settings.Add(new SettingModel(name, ValueType.NameOf<T>(), new SourceLocation(file, line), @default));
-        return new Setting<T>(name);
+        return new Setting<T>(name) { Owner = this };
+    }
+
+    internal void SetSettingRole(string name, string role)
+    {
+        for (var i = 0; i < _settings.Count; i++)
+            if (_settings[i].Name == name) _settings[i] = _settings[i] with { Role = role };
     }
 
     /// <summary>Make a value available to other repos in the orchestration under <paramref name="name"/>.</summary>

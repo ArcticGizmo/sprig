@@ -30,15 +30,10 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     public bool IsInfra => node.IsInfra;
     public bool IsOutside => node.Kind is TopologyKind.Outside or TopologyKind.Missing;
 
-    /// <summary>A container that's a database or store, by its image or, for a compose service (whose image sprig
-    /// doesn't read), its name: drawn as a cylinder rather than a box.</summary>
-    public bool IsStore => IsInfra && Stores.Any(s => node.Name.Contains(s, StringComparison.OrdinalIgnoreCase)
-        || (node.Kind == TopologyKind.Container && node.Detail.Contains(s, StringComparison.OrdinalIgnoreCase)));
+    /// <summary>What it is (<see cref="NodeRoles"/>): given by its definition or worked out; null when neither says.</summary>
+    public string? Role => node.Role;
 
-    static readonly string[] Stores =
-        ["postgres", "mysql", "mariadb", "mongo", "redis", "valkey", "sql", "cosmos", "elastic", "opensearch", "minio", "azurite", "db"];
-
-    public string KindLabel => node.Kind switch
+    public string KindLabel => (Role is { } role ? role + " · " : "") + node.Kind switch
     {
         TopologyKind.App => "app",
         TopologyKind.Job => "job",
@@ -264,15 +259,16 @@ public sealed class WorkspaceGraph
     public event Action<string>? CenterRequested;
 
     /// <summary>
-    /// Look for <paramref name="text"/> in each node's name, repo, port or image, and the tags under it, so "redis" finds
-    /// redis and everything that uses it.
+    /// Look for <paramref name="text"/> in each node's name, repo, port, image or role, and the tags under it, so "redis"
+    /// finds redis and everything that uses it, and "queue" every queue.
     /// </summary>
     public void SetSearch(string text)
     {
         Search = text.Trim();
         bool Has(string s) => s.Contains(Search, StringComparison.OrdinalIgnoreCase);
         Matches = !Searching ? []
-            : Nodes.Where(n => Has(n.Name) || Has(n.Owner) || Has(n.Detail) || n.Tags.Any(t => Has(t.Name)))
+            : Nodes.Where(n => Has(n.Name) || Has(n.Owner) || Has(n.Detail) || (n.Role is { } role && Has(role))
+                    || n.Tags.Any(t => Has(t.Name)))
                 .Select(n => Layout.Find(n.Key))
                 .OfType<LayoutBody>()
                 .OrderBy(b => Math.Round(b.Y / 40)).ThenBy(b => b.X)

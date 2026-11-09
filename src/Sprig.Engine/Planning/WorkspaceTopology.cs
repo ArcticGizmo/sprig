@@ -8,7 +8,9 @@ public enum TopologyKind { App, Job, Container, ComposeService, Outside, Missing
 
 /// <param name="Key"><c>owner/name</c> for what a repo or the orchestration runs, as plans and the host name it.</param>
 /// <param name="Detail">Its port, image or value, for a second line under its name.</param>
-public sealed record TopologyNode(string Key, string Owner, string Name, TopologyKind Kind, string Detail)
+/// <param name="Role">What it is, as <see cref="NodeRoles"/> names it: given by its definition or worked out; null when
+/// neither says.</param>
+public sealed record TopologyNode(string Key, string Owner, string Name, TopologyKind Kind, string Detail, string? Role = null)
 {
     public bool IsInfra => Kind is TopologyKind.Container or TopologyKind.ComposeService;
     public bool IsRunner => Kind is TopologyKind.App or TopologyKind.Job;
@@ -38,13 +40,14 @@ public sealed partial record WorkspaceTopology(IReadOnlyList<TopologyNode> Nodes
         var ports = plan.Ports.GroupBy(p => (p.Owner, p.Resource)).ToDictionary(g => g.Key, g => g.First().Port);
         foreach (var app in plan.Apps)
             Add(new TopologyNode(app.Key, app.Owner, app.Name, app.Job ? TopologyKind.Job : TopologyKind.App,
-                app.Job ? "job" : ports.GetValueOrDefault((app.Owner, app.Name)) is { } port ? $":{port}" : ""));
+                app.Job ? "job" : ports.GetValueOrDefault((app.Owner, app.Name)) is { } port ? $":{port}" : "",
+                app.Job ? null : NodeRoles.OfApp(app.Role, app.Name)));
         foreach (var c in plan.Containers)
-            Add(new TopologyNode($"{c.Owner}/{c.Name}", c.Owner, c.Name, TopologyKind.Container, c.Image));
+            Add(new TopologyNode($"{c.Owner}/{c.Name}", c.Owner, c.Name, TopologyKind.Container, c.Image, NodeRoles.OfInfra(c.Role, c.Name, c.Image)));
         foreach (var compose in plan.Compose)
             foreach (var s in compose.Services)
                 Add(new TopologyNode($"{compose.Owner}/{s.Name}", compose.Owner, s.Name, TopologyKind.ComposeService,
-                    s.Mappings.FirstOrDefault(m => m.Host is not null) is { } m ? $":{m.Host}" : compose.File));
+                    s.Mappings.FirstOrDefault(m => m.Host is not null) is { } m ? $":{m.Host}" : compose.File, NodeRoles.OfInfra(s.Role, s.Name)));
 
         var values = new Dictionary<(string From, string To), List<string>>();
         void Link(string from, string to, string value)
@@ -63,16 +66,19 @@ public sealed partial record WorkspaceTopology(IReadOnlyList<TopologyNode> Nodes
                     var name = source.Setting ?? e.Key;
                     if (source.Owner is null)
                     {
-                        Add(new TopologyNode($"{OutsideOwner}/{name}", OutsideOwner, name, TopologyKind.Missing, "no value yet"));
+                        Add(new TopologyNode($"{OutsideOwner}/{name}", OutsideOwner, name, TopologyKind.Missing, "no value yet",
+                            NodeRoles.OfInfra(plan.RoleOfSetting(name), name)));
                         Link(from, $"{OutsideOwner}/{name}", name);
                     }
                     else if (source.Resource is { } resource)
                     {
                         if (nodes.ContainsKey($"{source.Owner}/{resource}")) Link(from, $"{source.Owner}/{resource}", name);
                     }
-                    else if (source.Setting is not null && e.Value.Value is { } value && LooksLikeAddress(value))
+                    else if (source.Setting is not null && e.Value.Value is { } value
+                             && (LooksLikeAddress(value) || NodeRoles.IsInfra(plan.RoleOfSetting(source.Setting))))
                     {
-                        Add(new TopologyNode($"{OutsideOwner}/{name}", OutsideOwner, name, TopologyKind.Outside, ValueMask.Apply(value)));
+                        Add(new TopologyNode($"{OutsideOwner}/{name}", OutsideOwner, name, TopologyKind.Outside, ValueMask.Apply(value),
+                            NodeRoles.OfInfra(plan.RoleOfSetting(name), name, value: value)));
                         Link(from, $"{OutsideOwner}/{name}", name);
                     }
                 }

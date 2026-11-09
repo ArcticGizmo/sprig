@@ -152,15 +152,23 @@ public sealed class AppResource : IResource
     public AppResource Link(string label, [InterpolatedStringHandlerArgument] ExprHandler url, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => Link(label, url.ToExpr(), file, line);
 
+    /// <summary>Say what the app is, where sprig can't tell: a front end, an API or a worker.</summary>
+    public AppResource Is(Role role)
+    {
+        _role = Roles.Name(role);
+        return this;
+    }
+
     string? _readyLog;
     RestartModel? _restart;
+    string? _role;
     readonly List<LinkModel> _links = [];
 
     string PrimaryEndpoint => _primaryEndpoint
         ?? throw new InvalidOperationException($"app '{Name}' has no endpoint yet; call .Http() before using its Port or Url");
 
     internal AppModel Build() => new(Name, _kind, _path, _location, _endpoints.ToArray(), _env.ToArray(), _run, _waitFor.ToArray(),
-        Job: false, _readyLog, _restart, _links.Count > 0 ? _links.ToArray() : null);
+        Job: false, _readyLog, _restart, _links.Count > 0 ? _links.ToArray() : null, _role);
 }
 
 /// <summary>When sprig starts an app again after it exits on its own.</summary>
@@ -362,7 +370,16 @@ public class ContainerResource : IResource
         return this;
     }
 
-    internal ContainerModel Build() => new(Name, _image, _location, _endpoints.ToArray(), _env.ToArray(), _volumes.ToArray(), _health);
+    /// <summary>Say what the container is, where sprig can't tell from its image.</summary>
+    public ContainerResource Is(Role role)
+    {
+        _role = Roles.Name(role);
+        return this;
+    }
+
+    string? _role;
+
+    internal ContainerModel Build() => new(Name, _image, _location, _endpoints.ToArray(), _env.ToArray(), _volumes.ToArray(), _health, _role);
 }
 
 public sealed class ComposeFileResource
@@ -436,5 +453,14 @@ public sealed class ComposeServiceResource : IResource
         return this;
     }
 
-    internal ComposeServiceModel Build() => new(Name, _location, _endpoints.ToArray(), _health);
+    /// <summary>Say what the service is, where sprig can't tell from its name.</summary>
+    public ComposeServiceResource Is(Role role)
+    {
+        _role = Roles.Name(role);
+        return this;
+    }
+
+    string? _role;
+
+    internal ComposeServiceModel Build() => new(Name, _location, _endpoints.ToArray(), _health, _role);
 }

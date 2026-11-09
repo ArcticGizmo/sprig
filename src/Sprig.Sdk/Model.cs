@@ -63,6 +63,7 @@ public sealed record LinkModel(string Label, string Url, SourceLocation Location
 /// <param name="ReadyLog">A regular expression; the app is ready once a line of its output matches.</param>
 /// <param name="Restart">What to do when it exits without being asked to; null to leave it exited.</param>
 /// <param name="Links">Quick links to the app's pages.</param>
+/// <param name="Role">What it is (<c>web</c>, <c>api</c>, <c>worker</c>...), for how sprig draws it; null to leave it to sprig.</param>
 public sealed record AppModel(
     string Name,
     string Kind,
@@ -75,7 +76,8 @@ public sealed record AppModel(
     bool Job,
     string? ReadyLog = null,
     RestartModel? Restart = null,
-    IReadOnlyList<LinkModel>? Links = null);
+    IReadOnlyList<LinkModel>? Links = null,
+    string? Role = null);
 
 /// <param name="Policy"><c>onFailure</c> (a non-zero exit) or <c>always</c> (any exit; for a job, the same as
 /// <c>onFailure</c>).</param>
@@ -84,6 +86,7 @@ public sealed record RestartModel(string Policy, int Max, SourceLocation Locatio
 
 /// <param name="Health">A command run inside the container that exits 0 once it's ready; null to only wait for it to
 /// be running.</param>
+/// <param name="Role">What it is (<c>database</c>, <c>queue</c>...), for how sprig draws it; null to leave it to sprig.</param>
 public sealed record ContainerModel(
     string Name,
     string Image,
@@ -91,7 +94,8 @@ public sealed record ContainerModel(
     IReadOnlyList<EndpointModel> Endpoints,
     IReadOnlyList<EnvModel> Env,
     IReadOnlyList<VolumeModel> Volumes,
-    string? Health);
+    string? Health,
+    string? Role = null);
 
 public sealed record VolumeModel(string Name, string Target);
 
@@ -108,7 +112,9 @@ public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, st
 public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location, string? Kind = null, string? Profile = null);
 
 /// <param name="Default">A template for the value to use when nothing else gives one; null to be asked for one.</param>
-public sealed record SettingModel(string Name, string Type, SourceLocation Location, string? Default = null);
+/// <param name="Role">What the value points at (<c>queue</c>, <c>identity</c>...), for how sprig draws it; null to
+/// leave it to sprig.</param>
+public sealed record SettingModel(string Name, string Type, SourceLocation Location, string? Default = null, string? Role = null);
 
 public sealed record ExportModel(string Name, string Type, string Value, SourceLocation Location);
 
@@ -121,7 +127,8 @@ public sealed record ComposeFileModel(
     IReadOnlyList<ComposeOverrideModel> Overrides);
 
 /// <param name="Health">A command that exits 0 once the service is ready, replacing the file's own health check.</param>
-public sealed record ComposeServiceModel(string Name, SourceLocation Location, IReadOnlyList<EndpointModel> Endpoints, string? Health);
+/// <param name="Role">What it is (<c>database</c>, <c>queue</c>...), for how sprig draws it; null to leave it to sprig.</param>
+public sealed record ComposeServiceModel(string Name, SourceLocation Location, IReadOnlyList<EndpointModel> Endpoints, string? Health, string? Role = null);
 
 /// <param name="Path">A dotted path into the compose file, e.g. <c>services.postgres.container_name</c>.</param>
 public sealed record ComposeOverrideModel(string Path, string Value, SourceLocation Location);

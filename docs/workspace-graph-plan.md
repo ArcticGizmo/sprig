@@ -23,6 +23,15 @@ Then (user, same day):
 - **Tags say what they are.** Pointing at a tag shows its name, repo and state; its "+n" lists the ones it stands for. Clicking a tag picks that node; clicking "+n" picks the node it's under, whose card lists everything.
 - **Search.** A box above the graph (Ctrl+F) finds nodes by name, repo, port or image, and nodes using infra of that name, so "redis" finds redis and its users. What it finds is ringed and the rest dims; Enter goes to each in turn (Shift+Enter back), picking it and bringing it into view; Esc clears.
 
+Then roles (user, same day): a definition says **what something is**, and sprig decides how it looks.
+
+- **Worked out first**, so most repos need nothing: infra by its image, else its name, word by word (`safety-db` is a database, `rabbitmq-url` a queue); an outside value by its name, else its url's scheme or connection string (`amqp://` a queue, `Host=…` a database); an app by its name (`orders-api` an API, `cdc-worker` a worker). `Sprig.Engine.Planning.NodeRoles`.
+- **Said where it can't be**: `.Is(Role.Queue)` on a container, compose service, app or setting, e.g. `repo.Setting<Url>("events-url").Is(Role.Queue)`. What's said wins. A setting given an infra role is drawn as infra even when its value doesn't look like an address. Presets say theirs (Postgres a database, Redis a cache, RabbitMQ a queue, Mailpit mail). Model schema 14.
+- **Roles**: database, cache, queue, search, mail, storage, identity, proxy (infra), and web, api, worker (apps). Each has its own icon; search finds by role ("queue").
+- **Not offered**: colours or free-form icons. The ring's colour is the state, and a fixed set of roles keeps every repo's graph reading the same.
+
+Grouping by start group or role (a "Group by" switch) is the next step, if repo columns turn out not to be enough.
+
 A 3D layout was considered and turned down: on a flat screen its links cross again from any one angle, and reading it means turning it round.
 
 ## What's drawn

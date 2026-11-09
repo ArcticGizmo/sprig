@@ -16,6 +16,7 @@ public sealed class PostgresResource : ContainerResource
         Volume("data", "/var/lib/postgresql/data");
         // Over TCP, because the image's first-run setup serves only the unix socket and would pass a plain pg_isready.
         Health($"pg_isready -h 127.0.0.1 -U {User}");
+        Is(Role.Database);
     }
 
     /// <summary>An Npgsql-style connection string for <paramref name="database"/>.</summary>
@@ -29,6 +30,7 @@ public sealed class RedisResource : ContainerResource
     {
         Endpoint("tcp", 6379, file: location.File, line: location.Line);
         Health("redis-cli ping");
+        Is(Role.Cache);
     }
 
     /// <summary><c>localhost:&lt;port&gt;</c>, the form StackExchange.Redis expects.</summary>
@@ -47,6 +49,7 @@ public sealed class RabbitMqResource : ContainerResource
         Env("RABBITMQ_DEFAULT_USER", User, location.File, location.Line);
         Env("RABBITMQ_DEFAULT_PASS", Password, location.File, location.Line);
         Health(HealthCommand);
+        Is(Role.Queue);
     }
 
     /// <summary>Health checks run as root. If rabbitmq-diagnostics runs before the server has written its Erlang
@@ -68,6 +71,7 @@ public sealed class MailpitResource : ContainerResource
         Endpoint("smtp", 1025, file: location.File, line: location.Line);
         Endpoint("ui", 8025, scheme: "http", file: location.File, line: location.Line);
         Health("/mailpit readyz");
+        Is(Role.Mail);
     }
 
     /// <summary><c>smtp://localhost:&lt;port&gt;</c>.</summary>

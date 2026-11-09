@@ -92,7 +92,16 @@ public static class Planner
             return new Plan(
                 input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
                 _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links),
-                _asks.Count > 0 ? _asks : null);
+                _asks.Count > 0 ? _asks : null, SettingRoles());
+        }
+
+        /// <summary>Each setting a repo gave a role, by name; the first repo to say wins where two differ.</summary>
+        IReadOnlyDictionary<string, string>? SettingRoles()
+        {
+            var roles = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var setting in _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Settings).Where(s => s.Role is not null))
+                roles.TryAdd(setting.Name, setting.Role!);
+            return roles.Count > 0 ? roles : null;
         }
 
         // ---- scopes and names ----
@@ -213,7 +222,7 @@ public static class Planner
                 .Select(w => $"{scope.Owner}/{w}")
                 .ToArray();
             return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor,
-                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app), PlanLinks(scope, app.Links));
+                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app), PlanLinks(scope, app.Links), app.Role);
         }
 
         /// <summary>The references in a Run command template; a command that doesn't parse is left to resolving to report.</summary>
@@ -350,7 +359,7 @@ public static class Planner
                 mappings.Select(m => m.ToString()).ToArray(),
                 c.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), null, e.Location)).ToArray(),
                 c.Volumes.Select(v => $"{v.Name} → {v.Target}").ToArray(),
-                mappings, c.Volumes, c.Health);
+                mappings, c.Volumes, c.Health, c.Role);
         }
 
         PlannedCompose PlanCompose(Scope scope, ComposeFileModel file)
@@ -360,7 +369,7 @@ public static class Planner
             foreach (var service in file.Services)
             {
                 var mappings = Mappings(scope.Resources[service.Name], service.Endpoints);
-                services.Add(new PlannedComposeService(service.Name, mappings, service.Health));
+                services.Add(new PlannedComposeService(service.Name, mappings, service.Health, service.Role));
                 if (mappings.Count == 0) continue;
                 var value = string.Join(", ", mappings);
                 overrides.Add(new PlannedOverride($"services.{service.Name}.ports",

@@ -20,8 +20,12 @@ public sealed record Plan(
     IReadOnlyList<PlannedGroup> Groups,
     IReadOnlyList<PlanProblem> Problems,
     IReadOnlyList<PlannedLink>? Links = null,
-    IReadOnlyList<PlannedAsk>? Asks = null)
+    IReadOnlyList<PlannedAsk>? Asks = null,
+    IReadOnlyDictionary<string, string>? SettingRoles = null)
 {
+    /// <summary>The role a repo gave a setting (<c>.Is(Role.Queue)</c>), by the setting's name.</summary>
+    public string? RoleOfSetting(string name) => SettingRoles?.GetValueOrDefault(name);
+
     public bool HasErrors => Problems.Any(p => p.Severity == ProblemSeverity.Error);
 
     /// <summary>Settings nothing gives a value, which the workspace must be given before it can come up.</summary>
@@ -93,6 +97,7 @@ public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, So
 /// <param name="ReadyLog">A regular expression a line of its output must match before it's ready.</param>
 /// <param name="Restart">Whether, and how often, to start it again after it exits on its own.</param>
 /// <param name="Links">Its quick links, each resolved to an absolute url.</param>
+/// <param name="Role">What its definition says it is (<c>web</c>, <c>api</c>, <c>worker</c>); null when it doesn't say.</param>
 public sealed record PlannedApp(
     string Owner,
     string RepoPath,
@@ -107,7 +112,8 @@ public sealed record PlannedApp(
     IReadOnlyList<PlannedHealth>? Health = null,
     string? ReadyLog = null,
     RestartModel? Restart = null,
-    IReadOnlyList<PlannedLink>? Links = null)
+    IReadOnlyList<PlannedLink>? Links = null,
+    string? Role = null)
 {
     public string Key => $"{Owner}/{Name}";
 
@@ -150,7 +156,8 @@ public sealed record PlannedContainer(
     IReadOnlyList<string> Volumes,
     IReadOnlyList<PlannedMapping> Mappings,
     IReadOnlyList<VolumeModel> Mounts,
-    string? Health);
+    string? Health,
+    string? Role = null);
 
 /// <param name="Generated">Sprig's own change (such as the ports it maps), shown with the definition's overrides.</param>
 public sealed record PlannedOverride(string Path, PlannedValue Value, bool Generated = false);
@@ -164,7 +171,7 @@ public sealed record PlannedCompose(
     IReadOnlyList<PlannedComposeService> Services);
 
 /// <param name="Health">Replaces the file's own health check when set.</param>
-public sealed record PlannedComposeService(string Name, IReadOnlyList<PlannedMapping> Mappings, string? Health = null);
+public sealed record PlannedComposeService(string Name, IReadOnlyList<PlannedMapping> Mappings, string? Health = null, string? Role = null);
 
 /// <param name="Apps">The apps the group starts, as <c>repo/app</c>.</param>
 public sealed record PlannedGroup(string Name, IReadOnlyList<string> Apps);

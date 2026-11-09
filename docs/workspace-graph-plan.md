@@ -10,6 +10,16 @@ Started 2026-11-09. A workspace's apps, jobs and infra drawn as a force-directed
 | Infra | Infra nodes get **state, start/stop and logs**, as apps do. Container logs show in the same log pane. |
 | Layout | **Settle, then drag.** The simulation runs until it settles and stops. Dragging a node pins it there. Pinned places are kept per orchestration, so every workspace of it looks the same. |
 
+## Follow-up: dense workspaces (user, 2026-11-09)
+
+On a real repo whose services all use the same infra and each other's urls, the force layout was a tangle. Three changes, all chosen by the user:
+
+- **Layered layout, the default.** What uses something sits above it, so links run down the page: front ends at the top, the services they call below, infra and outside values along the bottom row. Each repo keeps a column; rows line up across columns. Loops are broken with as few links as possible running back up (Eades–Lin–Smyth), nodes are ordered within rows by barycentre sweeps keeping the order with fewest crossings, and a link that passes rows bends through the gaps. A **Layered | Force** switch keeps the force layout, which is where nodes can be dragged; the choice is remembered (`UiState.GraphForce`).
+- **Infra as tags.** The infra and outside values a node uses show as tags under it, each with its state's dot, rather than as lines. Their lines appear only when one end is pointed at or picked. Too small to read when zoomed out, a tag is just its dot.
+- **Focus.** With nothing pointed at or picked, links are faint. Pointing at or picking a node draws its links in full, with their values, and fades the rest.
+
+A 3D layout was considered and turned down: on a flat screen its links cross again from any one angle, and reading it means turning it round.
+
 ## What's drawn
 
 - **Nodes:** every app and job, every container a repo or the orchestration declares, every compose service a repo names, and a node for each value that comes from outside the workspace (a setting given a literal value, such as a shared dev database's url) or that nothing gives yet.

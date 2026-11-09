@@ -67,8 +67,8 @@ public sealed class ForceLayoutTests
         Assert.True(inGroup < across, $"within svc {inGroup:0}, svc to web {across:0}");
     }
 
-    static double Mean(ForceLayout.Body[] bodies)
+    static double Mean(LayoutBody[] bodies)
         => bodies.SelectMany((a, i) => bodies.Skip(i + 1).Select(b => Distance(a, b))).Average();
 
-    static double Distance(ForceLayout.Body a, ForceLayout.Body b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
+    static double Distance(LayoutBody a, LayoutBody b) => Math.Sqrt(Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2));
 }

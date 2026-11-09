@@ -131,10 +131,10 @@ public sealed class WorkspaceGraphCanvas : Control
     {
         if (graph.Layout.Bodies.Count == 0 || Bounds.Width < 10 || Bounds.Height < 10) return;
         var bodies = graph.Layout.Bodies;
-        var left = bodies.Min(b => b.X - b.Radius) - ForceLayout.BoxSide - 4;
-        var right = bodies.Max(b => b.X + b.Radius) + ForceLayout.BoxSide + 4;
-        var top = bodies.Min(b => b.Y) - ForceLayout.BoxAbove - 4;
-        var bottom = bodies.Max(b => b.Y) + ForceLayout.BoxBelow + 4;
+        var left = bodies.Min(b => b.X - b.Radius) - LayoutBox.Side - 4;
+        var right = bodies.Max(b => b.X + b.Radius) + LayoutBox.Side + 4;
+        var top = bodies.Min(b => b.Y) - LayoutBox.Above - 4;
+        var bottom = bodies.Max(b => b.Y) + LayoutBox.Below + 4;
         var scale = Math.Min((Bounds.Width - 40) / (right - left), (Bounds.Height - 40) / (bottom - top));
         _scale = Math.Clamp(scale, 0.35, 1.15);
         _offset = new Vector(Bounds.Width / 2 - (left + right) / 2 * _scale, Bounds.Height / 2 - (top + bottom) / 2 * _scale);
@@ -146,30 +146,47 @@ public sealed class WorkspaceGraphCanvas : Control
         if (Graph is not { } graph) return;
         if (!_userMoved) Fit(graph);
 
+        // Focus is the node pointed at, else the one picked: its links are drawn in full and the rest fade, so a dense
+        // workspace reads one node at a time.
         var focus = graph.Hovered ?? graph.Selected;
         var positions = graph.Layout.Bodies.ToDictionary(b => b.Key, b => ToScreen(b.X, b.Y), StringComparer.Ordinal);
         var r = R * _scale;
 
         DrawGroups(context, graph);
 
-        // Nodes and their names are placed first, so a link's label steps aside rather than covering one.
-        var labels = graph.Layout.Bodies.Select(b => positions[b.Key] is var p
-            ? new Rect(p.X - b.Radius * _scale, p.Y - r - 2, b.Radius * 2 * _scale, r * 2 + Math.Max(40, 40 * _scale)) : default).ToList();
+        // Nodes and their labels are placed first, so a link's label steps aside rather than covering one.
+        var labels = graph.Nodes.Where(n => positions.ContainsKey(n.Key) && graph.Layout.Find(n.Key) is not null).Select(n =>
+        {
+            var p = positions[n.Key];
+            var room = graph.Layout.Find(n.Key)!.Radius * _scale;
+            return new Rect(p.X - room, p.Y - r - 2, room * 2, r + 2 + LabelBottom(n));
+        }).ToList();
         foreach (var link in graph.Links.OrderBy(l => focus is not null && (l.From == focus || l.To == focus)))
         {
-            if (!positions.TryGetValue(link.From, out var from) || !positions.TryGetValue(link.To, out var to)) continue;
+            if (!positions.ContainsKey(link.From) || !positions.ContainsKey(link.To)) continue;
             var lit = focus is not null && (link.From == focus || link.To == focus);
-            var dimmed = graph.Selected is not null && !lit && graph.Hovered is null;
-            DrawLink(context, from, to, r, link, lit, dimmed, labels);
+            if (!lit && graph.IsTagLink(link)) continue;
+            var back = graph.Layout.RunsBack(link.From, link.To);
+            var opacity = lit ? 1 : focus is not null ? 0.07 : link.OrderOnly || back ? 0.2 : 0.4;
+            DrawLink(context, graph, link, positions, r, lit, opacity, labels);
         }
 
         foreach (var node in graph.Nodes.OrderBy(n => n.Key == graph.Selected))
         {
             if (!positions.TryGetValue(node.Key, out var at)) continue;
-            var dimmed = graph.Selected is { } picked && graph.Hovered is null && !graph.IsNear(node.Key, picked);
+            var dimmed = focus is not null && !graph.IsNear(node.Key, focus);
             DrawNode(context, node, at, r, node.Key == graph.Selected, node.Key == graph.Hovered, dimmed);
         }
     }
+
+    double NameSize => Math.Max(9.5, 12 * _scale);
+    // Tags shrink with the picture, unlike names: a row of them is as wide as the layout made room for, and a floor on
+    // their size would push them into their neighbours' when zoomed out.
+    double TagSize => 10 * _scale;
+
+    /// <summary>How far below a node's centre its label ends: its circle, name, state line and tags.</summary>
+    double LabelBottom(GraphNode node)
+        => R * _scale + 6 + NameSize * 1.3 + (NameSize - 1.5) * 1.3 + (node.Tags.Count > 0 ? TagSize * 1.5 + 6 : 0);
 
     void DrawGroups(DrawingContext context, WorkspaceGraph graph)
     {
@@ -177,27 +194,94 @@ public sealed class WorkspaceGraphCanvas : Control
         {
             var box = new Rect(ToScreen(b.Left, b.Top), ToScreen(b.Right, b.Bottom));
             context.DrawRectangle(GroupFill, new Pen(GroupLine, 1), box, 14, 14);
-            var title = new FormattedText(group, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, SansBold, Math.Max(9, 11 * _scale), Dim);
-            context.DrawText(title, new Point(box.X + 12, box.Y + 7));
+            // Scaled with the picture, so it stays in the room above the box's top row of nodes, but never too small to read.
+            var title = new FormattedText(group, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, SansBold, Math.Max(8.5, 11 * _scale), Dim)
+            {
+                MaxTextWidth = Math.Max(10, box.Width - 20 * _scale),
+                MaxLineCount = 1,
+                Trimming = TextTrimming.CharacterEllipsis,
+            };
+            context.DrawText(title, new Point(box.X + 12 * _scale, box.Y + 6 * _scale));
         }
     }
 
-    static void DrawLink(DrawingContext context, Point from, Point to, double r, TopologyLink link, bool lit, bool dimmed, List<Rect> labels)
+    /// <summary>
+    /// A link from what uses to what's used. By forces, a straight line between the circles. In rows, it leaves the
+    /// lower edge of its user's label and enters the top of what it uses (or, running back up, the top of the user and
+    /// the foot of the other's label), bending through the gaps the layout found, with each bend upright so the curve
+    /// reads as flowing down the page.
+    /// </summary>
+    void DrawLink(DrawingContext context, WorkspaceGraph graph, TopologyLink link, Dictionary<string, Point> positions, double r,
+        bool lit, double opacity, List<Rect> labels)
     {
-        var dx = to.X - from.X;
-        var dy = to.Y - from.Y;
-        var d = Math.Sqrt(dx * dx + dy * dy);
-        if (d < r * 2 + 4) return;
-        var ux = dx / d;
-        var uy = dy / d;
-        var start = new Point(from.X + ux * (r + 2), from.Y + uy * (r + 2));
-        var end = new Point(to.X - ux * (r + 4), to.Y - uy * (r + 4));
-        var brush = lit ? LinkLit : LinkBrush;
-        // Start order matters less than values at a glance, so it stays faint until its node is picked.
-        using var _ = context.PushOpacity(dimmed ? 0.18 : lit ? 1 : link.OrderOnly ? 0.4 : 0.85);
-        var pen = new Pen(brush, lit ? 2.2 : 1.4, link.OrderOnly ? new DashStyle([4, 3], 0) : null);
-        context.DrawLine(pen, start, end);
+        var from = positions[link.From];
+        var to = positions[link.To];
+        var points = new List<Point>();
+        if (graph.Layout.Rows && graph.Find(link.From) is { } user && graph.Find(link.To) is { } used)
+        {
+            var route = graph.Layout.Route(link.From, link.To).Select(p => ToScreen(p.X, p.Y)).ToList();
+            if (Math.Abs(to.Y - from.Y) < 1)
+            {
+                points.Add(new Point(from.X, from.Y + LabelBottom(user)));
+                points.AddRange(route);
+                points.Add(new Point(to.X, to.Y + LabelBottom(used) + 4));
+            }
+            else if (to.Y > from.Y)
+            {
+                points.Add(new Point(from.X, from.Y + LabelBottom(user)));
+                points.AddRange(route);
+                points.Add(new Point(to.X, to.Y - r - 4));
+            }
+            else
+            {
+                points.Add(new Point(from.X, from.Y - r - 2));
+                points.AddRange(route);
+                points.Add(new Point(to.X, to.Y + LabelBottom(used) + 4));
+            }
+        }
+        else
+        {
+            var dx = to.X - from.X;
+            var dy = to.Y - from.Y;
+            var d = Math.Sqrt(dx * dx + dy * dy);
+            if (d < r * 2 + 4) return;
+            points.Add(new Point(from.X + dx / d * (r + 2), from.Y + dy / d * (r + 2)));
+            points.Add(new Point(to.X - dx / d * (r + 4), to.Y - dy / d * (r + 4)));
+        }
 
+        var start = points[0];
+        var end = points[^1];
+        var brush = lit ? LinkLit : LinkBrush;
+        using var _ = context.PushOpacity(opacity);
+        var pen = new Pen(brush, lit ? 2.2 : 1.4, link.OrderOnly ? new DashStyle([4, 3], 0) : null);
+        var path = new StreamGeometry();
+        var lastControl = start;
+        using (var g = path.Open())
+        {
+            g.BeginFigure(start, false);
+            for (var i = 1; i < points.Count; i++)
+            {
+                var (p0, p1) = (points[i - 1], points[i]);
+                if (!graph.Layout.Rows)
+                {
+                    g.LineTo(p1);
+                    lastControl = p0;
+                    continue;
+                }
+                var half = (p1.Y - p0.Y) / 2;
+                lastControl = new Point(p1.X, p1.Y - half);
+                g.CubicBezierTo(new Point(p0.X, p0.Y + half), lastControl, p1);
+            }
+            g.EndFigure(false);
+        }
+        context.DrawGeometry(null, pen, path);
+
+        var hx = end.X - lastControl.X;
+        var hy = end.Y - lastControl.Y;
+        var hd = Math.Sqrt(hx * hx + hy * hy);
+        if (hd < 0.01) (hx, hy, hd) = (end.X - start.X, end.Y - start.Y, Math.Max(0.01, Math.Sqrt(Math.Pow(end.X - start.X, 2) + Math.Pow(end.Y - start.Y, 2))));
+        var ux = hx / hd;
+        var uy = hy / hd;
         var head = new StreamGeometry();
         using (var g = head.Open())
         {
@@ -212,7 +296,9 @@ public sealed class WorkspaceGraphCanvas : Control
         if (!lit) return;
         var label = link.OrderOnly ? "starts after it" : link.Values.Count <= 2 ? string.Join(", ", link.Values) : $"{link.Values[0]}, {link.Values[1]} +{link.Values.Count - 2}";
         var text = new FormattedText(label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Mono, 10.5, Text);
-        var mid = new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+        var mid = points.Count > 2 ? points[points.Count / 2] : new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+        ux = (end.X - start.X) / Math.Max(0.01, Math.Sqrt(Math.Pow(end.X - start.X, 2) + Math.Pow(end.Y - start.Y, 2)));
+        uy = (end.Y - start.Y) / Math.Max(0.01, Math.Sqrt(Math.Pow(end.X - start.X, 2) + Math.Pow(end.Y - start.Y, 2)));
         var box = new Rect(mid.X - text.Width / 2 - 7, mid.Y - text.Height / 2 - 2, text.Width + 14, text.Height + 4);
         // Along the link first, then beside it, for the first spot that covers nothing. With none, it goes unlabelled:
         // the picked node's card lists every value anyway, and a label over a node's name hides more than it tells.
@@ -238,14 +324,58 @@ public sealed class WorkspaceGraphCanvas : Control
         context.DrawEllipse(hovered ? NodeFillHover : NodeFill, ring, at, r, r);
         DrawIcon(context, node, at, r);
 
-        var size = Math.Max(9.5, 12 * _scale);
+        var size = NameSize;
         var name = new FormattedText(node.Name, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, SansBold, size, Text);
         context.DrawText(name, new Point(at.X - name.Width / 2, at.Y + r + 5));
         var line = node.IsRunner && node.Detail.Length > 0 && node.Health != NodeHealth.Bad ? $"{node.State} · {node.Detail}" : node.State;
         var sub = new FormattedText(line, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Sans, size - 1.5,
             node.Health is NodeHealth.Off or NodeHealth.Unknown ? Dim : state);
         context.DrawText(sub, new Point(at.X - sub.Width / 2, at.Y + r + 6 + name.Height));
+        if (node.Tags.Count > 0) DrawTags(context, node, new Point(at.X, at.Y + r + 10 + name.Height + sub.Height));
     }
+
+    /// <summary>The infra and outside values a node uses, as a row of tags centred under it, each with its state's dot;
+    /// past <see cref="WorkspaceGraph.MaxTags"/>, the rest are counted.</summary>
+    void DrawTags(DrawingContext context, GraphNode node, Point top)
+    {
+        var size = TagSize;
+        if (size < 7.5)
+        {
+            // Too small to read: each tag is its state's dot alone, until zoomed in.
+            var r = Math.Max(2, size * 0.32);
+            var x0 = top.X - (node.Tags.Count - 1) * r * 1.5;
+            for (var i = 0; i < node.Tags.Count; i++)
+                context.DrawEllipse(HealthBrush(node.Tags[i].Health), null, new Point(x0 + i * r * 3, top.Y + size * 0.75), r, r);
+            return;
+        }
+        var shown = node.Tags.Take(WorkspaceGraph.MaxTags)
+            .Select(t => (Text: new FormattedText(t.TagName, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Sans, size, Text), Dot: (IBrush?)HealthBrush(t.Health)))
+            .ToList();
+        if (node.Tags.Count > WorkspaceGraph.MaxTags)
+            shown.Add((new FormattedText($"+{node.Tags.Count - WorkspaceGraph.MaxTags}", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Sans, size, Dim), null));
+        var pad = size * 0.6;
+        var dot = size * 0.32;
+        var height = size * 1.5;
+        var gap = WorkspaceGraph.TagGap * size / 10;
+        double Width((FormattedText Text, IBrush? Dot) t) => t.Text.Width + pad * 2 + (t.Dot is null ? 0 : dot * 2 + pad * 0.6);
+        var x = top.X - (shown.Sum(Width) + gap * (shown.Count - 1)) / 2;
+        foreach (var tag in shown)
+        {
+            var w = Width(tag);
+            context.DrawRectangle(TagFill, new Pen(TagLine, 1), new Rect(x, top.Y, w, height), height / 2, height / 2);
+            var textX = x + pad;
+            if (tag.Dot is { } brush)
+            {
+                context.DrawEllipse(brush, null, new Point(x + pad + dot, top.Y + height / 2), dot, dot);
+                textX += dot * 2 + pad * 0.6;
+            }
+            context.DrawText(tag.Text, new Point(textX, top.Y + (height - tag.Text.Height) / 2));
+            x += w + gap;
+        }
+    }
+
+    static readonly IBrush TagFill = new SolidColorBrush(Color.Parse("#262634"));
+    static readonly IBrush TagLine = new SolidColorBrush(Color.Parse("#34344A"));
 
     /// <summary>A small picture of what it is: a window for an app, a play mark for a job, a cylinder for a store, a box
     /// for other containers and compose services, a globe for an outside value, a question mark for one missing.</summary>
@@ -371,7 +501,8 @@ public sealed class WorkspaceGraphCanvas : Control
                 e.Handled = true;
                 return;
             }
-            _dragKey = node.Key;
+            // In rows, places follow from the links, so a node is picked but not moved.
+            _dragKey = graph.Layout.CanDrag ? node.Key : null;
         }
         else
         {

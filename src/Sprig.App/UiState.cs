@@ -16,6 +16,7 @@ namespace Sprig.App;
 /// <param name="NavCollapsed">The left nav was folded down to its icons, for room to read logs.</param>
 /// <param name="GraphPlaces">Workspace graph nodes dragged to a place of their own, per orchestration, as <c>[x, y]</c>
 /// by node key, so every workspace of it is laid out alike.</param>
+/// <param name="GraphForce">The workspace graph is laid out by forces rather than in rows.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool DetailsClosed = false,
@@ -24,7 +25,8 @@ public sealed record UiStateData(
     Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null,
     Dictionary<string, string>? StartGroups = null,
     bool NavCollapsed = false,
-    Dictionary<string, Dictionary<string, double[]>>? GraphPlaces = null);
+    Dictionary<string, Dictionary<string, double[]>>? GraphPlaces = null,
+    bool GraphForce = false);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -84,6 +86,12 @@ public sealed class UiState(ISprigPaths paths)
         if (group is null) groups.Remove(orchestration);
         else groups[orchestration] = group;
         Save(Data with { StartGroups = groups.Count > 0 ? groups : null });
+    }
+
+    public bool GraphForce
+    {
+        get => Data.GraphForce;
+        set => Save(Data with { GraphForce = value });
     }
 
     public IReadOnlyDictionary<string, (double X, double Y)> GraphPlaces(string orchestration)

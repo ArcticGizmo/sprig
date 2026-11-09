@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Body = Sprig.App.ViewModels.LayoutBody;
+using Box = Sprig.App.ViewModels.LayoutBox;
 
 namespace Sprig.App.ViewModels;
 
@@ -10,31 +12,8 @@ namespace Sprig.App.ViewModels;
 /// (each group at its spot on a ring, nodes in key order), so a workspace lays out the same way on every visit. A pinned
 /// node stays where it was put and the rest settle around it.
 /// </summary>
-public sealed class ForceLayout
+public sealed class ForceLayout : IGraphLayout
 {
-    public sealed class Body(string key, string group, double radius)
-    {
-        public string Key => key;
-        public string Group => group;
-        public double Radius => radius;
-        public double X { get; set; }
-        public double Y { get; set; }
-        public double Vx { get; set; }
-        public double Vy { get; set; }
-        public bool Pinned { get; set; }
-    }
-
-    /// <summary>A group's box: round its nodes, with room above for its title and below for their labels.</summary>
-    public readonly record struct Box(double Left, double Top, double Right, double Bottom)
-    {
-        public bool Overlaps(Box other, double gap)
-            => Left < other.Right + gap && other.Left < Right + gap && Top < other.Bottom + gap && other.Top < Bottom + gap;
-    }
-
-    public const double BoxAbove = 52;
-    public const double BoxBelow = 62;
-    public const double BoxSide = 6;
-
     // Tuned on workspaces of 5 to 40 nodes: far enough apart to read each label, close enough to fit a window.
     const double LinkLength = 150;
     const double LinkStrength = 0.5;
@@ -101,14 +80,19 @@ public sealed class ForceLayout
     public Body? Find(string key) => _byKey.GetValueOrDefault(key);
 
     /// <summary>The boxed groups, each with its box as it stands.</summary>
-    public IEnumerable<(string Group, Box Box)> Boxes()
+    public IEnumerable<(string Group, LayoutBox Box)> Boxes()
         => _bodies.Where(b => b.Group != _loose).GroupBy(b => b.Group).Select(g => (g.Key, BoxOf(g.ToArray())));
 
-    static Box BoxOf(IReadOnlyCollection<Body> bodies)
+    internal static LayoutBox BoxOf(IReadOnlyCollection<Body> bodies)
     {
-        var side = bodies.Max(b => b.Radius) + BoxSide;
-        return new Box(bodies.Min(b => b.X) - side, bodies.Min(b => b.Y) - BoxAbove, bodies.Max(b => b.X) + side, bodies.Max(b => b.Y) + BoxBelow);
+        var side = bodies.Max(b => b.Radius) + LayoutBox.Side;
+        return new LayoutBox(bodies.Min(b => b.X) - side, bodies.Min(b => b.Y) - LayoutBox.Above, bodies.Max(b => b.X) + side, bodies.Max(b => b.Y) + LayoutBox.Below);
     }
+
+    public IReadOnlyList<(double X, double Y)> Route(string from, string to) => [];
+    public bool RunsBack(string from, string to) => false;
+    public bool Rows => false;
+    public bool CanDrag => true;
 
     /// <summary>Run until it settles.</summary>
     public void Settle(int maxSteps = 800)

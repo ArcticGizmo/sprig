@@ -233,6 +233,10 @@ internal static partial class HeadlessRenderer
             Save(window, Sibling(outFile, "graph-menu"));
             CloseMenus(window);
 
+            // The same by forces, where a node can be dragged and keeps its place.
+            vm.Workspaces.ShowForceGraphCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "graph-force"));
             var from = NodeAt("shop-analytics/kafka");
             window.MouseDown(from, MouseButton.Left);
             for (var i = 1; i <= 10; i++) window.MouseMove(from + new Vector(i * 18, i * 6), RawInputModifiers.LeftMouseButton);
@@ -242,6 +246,8 @@ internal static partial class HeadlessRenderer
             Console.WriteLine($"graph: {vm.Workspaces.Graph!.Nodes.Count} nodes, {vm.Workspaces.Graph.Links.Count} links; picked {vm.Workspaces.GraphPicked?.Name}; "
                 + $"kept places: {string.Join(", ", services.Ui.GraphPlaces("storefront").Keys)}");
 
+            vm.Workspaces.ShowLayeredGraphCommand.Execute(null);
+            vm.Workspaces.Graph!.Select(null);
             window.Width = 1024;
             window.Height = 700;
             vm.Workspaces.FitGraphCommand.Execute(null);

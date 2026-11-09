@@ -620,12 +620,20 @@
                             <Ellipse Width="9" Height="9" Fill="#6B7280" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="stopped" VerticalAlignment="Center" />
                         </StackPanel>
-                        <TextBlock Classes="cell via" VerticalAlignment="Center"
-                                   Text="Arrows point at what's used. Dashed: only starts after it." />
+                        <TextBlock Classes="cell via" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   Text="Tags under a node are the infra it uses. Point at a node for all its links." />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Classes="chip" Classes.on="{Binding GraphLayered}" Content="Layered" Margin="0,0,4,0"
+                                    Command="{Binding ShowLayeredGraphCommand}"
+                                    ToolTip.Tip="In rows: what uses something sits above it, with infra along the bottom" />
+                            <Button Classes="chip" Classes.on="{Binding GraphForce}" Content="Force"
+                                    Command="{Binding ShowForceGraphCommand}"
+                                    ToolTip.Tip="Pushed and pulled into clusters; drag a node to keep it somewhere" />
+                        </StackPanel>
                         <Button Classes="small" Content="Fit" Command="{Binding FitGraphCommand}" ToolTip.Tip="Fit the whole graph in view" />
-                        <Button Classes="small" Content="Reset layout" Command="{Binding ResetGraphLayoutCommand}"
+                        <Button Classes="small" Content="Reset layout" Command="{Binding ResetGraphLayoutCommand}" IsVisible="{Binding GraphForce}"
                                 ToolTip.Tip="Forget where nodes were dragged, for every workspace of this orchestration" />
                     </StackPanel>
                 </Grid>

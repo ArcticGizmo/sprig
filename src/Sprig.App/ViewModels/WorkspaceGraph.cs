@@ -80,6 +80,17 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     public bool HasUses => Uses.Count > 0;
     public bool HasUsedBy => UsedBy.Count > 0;
 
+    /// <summary>The infra and outside values it uses, shown as tags under it rather than as lines: nearly every service
+    /// uses the database, so those lines would say little and hide the rest.</summary>
+    public IReadOnlyList<GraphNode> Tags { get; set; } = [];
+
+    /// <summary>Taken with others as a tag: drawn without its links unless it, or what uses it, is in focus.</summary>
+    public bool IsTag => IsInfra || IsOutside;
+
+    /// <summary>Its name as a tag, without its repo's name in front (<c>safety-db</c> in <c>safety</c> is <c>db</c>).</summary>
+    public string TagName => Name.StartsWith(Owner + "-", StringComparison.OrdinalIgnoreCase) && Name.Length > Owner.Length + 1
+        ? Name[(Owner.Length + 1)..] : Name;
+
     /// <summary>Show what the host last said about the app.</summary>
     public void Refresh()
     {
@@ -148,11 +159,17 @@ public sealed class WorkspaceGraph
 
     public IReadOnlyList<GraphNode> Nodes { get; }
     public IReadOnlyList<TopologyLink> Links { get; }
-    public ForceLayout Layout { get; }
+    public IGraphLayout Layout { get; }
+
+    /// <summary>At most this many tags show under a node; the rest are counted.</summary>
+    public const int MaxTags = 3;
 
     readonly Dictionary<string, GraphNode> _byKey;
 
-    public WorkspaceGraph(IReadOnlyList<GraphNode> nodes, IReadOnlyList<TopologyLink> links, IReadOnlyDictionary<string, (double X, double Y)>? pinned)
+    /// <param name="layered">In rows, what uses something above it; otherwise by forces, where dragged nodes keep the
+    /// places in <paramref name="pinned"/>.</param>
+    public WorkspaceGraph(IReadOnlyList<GraphNode> nodes, IReadOnlyList<TopologyLink> links, IReadOnlyDictionary<string, (double X, double Y)>? pinned,
+        bool layered = false)
     {
         Nodes = nodes;
         Links = links;
@@ -163,14 +180,35 @@ public sealed class WorkspaceGraph
                 .Select(l => Describe(node, _byKey[l.To], l)).ToArray();
             node.UsedBy = links.Where(l => l.To == node.Key && _byKey.ContainsKey(l.From))
                 .Select(l => Describe(node, _byKey[l.From], l)).ToArray();
+            node.Tags = node.IsTag ? [] : links.Where(l => l.From == node.Key && _byKey.TryGetValue(l.To, out var to) && to.IsTag)
+                .Select(l => _byKey[l.To]).OrderBy(t => t.IsOutside).ThenBy(t => t.TagName, StringComparer.Ordinal).ToArray();
             node.Refresh();
         }
-        Layout = new ForceLayout(nodes.Select(n => (n.Key, n.Owner, Room(n))), links.Select(l => (l.From, l.To)), pinned, WorkspaceTopology.OutsideOwner);
-        Layout.Settle();
+        if (layered)
+            Layout = new LayeredLayout(nodes.Select(n => (n.Key, n.Owner, Room(n), n.IsTag)), links.Select(l => (l.From, l.To)), WorkspaceTopology.OutsideOwner);
+        else
+        {
+            var force = new ForceLayout(nodes.Select(n => (n.Key, n.Owner, Room(n))), links.Select(l => (l.From, l.To)), pinned, WorkspaceTopology.OutsideOwner);
+            force.Settle();
+            Layout = force;
+        }
     }
 
-    /// <summary>The room a node needs, label included: its label is usually wider than its circle.</summary>
-    static double Room(GraphNode node) => Math.Max(NodeRadius + 14, node.Name.Length * 3.6 + 12);
+    /// <summary>The room a node needs either side of its centre: its name and its tags are usually wider than its circle.</summary>
+    static double Room(GraphNode node)
+    {
+        var tags = node.Tags.Take(MaxTags).Sum(t => TagWidth(t.TagName)) + (node.Tags.Count > MaxTags ? TagWidth("+9") : 0)
+            + Math.Max(0, Math.Min(node.Tags.Count, MaxTags + 1) - 1) * TagGap;
+        return Math.Max(Math.Max(NodeRadius + 14, node.Name.Length * 3.6 + 12), tags / 2 + 4);
+    }
+
+    public const double TagGap = 4;
+
+    /// <summary>A tag's width at full size: a dot, its text, and padding.</summary>
+    public static double TagWidth(string text) => text.Length * 5.6 + 22;
+
+    /// <summary>Its line is left out unless one of its ends is in focus: a link to a node shown as a tag.</summary>
+    public bool IsTagLink(TopologyLink link) => Find(link.To) is { IsTag: true } && Find(link.From) is { IsTag: false };
 
     static string Describe(GraphNode from, GraphNode other, TopologyLink link)
     {

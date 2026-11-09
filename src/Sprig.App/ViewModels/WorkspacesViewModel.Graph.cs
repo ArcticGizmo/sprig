@@ -72,7 +72,7 @@ public partial class WorkspacesViewModel
 
         var topology = WorkspaceTopology.Of(plan);
         var nodes = topology.Nodes.Select(n => new GraphNode(n, Apps.FirstOrDefault(a => a.Key == n.Key), _targets.FirstOrDefault(t => t.Key == n.Key))).ToArray();
-        var graph = new WorkspaceGraph(nodes, topology.Links, _services.Ui.GraphPlaces(record.Orchestration));
+        var graph = new WorkspaceGraph(nodes, topology.Links, _services.Ui.GraphPlaces(record.Orchestration), layered: !GraphForce);
         graph.Picked += OnGraphPicked;
         graph.LogRequested += OnGraphLog;
         graph.PinsChanged += OnGraphPinned;
@@ -167,6 +167,28 @@ public partial class WorkspacesViewModel
         Tab = WorkspaceTab.Graph;
         await PollInfraAsync(now: true);
     }
+
+    /// <summary>Laid out by forces, where nodes can be dragged; otherwise in rows, what uses something above it.</summary>
+    public bool GraphForce
+    {
+        get => _services.Ui.GraphForce;
+        set
+        {
+            if (value == _services.Ui.GraphForce) return;
+            _services.Ui.GraphForce = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(GraphLayered));
+            if (Selected?.Record is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
+        }
+    }
+
+    public bool GraphLayered => !GraphForce;
+
+    [RelayCommand]
+    private void ShowLayeredGraph() => GraphForce = false;
+
+    [RelayCommand]
+    private void ShowForceGraph() => GraphForce = true;
 
     [RelayCommand]
     private void FitGraph() => Graph?.Fit();

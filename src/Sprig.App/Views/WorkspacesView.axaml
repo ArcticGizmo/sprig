@@ -495,10 +495,23 @@
                                     IsVisible="{Binding Selected.IsFree, FallbackValue=False}" IsEnabled="{Binding !IsWorking}"
                                     ToolTip.Tip="Put a branch in this free slot, with its folders, ports, values and data"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
-                            <Button Content="Start all" Command="{Binding StartAppsCommand}" Padding="12,6" FontSize="12.5"
+                            <!-- Like a launch profile: Start starts what the ▾ beside it picked, every app or one group. -->
+                            <StackPanel Orientation="Horizontal" Spacing="1" IsVisible="{Binding ShowRunControls}">
+                                <Button Content="{Binding StartLabel}" Command="{Binding StartAppsCommand}" Padding="12,6" FontSize="12.5"
+                                        ToolTip.Tip="{Binding StartTip}" Classes.splitleft="{Binding ShowStartChoices}"
+                                        AutomationProperties.AutomationId="workspace:start"
+                                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+                                <Button x:Name="StartChoiceButton" Content="▾" Padding="8,6" FontSize="12.5" Click="OpenStartChoices"
+                                        IsVisible="{Binding ShowStartChoices}" CornerRadius="0,4,4,0"
+                                        ToolTip.Tip="Choose what Start starts: every app, or a group the definitions name"
+                                        AutomationProperties.AutomationId="workspace:start-choice"
+                                        Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <Button Content="Restart" Command="{Binding RestartRunningCommand}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding ShowRunControls}"
-                                    ToolTip.Tip="Every app, after what each depends on; a workspace that's down is brought up first"
-                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
+                                    ToolTip.Tip="Every app that's going, built again and after what it depends on. Stopped apps stay stopped."
+                                    AutomationProperties.AutomationId="workspace:restart-running"
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Stop apps" Command="{Binding StopAppsCommand}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding ShowRunControls}"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
@@ -520,6 +533,9 @@
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}">
                                 <Button.Flyout>
                                     <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuItem Header="Restart running, jobs first" Command="{Binding RestartRunningWithJobsCommand}"
+                                                  IsVisible="{Binding ShowRunControls}"
+                                                  ToolTip.Tip="Run the jobs the running apps depend on (migrations, say) again, then restart the apps" />
                                         <MenuItem Header="Bring up again" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="Write its env files and start its infra afresh" />
                                         <MenuItem Header="Remove…" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}" />
@@ -673,7 +689,8 @@
                         </ItemsControl>
                         <TextBox Text="{Binding AppFilter}" PlaceholderText="{Binding Apps.Count, StringFormat='Filter {0} apps'}" />
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="{Binding ListCaption}" FontSize="11.5" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding ListCaption}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ListCaption}" Margin="0,0,8,0" />
                             <Button Grid.Column="1" Classes="flat" Command="{Binding ToggleAllReposCommand}" HorizontalAlignment="Right">
                                 <TextBlock Text="{Binding FoldLabel}" FontSize="11.5" Foreground="{StaticResource AccentBrush}" />
                             </Button>

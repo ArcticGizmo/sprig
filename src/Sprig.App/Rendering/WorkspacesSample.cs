@@ -100,6 +100,13 @@ internal static partial class HeadlessRenderer
             Save(window, Sibling(outFile, "folded"));
             vm.Workspaces.ToggleDetailsCommand.Execute(null);
 
+            // Start set to one group, as its ▾ would leave it.
+            vm.Workspaces.PickStartChoiceCommand.Execute(vm.Workspaces.StartChoices.First(c => c.Group == "client"));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "start-group"));
+            Console.WriteLine("start choices: " + string.Join(" | ", vm.Workspaces.StartChoices.Select(c => $"{c.Label} ({c.Apps})")));
+            vm.Workspaces.PickStartChoiceCommand.Execute(vm.Workspaces.StartChoices.First());
+
             // The new-workspace form when the slot the branch would take is broken. Nothing is registered in the sample
             // store, so the form is given a name to show.
             vm.Workspaces.OrchestrationNames.Add("storefront");
@@ -235,7 +242,10 @@ internal static partial class HeadlessRenderer
                     "payments-api" => [new PlannedLink("Swagger", $"http://localhost:{a.Port}/swagger")],
                     _ => null,
                 }))],
-            [], [], [], [new PlanProblem(ProblemSeverity.Warning, "ingest-worker has no health check, so \"ready\" only means it started",
+            [], [],
+            [new PlannedGroup("client", [.. SampleApps.Where(a => a.Repo == "shop-web").Select(a => $"{a.Repo}/{a.App}")]),
+             new PlannedGroup("apis", [.. SampleApps.Where(a => a.Repo == "shop-services" && !a.Job).Select(a => $"{a.Repo}/{a.App}")])],
+            [new PlanProblem(ProblemSeverity.Warning, "ingest-worker has no health check, so \"ready\" only means it started",
                 new SourceLocation(Path.Combine(root, "shop-analytics", "sprig.cs"), 14))],
             [new PlannedLink("Mail inbox", "http://localhost:8025"), new PlannedLink("Checkout flow", "http://localhost:5170/cart?seed=demo")]));
 

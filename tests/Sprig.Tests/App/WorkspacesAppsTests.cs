@@ -21,7 +21,7 @@ public class WorkspacesAppsTests
         ("shop-web", "storybook", null),
     ];
 
-    static WorkspacesViewModel Make(TempStore store, out AppServices services)
+    static WorkspacesViewModel Make(TempStore store, out AppServices services, IReadOnlyList<PlannedGroup>? groups = null)
     {
         services = new AppServices(store.Root);
         var workspaces = new WorkspaceStore(services.Paths);
@@ -35,7 +35,7 @@ public class WorkspacesAppsTests
                 null, [], Job: a.App == "migrate",
                 DependsOn: a.App == "catalog-api" ? ["shop-services/migrate"] : null,
                 Health: a.App == "catalog-api" ? [new PlannedHealth("http", "/health")] : null))],
-            [], [], [], []));
+            [], [], groups ?? [], []));
 
         var day = LogLineFormat.DateMarker(DateOnly.FromDateTime(DateTime.Now)) + "\n";
         var clock = DateTime.Now.Date.AddHours(11);
@@ -113,6 +113,37 @@ public class WorkspacesAppsTests
         Assert.Equal(1, vm.AllApps.Count);
         vm.TogglePinCommand.Execute(web);
         Assert.False(vm.StreamPinned);
+    }
+
+    [Fact]
+    public void Start_offers_every_app_or_a_group_and_keeps_the_choice_for_the_orchestration()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out var services, [new PlannedGroup("client", ["shop-web/web", "shop-web/storybook"])]);
+
+        Assert.Equal(["Every app", "client"], vm.StartChoices.Select(c => c.Label));
+        Assert.True(vm.ShowStartChoices);
+        Assert.Equal("Start all", vm.StartLabel);
+
+        vm.PickStartChoiceCommand.Execute(vm.StartChoices[1]);
+
+        Assert.Equal("Start client", vm.StartLabel);
+        Assert.StartsWith("web, storybook, after", vm.StartTip);
+        Assert.Equal("client", services.Ui.StartGroup("storefront"));
+        // Any workspace of the orchestration, seen afresh, starts with the same choice.
+        var again = new WorkspacesViewModel(services);
+        again.Show(Key);
+        Assert.Equal("Start client", again.StartLabel);
+    }
+
+    [Fact]
+    public void Without_groups_Start_starts_every_app_with_nothing_to_choose()
+    {
+        using var store = new TempStore();
+        var vm = Make(store, out _);
+
+        Assert.False(vm.ShowStartChoices);
+        Assert.Equal("Start all", vm.StartLabel);
     }
 
     [Fact]

@@ -97,6 +97,26 @@ public partial class WorkspacesView : UserControl
     readonly MenuItem _appPin = new();
     WorkspaceAppRow? _menuApp;
 
+    /// <summary>Built each time it opens, from the workspace's plan as it is now, with the current choice ticked.</summary>
+    void OpenStartChoices(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null) return;
+        var menu = new ContextMenu { Placement = PlacementMode.BottomEdgeAlignedRight };
+        foreach (var choice in _vm.StartChoices)
+        {
+            var item = new MenuItem
+            {
+                Header = choice.Label,
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = choice == _vm.StartChoice,
+            };
+            ToolTip.SetTip(item, choice.Apps);
+            item.Click += (_, _) => _vm?.PickStartChoiceCommand.Execute(choice);
+            menu.Items.Add(item);
+        }
+        menu.Open(StartChoiceButton);
+    }
+
     static WorkspaceAppRow? AppAt(object? source)
         => (source as Visual)?.GetSelfAndVisualAncestors().OfType<Control>().Select(c => c.DataContext)
             .OfType<AppListEntry>().FirstOrDefault()?.Row;

@@ -18,6 +18,7 @@ public sealed class RepoBuilder : DefinitionBuilder
     readonly List<ComposeFileResource> _compose = [];
     readonly List<SettingModel> _settings = [];
     readonly List<ExportModel> _exports = [];
+    readonly List<RepoGroupModel> _groups = [];
 
     internal RepoBuilder(string name, SourceLocation location) : base(name, location) { }
 
@@ -83,6 +84,17 @@ public sealed class RepoBuilder : DefinitionBuilder
     public void Export<T>(string name, [InterpolatedStringHandlerArgument] ExprHandler value, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) where T : ValueType
         => Export<T>(name, value.ToExpr(), file, line);
 
+    /// <summary>
+    /// A slice of the repo's apps to start on its own, such as only the front ends, to save the machine running the
+    /// rest. Starting it starts these apps and everything they wait for, in the usual order. An app can be in any
+    /// number of groups; an orchestration's repos' groups of the same name start together.
+    /// </summary>
+    public RepoBuilder Group(string name, params IResource[] apps)
+    {
+        _groups.Add(new RepoGroupModel(name, apps.Select(a => a.Name).ToArray(), new SourceLocation(Location.File, 0)));
+        return this;
+    }
+
     internal RepoModel BuildRepo() => (RepoModel)Build();
 
     private protected override DefinitionModel Build() => new RepoModel(
@@ -94,7 +106,8 @@ public sealed class RepoBuilder : DefinitionBuilder
         Apps: [.. _apps.Select(a => a.Build()), .. _jobs.Select(j => j.Build())],
         ComposeFiles: _compose.Select(c => c.Build()).ToArray(),
         Settings: _settings.ToArray(),
-        Exports: _exports.ToArray());
+        Exports: _exports.ToArray(),
+        Groups: _groups.Count > 0 ? _groups.ToArray() : null);
 
     AppResource AddApp(string name, string kind, string path, string file, int line)
     {

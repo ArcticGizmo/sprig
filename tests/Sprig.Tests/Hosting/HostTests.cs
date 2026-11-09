@@ -452,4 +452,30 @@ public class RunnerSpecsTests
         Assert.Equal(["shop/migrate"], specs[1].WaitFor);
         Assert.Null(specs[0].Port);
     }
+
+    [Fact]
+    public void Restarting_what_runs_leaves_stopped_apps_stopped_and_reruns_jobs_only_when_asked()
+    {
+        var repo = new WorkspaceRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);
+        var record = new WorkspaceRecord("storefront", @"C:\tb\sf.orchestration.cs", "local", null, "stable", [repo], [], [], WorkspaceState.Up,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        PlannedApp App(string name, bool job = false, params string[] dependsOn)
+            => new("shop", "../shop", name, "app", ".", [], new PlannedValue("x", "x", []), [], job, dependsOn);
+        var plan = new Plan("storefront", "local", "stable", null, [],
+            [App("web", false, "shop/api", "shop/auth"), App("api", false, "shop/migrate"), App("auth"), App("migrate", true), App("admin")], [], [], [], []);
+        RunnerStatus Is(string name, RunnerState state) => new(record.Key, $"shop/{name}", state, null, null, null, "x.log", DateTimeOffset.UtcNow);
+        // auth was stopped to run it from an IDE; admin was never started.
+        IReadOnlyList<RunnerStatus> runners = [Is("web", RunnerState.Ready), Is("api", RunnerState.Ready), Is("auth", RunnerState.Stopped),
+            Is("migrate", RunnerState.Completed), new RunnerStatus("other/1", "shop/admin", RunnerState.Ready, null, null, null, "x.log", DateTimeOffset.UtcNow)];
+
+        var (specs, restart) = RunnerSpecs.RestartRunning(record, plan, runners);
+
+        Assert.Equal(["shop/web", "shop/api"], restart);
+        Assert.Equal(["shop/migrate", "shop/api", "shop/web"], specs.Select(s => s.Name));
+        Assert.Equal(["shop/api"], specs.Single(s => s.Name == "shop/web").WaitFor);
+
+        Assert.Equal(["shop/web", "shop/api", "shop/migrate"], RunnerSpecs.RestartRunning(record, plan, runners, jobs: true).Restart);
+        Assert.Equal(["shop/api"], RunnerSpecs.RestartRunning(record, plan, runners, within: ["api"]).Restart);
+        Assert.Empty(RunnerSpecs.RestartRunning(record, plan, [Is("auth", RunnerState.Stopped)]).Specs);
+    }
 }

@@ -90,6 +90,10 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         [Description("When the slot is broken (folders in its way that aren't worktrees), delete them and make the slot again, rather than be asked")]
         public bool FixSlot { get; set; }
 
+        [CommandOption("--group <name>")]
+        [Description("Start only this group of apps (and what they depend on), rather than every app")]
+        public string? Group { get; set; }
+
         [CommandOption("--unset <name>")]
         [Description("Reusing a free slot, clear a value it kept so the default applies again. Repeat for more")]
         public string[] Unset { get; set; } = [];
@@ -111,6 +115,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (SettingValues.Parse(s.Set, out _) is { } error) return ValidationResult.Error(error);
         if (s.Run && s.NoApps) return ValidationResult.Error("--run follows the apps and --no-apps doesn't start them; choose one");
+        if (s.Group is not null && s.NoApps) return ValidationResult.Error("--group picks apps to start and --no-apps starts none; choose one");
         return ValidationResult.Success();
     }
 
@@ -140,7 +145,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             }
 
             if (!s.Json) Summary(record, plan, root, appsStart: true);
-            var specs = RunnerSpecs.For(record, plan);
+            var specs = RunnerSpecs.For(record, plan, Group(plan, s));
             if (specs.Count == 0)
             {
                 if (s.Json) CliOutput.Json(new { ok = true, workspace = record, plan, runners = Array.Empty<RunnerStatus>() });
@@ -180,7 +185,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             string? held = null;
             try
             {
-                Action<WorkspaceRecord, Plan>? beforeInfra = runApps ? (record, plan) => held = Prebuild(record, plan) : null;
+                Action<WorkspaceRecord, Plan>? beforeInfra = runApps ? (record, plan) => held = Prebuild(record, plan, s) : null;
                 var record = s.Branch is { } branch
                     ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(slot, s.From, s.EmptyData, fixSlot), progress, cancellation, beforeInfra, values, unset)
                     : cli.Workspaces.Up(loaded, workspace, null, options, progress, cancellation, beforeInfra, values);
@@ -224,16 +229,19 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         return answer == fix ? (s.Slot, true) : (int.Parse(broken.Next, System.Globalization.CultureInfo.InvariantCulture), false);
     }
 
+    /// <summary>The apps <c>--group</c> picks; null for every app.</summary>
+    static IReadOnlyList<string>? Group(Plan plan, Settings s) => s.Group is { } group ? RunnerSpecs.Group(plan, group) : null;
+
     /// <summary>
     /// Has the host build the apps while the infra comes up, held until starting them after <c>up</c> releases them.
     /// Returns the workspace's key when it did. Only a head start: if it fails, starting them afterwards builds as usual.
     /// </summary>
-    string? Prebuild(WorkspaceRecord record, Plan plan)
+    string? Prebuild(WorkspaceRecord record, Plan plan, Settings s)
     {
-        var specs = RunnerSpecs.For(record, plan);
-        if (specs.Count == 0) return null;
         try
         {
+            var specs = RunnerSpecs.For(record, plan, Group(plan, s));
+            if (specs.Count == 0) return null;
             return cli.Host.Send(new HostRequest("start", specs, Restart: [], Hold: true)).Ok ? record.Key : null;
         }
         catch (Exception)

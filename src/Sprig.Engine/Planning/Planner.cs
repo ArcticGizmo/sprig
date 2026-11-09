@@ -87,7 +87,7 @@ public static class Planner
             }
 
             CheckUnusedBindings();
-            var groups = input.Orchestration.Groups.Select(PlanGroup).ToArray();
+            var groups = PlanGroups();
 
             return new Plan(
                 input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
@@ -404,6 +404,47 @@ public static class Planner
             => endpoints.Where(e => e.TargetPort is not null)
                 .Select(e => new PlannedMapping(e.Name, resource.Endpoints[e.Name].Port, e.TargetPort!.Value))
                 .ToArray();
+
+        /// <summary>
+        /// The repos' groups, those of the same name joined, so "client" starts every repo's client apps together; then
+        /// the orchestration's, each replacing a repos' group of its name, since putting repos together is its job.
+        /// </summary>
+        IReadOnlyList<PlannedGroup> PlanGroups()
+        {
+            var groups = new List<(string Name, List<string> Apps)>();
+            foreach (var scope in _scopes)
+            {
+                if (scope.Repo is not { Groups: { } repoGroups } repo) continue;
+                foreach (var group in repoGroups)
+                {
+                    if (group.Name.Trim().Length == 0)
+                    {
+                        Problem($"{repo.Name} has a group with no name", group.Location);
+                        continue;
+                    }
+                    if (groups.FindIndex(g => g.Name == group.Name) is var at && at < 0)
+                    {
+                        groups.Add((group.Name, []));
+                        at = groups.Count - 1;
+                    }
+                    foreach (var name in group.Apps)
+                    {
+                        var key = $"{repo.Name}/{name}";
+                        if (!repo.Apps.Any(a => a.Name == name))
+                            Problem($"group '{group.Name}' names '{name}', which {repo.Name} doesn't declare as an app or job (infra always comes up with the workspace)", group.Location);
+                        else if (!groups[at].Apps.Contains(key)) groups[at].Apps.Add(key);
+                    }
+                }
+            }
+            foreach (var group in input.Orchestration.Groups)
+            {
+                var planned = PlanGroup(group);
+                var at = groups.FindIndex(g => g.Name == group.Name);
+                if (at >= 0) groups[at] = (group.Name, [.. planned.Apps]);
+                else groups.Add((group.Name, [.. planned.Apps]));
+            }
+            return groups.Select(g => new PlannedGroup(g.Name, g.Apps)).ToArray();
+        }
 
         PlannedGroup PlanGroup(GroupModel group)
         {

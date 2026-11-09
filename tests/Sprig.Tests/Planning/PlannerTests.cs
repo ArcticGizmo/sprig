@@ -623,6 +623,39 @@ public class PlannerTests
     }
 
     [Fact]
+    public void A_repos_groups_join_others_of_the_same_name_and_an_orchestrations_group_replaces_them()
+    {
+        var f = new Fixture();
+        var services = f.Add("../shop-services", repo =>
+        {
+            var catalog = repo.DotNet("catalog-api", ".").Http();
+            var orders = repo.DotNet("orders-api", ".").Http();
+            repo.Group("apis", catalog, orders).Group("client", catalog);
+        });
+        f.Add("../shop-web", repo => repo.Group("client", repo.Node("web", ".").Http()));
+        f.Orchestration.Group("apis", services.Only("orders-api"));
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal(["apis", "client"], plan.Groups.Select(g => g.Name));
+        Assert.Equal(["shop-services/catalog-api", "shop-web/web"], plan.Groups.Single(g => g.Name == "client").Apps);
+        Assert.Equal(["shop-services/orders-api"], plan.Groups.Single(g => g.Name == "apis").Apps);
+    }
+
+    [Fact]
+    public void A_repos_group_holds_only_its_apps_and_jobs()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", repo => repo.Group("cache", repo.Redis("redis"), repo.DotNet("api", ".").Http()));
+
+        var plan = f.Plan();
+
+        Assert.Equal(["shop-services/api"], plan.Groups.Single().Apps);
+        Assert.Contains("'redis', which shop-services doesn't declare as an app or job", Assert.Single(plan.Problems).Message);
+    }
+
+    [Fact]
     public void A_binding_no_repo_has_a_setting_for_is_a_warning_not_an_error()
     {
         var f = new Fixture();

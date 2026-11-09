@@ -87,6 +87,7 @@ public static class CliApp
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");
         config.AddCommand<StartCommand>("start");
+        config.AddCommand<RestartCommand>("restart");
         config.AddCommand<StopCommand>("stop");
         config.AddCommand<PsCommand>("ps");
         config.AddCommand<LogsCommand>("logs");

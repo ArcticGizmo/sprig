@@ -133,6 +133,10 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
 
 public sealed record WorkspaceInfraRow(string Name, string Ports);
 
+/// <summary>What Start starts, like a launch profile: every app (<see cref="Group"/> null) or one group.</summary>
+/// <param name="Apps">What it starts, in words.</param>
+public sealed record StartChoice(string? Group, string Label, string Apps);
+
 /// <summary>
 /// The Workspaces page: every workspace with its state, the folders, urls and ports of the selected one, and a form to make
 /// a new one. Up, down and remove run in the background and report to a progress window the view opens. The selected
@@ -398,6 +402,7 @@ public partial class WorkspacesViewModel : PageViewModel
         OnPropertyChanged(nameof(ShowTakeDown));
         OnPropertyChanged(nameof(ShowBringUp));
         OnPropertyChanged(nameof(ShowRunControls));
+        OnPropertyChanged(nameof(ShowStartChoices));
         ConfirmingRemove = false;
         DeleteBranch = false;
         ShowDetails(value?.Record);
@@ -407,6 +412,7 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         var plan = record is null ? null : _services.Workspaces.LastPlan(record.Orchestration, record.Name);
         _plan = plan;
+        FillStartChoices(record, plan);
         WorkspaceLinks = plan?.Links ?? [];
         AppsMessage = "";
         if (record is null || plan is null)
@@ -498,17 +504,65 @@ public partial class WorkspacesViewModel : PageViewModel
         await PollAsync();
     }
 
+    /// <summary>What Start can start: every app, then each group the definitions name. Empty until the workspace has a
+    /// plan.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowStartChoices))]
+    private IReadOnlyList<StartChoice> _startChoices = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartLabel), nameof(StartTip))]
+    private StartChoice? _startChoice;
+
+    bool _fillingStartChoices;
+
+    public bool ShowStartChoices => ShowRunControls && StartChoices.Count > 1;
+    public string StartLabel => StartChoice?.Group is { } group ? $"Start {group}" : "Start all";
+    public string StartTip => StartChoice?.Group is null
+        ? "Every app, after what each depends on; a workspace that's down is brought up first"
+        : $"{StartChoice.Apps}, after what each depends on; a workspace that's down is brought up first";
+
+    /// <summary>The choices for <paramref name="plan"/>'s groups, with the one last picked for the orchestration (or repo)
+    /// chosen, so every workspace of it starts the same slice.</summary>
+    void FillStartChoices(WorkspaceRecord? record, Plan? plan)
+    {
+        _fillingStartChoices = true;
+        try
+        {
+            StartChoices = plan is null || record is null ? []
+                : [new StartChoice(null, "Every app", $"All {plan.Apps.Count} apps"),
+                   .. plan.Groups.Select(g => new StartChoice(g.Name, g.Name, string.Join(", ", g.Apps.Select(a => a[(a.IndexOf('/') + 1)..]))))];
+            var remembered = record is null ? null : _services.Ui.StartGroup(record.Orchestration);
+            StartChoice = StartChoices.FirstOrDefault(c => c.Group == remembered) ?? StartChoices.FirstOrDefault();
+        }
+        finally
+        {
+            _fillingStartChoices = false;
+        }
+    }
+
+    partial void OnStartChoiceChanged(StartChoice? value)
+    {
+        if (!_fillingStartChoices && value is not null && Selected?.Record is { } record) _services.Ui.SetStartGroup(record.Orchestration, value.Group);
+    }
+
+    [RelayCommand]
+    private void PickStartChoice(StartChoice choice) => StartChoice = choice;
+
     [RelayCommand]
     private async Task StartApps() => await StartAsync(null);
 
     [RelayCommand]
     private async Task StartApp(WorkspaceAppRow row) => await StartAsync(row);
 
-    /// <summary>Every app (null), leaving alone what's already going; or one app, started afresh, after what it
-    /// depends on. Starting means everything it needs too: a workspace that isn't up is brought up first.</summary>
+    /// <summary>What Start's choice picks (every app, or a group), leaving alone what's already going; or one app, started
+    /// afresh, after what it depends on. Starting means everything it needs too: a workspace that isn't up is brought up
+    /// first.</summary>
     async Task StartAsync(WorkspaceAppRow? row)
     {
         if (Selected?.Record is not { } record) return;
+        // Taken now: bringing the workspace up reads it afresh, choices and all.
+        var group = row is null ? StartChoice?.Group : null;
         if (record.State != WorkspaceState.Up)
         {
             var key = row?.Key;
@@ -521,15 +575,50 @@ public partial class WorkspacesViewModel : PageViewModel
         if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
         try
         {
-            var names = row is null ? null : new[] { row.Key };
+            var names = row is not null ? new[] { row.Key } : group is not null ? RunnerSpecs.Group(plan, group) : null;
             await AppServices.RunAsync(() =>
             {
                 var specs = RunnerSpecs.For(record, plan, names);
-                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: names ?? []));
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: row is null ? [] : names!));
                 if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
             });
-            SayApps(row is null ? "Starting the apps, each after what it depends on." : $"Starting {row.Name}.", bad: false);
+            SayApps(row is not null ? $"Starting {row.Name}."
+                : group is not null ? $"Starting the {group} group, each app after what it depends on."
+                : "Starting the apps, each after what it depends on.", bad: false);
             if (row is not null) OpenApp(row);
+            await RefreshRunnersAsync();
+        }
+        catch (Exception e)
+        {
+            SayApps(e.Message, bad: true);
+        }
+    }
+
+    [RelayCommand]
+    private Task RestartRunning() => RestartRunningAsync(jobs: false);
+
+    [RelayCommand]
+    private Task RestartRunningWithJobs() => RestartRunningAsync(jobs: true);
+
+    /// <summary>Every app that's going, built again and after what it depends on, so a change in the worktree takes
+    /// effect; with <paramref name="jobs"/>, the jobs they depend on run again first. Stopped apps stay stopped.</summary>
+    async Task RestartRunningAsync(bool jobs)
+    {
+        if (Selected?.Record is not { } record || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
+        try
+        {
+            var count = await AppServices.RunAsync(() =>
+            {
+                var runners = _services.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+                var (specs, restart) = RunnerSpecs.RestartRunning(record, plan, runners, jobs: jobs);
+                if (specs.Count == 0) return 0;
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: restart));
+                if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't restart the apps");
+                return restart.Count(name => specs.Any(s => s.Name == name && !s.Job));
+            });
+            SayApps(count == 0 ? "Nothing is running to restart."
+                : $"Restarting {(count == 1 ? "1 app" : $"{count} apps")}{(jobs ? " after their jobs run again" : "")}, each built again and after what it depends on.",
+                bad: false);
             await RefreshRunnersAsync();
         }
         catch (Exception e)

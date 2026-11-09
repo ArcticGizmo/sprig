@@ -14,6 +14,41 @@ public static class RunnerSpecs
     public static IReadOnlyList<RunnerSpec> For(WorkspaceRecord record, Plan plan, IReadOnlyCollection<string>? names = null)
         => Closure(plan, Resolve(record, plan, names)).Select(app => For(record, plan, app)).ToArray();
 
+    /// <summary>
+    /// What restarting the workspace's running apps takes: every app that's going (of <paramref name="within"/>, when
+    /// given), each built again first, plus what they depend on. Those dependencies are left alone, except that
+    /// <paramref name="jobs"/> runs their jobs (migrations, say) again before the apps come back. Stopped apps stay
+    /// stopped and aren't waited for: one stopped on purpose may be running in an IDE on its port, and starting sprig's
+    /// copy beside it would clash. Empty when nothing is running.
+    /// </summary>
+    /// <param name="runners">What the host says is running.</param>
+    /// <param name="within">Only these apps, as <c>name</c> or <c>owner/name</c>.</param>
+    public static (IReadOnlyList<RunnerSpec> Specs, IReadOnlyList<string> Restart) RestartRunning(WorkspaceRecord record, Plan plan,
+        IReadOnlyList<RunnerStatus> runners, IReadOnlyCollection<string>? within = null, bool jobs = false)
+    {
+        var allowed = within is null ? null : Resolve(record, plan, within).ToHashSet(StringComparer.Ordinal);
+        var apps = plan.Apps.Where(a => !a.Job).Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
+        var running = runners
+            .Where(r => r.Workspace == record.Key && r.State.IsAlive() && apps.Contains(r.Name) && (allowed is null || allowed.Contains(r.Name)))
+            .Select(r => r.Name)
+            .ToArray();
+        if (running.Length == 0) return ([], []);
+        var stopped = runners.Where(r => r.Workspace == record.Key && r.State == RunnerState.Stopped).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        var specs = For(record, plan, running)
+            .Where(s => !stopped.Contains(s.Name))
+            .Select(s => s.WaitFor is { } waits && waits.Any(stopped.Contains) ? s with { WaitFor = waits.Where(w => !stopped.Contains(w)).ToArray() } : s)
+            .ToArray();
+        return (specs, jobs ? [.. running, .. specs.Where(s => s.Job).Select(s => s.Name)] : running);
+    }
+
+    /// <summary>The apps of <paramref name="plan"/>'s group <paramref name="name"/>, for <see cref="For"/>, which adds what
+    /// they depend on.</summary>
+    public static IReadOnlyList<string> Group(Plan plan, string name)
+        => plan.Groups.FirstOrDefault(g => g.Name == name)?.Apps
+            ?? throw new InvalidOperationException(plan.Groups.Count == 0
+                ? $"there's no group '{name}'; the definitions name none"
+                : $"there's no group '{name}'; there's {string.Join(", ", plan.Groups.Select(g => g.Name))}");
+
     /// <summary>The apps <paramref name="names"/> pick out, by their <see cref="PlannedApp.Key"/>.</summary>
     public static IReadOnlyList<string> Resolve(WorkspaceRecord record, Plan plan, IReadOnlyCollection<string>? names)
     {

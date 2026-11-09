@@ -10,12 +10,15 @@ namespace Sprig.App;
 /// <param name="LogTimesHidden">The log's time column was turned off.</param>
 /// <param name="LogWrapOff">The log's long lines run on past the edge rather than wrapping.</param>
 /// <param name="WorkspaceChoices">The new-workspace form's last answers per orchestration, so the next workspace of it starts there.</param>
+/// <param name="StartGroups">The group Start starts, per orchestration, like a launch profile picked once for a solution;
+/// absent for every app.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool DetailsClosed = false,
     bool LogTimesHidden = false,
     bool LogWrapOff = false,
-    Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null);
+    Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null,
+    Dictionary<string, string>? StartGroups = null);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -59,6 +62,17 @@ public sealed class UiState(ISprigPaths paths)
 
     public void SetWorkspaceChoices(string orchestration, Sprig.Engine.Workspaces.WorkspaceOptions options)
         => Save(Data with { WorkspaceChoices = new(Data.WorkspaceChoices ?? []) { [orchestration] = options } });
+
+    /// <summary>The group Start starts for <paramref name="orchestration"/>; null for every app.</summary>
+    public string? StartGroup(string orchestration) => Data.StartGroups?.GetValueOrDefault(orchestration);
+
+    public void SetStartGroup(string orchestration, string? group)
+    {
+        var groups = new Dictionary<string, string>(Data.StartGroups ?? []);
+        if (group is null) groups.Remove(orchestration);
+        else groups[orchestration] = group;
+        Save(Data with { StartGroups = groups.Count > 0 ? groups : null });
+    }
 
     void Save(UiStateData data)
     {

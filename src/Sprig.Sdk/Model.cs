@@ -24,6 +24,7 @@ public abstract record DefinitionModel(
     SourceLocation Location,
     IReadOnlyList<ContainerModel> Containers);
 
+/// <param name="Groups">Slices of the repo's apps to start on their own.</param>
 public sealed record RepoModel(
     int Schema,
     string Name,
@@ -33,8 +34,12 @@ public sealed record RepoModel(
     IReadOnlyList<AppModel> Apps,
     IReadOnlyList<ComposeFileModel> ComposeFiles,
     IReadOnlyList<SettingModel> Settings,
-    IReadOnlyList<ExportModel> Exports)
+    IReadOnlyList<ExportModel> Exports,
+    IReadOnlyList<RepoGroupModel>? Groups = null)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
+
+/// <param name="Apps">The repo's apps and jobs, by name.</param>
+public sealed record RepoGroupModel(string Name, IReadOnlyList<string> Apps, SourceLocation Location);
 
 public sealed record OrchestrationModel(
     int Schema,

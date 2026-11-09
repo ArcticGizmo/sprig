@@ -25,7 +25,7 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     public sealed class Settings : AppsSettings
     {
         [CommandOption("--group <name>")]
-        [Description("Start one of the orchestration's groups (and what its apps depend on)")]
+        [Description("Start one of the groups the definitions name (and what its apps depend on)")]
         public string? Group { get; set; }
 
         [CommandOption("--no-wait")]
@@ -47,8 +47,7 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         if (s.Group is { } group)
         {
             if (names is not null) throw new InvalidOperationException("name apps or a group, not both");
-            names = plan.Groups.FirstOrDefault(g => g.Name == group)?.Apps
-                ?? throw new InvalidOperationException($"{s.Orchestration} has no group '{group}';it has {string.Join(", ", plan.Groups.Select(g => g.Name))}");
+            names = RunnerSpecs.Group(plan, group);
         }
         var specs = RunnerSpecs.For(record, plan, names);
         // Apps named outright start afresh; everything else, including what they depend on, is left alone if it's going.
@@ -114,6 +113,48 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
             _ => ("dim", r.State.ToString().ToLowerInvariant()),
         };
         cli.Ansi.MarkupLine($"[{colour}]{Markup.Escape(r.Name)}[/]  {Markup.Escape(text)}");
+    }
+}
+
+[Description("Restart a workspace's running apps, each built again and after what it depends on. Stopped apps stay stopped")]
+public sealed class RestartCommand(CliContext cli) : Command<RestartCommand.Settings>
+{
+    public sealed class Settings : AppsSettings
+    {
+        [CommandOption("--group <name>")]
+        [Description("Only the running apps of this group")]
+        public string? Group { get; set; }
+
+        [CommandOption("--jobs")]
+        [Description("Run the jobs they depend on (migrations, say) again first, rather than leaving them finished")]
+        public bool Jobs { get; set; }
+
+        [CommandOption("--no-wait")]
+        [Description("Return once the apps are restarting, without waiting for them to be ready")]
+        public bool NoWait { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        s.ResolveApps(cli);
+        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
+        var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} hasn't come up yet; run sprig up first");
+        if (s.Group is not null && s.Apps.Length > 0) throw new InvalidOperationException("name apps or a group, not both");
+        IReadOnlyCollection<string>? within = s.Group is { } group ? RunnerSpecs.Group(plan, group) : s.Apps.Length > 0 ? s.Apps : null;
+
+        var runners = cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+        var (specs, restart) = RunnerSpecs.RestartRunning(record, plan, runners, within, s.Jobs);
+        if (specs.Count == 0)
+            return CliOutput.Ok(s.Json, "nothing is running to restart; start the apps with sprig start", new { ok = true, restarted = Array.Empty<string>() });
+
+        StartCommand.Send(cli, specs, restart);
+        if (s.NoWait)
+            return CliOutput.Ok(s.Json, $"restarting {restart.Count} apps", new { ok = true, restarted = restart });
+
+        var mine = StartCommand.WaitUntilReady(cli, record.Key, specs, s.Json, cancellation);
+        var failed = mine.Where(r => !r.State.Satisfies()).ToArray();
+        if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, restarted = restart, runners = mine });
+        return failed.Length == 0 ? 0 : 1;
     }
 }
 

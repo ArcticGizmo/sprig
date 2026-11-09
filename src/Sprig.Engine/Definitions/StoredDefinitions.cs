@@ -129,6 +129,18 @@ public sealed class StoredDefinitions(ISprigPaths paths)
         return file;
     }
 
+    /// <summary>Give an entry a new ID. A change of case alone is allowed, since IDs are compared without it.</summary>
+    public RepoEntry RenameRepo(string id, string newId)
+    {
+        if (Ids.Check(newId, "a repo ID") is { } bad) throw new ArgumentException(bad, nameof(newId));
+        if (Repo(id) is null) throw new ArgumentException($"'{id}' isn't in the Repos list", nameof(id));
+        if (!string.Equals(id, newId, StringComparison.OrdinalIgnoreCase)
+            && (RepoIdsTaken().Contains(newId) || OrchestrationIdsTaken().Contains(newId)))
+            throw new ArgumentException($"'{newId}' is already taken", nameof(newId));
+        if (id != newId) Directory.Move(Path.Combine(ReposRoot, id), Path.Combine(ReposRoot, newId));
+        return Repo(newId)!;
+    }
+
     public void DeleteRepo(string id) => DeleteFolder(Path.Combine(ReposRoot, id));
 
     public void DeleteOrchestration(string id) => DeleteFolder(Path.GetDirectoryName(OrchestrationFile(id))!);

@@ -22,6 +22,9 @@ public partial class CodeViewer : UserControl
         InitializeComponent();
         var textMate = new RegistryOptions(ThemeName.DarkPlus);
         Editor.InstallTextMate(textMate).SetGrammar(textMate.GetScopeByLanguageId(textMate.GetLanguageByExtension(".cs").Id));
+        // As in CodeEditor: urls keep the string colour rather than an unreadable link blue.
+        Editor.Options.EnableHyperlinks = false;
+        Editor.Options.EnableEmailHyperlinks = false;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

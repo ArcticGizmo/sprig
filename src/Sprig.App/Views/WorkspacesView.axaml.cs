@@ -212,7 +212,7 @@ public partial class WorkspacesView : UserControl
     void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(WorkspacesViewModel.IsAddOpen) && _vm?.IsAddOpen == true)
-            Dispatcher.UIThread.Post(() => NewNameBox.Focus(), DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(() => NewBranchBox.Focus(), DispatcherPriority.Loaded);
     }
 
     void HookLogScroller()

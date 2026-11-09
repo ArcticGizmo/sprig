@@ -38,7 +38,7 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         var here = string.Equals(Path.GetFullPath(folder).TrimEnd('\\', '/'), Path.GetFullPath(Environment.CurrentDirectory).TrimEnd('\\', '/'),
             StringComparison.OrdinalIgnoreCase);
         cli.Ansi.MarkupLine($"[dim]Run it where it is with: {Markup.Escape(here ? "sprig up" : $"sprig up {entry.Id}")}. " +
-                            $"Give it worktrees of its own with: {Markup.Escape(here ? "sprig up -w <name>" : $"sprig up {entry.Id} -w <name>")}[/]");
+                            $"Check a branch out in a slot of its own with: {Markup.Escape(here ? "sprig up -b <branch>" : $"sprig up {entry.Id} -b <branch>")}[/]");
         return 0;
     }
 }
@@ -51,14 +51,14 @@ public class ValuesSettings : TrustingSettings
     [Description("The repo or orchestration ID (default: the repo this folder is)")]
     public string? Id { get; set; }
 
-    [CommandOption("-w|--workspace <name>")]
-    [Description("The workspace (default: 'local', or the one whose worktree this is)")]
+    [CommandOption("-b|--branch <branch>")]
+    [Description("The workspace, by its branch or slot number (default: the slot this folder is in, else 'local')")]
     public string? Workspace { get; set; }
 
     public (string Id, string Workspace) Target(CliContext cli)
     {
         var (id, worktreeOf) = Id is { } named ? (named, null) : Here.Find(cli, Workspace);
-        return (id, Workspace ?? worktreeOf ?? "local");
+        return (id, Workspace is { } word ? Here.WorkspaceName(cli, id, word) : worktreeOf ?? "local");
     }
 }
 
@@ -94,7 +94,7 @@ static class ValuesChange
         if (s.Json) { CliOutput.Json(new { ok = true, values = Masked(record), restart }); return 0; }
         CliOutput.Success($"{changed} set on {record.Key}, and its files rewritten");
         if (restart.Count > 0)
-            cli.Ansi.MarkupLine($"[dim]Restart what uses them: sprig start {Markup.Escape(string.Join(" ", restart))}{(s.Id is null && s.Workspace is null ? "" : $" (with {Markup.Escape(record.Orchestration)} {Markup.Escape(record.Name)} first)")}[/]");
+            cli.Ansi.MarkupLine($"[dim]Restart what uses them: sprig start {Markup.Escape(string.Join(" ", restart))}{(s.Id is null && s.Workspace is null ? "" : $" (with {Markup.Escape(UpCommand.Words(record))} first)")}[/]");
         return 0;
     }
 
@@ -152,7 +152,7 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
         if (Read(cli, id, workspace, s) is not { } read) return 1;
         if (s.Json) { CliOutput.Json(read.Rows); return 0; }
         Write(cli, read.Loaded.Id, read.Rows,
-            $"[bold]{Markup.Escape(read.Loaded.Id)}[/] · workspace [bold]{Markup.Escape(workspace)}[/]{(read.Record is null ? " [dim](not made yet)[/]" : "")}");
+            $"[bold]{Markup.Escape(read.Record?.SlotName ?? read.Loaded.Id)}[/] · [bold]{Markup.Escape(read.Record?.Label ?? workspace)}[/]{(read.Record is null ? " [dim](not made yet)[/]" : "")}");
         return 0;
     }
 

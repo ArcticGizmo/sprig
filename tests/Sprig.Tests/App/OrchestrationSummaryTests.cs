@@ -239,8 +239,10 @@ public class ReposViewModelTests
         var now = DateTimeOffset.UtcNow;
         workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "local", null, "stable", [], [], [],
             Sprig.Engine.Workspaces.WorkspaceState.Up, now, now));
-        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "feat-x", "feat-x", "stable", [], [], [],
-            Sprig.Engine.Workspaces.WorkspaceState.Down, now, now));
+        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "1", "feat-x", "stable", [], [], [],
+            Sprig.Engine.Workspaces.WorkspaceState.Down, now, now, Folder: Path.Combine(store.Root, "src", "shop-web--1")));
+        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "2", null, "stable", [], [], [],
+            Sprig.Engine.Workspaces.WorkspaceState.Released, now, now, Folder: Path.Combine(store.Root, "src", "shop-web--2")));
         workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("storefront", "y", "local", null, "stable", [], [], [],
             Sprig.Engine.Workspaces.WorkspaceState.Up, now, now));
 
@@ -250,8 +252,9 @@ public class ReposViewModelTests
         vm.IsActive = true;
         await WaitFor(() => vm.NeedsApproval);
 
-        Assert.Equal([("feat-x", "on feat-x", "down"), ("local", "in place", "up")], vm.WorkspacesOfIt.Select(w => (w.Name, w.Where, w.State)));
-        vm.OpenWorkspaceRowCommand.Execute(vm.WorkspacesOfIt[1]);
+        Assert.Equal([("shop-web--1", "on feat-x", "down"), ("shop-web--2", "no branch checked out", "free"), ("local", "in place", "up")],
+            vm.WorkspacesOfIt.Select(w => (w.Name, w.Where, w.State)));
+        vm.OpenWorkspaceRowCommand.Execute(vm.WorkspacesOfIt[2]);
         Assert.Equal("shop-web/local", opened);
     }
 
@@ -270,11 +273,11 @@ public class ReposViewModelTests
         var vm = new ReposViewModel(services) { IsActive = true };
         await WaitFor(() => vm.NeedsApproval);
 
-        // As sprig init and sprig up -w feat-x would, from another process.
+        // As sprig init and sprig up -b feat-x would, from another process.
         new AppServices(store.Root).Authoring.AddRepo(mobile, "shop-mobile");
         var now = DateTimeOffset.UtcNow;
-        new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths).Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "feat-x",
-            "feat-x", "stable", [], [], [], Sprig.Engine.Workspaces.WorkspaceState.Up, now, now));
+        new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths).Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "1",
+            "feat-x", "stable", [], [], [], Sprig.Engine.Workspaces.WorkspaceState.Up, now, now, Folder: Path.Combine(store.Root, "shop-web--1")));
 
         vm.IsAddOpen = true;
         vm.WindowFocused();
@@ -284,7 +287,7 @@ public class ReposViewModelTests
         vm.WindowFocused();
         Assert.Equal(["shop-mobile", "shop-web"], vm.Repos.Select(r => r.Id));
         Assert.Equal("shop-web", vm.Selected?.Id);
-        Assert.Equal(["feat-x"], vm.WorkspacesOfIt.Select(w => w.Name));
+        Assert.Equal([("shop-web--1", "on feat-x")], vm.WorkspacesOfIt.Select(w => (w.Name, w.Where)));
     }
 
     [Fact]
@@ -328,6 +331,45 @@ public class ReposViewModelTests
         vm.OpenDeriveCommand.Execute(null);
         Assert.True(vm.DeriveBlocked);
         Assert.Contains("'shop-web'", vm.DeriveMessage);
+    }
+
+    [Fact]
+    public async Task Renaming_a_repo_kept_in_sprig_shows_it_under_the_new_ID_and_is_refused_while_it_has_workspaces()
+    {
+        using var store = new TempStore();
+        var folder = Path.Combine(store.Root, "src", "shop-web");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "sprig.cs"), "// never approved");
+        var services = new AppServices(store.Root);
+        services.Authoring.AddRepo(folder, "shop-web", inRepo: false);
+        var vm = new ReposViewModel(services) { IsActive = true };
+        await WaitFor(() => vm.NeedsApproval);
+
+        vm.OpenRenameCommand.Execute(null);
+        Assert.True(vm.IsRenameOpen);
+        Assert.False(vm.RenameBlocked);
+        Assert.Equal("shop-web", vm.RenameId);
+
+        vm.RenameId = "bad id";
+        await vm.RenameCommand.ExecuteAsync(null);
+        Assert.True(vm.RenameFailed);
+        Assert.True(vm.IsRenameOpen);
+
+        vm.RenameId = "storefront-web";
+        await vm.RenameCommand.ExecuteAsync(null);
+        Assert.False(vm.IsRenameOpen);
+        Assert.Equal(["storefront-web"], vm.Repos.Select(r => r.Id));
+        Assert.Equal("storefront-web", vm.Selected?.Id);
+
+        // Its workspaces are named by the ID, so they have to go first.
+        var now = DateTimeOffset.UtcNow;
+        new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths).Save(new Sprig.Engine.Workspaces.WorkspaceRecord("storefront-web", "x", "1",
+            null, "stable", [], [], [], Sprig.Engine.Workspaces.WorkspaceState.Released, now, now, Folder: Path.Combine(store.Root, "storefront-web--1")));
+        vm.OpenRenameCommand.Execute(null);
+        Assert.True(vm.RenameBlocked);
+        Assert.Contains("1 workspace", vm.RenameMessage);
+        await vm.RenameCommand.ExecuteAsync(null);
+        Assert.NotNull(services.Stored.Repo("storefront-web"));
     }
 
     [Fact]

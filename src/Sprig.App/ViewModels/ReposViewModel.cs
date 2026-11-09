@@ -27,8 +27,20 @@ public partial class RepoItem(RepoEntry entry) : ObservableObject
     [ObservableProperty] private string _summary = "";
 }
 
-/// <summary>A line in one of a repo's sections: what it runs, its infra, what it offers, its settings.</summary>
-public sealed record RepoFact(string Name, string Detail);
+/// <summary>One card on a repo's page: an app, infra, a setting or an offer.</summary>
+/// <param name="Badge">What kind of thing it is, e.g. ".NET", "compose" or "url".</param>
+/// <param name="Path">Where it comes from: a folder, a compose file or an image. Shown in monospace under the name.</param>
+public sealed record RepoFact(string Name, string Badge, string? Path, IReadOnlyList<FactLine> Lines)
+{
+    public bool HasPath => Path is { Length: > 0 };
+}
+
+/// <summary>A labelled line on a card. <see cref="Chips"/> shows names (what it waits for, its ports) one per pill.</summary>
+public sealed record FactLine(string Label, string? Text, IReadOnlyList<string>? Chips = null, bool Mono = false)
+{
+    public bool HasText => Text is { Length: > 0 };
+    public bool HasChips => Chips is { Count: > 0 };
+}
 
 /// <summary>One of the repo's own workspaces, on its page.</summary>
 /// <param name="Where">"in place", or the branch its worktree is on.</param>
@@ -77,11 +89,13 @@ public partial class ReposViewModel : PageViewModel
         WorkspacesOfIt.Clear();
         if (repo is not null)
             foreach (var w in _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase))
-                WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.Name, w.InPlace ? "in place" : $"on {w.Branch}", w.State switch
+                WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
+                    w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out", w.State switch
                 {
                     Sprig.Engine.Workspaces.WorkspaceState.Up => "up",
                     Sprig.Engine.Workspaces.WorkspaceState.Starting => "coming up",
                     Sprig.Engine.Workspaces.WorkspaceState.Failed => "failed",
+                    Sprig.Engine.Workspaces.WorkspaceState.Released => "free",
                     _ => "down",
                 }, w.State == Sprig.Engine.Workspaces.WorkspaceState.Up, w.State == Sprig.Engine.Workspaces.WorkspaceState.Failed));
         OnPropertyChanged(nameof(HasWorkspaces));
@@ -113,6 +127,12 @@ public partial class ReposViewModel : PageViewModel
     [ObservableProperty] private string _deriveMessage = "";
     [ObservableProperty] private bool _deriveFailed;
     [ObservableProperty] private bool _deriveBlocked;
+
+    [ObservableProperty] private bool _isRenameOpen;
+    [ObservableProperty] private string _renameId = "";
+    [ObservableProperty] private string _renameMessage = "";
+    [ObservableProperty] private bool _renameFailed;
+    [ObservableProperty] private bool _renameBlocked;
 
     NeedsTrust? _pending;
 
@@ -176,7 +196,7 @@ public partial class ReposViewModel : PageViewModel
     // Rebuilding the list re-runs the selected repo's definition, so it's left alone unless the Repos list changed.
     protected override void OnWindowFocused()
     {
-        if (Editor.IsEditing || IsChooseOpen || IsAddOpen || IsDeriveOpen || ConfirmingRemove) return;
+        if (Editor.IsEditing || IsChooseOpen || IsAddOpen || IsDeriveOpen || IsRenameOpen || ConfirmingRemove) return;
         if (_services.Stored.Repos().SequenceEqual(Repos.Select(r => r.Entry))) ListWorkspaces(Selected);
         else Refresh();
     }
@@ -293,35 +313,45 @@ public partial class ReposViewModel : PageViewModel
     void Show(RepoModel model)
     {
         foreach (var app in model.Apps)
-            Runs.Add(new RepoFact(app.Name, string.Join(" · ", RunDetail(app))));
+            Runs.Add(RunCard(app));
         foreach (var c in model.Containers)
-            Infra.Add(new RepoFact(c.Name, $"{c.Image} · {Endpoints(c.Endpoints)}"));
+            Infra.Add(new RepoFact(c.Name, "container", c.Image, InfraLines(c.Endpoints, c.Health).ToArray()));
         foreach (var file in model.ComposeFiles)
             foreach (var service in file.Services)
-                Infra.Add(new RepoFact(service.Name, $"from {file.File} · {Endpoints(service.Endpoints)}"));
+                Infra.Add(new RepoFact(service.Name, "compose", file.File, InfraLines(service.Endpoints, service.Health).ToArray()));
         foreach (var export in model.Exports)
-            Offers.Add(new RepoFact(export.Name, $"{Describe(export.Value)} · a {export.Type}"));
+            Offers.Add(new RepoFact(export.Name, export.Type, null, [new FactLine("Value", Describe(export.Value), Mono: true)]));
         foreach (var setting in model.Settings)
-            Settings.Add(new RepoFact(setting.Name, setting.Default is { } own
-                ? $"a {setting.Type}; {DescribeDefault(own)} unless a workspace or orchestration gives another"
-                : $"a {setting.Type}; asked for when a workspace is made"));
+            Settings.Add(new RepoFact(setting.Name, setting.Type, null, setting.Default is { } own
+                ? [new FactLine("Default", DescribeDefault(own), Mono: true)]
+                : [new FactLine("Default", "none: asked for when a workspace is made")]));
         HasModel = true;
         RaiseSections();
     }
 
-    static IEnumerable<string> RunDetail(AppModel app)
+    static RepoFact RunCard(AppModel app)
     {
-        yield return app.Kind switch { "dotnet" => ".NET", "node" => "Node", var k => k };
-        yield return app.Path;
-        if (app.Job) yield return "a job: runs to the end, then what waits for it starts";
+        var kind = app.Kind switch { "dotnet" => ".NET", "node" => "Node", _ => "command" };
+        var lines = new List<FactLine>();
+        if (app.Run is { } run) lines.Add(new FactLine("Runs", run, Mono: true));
+        if (app.Job) lines.Add(new FactLine("Once", "runs to the end, then what waits for it starts"));
+        if (app.Endpoints.Count > 0) lines.Add(new FactLine("Ports", null, app.Endpoints.Select(Port).ToArray()));
         var health = app.Endpoints.FirstOrDefault(e => e.Health is not null)?.Health;
-        if (health is not null) yield return $"ready on {health}";
-        else if (app.ReadyLog is not null) yield return "ready on a log line";
-        if (app.WaitFor.Count > 0) yield return $"after {string.Join(", ", app.WaitFor)}";
+        if (health is not null) lines.Add(new FactLine("Ready", health, Mono: true));
+        else if (app.ReadyLog is not null) lines.Add(new FactLine("Ready", $"on a log line matching {app.ReadyLog}"));
+        if (app.WaitFor.Count > 0) lines.Add(new FactLine("After", null, app.WaitFor));
+        return new RepoFact(app.Name, app.Job ? $"{kind} job" : kind, app.Path, lines);
     }
 
-    static string Endpoints(IReadOnlyList<EndpointModel> endpoints)
-        => endpoints.Count == 0 ? "no ports" : string.Join(", ", endpoints.Select(e => e.Name));
+    static IEnumerable<FactLine> InfraLines(IReadOnlyList<EndpointModel> endpoints, string? health)
+    {
+        yield return endpoints.Count == 0 ? new FactLine("Ports", "none") : new FactLine("Ports", null, endpoints.Select(Port).ToArray());
+        if (health is not null) yield return new FactLine("Ready", health, Mono: true);
+    }
+
+    /// <summary>"http", "tcp 5432" inside a container, "http 8100-8110" when pinned.</summary>
+    static string Port(EndpointModel e)
+        => string.Join(" ", new[] { e.Name, e.TargetPort?.ToString(System.Globalization.CultureInfo.InvariantCulture), e.Pin }.Where(p => p is not null));
 
     /// <summary>"{catalog-api.http.url}" → "catalog-api's url"; literal text is kept, with passwords masked.</summary>
     public static string Describe(string template)
@@ -433,6 +463,59 @@ public partial class ReposViewModel : PageViewModel
     {
         DeriveFailed = true;
         DeriveMessage = message;
+    }
+
+    [RelayCommand]
+    private void OpenRename()
+    {
+        if (Selected is not { InRepo: false } repo) return;
+        RenameId = repo.Id;
+        var blocked = _services.Authoring.RenameBlocker(repo.Entry) ?? WorkspacesBlockRename(repo);
+        RenameBlocked = blocked is not null;
+        RenameFailed = RenameBlocked;
+        RenameMessage = blocked ?? "";
+        IsRenameOpen = true;
+    }
+
+    // Its workspaces' slot folders, worktrees and port leases are all named by the ID.
+    string? WorkspacesBlockRename(RepoItem repo)
+        => _services.Workspaces.List().Count(w => w.Orchestration == repo.Id) is > 0 and var n
+            ? $"It has {Count(n, "workspace")} of its own, named by this ID. Remove {(n == 1 ? "it" : "them")} on the Workspaces page first."
+            : null;
+
+    [RelayCommand]
+    private void CancelRename() => IsRenameOpen = false;
+
+    [RelayCommand]
+    private async Task Rename()
+    {
+        if (Selected is not { } repo || RenameBlocked) return;
+        var id = RenameId.Trim();
+        if (id == repo.Id)
+        {
+            IsRenameOpen = false;
+            return;
+        }
+        if (Ids.Check(id, "a repo ID") is { } bad)
+        {
+            FailRename(bad);
+            return;
+        }
+        RepoEntry renamed;
+        try { renamed = await AppServices.RunAsync(() => _services.Authoring.RenameRepo(repo.Id, id)); }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            FailRename(e.Message);
+            return;
+        }
+        IsRenameOpen = false;
+        Refresh(renamed.Id);
+    }
+
+    void FailRename(string message)
+    {
+        RenameFailed = true;
+        RenameMessage = message;
     }
 
     /// <summary>Only once its definition runs: the form would only say why it can't.</summary>

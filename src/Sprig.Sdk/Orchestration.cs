@@ -15,8 +15,8 @@ public enum PortPolicy { Stable, Random }
 
 static class WorkspaceChoice
 {
-    public const string Message = "Worktrees and ports are chosen when you make a workspace now (the New workspace form, or "
-        + "sprig up --workspace with --in-place / --from / --random-ports). Delete this line.";
+    public const string Message = "Worktrees are chosen when you make a workspace now (the New workspace form, or "
+        + "sprig up --workspace with --in-place / --from), and a workspace keeps its ports until it's removed. Delete this line.";
 }
 
 public sealed class OrchestrationBuilder : DefinitionBuilder

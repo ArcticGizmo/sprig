@@ -163,6 +163,97 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Equal(("stable", "develop"), (told.PortPolicy, _workspaces.LastPlan("storefront", "feat-y")!.WorktreesFrom));
     }
 
+    static void WebWithApi(RepoBuilder repo)
+    {
+        var web = repo.Node("web", ".").Http();
+        web.EnvFile(".env.local", e => e.Set("PORT", web.Port).Set("API", repo.Setting<Url>("api-url", "http://localhost:5100")));
+    }
+
+    [Fact]
+    public void Check_out_puts_each_branch_in_a_numbered_slot_labelled_by_its_branch()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        Repo("shop-services", ("src/Api/Program.cs", "// api"));
+        var loaded = Load(("shop-web", Web), ("shop-services", Api));
+
+        var x = _workspaces.CheckOut(loaded, "feat-x");
+        var y = _workspaces.CheckOut(loaded, "feature/y");
+
+        Assert.Equal(("1", "feat-x", "storefront--1"), (x.Name, x.Branch, x.SlotName));
+        Assert.Equal(("2", "feature/y", "storefront--2"), (y.Name, y.Branch, y.SlotName));
+        Assert.Equal(Path.Combine(_root, "storefront--1", "shop-web"), x.Repos.Single(r => r.Name == "shop-web").Dir);
+        Assert.Equal("feature/y", _git.CurrentBranch(y.Repos.Single(r => r.Name == "shop-services").Dir));
+        // A branch already in a slot comes up there again.
+        Assert.Equal("1", _workspaces.CheckOut(loaded, "feat-x").Name);
+        Assert.Contains("has 'feat-x' checked out", Assert.Throws<WorkspaceException>(
+            () => _workspaces.CheckOut(loaded, "feat-z", new CheckOutOptions(Slot: 1))).Message);
+    }
+
+    [Fact]
+    public void A_released_slot_is_reused_with_its_folder_ports_values_and_what_was_built_in_it()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), (".gitignore", LocalFiles + "node_modules/\n"));
+        var loaded = Load(("shop-web", WebWithApi)) with { Id = "shop-web", Alone = true };
+
+        var first = _workspaces.CheckOut(loaded, "feat-x", values: new Dictionary<string, string> { ["api-url"] = "https://staging.example.com" });
+        var dir = first.Repos.Single().Dir;
+        // A repo on its own is the slot's folder itself.
+        Assert.Equal(Path.Combine(_root, "shop-web--1"), dir);
+        Assert.Equal(first.Folder, dir);
+        var port = _workspaces.LastPlan("shop-web", "1")!.Ports.Single().Port;
+        Directory.CreateDirectory(Path.Combine(dir, "node_modules"));
+        File.WriteAllText(Path.Combine(dir, "node_modules", "installed.txt"), "yes");
+
+        var released = _workspaces.Release("shop-web", "1");
+
+        Assert.Equal(WorkspaceState.Released, released.State);
+        Assert.True(released.IsFree);
+        Assert.Equal("free", released.Label);
+        Assert.Null(_git.CurrentBranch(dir));
+        Assert.True(_git.BranchExists(source, "feat-x"));
+        Assert.Contains("is free", Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "1", null)).Message);
+
+        var second = _workspaces.CheckOut(loaded, "feat-y");
+
+        Assert.Equal(("1", "feat-y"), (second.Name, second.Branch));
+        Assert.Equal("feat-y", _git.CurrentBranch(dir));
+        Assert.Equal(port, _workspaces.LastPlan("shop-web", "1")!.Ports.Single().Port);
+        Assert.True(File.Exists(Path.Combine(dir, "node_modules", "installed.txt")));
+        Assert.Contains("API=https://staging.example.com", File.ReadAllText(Path.Combine(dir, ".env.local")));
+
+        // Checking out again can clear what the slot kept.
+        _workspaces.Release("shop-web", "1");
+        _workspaces.CheckOut(loaded, "feat-z", unset: ["api-url"]);
+        Assert.Contains("API=http://localhost:5100", File.ReadAllText(Path.Combine(dir, ".env.local")));
+    }
+
+    [Fact]
+    public void Release_refuses_uncommitted_changes_and_a_branch_checked_out_elsewhere_is_refused()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web));
+        var record = _workspaces.CheckOut(loaded, "feat-x");
+        File.WriteAllText(Path.Combine(record.Repos.Single().Dir, "index.html"), "changed");
+
+        Assert.Contains("aren't committed", Assert.Throws<WorkspaceException>(() => _workspaces.Release("storefront", "1")).Message);
+        Assert.Equal("feat-x", _git.CurrentBranch(record.Repos.Single().Dir));
+
+        // main is the repo's own checkout.
+        Assert.Contains("checked out in shop-web's own folder", Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "main")).Message);
+        Assert.Equal("main", _git.CurrentBranch(source));
+    }
+
+    [Fact]
+    public void A_switch_made_with_git_in_a_slot_is_what_it_is_labelled()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web));
+        var record = _workspaces.CheckOut(loaded, "feat-x");
+        Git(record.Repos.Single().Dir, "switch", "-q", "-c", "feat-x2");
+
+        Assert.Equal("feat-x2", _workspaces.Up(loaded, "1", null).Branch);
+    }
+
     [Fact]
     public void Two_workspaces_get_their_own_worktrees_and_ports()
     {
@@ -521,7 +612,8 @@ public sealed class WorkspaceServiceTests : IDisposable
 
         var record = workspaces.Up(loaded, "feat-x", null);
         Assert.Equal("web/feat-x", record.Key);
-        Assert.Equal(Path.Combine(_root, "web--feat-x", "shop-web"), Assert.Single(record.Repos).Dir);
+        // On its own, the repo's worktree is the workspace's folder, with nothing inside to dig into.
+        Assert.Equal(Path.Combine(_root, "web--feat-x"), Assert.Single(record.Repos).Dir);
         Assert.Contains("FEATURE=v1", File.ReadAllText(Path.Combine(record.Repos[0].Dir, ".env.local")));
         // Brought up again by its orchestration path, as the app does, it reads its definition from its worktree.
         Assert.Equal(record.Repos[0].Dir, workspaces.Worktrees(entry!, "feat-x")!["web"]);

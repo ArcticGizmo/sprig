@@ -53,10 +53,9 @@ public sealed class UiState(ISprigPaths paths)
         Save(Data with { Pins = pins });
     }
 
-    /// <summary>The last answers for <paramref name="orchestration"/>; the first time, running in place, as the CLI's
-    /// <c>sprig up</c> does.</summary>
+    /// <summary>The last answers for <paramref name="orchestration"/>, so its next workspace starts from the same branch.</summary>
     public Sprig.Engine.Workspaces.WorkspaceOptions WorkspaceChoices(string orchestration)
-        => Data.WorkspaceChoices?.GetValueOrDefault(orchestration) ?? new Sprig.Engine.Workspaces.WorkspaceOptions(InPlace: true);
+        => Data.WorkspaceChoices?.GetValueOrDefault(orchestration) ?? new Sprig.Engine.Workspaces.WorkspaceOptions();
 
     public void SetWorkspaceChoices(string orchestration, Sprig.Engine.Workspaces.WorkspaceOptions options)
         => Save(Data with { WorkspaceChoices = new(Data.WorkspaceChoices ?? []) { [orchestration] = options } });

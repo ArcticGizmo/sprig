@@ -27,5 +27,11 @@ public partial class ReposView : UserControl
             Dispatcher.UIThread.Post(() => AddPath.FocusInput(), DispatcherPriority.Loaded);
         if (e.PropertyName == nameof(ReposViewModel.IsChooseOpen) && _vm?.IsChooseOpen == true)
             Dispatcher.UIThread.Post(() => ChooseInRepo.Focus(), DispatcherPriority.Loaded);
+        if (e.PropertyName == nameof(ReposViewModel.IsRenameOpen) && _vm is { IsRenameOpen: true, RenameBlocked: false })
+            Dispatcher.UIThread.Post(() =>
+            {
+                RenameBox.Focus();
+                RenameBox.SelectAll();
+            }, DispatcherPriority.Loaded);
     }
 }

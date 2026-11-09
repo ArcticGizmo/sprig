@@ -34,7 +34,9 @@ internal static partial class HeadlessRenderer
 
             var text = Sprig.App.Authoring.SampleDefinition.Text
                 .Replace(".Http(\"http\")\n    .Env(\"ConnectionStrings", ".Htp(\"http\")\n    .Env(\"ConnectionStrings")
-                .Replace("repo.Export<Url>", "#warning check the export name before committing\nrepo.Export<Url>");
+                .Replace("repo.Export<Url>", "#warning check the export name before committing\nrepo.Export<Url>")
+                // An http url, which has to keep the string colour rather than be drawn as a link.
+                .Replace("// The catalog owns stock levels.", "var search = repo.Setting<Url>(\"search-url\", \"http://localhost:7700\");\n\n// The catalog owns stock levels.");
             var editor = new Sprig.App.Controls.CodeEditor { Host = host, Text = text };
             var window = new Avalonia.Controls.Window
             {
@@ -226,9 +228,6 @@ internal static partial class HeadlessRenderer
             while (!vm.Workspaces.HasNewSettings && clock.Elapsed < TimeSpan.FromSeconds(30)) Pump(TimeSpan.FromMilliseconds(100));
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "new-workspace"));
-            vm.Workspaces.NewHasWorktrees = true;
-            Pump(TimeSpan.FromMilliseconds(200));
-            Save(window, Sibling(outFile, "new-workspace-worktrees"));
             vm.Workspaces.CancelAddCommand.Execute(null);
 
             // shop-web run in place with one value of its own, so its page lists a workspace and the workspace's Settings

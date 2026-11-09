@@ -152,6 +152,30 @@ public sealed class OrchestrationAuthoring(StoredDefinitions stored, Orchestrati
         return entry;
     }
 
+    /// <summary>
+    /// Give a repo kept in sprig a new ID, keeping its approval. Only while no orchestration names it, since their
+    /// <c>UseRepo</c> lines and their workspaces hold the ID; the repo's own workspaces are the caller's to check.
+    /// </summary>
+    public RepoEntry RenameRepo(string id, string newId)
+    {
+        var entry = Entry(id);
+        if (RenameBlocker(entry) is { } blocked) throw new ArgumentException(blocked);
+        var text = File.Exists(entry.DefinitionFile) ? File.ReadAllText(entry.DefinitionFile) : null;
+        var approved = text is not null && trust.Check(entry.DefinitionFile, DefinitionHash.Of(text)).State == TrustState.Trusted;
+        var renamed = stored.RenameRepo(id, newId);
+        if (approved) Approve(renamed.DefinitionFile);
+        return renamed;
+    }
+
+    /// <summary>Why <see cref="RenameRepo"/> can't run for <paramref name="entry"/>, or null when it can.</summary>
+    public string? RenameBlocker(RepoEntry entry)
+    {
+        if (entry.InRepo) return $"'{entry.Id}' uses the repo's own sprig.cs. Only a repo kept in sprig can be renamed.";
+        return UsedBy(entry.Id) is { Count: > 0 } users
+            ? $"{string.Join(", ", users.Select(u => $"'{u}'"))} {(users.Count == 1 ? "uses" : "use")} it by this ID. Take it out of {(users.Count == 1 ? "that orchestration" : "those orchestrations")} first."
+            : null;
+    }
+
     /// <summary>Take a repo off the Repos list, with the definition sprig keeps for it. The folder's own sprig.cs is
     /// left alone.</summary>
     public void DeleteRepo(string id) => stored.DeleteRepo(id);

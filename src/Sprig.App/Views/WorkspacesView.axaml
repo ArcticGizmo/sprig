@@ -64,6 +64,13 @@
         <Style Selector="Ellipse.dot.busy">
             <Setter Property="Fill" Value="{StaticResource AccentBrush}" />
         </Style>
+        <!-- After .busy so it wins: waiting is held back by another app, not working, so it reads apart from building. -->
+        <Style Selector="TextBlock.waiting">
+            <Setter Property="Foreground" Value="{StaticResource WaitBrush}" />
+        </Style>
+        <Style Selector="Ellipse.dot.waiting">
+            <Setter Property="Fill" Value="{StaticResource WaitBrush}" />
+        </Style>
         <Style Selector="Ellipse.dot.warn">
             <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
         </Style>
@@ -176,7 +183,41 @@
         </Style>
         <Style Selector="Button.toggle.warnon">
             <Setter Property="Background" Value="#3A2F12" />
-            <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
+            <Setter Property="Foreground" Value="#FCD34D" />
+        </Style>
+        <!-- Options sharing one track. The chosen one is filled rather than outlined, so a disabled one still reads as
+             part of the set instead of a separate grey button. -->
+        <Style Selector="Border.segmented">
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="2" />
+        </Style>
+        <Style Selector="Button.segment">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Button.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="Button.segment:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="Button.segment.on /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1E3550" />
+            <Setter Property="Foreground" Value="#DBEAFE" />
+        </Style>
+        <Style Selector="Button.segment.on:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#24405F" />
+        </Style>
+        <Style Selector="Button.segment:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#55556A" />
         </Style>
         <Style Selector="Border.rail">
             <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
@@ -444,16 +485,26 @@
                                     </Flyout>
                                 </Button.Flyout>
                             </Button>
+                            <Button Content="Check out a branch" Command="{Binding CheckOutHereCommand}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding Selected.IsFree, FallbackValue=False}" IsEnabled="{Binding !IsWorking}"
+                                    ToolTip.Tip="Put a branch in this free slot, with its folders, ports, values and data"
+                                    Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
                             <Button Content="Start all" Command="{Binding StartAppsCommand}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding ShowRunControls}"
                                     ToolTip.Tip="Every app, after what each depends on; a workspace that's down is brought up first"
                                     Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
                             <Button Content="Stop apps" Command="{Binding StopAppsCommand}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding ShowRunControls}"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding ShowBringUp}" ToolTip.Tip="Its worktrees, env files and infra, without starting its apps."
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
+                            <Button Content="Release" Command="{Binding ReleaseCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding Selected.CanRelease, FallbackValue=False}"
+                                    ToolTip.Tip="Free this slot for the next branch. Its branch and commits stay, and so do its data, ports and values."
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Settings" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     ToolTip.Tip="The values its repos take, and where each comes from"
@@ -663,6 +714,7 @@
                                             <Grid ColumnDefinitions="22,*,Auto,Auto" Margin="12,6,4,6">
                                                 <Ellipse Classes="dot" Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                          Classes.up="{Binding Row.IsGood}" Classes.busy="{Binding Row.IsBusy}"
+                                                         Classes.waiting="{Binding Row.IsWaiting}"
                                                          Classes.bad="{Binding Row.IsProblem}" Classes.done="{Binding Row.IsFinished}" />
                                                 <StackPanel Grid.Column="1">
                                                     <TextBlock Classes="appname" Text="{Binding Row.App}" FontSize="13"
@@ -673,7 +725,8 @@
                                                         <TextBlock Grid.Column="1" Classes="state" Text="{Binding Row.StateLine}" FontSize="11.5"
                                                                    TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Row.StateLine}"
                                                                    Classes.up="{Binding Row.IsGood}" Classes.bad="{Binding Row.IsProblem}"
-                                                                   Classes.busy="{Binding Row.IsBusy}" Classes.done="{Binding Row.IsFinished}" />
+                                                                   Classes.busy="{Binding Row.IsBusy}" Classes.waiting="{Binding Row.IsWaiting}"
+                                                                   Classes.done="{Binding Row.IsFinished}" />
                                                     </Grid>
                                                 </StackPanel>
                                                 <PathIcon Grid.Column="2" Width="11" Height="11" Margin="6,0,0,0" VerticalAlignment="Center"
@@ -711,13 +764,14 @@
                                                Classes.bad="{Binding LogApp.IsProblem, FallbackValue=False}"
                                                Classes.done="{Binding LogApp.IsFinished, FallbackValue=False}" />
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0" IsVisible="{Binding Logs.IsAll}" VerticalAlignment="Center">
-                                    <Button Classes="toggle" Classes.on="{Binding StreamingList}" Command="{Binding StreamListCommand}"
-                                            CornerRadius="6,0,0,6" Content="{Binding AllApps.Count, StringFormat='Apps in the list · {0}'}" />
-                                    <Button Classes="toggle" Classes.on="{Binding StreamPinned}" Command="{Binding StreamPinsCommand}"
-                                            CornerRadius="0,6,6,0" BorderThickness="0,1,1,1" IsEnabled="{Binding HasPins}"
-                                            Content="{Binding PinnedCount, StringFormat='Pinned · {0}'}" />
-                                </StackPanel>
+                                <Border Grid.Column="1" Classes="segmented" IsVisible="{Binding Logs.IsAll}" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <Button Classes="segment" Classes.on="{Binding StreamingList}" Command="{Binding StreamListCommand}"
+                                                Content="{Binding AllApps.Count, StringFormat='Apps in the list · {0}'}" />
+                                        <Button Classes="segment" Classes.on="{Binding StreamPinned}" Command="{Binding StreamPinsCommand}"
+                                                IsEnabled="{Binding HasPins}" Content="{Binding PinnedCount, StringFormat='Pinned · {0}'}" />
+                                    </StackPanel>
+                                </Border>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" IsVisible="{Binding Logs.IsOne}" VerticalAlignment="Center">
                                     <Button Classes="small" Content="Start" IsVisible="{Binding !LogApp.IsAlive, FallbackValue=False}"
                                             Command="{Binding StartAppCommand}" CommandParameter="{Binding LogApp}" />
@@ -737,14 +791,15 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="LogSearch" Text="{Binding Logs.Search}" PlaceholderText="Search this log" FontSize="12.5" />
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="0">
-                                    <Button Classes="toggle" Classes.on="{Binding Logs.ShowTimes}" Command="{Binding ToggleLogTimesCommand}"
-                                            CornerRadius="6,0,0,6" Content="Timestamps" IsEnabled="{Binding Logs.HasTimes}"
-                                            ToolTip.Tip="Show when each line was written" />
-                                    <Button Classes="toggle" Classes.on="{Binding Logs.Wrap}" Command="{Binding ToggleLogWrapCommand}"
-                                            CornerRadius="0,6,6,0" BorderThickness="0,1,1,1" Content="Wrap"
-                                            ToolTip.Tip="Wrap long lines; off, they run on and the log scrolls sideways" />
-                                </StackPanel>
+                                <Border Grid.Column="2" Classes="segmented">
+                                    <StackPanel Orientation="Horizontal" Spacing="2">
+                                        <Button Classes="segment" Classes.on="{Binding Logs.ShowTimes}" Command="{Binding ToggleLogTimesCommand}"
+                                                Content="Timestamps" IsEnabled="{Binding Logs.HasTimes}"
+                                                ToolTip.Tip="Show when each line was written" />
+                                        <Button Classes="segment" Classes.on="{Binding Logs.Wrap}" Command="{Binding ToggleLogWrapCommand}"
+                                                Content="Wrap" ToolTip.Tip="Wrap long lines; off, they run on and the log scrolls sideways" />
+                                    </StackPanel>
+                                </Border>
                                 <Button Grid.Column="3" Classes="toggle" Classes.warnon="{Binding Logs.ProblemsOnly}"
                                         Content="Warnings and errors" Click="ToggleProblems" />
                             </Grid>
@@ -953,21 +1008,10 @@
                             <TextBlock Classes="phead" Text="ORCHESTRATION OR REPO" />
                             <ComboBox ItemsSource="{Binding OrchestrationNames}" SelectedItem="{Binding NewOrchestration}" HorizontalAlignment="Stretch" />
                         </StackPanel>
-                        <StackPanel Spacing="4">
-                            <TextBlock Classes="phead" Text="NAME" />
-                            <TextBox x:Name="NewNameBox" Text="{Binding NewName}" PlaceholderText="{Binding NewNameHint}" />
-                        </StackPanel>
-                        <StackPanel Spacing="4">
-                            <TextBlock Classes="phead" Text="WHERE IT RUNS" />
-                            <RadioButton GroupName="new-where" IsChecked="{Binding NewHasWorktrees}"
-                                         Content="In worktrees of its own, on a branch of its own" />
-                            <RadioButton GroupName="new-where" IsChecked="{Binding NewInPlace}"
-                                         Content="In place, where the repos are checked out (one such workspace at a time)" />
-                        </StackPanel>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding NewHasWorktrees}">
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                             <StackPanel Spacing="4">
                                 <TextBlock Classes="phead" Text="BRANCH" />
-                                <TextBox Text="{Binding NewBranch}" PlaceholderText="Default: the workspace's name" />
+                                <TextBox x:Name="NewBranchBox" Text="{Binding NewBranch}" PlaceholderText="e.g. feat-x" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Classes="phead" Text="STARTING FROM" />
@@ -975,12 +1019,14 @@
                                          ToolTip.Tip="Used only when the branch doesn't exist yet" />
                             </StackPanel>
                         </Grid>
-                        <StackPanel Spacing="4">
-                            <TextBlock Classes="phead" Text="PORTS" />
-                            <RadioButton GroupName="new-ports" IsChecked="{Binding NewStablePorts}"
-                                         Content="Keep the ports it's given until it's removed" />
-                            <RadioButton GroupName="new-ports" IsChecked="{Binding NewRandomPorts}"
-                                         Content="Fresh ports each time it comes up" />
+                        <!-- Which slot the branch goes in, so a reused one's data and values are a choice, not a surprise. -->
+                        <TextBlock Text="{Binding NewSlotLine}" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                                   IsVisible="{Binding !NewSlotBad}" />
+                        <TextBlock Classes="bad" Text="{Binding NewSlotLine}" FontSize="12.5" TextWrapping="Wrap" IsVisible="{Binding NewSlotBad}" />
+                        <StackPanel Spacing="4" IsVisible="{Binding NewReusesSlot}">
+                            <TextBlock Classes="phead" Text="ITS DATA" />
+                            <RadioButton GroupName="new-data" IsChecked="{Binding NewKeepData}" Content="Keep the data the last branch left" />
+                            <RadioButton GroupName="new-data" IsChecked="{Binding NewEmptyData}" Content="Start with empty data" />
                         </StackPanel>
                         <StackPanel Spacing="6" IsVisible="{Binding HasNewSettings}">
                             <TextBlock Classes="phead" Text="SETTINGS" />

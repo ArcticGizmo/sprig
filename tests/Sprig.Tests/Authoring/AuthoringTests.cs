@@ -208,6 +208,41 @@ public sealed class AuthoringTests : IDisposable
     }
 
     [Fact]
+    public void A_repo_kept_in_sprig_renames_with_its_definition_and_approval_but_not_while_an_orchestration_uses_it()
+    {
+        var trust = new FileTrustStore(_store.Paths);
+        var authoring = Authoring(trust);
+        var entry = authoring.AddRepo(Dir("shop-services"), "services-sprig");
+        var draft = File.ReadAllText(entry.DefinitionFile);
+
+        var renamed = authoring.RenameRepo("services-sprig", "catalog");
+
+        Assert.Equal("catalog", renamed.Id);
+        Assert.False(renamed.InRepo);
+        Assert.Equal(entry.Folder, renamed.Folder);
+        Assert.Equal(Stored.CopyFile("catalog"), renamed.DefinitionFile);
+        Assert.Equal(draft, File.ReadAllText(renamed.DefinitionFile));
+        Assert.True(Approved(trust, renamed.DefinitionFile));
+        Assert.Null(Stored.Repo("services-sprig"));
+
+        // Case alone can change; another entry's ID can't be taken.
+        Assert.Equal("Catalog", authoring.RenameRepo("catalog", "Catalog").Id);
+        Write("shop-web/sprig.cs", "// shop-web's own");
+        authoring.AddRepo(Dir("shop-web"), "web");
+        Assert.Throws<ArgumentException>(() => authoring.RenameRepo("Catalog", "WEB"));
+        Assert.Throws<ArgumentException>(() => authoring.RenameRepo("Catalog", "not an id"));
+        // Only one kept in sprig.
+        Assert.NotNull(authoring.RenameBlocker(Stored.Repo("web")!));
+        Assert.Throws<ArgumentException>(() => authoring.RenameRepo("web", "web-2"));
+
+        // An orchestration that uses it holds its ID, so it stays as it is.
+        authoring.CreateOrchestration("storefront", [Dir("shop-services")]);
+        Assert.Contains("'storefront'", authoring.RenameBlocker(Stored.Repo("Catalog")!));
+        Assert.Throws<ArgumentException>(() => authoring.RenameRepo("Catalog", "catalog-2"));
+        Assert.NotNull(Stored.Repo("Catalog"));
+    }
+
+    [Fact]
     public void A_repo_named_by_folder_moves_onto_the_Repos_list_reusing_the_folders_entry()
     {
         var trust = new FileTrustStore(_store.Paths);

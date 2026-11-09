@@ -16,7 +16,7 @@ public class WorkspaceSettings : GlobalSettings
     public string Orchestration { get; set; } = "";
 
     [CommandArgument(1, "[workspace]")]
-    [Description("The workspace's name (default: local)")]
+    [Description("The workspace: its branch, slot number or folder name (default: the slot this folder is in, else local)")]
     public string Workspace { get; set; } = "";
 
     /// <summary>Whether words after the workspace name apps, so one that isn't an ID or a workspace is an app.</summary>
@@ -46,7 +46,12 @@ public class WorkspaceSettings : GlobalSettings
         }
         else throw Here.NotHere();
 
-        if (words.Count > 0 && (!TakesApps || cli.Workspaces.Get(Orchestration, words[0]) is not null))
+        if (words.Count > 0 && cli.Workspaces.Find(Orchestration, words[0]) is { } found)
+        {
+            workspace = found.Name;
+            words.RemoveAt(0);
+        }
+        else if (words.Count > 0 && !TakesApps)
         {
             workspace = words[0];
             words.RemoveAt(0);
@@ -56,7 +61,7 @@ public class WorkspaceSettings : GlobalSettings
     }
 }
 
-[Description("Bring a workspace up: worktrees (or the repo where it is), ports, env files and infra, then its apps in the background")]
+[Description("Bring a workspace up: a branch checked out in a slot of worktrees (or the repo where it is), ports, env files and infra, then its apps in the background")]
 public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 {
     public sealed class Settings : TrustingSettings
@@ -65,28 +70,25 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         [Description("A repo ID from the Repos list, an orchestration ID, or an orchestration file (default: the repo this folder is)")]
         public string? Orchestration { get; set; }
 
-        [CommandOption("-w|--workspace <name>")]
-        [Description("Name a workspace to give it worktrees of its own (default: 'local', which runs the repos where they're checked out)")]
-        public string? Workspace { get; set; }
-
-        [CommandOption("--branch <branch>")]
-        [Description("The branch for the workspace's worktrees (default: the workspace's name). Made from --from when it doesn't exist")]
+        [CommandOption("-b|--branch <branch>")]
+        [Description("Check this branch out in a slot of worktrees: the slot it's in already, else the lowest free one, else a new one (default: the slot this folder is in, else the repos where they're checked out, as 'local')")]
         public string? Branch { get; set; }
 
-        [CommandOption("--in-place")]
-        [Description("A new named workspace runs the repos where they're checked out, rather than in worktrees of its own")]
-        public bool InPlace { get; set; }
+        [CommandOption("--slot <number>")]
+        [Description("The slot to check the branch out in, e.g. 2 for storefront--2")]
+        public int? Slot { get; set; }
 
         [CommandOption("--from <branch>")]
-        [Description("Where a new workspace's branches start (default: each repo's own default branch)")]
+        [Description("Where a branch that doesn't exist yet starts (default: each repo's own default branch)")]
         public string? From { get; set; }
 
-        [CommandOption("--random-ports")]
-        [Description("A new workspace takes fresh ports each time it comes up, rather than keeping the ones it was given")]
-        public bool RandomPorts { get; set; }
+        [CommandOption("--empty-data")]
+        [Description("Reusing a free slot, start its infra with empty data rather than the data the last branch left")]
+        public bool EmptyData { get; set; }
 
-        /// <summary>Only what was asked for: an existing workspace keeps its own choices unless one is named.</summary>
-        public WorkspaceOptions? Options => InPlace || RandomPorts || From is not null ? new WorkspaceOptions(InPlace, From, RandomPorts) : null;
+        [CommandOption("--unset <name>")]
+        [Description("Reusing a free slot, clear a value it kept so the default applies again. Repeat for more")]
+        public string[] Unset { get; set; } = [];
 
         [CommandOption("--run")]
         [Description("Follow the apps' logs together here, rather than leaving them in the background. Ctrl+C stops the apps; the infra keeps running")]
@@ -112,25 +114,18 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (s.Json && s.Run)
             throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; leave it off with --json and the apps run in the background");
-        if (s.InPlace && (s.Branch is not null || s.From is not null))
-            throw new InvalidOperationException("--in-place runs the repos where they're checked out, so it takes no --branch or --from");
-        var named = s.Workspace ?? (s.Branch is { } b ? WorkspaceService.NameFromBranch(b) : null);
-        if (named is null && s.From is not null)
-            throw new InvalidOperationException("--from starts a workspace's own branches; name the workspace with -w <name>");
-        var (id, worktreeOf) = s.Orchestration is { } given ? (given, null) : Here.Find(cli, named);
-        // Run from inside a workspace's worktree, it's that workspace; otherwise the repo in place, as "local".
-        var workspace = named ?? worktreeOf ?? "local";
-        if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
+        if (s.Branch is null && (s.From is not null || s.EmptyData || s.Unset.Length > 0))
+            throw new InvalidOperationException("--from, --empty-data and --unset are for checking a branch out; name it with -b <branch>");
+        var (id, slotHere) = s.Orchestration is { } given ? (given, null) : Here.Find(cli, s.Branch);
+        // Without a branch: the slot named, or the one this folder is in, else the repos in place as "local".
+        var workspace = s.Slot is { } slot ? slot.ToString(System.Globalization.CultureInfo.InvariantCulture) : slotHere ?? "local";
+        if (OrchestrationLoad.Load(cli, id, s, s.Branch is null ? workspace : null) is not { } loaded) return 1;
         var root = Path.GetDirectoryName(loaded.OrchestrationPath)!;
-
-        var options = s.Options;
-        if (named is null && worktreeOf is null && cli.Workspaces.Get(loaded.Id, workspace) is null)
-            options = (options ?? new WorkspaceOptions()) with { InPlace = true };
 
         var progress = new SyncProgress<WorkspaceEvent>(e => Report(e, s.Json));
         try
         {
-            var record = UpApproving(loaded, workspace, options, s, progress, cancellation);
+            var record = UpApproving(loaded, workspace, s, progress, cancellation);
             if (record is null) return 1;
             var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
             if (s.NoApps)
@@ -166,19 +161,25 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 
     /// <summary>Up, asking to approve the definitions a new workspace's worktrees bring (its branch can change them), and
     /// for values of settings nothing gives one, and going again. Null when they weren't approved.</summary>
-    WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, WorkspaceOptions? options, Settings s,
+    WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, Settings s,
         IProgress<WorkspaceEvent> progress, CancellationToken cancellation)
     {
         var runApps = !s.NoApps;
         SettingValues.Parse(s.Set, out var given);
         var values = new Dictionary<string, string>(given, StringComparer.Ordinal);
+        // A new workspace with no branch is the repos where they're checked out.
+        var options = s.Branch is null && workspace == "local" && cli.Workspaces.Get(loaded.Id, workspace) is null ? new WorkspaceOptions(InPlace: true) : null;
+        IReadOnlyCollection<string>? unset = s.Unset;
         for (var attempt = 1; ; attempt++)
         {
             string? held = null;
             try
             {
-                return cli.Workspaces.Up(loaded, workspace, s.Branch, options, progress, cancellation,
-                    runApps ? (record, plan) => held = Prebuild(record, plan) : null, values);
+                Action<WorkspaceRecord, Plan>? beforeInfra = runApps ? (record, plan) => held = Prebuild(record, plan) : null;
+                var record = s.Branch is { } branch
+                    ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(s.Slot, s.From, s.EmptyData), progress, cancellation, beforeInfra, values, unset)
+                    : cli.Workspaces.Up(loaded, workspace, null, options, progress, cancellation, beforeInfra, values);
+                return record;
             }
             catch (WorkspaceException e) when (e.Untrusted.Count > 0 && attempt < 3)
             {
@@ -229,7 +230,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         if (json) CliOutput.Json(new { ok, workspace = record, plan, runners });
         else
         {
-            var names = $"{Markup.Escape(record.Orchestration)} {Markup.Escape(record.Name)}";
+            var names = Markup.Escape(Words(record));
             cli.Ansi.MarkupLine($"[dim]The apps keep running in the background. Watch them: sprig ps; read one's log: sprig logs {names} <app>; " +
                                 $"stop them: sprig stop {names}[/]");
         }
@@ -265,8 +266,9 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     void Summary(WorkspaceRecord record, Plan plan, string root, bool appsStart)
     {
         cli.Ansi.WriteLine();
-        var where = record.InPlace ? "repos in place" : $"branch {record.Branch}";
-        cli.Ansi.MarkupLine($"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/] is up  [dim]({Markup.Escape(where)}, {Markup.Escape(record.PortPolicy)} ports)[/]");
+        cli.Ansi.MarkupLine(record.InPlace
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/] is up  [dim](repos in place)[/]"
+            : $"[bold]{Markup.Escape(record.Branch ?? "")}[/] is up in [bold]{Markup.Escape(record.SlotName)}[/]  [dim]({Markup.Escape((record.Folder ?? "").Replace('\\', '/'))})[/]");
 
         var apps = new Table().Border(TableBorder.Rounded).AddColumns("App", "Folder", "Url", "Values in");
         foreach (var app in plan.Apps)
@@ -277,7 +279,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             var files = record.Files.Where(f => f.Path.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
                 .Select(f => Path.GetRelativePath(dir, f.Path).Replace('\\', '/')).ToArray();
             apps.AddRow(Markup.Escape($"{repo.Name}/{app.Name}"), Markup.Escape(dir.Replace('\\', '/')), Markup.Escape(url),
-                files.Length > 0 ? Markup.Escape(string.Join(", ", files)) : $"[dim]none: sprig env {Markup.Escape(record.Orchestration)} {Markup.Escape(record.Name)} {Markup.Escape(app.Name)}[/]");
+                files.Length > 0 ? Markup.Escape(string.Join(", ", files)) : $"[dim]none: sprig env {Markup.Escape(Words(record))} {Markup.Escape(app.Name)}[/]");
         }
         cli.Ansi.Write(apps);
 
@@ -293,10 +295,32 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 
         var warnings = plan.Problems.Where(p => p.Severity == ProblemSeverity.Warning).ToArray();
         if (warnings.Length > 0) PlanPrinter.Problems(cli.Ansi, warnings, root);
-        var names = $"{Markup.Escape(record.Orchestration)} {Markup.Escape(record.Name)}";
+        var names = Markup.Escape(Words(record));
         if (!appsStart)
             cli.Ansi.MarkupLine($"[dim]Start the apps: sprig start {names} (or from their folders: dotnet run, npm run dev). " +
                                 $"Stop the infra with: sprig down {names}[/]");
+    }
+
+    /// <summary>How to name the workspace on a command line: its ID, then its branch (or its name, in place).</summary>
+    internal static string Words(WorkspaceRecord record) => $"{record.Orchestration} {record.Branch ?? record.Name}";
+
+    /// <summary>The <c>sprig up</c> that brings this workspace up again.</summary>
+    internal static string UpLine(WorkspaceRecord record)
+        => record.InPlace ? $"sprig up {record.Orchestration}" : $"sprig up {record.Orchestration} -b {record.Branch ?? "<branch>"}";
+}
+
+[Description("Free a slot for another branch: stop its apps and infra and detach its worktrees, keeping its branch, data, ports and values")]
+public sealed class ReleaseCommand(CliContext cli) : Command<WorkspaceSettings>
+{
+    protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
+    {
+        s.Resolve(cli);
+        var before = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}'");
+        var record = cli.Workspaces.Release(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        if (s.Json) { CliOutput.Json(new { ok = true, workspace = record }); return 0; }
+        CliOutput.Success(before.IsFree ? $"{record.SlotName} was already free" : $"{record.SlotName} is free; '{before.Branch}' is kept, with its commits");
+        cli.Ansi.MarkupLine($"[dim]Check the next branch out in it with: sprig up {Markup.Escape(record.Orchestration)} -b <branch>[/]");
+        return 0;
     }
 }
 
@@ -307,7 +331,8 @@ public sealed class DownCommand(CliContext cli) : Command<WorkspaceSettings>
     {
         s.Resolve(cli);
         var record = cli.Workspaces.Down(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => Echo(cli, e, s.Json)), cancellation);
-        return CliOutput.Ok(s.Json, $"{record.Orchestration}/{record.Name} is down", new { ok = true, workspace = record });
+        return CliOutput.Ok(s.Json, record.IsFree ? $"{record.SlotName} is free, so nothing was running" : $"{record.SlotName} ({record.Label}) is down",
+            new { ok = true, workspace = record });
     }
 
     internal static void Echo(CliContext cli, WorkspaceEvent e, bool json)
@@ -344,13 +369,13 @@ public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
         {
             if (!cli.Interactive(s.Json)) throw new InvalidOperationException("removing a workspace deletes its databases; pass --yes to confirm");
             var what = record.InPlace ? "its containers and their data, and the values it wrote into the repos"
-                : $"its containers and their data, and its worktrees{(s.DeleteBranch ? $" and the branch '{record.Branch}'" : "")}";
-            if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Remove {Markup.Escape(record.Orchestration)}/{Markup.Escape(record.Name)}: {Markup.Escape(what)}?") { DefaultValue = false }))
+                : $"its containers and their data, and its worktrees{(s.DeleteBranch && record.Branch is { } b ? $" and the branch '{b}'" : "")}";
+            if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Remove {Markup.Escape(record.SlotName)}: {Markup.Escape(what)}?") { DefaultValue = false }))
                 return 1;
         }
         cli.Workspaces.Remove(s.Orchestration, s.Workspace, new RemoveOptions(s.DeleteBranch, s.Force),
             new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
-        return CliOutput.Ok(s.Json, $"removed {s.Orchestration}/{s.Workspace}", new { ok = true, orchestration = s.Orchestration, workspace = s.Workspace });
+        return CliOutput.Ok(s.Json, $"removed {record.SlotName}", new { ok = true, orchestration = s.Orchestration, workspace = s.Workspace });
     }
 }
 
@@ -370,10 +395,10 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
         if (s.Json) { CliOutput.Json(workspaces); return 0; }
         if (workspaces.Length == 0)
         {
-            cli.Ansi.MarkupLine("[dim]No workspaces. In a repo's folder, run it in place with: sprig up (or sprig up -w <name> for worktrees of its own)[/]");
+            cli.Ansi.MarkupLine("[dim]No workspaces. In a repo's folder, check a branch out in a slot of its own with: sprig up -b <branch> (or run it in place with: sprig up)[/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("ID", "Workspace", "Branch", "State", "Folder", "Updated");
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("ID", "Slot", "Branch", "State", "Folder", "Updated");
         foreach (var r in workspaces)
         {
             var state = r.State switch
@@ -381,9 +406,11 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
                 WorkspaceState.Up => "[green]up[/]",
                 WorkspaceState.Failed => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
                 WorkspaceState.Starting => "[yellow]starting[/]",
+                WorkspaceState.Released => "[dim]free[/]",
                 _ => "[dim]down[/]",
             };
-            table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.Name), Markup.Escape(r.Branch ?? "(in place)"), state,
+            table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.SlotName),
+                r.InPlace ? "[dim](in place)[/]" : r.Branch is { } b ? Markup.Escape(b) : "[dim](detached)[/]", state,
                 Markup.Escape((r.Folder ?? string.Join(", ", r.Repos.Select(x => x.Dir))).Replace('\\', '/')),
                 r.UpdatedAt.LocalDateTime.ToString("g"));
         }

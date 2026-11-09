@@ -14,12 +14,16 @@ static class Here
         => TryFind(cli) ?? throw NotHere();
 
     /// <summary>
-    /// <see cref="Find(CliContext)"/> for a command that names its workspace with <c>-w</c>: outside every repo, that
-    /// name is enough when just one repo or orchestration has a workspace called it.
+    /// <see cref="Find(CliContext)"/> for a command that names its workspace with <c>-b</c>: outside every repo, that
+    /// branch (or slot's folder name) is enough when just one repo or orchestration has a workspace it names.
     /// </summary>
     public static (string Id, string? Workspace) Find(CliContext cli, string? workspace)
         => TryFind(cli)
            ?? (workspace is not null && Named(cli, workspace) is { } existing ? (existing.Orchestration, existing.Name) : throw NotHere());
+
+    /// <summary>The name sprig keeps <paramref name="id"/>'s workspace under, given any way of naming it (a branch, a
+    /// slot number, a slot's folder name); the word itself when it names none, so a command can say it isn't there.</summary>
+    public static string WorkspaceName(CliContext cli, string id, string word) => cli.Workspaces.Find(id, word)?.Name ?? word;
 
     /// <summary>As <see cref="Find(CliContext)"/>, but null outside anything sprig knows.</summary>
     public static (string Id, string? Workspace)? TryFind(CliContext cli)
@@ -33,13 +37,13 @@ static class Here
 
     internal static WorkspaceRecord? Named(IEnumerable<WorkspaceRecord> workspaces, string name)
     {
-        var matches = workspaces.Where(r => r.Name == name).ToArray();
+        var matches = workspaces.Where(r => WorkspaceService.Names(r, name)).ToArray();
         return matches.Length switch
         {
             0 => null,
             1 => matches[0],
             _ => throw new InvalidOperationException(
-                $"{string.Join(" and ", matches.Select(r => $"'{r.Orchestration}'"))} each have a workspace called '{name}'; " +
+                $"{string.Join(" and ", matches.Select(r => $"'{r.Orchestration}'"))} each have a workspace '{name}'; " +
                 $"put the ID first, e.g. {matches[0].Orchestration} {name}"),
         };
     }

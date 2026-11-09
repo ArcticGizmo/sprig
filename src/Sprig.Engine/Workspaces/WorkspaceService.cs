@@ -41,6 +41,13 @@ public sealed record WorkspaceOptions(bool InPlace = false, string? From = null,
     public string PortPolicy => RandomPorts ? "random" : "stable";
 }
 
+/// <summary>Where and how a branch is checked out.</summary>
+/// <param name="Slot">The slot to use; null for the one the branch is already in, else the lowest free one, else a new
+/// one.</param>
+/// <param name="From">Where a branch that doesn't exist yet starts; null for each repo's own default branch.</param>
+/// <param name="EmptyData">Reusing a free slot, remove its infra's volumes first, rather than keep the data in them.</param>
+public sealed record CheckOutOptions(int? Slot = null, string? From = null, bool EmptyData = false);
+
 /// <param name="Repo">The repo's name.</param>
 /// <param name="Worktree">A worktree sprig made, rather than the repo run in place.</param>
 /// <param name="Unpushed">Commits on the workspace's branch that no other branch or remote has.</param>
@@ -92,6 +99,16 @@ public sealed partial class WorkspaceService(
 
     public WorkspaceRecord? Get(string orchestration, string workspace) => store.Get(orchestration, workspace);
 
+    /// <summary>The workspace of <paramref name="orchestration"/> that <paramref name="word"/> names: its slot number, its
+    /// branch, its folder's name (<c>storefront--2</c>), or the name of one that runs in place.</summary>
+    public WorkspaceRecord? Find(string orchestration, string word)
+        => store.Get(orchestration, word) is { } byName ? byName
+            : store.List().FirstOrDefault(r => r.Orchestration == orchestration && Names(r, word));
+
+    /// <summary>Whether <paramref name="word"/> is one of the ways to name <paramref name="record"/>.</summary>
+    public static bool Names(WorkspaceRecord record, string word)
+        => record.Name == word || record.Branch == word || string.Equals(record.SlotName, word, StringComparison.OrdinalIgnoreCase);
+
     public Plan? LastPlan(string orchestration, string workspace) => store.GetPlan(orchestration, workspace);
 
     /// <summary>The worktree of each repo of the orchestration at <paramref name="orchestrationPath"/>'s workspace, keyed by repo path,
@@ -137,13 +154,18 @@ public sealed partial class WorkspaceService(
             throw new WorkspaceException($"workspace '{workspace}' already belongs to the orchestration at {existing.OrchestrationPath}");
         if (existing is not null && options is not null && Differs(existing, options) is { } changed)
             throw new WorkspaceException($"workspace '{workspace}' {changed}; remove it and make a new one to change that");
+        if (existing is { IsFree: true } && branch is null)
+            throw new WorkspaceException($"{existing.SlotName} is free; check a branch out in it");
+        // The branch is the label, so a switch made in the worktree with git itself is what the slot is now on.
+        if (existing is { IsFree: false, InPlace: false } && LiveBranch(existing) is { } live && live != existing.Branch)
+            existing = existing with { Branch = live };
         var chosen = existing is null ? options ?? new WorkspaceOptions() : null;
 
         var inPlace = existing?.InPlace ?? chosen!.InPlace;
         branch = inPlace ? null : branch ?? existing?.Branch ?? workspace;
         if (inPlace && branch is not null) throw new WorkspaceException($"workspace '{workspace}' runs its repos in place, so it can't have its own branch");
         if (branch is not null && existing?.Branch is { } had && had != branch)
-            throw new WorkspaceException($"workspace '{workspace}' is on branch '{had}'; remove it first to change branch");
+            throw new WorkspaceException($"{existing.SlotName} has '{had}' checked out; release it first to check out another branch");
         if (branch is not null && !git.IsValidBranchName(branch)) throw new WorkspaceException($"'{branch}' isn't a valid branch name");
 
         var settingsNow = settings.Get();
@@ -151,7 +173,8 @@ public sealed partial class WorkspaceService(
 
         // A dry run first, so a broken orchestration fails before anything is created.
         step.Start("Plan");
-        if (existing is not null && Worktrees(existing) is { } worktrees)
+        // A free slot's worktrees are still on the last branch's commit, so its new branch is read once it's checked out.
+        if (existing is { IsFree: false } && Worktrees(existing) is { } worktrees)
         {
             try { loaded = FromWorktrees(loaded, worktrees); }
             catch (WorkspaceException e) { throw step.Fail(e); }
@@ -178,6 +201,7 @@ public sealed partial class WorkspaceService(
         record = record with
         {
             State = WorkspaceState.Starting,
+            Branch = branch,
             UpdatedAt = now,
             Error = null,
             Folder = inPlace ? null : record.Folder ?? WorkspaceFolder(loaded, id, workspace, settingsNow),
@@ -186,7 +210,7 @@ public sealed partial class WorkspaceService(
 
         try
         {
-            record = record with { Repos = Repos(loaded, record, chosen?.From, step, cancellation) };
+            record = record with { Repos = Repos(loaded, record, options?.From, step, cancellation) };
             store.Save(record);
 
             var dirs = record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal);
@@ -231,6 +255,7 @@ public sealed partial class WorkspaceService(
     public WorkspaceRecord Down(string orchestration, string workspace, IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
     {
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
+        if (record.IsFree) return record;
         var step = new Steps(progress);
         StopApps(record, step, cancellation);
         foreach (var project in record.Compose)
@@ -283,6 +308,123 @@ public sealed partial class WorkspaceService(
         leases.Release(record.Key);
         store.Delete(orchestration, workspace);
     }
+
+    // ---- slots ----
+
+    /// <summary>A slot's name: a whole number from 1, as written in its folder name.</summary>
+    public static bool IsSlot(string name)
+        => int.TryParse(name, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)
+           && n > 0 && n.ToString(System.Globalization.CultureInfo.InvariantCulture) == name;
+
+    /// <summary>
+    /// The slot of <paramref name="id"/> a check-out of <paramref name="branch"/> would use: the one it's already in, the
+    /// one asked for, the lowest free one, or else the next number. Its record, when the slot exists already.
+    /// </summary>
+    public (string Slot, WorkspaceRecord? Record) SlotFor(string id, string branch, int? slot = null)
+    {
+        var mine = store.List().Where(r => r.Orchestration == id && IsSlot(r.Name)).ToArray();
+        if (mine.FirstOrDefault(r => r.Branch == branch) is { } current)
+        {
+            if (slot is { } other && current.Name != Number(other))
+                throw new WorkspaceException($"'{branch}' is already checked out in {current.SlotName}");
+            return (current.Name, current);
+        }
+        if (slot is { } asked)
+        {
+            if (asked < 1) throw new WorkspaceException("slots are numbered from 1");
+            var at = mine.FirstOrDefault(r => r.Name == Number(asked));
+            if (at is { IsFree: false })
+                throw new WorkspaceException($"{at.SlotName} has '{at.Branch}' checked out; release it first, or leave the slot out to use a free one");
+            return (Number(asked), at);
+        }
+        if (mine.Where(r => r.IsFree).OrderBy(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)).FirstOrDefault() is { } free)
+            return (free.Name, free);
+        var used = mine.Select(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)).ToHashSet();
+        var next = 1;
+        while (used.Contains(next)) next++;
+        return (Number(next), null);
+    }
+
+    static string Number(int slot) => slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Check <paramref name="branch"/> out in a slot (see <see cref="SlotFor"/>) and bring it up. A free slot keeps its
+    /// folders, ports, values and, unless <see cref="CheckOutOptions.EmptyData"/>, its infra's data.
+    /// </summary>
+    /// <param name="values">Values to set, over any the slot kept.</param>
+    /// <param name="unset">Values the slot kept to clear, so their defaults apply again.</param>
+    public WorkspaceRecord CheckOut(LoadedOrchestration loaded, string branch, CheckOutOptions? options = null,
+        IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null,
+        IReadOnlyDictionary<string, string>? values = null, IReadOnlyCollection<string>? unset = null)
+    {
+        options ??= new CheckOutOptions();
+        if (!git.IsValidBranchName(branch)) throw new WorkspaceException($"'{branch}' isn't a valid branch name");
+        var (slot, record) = SlotFor(loaded.Id, branch, options.Slot);
+
+        if (record is { IsFree: true })
+        {
+            if (options.EmptyData) WipeData(record, new Steps(progress), cancellation);
+            if (unset is { Count: > 0 }) SetValues(record.Orchestration, record.Name, new Dictionary<string, string>(), unset);
+        }
+        return Up(loaded, slot, branch, new WorkspaceOptions(From: options.From), progress, cancellation, beforeInfra, values);
+    }
+
+    /// <summary>
+    /// Free the slot for another branch: stop its apps and infra, and leave each worktree on a detached HEAD at the commit
+    /// it was on. The branch, its commits, the slot's folders, ports, values and data all stay. Refused while a worktree
+    /// has changes that aren't committed.
+    /// </summary>
+    public WorkspaceRecord Release(string orchestration, string workspace, IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
+    {
+        var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace '{workspace}'");
+        if (record.InPlace)
+            throw new WorkspaceException($"{orchestration} / {workspace} runs the repos where they're checked out, so there's no slot to release; take it down instead");
+        if (record.IsFree) return record;
+        var dirty = record.Repos.Where(r => Directory.Exists(r.Dir) && git.HasUncommittedChanges(r.Dir)).ToArray();
+        if (dirty.Length > 0)
+            throw new WorkspaceException("these worktrees have changes that aren't committed; commit or stash them first:\n  "
+                + string.Join("\n  ", dirty.Select(r => r.Dir)));
+
+        var step = new Steps(progress);
+        StopApps(record, step, cancellation);
+        foreach (var project in record.Compose)
+        {
+            step.Start($"Stop {project.Name}");
+            docker.Down(project, volumes: false, line => step.Output(line), cancellation);
+            step.Done("data kept");
+        }
+        foreach (var repo in record.Repos.Where(r => Directory.Exists(r.Dir)))
+        {
+            step.Start($"Detach {repo.Name}");
+            git.Detach(repo.Dir);
+            step.Done($"was on {record.Branch}");
+        }
+        record = record with
+        {
+            Branch = null,
+            State = WorkspaceState.Released,
+            Error = null,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Repos = record.Repos.Select(r => r with { BranchCreated = false, From = null }).ToList(),
+        };
+        store.Save(record);
+        return record;
+    }
+
+    /// <summary>Remove a free slot's infra volumes, so the next branch in it starts with empty data.</summary>
+    void WipeData(WorkspaceRecord record, Steps step, CancellationToken cancellation)
+    {
+        foreach (var project in record.Compose)
+        {
+            step.Start($"Empty {project.Name}");
+            docker.Down(project, volumes: true, line => step.Output(line), cancellation);
+            step.Done("volumes removed");
+        }
+    }
+
+    /// <summary>The branch the slot's first worktree has checked out, read from git; null when it can't be read.</summary>
+    string? LiveBranch(WorkspaceRecord record)
+        => record.Repos.FirstOrDefault(r => r.Worktree && Directory.Exists(r.Dir)) is { } first ? git.CurrentBranch(first.Dir) : null;
 
     /// <summary>
     /// Why removing <paramref name="record"/> would lose work, in the order <see cref="Remove"/> checks: worktrees with
@@ -369,16 +511,31 @@ public sealed partial class WorkspaceService(
             cancellation.ThrowIfCancellationRequested();
             var source = loaded.RepoDirs[reference.Path];
             var name = loaded.Repos[reference.Path].Name;
-            var dir = LongPath.Of(Path.Combine(root, Path.GetRelativePath(common, source)));
+            // A repo on its own is the slot's folder itself; an orchestration's slot holds its repos as they're laid out.
+            var dir = loaded.Alone ? LongPath.Of(root) : LongPath.Of(Path.Combine(root, Path.GetRelativePath(common, source)));
             step.Start($"Worktree {name}");
 
             var before = record.Repos.FirstOrDefault(r => r.RepoPath == reference.Path);
+            if (git.IsRepo(source) && git.WorktreeOn(source, branch) is { } elsewhere && !SamePath(elsewhere, dir))
+                throw new WorkspaceException(SamePath(elsewhere, source)
+                    ? $"'{branch}' is checked out in {name}'s own folder, {elsewhere}; switch that to another branch first"
+                    : $"'{branch}' is already checked out at {elsewhere}; release it there first");
             if (Directory.Exists(dir))
             {
                 if (!git.Worktrees(source).Any(w => SamePath(w, dir)))
                     throw new WorkspaceException($"{dir} already exists and isn't a worktree of {source}");
-                repos.Add(new WorkspaceRepo(reference.Path, name, source, dir, Worktree: true, before?.BranchCreated ?? false));
-                step.Done($"{dir} (already there)");
+                if (git.CurrentBranch(dir) == branch)
+                {
+                    repos.Add(new WorkspaceRepo(reference.Path, name, source, dir, Worktree: true, before?.BranchCreated ?? false, before?.From));
+                    step.Done($"{dir} (already there)");
+                    continue;
+                }
+                // A free slot: its folder, build output and installed packages carry over to the new branch.
+                var startAt = from ?? git.DefaultBranch(source)
+                    ?? throw new WorkspaceException($"{source} has no default branch to start '{branch}' from; choose one to start from");
+                var made = git.SwitchTo(dir, branch, startAt);
+                repos.Add(new WorkspaceRepo(reference.Path, name, source, dir, Worktree: true, made, made ? startAt : null));
+                step.Done($"{dir} on {branch}{(made ? $" (new, from {startAt})" : "")}, reusing the slot");
                 continue;
             }
             if (!git.IsRepo(source)) throw new WorkspaceException($"{source} isn't a git repo, so it can't have a worktree");
@@ -400,7 +557,7 @@ public sealed partial class WorkspaceService(
         if (problems.Count > 0) throw new WorkspaceException("the workspace's compose files couldn't be read", problems);
 
         // Anything but a clean down may have left its containers listening on the leased ports.
-        var wasUp = existing is not null && existing.State != WorkspaceState.Down;
+        var wasUp = existing is not null && existing.State is not (WorkspaceState.Down or WorkspaceState.Released);
         var keep = record.PortPolicy != "random" || wasUp;
         var listening = _listening();
 

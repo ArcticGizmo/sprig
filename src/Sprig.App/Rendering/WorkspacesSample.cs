@@ -26,7 +26,7 @@ internal static partial class HeadlessRenderer
     [
         ("shop-gateway", "gateway", RunnerState.Ready, 8100, false),
         ("shop-gateway", "auth", RunnerState.Ready, 8101, false),
-        ("shop-gateway", "bff", RunnerState.Ready, 8102, false),
+        ("shop-gateway", "bff", RunnerState.Waiting, 8102, false),
         ("shop-services", "migrate", RunnerState.Completed, null, true),
         ("shop-services", "seed", RunnerState.Completed, null, true),
         ("shop-services", "catalog-api", RunnerState.Ready, 8000, false),

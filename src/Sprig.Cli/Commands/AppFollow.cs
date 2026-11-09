@@ -41,7 +41,7 @@ sealed class AppFollow(CliContext cli, WorkspaceRecord record, IReadOnlyList<Run
         var labels = LogFollower.Labels(specs.Select(x => x.Name));
         foreach (var spec in specs) follower.Add(labels[spec.Name], HostProtocol.LogFile(cli.Paths, record.Key, spec.Name));
 
-        var names = $"{record.Orchestration} {record.Name}";
+        var names = UpCommand.Words(record);
         cli.Ansi.MarkupLine($"[dim]Following {specs.Count} apps. Ctrl+C stops them; the infra keeps running (sprig down {Markup.Escape(names)} stops it).[/]");
 
         if (FollowUntilStoppedOrDone(follower, stopRequested) is { } done) return done;
@@ -95,7 +95,7 @@ sealed class AppFollow(CliContext cli, WorkspaceRecord record, IReadOnlyList<Run
             if (r.Error is { } why) cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(r.Name)}[/]  {Markup.Escape(why)}");
             else cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] {Markup.Escape(r.Name)} stopped");
         }
-        cli.Ansi.MarkupLine($"[dim]The infra is still up. Stop it with: sprig down {Markup.Escape(record.Orchestration)} {Markup.Escape(record.Name)}[/]");
+        cli.Ansi.MarkupLine($"[dim]The infra is still up. Stop it with: sprig down {Markup.Escape(UpCommand.Words(record))}[/]");
         return 0;
     }
 }

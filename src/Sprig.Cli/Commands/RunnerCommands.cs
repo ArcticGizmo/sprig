@@ -38,8 +38,10 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         s.ResolveApps(cli);
         var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
         var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} hasn't come up yet; run sprig up first");
+        if (record.IsFree)
+            throw new InvalidOperationException($"{record.SlotName} is free; check a branch out in it first: sprig up {record.Orchestration} -b <branch>");
         if (record.State != Sprig.Engine.Workspaces.WorkspaceState.Up)
-            throw new InvalidOperationException($"{record.Key} is {record.State.ToString().ToLowerInvariant()}; bring its infra up first: sprig up {s.Orchestration} --workspace {s.Workspace}");
+            throw new InvalidOperationException($"{record.SlotName} is {record.State.ToString().ToLowerInvariant()}; bring its infra up first: {UpCommand.UpLine(record)}");
 
         IReadOnlyCollection<string>? names = s.Apps.Length > 0 ? s.Apps : null;
         if (s.Group is { } group)
@@ -156,8 +158,10 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
             return 0;
         }
         var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");
+        // Runners are keyed "storefront/2"; people know the slot by its folder and branch.
+        var records = cli.Workspaces.List().ToDictionary(w => w.Key);
         foreach (var r in runners)
-            table.AddRow(Markup.Escape(r.Workspace), Markup.Escape(r.Name), State(r),
+            table.AddRow(Markup.Escape(records.TryGetValue(r.Workspace, out var w) ? $"{w.SlotName} ({w.Label})" : r.Workspace), Markup.Escape(r.Name), State(r),
                 r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "", r.Since.LocalDateTime.ToString("T"));
         cli.Ansi.Write(table);
         return 0;

@@ -351,9 +351,10 @@ public partial class OrchestrationsViewModel : PageViewModel
         WorkspacesOfIt.Clear();
         if (Selected is { } orchestration)
             foreach (var s in _services.Workspaces.List().Where(s => s.Orchestration == orchestration.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
-                WorkspacesOfIt.Add(new WorkspaceRow(s.Name, s.State switch
+                WorkspacesOfIt.Add(new WorkspaceRow(s.InPlace ? s.Name : $"{s.SlotName} · {s.Label}", s.State switch
                 {
                     WorkspaceState.Up => "up",
+                    WorkspaceState.Released => "free",
                     WorkspaceState.Starting => "coming up",
                     WorkspaceState.Failed => $"failed{(s.Error is { } e ? $": {e.Split('\n')[0]}" : "")}",
                     _ => "down",

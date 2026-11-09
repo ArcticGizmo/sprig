@@ -19,11 +19,18 @@ namespace Sprig.App.ViewModels;
 
 public sealed record WorkspaceItem(WorkspaceRecord Record)
 {
-    public string Title => $"{Record.Orchestration} / {Record.Name}";
-    public string Branch => Record.Branch ?? "repos in place";
-    public string State => Record.State.ToString().ToLowerInvariant();
+    /// <summary>A slot by its folder's name, as git and the file system show it; one in place by ID and name.</summary>
+    public string Title => Display(Record);
+    public string Branch => Record.InPlace ? "repos in place" : Record.Branch ?? "free";
+    public string State => Record.IsFree ? "free" : Record.State.ToString().ToLowerInvariant();
     public bool IsUp => Record.State == WorkspaceState.Up;
     public bool IsFailed => Record.State == WorkspaceState.Failed;
+    public bool IsFree => Record.IsFree;
+
+    /// <summary>A slot with a branch checked out, which can be released for the next one.</summary>
+    public bool CanRelease => !Record.InPlace && !Record.IsFree;
+
+    public static string Display(WorkspaceRecord record) => record.InPlace ? $"{record.Orchestration} / {record.Name}" : record.SlotName;
 }
 
 /// <summary>One app or job of the selected workspace, with what the host says about it.</summary>
@@ -61,6 +68,9 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
 
     [ObservableProperty] private bool _isBusy;
 
+    /// <summary>Held back until what it depends on is ready, rather than doing anything itself.</summary>
+    [ObservableProperty] private bool _isWaiting;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStoppedOrDone))]
     private bool _isAlive;
@@ -88,7 +98,7 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
 
     public void MarkStopping()
     {
-        (State, Detail, IsGood, IsBad, IsBusy) = ("stopping", "", false, false, true);
+        (State, Detail, IsGood, IsBad, IsBusy, IsWaiting) = ("stopping", "", false, false, true, false);
     }
 
     /// <summary>Show <paramref name="status"/>; null when the host has no runner for this app.</summary>
@@ -115,6 +125,7 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
         IsBad = status?.State is RunnerState.Failed or RunnerState.Exited;
         IsBusy = status?.State is RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Running
             or RunnerState.Restarting or RunnerState.Stopping;
+        IsWaiting = status?.State == RunnerState.Waiting;
         IsAlive = status is not null && (status.State.IsAlive() || status.State == RunnerState.Stopping);
         Restarts = status?.Restarts ?? 0;
     }
@@ -155,39 +166,79 @@ public partial class WorkspacesViewModel : PageViewModel
     [NotifyPropertyChangedFor(nameof(TrustInModal), nameof(TrustOnPage), nameof(MessageInModal), nameof(MessageOnPage))]
     private bool _isAddOpen;
     [ObservableProperty] private string? _newOrchestration;
-    [ObservableProperty] private string _newName = "";
     [ObservableProperty] private string _newBranch = "";
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(NewHasWorktrees), nameof(NewNameHint))]
-    private bool _newInPlace;
     [ObservableProperty] private string _newFrom = "";
+
+    /// <summary>The slot asked for, when the form was opened from a free one.</summary>
+    int? _newSlot;
+
+    /// <summary>Which slot the branch would go in, in words.</summary>
+    [ObservableProperty] private string _newSlotLine = "";
+    [ObservableProperty] private bool _newSlotBad;
+
+    /// <summary>The branch would reuse a free slot, so there's data to keep or empty.</summary>
+    [ObservableProperty] private bool _newReusesSlot;
+
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(NewStablePorts))]
-    private bool _newRandomPorts;
+    [NotifyPropertyChangedFor(nameof(NewKeepData))]
+    private bool _newEmptyData;
 
-    // Each choice's other answer, for the second radio button of its pair.
-    public bool NewHasWorktrees
+    public bool NewKeepData
     {
-        get => !NewInPlace;
-        set => NewInPlace = !value;
+        get => !NewEmptyData;
+        set => NewEmptyData = !value;
     }
 
-    public bool NewStablePorts
-    {
-        get => !NewRandomPorts;
-        set => NewRandomPorts = !value;
-    }
-    public string NewNameHint => NewInPlace ? "Default: local" : "e.g. feat-x";
+    /// <summary>The slot the branch would reuse; its kept values fill the form's settings.</summary>
+    WorkspaceRecord? _newSlotRecord;
 
-    /// <summary>An orchestration's workspaces start from the choices its last one was made with.</summary>
+    /// <summary>An orchestration's workspaces start from the branch its last one started from.</summary>
     partial void OnNewOrchestrationChanged(string? value)
     {
         if (value is null) return;
-        var last = _services.Ui.WorkspaceChoices(value);
-        NewInPlace = last.InPlace;
-        NewFrom = last.From ?? "";
-        NewRandomPorts = last.RandomPorts;
-        if (IsAddOpen) _ = LoadNewSettingsAsync(value);
+        NewFrom = _services.Ui.WorkspaceChoices(value).From ?? "";
+        if (!IsAddOpen) return;
+        UpdateSlotPreview();
+        _ = LoadNewSettingsAsync(value);
+    }
+
+    partial void OnNewBranchChanged(string value)
+    {
+        if (!IsAddOpen) return;
+        var before = _newSlotRecord?.Key;
+        UpdateSlotPreview();
+        if (_newSlotRecord?.Key != before) _ = LoadNewSettingsAsync(NewOrchestration);
+    }
+
+    /// <summary>Say which slot the branch would go in: the one it's in already, a free one to reuse, or a new one.</summary>
+    void UpdateSlotPreview()
+    {
+        _newSlotRecord = null;
+        NewReusesSlot = false;
+        NewSlotBad = false;
+        if (NewOrchestration is not { } id)
+        {
+            NewSlotLine = "";
+            return;
+        }
+        var branch = NewBranch.Trim();
+        try
+        {
+            var (slot, record) = _services.Workspaces.SlotFor(id, branch, _newSlot);
+            _newSlotRecord = record;
+            NewReusesSlot = record?.IsFree == true;
+            NewSlotLine = record switch
+            {
+                null => $"Goes in {id}--{slot}, a new slot.",
+                { IsFree: true } => $"Reuses {record.SlotName}, which is free: its folders, installed packages, ports and values carry over.",
+                _ => $"'{branch}' is already in {record.SlotName}, so it comes up there again.",
+            };
+        }
+        catch (WorkspaceException e)
+        {
+            NewSlotLine = e.Message;
+            NewSlotBad = true;
+        }
     }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MessageInModal), nameof(MessageOnPage))]
@@ -213,7 +264,7 @@ public partial class WorkspacesViewModel : PageViewModel
     public bool IsEmpty => Workspaces.Count == 0;
     public bool HasSelection => Selected is not null;
     public bool HasOrchestrations => OrchestrationNames.Count > 0;
-    public bool CanDeleteBranch => Selected?.Record.InPlace == false;
+    public bool CanDeleteBranch => Selected?.Record is { InPlace: false, Branch: not null };
 
     public WorkspacesViewModel(AppServices services)
     {
@@ -273,9 +324,11 @@ public partial class WorkspacesViewModel : PageViewModel
         if (Selected is null) _ = LoadOverviewStatusAsync();
     }
 
-    /// <summary>The header offers the one that applies: take an up workspace down, or bring any other up.</summary>
+    /// <summary>The header offers the one that applies: take an up workspace down, or bring any other up. A free slot
+    /// has nothing to run until a branch is checked out in it.</summary>
     public bool ShowTakeDown => Selected?.IsUp == true;
-    public bool ShowBringUp => !ShowTakeDown;
+    public bool ShowBringUp => Selected is { IsUp: false, IsFree: false };
+    public bool ShowRunControls => Selected?.IsFree != true;
 
     partial void OnSelectedChanged(WorkspaceItem? value)
     {
@@ -283,6 +336,7 @@ public partial class WorkspacesViewModel : PageViewModel
         OnPropertyChanged(nameof(CanDeleteBranch));
         OnPropertyChanged(nameof(ShowTakeDown));
         OnPropertyChanged(nameof(ShowBringUp));
+        OnPropertyChanged(nameof(ShowRunControls));
         ConfirmingRemove = false;
         DeleteBranch = false;
         ShowDetails(value?.Record);
@@ -313,7 +367,7 @@ public partial class WorkspacesViewModel : PageViewModel
             var files = record.Files.Where(f => f.Path.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
                 .Select(f => Path.GetRelativePath(dir, f.Path).Replace('\\', '/')).ToArray();
             return new WorkspaceAppRow(app.Key, $"{repo.Name} / {app.Name}", dir.Replace('\\', '/'), port is null ? "" : $"http://localhost:{port}",
-                files.Length > 0 ? string.Join(", ", files) : $"none; sprig env {record.Orchestration} {record.Name} {app.Name}", app.Job,
+                files.Length > 0 ? string.Join(", ", files) : $"none; sprig env {record.Orchestration} {record.Branch ?? record.Name} {app.Name}", app.Job,
                 repo.Name, app.Name, port?.ToString() ?? "");
         }).ToArray();
         ApplyRunners(_lastRunners);
@@ -455,11 +509,31 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private void OpenAdd()
     {
+        _newSlot = null;
+        OpenForm();
+    }
+
+    /// <summary>The new-workspace form for the selected free slot, so its branch goes there rather than in the lowest
+    /// free one.</summary>
+    [RelayCommand]
+    private void CheckOutHere()
+    {
+        if (Selected?.Record is not { IsFree: true } record) return;
+        _newSlot = int.Parse(record.Name, System.Globalization.CultureInfo.InvariantCulture);
+        NewBranch = "";
+        if (NewOrchestration != record.Orchestration) NewOrchestration = record.Orchestration;
+        OpenForm();
+    }
+
+    void OpenForm()
+    {
         FormMessage = "";
         FormFailed = false;
         PendingTrust.Clear();
         HasPendingTrust = false;
+        NewEmptyData = false;
         IsAddOpen = true;
+        UpdateSlotPreview();
         _ = LoadNewSettingsAsync(NewOrchestration);
     }
 
@@ -484,40 +558,44 @@ public partial class WorkspacesViewModel : PageViewModel
             return;
         }
 
-        var inPlace = NewInPlace;
-        var branch = !inPlace && NewBranch.Trim() is { Length: > 0 } b ? b : null;
-        var workspace = NewName.Trim() is { Length: > 0 } n ? n : branch is not null ? WorkspaceService.NameFromBranch(branch) : inPlace ? "local" : null;
-        if (workspace is null)
+        // The app checks branches out in slots of worktrees, which keep their ports; running in place is left to sprig up.
+        if (NewBranch.Trim() is not { Length: > 0 } branch)
         {
-            Fail("Name the workspace (or give a branch). It gets worktrees of its own on a branch of that name.");
+            Fail("Give the branch to check out. One that doesn't exist yet starts from where it says.");
             return;
         }
-        if (WorkspaceService.CheckName(workspace) is { } bad)
+        string slot;
+        try { slot = _services.Workspaces.SlotFor(name, branch, _newSlot).Slot; }
+        catch (WorkspaceException e)
         {
-            Fail(bad);
+            Fail(e.Message);
             return;
         }
 
-        var loaded = await LoadAsync(path, Create, workspace);
+        var loaded = await LoadAsync(path, Create);
         if (loaded is null) return;
         if (NewValues(loaded) is not { } values) return;
+        // A box emptied of a value the slot kept clears it, so the default applies again.
+        var unset = NewSettings.Where(s => s.Value.Length == 0 && s.Kept is not null).Select(s => s.Name).ToArray();
 
-        var options = new WorkspaceOptions(inPlace, !inPlace && NewFrom.Trim() is { Length: > 0 } from ? from : null, NewRandomPorts);
-        _services.Ui.SetWorkspaceChoices(name, options);
+        var from = NewFrom.Trim() is { Length: > 0 } f ? f : null;
+        _services.Ui.SetWorkspaceChoices(name, new WorkspaceOptions(From: from));
+        var options = new CheckOutOptions(_newSlot, from, NewEmptyData);
+        var slotName = $"{loaded.Id}--{slot}";
 
         // The progress window takes over from here, and reports any failure.
         IsAddOpen = false;
-        var ok = await RunAsync($"Starting {loaded.Id} / {workspace}",
-            (progress, cancellation) => _services.Workspaces.Up(loaded, workspace, branch, options, progress, cancellation, values: values),
-            $"{loaded.Id} / {workspace} is up.", retry: Create);
+        var ok = await RunAsync($"Checking out {branch} in {slotName}",
+            (progress, cancellation) => _services.Workspaces.CheckOut(loaded, branch, options, progress, cancellation, values: values, unset: unset),
+            $"{branch} is up in {slotName}.", retry: Create);
         if (ok)
         {
-            NewName = "";
             NewBranch = "";
+            _newSlot = null;
             foreach (var input in NewSettings) input.Value = "";
         }
         Refresh();
-        Selected = Workspaces.FirstOrDefault(s => s.Record.Orchestration == loaded.Id && s.Record.Name == workspace) ?? Selected;
+        Selected = Workspaces.FirstOrDefault(s => s.Record.Orchestration == loaded.Id && s.Record.Branch == branch) ?? Selected;
     }
 
     [RelayCommand]
@@ -530,9 +608,11 @@ public partial class WorkspacesViewModel : PageViewModel
         if (Selected?.Record is not { } record) return false;
         var loaded = await LoadAsync(record.OrchestrationPath, retry, record.Name);
         if (loaded is null) return false;
-        var ok = await RunAsync($"Bringing {record.Orchestration} / {record.Name} up",
-            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, record.Branch, progress: progress, cancellation: cancellation),
-            $"{record.Orchestration} / {record.Name} is up.",
+        var title = WorkspaceItem.Display(record);
+        // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
+        var ok = await RunAsync($"Bringing {title} up",
+            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation),
+            $"{title} is up.",
             retry: retry);
         Refresh();
         return ok;
@@ -542,9 +622,21 @@ public partial class WorkspacesViewModel : PageViewModel
     private async Task Down()
     {
         if (Selected?.Record is not { } record) return;
-        await RunAsync($"Stopping {record.Orchestration} / {record.Name}",
+        var title = WorkspaceItem.Display(record);
+        await RunAsync($"Stopping {title}",
             (progress, cancellation) => _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation),
-            $"{record.Orchestration} / {record.Name} is down. Its data, worktrees and ports are kept.");
+            $"{title} is down. Its data, worktrees and ports are kept.");
+        Refresh();
+    }
+
+    /// <summary>Free the selected slot for the next branch, keeping its branch, data, ports and values.</summary>
+    [RelayCommand]
+    private async Task Release()
+    {
+        if (Selected?.Record is not { } record || record.InPlace || record.IsFree) return;
+        await RunAsync($"Releasing {record.SlotName}",
+            (progress, cancellation) => _services.Workspaces.Release(record.Orchestration, record.Name, progress, cancellation),
+            $"{record.SlotName} is free. '{record.Branch}' is kept with its commits, and the slot keeps its data, ports and values for the next branch.");
         Refresh();
     }
 
@@ -560,9 +652,10 @@ public partial class WorkspacesViewModel : PageViewModel
         if (Selected?.Record is not { } record) return;
         ConfirmingRemove = false;
         var options = new RemoveOptions(DeleteBranch && !record.InPlace);
-        await RunAsync($"Removing {record.Orchestration} / {record.Name}",
+        var title = WorkspaceItem.Display(record);
+        await RunAsync($"Removing {title}",
             (progress, cancellation) => _services.Workspaces.Remove(record.Orchestration, record.Name, options, progress, cancellation),
-            $"{record.Orchestration} / {record.Name} is gone.");
+            $"{title} is gone.");
         Refresh();
     }
 

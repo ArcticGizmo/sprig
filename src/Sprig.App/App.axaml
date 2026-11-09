@@ -74,6 +74,7 @@
         <SolidColorBrush x:Key="ButtonBgBrush" Color="#2D2D3C" />
         <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
         <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
+        <SolidColorBrush x:Key="WaitBrush" Color="#A78BFA" />
         <SolidColorBrush x:Key="DangerBrush" Color="#F87171" />
         <SolidColorBrush x:Key="ConstantBrush" Color="#A78BFA" />
         <SolidColorBrush x:Key="DevBrush" Color="#FF5FB0" />

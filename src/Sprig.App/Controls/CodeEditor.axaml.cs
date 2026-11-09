@@ -61,6 +61,10 @@ public partial class CodeEditor : UserControl
         var textMate = new RegistryOptions(ThemeName.DarkPlus);
         Editor.InstallTextMate(textMate).SetGrammar(textMate.GetScopeByLanguageId(textMate.GetLanguageByExtension(".cs").Id));
         Editor.Options.ConvertTabsToSpaces = true;
+        // Links are drawn in a blue that can't be read on the dark panels, and a url in a definition is a value to
+        // edit, not a page to visit, so it keeps the string colour.
+        Editor.Options.EnableHyperlinks = false;
+        Editor.Options.EnableEmailHyperlinks = false;
         Editor.TextArea.TextView.BackgroundRenderers.Add(_squiggles);
         _squiggles.Attach(Editor.Document);
 

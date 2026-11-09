@@ -44,18 +44,20 @@ public class WorkspacesOverviewTests
         using var temp = new TempStore();
         var vm = Make(temp, out _);
 
-        Assert.Equal(["q4", "local", "demo", "feat-a", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Name));
+        Assert.Equal(["q4", "local", "demo", "feat-a", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
         Assert.Equal("6 workspaces of 3 orchestrations · 2 up · 1 failed · 3 down", vm.OverviewSummary);
         Assert.Equal(["All 6", "2 up", "1 failed", "3 down"], vm.OverviewChips.Select(c => c.Label));
-        var featA = vm.OverviewRows.Single(r => r.Name == "feat-a");
+        var featA = vm.OverviewRows.Single(r => r.Record.Name == "feat-a");
+        // A workspace of worktrees reads as its folder, as git and the file system show it.
+        Assert.Equal(("storefront--feat-a", "services / local"), (featA.Name, vm.OverviewRows.Single(r => r.Record.Name == "local").Name));
         Assert.Equal("1 of 2 running", featA.Apps);
         Assert.Equal("5170–8000", featA.Ports);
         Assert.Equal("now", featA.LastUp);
-        Assert.Equal("3 days ago", vm.OverviewRows.Single(r => r.Name == "feat-c").LastUp);
-        Assert.Equal("in place", vm.OverviewRows.Single(r => r.Name == "local").Worktrees);
+        Assert.Equal("3 days ago", vm.OverviewRows.Single(r => r.Record.Name == "feat-c").LastUp);
+        Assert.Equal("in place", vm.OverviewRows.Single(r => r.Record.Name == "local").Worktrees);
 
         vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
-        Assert.Equal(["q4", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Name));
+        Assert.Equal(["q4", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public class WorkspacesOverviewTests
 
         vm.SelectStaleCommand.Execute(null);
 
-        Assert.Equal(["q4", "spike"], vm.OverviewRows.Where(r => r.IsChecked).Select(r => r.Name));
+        Assert.Equal(["q4", "spike"], vm.OverviewRows.Where(r => r.IsChecked).Select(r => r.Record.Name));
         Assert.Equal("2 selected", vm.CheckedLabel);
         Assert.True(vm.HasChecked);
 
@@ -87,7 +89,7 @@ public class WorkspacesOverviewTests
         using var temp = new TempStore();
         var vm = Make(temp, out _);
 
-        vm.OpenOverviewRowCommand.Execute(vm.OverviewRows.Single(r => r.Name == "feat-a"));
+        vm.OpenOverviewRowCommand.Execute(vm.OverviewRows.Single(r => r.Record.Name == "feat-a"));
 
         Assert.Equal("storefront/feat-a", vm.Selected!.Record.Key);
 
@@ -103,7 +105,7 @@ public class WorkspacesOverviewTests
         var vm = Make(temp, out _);
 
         vm.OverviewSearch = "feat";
-        Assert.Equal(["feat-a", "feat-c"], vm.OverviewRows.Select(r => r.Name));
+        Assert.Equal(["feat-a", "feat-c"], vm.OverviewRows.Select(r => r.Record.Name));
 
         vm.OverviewSearch = "STOREFRONT down";
         Assert.Empty(vm.OverviewRows);
@@ -111,11 +113,11 @@ public class WorkspacesOverviewTests
 
         vm.OverviewSearch = "storefront";
         vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
-        Assert.Equal(["feat-c", "spike"], vm.OverviewRows.Select(r => r.Name));
+        Assert.Equal(["feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
 
         vm.OverviewSearch = "in place";
         vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.All));
-        Assert.Equal(["local"], vm.OverviewRows.Select(r => r.Name));
+        Assert.Equal(["local"], vm.OverviewRows.Select(r => r.Record.Name));
 
         vm.ClearOverviewSearchCommand.Execute(null);
         Assert.Equal(6, vm.OverviewRows.Count);

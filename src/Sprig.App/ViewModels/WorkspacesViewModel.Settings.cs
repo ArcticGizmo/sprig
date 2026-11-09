@@ -76,7 +76,9 @@ public partial class WorkspacesViewModel
         {
             var loaded = await AppServices.RunAsync(() => _services.Loader.Load(path));
             if (loaded.Orchestration is null || loaded.Untrusted.Count > 0 || loaded.Problems.Count > 0) return;
-            inputs = await AppServices.RunAsync(() => SettingInputs(loaded, null));
+            // A slot being reused starts from the values it kept, each of which can be changed or cleared.
+            var kept = _newSlotRecord?.Values;
+            inputs = await AppServices.RunAsync(() => SettingInputs(loaded, kept));
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
         {
@@ -92,7 +94,7 @@ public partial class WorkspacesViewModel
     {
         // Settings the form didn't show (it hadn't run the definitions yet) are added now, for the user to fill in.
         var shown = NewSettings.Select(s => s.Name).ToHashSet();
-        var missing = SettingInputs(loaded, null).Where(s => !shown.Contains(s.Name)).ToArray();
+        var missing = SettingInputs(loaded, _newSlotRecord?.Values).Where(s => !shown.Contains(s.Name)).ToArray();
         foreach (var input in missing) NewSettings.Add(input);
         if (missing.Length > 0) OnPropertyChanged(nameof(HasNewSettings));
 

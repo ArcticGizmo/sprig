@@ -13,7 +13,8 @@ namespace Sprig.App.Controls;
 
 /// <summary>
 /// The one control for any path field: a folder button on the right opens the OS picker, typing offers
-/// terminal-style completions (Tab takes the highlighted one, or the first), and paths always use forward slashes.
+/// terminal-style completions (Tab or Enter takes the highlighted one, or the first), and paths always use forward
+/// slashes.
 /// </summary>
 public partial class PathBox : UserControl
 {
@@ -77,12 +78,35 @@ public partial class PathBox : UserControl
         _syncing = false;
     }
 
+    // Handled here, ahead of the dialog: its Enter and Escape bindings would otherwise submit or cancel the whole form
+    // while the list is what the key was meant for.
     void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Tab || !Box.IsDropDownOpen) return;
+        if (!Box.IsDropDownOpen || e.KeyModifiers != KeyModifiers.None) return;
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            Box.IsDropDownOpen = false;
+            return;
+        }
+        if (e.Key is not (Key.Tab or Key.Enter)) return;
         var choice = Box.SelectedItem as string
             ?? PathCompletion.Suggest(Box.Text ?? "", PickFolder ? (_ => false) : Matches).FirstOrDefault();
         if (choice is null) return;
+
+        if (e.Key == Key.Enter)
+        {
+            // Enter picks rather than descends, so the folder is taken without the slash that would open its list.
+            choice = choice.Length > 1 ? choice.TrimEnd('/') : choice;
+            Box.IsDropDownOpen = false;
+            // Already typed in full: the Enter is for the form.
+            if (string.Equals(choice, (Box.Text ?? "").TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) return;
+            e.Handled = true;
+            Box.Text = choice;
+            Box.CaretIndex = choice.Length;
+            return;
+        }
+
         e.Handled = true;
         Box.Text = choice;
         Box.CaretIndex = choice.Length;

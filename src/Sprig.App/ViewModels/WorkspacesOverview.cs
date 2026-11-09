@@ -18,10 +18,10 @@ public sealed partial class OverviewRow(WorkspaceRecord record, Action checkedCh
 {
     public WorkspaceRecord Record => record;
     public string Key => record.Key;
-    public string Name => record.Name;
+    public string Name => WorkspaceItem.Display(record);
     public string Orchestration => record.Orchestration;
-    public string Branch => record.Branch ?? "repos in place";
-    public string State => record.State.ToString().ToLowerInvariant();
+    public string Branch => record.InPlace ? "repos in place" : record.Branch ?? "free";
+    public string State => record.IsFree ? "free" : record.State.ToString().ToLowerInvariant();
     public bool IsUp => record.State == WorkspaceState.Up;
     public bool IsFailed => record.State == WorkspaceState.Failed;
     public bool IsDown => record.State == WorkspaceState.Down;
@@ -105,6 +105,8 @@ public partial class WorkspacesViewModel
         _overview = Workspaces.Select(s => s.Record)
             .OrderBy(r => r.Orchestration, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.State switch { WorkspaceState.Failed => 0, WorkspaceState.Up => 1, WorkspaceState.Starting => 2, _ => 3 })
+            // Slots by number, so storefront--10 comes after storefront--2.
+            .ThenBy(r => WorkspaceService.IsSlot(r.Name) ? int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture) : int.MaxValue)
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .Select(record =>
             {
@@ -155,7 +157,7 @@ public partial class WorkspacesViewModel
                 row.Apps = "—";
                 continue;
             }
-            var apps = _services.Workspaces.LastPlan(row.Orchestration, row.Name)?.Apps.Count(a => !a.Job) ?? 0;
+            var apps = _services.Workspaces.LastPlan(row.Orchestration, row.Record.Name)?.Apps.Count(a => !a.Job) ?? 0;
             var running = runners.Count(r => r.Workspace == row.Key && r.State.IsAlive());
             row.Apps = running == 0 ? "apps stopped" : $"{running} of {apps} running";
         }
@@ -274,7 +276,7 @@ public partial class WorkspacesViewModel
         if (loaded.Untrusted.Count > 0) throw new InvalidOperationException("it has definitions to approve first; open it and bring it up there");
         if (loaded.Orchestration is null || loaded.Problems.Count > 0)
             throw new InvalidOperationException("its orchestration can't be planned: " + string.Join("; ", loaded.Problems.Take(2).Select(p => p.Message)));
-        _services.Workspaces.Up(loaded, record.Name, record.Branch, progress: progress, cancellation: cancellation);
+        _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation);
     });
 
     [RelayCommand]
@@ -308,14 +310,14 @@ public partial class WorkspacesViewModel
             foreach (var record in records)
             {
                 cancellation.ThrowIfCancellationRequested();
-                var named = new NamedProgress(progress, $"{record.Orchestration} / {record.Name}");
+                var named = new NamedProgress(progress, WorkspaceItem.Display(record));
                 try
                 {
                     each(record, named, cancellation);
                 }
                 catch (Exception e) when (e is not OperationCanceledException)
                 {
-                    failed.Add($"{record.Orchestration} / {record.Name}: {e.Message.Split('\n')[0]}");
+                    failed.Add($"{WorkspaceItem.Display(record)}: {e.Message.Split('\n')[0]}");
                 }
             }
             if (failed.Count > 0)

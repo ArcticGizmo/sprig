@@ -36,7 +36,9 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
         if (record is null)
         {
             cli.Ansi.MarkupLine($"[bold]{Markup.Escape(id)}[/] / [bold]{Markup.Escape(s.Workspace)}[/]  [dim]not made yet[/]");
-            cli.Ansi.MarkupLine($"[dim]Bring it up with: sprig up {Markup.Escape(id)}{(s.Workspace == "local" ? "" : $" -w {Markup.Escape(s.Workspace)}")}[/]");
+            cli.Ansi.MarkupLine(s.Workspace == "local"
+                ? $"[dim]Bring it up with: sprig up {Markup.Escape(id)}[/]"
+                : $"[dim]Check a branch out with: sprig up {Markup.Escape(id)} -b <branch>[/]");
         }
         else Header(record);
         cli.Ansi.WriteLine();
@@ -57,10 +59,12 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
             WorkspaceState.Up => "[green]up[/]",
             WorkspaceState.Failed => $"[red]failed[/] [dim]{Markup.Escape(record.Error ?? "")}[/]",
             WorkspaceState.Starting => "[yellow]starting[/]",
+            WorkspaceState.Released => "[dim]free[/]",
             _ => "[dim]down[/]",
         };
-        var where = record.InPlace ? "repos in place" : $"branch {record.Branch}";
-        cli.Ansi.MarkupLine($"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/]  {state}  [dim]({Markup.Escape(where)}, {Markup.Escape(record.PortPolicy)} ports)[/]");
+        cli.Ansi.MarkupLine(record.InPlace
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/]  {state}  [dim](repos in place)[/]"
+            : $"[bold]{Markup.Escape(record.SlotName)}[/]  {Markup.Escape(record.Branch ?? "no branch")}  {state}");
         var folder = record.Folder ?? string.Join(", ", record.Repos.Select(r => r.Dir));
         cli.Ansi.MarkupLine($"[dim]Folder[/]   {Markup.Escape(folder.Replace('\\', '/'))}");
         if (record.LastUpAt is { } at) cli.Ansi.MarkupLine($"[dim]Last up[/]  {Markup.Escape(at.LocalDateTime.ToString("g"))}");

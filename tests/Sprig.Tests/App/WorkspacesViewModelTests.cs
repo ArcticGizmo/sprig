@@ -111,9 +111,9 @@ public class WorkspacesViewModelTests
         Assert.Null(vm.Selected);
         vm.Show("storefront/feat-x");
 
-        Assert.Equal(["storefront / feat-x", "storefront / old"], vm.Workspaces.Select(s => s.Title));
+        Assert.Equal(["storefront--feat-x", "storefront--old"], vm.Workspaces.Select(s => s.Title));
         Assert.Equal(1, vm.NavCount);
-        Assert.Equal("storefront / feat-x", vm.Selected!.Title);
+        Assert.Equal("storefront--feat-x", vm.Selected!.Title);
         var app = Assert.Single(vm.Apps);
         Assert.Equal("http://localhost:8000", app.Url);
         Assert.Equal("Properties/launchSettings.json", app.Values);
@@ -124,7 +124,7 @@ public class WorkspacesViewModelTests
 
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task Run_it_asks_to_approve_the_definitions_then_brings_an_in_place_workspace_up_and_remembers_the_choice()
+    public async Task Run_it_asks_to_approve_the_definitions_then_brings_a_worktree_workspace_up()
     {
         using var store = new TempStore();
         var services = new AppServices(store.Root);
@@ -142,8 +142,7 @@ public class WorkspacesViewModelTests
             web.EnvFile(".env.local", e => e.Set("PORT", web.Port));
             return repo.Emit(args);
             """);
-        var processes = new Sprig.Engine.Processes.ProcessRunner();
-        processes.Run("git", ["-C", repo, "init", "-q", "-b", "main"]).EnsureSuccess();
+        Commit(repo);
         var orchestration = Path.Combine(store.Root, "work", "web.orchestration.cs");
         File.WriteAllText(orchestration, $$"""
             #:project {{sdk}}
@@ -161,9 +160,8 @@ public class WorkspacesViewModelTests
         // The orchestration is approved first; only then does sprig know which repos' definitions to ask about. Both asks
         // happen in the modal, which closes once the workspace starts coming up.
         vm.OpenAddCommand.Execute(null);
-        // The first workspace of anything runs in place unless asked otherwise, as sprig up does.
-        Assert.True(vm.NewInPlace);
-        Assert.Equal("Default: local", vm.NewNameHint);
+        vm.NewBranch = "feat-x";
+        Assert.Equal("Goes in web--1, a new slot.", vm.NewSlotLine);
         await vm.CreateCommand.ExecuteAsync(null);
         Assert.EndsWith("web.orchestration.cs", Assert.Single(vm.PendingTrust).Path);
         Assert.True(vm.TrustInModal);
@@ -176,14 +174,40 @@ public class WorkspacesViewModelTests
         Assert.False(vm.IsAddOpen);
         Assert.NotNull(shown);
         Assert.True(shown!.CanClose);
-        Assert.Equal("web / local is up.", shown.Summary);
-        Assert.Equal("web / local", vm.Selected!.Title);
+        Assert.Equal("feat-x is up in web--1.", shown.Summary);
+        Assert.Equal("web--1", vm.Selected!.Title);
+        Assert.Equal("feat-x", vm.Selected.Branch);
         Assert.True(vm.Selected.IsUp);
-        Assert.Matches(@"PORT=95\d\d", File.ReadAllText(Path.Combine(repo, ".env.local")));
-        Assert.True(vm.Selected.Record.InPlace);
+        Assert.True(vm.Selected.CanRelease);
+        Assert.Equal("stable", vm.Selected.Record.PortPolicy);
+        var env = Path.Combine(store.Root, "work", "web--1", "shop-web", ".env.local");
+        Assert.Matches(@"PORT=95\d\d", File.ReadAllText(env));
+        Assert.False(File.Exists(Path.Combine(repo, ".env.local")));
 
-        // The next workspace of the orchestration starts from the same choices.
-        Assert.True(new WorkspacesViewModel(new AppServices(store.Root)).NewInPlace);
+        // Released, the slot is free; the form then offers it, with its data to keep or empty.
+        await vm.ReleaseCommand.ExecuteAsync(null);
+        Assert.True(vm.Selected!.IsFree);
+        Assert.Equal("free", vm.Selected.Branch);
+        Assert.False(vm.ShowRunControls);
+        vm.CheckOutHereCommand.Execute(null);
+        vm.NewBranch = "feat-y";
+        Assert.StartsWith("Reuses web--1, which is free", vm.NewSlotLine);
+        Assert.True(vm.NewReusesSlot);
+        Assert.True(vm.NewKeepData);
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.Equal(("web--1", "feat-y"), (vm.Selected!.Title, vm.Selected.Branch));
+        Assert.True(File.Exists(env));
+
+        services.Workspaces.Remove("web", "1", new RemoveOptions(DeleteBranch: true));
+    }
+
+    /// <summary>A first commit with everything in the folder, so worktrees have the definition and its .gitignore.</summary>
+    static void Commit(string repo)
+    {
+        var processes = new Sprig.Engine.Processes.ProcessRunner();
+        processes.Run("git", ["-C", repo, "init", "-q", "-b", "main"]).EnsureSuccess();
+        processes.Run("git", ["-C", repo, "add", "-A"]).EnsureSuccess();
+        processes.Run("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "init"]).EnsureSuccess();
     }
 
     [Fact]
@@ -208,7 +232,7 @@ public class WorkspacesViewModelTests
                 .Set("KEY", repo.Setting<Secret>("api-key")));
             return repo.Emit(args);
             """);
-        new Sprig.Engine.Processes.ProcessRunner().Run("git", ["-C", repo, "init", "-q", "-b", "main"]).EnsureSuccess();
+        Commit(repo);
         var entry = services.Authoring.AddRepo(repo, "shop-web");
         services.Trust.Approve(entry.DefinitionFile, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(entry.DefinitionFile)));
 
@@ -216,6 +240,7 @@ public class WorkspacesViewModelTests
         vm.ProgressStarted += _ => { };
         vm.NewOrchestration = "shop-web";
         vm.OpenAddCommand.Execute(null);
+        vm.NewBranch = "feat-x";
         await WaitFor(() => vm.HasNewSettings);
 
         var key = vm.NewSettings.Single(s => s.Name == "api-key");
@@ -235,7 +260,7 @@ public class WorkspacesViewModelTests
         await vm.CreateCommand.ExecuteAsync(null);
         Assert.False(vm.IsAddOpen);
         Assert.True(vm.Selected!.IsUp);
-        var env = Path.Combine(repo, ".env.local");
+        var env = Path.Combine(store.Root, "work", "shop-web--1", ".env.local");
         Assert.Contains("KEY=k1", File.ReadAllText(env));
         Assert.Contains("API=http://localhost:5100", File.ReadAllText(env));
 
@@ -248,9 +273,22 @@ public class WorkspacesViewModelTests
         Assert.False(vm.IsSettingsOpen);
         Assert.Contains("API=https://api.example.com", File.ReadAllText(env));
         Assert.Equal("Its files have the new values. Restart web to use them.", vm.AppsMessage);
-        Assert.Equal("https://api.example.com", services.Workspaces.Get("shop-web", "local")!.Values!["api-url"]);
+        Assert.Equal("https://api.example.com", services.Workspaces.Get("shop-web", "1")!.Values!["api-url"]);
 
-        services.Workspaces.Remove("shop-web", "local", new RemoveOptions());
+        // The slot keeps its values when it's released. Checking the next branch out starts from them, and a box
+        // emptied clears that value, so its default applies again.
+        await vm.ReleaseCommand.ExecuteAsync(null);
+        vm.CheckOutHereCommand.Execute(null);
+        vm.NewBranch = "feat-y";
+        await WaitFor(() => vm.NewSettings.Any(s => s.Name == "api-url" && s.Value == "https://api.example.com"));
+        Assert.Equal("k1", vm.NewSettings.Single(s => s.Name == "api-key").Value);
+        vm.NewSettings.Single(s => s.Name == "api-url").Value = "";
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.Equal("feat-y", vm.Selected!.Branch);
+        Assert.Contains("API=http://localhost:5100", File.ReadAllText(env));
+        Assert.Contains("KEY=k1", File.ReadAllText(env));
+
+        services.Workspaces.Remove("shop-web", "1", new RemoveOptions(DeleteBranch: true));
     }
 
     static async Task WaitFor(Func<bool> condition)

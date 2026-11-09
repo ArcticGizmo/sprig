@@ -98,6 +98,49 @@ public sealed class GitClient(IProcessRunner runner)
         return true;
     }
 
+    /// <summary>
+    /// Switch the worktree at <paramref name="worktree"/> to <paramref name="branch"/>, choosing it as
+    /// <see cref="AddWorktree"/> does. Returns true when it made the branch.
+    /// </summary>
+    public bool SwitchTo(string worktree, string branch, string from)
+    {
+        if (BranchExists(worktree, branch))
+        {
+            Run(worktree, "switch", branch).EnsureSuccess();
+            return false;
+        }
+        if (RemoteBranch(worktree, branch) is { } remote)
+        {
+            Run(worktree, "switch", "--track", "-c", branch, remote).EnsureSuccess();
+            return true;
+        }
+        var start = RefExists(worktree, from) ? from
+            : RemoteBranch(worktree, from) ?? throw new InvalidOperationException($"{worktree} has no branch '{from}' to start '{branch}' from");
+        Run(worktree, "switch", "-c", branch, start).EnsureSuccess();
+        return true;
+    }
+
+    /// <summary>Leave the worktree at its current commit with no branch checked out, so the branch is free for any
+    /// other worktree.</summary>
+    public void Detach(string worktree) => Run(worktree, "switch", "--detach").EnsureSuccess();
+
+    /// <summary>The branch checked out at <paramref name="worktree"/>; null on a detached HEAD.</summary>
+    public string? CurrentBranch(string worktree)
+        => Run(worktree, "symbolic-ref", "--quiet", "--short", "HEAD") is { Success: true } r && r.StdOut.Trim() is { Length: > 0 } b ? b : null;
+
+    /// <summary>The worktree of <paramref name="repo"/>, its own checkout included, that has <paramref name="branch"/>
+    /// checked out; null when none has.</summary>
+    public string? WorktreeOn(string repo, string branch)
+    {
+        string? path = null;
+        foreach (var line in Run(repo, "worktree", "list", "--porcelain").EnsureSuccess().StdOut.Split('\n').Select(l => l.TrimEnd('\r')))
+        {
+            if (line.StartsWith("worktree ", StringComparison.Ordinal)) path = Normalise(line["worktree ".Length..]);
+            else if (line == $"branch refs/heads/{branch}") return path;
+        }
+        return null;
+    }
+
     public IReadOnlyList<string> Worktrees(string repo)
         => Run(repo, "worktree", "list", "--porcelain").EnsureSuccess().StdOut
             .Split('\n')

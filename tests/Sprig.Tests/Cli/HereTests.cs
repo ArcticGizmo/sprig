@@ -42,10 +42,21 @@ public class HereTests
     [Fact]
     public void A_workspace_name_alone_finds_the_one_workspace_with_it()
     {
-        var other = FeatX with { Orchestration = "storefront", Name = "s5" };
+        var other = FeatX with { Orchestration = "storefront", Name = "s5", Branch = "feat-y" };
 
         Assert.Same(FeatX, Here.Named([FeatX, other], "feat-x"));
         Assert.Null(Here.Named([FeatX, other], "nope"));
+    }
+
+    [Fact]
+    public void A_slot_is_found_by_its_branch_or_its_folders_name()
+    {
+        var slot = FeatX with { Orchestration = "storefront", Name = "2", Branch = "feature/y", Folder = Path.Combine(Root, "storefront--2") };
+
+        Assert.Same(slot, Here.Named([FeatX, slot], "feature/y"));
+        Assert.Same(slot, Here.Named([FeatX, slot], "storefront--2"));
+        Assert.Equal("storefront--2", slot.SlotName);
+        Assert.Equal("feature/y", slot.Label);
     }
 
     [Fact]

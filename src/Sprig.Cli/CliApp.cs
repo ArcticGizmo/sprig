@@ -83,6 +83,7 @@ public static class CliApp
         config.AddCommand<SettingsCommand>("settings");
         config.AddCommand<InfoCommand>("info");
         config.AddCommand<DownCommand>("down");
+        config.AddCommand<ReleaseCommand>("release");
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");
         config.AddCommand<EnvCommand>("env");

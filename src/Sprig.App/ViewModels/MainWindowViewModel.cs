@@ -34,6 +34,18 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public UpdateInstaller Updater { get; } = new();
 
+    readonly UiState _ui;
+
+    /// <summary>The nav folded down to its icons, so a log can have the width.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NavToggleTip))]
+    private bool _navCollapsed;
+
+    public string NavToggleTip => NavCollapsed ? "Expand the menu" : "Collapse the menu to its icons";
+
+    [RelayCommand]
+    private void ToggleNav() => _ui.NavCollapsed = NavCollapsed = !NavCollapsed;
+
     /// <summary>The app-wide host poll; the window's timer drives it.</summary>
     public HostStatus HostStatus { get; }
 
@@ -47,6 +59,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
     {
         HostStatus = services.HostStatus;
+        _ui = services.Ui;
+        _navCollapsed = _ui.NavCollapsed;
         Home = new HomeViewModel();
         Repos = new ReposViewModel(services);
         Workspaces = new WorkspacesViewModel(services);

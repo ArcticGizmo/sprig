@@ -135,6 +135,12 @@ internal static partial class HeadlessRenderer
             CloseMenus(window);
             vm.Workspaces.OpenApp(vm.Workspaces.Apps.First(a => a.App == "payments-api"));
 
+            // The nav folded to its icons, for the log's sake.
+            vm.ToggleNavCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "nav-collapsed"));
+            vm.ToggleNavCommand.Execute(null);
+
             // The new-workspace form when the slot the branch would take is broken. Nothing is registered in the sample
             // store, so the form is given a name to show.
             vm.Workspaces.OrchestrationNames.Add("storefront");

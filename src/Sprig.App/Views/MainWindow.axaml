@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+        xmlns:views="clr-namespace:Sprig.App.Views"
         x:Class="Sprig.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1280" Height="820"
@@ -43,25 +44,61 @@
         <Style Selector="Border.navitem.active > Grid > TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
         </Style>
+        <Style Selector="PathIcon.navicon">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Margin" Value="0,0,12,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.navitem.active PathIcon.navicon">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+
+        <!-- Collapsed, the nav is its icons alone; each row names itself in a tooltip instead. -->
+        <Style Selector="Border.sidenav">
+            <Setter Property="Width" Value="216" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed">
+            <Setter Property="Width" Value="60" />
+        </Style>
+        <!-- On a wrapper wherever the text has an IsVisible of its own, which a style can't override. -->
+        <Style Selector="Border.sidenav.collapsed :is(Control).navtext">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed PathIcon.navicon">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed Border.navitem">
+            <Setter Property="Padding" Value="14,10" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed StackPanel.navhead">
+            <Setter Property="Margin" Value="15,20,15,18" />
+        </Style>
+        <Style Selector="Border.sidenav:not(.collapsed) Button.nav">
+            <Setter Property="ToolTip.ServiceEnabled" Value="False" />
+        </Style>
     </Window.Styles>
 
-    <Grid ColumnDefinitions="216,*">
+    <Grid ColumnDefinitions="Auto,*">
 
         <!-- Left nav -->
-        <Border Grid.Column="0" Background="{StaticResource PanelBgBrush}"
+        <Border Grid.Column="0" Classes="sidenav" Classes.collapsed="{Binding NavCollapsed}" Background="{StaticResource PanelBgBrush}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0"
                 IsEnabled="{Binding !Updater.IsActive}">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="18,20,18,18">
+                <StackPanel Classes="navhead" DockPanel.Dock="Top" Margin="18,20,18,18">
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <Image x:Name="LogoImage" Width="30" Height="30" VerticalAlignment="Center" />
-                        <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
-                                   Foreground="{StaticResource TitleBrush}" />
-                        <!-- Dev instances write to a separate store; flag it so it's obvious at a glance. -->
-                        <TextBlock Text="- DEV" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"
-                                   Foreground="{StaticResource DevBrush}" IsVisible="{Binding IsDevInstance}" />
+                        <StackPanel Classes="navtext" Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TitleBrush}" />
+                            <!-- Dev instances write to a separate store; flag it so it's obvious at a glance. -->
+                            <TextBlock Text="- DEV" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"
+                                       Foreground="{StaticResource DevBrush}" IsVisible="{Binding IsDevInstance}" />
+                        </StackPanel>
                     </StackPanel>
-                    <TextBlock Text="experimental build"
+                    <TextBlock Classes="navtext" Text="experimental build"
                                Foreground="{StaticResource WarnBrush}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
 
@@ -69,24 +106,44 @@
                 <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="2">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
                     <!-- The accent Background is a local value so the nav hover style can't grey it out. -->
-                    <Button Classes="nav" Command="{Binding UpdateNowCommand}" IsVisible="{Binding ShowUpdateNotice}">
+                    <Button Classes="nav" Command="{Binding UpdateNowCommand}" IsVisible="{Binding ShowUpdateNotice}"
+                            ToolTip.Tip="{Binding UpdateNotice}">
                         <Border Classes="navitem" Background="{StaticResource AccentBrush}">
-                            <TextBlock Text="{Binding UpdateNotice}" FontSize="12.5" TextWrapping="Wrap"
-                                       VerticalAlignment="Center" Foreground="#0B1220" />
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Classes="navicon" Data="{x:Static views:NavIcons.Update}" Foreground="#0B1220" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="{Binding UpdateNotice}" FontSize="12.5" TextWrapping="Wrap"
+                                           VerticalAlignment="Center" Foreground="#0B1220" />
+                            </Grid>
                         </Border>
                     </Button>
-                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}">
+                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}" ToolTip.Tip="Settings">
                         <Border Classes="navitem" Classes.active="{Binding Settings.IsActive}">
-                            <TextBlock Text="Settings" FontSize="14"
-                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Classes="navicon" Data="{x:Static views:NavIcons.Settings}" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="Settings" FontSize="14"
+                                           VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                            </Grid>
                         </Border>
                     </Button>
-                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding About}">
+                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding About}"
+                            ToolTip.Tip="{Binding About.Version, StringFormat='About · {0}'}">
                         <Border Classes="navitem" Classes.active="{Binding About.IsActive}">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="About" FontSize="14"
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <PathIcon Classes="navicon" Data="{x:Static views:NavIcons.About}" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="About" FontSize="14"
                                            VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
-                                <TextBlock Grid.Column="1" Text="{Binding About.Version}" FontSize="11"
+                                <TextBlock Grid.Column="2" Classes="navtext" Text="{Binding About.Version}" FontSize="11"
+                                           VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                        </Border>
+                    </Button>
+                    <!-- Its tip is wanted either way, so the tooltip service is turned back on for it. -->
+                    <Button Classes="nav" Command="{Binding ToggleNavCommand}" ToolTip.Tip="{Binding NavToggleTip}" ToolTip.ServiceEnabled="True"
+                            AutomationProperties.AutomationId="nav:toggle">
+                        <Border Classes="navitem">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Classes="navicon" Data="{Binding NavCollapsed, Converter={x:Static views:NavIcons.ForCollapsed}}" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="Collapse" FontSize="14"
                                            VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
                             </Grid>
                         </Border>
@@ -99,21 +156,24 @@
                             <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
                                 <Button Classes="nav"
                                         AutomationProperties.AutomationId="{Binding Title, StringFormat='nav:{0}'}"
+                                        ToolTip.Tip="{Binding Title}"
                                         Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
                                         CommandParameter="{Binding}">
                                     <Border Classes="navitem" Classes.active="{Binding IsActive}">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <PathIcon Classes="navicon" Data="{Binding Converter={x:Static views:NavIcons.ForPage}}" />
+                                            <StackPanel Grid.Column="1" Classes="navtext" Spacing="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Title}" FontSize="14" Foreground="{StaticResource FgBrush}" />
                                                 <TextBlock Text="{Binding NavSubtitle}" FontSize="11" Foreground="{StaticResource MutedBrush}"
                                                            IsVisible="{Binding HasNavSubtitle}" TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
-                                            <Border Grid.Column="1" IsVisible="{Binding ShowNavCount}"
-                                                    Background="{StaticResource ButtonBgBrush}" CornerRadius="10"
-                                                    Padding="7,1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding NavCount}" FontSize="11"
-                                                           Foreground="{StaticResource MutedBrush}" />
-                                            </Border>
+                                            <Panel Grid.Column="2" Classes="navtext" VerticalAlignment="Center">
+                                                <Border IsVisible="{Binding ShowNavCount}"
+                                                        Background="{StaticResource ButtonBgBrush}" CornerRadius="10" Padding="7,1">
+                                                    <TextBlock Text="{Binding NavCount}" FontSize="11"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                </Border>
+                                            </Panel>
                                         </Grid>
                                     </Border>
                                 </Button>

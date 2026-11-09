@@ -12,13 +12,15 @@ namespace Sprig.App;
 /// <param name="WorkspaceChoices">The new-workspace form's last answers per orchestration, so the next workspace of it starts there.</param>
 /// <param name="StartGroups">The group Start starts, per orchestration, like a launch profile picked once for a solution;
 /// absent for every app.</param>
+/// <param name="NavCollapsed">The left nav was folded down to its icons, for room to read logs.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool DetailsClosed = false,
     bool LogTimesHidden = false,
     bool LogWrapOff = false,
     Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null,
-    Dictionary<string, string>? StartGroups = null);
+    Dictionary<string, string>? StartGroups = null,
+    bool NavCollapsed = false);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -45,6 +47,12 @@ public sealed class UiState(ISprigPaths paths)
     {
         get => !Data.LogWrapOff;
         set => Save(Data with { LogWrapOff = !value });
+    }
+
+    public bool NavCollapsed
+    {
+        get => Data.NavCollapsed;
+        set => Save(Data with { NavCollapsed = value });
     }
 
     public IReadOnlyList<string> Pins(string orchestration) => Data.Pins?.GetValueOrDefault(orchestration) ?? [];

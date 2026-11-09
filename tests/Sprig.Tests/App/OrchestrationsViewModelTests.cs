@@ -169,9 +169,9 @@ public class OrchestrationsViewModelTests
                     [new PlannedEnv("VITE_CATALOG_URL", new PlannedValue("{import.catalog-url}", "http://localhost:8000",
                         ["import catalog-url ← shop-services", "catalog-api.http port 8000"],
                         [new ValueSource("shop-services", "catalog-api", "http", "catalog-url")]), ".env.local", at)],
-                    null, [], []),
+                    null, []),
                 new PlannedApp("shop-services", "shop-services", "catalog-api", "dotnet", "src/Catalog.Api",
-                    [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", []), null, at)], null, [], []),
+                    [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", []), null, at)], null, []),
             ],
             [], [], [], [new PlanProblem(ProblemSeverity.Warning, "careful", at)]);
 

@@ -32,7 +32,7 @@ public class WorkspacesAppsTests
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", "main", [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
             [.. Sample.Select(a => new PlannedApp(a.Repo, $"../{a.Repo}", a.App, "dotnet", ".",
                 a.App == "catalog-api" ? [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", ["postgres.tcp port 8002"]), null, at)] : [],
-                null, [], [], Job: a.App == "migrate",
+                null, [], Job: a.App == "migrate",
                 DependsOn: a.App == "catalog-api" ? ["shop-services/migrate"] : null,
                 Health: a.App == "catalog-api" ? [new PlannedHealth("http", "/health")] : null))],
             [], [], [], []));
@@ -249,7 +249,6 @@ public class WorkspacesAppsTests
         var db = Assert.Single(details.Settings);
         Assert.Equal("Host=a;Password=***", db.Value);
         Assert.Equal("postgres.tcp port 8002", db.Via);
-        Assert.Equal("Db=Host=a;Password=***", vm.EnvText());
         Assert.EndsWith("logs/storefront/feat-x/shop-services/catalog-api.log", details.LogFile);
     }
 

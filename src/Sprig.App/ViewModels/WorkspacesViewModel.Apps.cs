@@ -277,7 +277,7 @@ public partial class WorkspacesViewModel
             after.Length > 0 ? string.Join(", ", after) : "nothing",
             ready.Length > 0 ? string.Join(" and ", ready) : app.Job ? "it finishes" : row.Port.Length > 0 && row.Port != "job" ? "its port opens" : "it starts",
             HostProtocol.LogFile(_services.Paths, record.Key, row.Key).Replace('\\', '/'),
-            app.Env.Select(e => new SettingRow(e.Key, e.File, e.Value.Value is { } v ? ValueMask.Apply(v) : "unresolved",
+            app.Env.Select(e => new SettingRow(e.Key, e.File is { } file ? app.FileLabel(file) : null, e.Value.Value is { } v ? ValueMask.Apply(v) : "unresolved",
                 string.Join(" → ", e.Value.Via), e.Value.Value is null)).ToArray(),
             app.Links ?? []);
     }
@@ -463,7 +463,4 @@ public partial class WorkspacesViewModel
         if (Details?.Folder is not { Length: > 0 } folder || !Directory.Exists(folder)) return;
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder.Replace('/', Path.DirectorySeparatorChar)) { UseShellExecute = true })?.Dispose();
     }
-
-    /// <summary>The picked app's values as <c>KEY=value</c> lines, secrets masked, for the view to put on the clipboard.</summary>
-    public string EnvText() => Details is null ? "" : string.Join(Environment.NewLine, Details.Settings.Select(v => $"{v.Key}={v.Value}"));
 }

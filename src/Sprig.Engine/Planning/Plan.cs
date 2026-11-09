@@ -79,10 +79,13 @@ public sealed record PlannedPort(string Owner, string Resource, string Endpoint,
 /// <param name="Sources">The endpoints and settings the value reached.</param>
 public sealed record PlannedValue(string Template, string? Value, IReadOnlyList<string> Via, IReadOnlyList<ValueSource>? Sources = null);
 
-public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, SourceLocation Location);
+/// <param name="File">Relative to the app's path; null only for a container's value, which goes in its compose
+/// definition.</param>
+/// <param name="Kind"><c>dotenv</c>, <c>appSettings</c> or <c>launchSettings</c>.</param>
+/// <param name="Profile">The launch profile's name, for <c>launchSettings</c>.</param>
+public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, SourceLocation Location, string? Kind = null, string? Profile = null);
 
 /// <param name="RepoPath">The repo, as the orchestration names it.</param>
-/// <param name="Outputs">Files that also get the app's process env vars.</param>
 /// <param name="Job">Runs to completion rather than staying up.</param>
 /// <param name="DependsOn">Apps and jobs (as <c>owner/name</c>) to have ready first: the ones it waits for, plus apps
 /// whose urls or ports reach it through its values, unless that would make a loop.</param>
@@ -99,7 +102,6 @@ public sealed record PlannedApp(
     IReadOnlyList<PlannedEnv> Env,
     PlannedValue? Run,
     IReadOnlyList<string> WaitFor,
-    IReadOnlyList<EnvOutputModel> Outputs,
     bool Job = false,
     IReadOnlyList<string>? DependsOn = null,
     IReadOnlyList<PlannedHealth>? Health = null,
@@ -108,6 +110,21 @@ public sealed record PlannedApp(
     IReadOnlyList<PlannedLink>? Links = null)
 {
     public string Key => $"{Owner}/{Name}";
+
+    /// <summary>The files its values are written into, each as <see cref="FileLabel"/> names it.</summary>
+    public IReadOnlyList<string> ValueFiles() => Env.Where(e => e.File is not null).Select(e => FileLabel(e.File!)).Distinct().ToArray();
+
+    /// <summary>A file it reads, relative to its folder when inside it (<c>.env.local</c>), else to the repo
+    /// (<c>backend/src/.env</c>), so a file shared by several apps reads the same from each.</summary>
+    public string FileLabel(string file)
+    {
+        // Only path arithmetic: the root stands in for the repo's folder.
+        var root = System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "repo"));
+        var appDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, Path));
+        var full = System.IO.Path.GetFullPath(System.IO.Path.Combine(appDir, file));
+        var inApp = System.IO.Path.GetRelativePath(appDir, full);
+        return (inApp.StartsWith("..", StringComparison.Ordinal) ? System.IO.Path.GetRelativePath(root, full) : inApp).Replace('\\', '/');
+    }
 }
 
 /// <summary>A quick link: a page worth opening by name.</summary>

@@ -21,7 +21,8 @@ public sealed class LanguageHostClientTests : IDisposable
         var response = await _client.CompleteAsync(text, text.Length);
 
         var labels = response.Items!.Select(i => i.Label).ToHashSet();
-        Assert.Superset(new HashSet<string> { "Env", "EnvFile", "Http", "Port", "Url", "WaitFor" }, labels);
+        Assert.Superset(new HashSet<string> { "AppSettings", "EnvFile", "LaunchSettings", "Http", "Port", "Url", "WaitFor" }, labels);
+        Assert.DoesNotContain("Env", labels);
     }
 
     [Fact]

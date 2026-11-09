@@ -33,7 +33,7 @@ internal static partial class HeadlessRenderer
                 .SetupWithoutStarting();
 
             var text = Sprig.App.Authoring.SampleDefinition.Text
-                .Replace(".Http(\"http\")\n    .Env(\"ConnectionStrings", ".Htp(\"http\")\n    .Env(\"ConnectionStrings")
+                .Replace(".Http(\"http\")\n    .WaitFor(pg);", ".Htp(\"http\")\n    .WaitFor(pg);")
                 .Replace("repo.Export<Url>", "#warning check the export name before committing\nrepo.Export<Url>")
                 // An http url, which has to keep the string colour rather than be drawn as a link.
                 .Replace("// The catalog owns stock levels.", "var search = repo.Setting<Url>(\"search-url\", \"http://localhost:7700\");\n\n// The catalog owns stock levels.");

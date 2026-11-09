@@ -162,7 +162,7 @@ sprig repo ls`)}`],
         expect: `"added 'shop-web' (in sprig), using …" with a path inside <code>sprig-store-writing</code>, then a dim line: "Run it where it is with: sprig up. Check a branch out in a slot of its own with: sprig up -b &lt;branch&gt;". <code>git status</code> is clean, because nothing was written to the repo.` },
       { id: "S4", title: "Read the draft",
         how: [`Open the file at the path init printed.`],
-        expect: `An SDK reference line, <code>using Sprig;</code>, <code>var repo = Repo.Describe("shop-web");</code>, then <code>var shopWeb = repo.Node("shop-web", ".").Http();</code>. Because it's a Vite app, the next line is <code>shopWeb.Run($"npm run dev -- --port {shopWeb.Port}");</code>. It ends with <code>return repo.Emit(args);</code>. The app takes its name from package.json, so it's called shop-web, the same as the repo. Note whether that reads well.` },
+        expect: `An SDK reference line, <code>using Sprig;</code>, <code>var repo = Repo.Describe("shop-web");</code>, then <code>var shopWeb = repo.Node("shop-web", ".").Http();</code>. Because it's a Vite app, two comment lines say Vite doesn't read PORT by itself and show the vite.config line that does, then <code>shopWeb.EnvFile(".env.local", e => e.Set("PORT", shopWeb.Port));</code>. There's no <code>Run</code> line. It ends with <code>return repo.Emit(args);</code>. The app takes its name from package.json, so it's called shop-web, the same as the repo. Note whether that reads well.` },
       { id: "S5", title: "First up",
         how: [`<code>sprig up</code>. Open the url it gives, then the storefront's <b>Config</b> tab.`],
         expect: `It runs in place as <code>local</code>. The first run does <code>npm ci --ignore-scripts</code>, then waits until shop-web is ready and gives its url. It asks nothing, because there are no settings yet. The Config tab shows the API urls coming from shop-web's own files, not sprig. The APIs are unreachable, since shop-services isn't running.` },
@@ -180,20 +180,21 @@ sprig repo ls`)}`],
         expect: `shop-web is listed "in sprig". With it selected, WORKSPACES shows local, up, with <b>Open</b>. RUNS lists shop-web, INFRA says None, and SETTINGS says None. There's no text under the page heading.` },
       { id: "E2", title: "Completion and docs",
         how: [`Click <b>Open definition</b>.`, `On a new line above <code>return</code>, type <code>repo.</code>, then on another line <code>shopWeb.</code>. Hover over a method name.`, `Delete what you typed.`],
-        expect: `Above the code: "In sprig, so no branch can change it. Saving approves what you saved." <code>repo.</code> offers DotNet, Node, App, DotNetJob, Job, ComposeFile, Setting, Export and the infra helpers such as Mailpit. <code>shopWeb.</code> offers Http, Env, EnvFile, Output, Run, WaitFor, ReadyOnLog, Restart and Link. Hovering shows each one's summary.` },
+        expect: `Above the code: "In sprig, so no branch can change it. Saving approves what you saved." <code>repo.</code> offers DotNet, Node, App, DotNetJob, Job, ComposeFile, Setting, Export and the infra helpers such as Mailpit. <code>shopWeb.</code> offers Http, EnvFile, AppSettings, LaunchSettings, Run, WaitFor, ReadyOnLog, Restart and Link, and no Env. Hovering shows each one's summary.` },
       { id: "E3", title: "Two settings, and a shorter app name",
         how: [`Replace everything between <code>Repo.Describe</code> and <code>return</code> with this, then press <b>Ctrl+S</b>:${block("settings", `var catalog = repo.Setting<Url>("catalog-url", "http://localhost:5100");
 var orders  = repo.Setting<Url>("orders-url", "http://localhost:5200");
 
 var web = repo.Node("web", ".").Http();
-web.Run($"npm run dev -- --port {web.Port}");
+web.Run("npm run dev");
 web.EnvFile(".env.local", e => e
+    .Set("PORT", web.Port)
     .Set("VITE_CATALOG_URL", catalog)
     .Set("VITE_ORDERS_URL", orders));`)}`],
         expect: `"Saved. Checking…", then "Saved, and it runs.", which fades after a few seconds. SETTINGS lists catalog-url and orders-url with their defaults, and RUNS lists web. The old shop-web app is still running under its old name: note what the WORKSPACES row says about it, if anything.` },
       { id: "E4", title: "Mistakes the editor catches",
-        how: [`Add <code>repo.Import&lt;Url&gt;("x");</code> and save.`, `Delete it, then delete the <code>;</code> after the <code>web.Run(…)</code> line and save.`, `Put the <code>;</code> back. Add <code>var api = repo.App("api", "."); api.Env("X", api.Port);</code> and save.`, `Delete that line and save.`],
-        expect: `1: a compile error at that line saying Import is Setting now, with the default as a second argument. 2: a compile error naming the line. 3: "app 'api' has no endpoint yet; call .Http() before using its Port or Url". Each problem shows in red on the status line and stays until a save fixes it. The last save says "Saved, and it runs." Also note whether the editor underlines the mistakes before you save.` },
+        how: [`Add <code>repo.Import&lt;Url&gt;("x");</code> and save.`, `Delete it, then delete the <code>;</code> after the <code>web.Run(…)</code> line and save.`, `Put the <code>;</code> back. Add <code>var api = repo.App("api", "."); api.EnvFile(".env", e => e.Set("X", api.Port));</code> and save.`, `Delete that line. Change the Run line to <code>web.Run($"npm run dev -- --port {web.Port}");</code> and save.`, `Put the Run line back to <code>web.Run("npm run dev");</code> and save.`],
+        expect: `1: a compile error at that line saying Import is Setting now, with the default as a second argument. 2: a compile error naming the line. 3: "app 'api' has no endpoint yet; call .Http() before using its Port or Url". 4: "'web' has {web.http.port} in its Run command, which typing the command yourself wouldn't fill in", pointing at an EnvFile instead. Each problem shows in red on the status line and stays until a save fixes it. The last save says "Saved, and it runs." Also note whether the editor underlines the mistakes before you save.` },
       { id: "E5", title: "Leaving with unsaved changes",
         how: [`Type anything into the code, then click <b>Close</b>. Click <b>Keep editing</b>, then <b>Close</b> again and <b>Discard them</b>.`],
         expect: `"It has changes you haven't saved." with <b>Keep editing</b> and <b>Discard them</b>. Keep editing leaves the change in place. Discard closes the editor, and the file is as you last saved it.` },
@@ -238,7 +239,7 @@ web.EnvFile(".env.local", e => e
     items: [
       { id: "I1", title: "init --in-repo",
         how: [`<code>cd ${T}/shop-services</code>, then <code>sprig init --in-repo</code> and <code>git status</code>. Open <code>sprig.cs</code>.`],
-        expect: `"added 'shop-services' (in repo), using …/shop-services/sprig.cs". <code>git status</code> shows sprig.cs untracked. The draft has catalog-api and orders-api as <code>repo.DotNet(…).Http(urlEnv: "Urls")</code>, a commented-out <code>repo.DotNetJob("migrate", "tools/Migrate")</code> saying it isn't a web app, and a commented-out ComposeFile line for <code>docker-compose.yml</code>. The diagnostics library isn't listed as an app.` },
+        expect: `"added 'shop-services' (in repo), using …/shop-services/sprig.cs". <code>git status</code> shows sprig.cs untracked. The draft has catalog-api and orders-api as <code>repo.DotNet(…).Http();</code>, each followed by a <code>.LaunchSettings(s => s.Set("Urls", ….Url))</code> line, a commented-out <code>repo.DotNetJob("migrate", "tools/Migrate")</code> saying it isn't a web app, and a commented-out ComposeFile line for <code>docker-compose.yml</code>. The diagnostics library isn't listed as an app.` },
       { id: "I2", title: "Write infra, a job and the mail default",
         how: [`In VS Code or Rider, keep the draft's first two lines (the SDK reference and <code>using Sprig;</code>) and replace the rest with:${block("services", `var repo = Repo.Describe("shop-services");
 
@@ -248,20 +249,24 @@ var pg = compose.Service("postgres").Endpoint("tcp", 5432).Health("pg_isready -h
 var smtp = repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl);
 
 var migrate = repo.DotNetJob("migrate", "tools/Migrate")
-    .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
+    .LaunchSettings(s => s.Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop"))
     .WaitFor(pg)
     .Retry(max: 3);
 
 var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
-    .Http(urlEnv: "Urls", health: "/health")
-    .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
+    .Http(health: "/health")
     .WaitFor(pg, migrate);
+catalog.LaunchSettings(s => s
+    .Set("Urls", catalog.Url)
+    .Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop"));
 
 var orders = repo.DotNet("orders-api", "src/Orders.Api")
-    .Http(urlEnv: "Urls", health: "/health")
-    .Env("Smtp__Url", smtp)
-    .Env("Catalog__Url", catalog.Url)
+    .Http(health: "/health")
     .WaitFor(catalog);
+orders.AppSettings("appsettings.Local.json", s => s
+    .Set("Urls", orders.Url)
+    .Set("Smtp__Url", smtp)
+    .Set("Catalog__Url", catalog.Url));
 
 repo.Export<Url>("catalog-url", catalog.Url);
 
@@ -273,6 +278,9 @@ return repo.Emit(args);`)}`],
       { id: "I4", title: "Prove the wiring",
         how: [`Open catalog-api's url plus <code>/config</code>, and the same for orders-api.`, `Place an order using orders-api's port, then open mail's UI port (from <code>sprig info</code>):${block("order", `Invoke-RestMethod -Method Post http://localhost:<orders-port>/orders -ContentType application/json -Body '{"productId":"tea","quantity":1,"email":"someone@example.com"}'`)}`],
         expect: `catalog-api's Db is reachable. orders-api's Smtp url points at the mail container and its Catalog url at catalog-api. The order comes back with <code>mailSent: true</code> and shows up in Mailpit.` },
+      { id: "I4b", title: "Run it yourself, get the same", isNew: true,
+        how: [`<code>sprig stop catalog-api orders-api</code>.`, `In one terminal, <code>cd src/Catalog.Api; dotnet run</code>. In another, <code>cd src/Orders.Api; dotnet run</code>.`, `Open each one's url plus <code>/config</code>, at the ports <code>sprig info</code> gave.`],
+        expect: `Both come up on the same ports sprig gave them, with the same Db, Smtp and Catalog values, because they're in <code>Properties/launchSettings.json</code> (sprig's profile, first) and <code>appsettings.Local.json</code>, not set on a process. Ctrl+C both, then <code>sprig start</code>.` },
       { id: "I5", title: "Saying no",
         how: [`Add a comment line to sprig.cs, run <code>sprig up</code> and answer <b>n</b>.`, `<code>sprig up --trust</code>`],
         expect: `Refused: "…/sprig.cs isn't approved to run. Read it, then: sprig trust add "…" (or pass --trust)". Nothing changes. <code>--trust</code> goes ahead without asking.` },

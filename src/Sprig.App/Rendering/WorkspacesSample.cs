@@ -207,11 +207,11 @@ internal static partial class HeadlessRenderer
             [.. SampleApps.Where(a => a.Port is not null).Select(a => new PlannedPort(a.Repo, a.App, "http", a.Port!.Value, null, null))],
             [.. SampleApps.Select(a => new PlannedApp(a.Repo, $"../{a.Repo}", a.App, "dotnet", a.Job ? $"tools/{a.App}" : ".",
                 a.Port is { } port
-                    ? [new PlannedEnv("ASPNETCORE_URLS", Value($"http://localhost:{port}", $"{a.App}.http port {port}"), null, at),
-                       new PlannedEnv("ConnectionStrings__Db", Value("Host=localhost;Port=8002;Password=hunter2", "postgres.tcp port 8002"), "appsettings.Local.json", at),
-                       new PlannedEnv("Mail__Smtp", Value("smtp://localhost:8011", "import mail-smtp ← storefront"), "appsettings.Local.json", at)]
+                    ? [new PlannedEnv("Urls", Value($"http://localhost:{port}", $"{a.App}.http port {port}"), "appsettings.Local.json", at, "appSettings"),
+                       new PlannedEnv("ConnectionStrings__Db", Value("Host=localhost;Port=8002;Password=hunter2", "postgres.tcp port 8002"), "appsettings.Local.json", at, "appSettings"),
+                       new PlannedEnv("Mail__Smtp", Value("smtp://localhost:8011", "import mail-smtp ← storefront"), "appsettings.Local.json", at, "appSettings")]
                     : [],
-                null, a.Job ? [] : ["migrate"], [], Job: a.Job,
+                null, a.Job ? [] : ["migrate"], Job: a.Job,
                 DependsOn: a.Repo == "shop-services" && !a.Job ? ["shop-services/migrate", "shop-services/seed"] : null,
                 Health: a.Port is not null && !a.Job ? [new PlannedHealth("http", "/health")] : null,
                 Links: a.App switch

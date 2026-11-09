@@ -47,13 +47,20 @@ public sealed class AuthoringTests : IDisposable
         var services = Scaffold.Repo(Dir("shop-services"), "shop-services");
         var web = Scaffold.Repo(Dir("shop-web"), "shop-web");
 
-        Assert.Contains("var catalogApi = repo.DotNet(\"catalog-api\", \"src/Catalog.Api\")", services);
+        Assert.Contains("var catalogApi = repo.DotNet(\"catalog-api\", \"src/Catalog.Api\").Http();", services);
+        Assert.Contains("catalogApi.LaunchSettings(s => s.Set(\"Urls\", catalogApi.Url));", services);
         Assert.DoesNotContain("tests", services, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("// repo.DotNetJob(\"migrate\", \"tools/Migrate\");", services);
         Assert.Contains("// repo.ComposeFile(\"docker-compose.yml\")", services);
         Assert.DoesNotContain("node_modules", services);
+        // Every value goes in a file the app reads, and the command stays one you could type.
         Assert.Contains("var web = repo.Node(\"web\", \".\").Http();", web);
-        Assert.Contains("web.Run($\"npm run dev -- --port {web.Port}\");", web);
+        Assert.Contains("web.EnvFile(\".env.local\", e => e.Set(\"PORT\", web.Port));", web);
+        Assert.Contains("Vite doesn't read PORT by itself", web);
+        Assert.DoesNotContain(".Run(", web);
+        Write("shop-services/src/Catalog.Api/Properties/launchSettings.json", "{}");
+        Assert.Contains("catalogApi.AppSettings(\"appsettings.Local.json\", s => s.Set(\"Urls\", catalogApi.Url));",
+            Scaffold.Repo(Dir("shop-services"), "shop-services"));
         Assert.StartsWith("#:", services);
         Parses(services);
         Parses(web);

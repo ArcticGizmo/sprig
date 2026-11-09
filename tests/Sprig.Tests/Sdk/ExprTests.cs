@@ -18,14 +18,34 @@ public class ExprTests
         var model = Describe(repo =>
         {
             var pg = repo.Container("pg", "postgres:17").Endpoint("tcp", 5432);
-            repo.DotNet("api", "src/Api").Http()
-                .Env("Db", $"Host=localhost;Port={pg.Port}")
-                .Env("Json", "{\"a\":1}");
+            repo.DotNet("api", "src/Api").Http().AppSettings("appsettings.Local.json", s => s
+                .Set("Db", $"Host=localhost;Port={pg.Port}")
+                .Set("Json", "{\"a\":1}"));
         });
 
         var env = model.Apps[0].Env;
         Assert.Equal("Host=localhost;Port={pg.tcp.port}", env[0].Value);
         Assert.Equal("{{\"a\":1}}", env[1].Value);
+    }
+
+    [Fact]
+    public void Every_value_an_app_or_job_gets_names_the_file_it_goes_in()
+    {
+        var model = Describe(repo =>
+        {
+            var api = repo.DotNet("api", "src/Api").Http();
+            api.LaunchSettings(s => s.Set("Urls", api.Url))
+                .AppSettings("appsettings.Local.json", s => s.Set("A", "1"))
+                .EnvFile("../../.env", e => e.Set("B", "2"));
+            repo.DotNetJob("migrate", "tools/Migrate").LaunchSettings("dev", s => s.Set("C", "3"));
+        });
+
+        Assert.Equal([
+            new EnvModel("Urls", "{api.http.url}", "Properties/launchSettings.json", model.Apps[0].Env[0].Location, "launchSettings", "sprig"),
+            new EnvModel("A", "1", "appsettings.Local.json", model.Apps[0].Env[1].Location, "appSettings"),
+            new EnvModel("B", "2", "../../.env", model.Apps[0].Env[2].Location, "dotenv"),
+        ], model.Apps[0].Env);
+        Assert.Equal(("launchSettings", "dev"), (model.Apps[1].Env[0].Kind, model.Apps[1].Env[0].Profile));
     }
 
     [Fact]
@@ -53,7 +73,7 @@ public class ExprTests
     [Fact]
     public void Numbers_in_a_template_are_written_invariantly()
     {
-        var model = Describe(repo => repo.DotNet("api", ".").Http().Env("Ratio", $"{1.5}x"));
+        var model = Describe(repo => repo.DotNet("api", ".").Http().AppSettings("appsettings.Local.json", s => s.Set("Ratio", $"{1.5}x")));
 
         Assert.Equal("1.5x", model.Apps[0].Env[0].Value);
     }

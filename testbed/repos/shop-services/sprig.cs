@@ -17,32 +17,38 @@ var rabbit = compose.Service("rabbitmq").Endpoint("amqp", 5672).Endpoint("ui", 1
 var smtp = repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl);
 
 // Runs to completion each time the apps start; the APIs wait for it to succeed. Retried, since Postgres can still be
-// settling in the first second after it reports healthy.
+// settling in the first second after it reports healthy. It reads the env, so its value goes in a launch profile,
+// which dotnet run and IDEs read; .gitignore covers it.
 var migrate = repo.DotNetJob("migrate", "tools/Migrate")
-    .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
+    .LaunchSettings(s => s.Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop"))
     .WaitFor(pg)
     .Retry(max: 3);
 
-// Urls rather than ASPNETCORE_URLS: appsettings.json sets "urls", and only the unprefixed env var outranks it.
 // Ready once /health answers, rather than as soon as Kestrel opens the port.
 var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
-    .Http(urlEnv: "Urls", health: "/health")
+    .Http(health: "/health")
     .Restart(RestartPolicy.OnFailure)
-    .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
-    .Env("Redis__Url", $"localhost:{redis.Port}")
-    .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
-    .Output(EnvOutput.LaunchSettings())                   // dotnet run and IDEs read it; .gitignore covers it
     .WaitFor(pg, redis, rabbit, migrate);
 
+// Urls rather than ASPNETCORE_URLS: appsettings.json sets "urls", and only the unprefixed name outranks it.
+catalog.LaunchSettings(s => s
+    .Set("Urls", catalog.Url)
+    .Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop")
+    .Set("Redis__Url", $"localhost:{redis.Port}")
+    .Set("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}"));
+
 var orders = repo.DotNet("orders-api", "src/Orders.Api")
-    .Http(urlEnv: "Urls", health: "/health")
+    .Http(health: "/health")
     .Restart(RestartPolicy.OnFailure)
-    .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=orders;Username=shop;Password=shop")
-    .Env("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
-    .Env("Smtp__Url", smtp)
-    .Env("Catalog__Url", catalog.Url)                     // a sibling in this repo: no import needed
-    .Output(EnvOutput.AppSettings("appsettings.Local.json")) // Program.cs loads it; .gitignore covers it
     .WaitFor(pg, rabbit, migrate, catalog);
+
+// Program.cs loads appsettings.Local.json last; .gitignore covers it.
+orders.AppSettings("appsettings.Local.json", s => s
+    .Set("Urls", orders.Url)
+    .Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=orders;Username=shop;Password=shop")
+    .Set("Bus__Url", $"amqp://shop:shop@localhost:{rabbit.Port}")
+    .Set("Smtp__Url", smtp)
+    .Set("Catalog__Url", catalog.Url));                   // a sibling in this repo: no import needed
 
 repo.Export<Url>("catalog-url", catalog.Url);
 repo.Export<Url>("orders-url", orders.Url);

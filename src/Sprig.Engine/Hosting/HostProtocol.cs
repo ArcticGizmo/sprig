@@ -6,7 +6,8 @@ using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Hosting;
 
-/// <summary>How to run one app for a workspace.</summary>
+/// <summary>How to run one app for a workspace: the same command, in the same folder, that someone running it themselves
+/// would use. Its values are in the files it reads, never added to its environment.</summary>
 /// <param name="Workspace">The workspace's key, <c>&lt;orchestration&gt;/&lt;workspace&gt;</c>.</param>
 /// <param name="Name">The app, as <c>&lt;repo&gt;/&lt;app&gt;</c>.</param>
 /// <param name="Build">Run first and must succeed; runs one at a time per <see cref="BuildKey"/>.</param>
@@ -24,7 +25,6 @@ public sealed record RunnerSpec(
     string Name,
     CommandSpec Command,
     string WorkingDirectory,
-    IReadOnlyDictionary<string, string> Env,
     CommandSpec? Build = null,
     string? BuildKey = null,
     int? Port = null,

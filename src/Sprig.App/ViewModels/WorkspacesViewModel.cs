@@ -364,10 +364,9 @@ public partial class WorkspacesViewModel : PageViewModel
             var repo = record.Repos.First(r => r.RepoPath == app.RepoPath);
             var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
             var port = plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name)?.Port;
-            var files = record.Files.Where(f => f.Path.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
-                .Select(f => Path.GetRelativePath(dir, f.Path).Replace('\\', '/')).ToArray();
+            var files = app.ValueFiles();
             return new WorkspaceAppRow(app.Key, $"{repo.Name} / {app.Name}", dir.Replace('\\', '/'), port is null ? "" : $"http://localhost:{port}",
-                files.Length > 0 ? string.Join(", ", files) : $"none; sprig env {record.Orchestration} {record.Branch ?? record.Name} {app.Name}", app.Job,
+                files.Count > 0 ? string.Join(", ", files) : "none", app.Job,
                 repo.Name, app.Name, port?.ToString() ?? "");
         }).ToArray();
         ApplyRunners(_lastRunners);

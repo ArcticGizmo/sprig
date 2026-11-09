@@ -57,8 +57,16 @@ public static partial class Scaffold
             var appName = Ids.Slug(Kebab(System.IO.Path.GetFileNameWithoutExtension(project)), "app");
             if (IsWebProject(project))
             {
-                text.Append($"var {Variable(appName, used)} = repo.DotNet({Literal(appName)}, {Literal(dir)})\n");
-                text.Append("    .Http(urlEnv: \"Urls\");\n\n");
+                var variable = Variable(appName, used);
+                text.Append($"var {variable} = repo.DotNet({Literal(appName)}, {Literal(dir)}).Http();\n");
+                // Urls rather than ASPNETCORE_URLS: it outranks a "urls" in appsettings.json.
+                if (File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(project)!, "Properties", "launchSettings.json")))
+                {
+                    text.Append("// Its launchSettings.json is probably committed, so the url goes in a local settings file. Load it last in\n");
+                    text.Append("// Program.cs: builder.Configuration.AddJsonFile(\"appsettings.Local.json\", optional: true);\n");
+                    text.Append($"{variable}.AppSettings(\"appsettings.Local.json\", s => s.Set(\"Urls\", {variable}.Url));\n\n");
+                }
+                else text.Append($"{variable}.LaunchSettings(s => s.Set(\"Urls\", {variable}.Url));\n\n");
                 found++;
             }
             else if (File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(project)!, "Program.cs")))
@@ -75,10 +83,10 @@ public static partial class Scaffold
             var appName = Ids.Slug(Kebab(info.Name ?? (dir == "." ? name : System.IO.Path.GetFileName(dir))), "web");
             var variable = Variable(appName, used);
             text.Append($"var {variable} = repo.Node({Literal(appName)}, {Literal(dir)}).Http();\n");
-            // Vite ignores PORT, so its port goes on the command line.
-            text.Append(info.Vite
-                ? $"{variable}.Run($\"npm run dev -- --port {{{variable}.Port}}\");\n\n"
-                : $"{variable}.EnvFile(\".env.local\", e => e.Set(\"PORT\", {variable}.Port));\n\n");
+            if (info.Vite)
+                text.Append("// Vite doesn't read PORT by itself. In vite.config, take it from the env file:\n"
+                    + "// server: { port: Number(loadEnv(mode, process.cwd(), '').PORT), strictPort: true }\n");
+            text.Append($"{variable}.EnvFile(\".env.local\", e => e.Set(\"PORT\", {variable}.Port));\n\n");
             found++;
         }
 
@@ -92,8 +100,10 @@ public static partial class Scaffold
 
         if (found == 0)
             text.Append("// No apps found to start from. Describe one, for example:\n"
-                + "// repo.DotNet(\"api\", \"src/Api\").Http(urlEnv: \"Urls\");\n"
-                + "// repo.Node(\"web\", \".\").Http(portEnv: \"PORT\");\n\n");
+                + "// var api = repo.DotNet(\"api\", \"src/Api\").Http();\n"
+                + "// api.LaunchSettings(s => s.Set(\"Urls\", api.Url));\n"
+                + "// var web = repo.Node(\"web\", \".\").Http();\n"
+                + "// web.EnvFile(\".env.local\", e => e.Set(\"PORT\", web.Port));\n\n");
         text.Append("return repo.Emit(args);\n");
         return text.ToString();
     }

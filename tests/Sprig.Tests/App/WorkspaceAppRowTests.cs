@@ -20,8 +20,8 @@ public class WorkspaceAppRowTests
             WorkspaceState.Down, now, now));
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", null, [],
             [
-                new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, [], []),
-                new PlannedApp("shop", "../shop", "migrate", "dotnet", ".", [], null, [], [], Job: true),
+                new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, []),
+                new PlannedApp("shop", "../shop", "migrate", "dotnet", ".", [], null, [], Job: true),
             ], [], [], [], []));
         var vm = new WorkspacesViewModel(services);
         vm.Show("storefront/feat-x");

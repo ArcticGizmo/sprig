@@ -18,13 +18,19 @@ public static class SampleDefinition
         // The catalog owns stock levels.
         var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
             .Http("http")
-            .Env("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog")
             .WaitFor(pg);
+
+        catalog.AppSettings("appsettings.Local.json", s => s
+            .Set("Urls", catalog.Url)
+            .Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog"));
 
         var orders = repo.DotNet("orders-api", "src/Orders.Api")
             .Http("http")
-            .Env("Smtp__Url", smtp)
             .WaitFor(pg, catalog);
+
+        orders.AppSettings("appsettings.Local.json", s => s
+            .Set("Urls", orders.Url)
+            .Set("Smtp__Url", smtp));
 
         repo.Export<Url>("catalog-url", catalog.Url);
 

@@ -276,10 +276,9 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             var repo = record.Repos.Single(r => r.RepoPath == app.RepoPath);
             var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
             var url = plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name) is { Port: { } port } ? $"http://localhost:{port}" : "";
-            var files = record.Files.Where(f => f.Path.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
-                .Select(f => Path.GetRelativePath(dir, f.Path).Replace('\\', '/')).ToArray();
+            var files = app.ValueFiles();
             apps.AddRow(Markup.Escape($"{repo.Name}/{app.Name}"), Markup.Escape(dir.Replace('\\', '/')), Markup.Escape(url),
-                files.Length > 0 ? Markup.Escape(string.Join(", ", files)) : $"[dim]none: sprig env {Markup.Escape(Words(record))} {Markup.Escape(app.Name)}[/]");
+                files.Count > 0 ? Markup.Escape(string.Join(", ", files)) : "[dim]none[/]");
         }
         cli.Ansi.Write(apps);
 
@@ -415,38 +414,6 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
                 r.UpdatedAt.LocalDateTime.ToString("g"));
         }
         cli.Ansi.Write(table);
-        return 0;
-    }
-}
-
-[Description("Print the env vars an app of a workspace gets, for an IDE launch profile or a shell")]
-public sealed class EnvCommand(CliContext cli) : Command<EnvCommand.Settings>
-{
-    public sealed class Settings : WorkspaceSettings
-    {
-        [CommandArgument(2, "[app]")]
-        [Description("The app, as <name> or <repo>/<name>")]
-        public string App { get; set; } = "";
-
-        protected override bool TakesApps => true;
-    }
-
-    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
-    {
-        s.App = s.Resolve(cli).FirstOrDefault() ?? s.App;
-        if (s.App.Length == 0) throw new InvalidOperationException("name the app: sprig env [id] [workspace] <app>");
-        var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace)
-            ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}' that has come up");
-        var matches = plan.Apps.Where(a => a.Name == s.App || $"{a.Owner}/{a.Name}" == s.App).ToArray();
-        var app = matches.Length switch
-        {
-            1 => matches[0],
-            0 => throw new InvalidOperationException($"no app '{s.App}' in {s.Orchestration}; it has {string.Join(", ", plan.Apps.Select(a => $"{a.Owner}/{a.Name}"))}"),
-            _ => throw new InvalidOperationException($"'{s.App}' is in more than one repo; name it as <repo>/{s.App}"),
-        };
-        var env = app.Env.Where(e => e.File is null).Select(e => (e.Key, Value: e.Value.Value ?? "")).ToArray();
-        if (s.Json) CliOutput.Json(env.ToDictionary(e => e.Key, e => e.Value));
-        else foreach (var (key, value) in env) Console.WriteLine($"{key}={value}");
         return 0;
     }
 }

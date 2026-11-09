@@ -90,6 +90,28 @@ public sealed class EnvFilesTests : IDisposable
     }
 
     [Fact]
+    public void A_launch_profile_starts_from_the_env_of_the_profile_it_puts_second_so_dotnet_run_keeps_it()
+    {
+        var file = Path.Combine(_dir, "Properties", "launchSettings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, """
+            { "profiles": {
+              "docker": { "commandName": "Docker" },
+              "http": { "commandName": "Project", "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development", "Db": "mine" } }
+            } }
+            """);
+
+        EnvFiles.WriteLaunchProfile(file, "sprig", Values(("Db", "Host=x")));
+        // Again, as the next up does, with sprig's own profile now first.
+        EnvFiles.WriteLaunchProfile(file, "sprig", Values(("Db", "Host=y")));
+
+        var env = JsonNode.Parse(File.ReadAllText(file))!["profiles"]!["sprig"]!["environmentVariables"]!;
+        Assert.Equal("Development", (string?)env["ASPNETCORE_ENVIRONMENT"]);
+        Assert.Equal("Host=y", (string?)env["Db"]);
+        Assert.Equal("mine", (string?)JsonNode.Parse(File.ReadAllText(file))!["profiles"]!["http"]!["environmentVariables"]!["Db"]);
+    }
+
+    [Fact]
     public void A_launch_settings_file_sprig_made_is_deleted_with_its_folder()
     {
         var file = Path.Combine(_dir, "app", "Properties", "launchSettings.json");

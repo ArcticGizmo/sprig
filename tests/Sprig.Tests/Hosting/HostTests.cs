@@ -33,9 +33,9 @@ public sealed class HostTests : IDisposable
         _store.Dispose();
     }
 
-    static CommandSpec Wait(int seconds) => OperatingSystem.IsWindows()
-        ? new CommandSpec("cmd.exe", ["/d", "/c", $"echo hello from %GREETING% & ping -n {seconds} 127.0.0.1 > nul"])
-        : new CommandSpec("/bin/sh", ["-c", $"echo hello from $GREETING; sleep {seconds}"]);
+    static CommandSpec Wait(int seconds, string greeting = "sprig") => OperatingSystem.IsWindows()
+        ? new CommandSpec("cmd.exe", ["/d", "/c", $"echo hello from {greeting} & ping -n {seconds} 127.0.0.1 > nul"])
+        : new CommandSpec("/bin/sh", ["-c", $"echo hello from {greeting}; sleep {seconds}"]);
 
     /// <summary>The host keeps a running app's log open for writing, so it's read the way <c>sprig logs</c> reads it.</summary>
     static string ReadShared(string file)
@@ -63,8 +63,7 @@ public sealed class HostTests : IDisposable
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var spec = new RunnerSpec("storefront/feat-x", "shop/api", Wait(30), _store.Root,
-            new Dictionary<string, string> { ["GREETING"] = "sprig" }, Port: port);
+        var spec = new RunnerSpec("storefront/feat-x", "shop/api", Wait(30), _store.Root, Port: port);
 
         Assert.True(_client.Send(new HostRequest("start", [spec])).Ok);
         var ready = Await("shop/api", r => r.State == RunnerState.Ready);
@@ -83,7 +82,7 @@ public sealed class HostTests : IDisposable
     [Fact]
     public void A_failed_build_stops_the_app_from_starting_and_stopping_a_workspace_forgets_it()
     {
-        var spec = new RunnerSpec("storefront/feat-x", "shop/web", Wait(30), _store.Root, new Dictionary<string, string>(), Build: Exit(3), BuildKey: "shop");
+        var spec = new RunnerSpec("storefront/feat-x", "shop/web", Wait(30), _store.Root, Build: Exit(3), BuildKey: "shop");
 
         _client.Send(new HostRequest("start", [spec]));
 
@@ -101,7 +100,7 @@ public sealed class HostTests : IDisposable
         : new CommandSpec("/bin/sh", ["-c", $"exit {code}"]);
 
     RunnerSpec Spec(string name, CommandSpec command, bool job = false, params string[] waitFor)
-        => new("storefront/feat-x", name, command, _store.Root, new Dictionary<string, string> { ["GREETING"] = name }, WaitFor: waitFor, Job: job);
+        => new("storefront/feat-x", name, command, _store.Root, WaitFor: waitFor, Job: job);
 
     [Fact]
     public void An_app_waits_for_its_job_to_finish_and_starting_it_again_leaves_what_is_going_alone()
@@ -332,7 +331,7 @@ public sealed class HostTests : IDisposable
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         using var stop = new CancellationTokenSource();
 
-        var run = Task.Run(() => new Sprig.Cli.Commands.AppFollow(cli, record, [Spec("shop/api", Wait(30)), Spec("shop/web", Wait(30))])
+        var run = Task.Run(() => new Sprig.Cli.Commands.AppFollow(cli, record, [Spec("shop/api", Wait(30, "shop/api")), Spec("shop/web", Wait(30, "shop/web"))])
             .Run(stop.Token, output, colour: false));
         Await("shop/api", r => r.State == RunnerState.Ready);
         Await("shop/web", r => r.State == RunnerState.Ready);
@@ -398,32 +397,30 @@ public class RunnerSpecsTests
     static readonly SourceLocation At = new("x", 1);
 
     [Fact]
-    public void Apps_run_by_kind_with_their_process_env_and_port()
+    public void Apps_run_by_kind_as_you_would_run_them_yourself_with_their_port()
     {
         var repo = new WorkspaceRepo("../shop-services", "shop-services", @"C:\tb\shop-services", @"C:\tb\sf--x\shop-services", true, true);
         var record = new WorkspaceRecord("storefront", @"C:\tb\sf.orchestration.cs", "x", "x", "stable", [repo], [], [], WorkspaceState.Up,
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
-        PlannedEnv Env(string key, string value, string? file = null) => new(key, new PlannedValue(value, value, []), file, At);
+        PlannedEnv Env(string key, string value) => new(key, new PlannedValue(value, value, []), "Properties/launchSettings.json", At, "launchSettings", "sprig");
         var plan = new Plan("storefront", "x", "stable", "main",
             [new PlannedPort("shop-services", "api", "http", 8001, null, null)],
             [
-                new PlannedApp("shop-services", "../shop-services", "api", "dotnet", "src/Api", [Env("Urls", "http://localhost:8001"), Env("A", "1", ".env.local")], null, [], [],
+                new PlannedApp("shop-services", "../shop-services", "api", "dotnet", "src/Api", [Env("Urls", "http://localhost:8001")], null, [],
                     Health: [new PlannedHealth("http", "/health")], Restart: new RestartModel("always", 2, At)),
-                new PlannedApp("shop-services", "../shop-services", "web", "node", "web", [], null, [], []),
-                new PlannedApp("shop-services", "../shop-services", "tool", "app", ".", [], new PlannedValue("go run .", "go run .", []), [], []),
+                new PlannedApp("shop-services", "../shop-services", "web", "node", "web", [], null, []),
+                new PlannedApp("shop-services", "../shop-services", "tool", "app", ".", [], new PlannedValue("go run .", "go run .", []), []),
             ],
             [], [], [], []);
 
         var specs = RunnerSpecs.For(record, plan);
 
         var api = specs.Single(s => s.Name == "shop-services/api");
-        Assert.Equal("dotnet run --no-build --no-launch-profile", api.Command.ToString());
+        // A plain dotnet run, launch profile and all, so the values in its files are what it gets.
+        Assert.Equal("dotnet run --no-build", api.Command.ToString());
         Assert.Equal("dotnet build --nologo -v minimal", api.Build!.ToString());
         Assert.Equal(repo.Dir, api.BuildKey);
         Assert.Equal(Path.GetFullPath(@"C:\tb\sf--x\shop-services\src\Api"), api.WorkingDirectory);
-        Assert.Equal("http://localhost:8001", api.Env["Urls"]);
-        Assert.Equal("Development", api.Env["ASPNETCORE_ENVIRONMENT"]);
-        Assert.False(api.Env.ContainsKey("A"));
         Assert.Equal(8001, api.Port);
         Assert.Equal("storefront/x", api.Workspace);
         Assert.Equal(["http://localhost:8001/health"], api.HealthUrls);
@@ -444,7 +441,7 @@ public class RunnerSpecsTests
         var record = new WorkspaceRecord("storefront", @"C:\tb\sf.orchestration.cs", "local", null, "stable", [repo], [], [], WorkspaceState.Up,
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         PlannedApp App(string name, bool job = false, params string[] dependsOn)
-            => new("shop", "../shop", name, "app", ".", [], new PlannedValue("x", "x", []), [], [], job, dependsOn);
+            => new("shop", "../shop", name, "app", ".", [], new PlannedValue("x", "x", []), [], job, dependsOn);
         var plan = new Plan("storefront", "local", "stable", null, [],
             [App("web", false, "shop/api"), App("api", false, "shop/migrate"), App("migrate", true), App("admin")], [], [], [], []);
 

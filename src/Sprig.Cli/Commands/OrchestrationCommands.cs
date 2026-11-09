@@ -271,10 +271,7 @@ static class PlanPrinter
                 .Title($"[bold]{Markup.Escape(app.Owner)} / {Markup.Escape(app.Name)}[/] [dim]({Markup.Escape(app.Kind)}{(app.Job ? " job" : "")}, {Markup.Escape(app.Path)})[/]")
                 .AddColumns("Setting", "Value", "Comes from");
             foreach (var env in app.Env)
-            {
-                var key = env.File is null ? env.Key : $"{env.Key} [dim]({env.File})[/]";
-                table.AddRow(new Markup(env.File is null ? Markup.Escape(env.Key) : key), Value(env.Value), Via(env.Value));
-            }
+                table.AddRow(new Markup($"{Markup.Escape(env.Key)} [dim]({Markup.Escape(env.File is { } file ? app.FileLabel(file) : "no file")})[/]"), Value(env.Value), Via(env.Value));
             if (app.Run is { } run) table.AddRow(new Markup("[dim]run[/]"), Value(run), Via(run));
             if (app.WaitFor.Count > 0) table.AddRow(new Markup("[dim]waits for[/]"), new SpectreText(string.Join(", ", app.WaitFor)), new SpectreText(""));
             var implied = (app.DependsOn ?? []).Where(d => !app.WaitFor.Any(w => d == $"{app.Owner}/{w}")).ToArray();
@@ -287,8 +284,6 @@ static class PlanPrinter
                 table.AddRow(new Markup($"[dim]{(app.Job ? "retries" : "restarts")}[/]"),
                     new SpectreText(app.Job || restart.Policy != "always" ? $"after a failure, up to {restart.Max} in a row" : $"after any exit, up to {restart.Max} in a row"),
                     new SpectreText(""));
-            if (app.Outputs.Count > 0)
-                table.AddRow(new Markup("[dim]env vars also go to[/]"), new SpectreText(string.Join(", ", app.Outputs.Select(o => o.File))), new SpectreText(""));
             console.Write(table);
         }
 

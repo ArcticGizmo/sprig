@@ -907,10 +907,7 @@
                                     <TextBlock Grid.Row="5" Classes="cell via" Text="Restarts" />
                                     <TextBlock Grid.Row="5" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding PickedApp.Restarts}" />
                                 </Grid>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Classes="small" Content="Open folder" Command="{Binding OpenFolderCommand}" />
-                                    <Button Classes="small" Content="Copy env" Click="CopyEnv" />
-                                </StackPanel>
+                                <Button Classes="small" Content="Open folder" Command="{Binding OpenFolderCommand}" HorizontalAlignment="Left" />
                                 <StackPanel Spacing="4" IsVisible="{Binding Details.HasSettings, FallbackValue=False}">
                                     <TextBlock Classes="phead" Text="VALUES" />
                                     <ItemsControl ItemsSource="{Binding Details.Settings}">

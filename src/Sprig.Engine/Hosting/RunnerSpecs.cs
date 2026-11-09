@@ -4,7 +4,7 @@ using Sprig.Engine.Workspaces;
 namespace Sprig.Engine.Hosting;
 
 /// <summary>Turns a workspace's apps and jobs into what the host runs: the command for each kind, its folder in the
-/// workspace, its process env vars, the port that says it's ready, and what it waits for.</summary>
+/// workspace, the port that says it's ready, and what it waits for.</summary>
 public static class RunnerSpecs
 {
     /// <summary>
@@ -52,8 +52,6 @@ public static class RunnerSpecs
     {
         var repo = record.Repos.Single(r => r.RepoPath == app.RepoPath);
         var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
-        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var e in app.Env.Where(e => e.File is null)) env[e.Key] = e.Value.Value ?? "";
         var port = app.Job ? null : plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name)?.Port;
 
         CommandSpec? build = null;
@@ -62,13 +60,10 @@ public static class RunnerSpecs
             command = Shell(run);
         else if (app.Kind == "dotnet")
         {
-            // Built once up front, one build per repo at a time, because sibling apps share projects' obj folders. No
-            // launch profile: the app's own profile would override the values sprig sets.
+            // Built once up front, one build per repo at a time, because sibling apps share projects' obj folders. Then
+            // run as a plain dotnet run would, launch profile and all.
             build = new CommandSpec("dotnet", ["build", "--nologo", "-v", "minimal"]);
-            command = new CommandSpec("dotnet", ["run", "--no-build", "--no-launch-profile"]);
-            // A launch profile is usually where Development comes from; without one the app would run as Production.
-            env.TryAdd("ASPNETCORE_ENVIRONMENT", "Development");
-            env.TryAdd("DOTNET_ENVIRONMENT", "Development");
+            command = new CommandSpec("dotnet", ["run", "--no-build"]);
         }
         else if (app.Kind == "node")
             command = Shell("npm run dev");
@@ -87,7 +82,7 @@ public static class RunnerSpecs
             .ToArray();
         var restart = app.Restart is { } r ? new RestartSpec(r.Policy == "always", r.Max) : null;
 
-        return new RunnerSpec(record.Key, app.Key, command, dir, env, build, build is null ? null : repo.Dir, port,
+        return new RunnerSpec(record.Key, app.Key, command, dir, build, build is null ? null : repo.Dir, port,
             app.DependsOn ?? [], app.Job, health.Length > 0 ? health : null, app.ReadyLog, restart);
     }
 

@@ -41,12 +41,12 @@ public sealed class OrchestrationSummaryTests : IDisposable
             var pg = repo.Postgres("pg");
             var migrate = repo.DotNetJob("migrate", "tools/Migrate").WaitFor(pg);
             var catalog = repo.DotNet("catalog-api", ".").Http().WaitFor(pg, migrate);
-            repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Setting<Url>("mail-smtp"));
+            repo.DotNet("orders-api", ".").Http().AppSettings("appsettings.Local.json", s => s.Set("Smtp__Url", repo.Setting<Url>("mail-smtp")));
             repo.Export<Url>("catalog-url", catalog.Url);
         });
-        var web = Add("shop-web", repo => repo.Node("web", ".").Http()
-            .Env("API", repo.Setting<Url>("catalog-url"))
-            .Env("PAY", repo.Setting<Url>("payments-url")));
+        var web = Add("shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env.local", e => e
+            .Set("API", repo.Setting<Url>("catalog-url"))
+            .Set("PAY", repo.Setting<Url>("payments-url"))));
         var mail = _orchestration.Mailpit("mail");
         _orchestration.Bind("mail-smtp", mail.SmtpUrl);
         _orchestration.Group("web", web, services);
@@ -144,13 +144,13 @@ public sealed class OrchestrationSummaryTests : IDisposable
     {
         Add("shop-services", repo =>
         {
-            repo.DotNet("orders-api", ".").Http()
-                .Env("Smtp__Url", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl))
-                .Env("Flag", repo.Setting<Text>("flag", "on"));
+            repo.DotNet("orders-api", ".").Http().AppSettings("appsettings.Local.json", s => s
+                .Set("Smtp__Url", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl))
+                .Set("Flag", repo.Setting<Text>("flag", "on")));
             repo.Export<Url>("catalog-url", "http://a");
         });
         Add("shop-legacy", repo => repo.Export<Url>("catalog-url", "http://b"));
-        Add("shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url")));
+        Add("shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env.local", e => e.Set("API", repo.Setting<Url>("catalog-url"))));
         var (loaded, plan) = Build();
 
         var cards = OrchestrationSummary.Cards(loaded, plan, new StoredDefinitions(_store.Paths));

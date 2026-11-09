@@ -38,11 +38,11 @@ public class PlannerTests
         f.Add("../shop-services", repo =>
         {
             var pg = repo.Postgres("pg");
-            var migrate = repo.DotNetJob("migrate", "tools/Migrate").Env("Db", pg.Database("catalog")).WaitFor(pg);
-            var catalog = repo.DotNet("catalog-api", ".").Http(urlEnv: "Urls").WaitFor(pg, migrate);
+            var migrate = repo.DotNetJob("migrate", "tools/Migrate").EnvFile(".env", e => e.Set("Db", pg.Database("catalog"))).WaitFor(pg);
+            var catalog = repo.DotNet("catalog-api", ".").Http().WaitFor(pg, migrate);
             repo.Export<Url>("catalog-url", catalog.Url);
         });
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url")));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("catalog-url"))));
 
         var plan = f.Plan();
 
@@ -55,7 +55,7 @@ public class PlannerTests
     }
 
     static void Orders(RepoBuilder repo)
-        => repo.Node("orders", ".").Http().Env("SMTP", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl));
+        => repo.Node("orders", ".").Http().EnvFile(".env", e => e.Set("SMTP", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl)));
 
     [Fact]
     public void A_setting_nothing_else_gives_uses_its_default_and_its_infra()
@@ -79,7 +79,7 @@ public class PlannerTests
     public void A_literal_default_is_used_as_it_is()
     {
         var f = new Fixture();
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url", "http://localhost:5100")));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("catalog-url", "http://localhost:5100"))));
 
         var value = f.Plan().Apps.Single().Env.Single().Value;
 
@@ -126,7 +126,7 @@ public class PlannerTests
     {
         var f = new Fixture();
         f.Add("../shop-services", repo => repo.Export<Url>("catalog-url", repo.DotNet("catalog-api", ".").Http().Url));
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("catalog-url", "http://localhost:5100")));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("catalog-url", "http://localhost:5100"))));
 
         Assert.StartsWith("http://localhost:9", f.Plan().Apps.Single(a => a.Name == "web").Env.Single().Value.Value);
         var pointed = f.PlanWith(i => i with { Values = new Dictionary<string, string> { ["catalog-url"] = "https://catalog.example.com" } });
@@ -141,9 +141,9 @@ public class PlannerTests
         f.Add("../shop-services", repo =>
         {
             var mail = repo.Mailpit("mail");
-            repo.Node("orders", ".").Http().Env("SMTP", repo.Setting<Url>("mail-smtp", mail.SmtpUrl)).WaitFor(mail);
+            repo.Node("orders", ".").Http().EnvFile(".env", e => e.Set("SMTP", repo.Setting<Url>("mail-smtp", mail.SmtpUrl))).WaitFor(mail);
             var key = repo.Setting<Secret>("payments-key");
-            repo.Node("web", ".").Http().Env("KEY", key).Env("KEY_AGAIN", key);
+            repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("KEY", key)).EnvFile(".env", e => e.Set("KEY_AGAIN", key));
         });
         f.Orchestration.Bind("mail-smtp", "smtp://elsewhere:25");
 
@@ -169,8 +169,8 @@ public class PlannerTests
         {
             var a = repo.Node("a", ".").Http();
             var b = repo.Node("b", ".").Http();
-            a.Env("B", b.Url);
-            b.Env("A", a.Url);
+            a.EnvFile(".env", e => e.Set("B", b.Url));
+            b.EnvFile(".env", e => e.Set("A", a.Url));
         });
 
         var plan = f.Plan();
@@ -361,19 +361,62 @@ public class PlannerTests
     }
 
     [Fact]
-    public void Outputs_are_carried_into_the_plan_and_a_launch_profile_for_a_node_app_is_a_warning()
+    public void Each_value_keeps_its_file_and_a_launch_profile_for_a_node_app_is_a_warning()
     {
         var f = new Fixture();
         f.Add("../r", repo =>
         {
-            repo.DotNet("api", ".").Http(urlEnv: "ASPNETCORE_URLS").Output(EnvOutput.LaunchSettings());
-            repo.Node("web", ".").Http(portEnv: "PORT").Output(EnvOutput.LaunchSettings());
+            var api = repo.DotNet("api", ".").Http();
+            api.LaunchSettings(s => s.Set("ASPNETCORE_URLS", api.Url));
+            var web = repo.Node("web", ".").Http();
+            web.LaunchSettings(s => s.Set("PORT", web.Port));
         });
 
         var plan = f.Plan();
 
-        Assert.Equal("Properties/launchSettings.json", Assert.Single(plan.Apps.Single(a => a.Name == "api").Outputs).File);
+        var urls = Env(plan, "api", "ASPNETCORE_URLS");
+        Assert.Equal(("Properties/launchSettings.json", "launchSettings", "sprig"), (urls.File, urls.Kind, urls.Profile));
         Assert.Contains("'web' isn't a .NET app", Assert.Single(plan.Problems).Message);
+    }
+
+    [Fact]
+    public void A_value_meant_for_the_process_is_refused_since_running_the_app_yourself_would_not_get_it()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo => repo.DotNet("api", ".").Http());
+        var at = new SourceLocation("sprig.cs", 3);
+
+        var plan = f.PlanWith(i => i with
+        {
+            Repos = i.Repos.ToDictionary(r => r.Key, r => r.Value with
+            {
+                Apps = [r.Value.Apps[0] with { Env = [new EnvModel("Feature", "on", null, at)] }],
+            }),
+        });
+
+        var problem = Assert.Single(plan.Problems);
+        Assert.Equal(ProblemSeverity.Error, problem.Severity);
+        Assert.Contains("'api' would get Feature on its process, which running it yourself wouldn't", problem.Message);
+        Assert.Contains(".AppSettings(\"appsettings.Local.json\", …)", problem.Message);
+        Assert.Equal(at, problem.Location);
+    }
+
+    [Fact]
+    public void A_value_in_a_run_command_is_refused_since_typing_the_command_would_not_fill_it_in()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            var web = repo.Node("web", ".").Http();
+            web.Run($"npm run dev -- --port {web.Port}");
+            repo.Node("docs", ".").Http().Run("npm run docs");
+        });
+
+        var problem = Assert.Single(f.Plan().Problems);
+
+        Assert.Equal(ProblemSeverity.Error, problem.Severity);
+        Assert.Contains("'web' has {web.http.port} in its Run command", problem.Message);
+        Assert.Contains(".EnvFile(\".env.local\"", problem.Message);
     }
 
     static PlannedEnv Env(Plan plan, string app, string key)
@@ -388,7 +431,8 @@ public class PlannerTests
         var f = new Fixture();
         f.Add("../shop-services", repo =>
         {
-            var catalog = repo.DotNet("catalog-api", "src/Catalog.Api").Http(urlEnv: "ASPNETCORE_URLS");
+            var catalog = repo.DotNet("catalog-api", "src/Catalog.Api").Http();
+            catalog.LaunchSettings(s => s.Set("ASPNETCORE_URLS", catalog.Url));
             repo.Export<Url>("catalog-url", catalog.Url);
         });
         f.Add("../shop-web", repo =>
@@ -414,7 +458,7 @@ public class PlannerTests
         var f = new Fixture();
         var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
         f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("CACHE", repo.Setting<Url>("cache-url")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("CACHE", repo.Setting<Url>("cache-url"))));
 
         var ambiguous = f.Plan();
         var problem = Assert.Single(ambiguous.Problems);
@@ -431,7 +475,7 @@ public class PlannerTests
     public void A_setting_to_ask_for_says_where_it_was_declared()
     {
         var f = new Fixture();
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("api-url")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("api-url"))));
 
         var ask = Assert.Single(f.Plan().ToAsk);
 
@@ -445,7 +489,7 @@ public class PlannerTests
     {
         var f = new Fixture();
         f.Add("../db", repo => repo.Export<ConnectionString>("orders-db", "Host=x"));
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("DB", repo.Setting<Url>("orders-db")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("DB", repo.Setting<Url>("orders-db"))));
 
         Assert.Contains("web's setting 'orders-db' is a url, but db exports it as connectionstring", Assert.Single(f.Plan().Problems).Message);
     }
@@ -454,7 +498,7 @@ public class PlannerTests
     public void Infra_the_orchestration_owns_can_give_a_setting()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().Env("Smtp__Url", repo.Setting<Url>("mail-smtp")));
+        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().EnvFile(".env", e => e.Set("Smtp__Url", repo.Setting<Url>("mail-smtp"))));
         var mail = f.Orchestration.Mailpit("mail");
         f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
 
@@ -478,8 +522,8 @@ public class PlannerTests
             var pg = repo.Postgres("pg");
             var bus = repo.RabbitMq("bus");
             repo.DotNet("catalog-api", ".").Http()
-                .Env("ConnectionStrings__Db", pg.Database("catalog"))
-                .Env("Bus__Url", bus.Url);
+                .EnvFile(".env", e => e.Set("ConnectionStrings__Db", pg.Database("catalog")))
+                .EnvFile(".env", e => e.Set("Bus__Url", bus.Url));
         });
 
         var plan = f.Plan();
@@ -525,11 +569,11 @@ public class PlannerTests
     public void Names_are_private_to_their_repo()
     {
         var f = new Fixture();
-        f.Add("../a", repo => repo.DotNet("api", ".").Http().Env("Db", $"{repo.Postgres("pg").Port}"));
+        f.Add("../a", repo => repo.DotNet("api", ".").Http().EnvFile(".env", e => e.Set("Db", $"{repo.Postgres("pg").Port}")));
         f.Add("../b", repo =>
         {
             repo.Postgres("pg");
-            repo.Node("web", ".").Http().Env("Api", new Ref("api.http.url"));
+            repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("Api", new Ref("api.http.url")));
         });
 
         var plan = f.Plan();
@@ -549,7 +593,7 @@ public class PlannerTests
             var compose = repo.ComposeFile("docker-compose.yml");
             var pg = compose.Service("postgres").Endpoint("tcp", 5432);
             compose.Set("services.postgres.container_name", $"shop-pg-{Workspace.Name}");
-            repo.DotNet("api", ".").Http().Env("Db", $"Host=localhost;Port={pg.Port}");
+            repo.DotNet("api", ".").Http().EnvFile(".env", e => e.Set("Db", $"Host=localhost;Port={pg.Port}"));
         });
 
         var plan = f.Plan();
@@ -613,11 +657,11 @@ public class PlannerTests
         f.Add("../shop-services", repo =>
         {
             var pg = repo.Postgres("pg");
-            var catalog = repo.DotNet("catalog-api", ".").Http().Env("Db", pg.Database("catalog"));
-            repo.DotNet("orders-api", ".").Http().Env("Catalog__Url", catalog.Url);
+            var catalog = repo.DotNet("catalog-api", ".").Http().EnvFile(".env", e => e.Set("Db", pg.Database("catalog")));
+            repo.DotNet("orders-api", ".").Http().EnvFile(".env", e => e.Set("Catalog__Url", catalog.Url));
             repo.Export<Url>("catalog-url", catalog.Url);
         });
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().Env("VITE_CATALOG_URL", repo.Setting<Url>("catalog-url")));
+        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("VITE_CATALOG_URL", repo.Setting<Url>("catalog-url"))));
 
         var plan = f.Plan();
 
@@ -635,9 +679,9 @@ public class PlannerTests
         var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
         f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
         f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http()
-            .Env("Smtp__Url", repo.Setting<Url>("mail-smtp"))
-            .Env("Cache", repo.Setting<Url>("cache-url"))
-            .Env("Flag", repo.Setting<Text>("flag")));
+            .EnvFile(".env", e => e.Set("Smtp__Url", repo.Setting<Url>("mail-smtp")))
+            .EnvFile(".env", e => e.Set("Cache", repo.Setting<Url>("cache-url")))
+            .EnvFile(".env", e => e.Set("Flag", repo.Setting<Text>("flag"))));
         var mail = f.Orchestration.Mailpit("mail");
         f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
         f.Orchestration.Bind("cache-url", a.Export("cache-url"));
@@ -659,7 +703,7 @@ public class PlannerTests
     public void A_setting_to_ask_for_is_a_wire_with_no_provider()
     {
         var f = new Fixture();
-        f.Add("../web", repo => repo.Node("web", ".").Http().Env("API", repo.Setting<Url>("api-url")));
+        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("api-url"))));
 
         var wire = Assert.Single(f.Plan().Wires());
 

@@ -34,7 +34,7 @@ public class HostStatusTests
         workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "feat-x", null, "stable", [repo], [], [],
             WorkspaceState.Up, now, now));
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", null, [],
-            [new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, [], [])], [], [], [], []));
+            [new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, [])], [], [], [], []));
         RunnerStatus[] Api(RunnerState state) => [new("storefront/feat-x", "shop/api", state, 42, 8000, null, "api.log", now)];
 
         services.HostStatus.Apply(Api(RunnerState.Ready));

@@ -40,7 +40,7 @@ public sealed class PlanView
         Apps = plan.Apps.Select(a => new AppSection(
             $"{a.Owner} / {a.Name}",
             $"{a.Kind} · {a.Path}" + (a.WaitFor.Count > 0 ? $" · waits for {string.Join(", ", a.WaitFor)}" : ""),
-            a.Env.Select(e => Row(e.Key, e.File, e.Value))
+            a.Env.Select(e => Row(e.Key, e.File is { } file ? a.FileLabel(file) : null, e.Value))
                 .Concat(a.Run is { } run ? [Row("run", null, run)] : [])
                 .ToArray())).ToArray();
 

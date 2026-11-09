@@ -48,13 +48,16 @@ public static class EnvFiles
     }
 
     /// <summary>A launch profile named <paramref name="profile"/>, placed first so <c>dotnet run</c> uses it by
-    /// default. Other profiles are kept as they are.</summary>
+    /// default. Other profiles are kept as they are. Its env starts from the profile it puts second, so the app keeps
+    /// what that gave it (usually <c>ASPNETCORE_ENVIRONMENT</c>) under a plain <c>dotnet run</c>.</summary>
     public static void WriteLaunchProfile(string path, string profile, IReadOnlyList<KeyValuePair<string, string>> values)
     {
         var root = ReadObject(path);
         var old = root["profiles"] as JsonObject ?? [];
 
-        var env = new JsonObject();
+        var displaced = old.Where(p => p.Key != profile).Select(p => p.Value as JsonObject)
+            .FirstOrDefault(p => p?["commandName"]?.GetValue<string>() == "Project");
+        var env = displaced?["environmentVariables"]?.DeepClone() as JsonObject ?? [];
         foreach (var (key, value) in values) env[key] = value;
         var mine = new JsonObject
         {

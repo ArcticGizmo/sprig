@@ -423,12 +423,6 @@ public partial class WorkspacesView : UserControl
         if (_vm is not null) _vm.Logs.ProblemsOnly = !_vm.Logs.ProblemsOnly;
     }
 
-    async void CopyEnv(object? sender, RoutedEventArgs e)
-    {
-        if (_vm is null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
-        await clipboard.SetTextAsync(_vm.EnvText());
-    }
-
     void ShowProgress(OperationProgressViewModel progress)
     {
         var window = new OperationProgressWindow { DataContext = progress };

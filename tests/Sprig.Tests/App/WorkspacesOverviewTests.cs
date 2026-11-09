@@ -28,7 +28,7 @@ public class WorkspacesOverviewTests
         Save("analytics", "q4", WorkspaceState.Down, 21);
         store.SavePlan(new Plan("storefront", "feat-a", "stable", "main",
             [new PlannedPort("shop", "api", "http", 8000, null, null), new PlannedPort("shop", "web", "http", 5170, null, null)],
-            [new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, [], []), new PlannedApp("shop", "../shop", "web", "node", ".", [], null, [], [])],
+            [new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, []), new PlannedApp("shop", "../shop", "web", "node", ".", [], null, [])],
             [], [], [], []));
         services.HostStatus.Apply([new RunnerStatus("storefront/feat-a", "shop/api", RunnerState.Ready, 1, 8000, null, "a.log", Now)]);
 

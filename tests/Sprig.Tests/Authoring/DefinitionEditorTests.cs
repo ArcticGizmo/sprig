@@ -15,7 +15,7 @@ public class DefinitionEditorTests
         // The catalog owns stock levels.
         var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
             .Http("http")
-            .Env("Mode",   "dev")      // aligned on purpose
+            .AppSettings("appsettings.Local.json", s => s.Set("Mode",   "dev"))      // aligned on purpose
             .WaitFor();
 
         var web = repo.Node("web", "apps/web").Http();
@@ -36,50 +36,6 @@ public class DefinitionEditorTests
         Assert.Equal("catalog", found[0].Variable);
         Assert.Equal(9, found[0].Line);
         Assert.False(found[2].Editable);
-    }
-
-    [Fact]
-    public void AddEnv_goes_after_the_last_env_with_the_chains_indent_and_touches_nothing_else()
-    {
-        var result = DefinitionEditor.AddEnv(Source, "catalog-api", "Smtp__Url", "smtp");
-
-        Assert.True(result.Ok, result.Error);
-        Assert.Equal(Source.Replace(
-            """
-                .Env("Mode",   "dev")      // aligned on purpose
-            """,
-            """
-                .Env("Mode",   "dev")      // aligned on purpose
-                .Env("Smtp__Url", smtp)
-            """), result.Text);
-    }
-
-    [Fact]
-    public void AddEnv_on_a_one_line_chain_starts_a_continuation_line()
-    {
-        var result = DefinitionEditor.AddEnv(Source, "web", "VITE_API_URL", "catalog.Url");
-
-        Assert.True(result.Ok, result.Error);
-        Assert.Contains("""
-            var web = repo.Node("web", "apps/web").Http()
-                .Env("VITE_API_URL", catalog.Url);
-            """, result.Text);
-    }
-
-    [Fact]
-    public void AddEnv_refuses_a_key_that_is_already_set_and_an_app_inside_a_loop()
-    {
-        Assert.Contains("already sets Mode", DefinitionEditor.AddEnv(Source, "catalog-api", "Mode", "\"x\"").Error);
-        Assert.Contains("no editable app", DefinitionEditor.AddEnv(Source, "a", "K", "\"x\"").Error);
-    }
-
-    [Fact]
-    public void AddEnv_that_would_not_compile_is_refused_and_the_text_is_unchanged()
-    {
-        var result = DefinitionEditor.AddEnv(Source, "catalog-api", "Broken", "(");
-
-        Assert.False(result.Ok);
-        Assert.Equal(Source, result.Text);
     }
 
     [Fact]
@@ -127,7 +83,7 @@ public class DefinitionEditorTests
     {
         var crlf = Source.Replace("\n", "\r\n");
 
-        var result = DefinitionEditor.AddEnv(crlf, "catalog-api", "K", "\"v\"");
+        var result = DefinitionEditor.AddSetting(crlf, "billing-url", "Url", "billing");
 
         Assert.DoesNotContain("\n", result.Text.Replace("\r\n", ""));
     }

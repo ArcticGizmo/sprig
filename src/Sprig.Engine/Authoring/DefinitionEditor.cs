@@ -40,21 +40,6 @@ public static class DefinitionEditor
             .ToArray();
     }
 
-    /// <summary>Add <c>.Env("key", value)</c> to an app's chain, after its last env var, or after its endpoints.</summary>
-    /// <param name="valueCode">The C# for the value, e.g. <c>"\"literal\""</c>, <c>"smtp"</c> or <c>"$\"http://{api.Port}\""</c>.</param>
-    public static EditResult AddEnv(string text, string app, string key, string valueCode)
-    {
-        if (Find(text, app) is not { } decl) return EditResult.Fail(text, $"no editable app named '{app}'");
-        if (decl.Chain.Any(c => c.Method == "Env" && FirstStringArg(c.Invocation) == key))
-            return EditResult.Fail(text, $"'{app}' already sets {key}");
-
-        var anchor = decl.Chain.LastOrDefault(c => c.Method is "Env" or "EnvFile")
-            ?? decl.Chain.LastOrDefault(c => c.Method == "Http")
-            ?? decl.Chain[^1];
-        var line = $".Env({Literal(key)}, {valueCode})";
-        return Apply(text, InsertionPointAfter(text, anchor.Invocation), NewLine(text) + ChainIndent(text, decl) + line);
-    }
-
     /// <summary>Set, change or (with a null <paramref name="pin"/>) remove the <c>pin:</c> on an app's endpoint.</summary>
     public static EditResult SetPin(string text, string app, string endpoint, string? pin)
     {
@@ -190,22 +175,6 @@ public static class DefinitionEditor
         => invocation.ArgumentList.Arguments.FirstOrDefault(a => a.NameColon is null) is { Expression: LiteralExpressionSyntax lit }
            && lit.IsKind(SyntaxKind.StringLiteralExpression) ? lit.Token.ValueText : null;
 
-    /// <summary>The indent used by the chain's continuation lines, or the statement's indent plus four spaces when
-    /// the whole chain is on one line.</summary>
-    static string ChainIndent(string text, Declaration decl)
-    {
-        var source = SourceText.From(text);
-        foreach (var call in decl.Chain.Skip(1))
-        {
-            var dot = ((MemberAccessExpressionSyntax)call.Invocation.Expression).OperatorToken;
-            var line = source.Lines.GetLineFromPosition(dot.SpanStart);
-            var leading = text[line.Start..dot.SpanStart];
-            if (leading.Trim().Length == 0) return leading;
-        }
-        var statementLine = source.Lines.GetLineFromPosition(decl.Statement!.SpanStart);
-        var indent = text[statementLine.Start..decl.Statement.SpanStart];
-        return indent + "    ";
-    }
 
     static EditResult Apply(string text, int position, string insert) => Apply(text, new TextSpan(position, 0), insert);
 

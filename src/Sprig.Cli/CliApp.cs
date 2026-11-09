@@ -86,7 +86,6 @@ public static class CliApp
         config.AddCommand<ReleaseCommand>("release");
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");
-        config.AddCommand<EnvCommand>("env");
         config.AddCommand<StartCommand>("start");
         config.AddCommand<StopCommand>("stop");
         config.AddCommand<PsCommand>("ps");

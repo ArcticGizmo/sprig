@@ -622,13 +622,9 @@ public sealed partial class WorkspaceService(
         {
             var repoDir = repoDirs[app.RepoPath];
             var appDir = Path.GetFullPath(Path.Combine(repoDir, app.Path));
-            var process = app.Env.Where(e => e.File is null).Select(e => KeyValuePair.Create(e.Key, e.Value.Value ?? "")).ToList();
-
-            foreach (var group in app.Env.Where(e => e.File is not null).GroupBy(e => e.File!))
-                Add(app.RepoPath, repoDir, Path.GetFullPath(Path.Combine(appDir, group.Key)), "dotenv", null,
+            foreach (var group in app.Env.Where(e => e.File is not null).GroupBy(e => (e.File!, e.Kind ?? "dotenv", e.Profile)))
+                Add(app.RepoPath, repoDir, Path.GetFullPath(Path.Combine(appDir, group.Key.Item1)), group.Key.Item2, group.Key.Profile,
                     group.Select(e => KeyValuePair.Create(e.Key, e.Value.Value ?? "")), group.First().Location);
-            foreach (var output in app.Outputs)
-                Add(app.RepoPath, repoDir, Path.GetFullPath(Path.Combine(appDir, output.File)), output.Kind, output.Profile, process, output.Location);
         }
         return targets;
 
@@ -662,8 +658,8 @@ public sealed partial class WorkspaceService(
             var relative = Path.GetRelativePath(target.RepoDir, target.Path).Replace('\\', '/');
             if (tracked)
                 problems.Add(new PlanProblem(ProblemSeverity.Error,
-                    $"git tracks {relative}, so sprig won't write a workspace's values into it. Point the output at a local file the app reads instead" +
-                    (target.Kind == "launchSettings" ? ", e.g. EnvOutput.AppSettings(\"appsettings.Local.json\")." : "."), target.Location));
+                    $"git tracks {relative}, so sprig won't write a workspace's values into it. Write them into a local file the app reads instead" +
+                    (target.Kind == "launchSettings" ? ", e.g. .AppSettings(\"appsettings.Local.json\", …)." : "."), target.Location));
             else if (!ignored)
                 problems.Add(new PlanProblem(ProblemSeverity.Error,
                     $"{relative} isn't ignored by git, so a workspace's values could be committed. Add it to the repo's .gitignore" + target.Kind switch

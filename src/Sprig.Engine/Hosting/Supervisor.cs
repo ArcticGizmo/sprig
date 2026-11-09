@@ -446,7 +446,6 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 StandardErrorEncoding = Encoding.UTF8,
             };
             foreach (var arg in command.Args) psi.ArgumentList.Add(arg);
-            foreach (var (key, value) in spec.Env) psi.Environment[key] = value;
 
             var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
             process.OutputDataReceived += (_, e) => Output(e.Data, logMatched);

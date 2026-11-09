@@ -184,18 +184,24 @@ public static class Planner
             foreach (var wait in app.WaitFor.Where(w => !scope.Resources.ContainsKey(w)))
                 Problem($"'{app.Name}' waits for '{wait}', which {scope.Owner} doesn't declare", app.Location);
 
-            foreach (var output in app.Outputs)
+            // A value only ever reaches an app through a file it reads, so running it by hand or from another tool gets
+            // the same values sprig's run does.
+            foreach (var e in app.Env)
             {
-                if (output.Kind is not ("dotenv" or "launchSettings" or "appSettings"))
-                    Problem($"'{app.Name}' writes to an unknown kind of output '{output.Kind}'", output.Location);
-                else if (output.Kind == "launchSettings" && app.Kind != "dotnet")
-                    Warn($"'{app.Name}' isn't a .NET app, so nothing reads the launch profile sprig writes for it", output.Location);
+                if (e.File is null)
+                    Problem($"'{app.Name}' would get {e.Key} on its process, which running it yourself wouldn't. Write it into a file the app reads: " +
+                        (app.Kind == "dotnet" ? ".AppSettings(\"appsettings.Local.json\", …) or .LaunchSettings(…)" : ".EnvFile(\".env.local\", …)"), e.Location);
+                else if (e.Kind is not ("dotenv" or "appSettings" or "launchSettings"))
+                    Problem($"'{app.Name}' writes {e.Key} into {e.File} as an unknown kind of file '{e.Kind}'", e.Location);
+                else if (e.Kind == "launchSettings" && app.Kind != "dotnet")
+                    Warn($"'{app.Name}' isn't a .NET app, so nothing reads the launch profile sprig writes {e.Key} into", e.Location);
             }
-            if (app.Outputs.Count > 0 && !app.Env.Any(e => e.File is null))
-                Warn($"'{app.Name}' has outputs but no env vars to write into them", app.Location);
+            if (app.Run is { } command && RunValues(command) is { Length: > 0 } carried)
+                Problem($"'{app.Name}' has {string.Join(", ", carried.Select(c => $"{{{c}}}"))} in its Run command, which typing the command yourself wouldn't fill in. " +
+                    "Give the command as you'd type it, and the value in a file the app reads, e.g. .EnvFile(\".env.local\", e => e.Set(\"PORT\", app.Port))", app.Location);
 
             _referenced = [];
-            var env = app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location)).ToArray();
+            var env = app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location, e.Kind, e.Profile)).ToArray();
             var run = app.Run is null ? null : Resolve(scope, app.Run, app.Location);
             var key = $"{scope.Owner}/{app.Name}";
             _referencedBy[key] = _referenced;
@@ -206,8 +212,15 @@ public static class Planner
                 .Where(w => scope.Resources.TryGetValue(w, out var r) && r.Kind is "app" or "job")
                 .Select(w => $"{scope.Owner}/{w}")
                 .ToArray();
-            return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor, app.Outputs,
+            return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor,
                 app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app), PlanLinks(scope, app.Links));
+        }
+
+        /// <summary>The references in a Run command template; a command that doesn't parse is left to resolving to report.</summary>
+        static string[] RunValues(string command)
+        {
+            try { return TemplateText.Parse(command).OfType<RefPart>().Select(r => r.Path).ToArray(); }
+            catch (FormatException) { return []; }
         }
 
         /// <summary>Resolved after the app's values, so linking to another app's page never makes it wait for that app.

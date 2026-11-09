@@ -86,7 +86,10 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     static void Api(RepoBuilder repo)
-        => repo.DotNet("api", "src/Api").Http(urlEnv: "ASPNETCORE_URLS").Env("Feature", "on").Output(EnvOutput.LaunchSettings());
+    {
+        var api = repo.DotNet("api", "src/Api").Http();
+        api.LaunchSettings(s => s.Set("ASPNETCORE_URLS", api.Url).Set("Feature", "on"));
+    }
 
     [Fact]
     public void Up_makes_worktrees_writes_ignored_env_files_and_keeps_its_ports()
@@ -343,7 +346,7 @@ public sealed class WorkspaceServiceTests : IDisposable
 
         var problem = Assert.Single(e.Problems);
         Assert.StartsWith("git tracks src/Api/Properties/launchSettings.json", problem.Message);
-        Assert.Contains("EnvOutput.AppSettings", problem.Message);
+        Assert.Contains(".AppSettings(\"appsettings.Local.json\", …)", problem.Message);
         Assert.EndsWith("WorkspaceServiceTests.cs", problem.Location!.File);
         Assert.False(Directory.Exists(Path.Combine(_root, "storefront--feat-x")));
         Assert.Null(_workspaces.Get("storefront", "feat-x"));
@@ -354,7 +357,10 @@ public sealed class WorkspaceServiceTests : IDisposable
     {
         RepoWith("shop-services", "bin/\n", ("src/Api/Program.cs", "// api"));
         var loaded = Load(("shop-services", repo =>
-            repo.DotNet("api", "src/Api").Http(urlEnv: "Urls").Output(EnvOutput.AppSettings("appsettings.Local.json"))));
+        {
+            var api = repo.DotNet("api", "src/Api").Http();
+            api.AppSettings("appsettings.Local.json", s => s.Set("Urls", api.Url));
+        }));
 
         var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "local", null, InPlace));
 

@@ -53,7 +53,7 @@ public sealed record OrchestrationModel(
 /// <param name="Url">A template that resolves to an absolute http(s) url.</param>
 public sealed record LinkModel(string Label, string Url, SourceLocation Location);
 
-/// <param name="Outputs">Files that also receive the app's process env vars, for running it by hand or from an IDE.</param>
+/// <param name="Env">The values it gets, each in the file it's written to.</param>
 /// <param name="Job">A one-off command (such as migrations) that runs to completion, rather than an app that keeps running.</param>
 /// <param name="ReadyLog">A regular expression; the app is ready once a line of its output matches.</param>
 /// <param name="Restart">What to do when it exits without being asked to; null to leave it exited.</param>
@@ -67,7 +67,6 @@ public sealed record AppModel(
     IReadOnlyList<EnvModel> Env,
     string? Run,
     IReadOnlyList<string> WaitFor,
-    IReadOnlyList<EnvOutputModel> Outputs,
     bool Job,
     string? ReadyLog = null,
     RestartModel? Restart = null,
@@ -77,12 +76,6 @@ public sealed record AppModel(
 /// <c>onFailure</c>).</param>
 /// <param name="Max">Restarts in a row before giving up. A run that lasted a minute starts the count again.</param>
 public sealed record RestartModel(string Policy, int Max, SourceLocation Location);
-
-/// <summary>A file, under the app's path, that gets the app's process env vars written into it.</summary>
-/// <param name="Kind"><c>dotenv</c>, <c>launchSettings</c> or <c>appSettings</c>.</param>
-/// <param name="File">Relative to the app's path.</param>
-/// <param name="Profile">The launch profile's name, for <c>launchSettings</c>.</param>
-public sealed record EnvOutputModel(string Kind, string File, string? Profile, SourceLocation Location);
 
 /// <param name="Health">A command run inside the container that exits 0 once it's ready; null to only wait for it to
 /// be running.</param>
@@ -103,8 +96,11 @@ public sealed record VolumeModel(string Name, string Target);
 /// the app is ready.</param>
 public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, string? Scheme, SourceLocation Location, string? Health = null);
 
-/// <summary>One env var. <see cref="File"/> is null for a process env var, else the env file it's written to.</summary>
-public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location);
+/// <summary>One value. An app's is written into <see cref="File"/>, relative to the app's path, never set on its
+/// process; a container's goes in its compose definition and has no file.</summary>
+/// <param name="Kind"><c>dotenv</c>, <c>appSettings</c> or <c>launchSettings</c>; null for a container's.</param>
+/// <param name="Profile">The launch profile's name, for <c>launchSettings</c>.</param>
+public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location, string? Kind = null, string? Profile = null);
 
 /// <param name="Default">A template for the value to use when nothing else gives one; null to be asked for one.</param>
 public sealed record SettingModel(string Name, string Type, SourceLocation Location, string? Default = null);

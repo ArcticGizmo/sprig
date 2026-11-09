@@ -101,7 +101,9 @@ public class WorkspacesViewModelTests
         var at = new SourceLocation("x", 1);
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", "main",
             [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
-            [new PlannedApp("shop-services", "../shop-services", "catalog-api", "dotnet", "src/Catalog.Api", [], null, [], [])],
+            [new PlannedApp("shop-services", "../shop-services", "catalog-api", "dotnet", "src/Catalog.Api",
+                [new PlannedEnv("Urls", new PlannedValue("{catalog-api.http.url}", "http://localhost:8000", []), "Properties/launchSettings.json", at, "launchSettings", "sprig"),
+                 new PlannedEnv("Seq", new PlannedValue("x", "x", []), "../../.env", at)], null, [])],
             [],
             [new PlannedCompose("shop-services", "../shop-services", "docker-compose.yml", [],
                 [new PlannedComposeService("postgres", [new PlannedMapping("tcp", 8002, 5432)])])],
@@ -116,7 +118,8 @@ public class WorkspacesViewModelTests
         Assert.Equal("storefront--feat-x", vm.Selected!.Title);
         var app = Assert.Single(vm.Apps);
         Assert.Equal("http://localhost:8000", app.Url);
-        Assert.Equal("Properties/launchSettings.json", app.Values);
+        // A file shared from outside the app's folder reads from the repo, the same from every app.
+        Assert.Equal("Properties/launchSettings.json, .env", app.Values);
         Assert.Equal("8002:5432", Assert.Single(vm.Infra).Ports);
         Assert.True(vm.HasWarnings);
         Assert.True(vm.CanDeleteBranch);

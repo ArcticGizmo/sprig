@@ -107,6 +107,19 @@ internal static partial class HeadlessRenderer
             Console.WriteLine("start choices: " + string.Join(" | ", vm.Workspaces.StartChoices.Select(c => $"{c.Label} ({c.Apps})")));
             vm.Workspaces.PickStartChoiceCommand.Execute(vm.Workspaces.StartChoices.First());
 
+            // The ▾'s choices, each with a ▶ that starts it there and then.
+            var choices = window.GetVisualDescendants().OfType<Button>().First(b => b.Name == "StartChoiceButton");
+            choices.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "start-choices"));
+            // Pointed at, the first ▶ lights up the whole area that takes its click.
+            var play = window.GetVisualDescendants().OfType<Button>().First(b => b.Classes.Contains("startnow"));
+            window.MouseMove(play.TranslatePoint(new Point(play.Bounds.Width / 2, 2), window)!.Value);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "start-choices-hover"));
+            Console.WriteLine($"▶ click area: {play.Bounds.Width:0}×{play.Bounds.Height:0}, its row {((Control)play.FindAncestorOfType<MenuItem>()!).Bounds.Height:0} high");
+            CloseMenus(window);
+
             // Three apps marked with Ctrl+click, then one of them right-clicked: one menu for them all.
             vm.Workspaces.OpenApp(vm.Workspaces.Apps.First(a => a.App == "catalog-api"));
             foreach (var name in new[] { "orders-api", "payments-api" }) vm.Workspaces.ToggleMark(vm.Workspaces.Apps.First(a => a.App == name));

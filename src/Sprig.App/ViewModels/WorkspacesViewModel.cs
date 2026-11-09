@@ -552,6 +552,14 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private void PickStartChoice(StartChoice choice) => StartChoice = choice;
 
+    /// <summary>Picks <paramref name="choice"/> and starts it in one go, from the ▶ beside it in the choices.</summary>
+    [RelayCommand]
+    private async Task StartChoiceNow(StartChoice choice)
+    {
+        StartChoice = choice;
+        await StartAsync(null);
+    }
+
     [RelayCommand]
     private async Task StartApps() => await StartAsync(null);
 

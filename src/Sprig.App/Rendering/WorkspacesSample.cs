@@ -227,6 +227,32 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "graph-hover"));
 
+            // payments-api uses four, so its "+1" stands for one; pointed at, it says which. Brought into view first,
+            // since fitted the sample is zoomed out to where tags are only dots.
+            vm.Workspaces.Graph!.Reveal("shop-services/payments-api");
+            vm.Workspaces.Graph.Select(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            window.MouseMove(canvas.TranslatePoint(canvas.TagAt("shop-services/payments-api", more: true)!.Value, window)!.Value);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "graph-tag-more"));
+            window.MouseMove(canvas.TranslatePoint(canvas.TagAt("shop-services/payments-api", more: false)!.Value, window)!.Value);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "graph-tag"));
+
+            // Looking for redis finds it and what uses it; Enter goes to each in turn.
+            vm.Workspaces.GraphSearch = "redis";
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "graph-search"));
+            var found = vm.Workspaces.GraphSearchCaption;
+            vm.Workspaces.NextGraphMatchCommand.Execute(null);
+            vm.Workspaces.NextGraphMatchCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "graph-search-next"));
+            Console.WriteLine($"search 'redis': {found}, then {vm.Workspaces.GraphSearchCaption}, picked {vm.Workspaces.GraphPicked?.Name}");
+            vm.Workspaces.ClearGraphSearchCommand.Execute(null);
+            vm.Workspaces.FitGraphCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+
             window.MouseDown(NodeAt("shop-services/payments-api"), MouseButton.Right);
             window.MouseUp(NodeAt("shop-services/payments-api"), MouseButton.Right);
             Pump(TimeSpan.FromMilliseconds(400));
@@ -449,6 +475,11 @@ internal static partial class HeadlessRenderer
                 break;
         }
         if (app == "orders-api") Mail();
+        if (app == "payments-api")
+        {
+            Redis(repo);
+            Mail();
+        }
         if (app == "payments-api")
             Add("Payments__Url", "https://sandbox.payments.example.com", "setting payments-gateway ← this workspace",
                 new(ValueSource.Workspace, null, null, "payments-gateway"));

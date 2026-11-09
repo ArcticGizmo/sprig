@@ -251,6 +251,43 @@ public sealed class WorkspaceGraph
         Changed?.Invoke();
     }
 
+    /// <summary>What's being looked for; empty for nothing.</summary>
+    public string Search { get; private set; } = "";
+
+    /// <summary>The nodes <see cref="Search"/> finds, in reading order (top to bottom, then left to right).</summary>
+    public IReadOnlyList<string> Matches { get; private set; } = [];
+
+    public bool Searching => Search.Length > 0;
+    public bool IsMatch(string key) => Searching && Matches.Contains(key);
+
+    /// <summary>Bring a node into the middle of the view.</summary>
+    public event Action<string>? CenterRequested;
+
+    /// <summary>
+    /// Look for <paramref name="text"/> in each node's name, repo, port or image, and the tags under it, so "redis" finds
+    /// redis and everything that uses it.
+    /// </summary>
+    public void SetSearch(string text)
+    {
+        Search = text.Trim();
+        bool Has(string s) => s.Contains(Search, StringComparison.OrdinalIgnoreCase);
+        Matches = !Searching ? []
+            : Nodes.Where(n => Has(n.Name) || Has(n.Owner) || Has(n.Detail) || n.Tags.Any(t => Has(t.Name)))
+                .Select(n => Layout.Find(n.Key))
+                .OfType<LayoutBody>()
+                .OrderBy(b => Math.Round(b.Y / 40)).ThenBy(b => b.X)
+                .Select(b => b.Key)
+                .ToArray();
+        Changed?.Invoke();
+    }
+
+    /// <summary>Pick a node and bring it into view.</summary>
+    public void Reveal(string key)
+    {
+        Select(key);
+        CenterRequested?.Invoke(key);
+    }
+
     public void Invalidate() => Changed?.Invoke();
     public void RequestLog(GraphNode node) => LogRequested?.Invoke(node);
     public void Pinned() => PinsChanged?.Invoke();

@@ -18,6 +18,11 @@ On a real repo whose services all use the same infra and each other's urls, the 
 - **Infra as tags.** The infra and outside values a node uses show as tags under it, each with its state's dot, rather than as lines. Their lines appear only when one end is pointed at or picked. Too small to read when zoomed out, a tag is just its dot.
 - **Focus.** With nothing pointed at or picked, links are faint. Pointing at or picking a node draws its links in full, with their values, and fades the rest.
 
+Then (user, same day):
+
+- **Tags say what they are.** Pointing at a tag shows its name, repo and state; its "+n" lists the ones it stands for. Clicking a tag picks that node; clicking "+n" picks the node it's under, whose card lists everything.
+- **Search.** A box above the graph (Ctrl+F) finds nodes by name, repo, port or image, and nodes using infra of that name, so "redis" finds redis and its users. What it finds is ringed and the rest dims; Enter goes to each in turn (Shift+Enter back), picking it and bringing it into view; Esc clears.
+
 A 3D layout was considered and turned down: on a flat screen its links cross again from any one angle, and reading it means turning it round.
 
 ## What's drawn

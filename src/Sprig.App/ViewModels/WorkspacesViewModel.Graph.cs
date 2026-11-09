@@ -77,6 +77,11 @@ public partial class WorkspacesViewModel
         graph.LogRequested += OnGraphLog;
         graph.PinsChanged += OnGraphPinned;
         Graph = graph;
+        // Another workspace starts with nothing looked for; the same one, read afresh, keeps the search.
+        if (!same) GraphSearch = "";
+        graph.SetSearch(GraphSearch);
+        _graphMatch = -1;
+        CaptionSearch();
         if (!same)
         {
             _lastInfra = null;
@@ -167,6 +172,48 @@ public partial class WorkspacesViewModel
         Tab = WorkspaceTab.Graph;
         await PollInfraAsync(now: true);
     }
+
+    /// <summary>What to look for in the graph: a name, repo, port or image, or infra used.</summary>
+    [ObservableProperty] private string _graphSearch = "";
+
+    /// <summary>How many it found, and which one Enter last went to.</summary>
+    [ObservableProperty] private string _graphSearchCaption = "";
+
+    int _graphMatch = -1;
+
+    partial void OnGraphSearchChanged(string value)
+    {
+        _graphMatch = -1;
+        Graph?.SetSearch(value);
+        CaptionSearch();
+    }
+
+    void CaptionSearch()
+    {
+        var found = Graph?.Matches.Count ?? 0;
+        GraphSearchCaption = GraphSearch.Trim().Length == 0 ? ""
+            : found == 0 ? "none found"
+            : _graphMatch < 0 ? (found == 1 ? "1 found · Enter to go to it" : $"{found} found · Enter to go through them")
+            : $"{_graphMatch + 1} of {found}";
+    }
+
+    /// <summary>Go to the next node the search found, picking it and bringing it into view; Shift goes back.</summary>
+    [RelayCommand]
+    private void NextGraphMatch() => StepGraphMatch(1);
+
+    [RelayCommand]
+    private void PreviousGraphMatch() => StepGraphMatch(-1);
+
+    void StepGraphMatch(int by)
+    {
+        if (Graph is not { Matches.Count: > 0 } graph) return;
+        _graphMatch = _graphMatch < 0 ? (by > 0 ? 0 : graph.Matches.Count - 1) : (_graphMatch + by + graph.Matches.Count) % graph.Matches.Count;
+        graph.Reveal(graph.Matches[_graphMatch]);
+        CaptionSearch();
+    }
+
+    [RelayCommand]
+    private void ClearGraphSearch() => GraphSearch = "";
 
     /// <summary>Laid out by forces, where nodes can be dragged; otherwise in rows, what uses something above it.</summary>
     public bool GraphForce

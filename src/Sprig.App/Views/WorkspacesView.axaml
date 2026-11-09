@@ -602,8 +602,20 @@
             <Panel>
             <!-- Graph: every app, job and container, linked by the values one takes from another -->
             <Grid IsVisible="{Binding OnGraphTab}" RowDefinitions="Auto,*">
-                <Grid Margin="22,12,22,6" ColumnDefinitions="*,Auto">
-                    <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                <Grid Margin="22,12,22,6" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBox x:Name="GraphSearchBox" Width="220" Text="{Binding GraphSearch}" PlaceholderText="Find in graph (Ctrl+F)"
+                                 FontSize="12.5" Padding="8,5" AutomationProperties.AutomationId="workspace:graph-search"
+                                 ToolTip.Tip="A name, repo, port or image, or infra a node uses. Enter goes to each one found; Shift+Enter back; Esc clears.">
+                            <TextBox.KeyBindings>
+                                <KeyBinding Gesture="Enter" Command="{Binding NextGraphMatchCommand}" />
+                                <KeyBinding Gesture="Shift+Enter" Command="{Binding PreviousGraphMatchCommand}" />
+                                <KeyBinding Gesture="Escape" Command="{Binding ClearGraphSearchCommand}" />
+                            </TextBox.KeyBindings>
+                        </TextBox>
+                        <TextBlock Classes="cell via" Text="{Binding GraphSearchCaption}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center" ClipToBounds="True">
                         <StackPanel Orientation="Horizontal" Spacing="5">
                             <Ellipse Width="9" Height="9" Fill="#4ADE80" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="ready or healthy" VerticalAlignment="Center" />
@@ -620,10 +632,10 @@
                             <Ellipse Width="9" Height="9" Fill="#6B7280" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="stopped" VerticalAlignment="Center" />
                         </StackPanel>
-                        <TextBlock Classes="cell via" VerticalAlignment="Center" TextWrapping="Wrap"
+                        <TextBlock Classes="cell via" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                                    Text="Tags under a node are the infra it uses. Point at a node for all its links." />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                         <StackPanel Orientation="Horizontal">
                             <Button Classes="chip" Classes.on="{Binding GraphLayered}" Content="Layered" Margin="0,0,4,0"
                                     Command="{Binding ShowLayeredGraphCommand}"

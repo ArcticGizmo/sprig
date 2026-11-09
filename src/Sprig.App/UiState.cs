@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Sprig.Engine.Store;
 
 namespace Sprig.App;
@@ -13,6 +14,8 @@ namespace Sprig.App;
 /// <param name="StartGroups">The group Start starts, per orchestration, like a launch profile picked once for a solution;
 /// absent for every app.</param>
 /// <param name="NavCollapsed">The left nav was folded down to its icons, for room to read logs.</param>
+/// <param name="GraphPlaces">Workspace graph nodes dragged to a place of their own, per orchestration, as <c>[x, y]</c>
+/// by node key, so every workspace of it is laid out alike.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool DetailsClosed = false,
@@ -20,7 +23,8 @@ public sealed record UiStateData(
     bool LogWrapOff = false,
     Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null,
     Dictionary<string, string>? StartGroups = null,
-    bool NavCollapsed = false);
+    bool NavCollapsed = false,
+    Dictionary<string, Dictionary<string, double[]>>? GraphPlaces = null);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -80,6 +84,19 @@ public sealed class UiState(ISprigPaths paths)
         if (group is null) groups.Remove(orchestration);
         else groups[orchestration] = group;
         Save(Data with { StartGroups = groups.Count > 0 ? groups : null });
+    }
+
+    public IReadOnlyDictionary<string, (double X, double Y)> GraphPlaces(string orchestration)
+        => (Data.GraphPlaces?.GetValueOrDefault(orchestration) ?? [])
+            .Where(p => p.Value is { Length: 2 })
+            .ToDictionary(p => p.Key, p => (p.Value[0], p.Value[1]));
+
+    public void SetGraphPlaces(string orchestration, IReadOnlyDictionary<string, (double X, double Y)> places)
+    {
+        var all = new Dictionary<string, Dictionary<string, double[]>>(Data.GraphPlaces ?? []);
+        if (places.Count == 0) all.Remove(orchestration);
+        else all[orchestration] = places.ToDictionary(p => p.Key, p => new[] { p.Value.X, p.Value.Y });
+        Save(Data with { GraphPlaces = all.Count > 0 ? all : null });
     }
 
     void Save(UiStateData data)

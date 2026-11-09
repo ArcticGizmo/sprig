@@ -44,10 +44,10 @@ public sealed class WorkspaceLogs
     public const int MergedCap = 20_000;
     public const int MaxLinesPerRead = 2_000;
 
-    sealed class Source(string app, string file)
+    sealed class Source(string app, ILogSource log)
     {
         public string App => app;
-        public LogTail Tail { get; } = new(file) { MaxLinesPerRead = WorkspaceLogs.MaxLinesPerRead };
+        public ILogSource Tail => log;
         public List<WorkspaceLogLine> Lines { get; } = [];
         public int Read;
         public DateTimeOffset LastTime = DateTimeOffset.MinValue;
@@ -80,16 +80,23 @@ public sealed class WorkspaceLogs
 
     public string? FileOf(string app) => _sources.TryGetValue(app, out var s) ? s.Tail.File : null;
 
-    /// <summary>Follow these apps' logs: ones already followed keep what they've read, ones no longer listed are
-    /// dropped along with their lines.</summary>
-    public void SetApps(IEnumerable<(string App, string File)> apps)
+    /// <summary>Follow these apps' logs, and these other logs (containers', read through docker): ones already followed
+    /// keep what they've read, ones no longer listed are dropped along with their lines.</summary>
+    public void SetApps(IEnumerable<(string App, string File)> apps, IEnumerable<(string App, ILogSource Source)>? others = null)
     {
-        var wanted = apps.ToDictionary(a => a.App, a => a.File, StringComparer.Ordinal);
-        var dropped = _sources.Where(s => !wanted.TryGetValue(s.Key, out var file) || file != s.Value.Tail.File).Select(s => s.Key).ToHashSet();
+        var files = apps.ToDictionary(a => a.App, a => a.File, StringComparer.Ordinal);
+        var given = (others ?? []).ToDictionary(o => o.App, o => o.Source, StringComparer.Ordinal);
+        bool Kept(string app, ILogSource log) => given.TryGetValue(app, out var source)
+            ? ReferenceEquals(source, log)
+            : files.TryGetValue(app, out var file) && log is LogTail && log.File == file;
+        var dropped = _sources.Where(s => !Kept(s.Key, s.Value.Tail)).Select(s => s.Key).ToHashSet();
         foreach (var app in dropped) _sources.Remove(app);
         if (dropped.Count > 0) _merged.RemoveAll(l => dropped.Contains(l.App));
-        foreach (var (app, file) in wanted)
-            if (!_sources.ContainsKey(app)) _sources[app] = new Source(app, file);
+        foreach (var (app, file) in files)
+            if (!given.ContainsKey(app) && !_sources.ContainsKey(app))
+                _sources[app] = new Source(app, new LogTail(file) { MaxLinesPerRead = MaxLinesPerRead });
+        foreach (var (app, source) in given)
+            if (!_sources.ContainsKey(app)) _sources[app] = new Source(app, source);
     }
 
     /// <summary>Read what every log has gained. A call while another is still reading returns nothing.</summary>

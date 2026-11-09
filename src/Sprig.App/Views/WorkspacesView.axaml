@@ -4,6 +4,7 @@
              xmlns:logs="clr-namespace:Sprig.App.Logs"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              xmlns:planning="clr-namespace:Sprig.Engine.Planning;assembly=Sprig.Engine"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              x:Class="Sprig.App.Views.WorkspacesView"
              x:DataType="vm:WorkspacesViewModel">
 
@@ -576,6 +577,12 @@
                                 <TextBlock Classes="tablabel" Text="Apps and logs" FontSize="13" FontWeight="SemiBold" />
                             </Border>
                         </Button>
+                        <Button Classes="flat" Command="{Binding ShowGraphTabCommand}" HorizontalAlignment="Left"
+                                AutomationProperties.AutomationId="workspace:graph-tab">
+                            <Border Classes="tab" Classes.on="{Binding OnGraphTab}">
+                                <TextBlock Classes="tablabel" Text="Graph" FontSize="13" FontWeight="SemiBold" />
+                            </Border>
+                        </Button>
                         <Button Classes="flat" Command="{Binding ShowInfraTabCommand}" HorizontalAlignment="Left">
                             <Border Classes="tab" Classes.on="{Binding OnInfraTab}">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -593,6 +600,96 @@
             <!-- The two tabs share the space under the header. In one panel, each fills it: as a DockPanel child that
                  isn't the last, the infra tab would be docked left at the width of whatever had loaded so far. -->
             <Panel>
+            <!-- Graph: every app, job and container, linked by the values one takes from another -->
+            <Grid IsVisible="{Binding OnGraphTab}" RowDefinitions="Auto,*">
+                <Grid Margin="22,12,22,6" ColumnDefinitions="*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Ellipse Width="9" Height="9" Fill="#4ADE80" VerticalAlignment="Center" />
+                            <TextBlock Classes="cell via" Text="ready or healthy" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Ellipse Width="9" Height="9" Fill="#FBBF24" VerticalAlignment="Center" />
+                            <TextBlock Classes="cell via" Text="starting" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Ellipse Width="9" Height="9" Fill="#F87171" VerticalAlignment="Center" />
+                            <TextBlock Classes="cell via" Text="failed" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Ellipse Width="9" Height="9" Fill="#6B7280" VerticalAlignment="Center" />
+                            <TextBlock Classes="cell via" Text="stopped" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Classes="cell via" VerticalAlignment="Center"
+                                   Text="Arrows point at what's used. Dashed: only starts after it." />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                        <Button Classes="small" Content="Fit" Command="{Binding FitGraphCommand}" ToolTip.Tip="Fit the whole graph in view" />
+                        <Button Classes="small" Content="Reset layout" Command="{Binding ResetGraphLayoutCommand}"
+                                ToolTip.Tip="Forget where nodes were dragged, for every workspace of this orchestration" />
+                    </StackPanel>
+                </Grid>
+                <Panel Grid.Row="1">
+                    <controls:WorkspaceGraphCanvas x:Name="GraphCanvas" Graph="{Binding Graph}"
+                                                   AutomationProperties.AutomationId="workspace:graph" />
+                    <TextBlock IsVisible="{Binding GraphEmpty}" Classes="cell via" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Text="Nothing to draw until the workspace has been planned. Bring it up first." />
+
+                    <!-- The picked node: what it is, how it's doing, what it uses, and what to do with it -->
+                    <Border IsVisible="{Binding HasGraphPicked}" Classes="panel" Width="320" Margin="0,8,22,22"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" Padding="16,14" BoxShadow="0 8 24 0 #66000000">
+                        <StackPanel Spacing="10" DataContext="{Binding GraphPicked}" x:DataType="vm:GraphNode">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Classes="cell via" Text="{Binding Owner}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Classes="flat" Content="✕" FontSize="12" Padding="6,2" VerticalAlignment="Top"
+                                        Foreground="{StaticResource MutedBrush}" ToolTip.Tip="Close"
+                                        Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).CloseGraphCardCommand}" />
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <Ellipse Width="9" Height="9" VerticalAlignment="Center" Fill="{Binding HealthBrush}" />
+                                <TextBlock Classes="cell" Text="{Binding StateLine}" />
+                            </StackPanel>
+                            <TextBlock Classes="cell via" Text="{Binding KindLabel}" />
+                            <SelectableTextBlock Classes="cell mono" FontSize="12" Text="{Binding Url}" IsVisible="{Binding HasUrl}" />
+                            <StackPanel Spacing="3" IsVisible="{Binding HasUses}">
+                                <TextBlock Classes="phead" Text="USES" />
+                                <ItemsControl ItemsSource="{Binding Uses}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="sys:String">
+                                            <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel Spacing="3" IsVisible="{Binding HasUsedBy}">
+                                <TextBlock Classes="phead" Text="USED BY" />
+                                <ItemsControl ItemsSource="{Binding UsedBy}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="sys:String">
+                                            <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <WrapPanel>
+                                <Button Classes="small" Margin="0,0,6,6" Content="Log" IsVisible="{Binding HasLog}"
+                                        Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphLogCommand}" CommandParameter="{Binding}" />
+                                <Button Classes="small" Margin="0,0,6,6" Content="{Binding StartLabel}" IsVisible="{Binding CanStart}"
+                                        Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphStartCommand}" CommandParameter="{Binding}" />
+                                <Button Classes="small" Margin="0,0,6,6" Content="Stop" IsVisible="{Binding CanStop}"
+                                        Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphStopCommand}" CommandParameter="{Binding}" />
+                                <Button Classes="small" Margin="0,0,6,6" Content="Open ↗" IsVisible="{Binding HasUrl}" ToolTip.Tip="{Binding Url}"
+                                        Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphOpenCommand}" CommandParameter="{Binding}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </Panel>
+            </Grid>
+
             <!-- Infra, worktrees and files: the page's width up to 1200, centred -->
             <ScrollViewer IsVisible="{Binding OnInfraTab}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="22,18" Spacing="16" MaxWidth="1200" HorizontalAlignment="Stretch">

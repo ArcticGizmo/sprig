@@ -71,7 +71,7 @@ public sealed record AppDetails(string Repo, string Name, string Url, string Fol
     public bool HasLinks => Links.Count > 0;
 }
 
-public enum WorkspaceTab { Apps, Infra }
+public enum WorkspaceTab { Apps, Graph, Infra }
 
 /// <param name="IsWarn">Something to look at before removing the workspace: changes, unpushed commits, or a missing folder.</param>
 public sealed record WorktreeRow(string Repo, string Folder, string Status, bool IsWarn);
@@ -112,7 +112,7 @@ public partial class WorkspacesViewModel
     private bool _streamPinned;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(OnAppsTab), nameof(OnInfraTab))]
+    [NotifyPropertyChangedFor(nameof(OnAppsTab), nameof(OnInfraTab), nameof(OnGraphTab))]
     private WorkspaceTab _tab = WorkspaceTab.Apps;
 
     [ObservableProperty] private string _listCaption = "";
@@ -127,10 +127,13 @@ public partial class WorkspacesViewModel
     public bool OnInfraTab => Tab == WorkspaceTab.Infra;
     public string WarningsBadge => Warnings.Count == 1 ? "1 warning" : $"{Warnings.Count} warnings";
 
-    public string LogTitle => Logs.IsAll ? "All apps" : Apps.FirstOrDefault(a => a.Key == Logs.Key)?.Name ?? Logs.Key;
+    public string LogTitle => Logs.IsAll ? "All apps"
+        : Apps.FirstOrDefault(a => a.Key == Logs.Key)?.Name
+          ?? (Graph?.Find(Logs.Key) is { } node ? $"{node.Owner} / {node.Name}" : Logs.Key);
     public string LogSub => Logs.IsAll
         ? StreamPinned ? $"{PinnedCount} pinned apps. Click a name to open its own log." : $"{AllApps.Count} apps, the ones the list shows. Click a name to open its own log."
-        : Apps.FirstOrDefault(a => a.Key == Logs.Key)?.StateLine ?? "";
+        : Apps.FirstOrDefault(a => a.Key == Logs.Key)?.StateLine
+          ?? (Graph?.Find(Logs.Key) is { } node ? $"container · {node.StateLine}" : "");
     public WorkspaceAppRow? LogApp => Logs.IsAll ? null : Apps.FirstOrDefault(a => a.Key == Logs.Key);
 
     void LoadWorkspace(WorkspaceRecord? record, Plan? plan)
@@ -162,7 +165,8 @@ public partial class WorkspacesViewModel
         PinnedCount = Apps.Count(a => a.IsPinned);
         if (!same || PinnedCount == 0) StreamPinned = false;
 
-        Logs.SetApps(record is null ? [] : Apps.Select(a => (a.Key, HostProtocol.LogFile(_services.Paths, record.Key, a.Key))).ToArray());
+        BuildGraph(record, plan, same);
+        Logs.SetApps(record is null ? [] : Apps.Select(a => (a.Key, HostProtocol.LogFile(_services.Paths, record.Key, a.Key))).ToArray(), InfraLogSources());
         Logs.SetStream(InStream);
         var picked = PickedApp?.Key;
         if (!same) Logs.Show(WorkspaceLogPane.All);

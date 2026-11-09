@@ -121,12 +121,13 @@ public sealed partial class WorkspaceLogPane : ViewModelBase
     /// <summary>The view should show this row with the lines either side of it, and pick it out.</summary>
     public event Action<LogRow>? Reveal;
 
-    /// <summary>Follow these apps' logs, in this order (which sets their colours).</summary>
-    public void SetApps(IReadOnlyList<(string App, string File)> apps)
+    /// <summary>Follow these apps' logs, in this order (which sets their colours), and the workspace's containers' logs.</summary>
+    public void SetApps(IReadOnlyList<(string App, string File)> apps, IReadOnlyList<(string App, ILogSource Source)>? others = null)
     {
-        _logs.SetApps(apps);
-        _labels = LogLabels.Shortest(apps.Select(a => a.App));
-        _colours = apps.Select((a, i) => (a.App, Colour: Colours[i % Colours.Length])).ToDictionary(x => x.App, x => x.Colour);
+        _logs.SetApps(apps, others);
+        var all = apps.Select(a => a.App).Concat((others ?? []).Select(o => o.App)).ToArray();
+        _labels = LogLabels.Shortest(all);
+        _colours = all.Select((a, i) => (App: a, Colour: Colours[i % Colours.Length])).ToDictionary(x => x.App, x => x.Colour);
         foreach (var gone in _states.Keys.Where(k => k != All && !_labels.ContainsKey(k)).ToArray()) _states.Remove(gone);
         if (!IsAll && !_labels.ContainsKey(Key)) Show(All);
         else Rebuild();

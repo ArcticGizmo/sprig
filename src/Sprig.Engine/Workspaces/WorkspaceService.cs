@@ -870,7 +870,7 @@ public sealed partial class WorkspaceService(
         {
             var file = Path.Combine(folder, "containers.compose.yml");
             File.WriteAllText(file, ComposeYaml.ForContainers(plan.Containers));
-            var project = new ComposeProject(ComposeYaml.ProjectName("sprig", record.Orchestration, record.Name), file, folder);
+            var project = new ComposeProject(ContainersProject(record), file, folder);
             projects.Add(project);
             checkedBy[project.Name] = plan.Containers.Where(c => c.Health is not null).Select(c => c.Name).ToArray();
         }
@@ -880,7 +880,7 @@ public sealed partial class WorkspaceService(
             var source = Path.Combine(repo.Dir, compose.File);
             var file = Path.Combine(folder, $"{ComposeYaml.ProjectName(repo.Name, Path.GetFileNameWithoutExtension(compose.File))}.compose.yml");
             File.WriteAllText(file, ComposeYaml.ForWorkspace(File.ReadAllText(source), compose));
-            var project = new ComposeProject(ComposeYaml.ProjectName("sprig", record.Orchestration, record.Name, repo.Name), file,
+            var project = new ComposeProject(RepoProject(record, repo.Name), file,
                 Path.GetDirectoryName(Path.GetFullPath(source))!);
             projects.Add(project);
             checkedBy[project.Name] = compose.Services.Where(s => s.Health is not null).Select(s => s.Name).ToArray();

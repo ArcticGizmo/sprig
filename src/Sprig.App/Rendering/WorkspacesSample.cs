@@ -207,6 +207,54 @@ internal static partial class HeadlessRenderer
             window.Width = 1440;
             window.Height = 900;
 
+            // The graph, with the containers' states held as docker would give them.
+            vm.Workspaces.HoldInfraStates(SampleInfraStates);
+            Wait(vm.Workspaces.ShowGraphTabCommand.ExecuteAsync(null));
+            Pump(TimeSpan.FromMilliseconds(600));
+            Save(window, Sibling(outFile, "graph"));
+            var boxes = vm.Workspaces.Graph!.Layout.Boxes().ToArray();
+            var overlaps = boxes.SelectMany((a, i) => boxes.Skip(i + 1).Where(b => a.Box.Overlaps(b.Box, 0)).Select(b => $"{a.Group} and {b.Group}")).ToArray();
+            Console.WriteLine($"repo boxes overlapping: {overlaps.Length} ({string.Join(", ", overlaps)})");
+            var canvas = window.GetVisualDescendants().OfType<Sprig.App.Controls.WorkspaceGraphCanvas>().First();
+            Point NodeAt(string key) => canvas.TranslatePoint(canvas.PointOf(key)!.Value, window)!.Value;
+
+            window.MouseDown(NodeAt("shop-services/orders-api"), MouseButton.Left);
+            window.MouseUp(NodeAt("shop-services/orders-api"), MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "graph-picked"));
+
+            window.MouseMove(NodeAt("shop-services/postgres"));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "graph-hover"));
+
+            window.MouseDown(NodeAt("shop-services/payments-api"), MouseButton.Right);
+            window.MouseUp(NodeAt("shop-services/payments-api"), MouseButton.Right);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "graph-menu"));
+            CloseMenus(window);
+
+            var from = NodeAt("shop-analytics/kafka");
+            window.MouseDown(from, MouseButton.Left);
+            for (var i = 1; i <= 10; i++) window.MouseMove(from + new Vector(i * 18, i * 6), RawInputModifiers.LeftMouseButton);
+            window.MouseUp(from + new Vector(180, 60), MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(1500));
+            Save(window, Sibling(outFile, "graph-dragged"));
+            Console.WriteLine($"graph: {vm.Workspaces.Graph!.Nodes.Count} nodes, {vm.Workspaces.Graph.Links.Count} links; picked {vm.Workspaces.GraphPicked?.Name}; "
+                + $"kept places: {string.Join(", ", services.Ui.GraphPlaces("storefront").Keys)}");
+
+            window.Width = 1024;
+            window.Height = 700;
+            vm.Workspaces.FitGraphCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "graph-small"));
+            window.Width = 1440;
+            window.Height = 900;
+
+            // A node's Log button opens its log on the Apps tab.
+            vm.Workspaces.GraphLogCommand.Execute(vm.Workspaces.Graph.Find("shop-services/orders-api"));
+            Pump(TimeSpan.FromMilliseconds(400));
+            Console.WriteLine($"Log from the graph: tab {vm.Workspaces.Tab}, showing {vm.Workspaces.LogTitle}");
+
             vm.NavigateCommand.Execute(vm.Workspaces);
             Wait(vm.Workspaces.LoadOverviewStatusAsync());
             Pump(TimeSpan.FromMilliseconds(500));
@@ -274,16 +322,15 @@ internal static partial class HeadlessRenderer
             WorkspaceState.Down, now.AddDays(-4), now.AddDays(-4)));
 
         var at = new SourceLocation(Path.Combine(root, "shop-services", "sprig.cs"), 12);
-        PlannedValue Value(string v, params string[] via) => new(v, v, via);
         workspaces.SavePlan(new Plan("storefront", "feat-a", "stable", "main",
-            [.. SampleApps.Where(a => a.Port is not null).Select(a => new PlannedPort(a.Repo, a.App, "http", a.Port!.Value, null, null))],
+            [.. SampleApps.Where(a => a.Port is not null).Select(a => new PlannedPort(a.Repo, a.App, "http", a.Port!.Value, null, null)),
+             new PlannedPort("shop-services", "postgres", "tcp", 8002, null, 5432),
+             new PlannedPort("shop-services", "redis", "tcp", 8003, null, 6379),
+             new PlannedPort("storefront", "mail", "smtp", 8011, null, 1025),
+             new PlannedPort("shop-analytics", "kafka", "tcp", 9092, null, 9092)],
             [.. SampleApps.Select(a => new PlannedApp(a.Repo, $"../{a.Repo}", a.App, "dotnet", a.Job ? $"tools/{a.App}" : ".",
-                a.Port is { } port
-                    ? [new PlannedEnv("Urls", Value($"http://localhost:{port}", $"{a.App}.http port {port}"), "appsettings.Local.json", at, "appSettings"),
-                       new PlannedEnv("ConnectionStrings__Db", Value("Host=localhost;Port=8002;Password=hunter2", "postgres.tcp port 8002"), "appsettings.Local.json", at, "appSettings"),
-                       new PlannedEnv("Mail__Smtp", Value("smtp://localhost:8011", "import mail-smtp ← storefront"), "appsettings.Local.json", at, "appSettings")]
-                    : [],
-                null, a.Job ? [] : ["migrate"], Job: a.Job,
+                SampleEnv(a.Repo, a.App, a.Port, at),
+                null, a.Job ? [] : a.Repo == "shop-services" ? ["migrate"] : [], Job: a.Job,
                 DependsOn: a.Repo == "shop-services" && !a.Job ? ["shop-services/migrate", "shop-services/seed"] : null,
                 Health: a.Port is not null && !a.Job ? [new PlannedHealth("http", "/health")] : null,
                 Links: a.App switch
@@ -292,7 +339,12 @@ internal static partial class HeadlessRenderer
                     "payments-api" => [new PlannedLink("Swagger", $"http://localhost:{a.Port}/swagger")],
                     _ => null,
                 }))],
-            [], [],
+            [new PlannedContainer("shop-services", "postgres", "postgres:17", ["8002:5432"], [], ["data → /var/lib/postgresql/data"],
+                 [new PlannedMapping("tcp", 8002, 5432)], [new VolumeModel("data", "/var/lib/postgresql/data")], "pg_isready"),
+             new PlannedContainer("shop-services", "redis", "redis:7", ["8003:6379"], [], [], [new PlannedMapping("tcp", 8003, 6379)], [], null),
+             new PlannedContainer("storefront", "mail", "axllent/mailpit:v1.27", ["8011:1025"], [], [], [new PlannedMapping("smtp", 8011, 1025)], [], null)],
+            [new PlannedCompose("shop-analytics", "../shop-analytics", "docker-compose.yml", [],
+                 [new PlannedComposeService("kafka", [new PlannedMapping("tcp", 9092, 9092)])])],
             [new PlannedGroup("client", [.. SampleApps.Where(a => a.Repo == "shop-web").Select(a => $"{a.Repo}/{a.App}")]),
              new PlannedGroup("apis", [.. SampleApps.Where(a => a.Repo == "shop-services" && !a.Job).Select(a => $"{a.Repo}/{a.App}")])],
             [new PlanProblem(ProblemSeverity.Warning, "ingest-worker has no health check, so \"ready\" only means it started",
@@ -320,6 +372,81 @@ internal static partial class HeadlessRenderer
                     }, state == RunnerState.Restarting ? 3 : 0));
         }
         return runners;
+    }
+
+    /// <summary>What the sample's containers would say: one still waiting on its health check, which is why the worker
+    /// that reads from it keeps restarting.</summary>
+    static readonly Dictionary<string, Sprig.Engine.Compose.ComposeService> SampleInfraStates = new()
+    {
+        ["shop-services/postgres"] = new("shop-services-postgres", "running", "healthy", 0),
+        ["shop-services/redis"] = new("shop-services-redis", "running", "", 0),
+        ["storefront/mail"] = new("storefront-mail", "running", "", 0),
+        ["shop-analytics/kafka"] = new("kafka", "running", "starting", 0),
+    };
+
+    /// <summary>Each sample app's values, with where each came from, so the graph has links to draw: the services share a
+    /// database, the gateway fronts them, the web apps go through the gateway, and payments uses a sandbox outside.</summary>
+    static IReadOnlyList<PlannedEnv> SampleEnv(string repo, string app, int? port, SourceLocation at)
+    {
+        var env = new List<PlannedEnv>();
+        int? PortOf(string other) => SampleApps.FirstOrDefault(a => a.App == other).Port;
+        void Add(string key, string value, string via, ValueSource source)
+            => env.Add(new PlannedEnv(key, new PlannedValue(value, value, [via], [source]), "appsettings.Local.json", at, "appSettings"));
+        void Db() => Add("ConnectionStrings__Db", "Host=localhost;Port=8002;Password=hunter2", "postgres.tcp port 8002", new("shop-services", "postgres", "tcp", null));
+        void Redis(string owner) => Add("Redis__Url", "redis://localhost:8003", "redis.tcp port 8003",
+            new("shop-services", "redis", "tcp", owner == "shop-services" ? null : "cache-url"));
+        void Mail() => Add("Mail__Smtp", "smtp://localhost:8011", "setting mail-smtp ← storefront", new("storefront", "mail", "smtp", "mail-smtp"));
+        void Kafka() => Add("Kafka__Brokers", "localhost:9092", "kafka.tcp port 9092", new("shop-analytics", "kafka", "tcp", null));
+        void Uses(string key, string setting, string owner, string other)
+            => Add(key, $"http://localhost:{PortOf(other)}", $"setting {setting} ← {owner}", new(owner, other, "http", setting));
+
+        if (port is { } p) Add("Urls", $"http://localhost:{p}", $"{app}.http port {p}", new(repo, app, "http", null));
+        switch (app)
+        {
+            case "migrate" or "seed" or "orders-api" or "payments-api" or "search-api":
+                Db();
+                break;
+            case "catalog-api" or "inventory-api":
+                Db();
+                Redis(repo);
+                break;
+            case "notifications":
+                Mail();
+                break;
+            case "auth":
+                Redis(repo);
+                break;
+            case "gateway":
+                Uses("Routes__Catalog", "catalog-url", "shop-services", "catalog-api");
+                Uses("Routes__Orders", "orders-url", "shop-services", "orders-api");
+                Uses("Routes__Search", "search-url", "shop-services", "search-api");
+                Uses("Auth__Authority", "auth-url", "shop-gateway", "auth");
+                break;
+            case "bff":
+                Uses("Gateway__Url", "gateway-url", "shop-gateway", "gateway");
+                break;
+            case "events-api" or "ingest-worker":
+                Kafka();
+                break;
+            case "reports-api":
+                Add("ConnectionStrings__Reports", "Host=localhost;Port=8002;Password=hunter2", "setting reports-db ← shop-services",
+                    new("shop-services", "postgres", "tcp", "reports-db"));
+                break;
+            case "scheduler":
+                Uses("Events__Url", "events-url", "shop-analytics", "events-api");
+                break;
+            case "web" or "admin":
+                Uses("VITE_API", "bff-url", "shop-gateway", "bff");
+                break;
+            case "mobile":
+                Uses("API_URL", "gateway-url", "shop-gateway", "gateway");
+                break;
+        }
+        if (app == "orders-api") Mail();
+        if (app == "payments-api")
+            Add("Payments__Url", "https://sandbox.payments.example.com", "setting payments-gateway ← this workspace",
+                new(ValueSource.Workspace, null, null, "payments-gateway"));
+        return env;
     }
 
     static IEnumerable<string> SampleLog(string app, RunnerState? state, int? port)

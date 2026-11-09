@@ -1,0 +1,144 @@
+using Sprig.App.ViewModels;
+using Sprig.Engine.Compose;
+using Sprig.Engine.Git;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Processes;
+using Sprig.Engine.Settings;
+using Sprig.Engine.Workspaces;
+using Sprig.Model;
+
+namespace Sprig.Tests.Workspaces;
+
+/// <summary>The graph's view of a workspace's containers: where each runs, how it's doing, and starting and stopping
+/// one, against a docker that only answers from a script.</summary>
+public sealed class WorkspaceInfraTests : IDisposable
+{
+    /// <summary>Answers <c>ps</c> per project from <see cref="Ps"/>, and records every call.</summary>
+    sealed class FakeDocker : IProcessRunner
+    {
+        public Dictionary<string, string> Ps { get; } = [];
+        public List<IReadOnlyList<string>> Calls { get; } = [];
+        public bool Down { get; set; }
+
+        public ProcessResult Run(string executable, IReadOnlyList<string> arguments, string? workingDirectory = null,
+            CancellationToken cancellationToken = default, Action<string>? onOutput = null)
+        {
+            Calls.Add(arguments);
+            if (Down) return new ProcessResult(executable, arguments, 1, "", "error during connect: the docker engine isn't running");
+            var project = arguments[arguments.ToList().IndexOf("-p") + 1];
+            return new ProcessResult(executable, arguments, 0, arguments.Contains("ps") ? Ps.GetValueOrDefault(project, "") : "", "");
+        }
+    }
+
+    readonly TempStore _store = new();
+    readonly FakeDocker _docker = new();
+    readonly WorkspaceService _workspaces;
+
+    public WorkspaceInfraTests()
+    {
+        _workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths),
+            new GitClient(_docker), new DockerCompose(_docker), listening: () => new HashSet<int>());
+    }
+
+    public void Dispose() => _store.Dispose();
+
+    (WorkspaceRecord, Plan) Shop()
+    {
+        var orchestration = Orchestration.Describe("storefront");
+        var repo = Repo.Describe("shop-services");
+        repo.Postgres("pg");
+        repo.ComposeFile("docker-compose.yml").Service("search").Endpoint("http", 7700, scheme: "http");
+        orchestration.Repo("shop-services");
+        orchestration.Mailpit("mail");
+        var plan = Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["shop-services"] = repo.BuildRepo() },
+            "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
+        var now = DateTimeOffset.Now;
+        var dir = Path.Combine(_store.Root, "storefront--1", "shop-services");
+        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.cs"), "1", "feat-a", "stable",
+            [new WorkspaceRepo("shop-services", "shop-services", Path.Combine(_store.Root, "shop-services"), dir, true, true)], [], [], WorkspaceState.Up, now, now);
+        return (record, plan);
+    }
+
+    [Fact]
+    public void Each_container_is_found_under_the_project_and_service_names_up_gives_it()
+    {
+        var (record, plan) = Shop();
+
+        var targets = _workspaces.InfraTargets(record, plan).ToDictionary(t => t.Key);
+
+        Assert.Equal(("sprig-storefront-1", "shop-services-pg"), (targets["shop-services/pg"].Project.Name, targets["shop-services/pg"].Service));
+        Assert.Equal(("sprig-storefront-1", "storefront-mail"), (targets["storefront/mail"].Project.Name, targets["storefront/mail"].Service));
+        Assert.Equal(("sprig-storefront-1-shop-services", "search"), (targets["shop-services/search"].Project.Name, targets["shop-services/search"].Service));
+    }
+
+    [Fact]
+    public void States_come_from_one_ps_per_project_and_a_container_docker_hasn_t_got_is_left_out()
+    {
+        var (record, plan) = Shop();
+        _docker.Ps["sprig-storefront-1"] = """
+            {"Service":"shop-services-pg","State":"running","Health":"healthy","ExitCode":0}
+            """;
+        _docker.Ps["sprig-storefront-1-shop-services"] = """
+            {"Service":"search","State":"exited","Health":"","ExitCode":1}
+            """;
+
+        var states = _workspaces.InfraStates(_workspaces.InfraTargets(record, plan))!;
+
+        Assert.Equal("healthy", states["shop-services/pg"].Health);
+        Assert.Equal("exited", states["shop-services/search"].State);
+        Assert.False(states.ContainsKey("storefront/mail"));
+        Assert.Equal(2, _docker.Calls.Count(c => c.Contains("ps")));
+    }
+
+    [Fact]
+    public void A_docker_that_doesn_t_answer_gives_no_states_rather_than_all_stopped()
+    {
+        var (record, plan) = Shop();
+        _docker.Down = true;
+
+        Assert.Null(_workspaces.InfraStates(_workspaces.InfraTargets(record, plan)));
+    }
+
+    [Fact]
+    public void Starting_and_stopping_one_container_names_only_its_service()
+    {
+        var (record, plan) = Shop();
+        var pg = _workspaces.InfraTargets(record, plan).Single(t => t.Key == "shop-services/pg");
+
+        _workspaces.StopContainer(pg);
+        _workspaces.StartContainer(pg);
+
+        Assert.Equal(["compose", "-p", "sprig-storefront-1", "stop", "shop-services-pg"], _docker.Calls[^2]);
+        Assert.Equal(["compose", "-p", "sprig-storefront-1", "start", "shop-services-pg"], _docker.Calls[^1]);
+    }
+
+    [Theory]
+    [InlineData("running", "healthy", 0, "healthy", NodeHealth.Good, true)]
+    [InlineData("running", "", 0, "running", NodeHealth.Good, true)]
+    [InlineData("running", "starting", 0, "starting", NodeHealth.Busy, true)]
+    [InlineData("running", "unhealthy", 0, "unhealthy", NodeHealth.Bad, true)]
+    [InlineData("exited", "", 0, "stopped", NodeHealth.Off, false)]
+    [InlineData("exited", "", 143, "stopped", NodeHealth.Off, false)]
+    [InlineData("exited", "", 1, "exited", NodeHealth.Bad, false)]
+    [InlineData("restarting", "", 1, "restarting", NodeHealth.Bad, true)]
+    public void A_container_node_reads_docker_s_state_as_one_colour(string state, string health, int exit, string shown, NodeHealth colour, bool alive)
+    {
+        var node = new GraphNode(new TopologyNode("svc/pg", "svc", "pg", TopologyKind.Container, "postgres:17"), null, null);
+
+        node.Apply(new ComposeService("svc-pg", state, health, exit), known: true);
+
+        Assert.Equal((shown, colour, alive), (node.State, node.Health, node.IsAlive));
+    }
+
+    [Fact]
+    public void A_container_docker_hasn_t_got_or_can_t_say_about_isn_t_shown_as_failed()
+    {
+        var node = new GraphNode(new TopologyNode("svc/pg", "svc", "pg", TopologyKind.Container, "postgres:17"), null, null);
+
+        node.Apply(null, known: true);
+        Assert.Equal(("not created", NodeHealth.Off), (node.State, node.Health));
+
+        node.Apply(null, known: false);
+        Assert.Equal(("unknown", NodeHealth.Unknown), (node.State, node.Health));
+    }
+}

@@ -93,6 +93,12 @@ public sealed class DockerCompose(IProcessRunner runner)
         Compose(project, args, onOutput, cancellation).EnsureSuccess();
     }
 
+    /// <summary>Start one service's container again, as <c>up</c> left it; it must have been created by an <c>up</c>.</summary>
+    public void Start(ComposeProject project, string service) => Compose(project, ["start", service], null, default).EnsureSuccess();
+
+    /// <summary>Stop one service's container, keeping it (and its data) for <see cref="Start"/>.</summary>
+    public void Stop(ComposeProject project, string service) => Compose(project, ["stop", service], null, default).EnsureSuccess();
+
     /// <summary>How many of the project's containers are running.</summary>
     public int Running(string projectName)
     {

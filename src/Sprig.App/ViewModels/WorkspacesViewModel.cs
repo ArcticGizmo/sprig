@@ -481,11 +481,13 @@ public partial class WorkspacesViewModel : PageViewModel
         foreach (var row in Apps)
             row.Apply(runners?.FirstOrDefault(r => r.Workspace == key && r.Name == row.Key));
         StatesChanged();
+        RefreshGraph();
         if (Selected is null) CountOverviewApps();
     }
 
-    /// <summary>Read the logs. The view calls this every second while the page shows; the app-wide
-    /// <see cref="HostStatus"/> poll brings the apps' states.</summary>
+    /// <summary>Read the logs, and every few seconds the containers' states while the graph or a container's log shows.
+    /// The view calls this every second while the page shows; the app-wide <see cref="HostStatus"/> poll brings the
+    /// apps' states.</summary>
     public async Task PollAsync()
     {
         if (_polling || Selected is null) return;
@@ -493,6 +495,7 @@ public partial class WorkspacesViewModel : PageViewModel
         try
         {
             await Logs.PollAsync();
+            await PollInfraAsync();
         }
         finally
         {

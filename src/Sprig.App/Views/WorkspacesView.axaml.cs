@@ -92,6 +92,29 @@ public partial class WorkspacesView : UserControl
         _marksStop.Click += (_, _) => _vm?.StopMarkedCommand.Execute(null);
         _marksPin.Click += (_, _) => _vm?.PinMarkedCommand.Execute(null);
         _marksMenu = new ContextMenu { Items = { _marksStart, _marksRestart, _marksStop, new Separator(), _marksPin } };
+
+        GraphCanvas.NodeMenuRequested += ShowNodeMenu;
+    }
+
+    /// <summary>A graph node's actions: its log, start or restart, stop, and an app's pages.</summary>
+    void ShowNodeMenu(GraphNode node, Control at)
+    {
+        if (_vm is not { } vm) return;
+        var menu = new ContextMenu { Placement = PlacementMode.Pointer };
+        void Add(string header, Action act)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => act();
+            menu.Items.Add(item);
+        }
+        if (node.HasLog) Add("Open log", () => vm.OpenNodeLog(node));
+        if (node.CanStart) Add(node.StartLabel, () => vm.GraphStartCommand.Execute(node));
+        if (node.CanStop) Add("Stop", () => vm.GraphStopCommand.Execute(node));
+        var links = node.App is { } row ? vm.LinksOf(row) : [];
+        if (links.Count > 0 && menu.Items.Count > 0) menu.Items.Add(new Separator());
+        foreach (var link in links) Add($"{link.Label} ↗", () => OpenLink(link.Url, newWindow: false));
+        if (menu.Items.Count == 0) return;
+        menu.Open(at);
     }
 
     readonly ContextMenu _linkMenu;

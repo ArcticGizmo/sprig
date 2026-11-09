@@ -315,7 +315,8 @@ internal static partial class HeadlessRenderer
             var services = new AppServices();
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
             vm.NavigateCommand.Execute(vm.Workspaces);
-            vm.Workspaces.Show(vm.Workspaces.Workspaces.FirstOrDefault()?.Record.Key);
+            // One that's up with infra, when there is one, so its graph has containers for docker to report on.
+            vm.Workspaces.Show((vm.Workspaces.Workspaces.FirstOrDefault(w => w.IsUp && w.Record.Compose.Count > 0) ?? vm.Workspaces.Workspaces.FirstOrDefault())?.Record.Key);
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1400 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(500));
@@ -330,6 +331,25 @@ internal static partial class HeadlessRenderer
             }
             Pump(TimeSpan.FromMilliseconds(600));
             Save(window, pageFile);
+
+            // The graph, with the containers' states from docker, then the first container's log followed through it.
+            Wait(vm.Workspaces.ShowGraphTabCommand.ExecuteAsync(null));
+            Pump(TimeSpan.FromMilliseconds(600));
+            Save(window, Sibling(pageFile, "graph"));
+            if (vm.Workspaces.Graph?.Nodes.FirstOrDefault(n => n.IsInfra && n.IsAlive) is { } container)
+            {
+                vm.Workspaces.OpenNodeLog(container);
+                var clock = Stopwatch.StartNew();
+                while (vm.Workspaces.Logs.Lines.Count == 0 && clock.Elapsed < TimeSpan.FromSeconds(15))
+                {
+                    Wait(vm.Workspaces.PollAsync());
+                    Pump(TimeSpan.FromMilliseconds(250));
+                }
+                Pump(TimeSpan.FromMilliseconds(400));
+                Save(window, Sibling(pageFile, "container-log"));
+                Console.WriteLine($"graph: {string.Join(", ", vm.Workspaces.Graph.Nodes.Where(n => n.IsInfra).Select(n => $"{n.Name} {n.StateLine}"))}; "
+                    + $"{container.Name}'s log: {vm.Workspaces.Logs.Lines.Count} lines, title '{vm.Workspaces.LogTitle}', sub '{vm.Workspaces.LogSub}'");
+            }
             window.Close();
 
             var progress = new OperationProgressViewModel("Starting storefront / feat-x");

@@ -24,8 +24,9 @@ public class WorkspaceSettings : GlobalSettings
 
     /// <summary>
     /// Fills in what was left out: the ID from the current folder, and the workspace from the worktree it's in, else
-    /// <c>local</c>. Words that turn out not to be an ID or one of its workspaces are handed back, for commands whose
-    /// next argument is an app.
+    /// <c>local</c>. Outside every repo, a first word that's the name of just one workspace means that workspace. Words
+    /// that turn out not to be an ID or one of its workspaces are handed back, for commands whose next argument is an
+    /// app.
     /// </summary>
     public IReadOnlyList<string> Resolve(CliContext cli)
     {
@@ -36,7 +37,14 @@ public class WorkspaceSettings : GlobalSettings
             Orchestration = words[0];
             words.RemoveAt(0);
         }
-        else (Orchestration, workspace) = Here.Find(cli);
+        else if (Here.TryFind(cli) is { } here) (Orchestration, workspace) = here;
+        else if (words.Count > 0 && Here.Named(cli, words[0]) is { } named)
+        {
+            (Orchestration, Workspace) = (named.Orchestration, named.Name);
+            words.RemoveAt(0);
+            return words;
+        }
+        else throw Here.NotHere();
 
         if (words.Count > 0 && (!TakesApps || cli.Workspaces.Get(Orchestration, words[0]) is not null))
         {
@@ -48,7 +56,7 @@ public class WorkspaceSettings : GlobalSettings
     }
 }
 
-[Description("Bring a workspace up: worktrees (or the repo where it is), ports, env files and infra, in one step")]
+[Description("Bring a workspace up: worktrees (or the repo where it is), ports, env files and infra, then its apps in the background")]
 public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 {
     public sealed class Settings : TrustingSettings
@@ -81,12 +89,12 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public WorkspaceOptions? Options => InPlace || RandomPorts || From is not null ? new WorkspaceOptions(InPlace, From, RandomPorts) : null;
 
         [CommandOption("--run")]
-        [Description("Then start every app and follow their logs together. Ctrl+C stops the apps; the infra keeps running")]
+        [Description("Follow the apps' logs together here, rather than leaving them in the background. Ctrl+C stops the apps; the infra keeps running")]
         public bool Run { get; set; }
 
-        [CommandOption("-d|--detached")]
-        [Description("Then start every app, wait until they're ready, and leave them running in the background")]
-        public bool Detached { get; set; }
+        [CommandOption("--no-apps")]
+        [Description("Stop once the worktrees, files and infra are ready, without starting the apps")]
+        public bool NoApps { get; set; }
 
         [CommandOption("--set <name=value>")]
         [Description("Give a setting this value in the workspace, over the orchestration's and the repo's default. Kept for next time. Repeat for more")]
@@ -94,18 +102,22 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     }
 
     protected override ValidationResult Validate(CommandContext context, Settings s)
-        => SettingValues.Parse(s.Set, out _) is { } error ? ValidationResult.Error(error) : ValidationResult.Success();
+    {
+        if (SettingValues.Parse(s.Set, out _) is { } error) return ValidationResult.Error(error);
+        if (s.Run && s.NoApps) return ValidationResult.Error("--run follows the apps and --no-apps doesn't start them; choose one");
+        return ValidationResult.Success();
+    }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        if (s.Json && s.Run && !s.Detached)
-            throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; use --detached with --json");
+        if (s.Json && s.Run)
+            throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; leave it off with --json and the apps run in the background");
         if (s.InPlace && (s.Branch is not null || s.From is not null))
             throw new InvalidOperationException("--in-place runs the repos where they're checked out, so it takes no --branch or --from");
         var named = s.Workspace ?? (s.Branch is { } b ? WorkspaceService.NameFromBranch(b) : null);
         if (named is null && s.From is not null)
             throw new InvalidOperationException("--from starts a workspace's own branches; name the workspace with -w <name>");
-        var (id, worktreeOf) = s.Orchestration is { } given ? (given, null) : Here.Find(cli);
+        var (id, worktreeOf) = s.Orchestration is { } given ? (given, null) : Here.Find(cli, named);
         // Run from inside a workspace's worktree, it's that workspace; otherwise the repo in place, as "local".
         var workspace = named ?? worktreeOf ?? "local";
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
@@ -121,8 +133,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             var record = UpApproving(loaded, workspace, options, s, progress, cancellation);
             if (record is null) return 1;
             var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
-            var runApps = s.Run || s.Detached;
-            if (!runApps)
+            if (s.NoApps)
             {
                 if (s.Json) CliOutput.Json(new { ok = true, workspace = record, plan });
                 else Summary(record, plan, root, appsStart: false);
@@ -137,7 +148,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
                 else cli.Ansi.MarkupLine("[dim]The orchestration has no apps to run.[/]");
                 return 0;
             }
-            return s.Detached ? StartDetached(record, plan, specs, s.Json, cancellation) : new AppFollow(cli, record, specs).Run();
+            return s.Run ? new AppFollow(cli, record, specs).Run() : StartDetached(record, plan, specs, s.Json, cancellation);
         }
         catch (WorkspaceException e)
         {
@@ -158,7 +169,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, WorkspaceOptions? options, Settings s,
         IProgress<WorkspaceEvent> progress, CancellationToken cancellation)
     {
-        var runApps = s.Run || s.Detached;
+        var runApps = !s.NoApps;
         SettingValues.Parse(s.Set, out var given);
         var values = new Dictionary<string, string>(given, StringComparer.Ordinal);
         for (var attempt = 1; ; attempt++)

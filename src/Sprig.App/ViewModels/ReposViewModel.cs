@@ -157,8 +157,8 @@ public partial class ReposViewModel : PageViewModel
     public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.cs" : "Choose the repo's folder";
 
     public string RemoveNote => Selected is { InRepo: true }
-        ? "Take it off the Repos list? The folder's own sprig.cs is left where it is. Orchestrations that use it will say it's missing."
-        : "Take it off the Repos list? The definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.";
+        ? "It comes off the Repos list. The folder's own sprig.cs is left where it is. Orchestrations that use it will say it's missing."
+        : "It comes off the Repos list, and the definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.";
 
     public ReposViewModel(AppServices services)
     {
@@ -171,6 +171,14 @@ public partial class ReposViewModel : PageViewModel
     protected override void OnActivated()
     {
         if (!Editor.IsDirty) Refresh();
+    }
+
+    // Rebuilding the list re-runs the selected repo's definition, so it's left alone unless the Repos list changed.
+    protected override void OnWindowFocused()
+    {
+        if (Editor.IsEditing || IsChooseOpen || IsAddOpen || IsDeriveOpen || ConfirmingRemove) return;
+        if (_services.Stored.Repos().SequenceEqual(Repos.Select(r => r.Entry))) ListWorkspaces(Selected);
+        else Refresh();
     }
 
     /// <summary>Show one repo, by ID.</summary>

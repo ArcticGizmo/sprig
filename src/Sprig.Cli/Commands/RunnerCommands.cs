@@ -157,19 +157,21 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
         }
         var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");
         foreach (var r in runners)
-            table.AddRow(Markup.Escape(r.Workspace),Markup.Escape(r.Name), r.State switch
-                {
-                    RunnerState.Ready => "[green]ready[/]",
-                    RunnerState.Completed => "[green]finished[/]",
-                    RunnerState.Stopped when r.Error is { } note => $"stopped [yellow]{Markup.Escape(note)}[/]",
-                    RunnerState.Restarting => $"[yellow]restarting[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
-                    RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",
-                    _ => r.State.ToString().ToLowerInvariant(),
-                } + (r.Restarts > 0 && r.State != RunnerState.Restarting ? $" [dim](restarted {r.Restarts}×)[/]" : ""),
+            table.AddRow(Markup.Escape(r.Workspace), Markup.Escape(r.Name), State(r),
                 r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "", r.Since.LocalDateTime.ToString("T"));
         cli.Ansi.Write(table);
         return 0;
     }
+
+    internal static string State(RunnerStatus r) => r.State switch
+    {
+        RunnerState.Ready => "[green]ready[/]",
+        RunnerState.Completed => "[green]finished[/]",
+        RunnerState.Stopped when r.Error is { } note => $"stopped [yellow]{Markup.Escape(note)}[/]",
+        RunnerState.Restarting => $"[yellow]restarting[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
+        RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",
+        _ => r.State.ToString().ToLowerInvariant(),
+    } + (r.Restarts > 0 && r.State != RunnerState.Restarting ? $" [dim](restarted {r.Restarts}×)[/]" : "");
 }
 
 [Description("Print the end of an app's log")]

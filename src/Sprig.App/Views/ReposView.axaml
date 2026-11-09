@@ -148,17 +148,6 @@
                                 BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Padding="12,5" />
                     </Grid>
 
-                    <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding ConfirmingRemove}">
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="cell" Text="{Binding RemoveNote}" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Classes="small" Content="Keep it" Command="{Binding CancelRemoveCommand}" />
-                                <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
-                                        Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
                     <!-- Its own workspaces: the repo run on its own. Each opens on the Workspaces page, where its apps run. -->
                     <Border Classes="panel">
                         <StackPanel Spacing="9">
@@ -282,6 +271,27 @@
 
             <ContentControl Content="{Binding Editor}" IsVisible="{Binding Editor.IsEditing}" Margin="24,20,24,16" />
         </Grid>
+
+        <!-- Remove -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding ConfirmingRemove}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelRemoveCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource DangerBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding Selected.Id, StringFormat='Remove {0}?', FallbackValue=''}" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock Classes="cell" Text="{Binding RemoveNote}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Classes="small" Content="Keep it" Command="{Binding CancelRemoveCommand}" Padding="14,7" />
+                        <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
+                                Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
 
         <!-- + Add starts with a choice, so neither form's fields show until you've said which you want. -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsChooseOpen}">

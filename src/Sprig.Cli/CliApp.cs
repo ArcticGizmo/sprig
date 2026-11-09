@@ -81,6 +81,7 @@ public static class CliApp
         config.AddCommand<SetCommand>("set");
         config.AddCommand<UnsetCommand>("unset");
         config.AddCommand<SettingsCommand>("settings");
+        config.AddCommand<InfoCommand>("info");
         config.AddCommand<DownCommand>("down");
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");

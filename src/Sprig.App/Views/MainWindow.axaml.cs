@@ -30,6 +30,11 @@ public partial class MainWindow : Window
             _hostPoll.Start();
         };
         Closed += (_, _) => _hostPoll.Stop();
+        // Coming back from a terminal is when the CLI has most likely changed what the page shows.
+        Activated += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm) vm.WindowFocused();
+        };
         // Hidden in the tray it still polls, so the tray's count of running apps stays true, just less often.
         PropertyChanged += (_, e) =>
         {

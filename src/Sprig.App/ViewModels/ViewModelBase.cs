@@ -34,4 +34,15 @@ public abstract partial class PageViewModel : ViewModelBase
 
     /// <summary>Called when this page becomes the current page. Override to refresh live data.</summary>
     protected virtual void OnActivated() { }
+
+    /// <summary>The window came back to the front, perhaps after a terminal changed the store. Only the page shown hears
+    /// of it.</summary>
+    public void WindowFocused()
+    {
+        if (IsActive) OnWindowFocused();
+    }
+
+    /// <summary>Reload what a terminal may have changed, unless a dialog or an edit is in progress, which a reload would
+    /// lose.</summary>
+    protected virtual void OnWindowFocused() { }
 }

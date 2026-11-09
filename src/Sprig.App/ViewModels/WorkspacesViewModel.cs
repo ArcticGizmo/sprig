@@ -229,6 +229,17 @@ public partial class WorkspacesViewModel : PageViewModel
 
     protected override void OnActivated() => Refresh();
 
+    // Rebuilding the list reloads the selected workspace's apps and log, so it's left alone unless something changed.
+    protected override void OnWindowFocused()
+    {
+        if (IsAddOpen || IsSettingsOpen || ConfirmingRemove || ConfirmingBulkRemove || IsWorking || HasPendingTrust) return;
+        var records = _services.Workspaces.List().Select(r => (r.Key, r.State, r.UpdatedAt));
+        var names = _services.Orchestrations.List().Select(e => e.Id).Concat(_services.Stored.Repos().Select(r => r.Id));
+        if (!records.SequenceEqual(Workspaces.Select(w => (w.Record.Key, w.Record.State, w.Record.UpdatedAt)))
+            || !names.SequenceEqual(OrchestrationNames))
+            Refresh();
+    }
+
     /// <summary>Raised after the list of workspaces is read again, so the nav can follow.</summary>
     public event Action? WorkspacesChanged;
 

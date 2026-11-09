@@ -149,6 +149,18 @@ The app's Orchestrations page planned storefront with no problems in the headles
 - No new orchestration features until the later plan.
 - **Done when:** `storefront` and `catalog` plan, start and stop from the app and the CLI as they did before step 1.
 
+### Hand pass, first round (2026-11-06)
+
+Agreed with the user, and built the same day:
+- **`sprig up` starts the apps**, in the background, and waits until they're ready. `--run` follows their logs, and `--no-apps` stops at the infra. `-d` is gone.
+- **A workspace's name is enough from anywhere.** Outside every repo, a bare name (`sprig rm feat-x`, `sprig settings -w feat-x`) finds the one workspace with it, and asks for the ID when several have it. Inside a repo, words mean that repo's workspaces as before.
+- **`settings` stays, and `sprig info` shows a workspace whole:** state, folder, apps with state and url, infra ports and settings.
+- **The app reloads the page shown when its window comes back to the front**, unless a dialog or an edit is open. Live file watching was turned down as more than this needs.
+- **Fixed:** `shop-web--feat-x` counts as the feat-x workspace, not only the `shop-web` worktree inside it.
+- **Helpers:** `scripts/dev-sprig.ps1` and `dev-sprig.cmd` put this checkout's build first on one terminal's PATH, with `-Store` for an empty store.
+
+Still open: a one-repo workspace could put its worktree straight in `shop-web--feat-x`, without the `shop-web` folder inside.
+
 ## Order
 
 1 first, so nothing new is written under the old names. 2 before 3 and 4, since a repo that runs alone needs settings. 3 before 4, so the app's flow copies a CLI flow that has already been checked. 5 can happen at any point after 2.

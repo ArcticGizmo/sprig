@@ -256,6 +256,38 @@ public class ReposViewModelTests
     }
 
     [Fact]
+    public async Task Coming_back_to_the_window_shows_what_a_terminal_changed_unless_a_dialog_is_open()
+    {
+        using var store = new TempStore();
+        var web = Path.Combine(store.Root, "src", "shop-web");
+        var mobile = Path.Combine(store.Root, "src", "shop-mobile");
+        Directory.CreateDirectory(web);
+        Directory.CreateDirectory(mobile);
+        File.WriteAllText(Path.Combine(web, "sprig.cs"), "// never approved");
+        File.WriteAllText(Path.Combine(mobile, "sprig.cs"), "// never approved");
+        var services = new AppServices(store.Root);
+        services.Authoring.AddRepo(web, "shop-web");
+        var vm = new ReposViewModel(services) { IsActive = true };
+        await WaitFor(() => vm.NeedsApproval);
+
+        // As sprig init and sprig up -w feat-x would, from another process.
+        new AppServices(store.Root).Authoring.AddRepo(mobile, "shop-mobile");
+        var now = DateTimeOffset.UtcNow;
+        new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths).Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop-web", "x", "feat-x",
+            "feat-x", "stable", [], [], [], Sprig.Engine.Workspaces.WorkspaceState.Up, now, now));
+
+        vm.IsAddOpen = true;
+        vm.WindowFocused();
+        Assert.Equal(["shop-web"], vm.Repos.Select(r => r.Id));
+
+        vm.IsAddOpen = false;
+        vm.WindowFocused();
+        Assert.Equal(["shop-mobile", "shop-web"], vm.Repos.Select(r => r.Id));
+        Assert.Equal("shop-web", vm.Selected?.Id);
+        Assert.Equal(["feat-x"], vm.WorkspacesOfIt.Select(w => w.Name));
+    }
+
+    [Fact]
     public async Task A_repo_not_yet_approved_shows_it_and_copying_it_into_sprig_adds_a_new_unapproved_entry()
     {
         using var store = new TempStore();

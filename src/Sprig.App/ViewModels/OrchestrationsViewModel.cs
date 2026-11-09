@@ -170,6 +170,16 @@ public partial class OrchestrationsViewModel : PageViewModel
 
     protected override void OnActivated() => Refresh(Selected?.Name, replan: !Editor.IsDirty);
 
+    // Without replanning, which runs definitions: the list and its workspace counts are what a terminal changes.
+    protected override void OnWindowFocused()
+    {
+        if (Editor.IsEditing || IsChooseOpen || IsAddOpen || IsNewOpen || ConfirmingRemove || IsBusy || HasPendingTrust) return;
+        var before = Selected?.Name;
+        Refresh(before, replan: false);
+        if (Selected is not null && Selected.Name != before) _ = PlanSelectedAsync();
+        else ListWorkspaces();
+    }
+
     /// <summary>Show one orchestration, by ID.</summary>
     public void Show(string id)
     {
@@ -333,6 +343,11 @@ public partial class OrchestrationsViewModel : PageViewModel
             foreach (var row in OrchestrationSummary.Policies(plan)) Policies.Add(row);
         }
         HasAdded = Added.Count > 0;
+        ListWorkspaces();
+    }
+
+    void ListWorkspaces()
+    {
         WorkspacesOfIt.Clear();
         if (Selected is { } orchestration)
             foreach (var s in _services.Workspaces.List().Where(s => s.Orchestration == orchestration.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
@@ -676,7 +691,7 @@ public partial class OrchestrationsViewModel : PageViewModel
     {
         item ??= Selected;
         if (item is null) return;
-        if (item.InSprig && !ConfirmingRemove)
+        if (!ConfirmingRemove)
         {
             ConfirmingRemove = true;
             return;
@@ -691,6 +706,12 @@ public partial class OrchestrationsViewModel : PageViewModel
 
     [RelayCommand]
     private void CancelRemove() => ConfirmingRemove = false;
+
+    public string RemoveNote => Selected is { InSprig: true }
+        ? "It's kept only in sprig, so its file goes too. Repos it uses stay for others. Take down or remove its workspaces first: without the orchestration they can't be brought up again."
+        : "Take it off the list? Its file is left where it is. Take down or remove its workspaces first: without the orchestration they can't be brought up again.";
+
+    partial void OnConfirmingRemoveChanged(bool value) => OnPropertyChanged(nameof(RemoveNote));
 
     // ---- a new orchestration kept in sprig ----
 

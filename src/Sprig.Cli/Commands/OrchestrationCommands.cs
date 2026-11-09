@@ -196,7 +196,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var (id, worktreeOf) = s.Orchestration is { } named ? (named, null) : Here.Find(cli);
+        var (id, worktreeOf) = s.Orchestration is { } named ? (named, null) : Here.Find(cli, s.Workspace);
         var workspace = s.Workspace ?? worktreeOf ?? "local";
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
 

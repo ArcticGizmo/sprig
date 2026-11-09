@@ -106,6 +106,8 @@ public partial class MainWindowViewModel : ViewModelBase
             UpdateNotice = "Update failed to install. Try again from the About page.";
     }
 
+    public void WindowFocused() => CurrentPage.WindowFocused();
+
     partial void OnUpdateNoticeChanged(string? value) => OnPropertyChanged(nameof(ShowUpdateNotice));
 
     partial void OnCurrentPageChanged(PageViewModel value)

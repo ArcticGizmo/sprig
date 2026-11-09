@@ -34,6 +34,33 @@ public class OrchestrationsViewModelTests
     }
 
     [Fact]
+    public async Task Removing_one_kept_in_the_repo_asks_first_and_leaves_its_file()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(store.Root);
+        var file = Path.Combine(store.Root, "storefront.orchestration.cs");
+        File.WriteAllText(file, "using Sprig;\nreturn Orchestration.Describe(\"shop\").Emit(args);");
+        var vm = new OrchestrationsViewModel(new AppServices(store.Root));
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = file;
+        await vm.AddCommand.ExecuteAsync(null);
+
+        vm.RemoveCommand.Execute(null);
+        Assert.True(vm.ConfirmingRemove);
+        Assert.Contains("left where it is", vm.RemoveNote);
+        Assert.Single(vm.Orchestrations);
+
+        vm.CancelRemoveCommand.Execute(null);
+        Assert.Single(vm.Orchestrations);
+
+        vm.RemoveCommand.Execute(null);
+        vm.RemoveCommand.Execute(null);
+        Assert.False(vm.ConfirmingRemove);
+        Assert.Empty(vm.Orchestrations);
+        Assert.True(File.Exists(file));
+    }
+
+    [Fact]
     public void Add_asks_which_kind_first_and_back_returns_to_that_choice()
     {
         using var store = new TempStore();

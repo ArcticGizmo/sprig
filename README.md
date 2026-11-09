@@ -36,6 +36,8 @@ dotnet run --project src/Sprig.App    # launch the desktop app
 dotnet run --project src/Sprig.Cli -- --help
 ```
 
+To type `sprig` for this build in one terminal, ahead of any installed release, run `.\scripts\dev-sprig.ps1` in PowerShell or `scripts\dev-sprig.cmd` in cmd. `-Store <folder>` gives it an empty store, and `-Off` puts things back.
+
 | Project | Purpose |
 |---|---|
 | `Sprig.Sdk` | What `sprig.cs` definitions reference (`#:package Sprig.Sdk`). |

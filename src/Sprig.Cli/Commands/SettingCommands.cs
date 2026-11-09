@@ -57,7 +57,7 @@ public class ValuesSettings : TrustingSettings
 
     public (string Id, string Workspace) Target(CliContext cli)
     {
-        var (id, worktreeOf) = Id is { } named ? (named, null) : Here.Find(cli);
+        var (id, worktreeOf) = Id is { } named ? (named, null) : Here.Find(cli, Workspace);
         return (id, Workspace ?? worktreeOf ?? "local");
     }
 }
@@ -149,30 +149,40 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
     protected override int Execute(CommandContext context, ValuesSettings s, CancellationToken cancellation)
     {
         var (id, workspace) = s.Target(cli);
-        if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
+        if (Read(cli, id, workspace, s) is not { } read) return 1;
+        if (s.Json) { CliOutput.Json(read.Rows); return 0; }
+        Write(cli, read.Loaded.Id, read.Rows,
+            $"[bold]{Markup.Escape(read.Loaded.Id)}[/] · workspace [bold]{Markup.Escape(workspace)}[/]{(read.Record is null ? " [dim](not made yet)[/]" : "")}");
+        return 0;
+    }
+
+    internal sealed record Row(string Repo, string Name, string Type, string? Value, string From);
+
+    /// <summary>Each setting of <paramref name="id"/>'s repos as <paramref name="workspace"/> has it. Null (after saying
+    /// why) when the definitions can't be run.</summary>
+    internal static (LoadedOrchestration Loaded, WorkspaceRecord? Record, Row[] Rows)? Read(CliContext cli, string id, string workspace, TrustingSettings s)
+    {
+        if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return null;
         var record = cli.Workspaces.Get(loaded.Id, workspace);
         var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, workspace, cli.Settings.Get(), new HashSet<int>(),
             Values: record?.Values));
+        return (loaded, record, Rows(loaded, plan, record).ToArray());
+    }
 
-        var rows = Rows(loaded, plan, record).ToArray();
-        if (s.Json) { CliOutput.Json(rows); return 0; }
-        if (rows.Length == 0)
+    internal static void Write(CliContext cli, string id, IReadOnlyList<Row> rows, string title)
+    {
+        if (rows.Count == 0)
         {
-            cli.Ansi.MarkupLine($"[dim]{Markup.Escape(loaded.Id)}'s repos have no settings.[/]");
-            return 0;
+            cli.Ansi.MarkupLine($"[dim]{Markup.Escape(id)}'s repos have no settings.[/]");
+            return;
         }
-        var table = new Table().Border(TableBorder.Rounded)
-            .Title($"[bold]{Markup.Escape(loaded.Id)}[/] · workspace [bold]{Markup.Escape(workspace)}[/]{(record is null ? " [dim](not made yet)[/]" : "")}")
-            .AddColumns("Repo", "Setting", "Type", "Value", "From");
+        var table = new Table().Border(TableBorder.Rounded).Title(title).AddColumns("Repo", "Setting", "Type", "Value", "From");
         foreach (var r in rows)
             table.AddRow(new Markup(Markup.Escape(r.Repo)), new Markup(Markup.Escape(r.Name)), new Markup($"[dim]{Markup.Escape(r.Type)}[/]"),
                 new Markup(r.Value is null ? "[yellow]to ask[/]" : Markup.Escape(r.Value)), new Markup($"[dim]{Markup.Escape(r.From)}[/]"));
         cli.Ansi.Write(table);
         cli.Ansi.MarkupLine("[dim]Change one with: sprig set name=value. Clear it with: sprig unset name[/]");
-        return 0;
     }
-
-    sealed record Row(string Repo, string Name, string Type, string? Value, string From);
 
     static IEnumerable<Row> Rows(LoadedOrchestration loaded, Plan plan, WorkspaceRecord? record)
     {

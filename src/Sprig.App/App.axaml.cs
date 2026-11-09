@@ -28,7 +28,8 @@ public partial class App : Application
             desktop.MainWindow = main;
             // The language host is a child process; don't leave it running after the app closes.
             desktop.Exit += (_, _) => services.Language.Dispose();
-            _ = new Tray(this, desktop, main, services);
+            var tray = new Tray(this, desktop, main, services);
+            TerminalStop.Listen(() => Avalonia.Threading.Dispatcher.UIThread.Post(tray.Quit));
             MaybeShowChangelog(services, main);
         }
         base.OnFrameworkInitializationCompleted();

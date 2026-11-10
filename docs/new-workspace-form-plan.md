@@ -18,6 +18,20 @@ Branch: `experimental`. Written 2026-11-10 from the user's feedback after using 
 
 Remove now deletes whatever git leaves itself (links are removed, not followed). It tries a few times while the last app lets go, then prunes git's list. If the folder still can't be deleted, it says what's held and keeps the slot, and removing again once that's closed finishes the job. Commit 8fc7e7b.
 
+### Second cause: pnpm's links (found 2026-11-10, after the user hit it again)
+
+The leftover `safety-virtual--1` held no files at all, just 5,157 folders, 3,407 of them pnpm junctions in `node_modules` whose targets in `.pnpm` git had already deleted. Reproduced on a scratch repo: git for Windows can't remove a junction once it dangles, yet **exits 0**. Remove before 8fc7e7b trusted that, deleted the record, and left the folder. That removal ran at 08:22, before the fix.
+
+Remove now shows the cleanup as steps of its own, so a failure to delete is seen rather than hidden:
+- **Worktree x**: what git did ("removed by git", "git stopped partway: …", "git had forgotten it already").
+- **Clean up <folder>**: what git left, counted without following links ("git left no files, just 1,750 empty folders and 3,407 links…; deleted"), or a failure naming what's still there.
+- **Branch b in x**, when the branch goes too.
+- **Slot folder <folder>**, for an orchestration's slot: deleted, or kept and saying what else it holds.
+
+A broken slot now says what the folder in its way holds, so it's clear whether it's a half-finished removal or something of the user's.
+
+The mode switch is now a segmented control rather than radio buttons (user, 2026-11-10).
+
 ## Decisions (user, 2026-11-10)
 
 | Topic | Decision |

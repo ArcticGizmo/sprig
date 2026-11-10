@@ -25,6 +25,36 @@
                 </DataTemplate>
             </Setter>
         </Style>
+        <Style Selector="Border.segmented">
+            <Setter Property="Background" Value="#14141B" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="3" />
+        </Style>
+        <Style Selector="Button.segment">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1AFFFFFF" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="Button.segment.on /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#3360A5FA" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+            <Setter Property="BorderBrush" Value="#8060A5FA" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.segment.on">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
         <Style Selector="Button.branchlist">
             <Setter Property="Padding" Value="10,5" />
             <Setter Property="VerticalAlignment" Value="Stretch" />
@@ -1200,17 +1230,23 @@
                         </StackPanel>
                         <StackPanel Spacing="4">
                             <TextBlock Classes="phead" Text="WHAT TO CHECK OUT" />
-                            <StackPanel Orientation="Horizontal" Spacing="18">
-                                <RadioButton GroupName="new-mode" IsChecked="{Binding NewModeNew}" Content="New branch"
-                                             AutomationProperties.AutomationId="new-workspace:mode-new"
-                                             ToolTip.Tip="Make a branch, from the default branch or one you pick" />
-                                <RadioButton GroupName="new-mode" IsChecked="{Binding NewModeExisting}" Content="Existing branch"
-                                             AutomationProperties.AutomationId="new-workspace:mode-existing"
-                                             ToolTip.Tip="Check out a branch that's there already, locally or on a remote" />
-                                <RadioButton GroupName="new-mode" IsChecked="{Binding NewModeNone}" Content="No branch"
-                                             AutomationProperties.AutomationId="new-workspace:mode-none"
-                                             ToolTip.Tip="Make a free slot, its worktrees detached, to check a branch out in later" />
-                            </StackPanel>
+                            <!-- One of three, as a segmented control: the picked one is filled. -->
+                            <Border Classes="segmented">
+                                <UniformGrid Columns="3">
+                                    <Button Classes="segment" Classes.on="{Binding NewModeNew}" Content="New branch"
+                                            Command="{Binding PickNewModeCommand}" CommandParameter="{x:Static vm:NewCheckout.NewBranch}"
+                                            AutomationProperties.AutomationId="new-workspace:mode-new"
+                                            ToolTip.Tip="Make a branch, from the default branch or one you pick" />
+                                    <Button Classes="segment" Classes.on="{Binding NewModeExisting}" Content="Existing branch"
+                                            Command="{Binding PickNewModeCommand}" CommandParameter="{x:Static vm:NewCheckout.Existing}"
+                                            AutomationProperties.AutomationId="new-workspace:mode-existing"
+                                            ToolTip.Tip="Check out a branch that's there already, locally or on a remote" />
+                                    <Button Classes="segment" Classes.on="{Binding NewModeNone}" Content="No branch"
+                                            Command="{Binding PickNewModeCommand}" CommandParameter="{x:Static vm:NewCheckout.NoBranch}"
+                                            AutomationProperties.AutomationId="new-workspace:mode-none"
+                                            ToolTip.Tip="Make a free slot, its worktrees detached, to check a branch out in later" />
+                                </UniformGrid>
+                            </Border>
                         </StackPanel>
                         <StackPanel Spacing="4" IsVisible="{Binding NewModeNew}">
                             <TextBlock Classes="phead" Text="NAME" />

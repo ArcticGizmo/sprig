@@ -207,7 +207,7 @@ public sealed class WorkspaceServiceTests : IDisposable
 
         Assert.Equal($"{stray} already exists and isn't a worktree of {services}. Move or delete it, then try again.", blocker);
         var e = Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-x"));
-        Assert.Equal($"storefront--1 is broken: {stray} is there, but isn't a worktree sprig can use. Fix it (deleting what's in the way), or use storefront--2 instead", e.Message);
+        Assert.Equal($"storefront--1 is broken: {stray} is there, holding 1 file, but isn't a worktree sprig can use. Fix it (deleting what's in the way), or use storefront--2 instead", e.Message);
         // shop-web comes first, but nothing was made for it, and there's no workspace to clean up.
         Assert.False(Directory.Exists(Path.Combine(_root, "storefront--1", "shop-web")));
         Assert.False(_git.BranchExists(Path.Combine(_root, "shop-web"), "feat-x"));
@@ -506,6 +506,52 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.False(Directory.Exists(record.Folder));
         Assert.DoesNotContain(_git.Worktrees(source), w => w.Contains("storefront--", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(_workspaces.List());
+    }
+
+    [Fact]
+    public void Rm_deletes_the_dangling_links_git_leaves_and_says_so_in_its_own_step()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var source = RepoWith("shop-web", LocalFiles + "\nnode_modules/\n", ("index.html", "hi"));
+        var record = _workspaces.Up(Load(("shop-web", Web)), "feat-x", null);
+        var dir = record.Repos[0].Dir;
+        // As pnpm lays node_modules out: a package in its store, and a junction to it from an app's node_modules. git
+        // deletes the store first, can't remove the junction once it dangles, and still says it succeeded.
+        var package = Path.Combine(dir, "node_modules", ".pnpm", "dotenv@17", "node_modules", "dotenv");
+        Directory.CreateDirectory(package);
+        File.WriteAllText(Path.Combine(package, "index.js"), "x");
+        var link = Path.Combine(dir, "app", "node_modules", "dotenv");
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        _processes.Run("cmd", ["/c", "mklink", "/J", link, package]).EnsureSuccess();
+        var events = new List<WorkspaceEvent>();
+
+        _workspaces.Remove("storefront", "feat-x", new RemoveOptions(), new SyncProgressList(events));
+
+        Assert.False(Directory.Exists(dir));
+        Assert.Empty(_workspaces.List());
+        Assert.DoesNotContain(_git.Worktrees(source), w => w.Contains("storefront--", StringComparison.OrdinalIgnoreCase));
+        var cleanup = Assert.Single(events, e => e.Step.StartsWith("Clean up ", StringComparison.Ordinal) && e.State == StepState.Done);
+        Assert.Contains("1 link", cleanup.Detail);
+        Assert.EndsWith("deleted", cleanup.Detail);
+    }
+
+    sealed class SyncProgressList(List<WorkspaceEvent> events) : IProgress<WorkspaceEvent>
+    {
+        public void Report(WorkspaceEvent value) => events.Add(value);
+    }
+
+    [Fact]
+    public void A_broken_slot_says_what_the_folder_in_its_way_holds()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web)) with { Id = "shop-web", Alone = true };
+        Directory.CreateDirectory(Path.Combine(_root, "shop-web--1", "frontend", "node_modules", "a"));
+        Directory.CreateDirectory(Path.Combine(_root, "shop-web--1", "frontend", "node_modules", "b"));
+
+        var broken = _workspaces.BrokenSlotFor(loaded, "feat-x");
+
+        Assert.NotNull(broken);
+        Assert.Contains("holding 4 empty folders", broken.Why);
     }
 
     [Fact]

@@ -76,10 +76,11 @@ public sealed record BranchChoice(string Name, string? Remote, IReadOnlyList<str
 /// <summary>A slot that can't take a branch as it stands: where its worktrees go, there are folders that aren't
 /// worktrees of their repos (left from a slot that was removed, or made by hand).</summary>
 /// <param name="Next">The lowest slot number that's fine to use instead.</param>
-public sealed record BrokenSlot(string Slot, string SlotName, IReadOnlyList<string> InTheWay, string Next, string NextName)
+/// <param name="Holds">What the one folder in the way holds, in words, when there's one; null when not looked at.</param>
+public sealed record BrokenSlot(string Slot, string SlotName, IReadOnlyList<string> InTheWay, string Next, string NextName, string? Holds = null)
 {
     public string Why => InTheWay.Count == 1
-        ? $"{SlotName} is broken: {InTheWay[0]} is there, but isn't a worktree sprig can use"
+        ? $"{SlotName} is broken: {InTheWay[0]} is there{(Holds is null ? "" : $", holding {Holds}")}, but isn't a worktree sprig can use"
         : $"{SlotName} is broken: {string.Join(", ", InTheWay)} are there, but aren't worktrees sprig can use";
 }
 
@@ -336,13 +337,27 @@ public sealed partial class WorkspaceService(
 
         foreach (var repo in record.Repos.Where(r => r.Worktree))
         {
+            var known = git.IsRepo(repo.Source);
             step.Start($"Worktree {repo.Name}");
-            RemoveWorktree(repo, step);
-            if (options.DeleteBranch && record.Branch is { } branch && git.BranchExists(repo.Source, branch))
+            step.Done(RemoveWorktree(repo, known));
+
+            step.Start($"Clean up {repo.Dir}");
+            step.Done(DeleteLeftovers(repo.Dir, step));
+            if (known) git.PruneWorktrees(repo.Source);
+
+            if (options.DeleteBranch && record.Branch is { } branch && known && git.BranchExists(repo.Source, branch))
+            {
+                step.Start($"Branch {branch} in {repo.Name}");
                 git.DeleteBranch(repo.Source, branch, force: true);
-            step.Done(options.DeleteBranch ? "removed, with its branch" : "removed");
+                step.Done("deleted");
+            }
         }
-        DeleteIfEmpty(record.Folder);
+        if (record.Folder is { } folder && !record.Repos.Any(r => SamePath(r.Dir, folder)))
+        {
+            step.Start($"Slot folder {folder}");
+            DeleteIfEmpty(folder);
+            step.Done(Directory.Exists(folder) ? $"kept, since it holds more than the worktrees: {Contents(folder)}" : "deleted");
+        }
 
         leases.Release(record.Key);
         store.Delete(orchestration, workspace);
@@ -350,33 +365,77 @@ public sealed partial class WorkspaceService(
 
     const int DeleteAttempts = 5;
 
-    /// <summary>
-    /// git forgets a worktree once it has started deleting its folder, so a file something still has open (an app that
-    /// has only just stopped, an IDE, a build server) leaves the folder half deleted and no longer a worktree: asking git
-    /// again fails, and the folder is in the slot's way next time. Whatever git leaves is deleted here instead, tried a few
-    /// times while the last app lets go, and git's list is pruned. Failing that, it says what's held, and removing again
-    /// once that's closed finishes the job.
-    /// </summary>
-    void RemoveWorktree(WorkspaceRepo repo, Steps step)
+    /// <summary>Has git remove the worktree, saying how that went. git deletes the folder first and forgets the worktree
+    /// even when it can't delete all of it, so what it leaves is cleaned up after (<see cref="DeleteLeftovers"/>).</summary>
+    string RemoveWorktree(WorkspaceRepo repo, bool known)
     {
-        var known = git.IsRepo(repo.Source);
-        if (known && Directory.Exists(repo.Dir) && git.Worktrees(repo.Source).Any(w => SamePath(w, repo.Dir)))
+        if (!Directory.Exists(repo.Dir)) return "already gone";
+        if (!known || !git.Worktrees(repo.Source).Any(w => SamePath(w, repo.Dir))) return "git had forgotten it already";
+        try
         {
-            try { git.RemoveWorktree(repo.Source, repo.Dir, force: true); }
-            catch (Processes.ProcessException) { /* what it left is deleted below */ }
+            git.RemoveWorktree(repo.Source, repo.Dir, force: true);
+            return "removed by git";
         }
-        for (var attempt = 1; Directory.Exists(repo.Dir); attempt++)
+        catch (Processes.ProcessException e)
         {
-            try { DeleteTree(repo.Dir); }
+            return $"git stopped partway: {e.Result.StdErr.Trim().Split('\n')[0]}";
+        }
+    }
+
+    /// <summary>
+    /// Delete what git left of a worktree's folder, saying what that was. Two things leave it: links (pnpm's junctions in
+    /// node_modules), which git on Windows can't remove once what they point at is gone, though it still says it
+    /// succeeded; and a file something still has open (an app that has only just stopped, an IDE, a build server). Links
+    /// are removed rather than followed, and a held file is tried again a few times while it's let go. Failing that, it
+    /// names what's held, the slot is kept, and removing again once that's closed finishes the job.
+    /// </summary>
+    string DeleteLeftovers(string dir, Steps step)
+    {
+        if (!Directory.Exists(dir)) return "nothing left";
+        var left = Contents(dir);
+        for (var attempt = 1; Directory.Exists(dir); attempt++)
+        {
+            try { DeleteTree(dir); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 if (attempt == DeleteAttempts)
                     throw step.Fail(new WorkspaceException(
-                        $"{repo.Dir} couldn't be deleted ({e.Message.TrimEnd('.')}). Close whatever has it open, such as an IDE, a terminal or a build server, then remove it again."));
+                        $"{dir} couldn't be deleted ({e.Message.TrimEnd('.')}). It still holds {Contents(dir)}. Close whatever has it open, such as an IDE, a terminal or a build server, then remove it again."));
                 Thread.Sleep(TimeSpan.FromMilliseconds(250 * attempt));
             }
         }
-        if (known) git.PruneWorktrees(repo.Source);
+        return $"git left {left}; deleted";
+    }
+
+    /// <summary>What a folder holds, counted without following links, for saying why it's still there.</summary>
+    internal static string Contents(string dir)
+    {
+        const int Most = 200_000;
+        int files = 0, folders = 0, links = 0;
+        var pending = new Stack<DirectoryInfo>([new DirectoryInfo(dir)]);
+        try
+        {
+            while (pending.Count > 0 && files + folders + links < Most)
+                foreach (var entry in pending.Pop().EnumerateFileSystemInfos())
+                {
+                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) links++;
+                    else if (entry is DirectoryInfo sub)
+                    {
+                        folders++;
+                        pending.Push(sub);
+                    }
+                    else files++;
+                }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* counted as far as it could be read */ }
+        static string Count(int n, string one) => n == 1 ? $"1 {one}" : $"{n:N0} {one}s";
+        var parts = new List<string>();
+        if (files > 0) parts.Add(Count(files, "file"));
+        if (folders > 0) parts.Add(Count(folders, files == 0 ? "empty folder" : "folder"));
+        if (links > 0) parts.Add(Count(links, "link"));
+        if (parts.Count == 0) return "nothing (it's empty)";
+        var what = parts.Count == 1 ? parts[0] : string.Join(", ", parts[..^1]) + " and " + parts[^1];
+        return files == 0 && links > 0 ? $"no files, just {what}: what's left when git can't remove links such as pnpm's" : what;
     }
 
     // ---- slots ----
@@ -569,7 +628,7 @@ public sealed partial class WorkspaceService(
         var inTheWay = InTheWay(loaded, record?.Folder ?? WorkspaceFolder(loaded, loaded.Id, name, settingsNow));
         if (inTheWay.Count == 0) return null;
         var next = NextUsableSlot(loaded, name, settingsNow);
-        return new BrokenSlot(name, $"{loaded.Id}--{name}", inTheWay, next, $"{loaded.Id}--{next}");
+        return new BrokenSlot(name, $"{loaded.Id}--{name}", inTheWay, next, $"{loaded.Id}--{next}", inTheWay is [var only] ? Contents(only) : null);
     }
 
     /// <summary>The folders where the slot at <paramref name="root"/> puts its worktrees that are there but aren't

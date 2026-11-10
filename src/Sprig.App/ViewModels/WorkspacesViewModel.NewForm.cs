@@ -44,6 +44,9 @@ public partial class WorkspacesViewModel
         set { if (value) NewMode = NewCheckout.NoBranch; }
     }
 
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void PickNewMode(NewCheckout mode) => NewMode = mode;
+
     public bool NewShowsFrom => NewMode != NewCheckout.Existing;
     public string NewFromLabel => NewMode == NewCheckout.NoBranch ? "AT" : "FROM";
     public string CreateLabel => NewMode == NewCheckout.NoBranch ? "Make the slot" : "Run it";

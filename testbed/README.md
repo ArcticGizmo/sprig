@@ -16,7 +16,7 @@ pwsh -File scripts/testbed.ps1 -Path D:\tb -Force
 Two orchestrations sit beside the repos:
 
 - `storefront.orchestration.cs` joins all three repos: `sprig up storefront -b feat-x` checks feat-x out in a slot of worktrees, `storefront--1`, and `sprig up storefront` runs the repos where they're checked out, as `local`.
-- One repo on its own: in its folder, `sprig init` then `sprig up` runs it in place, apps and all (`--no-apps` stops at the infra). `sprig up -b feat-x` checks a branch out in a slot of its own, `shop-web--1`, and `sprig release feat-x` frees the slot for the next branch, keeping its data, ports and values. `sprig info` shows a workspace whole; `sprig settings`, `sprig set name=value` and `sprig unset name` show and change where its values come from.
+- One repo on its own: in its folder, `sprig init` then `sprig up` runs it in place, apps and all (`--no-apps` stops at the infra). `sprig up -b feat-x` checks a branch out in a slot of its own, `shop-web--1`, and `sprig free feat-x` frees the slot for the next branch, keeping its data, ports and values. `sprig info` shows a workspace whole; `sprig settings`, `sprig set name=value` and `sprig unset name` show and change where its values come from.
 
 To use this checkout's build as `sprig`, run `.\scripts\dev-sprig.ps1 -Store <empty folder>` (or `scripts\dev-sprig.cmd` in cmd) in the terminal you test from.
 - `catalog.orchestration.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`orchestration.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:

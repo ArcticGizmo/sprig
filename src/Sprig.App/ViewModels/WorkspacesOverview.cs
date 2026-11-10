@@ -283,6 +283,12 @@ public partial class WorkspacesViewModel
     private Task BulkDown() => RunBulk("Taking down", CheckedRecords(), (record, progress, cancellation) =>
         _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation));
 
+    /// <summary>Free each ticked slot that has a branch, keeping its worktrees warm for the next one; free slots and
+    /// in-place workspaces are passed over.</summary>
+    [RelayCommand]
+    private Task BulkFree() => RunBulk("Freeing", CheckedRecords().Where(r => !r.InPlace && !r.IsFree).ToArray(), (record, progress, cancellation) =>
+        _services.Workspaces.Free(record.Orchestration, record.Name, progress, cancellation));
+
     [RelayCommand]
     private void AskBulkRemove() => ConfirmingBulkRemove = CheckedCount > 0;
 

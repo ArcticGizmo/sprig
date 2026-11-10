@@ -94,6 +94,27 @@ public partial class WorkspacesView : UserControl
         _marksMenu = new ContextMenu { Items = { _marksStart, _marksRestart, _marksStop, new Separator(), _marksPin } };
 
         GraphCanvas.NodeMenuRequested += ShowNodeMenu;
+
+        foreach (var box in new[] { NewExistingBox, NewFromBox })
+        {
+            // Filtered by what's typed, but a branch already picked shows the whole list again, so another can be chosen.
+            box.ItemFilter = (search, item) => string.IsNullOrEmpty(search) || item is not Sprig.Engine.Workspaces.BranchChoice choice
+                || _vm?.NewBranchChoices.Any(c => c.Ref == search) == true
+                || choice.Ref.Contains(search, StringComparison.OrdinalIgnoreCase);
+            // A click in the box lists what can be picked, so it reads as a choice rather than a blank to fill.
+            box.AddHandler(PointerReleasedEvent, (_, _) =>
+            {
+                if (!box.IsDropDownOpen && box.ItemsSource is System.Collections.ICollection { Count: > 0 }) box.IsDropDownOpen = true;
+            }, RoutingStrategies.Bubble, handledEventsToo: true);
+        }
+    }
+
+    /// <summary>The ▾ beside a branch picker: every branch, or closed again.</summary>
+    void OpenBranchList(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is not string name || this.FindControl<AutoCompleteBox>(name) is not { } box) return;
+        box.Focus();
+        box.IsDropDownOpen = !box.IsDropDownOpen;
     }
 
     /// <summary>A graph node's actions: its log, start or restart, stop, and an app's pages.</summary>

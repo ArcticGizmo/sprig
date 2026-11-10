@@ -86,6 +86,8 @@ public partial class WorkspacesViewModel
                 // Now the slot's folders can be looked at too.
                 CheckSlotSoon(immediately: true);
             }
+            if (NewBranchChoices.Count == 0) await LoadBranchChoicesAsync(loaded);
+            if (version != _newSettingsVersion) return;
             if (loaded.Orchestration is not null && loaded.Untrusted.Count == 0 && loaded.Problems.Count == 0)
             {
                 // A slot being reused starts from the values it kept, each of which can be changed or cleared.

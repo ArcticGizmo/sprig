@@ -235,7 +235,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         Directory.CreateDirectory(Path.Combine(dir, "node_modules"));
         File.WriteAllText(Path.Combine(dir, "node_modules", "installed.txt"), "yes");
 
-        var released = _workspaces.Release("shop-web", "1");
+        var released = _workspaces.Free("shop-web", "1");
 
         Assert.Equal(WorkspaceState.Released, released.State);
         Assert.True(released.IsFree);
@@ -253,7 +253,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Contains("API=https://staging.example.com", File.ReadAllText(Path.Combine(dir, ".env.local")));
 
         // Checking out again can clear what the slot kept.
-        _workspaces.Release("shop-web", "1");
+        _workspaces.Free("shop-web", "1");
         _workspaces.CheckOut(loaded, "feat-z", unset: ["api-url"]);
         Assert.Contains("API=http://localhost:5100", File.ReadAllText(Path.Combine(dir, ".env.local")));
     }
@@ -280,7 +280,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         _workspaces.CheckOut(loaded, "feat-x");
         Assert.True(File.Exists(log));
 
-        _workspaces.Release("storefront", "1");
+        _workspaces.Free("storefront", "1");
         Assert.False(File.Exists(log));
         Assert.False(Directory.Exists(Path.Combine(Sprig.Engine.Hosting.HostProtocol.LogFolder(_store.Paths), "storefront")));
 
@@ -288,6 +288,79 @@ public sealed class WorkspaceServiceTests : IDisposable
         Run("feat-y's run");
         _workspaces.Remove("storefront", "1", new RemoveOptions());
         Assert.False(File.Exists(log));
+    }
+
+    /// <summary>A second remote, <c>upstream</c>, with a branch the repo doesn't have locally.</summary>
+    void Upstream(string repo, string branch)
+    {
+        var other = Path.Combine(_root, "upstream-" + Path.GetFileName(repo));
+        Git(_root, "clone", "-q", repo, other);
+        Git(other, "switch", "-q", "-c", branch);
+        File.WriteAllText(Path.Combine(other, "upstream.txt"), branch);
+        Git(other, "add", "-A");
+        Git(other, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "on upstream");
+        Git(repo, "remote", "add", "upstream", other);
+        Git(repo, "fetch", "-q", "upstream");
+    }
+
+    [Fact]
+    public void Branch_choices_list_local_branches_then_each_remotes_with_the_default_marked()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"));
+        Git(source, "branch", "feat-local");
+        Upstream(source, "feat/up");
+
+        var choices = _workspaces.BranchChoices(Load(("shop-web", Web)));
+
+        Assert.Equal(["main", "feat-local"], choices.Where(c => c.Remote is null).Select(c => c.Ref));
+        Assert.True(choices.First(c => c.Ref == "main").Default);
+        Assert.Contains(choices, c => c.Ref == "upstream/feat/up");
+        Assert.DoesNotContain(choices, c => c.Name == "HEAD");
+    }
+
+    [Fact]
+    public void A_new_branch_is_refused_when_its_name_is_taken_and_an_existing_one_is_taken_from_the_remote_named()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"));
+        Upstream(source, "feat/up");
+        var loaded = Load(("shop-web", Web));
+
+        var e = Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat/up", new CheckOutOptions(NewBranch: true)));
+        Assert.Contains("already exists in upstream (shop-web)", e.Message);
+        Assert.Contains("Existing branch", e.Message);
+
+        var record = _workspaces.CheckOut(loaded, "feat/up", new CheckOutOptions(Track: "upstream"));
+
+        Assert.True(File.Exists(Path.Combine(record.Repos[0].Dir, "upstream.txt")));
+        Assert.Equal("upstream/feat/up", RunGit(record.Repos[0].Dir, "rev-parse", "--abbrev-ref", "@{upstream}"));
+    }
+
+    [Fact]
+    public void A_free_slot_can_be_made_with_no_branch_and_claimed_later()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web));
+
+        var free = _workspaces.MakeFreeSlot(loaded);
+
+        Assert.True(free.IsFree);
+        Assert.Equal("1", free.Name);
+        Assert.Null(_git.CurrentBranch(free.Repos[0].Dir));
+        Assert.Contains(_git.Worktrees(source), w => string.Equals(w, Path.GetFullPath(free.Repos[0].Dir), StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("2", _workspaces.FreeSlotName("storefront"));
+
+        // The next branch takes the free slot, reusing its worktree.
+        var claimed = _workspaces.CheckOut(loaded, "feat-x", new CheckOutOptions(NewBranch: true));
+        Assert.Equal("1", claimed.Name);
+        Assert.Equal("feat-x", _git.CurrentBranch(claimed.Repos[0].Dir));
+        Assert.Single(_workspaces.List());
+    }
+
+    string RunGit(string dir, params string[] args)
+    {
+        var result = _processes.Run("git", ["-C", dir, .. args], dir);
+        Assert.True(result.Success, result.StdErr);
+        return result.StdOut.Trim();
     }
 
     [Fact]
@@ -339,7 +412,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         Repo("shop-web", ("index.html", "hi"));
         var loaded = Load(("shop-web", Web)) with { Id = "shop-web", Alone = true };
         var dir = _workspaces.CheckOut(loaded, "feat-x").Repos.Single().Dir;
-        _workspaces.Release("shop-web", "1");
+        _workspaces.Free("shop-web", "1");
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
         Directory.Delete(dir, recursive: true);
 
@@ -357,7 +430,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         var record = _workspaces.CheckOut(loaded, "feat-x");
         File.WriteAllText(Path.Combine(record.Repos.Single().Dir, "index.html"), "changed");
 
-        Assert.Contains("aren't committed", Assert.Throws<WorkspaceException>(() => _workspaces.Release("storefront", "1")).Message);
+        Assert.Contains("aren't committed", Assert.Throws<WorkspaceException>(() => _workspaces.Free("storefront", "1")).Message);
         Assert.Equal("feat-x", _git.CurrentBranch(record.Repos.Single().Dir));
 
         // main is the repo's own checkout.

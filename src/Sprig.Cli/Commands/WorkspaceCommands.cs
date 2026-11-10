@@ -338,13 +338,13 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 }
 
 [Description("Free a slot for another branch: stop its apps and infra and detach its worktrees, keeping its branch, data, ports and values")]
-public sealed class ReleaseCommand(CliContext cli) : Command<WorkspaceSettings>
+public sealed class FreeCommand(CliContext cli) : Command<WorkspaceSettings>
 {
     protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
     {
         s.Resolve(cli);
         var before = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}'");
-        var record = cli.Workspaces.Release(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        var record = cli.Workspaces.Free(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
         if (s.Json) { CliOutput.Json(new { ok = true, workspace = record }); return 0; }
         CliOutput.Success(before.IsFree ? $"{record.SlotName} was already free" : $"{record.SlotName} is free; '{before.Branch}' is kept, with its commits");
         cli.Ansi.MarkupLine($"[dim]Check the next branch out in it with: sprig up {Markup.Escape(record.Orchestration)} -b <branch>[/]");

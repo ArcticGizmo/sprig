@@ -27,8 +27,8 @@ public sealed record WorkspaceItem(WorkspaceRecord Record)
     public bool IsFailed => Record.State == WorkspaceState.Failed;
     public bool IsFree => Record.IsFree;
 
-    /// <summary>A slot with a branch checked out, which can be released for the next one.</summary>
-    public bool CanRelease => !Record.InPlace && !Record.IsFree;
+    /// <summary>A slot with a branch checked out, which can be freed for the next one.</summary>
+    public bool CanFree => !Record.InPlace && !Record.IsFree;
 
     public static string Display(WorkspaceRecord record) => record.InPlace ? $"{record.Orchestration} / {record.Name}" : record.SlotName;
 }
@@ -224,6 +224,8 @@ public partial class WorkspacesViewModel : PageViewModel
         if (value is null) return;
         NewFrom = _services.Ui.WorkspaceChoices(value).From ?? "";
         if (!IsAddOpen) return;
+        NewBranchChoices = [];
+        FillSlotChoices(value);
         CheckSlotSoon(immediately: true);
         _ = LoadNewSettingsAsync(value);
     }
@@ -262,10 +264,19 @@ public partial class WorkspacesViewModel : PageViewModel
             ShowSlot("", bad: false, null);
             return;
         }
-        var branch = NewBranch.Trim();
+        if (NewMode == NewCheckout.NoBranch)
+        {
+            var at = NewFrom.Trim() is { Length: > 0 } f ? f : null;
+            var (freeLine, freeBad) = await AppServices.RunAsync(() => FreeSlotPreview(id, at));
+            if (cancel.IsCancellationRequested) return;
+            ShowSlot(freeLine, freeBad, null);
+            return;
+        }
+        var (branch, _) = NewTarget();
         var slot = _newSlot;
         var loaded = _newLoadedFor == id ? _newLoaded : null;
-        var (line, bad, record, broken) = await AppServices.RunAsync(() => SlotPreview(id, branch, slot, loaded));
+        var makes = NewMode == NewCheckout.NewBranch;
+        var (line, bad, record, broken) = await AppServices.RunAsync(() => SlotPreview(id, branch, slot, loaded, makes));
         if (cancel.IsCancellationRequested) return;
 
         var before = _newSlotRecord?.Key;
@@ -276,11 +287,15 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>Which slot the branch would go in (the one it's in already, a free one to reuse, or a new one), or what
     /// stands in the way of it: a broken slot (which the form then asks about), or the branch checked out somewhere
     /// else.</summary>
-    (string Line, bool Bad, WorkspaceRecord? Record, BrokenSlot? Broken) SlotPreview(string id, string branch, int? slot, LoadedOrchestration? loaded)
+    /// <param name="makes">The branch is to be made, so one of that name already there stands in the way.</param>
+    (string Line, bool Bad, WorkspaceRecord? Record, BrokenSlot? Broken) SlotPreview(string id, string branch, int? slot, LoadedOrchestration? loaded,
+        bool makes)
     {
         try
         {
             var (name, record) = _services.Workspaces.SlotFor(id, branch, slot);
+            if (makes && branch.Length > 0 && loaded is not null && _services.Workspaces.BranchTaken(loaded, branch) is { } taken)
+                return ($"{char.ToUpperInvariant(taken[0])}{taken[1..]}.", true, record, null);
             if (loaded is not null && _services.Workspaces.BrokenSlotFor(loaded, branch, slot) is { } broken)
                 return ($"{broken.Why}.", true, record, broken);
             if (branch.Length > 0 && loaded is not null && _services.Workspaces.CheckOutBlocker(loaded, branch, slot) is { } blocked)
@@ -707,6 +722,8 @@ public partial class WorkspacesViewModel : PageViewModel
         NewFixSlot = false;
         _newLoaded = null;
         _newLoadedFor = null;
+        NewBranchChoices = [];
+        FillSlotChoices(NewOrchestration);
         IsAddOpen = true;
         CheckSlotSoon(immediately: true);
         _ = LoadNewSettingsAsync(NewOrchestration);
@@ -734,10 +751,16 @@ public partial class WorkspacesViewModel : PageViewModel
             return;
         }
 
-        // The app checks branches out in slots of worktrees, which keep their ports; running in place is left to sprig up.
-        if (NewBranch.Trim() is not { Length: > 0 } branch)
+        if (NewMode == NewCheckout.NoBranch)
         {
-            Fail("Give the branch to check out. One that doesn't exist yet starts from where it says.");
+            await CreateFreeSlotAsync(name, path);
+            return;
+        }
+        // The app checks branches out in slots of worktrees, which keep their ports; running in place is left to sprig up.
+        var (branch, track) = NewTarget();
+        if (branch.Length == 0)
+        {
+            Fail(NewMode == NewCheckout.NewBranch ? "Give the new branch a name." : "Pick the branch to check out.");
             return;
         }
         var loaded = await LoadAsync(path, Create);
@@ -781,7 +804,9 @@ public partial class WorkspacesViewModel : PageViewModel
 
         var from = NewFrom.Trim() is { Length: > 0 } f ? f : null;
         _services.Ui.SetWorkspaceChoices(name, new WorkspaceOptions(From: from));
-        var options = new CheckOutOptions(newSlot, from, NewEmptyData, fixSlot);
+        var makes = NewMode == NewCheckout.NewBranch;
+        // An existing branch that some of an orchestration's repos don't have is made in those from their default branch.
+        var options = new CheckOutOptions(newSlot, makes ? from : null, NewEmptyData, fixSlot, NewBranch: makes, Track: track);
         var slotName = $"{loaded.Id}--{slot}";
 
         // The progress window takes over from here, and reports any failure.
@@ -792,6 +817,7 @@ public partial class WorkspacesViewModel : PageViewModel
         if (ok)
         {
             NewBranch = "";
+            NewExisting = "";
             _newSlot = null;
             foreach (var input in NewSettings) input.Value = "";
         }
@@ -832,11 +858,11 @@ public partial class WorkspacesViewModel : PageViewModel
 
     /// <summary>Free the selected slot for the next branch, keeping its branch, data, ports and values.</summary>
     [RelayCommand]
-    private async Task Release()
+    private async Task Free()
     {
         if (Selected?.Record is not { } record || record.InPlace || record.IsFree) return;
-        await RunAsync($"Releasing {record.SlotName}",
-            (progress, cancellation) => _services.Workspaces.Release(record.Orchestration, record.Name, progress, cancellation),
+        await RunAsync($"Freeing {record.SlotName}",
+            (progress, cancellation) => _services.Workspaces.Free(record.Orchestration, record.Name, progress, cancellation),
             $"{record.SlotName} is free. '{record.Branch}' is kept with its commits, and the slot keeps its data, ports and values for the next branch.");
         Refresh();
     }

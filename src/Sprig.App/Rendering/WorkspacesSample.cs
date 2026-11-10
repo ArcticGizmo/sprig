@@ -156,6 +156,38 @@ internal static partial class HeadlessRenderer
             Save(window, Sibling(outFile, "new-broken"));
             vm.Workspaces.CancelAddCommand.Execute(null);
 
+            // The form's three cases, with branches as two remotes would give them, the list open for an existing one.
+            vm.Workspaces.OpenAddCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            vm.Workspaces.NewBranchChoices =
+            [
+                new BranchChoice("main", null, [], true),
+                new BranchChoice("feat/payments", null, ["shop-services"], false),
+                new BranchChoice("main", "origin", [], true),
+                new BranchChoice("feat/injuries-v2", "origin", [], false),
+                new BranchChoice("feat/mobile-events", "origin", ["shop-web"], false),
+                new BranchChoice("main", "upstream", [], true),
+                new BranchChoice("spike/kafka", "upstream", [], false),
+            ];
+            vm.Workspaces.NewModeNew = true;
+            vm.Workspaces.NewBranch = "feat/orders-retry";
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "new-mode-new"));
+            vm.Workspaces.NewModeExisting = true;
+            Pump(TimeSpan.FromMilliseconds(300));
+            var existingBox = window.GetVisualDescendants().OfType<AutoCompleteBox>().First(b => b.Name == "NewExistingBox");
+            existingBox.Focus();
+            existingBox.IsDropDownOpen = true;
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "new-mode-existing"));
+            existingBox.IsDropDownOpen = false;
+            vm.Workspaces.NewModeNone = true;
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "new-mode-none"));
+            Console.WriteLine($"form, no branch: '{vm.Workspaces.NewSlotLine}', button '{vm.Workspaces.CreateLabel}'");
+            vm.Workspaces.NewModeNew = true;
+            vm.Workspaces.CancelAddCommand.Execute(null);
+
             // Unwrapped, the failure and its stack trace picked by dragging over them and copied, as a user would.
             vm.Workspaces.ToggleLogWrapCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(400));

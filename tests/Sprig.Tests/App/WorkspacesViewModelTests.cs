@@ -181,7 +181,7 @@ public class WorkspacesViewModelTests
         Assert.Equal("web--1", vm.Selected!.Title);
         Assert.Equal("feat-x", vm.Selected.Branch);
         Assert.True(vm.Selected.IsUp);
-        Assert.True(vm.Selected.CanRelease);
+        Assert.True(vm.Selected.CanFree);
         Assert.Equal("stable", vm.Selected.Record.PortPolicy);
         var env = Path.Combine(store.Root, "work", "web--1", "shop-web", ".env.local");
         Assert.Matches(@"PORT=95\d\d", File.ReadAllText(env));
@@ -203,7 +203,7 @@ public class WorkspacesViewModelTests
         vm.CancelAddCommand.Execute(null);
 
         // Released, the slot is free; the form then offers it, with its data to keep or empty.
-        await vm.ReleaseCommand.ExecuteAsync(null);
+        await vm.FreeCommand.ExecuteAsync(null);
         Assert.True(vm.Selected!.IsFree);
         Assert.Equal("free", vm.Selected.Branch);
         Assert.False(vm.ShowRunControls);
@@ -295,7 +295,7 @@ public class WorkspacesViewModelTests
 
         // The slot keeps its values when it's released. Checking the next branch out starts from them, and a box
         // emptied clears that value, so its default applies again.
-        await vm.ReleaseCommand.ExecuteAsync(null);
+        await vm.FreeCommand.ExecuteAsync(null);
         vm.CheckOutHereCommand.Execute(null);
         vm.NewBranch = "feat-y";
         await WaitFor(() => vm.NewSettings.Any(s => s.Name == "api-url" && s.Value == "https://api.example.com"));
@@ -307,6 +307,67 @@ public class WorkspacesViewModelTests
         Assert.Contains("KEY=k1", File.ReadAllText(env));
 
         services.Workspaces.Remove("shop-web", "1", new RemoveOptions(DeleteBranch: true));
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task The_form_makes_a_free_slot_refuses_a_taken_new_name_and_checks_out_an_existing_branch_into_the_slot_picked()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        services.Settings.Save(new Sprig.Engine.Settings.SprigSettings { PortRangeStart = 9700, PortRangeEndExclusive = 9800 });
+
+        var sdk = Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
+        var repo = Path.Combine(store.Root, "work", "shop-web");
+        Directory.CreateDirectory(repo);
+        File.WriteAllText(Path.Combine(repo, ".gitignore"), ".env.local\n");
+        File.WriteAllText(Path.Combine(repo, "sprig.cs"), $$"""
+            #:project {{sdk}}
+            using Sprig;
+            var repo = Repo.Describe("shop-web");
+            var web = repo.Node("web", ".").Http();
+            web.EnvFile(".env.local", e => e.Set("PORT", web.Port));
+            return repo.Emit(args);
+            """);
+        Commit(repo);
+        new Sprig.Engine.Processes.ProcessRunner().Run("git", ["-C", repo, "branch", "feat/ready"]).EnsureSuccess();
+        var entry = services.Authoring.AddRepo(repo, "shop-web");
+        services.Trust.Approve(entry.DefinitionFile, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(entry.DefinitionFile)));
+
+        var vm = new WorkspacesViewModel(services);
+        vm.ProgressStarted += _ => { };
+        vm.NewOrchestration = "shop-web";
+        vm.OpenAddCommand.Execute(null);
+        await WaitFor(() => vm.NewBranchChoices.Count > 0);
+        Assert.Equal(["main", "feat/ready"], vm.NewBranchChoices.Select(c => c.Ref));
+        Assert.Equal("default", vm.NewBranchChoices[0].Note);
+
+        // No branch: a free slot, nothing started.
+        vm.NewModeNone = true;
+        await WaitFor(() => vm.NewSlotLine.StartsWith("Makes shop-web--1, a free slot", StringComparison.Ordinal));
+        Assert.Equal("Make the slot", vm.CreateLabel);
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.True(vm.Selected!.IsFree);
+        Assert.Equal("shop-web--1", vm.Selected.Title);
+
+        // A new branch can't take a name that's there already.
+        vm.OpenAddCommand.Execute(null);
+        vm.NewModeNew = true;
+        vm.NewBranch = "feat/ready";
+        await WaitFor(() => vm.NewSlotBad && vm.NewSlotLine.Contains("already exists in shop-web"));
+
+        // Checked out as it is, into the slot picked: a new one rather than the free one.
+        vm.NewModeExisting = true;
+        vm.NewExisting = "feat/ready";
+        Assert.True(vm.NewShowsSlotChoices);
+        vm.NewSlotChoice = vm.NewSlotChoices.Last();
+        await WaitFor(() => vm.NewSlotLine == "Goes in shop-web--2, a new slot.");
+        await vm.CreateCommand.ExecuteAsync(null);
+        Assert.Equal(("shop-web--2", "feat/ready"), (vm.Selected!.Title, vm.Selected.Branch));
+        Assert.True(services.Workspaces.Get("shop-web", "1")!.IsFree);
+
+        services.Workspaces.Remove("shop-web", "2", new RemoveOptions());
+        services.Workspaces.Remove("shop-web", "1", new RemoveOptions());
     }
 
     static async Task WaitFor(Func<bool> condition)

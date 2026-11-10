@@ -4,11 +4,33 @@
              xmlns:logs="clr-namespace:Sprig.App.Logs"
              xmlns:controls="clr-namespace:Sprig.App.Controls"
              xmlns:planning="clr-namespace:Sprig.Engine.Planning;assembly=Sprig.Engine"
+             xmlns:ws="clr-namespace:Sprig.Engine.Workspaces;assembly=Sprig.Engine"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              x:Class="Sprig.App.Views.WorkspacesView"
              x:DataType="vm:WorkspacesViewModel">
 
     <UserControl.Styles>
+        <!-- A branch picker: each branch as git names it, with what to know about it beside it. -->
+        <Style Selector="AutoCompleteBox.branches">
+            <Setter Property="MinimumPrefixLength" Value="0" />
+            <Setter Property="MaxDropDownHeight" Value="280" />
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+            <Setter Property="ItemTemplate">
+                <DataTemplate x:DataType="ws:BranchChoice">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                        <TextBlock Text="{Binding Ref}" FontSize="12.5" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="1" Text="{Binding Note}" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                   FontFamily="{StaticResource ContentControlThemeFontFamily}" VerticalAlignment="Center" />
+                    </Grid>
+                </DataTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.branchlist">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
         <Style Selector="Border.panel">
             <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
@@ -381,24 +403,26 @@
                 </TextBox>
                 <Panel Grid.Column="1">
                     <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding NoneChecked}" VerticalAlignment="Center">
-                        <TextBlock Text="Double-click a workspace to open it. Tick workspaces to bring up, take down or remove several at once." FontSize="12.5"
+                        <TextBlock Text="Double-click a workspace to open it. Tick workspaces to bring up, take down, free or remove several at once." FontSize="12.5"
                                    Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
                         <Button Classes="flat" Command="{Binding SelectStaleCommand}" IsVisible="{Binding HasStale}" HorizontalAlignment="Left">
                             <TextBlock Text="{Binding StaleLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
                         </Button>
                     </StackPanel>
-                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8" IsVisible="{Binding HasChecked}">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8" IsVisible="{Binding HasChecked}">
                         <TextBlock Text="{Binding CheckedLabel}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
                                    VerticalAlignment="Center" Margin="0,0,4,0" />
                         <Button Grid.Column="1" Classes="small" Content="Bring up" Command="{Binding BulkUpCommand}" IsEnabled="{Binding !IsWorking}" />
                         <Button Grid.Column="2" Classes="small" Content="Take down" Command="{Binding BulkDownCommand}" IsEnabled="{Binding !IsWorking}" />
-                        <Button Grid.Column="3" Content="Remove…" Command="{Binding AskBulkRemoveCommand}" IsEnabled="{Binding !IsWorking}"
+                        <Button Grid.Column="3" Classes="small" Content="Free" Command="{Binding BulkFreeCommand}" IsEnabled="{Binding !IsWorking}"
+                                ToolTip.Tip="Detach each one's worktrees and keep them, with their data, ports and build output, for the next branch. Branches and commits stay." />
+                        <Button Grid.Column="4" Content="Remove…" Command="{Binding AskBulkRemoveCommand}" IsEnabled="{Binding !IsWorking}"
                                 Background="Transparent" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}"
                                 BorderThickness="1" Padding="10,3" FontSize="12" />
-                        <Button Grid.Column="4" Classes="flat" Command="{Binding ClearCheckedCommand}" VerticalAlignment="Center">
+                        <Button Grid.Column="5" Classes="flat" Command="{Binding ClearCheckedCommand}" VerticalAlignment="Center">
                             <TextBlock Text="Clear" FontSize="12.5" Foreground="{StaticResource MutedBrush}" />
                         </Button>
-                        <TextBlock Grid.Column="5" Text="{Binding GuardNote}" FontSize="12" Foreground="{StaticResource WarnBrush}"
+                        <TextBlock Grid.Column="6" Text="{Binding GuardNote}" FontSize="12" Foreground="{StaticResource WarnBrush}"
                                    TextWrapping="Wrap" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </Grid>
                 </Panel>
@@ -533,9 +557,9 @@
                             <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding ShowBringUp}" ToolTip.Tip="Its worktrees, env files and infra, without starting its apps."
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Release" Command="{Binding ReleaseCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding Selected.CanRelease, FallbackValue=False}"
-                                    ToolTip.Tip="Free this slot for the next branch. Its branch and commits stay, and so do its data, ports and values."
+                            <Button Content="Free" Command="{Binding FreeCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
+                                    ToolTip.Tip="Free this slot for the next branch: its worktrees go to a detached HEAD. Its branch and commits stay, and so do its data, ports, values and build output."
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Settings" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     ToolTip.Tip="The values its repos take, and where each comes from"
@@ -1174,17 +1198,59 @@
                             <TextBlock Classes="phead" Text="ORCHESTRATION OR REPO" />
                             <ComboBox ItemsSource="{Binding OrchestrationNames}" SelectedItem="{Binding NewOrchestration}" HorizontalAlignment="Stretch" />
                         </StackPanel>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <StackPanel Spacing="4">
-                                <TextBlock Classes="phead" Text="BRANCH" />
-                                <TextBox x:Name="NewBranchBox" Text="{Binding NewBranch}" PlaceholderText="e.g. feat-x" />
+                        <StackPanel Spacing="4">
+                            <TextBlock Classes="phead" Text="WHAT TO CHECK OUT" />
+                            <StackPanel Orientation="Horizontal" Spacing="18">
+                                <RadioButton GroupName="new-mode" IsChecked="{Binding NewModeNew}" Content="New branch"
+                                             AutomationProperties.AutomationId="new-workspace:mode-new"
+                                             ToolTip.Tip="Make a branch, from the default branch or one you pick" />
+                                <RadioButton GroupName="new-mode" IsChecked="{Binding NewModeExisting}" Content="Existing branch"
+                                             AutomationProperties.AutomationId="new-workspace:mode-existing"
+                                             ToolTip.Tip="Check out a branch that's there already, locally or on a remote" />
+                                <RadioButton GroupName="new-mode" IsChecked="{Binding NewModeNone}" Content="No branch"
+                                             AutomationProperties.AutomationId="new-workspace:mode-none"
+                                             ToolTip.Tip="Make a free slot, its worktrees detached, to check a branch out in later" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4">
-                                <TextBlock Classes="phead" Text="STARTING FROM" />
-                                <TextBox Text="{Binding NewFrom}" PlaceholderText="Each repo's default branch"
-                                         ToolTip.Tip="Used only when the branch doesn't exist yet" />
-                            </StackPanel>
-                        </Grid>
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding NewModeNew}">
+                            <TextBlock Classes="phead" Text="NAME" />
+                            <TextBox x:Name="NewBranchBox" Text="{Binding NewBranch}" PlaceholderText="e.g. feat/orders-retry" />
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding NewModeExisting}">
+                            <TextBlock Classes="phead" Text="BRANCH" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <AutoCompleteBox x:Name="NewExistingBox" Classes="branches" Text="{Binding NewExisting}"
+                                                 ItemsSource="{Binding NewBranchChoices}" ValueMemberBinding="{ReflectionBinding Ref}"
+                                                 PlaceholderText="Pick a branch, or type to filter"
+                                                 AutomationProperties.AutomationId="new-workspace:existing" />
+                                <Button Grid.Column="1" Classes="branchlist" Content="▾" Tag="NewExistingBox" Click="OpenBranchList"
+                                        ToolTip.Tip="Every branch: local ones, then each remote's" />
+                            </Grid>
+                            <TextBlock Classes="cell via" TextWrapping="Wrap"
+                                       Text="A remote's branch is checked out as a local branch that tracks it." />
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding NewShowsFrom}">
+                            <TextBlock Classes="phead" Text="{Binding NewFromLabel}" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <AutoCompleteBox x:Name="NewFromBox" Classes="branches" Text="{Binding NewFrom}"
+                                                 ItemsSource="{Binding NewBranchChoices}" ValueMemberBinding="{ReflectionBinding Ref}"
+                                                 PlaceholderText="Each repo's default branch"
+                                                 AutomationProperties.AutomationId="new-workspace:from" />
+                                <Button Grid.Column="1" Classes="branchlist" Content="▾" Tag="NewFromBox" Click="OpenBranchList"
+                                        ToolTip.Tip="Every branch: local ones, then each remote's" />
+                            </Grid>
+                        </StackPanel>
+                        <StackPanel Spacing="4" IsVisible="{Binding NewShowsSlotChoices}">
+                            <TextBlock Classes="phead" Text="SLOT" />
+                            <ComboBox ItemsSource="{Binding NewSlotChoices}" SelectedItem="{Binding NewSlotChoice}" HorizontalAlignment="Stretch"
+                                      AutomationProperties.AutomationId="new-workspace:slot">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SlotChoice">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
                         <!-- Which slot the branch goes in, so a reused one's data and values are a choice, not a surprise. -->
                         <!-- One line that changes colour, keeping its place while the check runs. -->
                         <TextBlock Classes="slotline" Classes.bad="{Binding NewSlotBad}" Text="{Binding NewSlotLine}" FontSize="12.5"
@@ -1212,7 +1278,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
                         <Button Content="Cancel" Command="{Binding CancelAddCommand}"
                                 Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
-                        <Button Content="Run it" Command="{Binding CreateCommand}" IsVisible="{Binding HasOrchestrations}"
+                        <Button Content="{Binding CreateLabel}" Command="{Binding CreateCommand}" IsVisible="{Binding HasOrchestrations}"
                                 IsEnabled="{Binding !IsWorking}"
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
                     </StackPanel>

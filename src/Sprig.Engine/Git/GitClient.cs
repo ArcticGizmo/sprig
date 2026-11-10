@@ -2,6 +2,13 @@ using Sprig.Engine.Processes;
 
 namespace Sprig.Engine.Git;
 
+/// <summary>A branch: a local one when <paramref name="Remote"/> is null, else a remote-tracking one.</summary>
+public sealed record GitBranch(string Name, string? Remote)
+{
+    /// <summary>As git names it: <c>feat/x</c>, or <c>origin/feat/x</c>.</summary>
+    public string Ref => Remote is null ? Name : $"{Remote}/{Name}";
+}
+
 /// <summary>The git operations a workspace needs, by shelling out to <c>git</c>.</summary>
 public sealed class GitClient(IProcessRunner runner)
 {
@@ -50,9 +57,35 @@ public sealed class GitClient(IProcessRunner runner)
     public bool RefExists(string repo, string reference)
         => Run(repo, "rev-parse", "--verify", "--quiet", $"{reference}^{{commit}}").Success;
 
-    /// <summary>A remote-tracking branch named <paramref name="branch"/>, preferring origin then upstream.</summary>
-    public string? RemoteBranch(string repo, string branch)
+    /// <summary>The repo's local branches, then its remote-tracking ones (without each remote's <c>HEAD</c>).</summary>
+    public IReadOnlyList<GitBranch> Branches(string repo)
     {
+        var result = Run(repo, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes");
+        if (!result.Success) return [];
+        var remotes = Run(repo, "remote").StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .OrderByDescending(r => r.Length).ToArray();
+        var branches = new List<GitBranch>();
+        foreach (var line in result.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith("refs/heads/", StringComparison.Ordinal))
+                branches.Add(new GitBranch(line["refs/heads/".Length..], null));
+            else if (line.StartsWith("refs/remotes/", StringComparison.Ordinal))
+            {
+                var rest = line["refs/remotes/".Length..];
+                // A remote's name can hold a slash, so the longest that fits is the one.
+                if (remotes.FirstOrDefault(r => rest.StartsWith(r + "/", StringComparison.Ordinal)) is not { } remote) continue;
+                var name = rest[(remote.Length + 1)..];
+                if (name != "HEAD") branches.Add(new GitBranch(name, remote));
+            }
+        }
+        return branches;
+    }
+
+    /// <summary>A remote-tracking branch named <paramref name="branch"/>: on <paramref name="remote"/> when one is named,
+    /// else preferring origin then upstream.</summary>
+    public string? RemoteBranch(string repo, string branch, string? remote = null)
+    {
+        if (remote is not null) return RefExists(repo, $"refs/remotes/{remote}/{branch}") ? $"{remote}/{branch}" : null;
         var refs = Run(repo, "for-each-ref", "--format=%(refname:short)", $"refs/remotes/*/{branch}").StdOut
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return refs.FirstOrDefault(r => r.StartsWith("origin/", StringComparison.Ordinal))
@@ -80,14 +113,15 @@ public sealed class GitClient(IProcessRunner runner)
     /// A worktree at <paramref name="path"/> on <paramref name="branch"/>: the local branch when there is one, else a
     /// remote one of that name, else a new branch from <paramref name="from"/>. Returns true when it made the branch.
     /// </summary>
-    public bool AddWorktree(string repo, string path, string branch, string from)
+    /// <param name="track">The remote to take the branch from when there's no local one; null for whichever has it.</param>
+    public bool AddWorktree(string repo, string path, string branch, string from, string? track = null)
     {
         if (BranchExists(repo, branch))
         {
             Run(repo, "worktree", "add", path, branch).EnsureSuccess();
             return false;
         }
-        if (RemoteBranch(repo, branch) is { } remote)
+        if (RemoteBranch(repo, branch, track) is { } remote)
         {
             Run(repo, "worktree", "add", "--track", "-b", branch, path, remote).EnsureSuccess();
             return true;
@@ -102,14 +136,14 @@ public sealed class GitClient(IProcessRunner runner)
     /// Switch the worktree at <paramref name="worktree"/> to <paramref name="branch"/>, choosing it as
     /// <see cref="AddWorktree"/> does. Returns true when it made the branch.
     /// </summary>
-    public bool SwitchTo(string worktree, string branch, string from)
+    public bool SwitchTo(string worktree, string branch, string from, string? track = null)
     {
         if (BranchExists(worktree, branch))
         {
             Run(worktree, "switch", branch).EnsureSuccess();
             return false;
         }
-        if (RemoteBranch(worktree, branch) is { } remote)
+        if (RemoteBranch(worktree, branch, track) is { } remote)
         {
             Run(worktree, "switch", "--track", "-c", branch, remote).EnsureSuccess();
             return true;
@@ -123,6 +157,15 @@ public sealed class GitClient(IProcessRunner runner)
     /// <summary>Leave the worktree at its current commit with no branch checked out, so the branch is free for any
     /// other worktree.</summary>
     public void Detach(string worktree) => Run(worktree, "switch", "--detach").EnsureSuccess();
+
+    /// <summary>A worktree at <paramref name="path"/> on a detached HEAD at <paramref name="at"/>, a local or remote
+    /// branch or a commit.</summary>
+    public void AddDetachedWorktree(string repo, string path, string at)
+    {
+        var start = RefExists(repo, at) ? at
+            : RemoteBranch(repo, at) ?? throw new InvalidOperationException($"{repo} has no branch '{at}' to start a free slot at");
+        Run(repo, "worktree", "add", "--detach", path, start).EnsureSuccess();
+    }
 
     /// <summary>The branch checked out at <paramref name="worktree"/>; null on a detached HEAD.</summary>
     public string? CurrentBranch(string worktree)

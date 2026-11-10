@@ -365,6 +365,22 @@ public sealed partial class WorkspaceService(
     {
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
         if (record.IsMain) throw new WorkspaceException($"{record.SlotName}'s main is always there, so it can't be removed; take it down instead");
+        Remove(record, options, progress, cancellation);
+    }
+
+    /// <summary>
+    /// Remove the main of <paramref name="orchestration"/> as that repo or orchestration goes, or takes a new ID: it's
+    /// only always there while they are. Its containers and their data go, and the values it wrote into the checkout
+    /// are put back. Nothing happens when it has never come up.
+    /// </summary>
+    public void RemoveMain(string orchestration, IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
+    {
+        if (store.Get(orchestration, WorkspaceRecord.MainName) is { IsMain: true } record)
+            Remove(record, new RemoveOptions(), progress, cancellation);
+    }
+
+    void Remove(WorkspaceRecord record, RemoveOptions options, IProgress<WorkspaceEvent>? progress, CancellationToken cancellation)
+    {
         var step = new Steps(progress);
 
         if (!options.Force && RemovalBlockers(record, options.DeleteBranch) is [var first, ..]) throw new WorkspaceException(first);
@@ -408,7 +424,7 @@ public sealed partial class WorkspaceService(
         }
 
         leases.Release(record.Key);
-        store.Delete(orchestration, workspace);
+        store.Delete(record.Orchestration, record.Name);
     }
 
     const int DeleteAttempts = 5;

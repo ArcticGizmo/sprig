@@ -339,6 +339,8 @@
                     <TextBlock Text="{Binding Selected.Id, StringFormat='Remove {0}?', FallbackValue=''}" FontSize="17" FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}" />
                     <TextBlock Classes="cell" Text="{Binding RemoveNote}" />
+                    <TextBlock Text="{Binding RemoveError}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
+                               IsVisible="{Binding RemoveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                         <Button Classes="small" Content="Keep it" Command="{Binding CancelRemoveCommand}" Padding="14,7" />
                         <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
@@ -366,6 +368,8 @@
                         <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                    Text="What orchestrations will call it: orchestration.UseRepo(&quot;the-id&quot;). Its definition and approval come with it." />
                     </StackPanel>
+                    <TextBlock Text="{Binding RenameNote}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
+                               IsVisible="{Binding RenameNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <TextBlock Text="{Binding RenameMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding RenameFailed}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">

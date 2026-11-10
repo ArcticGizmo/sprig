@@ -128,7 +128,9 @@ public sealed class RepoRmCommand(CliContext cli) : Command<RepoRmCommand.Settin
         var usedBy = authoring.UsedBy(s.Id);
         if (usedBy.Count > 0 && !s.Force)
             throw new InvalidOperationException($"'{s.Id}' is used by {string.Join(", ", usedBy)}. Pass --force to remove it anyway");
+        // Its main is named by the ID, so it goes first; nothing could remove it afterwards.
+        cli.Workspaces.RemoveMain(s.Id, new SyncProgress<Sprig.Engine.Workspaces.WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
         authoring.DeleteRepo(s.Id);
-        return CliOutput.Ok(s.Json, $"took '{s.Id}' off the list", new { ok = true, id = s.Id, usedBy });
+        return CliOutput.Ok(s.Json, $"took '{s.Id}' off the list, with its main checkout", new { ok = true, id = s.Id, usedBy });
     }
 }

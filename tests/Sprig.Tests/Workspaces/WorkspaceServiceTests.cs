@@ -684,6 +684,21 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Main_goes_with_its_id_putting_back_what_it_wrote_and_is_nothing_to_remove_before_it_has_come_up()
+    {
+        var dir = Repo("shop-web", ("index.html", "hi"));
+        File.WriteAllText(Path.Combine(dir, ".env.local"), "MINE=1\n");
+        var loaded = Load(("shop-web", Web));
+        _workspaces.RemoveMain("storefront");
+
+        _workspaces.Up(loaded, "main", null);
+        _workspaces.RemoveMain("storefront");
+
+        Assert.Null(_workspaces.Get("storefront", "main"));
+        Assert.Equal("MINE=1\n", File.ReadAllText(Path.Combine(dir, ".env.local")));
+    }
+
+    [Fact]
     public void Main_with_a_setting_that_has_no_default_says_to_give_it_one_rather_than_asking()
     {
         Repo("shop-web", ("index.html", "hi"));

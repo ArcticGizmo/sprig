@@ -61,6 +61,31 @@ public class WorkspacesOverviewTests
     }
 
     [Fact]
+    public void A_ticked_main_is_never_counted_for_removing_or_freeing_and_the_dialog_says_it_stays()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out var services);
+        new WorkspaceStore(services.Paths).Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "main", null, "stable",
+            [], [], [], WorkspaceState.Down, Now.AddDays(-30), Now.AddDays(-30)));
+        vm.RefreshCommand.Execute(null);
+        var main = vm.OverviewRows.Single(r => r.Record.IsMain);
+
+        main.IsChecked = true;
+        Assert.True(vm.HasChecked);
+        Assert.False(vm.CanBulkRemove);
+        Assert.False(vm.CanBulkFree);
+        vm.AskBulkRemoveCommand.Execute(null);
+        Assert.False(vm.ConfirmingBulkRemove);
+        // A month down, but always there, so not offered as stale either.
+        Assert.Equal("Select the 2 down for over a week", vm.StaleLabel);
+
+        vm.OverviewRows.Single(r => r.Record.Name == "feat-a").IsChecked = true;
+        vm.AskBulkRemoveCommand.Execute(null);
+        Assert.True(vm.ConfirmingBulkRemove);
+        Assert.Equal(("Remove 1 workspace?", "The main checkout you ticked stays: it's always there."), (vm.BulkRemoveTitle, vm.MainsPassedOver));
+    }
+
+    [Fact]
     public void The_shortcut_ticks_what_has_been_down_over_a_week_and_ticks_survive_a_refresh()
     {
         using var temp = new TempStore();

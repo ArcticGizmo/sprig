@@ -18,7 +18,8 @@ using Sprig.Engine.Orchestrations;
 namespace Sprig.App.ViewModels;
 
 /// <param name="HeldBy">For a main that's down, another definition's workspace that's up in the same checkout.</param>
-public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? HeldBy = null)
+/// <param name="Orphaned">Its repo or orchestration has gone, so nothing else would ever remove it.</param>
+public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? HeldBy = null, bool Orphaned = false)
 {
     /// <summary>A slot by its folder's name, as git and the file system show it; main by its ID, the name the slots are
     /// numbered from; another one in place by ID and name.</summary>
@@ -33,8 +34,8 @@ public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? Held
     /// <summary>A slot with a branch checked out, which can be freed for the next one.</summary>
     public bool CanFree => !Record.InPlace && !Record.IsFree;
 
-    /// <summary>Main is always there and runs with the definitions' own values.</summary>
-    public bool CanRemove => !Record.IsMain;
+    /// <summary>Main is always there and runs with the definitions' own values, while its repo or orchestration is.</summary>
+    public bool CanRemove => !Record.IsMain || Orphaned;
     public bool HasSettings => !Record.IsMain;
 
     public bool IsHeld => HeldBy is not null;
@@ -414,7 +415,8 @@ public partial class WorkspacesViewModel : PageViewModel
             .Select(id => _services.Orchestrations.Resolve(id) is { } path ? _services.Workspaces.MainOf(id, path) : null)
             .OfType<WorkspaceRecord>();
         foreach (var record in stored.Concat(mains))
-            Workspaces.Add(new WorkspaceItem(record, record.IsMain && record.State != WorkspaceState.Up ? _services.Workspaces.HolderOf(record) : null));
+            Workspaces.Add(new WorkspaceItem(record, record.IsMain && record.State != WorkspaceState.Up ? _services.Workspaces.HolderOf(record) : null,
+                Orphaned: record.IsMain && !OrchestrationNames.Contains(record.Orchestration)));
         NavCount = Workspaces.Count(s => s.IsUp);
 
         NewOrchestration = OrchestrationNames.Contains(orchestration ?? "") ? orchestration : OrchestrationNames.FirstOrDefault();
@@ -960,12 +962,16 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private async Task Remove()
     {
-        if (Selected?.Record is not { } record || record.IsMain) return;
+        if (Selected is not { CanRemove: true, Record: var record }) return;
         ConfirmingRemove = false;
         var options = new RemoveOptions(DeleteBranch && !record.InPlace);
         var title = WorkspaceItem.Display(record);
         await RunAsync($"Removing {title}",
-            (progress, cancellation) => _services.Workspaces.Remove(record.Orchestration, record.Name, options, progress, cancellation),
+            (progress, cancellation) =>
+            {
+                if (record.IsMain) _services.Workspaces.RemoveMain(record.Orchestration, progress, cancellation);
+                else _services.Workspaces.Remove(record.Orchestration, record.Name, options, progress, cancellation);
+            },
             $"{title} is gone.");
         Refresh();
     }

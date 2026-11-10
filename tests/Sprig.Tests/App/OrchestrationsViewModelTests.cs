@@ -40,24 +40,31 @@ public class OrchestrationsViewModelTests
         Directory.CreateDirectory(store.Root);
         var file = Path.Combine(store.Root, "storefront.orchestration.cs");
         File.WriteAllText(file, "using Sprig;\nreturn Orchestration.Describe(\"shop\").Emit(args);");
-        var vm = new OrchestrationsViewModel(new AppServices(store.Root));
+        var services = new AppServices(store.Root);
+        var vm = new OrchestrationsViewModel(services);
         vm.OpenAddCommand.Execute(null);
         vm.NewPath = file;
         await vm.AddCommand.ExecuteAsync(null);
+        // Its main came up once, so there's a record of it, named by the ID.
+        var now = DateTimeOffset.UtcNow;
+        new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths).Save(new Sprig.Engine.Workspaces.WorkspaceRecord("storefront", file, "main", null,
+            "stable", [], [], [], Sprig.Engine.Workspaces.WorkspaceState.Down, now, now));
 
-        vm.RemoveCommand.Execute(null);
+        await vm.RemoveCommand.ExecuteAsync(null);
         Assert.True(vm.ConfirmingRemove);
         Assert.Contains("left where it is", vm.RemoveNote);
+        Assert.Contains("main checkout goes with it", vm.RemoveNote);
         Assert.Single(vm.Orchestrations);
 
         vm.CancelRemoveCommand.Execute(null);
         Assert.Single(vm.Orchestrations);
 
-        vm.RemoveCommand.Execute(null);
-        vm.RemoveCommand.Execute(null);
+        await vm.RemoveCommand.ExecuteAsync(null);
+        await vm.RemoveCommand.ExecuteAsync(null);
         Assert.False(vm.ConfirmingRemove);
         Assert.Empty(vm.Orchestrations);
         Assert.True(File.Exists(file));
+        Assert.Null(services.Workspaces.Get("storefront", "main"));
     }
 
     [Fact]

@@ -452,8 +452,10 @@
                         <Button Grid.Column="1" Classes="small" Content="Bring up" Command="{Binding BulkUpCommand}" IsEnabled="{Binding !IsWorking}" />
                         <Button Grid.Column="2" Classes="small" Content="Take down" Command="{Binding BulkDownCommand}" IsEnabled="{Binding !IsWorking}" />
                         <Button Grid.Column="3" Classes="small" Content="Free" Command="{Binding BulkFreeCommand}" IsEnabled="{Binding !IsWorking}"
+                                IsVisible="{Binding CanBulkFree}"
                                 ToolTip.Tip="Detach each one's worktrees and keep them, with their data, ports and build output, for the next branch. Branches and commits stay." />
                         <Button Grid.Column="4" Content="Remove…" Command="{Binding AskBulkRemoveCommand}" IsEnabled="{Binding !IsWorking}"
+                                IsVisible="{Binding CanBulkRemove}"
                                 Background="Transparent" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}"
                                 BorderThickness="1" Padding="10,3" FontSize="12" />
                         <Button Grid.Column="5" Classes="flat" Command="{Binding ClearCheckedCommand}" VerticalAlignment="Center">
@@ -1223,9 +1225,11 @@
                     BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
                     HorizontalAlignment="Stretch" VerticalAlignment="Center">
                 <StackPanel Spacing="12">
-                    <TextBlock Text="{Binding CheckedLabel, StringFormat='Remove {0}?'}" FontSize="17" FontWeight="SemiBold"
+                    <TextBlock Text="{Binding BulkRemoveTitle}" FontSize="17" FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}" />
                     <TextBlock Classes="cell" Text="Each one's containers and their data are deleted, and so are its worktrees. Any with changes that aren't committed are skipped, and the summary says which." />
+                    <TextBlock Classes="cell" Text="{Binding MainsPassedOver}"
+                               IsVisible="{Binding MainsPassedOver, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <TextBlock Classes="cell" Foreground="{StaticResource WarnBrush}" Text="{Binding GuardNote}"
                                IsVisible="{Binding GuardNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <CheckBox IsChecked="{Binding BulkDeleteBranches}"

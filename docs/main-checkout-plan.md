@@ -43,6 +43,13 @@ One checkout can have more than one definition: a repo's own `sprig.cs` and an i
 - **The in-place `local`** still works for a record that has it, but nothing makes one now. The headless render's demo still uses it, because it needs a workspace with values set.
 - **Tests:** three engine tests (main itself, a setting with no default, taking over) and the app's workspace test, which brings `main` up and takes it over from a second orchestration.
 
+## After the user's first use (2026-11-10)
+
+- **The overview offered to remove main.** Ticking a main showed the bulk Remove…, whose dialog then passed over it without saying. Remove and Free now show only when something ticked can be removed or freed, and the dialog says a ticked main stays.
+- **Main goes with its ID** (user, 2026-11-10). Main is only always there while its repo or orchestration is. Removing either (on its page, `sprig repo rm`, `sprig orchestration rm`) removes its main first with `RemoveMain`: its containers and data, and the values it wrote put back. If that fails, the repo or orchestration stays listed and the dialog says why.
+- **Renaming a repo** is refused while its main is up, and otherwise drops the old ID's main, data included, which the rename dialog says first. Other workspaces still block a rename.
+- **A main whose ID has gone** some other way gets Remove… on its page, so nothing is left that can't be cleared.
+
 ## For later
 
 - Emptying a `main`'s data, since it can't be removed.

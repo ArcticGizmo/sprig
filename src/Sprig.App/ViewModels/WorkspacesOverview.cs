@@ -87,6 +87,20 @@ public partial class WorkspacesViewModel
     public bool NoneChecked => CheckedCount == 0;
     public string CheckedLabel => $"{CheckedCount} selected";
 
+    /// <summary>Main is always there, so it's never counted for removing; only a slot with a branch can be freed.</summary>
+    int Removable => _overview.Count(r => r.IsChecked && !r.Record.IsMain);
+    int MainsChecked => _overview.Count(r => r.IsChecked && r.Record.IsMain);
+
+    public bool CanBulkRemove => Removable > 0;
+    public bool CanBulkFree => _overview.Any(r => r.IsChecked && !r.Record.InPlace && !r.Record.IsFree);
+    public string BulkRemoveTitle => Removable == 1 ? "Remove 1 workspace?" : $"Remove {Removable} workspaces?";
+    public string MainsPassedOver => MainsChecked switch
+    {
+        0 => "",
+        1 => "The main checkout you ticked stays: it's always there.",
+        var n => $"The {n} main checkouts you ticked stay: they're always there.",
+    };
+
     partial void OnCheckedCountChanged(int value)
     {
         OnPropertyChanged(nameof(HasChecked));
@@ -206,6 +220,10 @@ public partial class WorkspacesViewModel
     {
         CheckedCount = _overview.Count(r => r.IsChecked);
         AllChecked = OverviewRows.Count > 0 && OverviewRows.All(r => r.IsChecked);
+        OnPropertyChanged(nameof(CanBulkRemove));
+        OnPropertyChanged(nameof(CanBulkFree));
+        OnPropertyChanged(nameof(BulkRemoveTitle));
+        OnPropertyChanged(nameof(MainsPassedOver));
         UpdateGuardNote();
     }
 
@@ -293,7 +311,7 @@ public partial class WorkspacesViewModel
         _services.Workspaces.Free(record.Orchestration, record.Name, progress, cancellation));
 
     [RelayCommand]
-    private void AskBulkRemove() => ConfirmingBulkRemove = CheckedCount > 0;
+    private void AskBulkRemove() => ConfirmingBulkRemove = CanBulkRemove;
 
     [RelayCommand]
     private void CancelBulkRemove() => ConfirmingBulkRemove = false;

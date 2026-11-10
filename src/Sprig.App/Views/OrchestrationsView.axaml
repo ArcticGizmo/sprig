@@ -806,6 +806,8 @@
                     <TextBlock Text="{Binding Selected.Name, StringFormat='Remove {0}?', FallbackValue=''}" FontSize="17" FontWeight="SemiBold"
                                Foreground="{StaticResource TitleBrush}" />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" Text="{Binding RemoveNote}" />
+                    <TextBlock Text="{Binding RemoveError}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
+                               IsVisible="{Binding RemoveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                         <Button Content="Keep it" Command="{Binding CancelRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
                                 Foreground="{StaticResource FgBrush}" Padding="14,7" />

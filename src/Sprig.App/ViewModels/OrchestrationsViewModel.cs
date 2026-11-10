@@ -688,13 +688,21 @@ public partial class OrchestrationsViewModel : PageViewModel
 
     /// <summary>An orchestration kept in sprig exists nowhere else, so removing one asks first.</summary>
     [RelayCommand]
-    private void Remove(OrchestrationItem? item)
+    private async Task Remove(OrchestrationItem? item)
     {
         item ??= Selected;
         if (item is null) return;
         if (!ConfirmingRemove)
         {
+            RemoveError = "";
             ConfirmingRemove = true;
+            return;
+        }
+        // Its main is named by the ID, so it goes first; nothing could remove it afterwards.
+        try { await AppServices.RunAsync(() => _services.Workspaces.RemoveMain(item.Name)); }
+        catch (Exception e)
+        {
+            RemoveError = $"Its main checkout couldn't be removed, so the orchestration is still listed: {e.Message.Split('\n')[0]}";
             return;
         }
         ConfirmingRemove = false;
@@ -708,9 +716,13 @@ public partial class OrchestrationsViewModel : PageViewModel
     [RelayCommand]
     private void CancelRemove() => ConfirmingRemove = false;
 
-    public string RemoveNote => Selected is { InSprig: true }
-        ? "It's kept only in sprig, so its file goes too. Repos it uses stay for others. Take down or remove its workspaces first: without the orchestration they can't be brought up again."
-        : "Take it off the list? Its file is left where it is. Take down or remove its workspaces first: without the orchestration they can't be brought up again.";
+    public string RemoveNote => (Selected is { InSprig: true }
+        ? "It's kept only in sprig, so its file goes too. Repos it uses stay for others."
+        : "Take it off the list? Its file is left where it is.")
+        + " Its main checkout goes with it, containers and data included. Take down or remove its slots first: without the orchestration they can't be brought up again.";
+
+    /// <summary>Why removing stopped, said in the dialog, which stays open.</summary>
+    [ObservableProperty] private string _removeError = "";
 
     partial void OnConfirmingRemoveChanged(bool value) => OnPropertyChanged(nameof(RemoveNote));
 

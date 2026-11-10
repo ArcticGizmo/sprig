@@ -129,8 +129,12 @@ public sealed class OrchestrationRmCommand(CliContext cli) : Command<Orchestrati
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        if (!cli.Orchestrations.Remove(s.Id)) throw new InvalidOperationException($"no orchestration registered as '{s.Id}'");
-        return CliOutput.Ok(s.Json, $"forgot '{s.Id}'", new { ok = true, id = s.Id });
+        var entry = cli.Orchestrations.List().FirstOrDefault(e => string.Equals(e.Id, s.Id, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"no orchestration registered as '{s.Id}'");
+        // Its main is named by the ID, so it goes first; nothing could remove it afterwards.
+        cli.Workspaces.RemoveMain(entry.Id, new SyncProgress<Sprig.Engine.Workspaces.WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        cli.Orchestrations.Remove(entry.Id);
+        return CliOutput.Ok(s.Json, $"forgot '{s.Id}', with its main checkout", new { ok = true, id = s.Id });
     }
 }
 

@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Store;
+using Sprig.Engine.Workspaces;
 using Sprig.Model;
 
 namespace Sprig.App.ViewModels;
@@ -176,9 +177,13 @@ public partial class ReposViewModel : PageViewModel
 
     public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.cs" : "Choose the repo's folder";
 
-    public string RemoveNote => Selected is { InRepo: true }
+    public string RemoveNote => (Selected is { InRepo: true }
         ? "It comes off the Repos list. The folder's own sprig.cs is left where it is. Orchestrations that use it will say it's missing."
-        : "It comes off the Repos list, and the definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.";
+        : "It comes off the Repos list, and the definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.")
+        + " Its main checkout's containers and their data go too, and the values it wrote into the checkout are put back.";
+
+    /// <summary>Why removing stopped, said in the dialog, which stays open.</summary>
+    [ObservableProperty] private string _removeError = "";
 
     public ReposViewModel(AppServices services)
     {
@@ -474,14 +479,26 @@ public partial class ReposViewModel : PageViewModel
         RenameBlocked = blocked is not null;
         RenameFailed = RenameBlocked;
         RenameMessage = blocked ?? "";
+        RenameNote = !RenameBlocked && _services.Workspaces.Get(repo.Id, WorkspaceRecord.MainName) is not null
+            ? "Its main checkout's containers and their data go, since they're named by this ID. It starts afresh under the new one."
+            : "";
         IsRenameOpen = true;
     }
 
-    // Its workspaces' slot folders, worktrees and port leases are all named by the ID.
+    /// <summary>What renaming takes with it, said before it's done.</summary>
+    [ObservableProperty] private string _renameNote = "";
+
+    // Its workspaces' slot folders, worktrees and port leases are all named by the ID. Main goes with the old ID instead,
+    // as long as it's down.
     string? WorkspacesBlockRename(RepoItem repo)
-        => _services.Workspaces.List().Count(w => w.Orchestration == repo.Id) is > 0 and var n
-            ? $"It has {Count(n, "workspace")} of its own, named by this ID. Remove {(n == 1 ? "it" : "them")} on the Workspaces page first."
+    {
+        var mine = _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).ToArray();
+        if (mine.Count(w => !w.IsMain) is > 0 and var n)
+            return $"It has {Count(n, "workspace")} of its own, named by this ID. Remove {(n == 1 ? "it" : "them")} on the Workspaces page first.";
+        return mine.Any(w => w.IsMain && w.State is WorkspaceState.Up or WorkspaceState.Starting)
+            ? "Its main checkout is up. Take it down on the Workspaces page first."
             : null;
+    }
 
     [RelayCommand]
     private void CancelRename() => IsRenameOpen = false;
@@ -506,6 +523,14 @@ public partial class ReposViewModel : PageViewModel
         catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
         {
             FailRename(e.Message);
+            return;
+        }
+        // Named by the old ID, which nothing else has now.
+        try { await AppServices.RunAsync(() => _services.Workspaces.RemoveMain(repo.Id)); }
+        catch (Exception e)
+        {
+            Refresh(renamed.Id);
+            FailRename($"Renamed, but the main checkout under the old ID couldn't be removed: {e.Message.Split('\n')[0]}. Remove it on the Workspaces page.");
             return;
         }
         IsRenameOpen = false;
@@ -534,12 +559,20 @@ public partial class ReposViewModel : PageViewModel
     /// <summary>Taking a repo kept in sprig off the list deletes its definition, and orchestrations using either kind
     /// break, so it asks first.</summary>
     [RelayCommand]
-    private void Remove()
+    private async Task Remove()
     {
         if (Selected is not { } repo) return;
         if (!ConfirmingRemove)
         {
+            RemoveError = "";
             ConfirmingRemove = true;
+            return;
+        }
+        // Its main is named by the ID, so it goes first; nothing could remove it afterwards.
+        try { await AppServices.RunAsync(() => _services.Workspaces.RemoveMain(repo.Id)); }
+        catch (Exception e)
+        {
+            RemoveError = $"Its main checkout couldn't be removed, so the repo is still listed: {e.Message.Split('\n')[0]}";
             return;
         }
         ConfirmingRemove = false;

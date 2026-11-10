@@ -408,6 +408,34 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Rm_with_a_file_held_open_says_so_keeps_the_slot_and_finishes_once_it_is_let_go()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        // Build output is ignored, so it doesn't count as uncommitted changes.
+        var source = RepoWith("shop-web", LocalFiles + "\nobj/\n", ("index.html", "hi"));
+        var record = _workspaces.Up(Load(("shop-web", Web)), "feat-x", null);
+        var held =Path.Combine(record.Repos[0].Dir, "obj", "app.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(held)!);
+        File.WriteAllText(held, "x");
+
+        using (File.Open(held, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var e = Assert.Throws<WorkspaceException>(() => _workspaces.Remove("storefront", "feat-x", new RemoveOptions()));
+            Assert.Contains("couldn't be deleted", e.Message);
+            Assert.Contains("remove it again", e.Message);
+            Assert.Single(_workspaces.List());
+        }
+
+        // git has forgotten the worktree by now, so this is sprig deleting what it left.
+        _workspaces.Remove("storefront", "feat-x", new RemoveOptions());
+
+        Assert.False(Directory.Exists(record.Repos[0].Dir));
+        Assert.False(Directory.Exists(record.Folder));
+        Assert.DoesNotContain(_git.Worktrees(source), w => w.Contains("storefront--", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(_workspaces.List());
+    }
+
+    [Fact]
     public void Rm_refuses_a_worktree_with_uncommitted_changes_unless_forced()
     {
         Repo("shop-web", ("index.html", "hi"));

@@ -314,7 +314,7 @@ public sealed partial class WorkspaceService(
         foreach (var repo in record.Repos.Where(r => r.Worktree))
         {
             step.Start($"Worktree {repo.Name}");
-            if (Directory.Exists(repo.Dir)) git.RemoveWorktree(repo.Source, repo.Dir, force: true);
+            RemoveWorktree(repo, step);
             if (options.DeleteBranch && record.Branch is { } branch && git.BranchExists(repo.Source, branch))
                 git.DeleteBranch(repo.Source, branch, force: true);
             step.Done(options.DeleteBranch ? "removed, with its branch" : "removed");
@@ -323,6 +323,37 @@ public sealed partial class WorkspaceService(
 
         leases.Release(record.Key);
         store.Delete(orchestration, workspace);
+    }
+
+    const int DeleteAttempts = 5;
+
+    /// <summary>
+    /// git forgets a worktree once it has started deleting its folder, so a file something still has open (an app that
+    /// has only just stopped, an IDE, a build server) leaves the folder half deleted and no longer a worktree: asking git
+    /// again fails, and the folder is in the slot's way next time. Whatever git leaves is deleted here instead, tried a few
+    /// times while the last app lets go, and git's list is pruned. Failing that, it says what's held, and removing again
+    /// once that's closed finishes the job.
+    /// </summary>
+    void RemoveWorktree(WorkspaceRepo repo, Steps step)
+    {
+        var known = git.IsRepo(repo.Source);
+        if (known && Directory.Exists(repo.Dir) && git.Worktrees(repo.Source).Any(w => SamePath(w, repo.Dir)))
+        {
+            try { git.RemoveWorktree(repo.Source, repo.Dir, force: true); }
+            catch (Processes.ProcessException) { /* what it left is deleted below */ }
+        }
+        for (var attempt = 1; Directory.Exists(repo.Dir); attempt++)
+        {
+            try { DeleteTree(repo.Dir); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == DeleteAttempts)
+                    throw step.Fail(new WorkspaceException(
+                        $"{repo.Dir} couldn't be deleted ({e.Message.TrimEnd('.')}). Close whatever has it open, such as an IDE, a terminal or a build server, then remove it again."));
+                Thread.Sleep(TimeSpan.FromMilliseconds(250 * attempt));
+            }
+        }
+        if (known) git.PruneWorktrees(repo.Source);
     }
 
     // ---- slots ----
@@ -960,7 +991,7 @@ public sealed partial class WorkspaceService(
             foreach (var child in Directory.EnumerateDirectories(dir)) DeleteIfEmpty(child);
             if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
         }
-        catch (IOException) { /* something else is in there; leave it */ }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* something else is in there; leave it */ }
     }
 
     /// <summary>Last value wins, as it would for a process env var set twice.</summary>

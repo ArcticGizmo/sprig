@@ -435,6 +435,56 @@ public class RunnerSpecsTests
     }
 
     [Fact]
+    public void A_pnpm_workspace_s_apps_run_with_pnpm_and_share_one_install_done_again_when_the_lockfile_changes()
+    {
+        using var store = new TempStore();
+        var dir = Path.Combine(store.Root, "shop");
+        void Write(string relative, string text)
+        {
+            var path = Path.Combine(dir, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text);
+        }
+        Write("frontend/pnpm-workspace.yaml", "packages: [apps/*]");
+        Write("frontend/pnpm-lock.yaml", "lockfileVersion: '9.0'");
+        Write("frontend/apps/web/package.json", """{ "scripts": { "dev": "vite" } }""");
+        Write("frontend/apps/admin/package.json", """{ "scripts": { "dev": "vite" } }""");
+        Write("legacy/package.json", """{ "scripts": { "dev": "vite" } }""");
+        Write("legacy/package-lock.json", "{}");
+        Write("solo/package.json", """{ "scripts": { "dev": "vite" }, "packageManager": "pnpm@10.0.0" }""");
+
+        var repo = new WorkspaceRepo("../shop", "shop", dir, dir, false, false);
+        var record = new WorkspaceRecord("shop", "x", "main", null, "stable", [repo], [], [], WorkspaceState.Up, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        PlannedApp Node(string name, string path) => new("shop", "../shop", name, "node", path, [], null, []);
+        var plan = new Plan("shop", "main", "stable", null, [],
+            [Node("web", "frontend/apps/web"), Node("admin", "frontend/apps/admin"), Node("legacy", "legacy"), Node("solo", "solo")], [], [], [], []);
+        RunnerSpec Spec(string name) => RunnerSpecs.For(record, plan).Single(s => s.Name == $"shop/{name}");
+
+        var frontend = Path.GetFullPath(Path.Combine(dir, "frontend"));
+        Assert.EndsWith("pnpm run dev", Spec("web").Command.ToString());
+        Assert.EndsWith("pnpm install --frozen-lockfile --ignore-scripts", Spec("web").Build!.ToString());
+        Assert.Equal(frontend, Spec("web").BuildKey);
+        Assert.Equal(frontend, Spec("admin").BuildKey);
+        // An app with an npm lockfile of its own keeps npm, and one that only names pnpm installs without a lockfile.
+        Assert.EndsWith("npm run dev", Spec("legacy").Command.ToString());
+        Assert.EndsWith("npm ci --ignore-scripts", Spec("legacy").Build!.ToString());
+        Assert.EndsWith("pnpm run dev", Spec("solo").Command.ToString());
+        Assert.EndsWith("pnpm install --ignore-scripts", Spec("solo").Build!.ToString());
+
+        Write("frontend/node_modules/.modules.yaml", "layoutVersion: 5");
+        File.SetLastWriteTimeUtc(Path.Combine(dir, "frontend/pnpm-lock.yaml"), DateTime.UtcNow.AddMinutes(-5));
+        Assert.Null(Spec("web").Build);
+        Assert.Null(Spec("web").BuildKey);
+
+        File.SetLastWriteTimeUtc(Path.Combine(dir, "frontend/pnpm-lock.yaml"), DateTime.UtcNow.AddMinutes(5));
+        Assert.NotNull(Spec("admin").Build);
+
+        // A workspace that lists which packages may run install scripts has pnpm hold every package to that list.
+        Write("frontend/pnpm-workspace.yaml", "packages: [apps/*]\nallowBuilds:\n  esbuild: true\n");
+        Assert.EndsWith("pnpm install --frozen-lockfile", Spec("web").Build!.ToString());
+    }
+
+    [Fact]
     public void Starting_one_app_brings_what_it_depends_on_first()
     {
         var repo = new WorkspaceRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);

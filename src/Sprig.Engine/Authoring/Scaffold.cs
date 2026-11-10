@@ -79,7 +79,9 @@ public static partial class Scaffold
         foreach (var package in Files(repoDir, "package.json"))
         {
             var dir = Relative(repoDir, System.IO.Path.GetDirectoryName(package)!);
-            if (ReadPackage(package) is not { HasDev: true } info) continue;
+            // A workspace's root only holds its apps, which are found on their own; its dev script starts all of them.
+            if (ReadPackage(package) is not { HasDev: true, Workspaces: false } info
+                || File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(package)!, "pnpm-workspace.yaml"))) continue;
             var appName = Ids.Slug(Kebab(info.Name ?? (dir == "." ? name : System.IO.Path.GetFileName(dir))), "web");
             var variable = Variable(appName, used);
             text.Append($"var {variable} = repo.Node({Literal(appName)}, {Literal(dir)}).Http();\n");
@@ -110,7 +112,7 @@ public static partial class Scaffold
 
     static void Header(StringBuilder text) => text.Append(SdkReference.Line()).Append("\nusing Sprig;\n\n");
 
-    sealed record PackageInfo(string? Name, bool HasDev, bool Vite);
+    sealed record PackageInfo(string? Name, bool HasDev, bool Vite, bool Workspaces);
 
     static PackageInfo? ReadPackage(string file)
     {
@@ -123,7 +125,7 @@ public static partial class Scaffold
                 && scripts.TryGetProperty("dev", out _);
             var vite = (string section) => root.TryGetProperty(section, out var deps) && deps.ValueKind == JsonValueKind.Object
                 && deps.TryGetProperty("vite", out _);
-            return new PackageInfo(name?.Split('/')[^1], hasDev, vite("devDependencies") || vite("dependencies"));
+            return new PackageInfo(name?.Split('/')[^1], hasDev, vite("devDependencies") || vite("dependencies"), root.TryGetProperty("workspaces", out _));
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {

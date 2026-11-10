@@ -27,7 +27,9 @@ public sealed class RepoBuilder : DefinitionBuilder
     public AppResource DotNet(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => AddApp(name, "dotnet", path, file, line);
 
-    /// <summary>A Node app (Vite, Ionic and the like), run from <paramref name="path"/>.</summary>
+    /// <summary>A Node app (Vite, Ionic and the like), run from <paramref name="path"/> with <c>npm run dev</c>, or
+    /// <c>pnpm run dev</c> when it's in a pnpm workspace or says pnpm is its <c>packageManager</c>. Its packages are
+    /// installed first when they're missing or the lockfile has changed since.</summary>
     public AppResource Node(string name, string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
         => AddApp(name, "node", path, file, line);
 

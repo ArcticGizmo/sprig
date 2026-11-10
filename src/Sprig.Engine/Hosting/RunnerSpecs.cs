@@ -90,6 +90,8 @@ public static class RunnerSpecs
         var port = app.Job ? null : plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name)?.Port;
 
         CommandSpec? build = null;
+        var buildKey = repo.Dir;
+        var node = app.Kind == "node" ? NodePackages.Of(dir, repo.Dir) : null;
         CommandSpec command;
         if (app.Run?.Value is { } run)
             command = Shell(run);
@@ -100,15 +102,24 @@ public static class RunnerSpecs
             build = new CommandSpec("dotnet", ["build", "--nologo", "-v", "minimal"]);
             command = new CommandSpec("dotnet", ["run", "--no-build"]);
         }
-        else if (app.Kind == "node")
-            command = Shell("npm run dev");
+        else if (node is not null)
+            command = Shell(node.Pnpm ? "pnpm run dev" : "npm run dev");
         else
             throw new InvalidOperationException($"'{app.Name}' has no Run command, so sprig doesn't know how to start it");
 
-        // A fresh worktree has no node_modules (git ignores it). Install scripts stay off: they're where malicious
-        // packages run their code.
-        if (app.Kind == "node" && !Directory.Exists(Path.Combine(dir, "node_modules")) && File.Exists(Path.Combine(dir, "package.json")))
-            build = Shell(File.Exists(Path.Combine(dir, "package-lock.json")) ? "npm ci --ignore-scripts" : "npm install --ignore-scripts");
+        // A fresh worktree has no node_modules (git ignores it), and a slot taking another branch may have a different
+        // lockfile. Install scripts stay off, since they're where malicious packages run their code, unless a pnpm
+        // workspace lists the packages it lets run them; pnpm then holds every other package to that list. A pnpm
+        // workspace's apps share one install, so it's keyed by the workspace's folder: the second app waits, then finds
+        // nothing to do.
+        if (node is not null && File.Exists(Path.Combine(dir, "package.json")) && !node.Installed())
+        {
+            var scripts = node.Pnpm && node.ListsBuilds() ? "" : " --ignore-scripts";
+            build = Shell(node.Pnpm
+                ? node.Lockfile is null ? $"pnpm install{scripts}" : $"pnpm install --frozen-lockfile{scripts}"
+                : node.Lockfile is null ? $"npm install{scripts}" : $"npm ci{scripts}");
+            buildKey = node.Root;
+        }
 
         var health = (app.Health ?? [])
             .Select(h => plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name && p.Endpoint == h.Endpoint)?.Port is { } p
@@ -117,7 +128,7 @@ public static class RunnerSpecs
             .ToArray();
         var restart = app.Restart is { } r ? new RestartSpec(r.Policy == "always", r.Max) : null;
 
-        return new RunnerSpec(record.Key, app.Key, command, dir, build, build is null ? null : repo.Dir, port,
+        return new RunnerSpec(record.Key, app.Key, command, dir, build, build is null ? null : buildKey, port,
             app.DependsOn ?? [], app.Job, health.Length > 0 ? health : null, app.ReadyLog, restart);
     }
 

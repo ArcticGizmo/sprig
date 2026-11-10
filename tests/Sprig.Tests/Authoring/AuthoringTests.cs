@@ -67,6 +67,24 @@ public sealed class AuthoringTests : IDisposable
     }
 
     [Fact]
+    public void A_repo_draft_leaves_out_a_workspace_s_root_and_describes_its_apps()
+    {
+        Write("shop-front/package.json", """{ "name": "shop-front", "scripts": { "dev": "turbo run dev" } }""");
+        Write("shop-front/pnpm-workspace.yaml", "packages: [apps/*]");
+        Write("shop-front/apps/web/package.json", """{ "name": "@shop/web", "scripts": { "dev": "vite" } }""");
+        Write("shop-npm/package.json", """{ "name": "shop-npm", "workspaces": ["admin"], "scripts": { "dev": "npm run dev -ws" } }""");
+        Write("shop-npm/admin/package.json", """{ "name": "admin", "scripts": { "dev": "vite" } }""");
+
+        var pnpm = Scaffold.Repo(Dir("shop-front"), "shop-front");
+        var npm = Scaffold.Repo(Dir("shop-npm"), "shop-npm");
+
+        Assert.Contains("repo.Node(\"web\", \"apps/web\")", pnpm);
+        Assert.DoesNotContain("\"shop-front\", \".\"", pnpm);
+        Assert.Contains("repo.Node(\"admin\", \"admin\")", npm);
+        Assert.DoesNotContain("\"shop-npm\", \".\"", npm);
+    }
+
+    [Fact]
     public void An_orchestration_repo_named_by_folder_becomes_one_used_from_the_Repos_list_leaving_the_rest_as_written()
     {
         const string orchestration = """

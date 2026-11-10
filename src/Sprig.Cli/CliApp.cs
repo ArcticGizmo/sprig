@@ -35,10 +35,11 @@ public static class CliApp
         var settings = new FileSettingsStore(paths, devDefaults);
         var processes = new ProcessRunner();
         var host = new HostClient(paths);
-        var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths);
+        var git = new GitClient(processes);
+        var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths, git: git);
         var orchestrations = new OrchestrationRegistry(paths);
         var workspaces = new WorkspaceService(new WorkspaceStore(paths), new PortLeases(paths), settings,
-            new GitClient(processes), new DockerCompose(processes), host: host,
+            git, new DockerCompose(processes), host: host,
             loader: new OrchestrationLoader(definitions, orchestrations, new StoredDefinitions(paths)));
         var context = new CliContext(paths, settings, trust, definitions, orchestrations, workspaces, host, ansi);
 

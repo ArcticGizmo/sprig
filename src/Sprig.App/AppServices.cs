@@ -20,6 +20,9 @@ public sealed class AppServices
     public ISprigPaths Paths { get; }
     public ISettingsStore Settings { get; }
     public ITrustStore Trust { get; }
+
+    /// <summary>The trust store with the user's own edits approved, for asking whether a file needs approval.</summary>
+    public TrustRules TrustRules { get; }
     public DefinitionRunner Definitions { get; }
     public OrchestrationRegistry Orchestrations { get; }
     public OrchestrationLoader Loader { get; }
@@ -40,17 +43,19 @@ public sealed class AppServices
         Paths = new SprigPaths(root);
         Settings = new FileSettingsStore(Paths, dev: root is null && AppProfile.IsDev);
         Trust = new FileTrustStore(Paths);
-        Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths);
+        var processes = new ProcessRunner();
+        var git = new GitClient(processes);
+        Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths, git: git);
         Orchestrations = new OrchestrationRegistry(Paths);
         Stored = new StoredDefinitions(Paths);
+        TrustRules = new TrustRules(Trust, Stored, git);
         Loader = new OrchestrationLoader(Definitions, Orchestrations, Stored);
         Authoring = new OrchestrationAuthoring(Stored, Orchestrations, Trust);
-        var processes = new ProcessRunner();
         Host = new HostClient(Paths);
         HostStatus = new HostStatus(Host);
         Ui = new UiState(Paths);
         Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
-            new GitClient(processes), new DockerCompose(processes), host: Host, loader: Loader);
+            git, new DockerCompose(processes), host: Host, loader: Loader);
     }
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);

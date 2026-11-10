@@ -957,10 +957,10 @@ public sealed class WorkspaceServiceTests : IDisposable
         var problem = Assert.Single(loader.Load(missing).Problems);
         Assert.Contains("'nope' isn't in sprig's Repos list", problem.Message);
 
-        // A copy kept in sprig is approved as itself, so changing it asks again.
+        // A copy kept in sprig is approved as itself, and once approved it's the user's own: changing it, in the app
+        // or anywhere else, doesn't ask again.
         File.WriteAllText(stored.CopyFile("web-a"), "// copy b");
-        var pending = Assert.Single(loader.Load(usesA).Untrusted);
-        Assert.Equal(stored.CopyFile("web-a"), pending.TrustPath);
+        Assert.Empty(loader.Load(usesA).Untrusted);
     }
 
     [Fact]

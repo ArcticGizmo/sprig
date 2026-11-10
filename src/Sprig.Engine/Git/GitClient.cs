@@ -192,6 +192,17 @@ public sealed class GitClient(IProcessRunner runner)
             .Select(l => Normalise(l["worktree ".Length..]))
             .ToArray();
 
+    /// <summary>The text <paramref name="file"/> has in its working tree's last commit; null when it isn't in a git
+    /// working tree or that commit doesn't have it.</summary>
+    public string? CommittedText(string file)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(file))!;
+        if (!Directory.Exists(dir)) return null;
+        // "./" makes the path relative to -C's folder rather than the top of the working tree.
+        var result = Run(dir, "show", $"HEAD:./{Path.GetFileName(file)}");
+        return result.Success ? result.StdOut : null;
+    }
+
     public bool HasUncommittedChanges(string path)
         => Run(path, "status", "--porcelain").StdOut.Trim().Length > 0;
 

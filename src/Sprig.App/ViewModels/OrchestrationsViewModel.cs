@@ -219,7 +219,7 @@ public partial class OrchestrationsViewModel : PageViewModel
 
     bool NeedsApproval(string path)
     {
-        try { return _services.Trust.Check(path, DefinitionHash.Of(File.ReadAllText(path))).State != TrustState.Trusted; }
+        try { return _services.TrustRules.Check(path, DefinitionHash.Of(File.ReadAllText(path))).State != TrustState.Trusted; }
         catch (IOException) { return false; }
         catch (UnauthorizedAccessException) { return false; }
     }

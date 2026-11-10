@@ -67,7 +67,7 @@
                             Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,6" />
                 </Grid>
                 <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
-                           Text="Sprig runs these C# files with your permissions. Read each one and approve it. Approval covers exactly what you see; any change asks again." />
+                           Text="Sprig runs these C# files with your permissions. Read each one and approve it. Approval covers exactly what you see. Your own edits after that don't ask again; a change that comes from someone else does." />
             </StackPanel>
 
             <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,16,0,0">

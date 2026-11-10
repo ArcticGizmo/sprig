@@ -12,6 +12,8 @@ namespace Sprig.Engine.Authoring;
 /// </summary>
 public sealed class OrchestrationAuthoring(StoredDefinitions stored, OrchestrationRegistry registry, ITrustStore trust)
 {
+    readonly TrustRules _rules = new(trust, stored);
+
     /// <summary>
     /// A new orchestration kept in sprig, over <paramref name="repoDirs"/>, naming each repo by its entry in the Repos list.
     /// An entry already there for the folder is reused; otherwise one is added (<see cref="AddRepo"/>).
@@ -161,7 +163,7 @@ public sealed class OrchestrationAuthoring(StoredDefinitions stored, Orchestrati
         var entry = Entry(id);
         if (RenameBlocker(entry) is { } blocked) throw new ArgumentException(blocked);
         var text = File.Exists(entry.DefinitionFile) ? File.ReadAllText(entry.DefinitionFile) : null;
-        var approved = text is not null && trust.Check(entry.DefinitionFile, DefinitionHash.Of(text)).State == TrustState.Trusted;
+        var approved = text is not null && _rules.Check(entry.DefinitionFile, DefinitionHash.Of(text)).State == TrustState.Trusted;
         var renamed = stored.RenameRepo(id, newId);
         if (approved) Approve(renamed.DefinitionFile);
         return renamed;
@@ -214,7 +216,7 @@ public sealed class OrchestrationAuthoring(StoredDefinitions stored, Orchestrati
 
     void CarryApproval(string from, string to, string text)
     {
-        if (trust.Check(from, DefinitionHash.Of(text)).State == TrustState.Trusted) Approve(to);
+        if (_rules.Check(from, DefinitionHash.Of(text)).State == TrustState.Trusted) Approve(to);
     }
 
     static bool HasOwn(string folder) => folder.Length > 0 && File.Exists(Path.Combine(folder, OrchestrationLoader.RepoDefinitionFile));
@@ -231,7 +233,7 @@ public sealed class OrchestrationAuthoring(StoredDefinitions stored, Orchestrati
     /// of it is still code the user may not have read.</summary>
     public void ApplyEdit(string file, string text)
     {
-        var wasApproved = trust.Check(file, DefinitionHash.Of(File.ReadAllText(file))).State == TrustState.Trusted;
+        var wasApproved = _rules.Check(file, DefinitionHash.Of(File.ReadAllText(file))).State == TrustState.Trusted;
         File.WriteAllText(file, text);
         if (wasApproved) Approve(file);
     }

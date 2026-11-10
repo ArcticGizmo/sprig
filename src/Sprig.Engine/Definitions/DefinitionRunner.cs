@@ -32,9 +32,11 @@ public sealed record Failed(string Path, string Sha256, TimeSpan Elapsed, string
 /// Turns a sprig.cs into its model. Checks the directives, then trust, then the cache, and only then runs the
 /// definition. The model is cached by content hash and SDK version, so an unchanged definition never runs twice.
 /// </summary>
-public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, ISprigPaths paths, DefinitionRunnerOptions? options = null)
+public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, ISprigPaths paths, DefinitionRunnerOptions? options = null,
+    Git.GitClient? git = null)
 {
     readonly DefinitionRunnerOptions _options = options ?? new DefinitionRunnerOptions();
+    readonly TrustRules _trust = new(trust, new StoredDefinitions(paths), git);
 
     /// <param name="trustAs">The file whose approvals count for this one; a worktree's copy of a repo's sprig.cs is
     /// approved as the repo's own, so each version is approved once per repo rather than once per worktree.</param>
@@ -49,7 +51,7 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
         var violations = DirectivePolicy.Check(text, _options.AllowLocalSdkProject);
         if (violations.Count > 0) return new Rejected(path, sha, clock.Elapsed, violations);
 
-        var decision = trust.Check(trustPath, sha);
+        var decision = _trust.Check(path, sha, trustPath);
         if (decision.State != TrustState.Trusted) return new NeedsTrust(path, sha, clock.Elapsed, decision.ApprovedSha256, trustPath);
 
         // Two runs of one file at once share dotnet's build output for it, and the loser fails. The second caller waits,

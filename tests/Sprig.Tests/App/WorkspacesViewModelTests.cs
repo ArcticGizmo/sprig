@@ -216,6 +216,32 @@ public class WorkspacesViewModelTests
         Assert.Equal(("web--1", "feat-y"), (vm.Selected!.Title, vm.Selected.Branch));
         Assert.True(File.Exists(env));
 
+        // Main is listed before it has ever come up, and runs in the repo itself, with nothing to set, free or remove.
+        var main = vm.Workspaces.Single(w => w.Record.Key == "web/main");
+        Assert.Equal(("web", "main checkout"), (main.Title, main.Branch));
+        Assert.False(main.HasSettings || main.CanRemove || main.CanFree);
+        vm.Show("web/main");
+        await vm.UpCommand.ExecuteAsync(null);
+        Assert.True(vm.Selected!.IsUp);
+        Assert.Equal("main checkout · main", vm.Selected.Branch);
+        Assert.Matches(@"PORT=95\d\d", File.ReadAllText(Path.Combine(repo, ".env.local")));
+
+        // A second definition of the same checkout asks before taking it over, then takes the first one down.
+        var other = Path.Combine(store.Root, "work", "web-again.orchestration.cs");
+        File.WriteAllText(other, File.ReadAllText(orchestration).Replace("Describe(\"web\")", "Describe(\"web-again\")"));
+        services.Orchestrations.Add("web-again", other);
+        vm.RefreshCommand.Execute(null);
+        vm.Show("web-again/main");
+        await vm.UpCommand.ExecuteAsync(null);
+        await vm.ApproveAllCommand.ExecuteAsync(null);
+        Assert.True(vm.ConfirmingTakeOver);
+        Assert.Equal("Take over from web?", vm.TakeOverTitle);
+        await vm.TakeOverCommand.ExecuteAsync(null);
+        Assert.Equal(("web-again", true), (vm.Selected!.Title, vm.Selected.IsUp));
+        var taken = vm.Workspaces.Single(w => w.Record.Key == "web/main");
+        Assert.Equal(("down", "web-again is up in this checkout"), (taken.State, taken.HeldLine));
+        await vm.DownCommand.ExecuteAsync(null);
+
         services.Workspaces.Remove("web", "1", new RemoveOptions(DeleteBranch: true));
     }
 

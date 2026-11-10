@@ -90,7 +90,7 @@ public partial class ReposViewModel : PageViewModel
         if (repo is not null)
             foreach (var w in _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase))
                 WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
-                    w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out", w.State switch
+                    w.IsMain ? "main checkout" : w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out", w.State switch
                 {
                     Sprig.Engine.Workspaces.WorkspaceState.Up => "up",
                     Sprig.Engine.Workspaces.WorkspaceState.Starting => "coming up",

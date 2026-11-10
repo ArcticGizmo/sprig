@@ -36,7 +36,7 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
         if (record is null)
         {
             cli.Ansi.MarkupLine($"[bold]{Markup.Escape(id)}[/] / [bold]{Markup.Escape(s.Workspace)}[/]  [dim]not made yet[/]");
-            cli.Ansi.MarkupLine(s.Workspace == "local"
+            cli.Ansi.MarkupLine(s.Workspace == WorkspaceRecord.MainName
                 ? $"[dim]Bring it up with: sprig up {Markup.Escape(id)}[/]"
                 : $"[dim]Check a branch out with: sprig up {Markup.Escape(id)} -b <branch>[/]");
         }
@@ -62,7 +62,9 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
             WorkspaceState.Released => "[dim]free[/]",
             _ => "[dim]down[/]",
         };
-        cli.Ansi.MarkupLine(record.InPlace
+        cli.Ansi.MarkupLine(record.IsMain
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/]  {Markup.Escape(record.CheckoutBranch ?? "")}  {state}  [dim](main checkout)[/]"
+            : record.InPlace
             ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/]  {state}  [dim](repos in place)[/]"
             : $"[bold]{Markup.Escape(record.SlotName)}[/]  {Markup.Escape(record.Branch ?? "no branch")}  {state}");
         var folder = record.Folder ?? string.Join(", ", record.Repos.Select(r => r.Dir));

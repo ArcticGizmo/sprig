@@ -89,5 +89,5 @@ Feedback from trying slots on a real repo, built the same day:
 
 ## For later
 
-- Each repo's checkout as a fixed `main` slot (decision 7).
+- Each repo's checkout as a fixed `main` slot (decision 7): built 2026-11-10, see docs/main-checkout-plan.md.
 - A slot pool size: making slots ahead of time, or capping how many there are.

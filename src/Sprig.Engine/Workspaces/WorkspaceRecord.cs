@@ -24,6 +24,8 @@ public sealed record WorkspaceRepo(string RepoPath, string Name, string Source, 
 /// <param name="LastUpAt">When it last finished coming up; null for a record from before this was kept.</param>
 /// <param name="Values">Values set on this workspace, by setting name. They win over the orchestration's and the repos'
 /// defaults.</param>
+/// <param name="CheckoutBranch">For one that runs in place, the branch the checkout was on when it last came up; the
+/// checkout is the user's own, so sprig never switches it.</param>
 public sealed record WorkspaceRecord(
     string Orchestration,
     string OrchestrationPath,
@@ -39,19 +41,27 @@ public sealed record WorkspaceRecord(
     string? Folder = null,
     string? Error = null,
     DateTimeOffset? LastUpAt = null,
-    IReadOnlyDictionary<string, string>? Values = null)
+    IReadOnlyDictionary<string, string>? Values = null,
+    string? CheckoutBranch = null)
 {
+    /// <summary>The workspace every repo and orchestration has that runs its repos where they're checked out.</summary>
+    public const string MainName = "main";
+
     public bool InPlace => Branch is null && Folder is null;
+
+    /// <summary>The repos' own checkouts, run with the definitions' defaults. It's always there, so it can't be removed,
+    /// and only one definition runs in a checkout at a time.</summary>
+    public bool IsMain => InPlace && Name == MainName;
 
     /// <summary>A slot with nothing checked out, ready for the next branch.</summary>
     public bool IsFree => State == WorkspaceState.Released;
 
-    /// <summary>What git and the file system call it: the slot's folder name, e.g. <c>storefront--2</c>; the workspace's
-    /// name when it runs in place.</summary>
-    public string SlotName => InPlace ? Name : $"{Orchestration}--{Name}";
+    /// <summary>What git and the file system call it: the slot's folder name, e.g. <c>storefront--2</c>; for main, the ID
+    /// those slots are numbered from; else the workspace's name when it runs in place.</summary>
+    public string SlotName => IsMain ? Orchestration : InPlace ? Name : $"{Orchestration}--{Name}";
 
     /// <summary>How people know it: its branch, or that it's free.</summary>
-    public string Label => Branch ?? (IsFree ? "free" : Name);
+    public string Label => Branch ?? (IsFree ? "free" : InPlace ? CheckoutBranch ?? Name : Name);
 
     /// <summary>Names the workspace in the port leases.</summary>
     public string Key => KeyOf(Orchestration, Name);

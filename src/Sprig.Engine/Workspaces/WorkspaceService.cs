@@ -24,9 +24,19 @@ public sealed class WorkspaceException(string message, IReadOnlyList<PlanProblem
     public IReadOnlyList<Definitions.NeedsTrust> Untrusted { get; } = untrusted ?? [];
     public IReadOnlyList<PlannedAsk> Asks { get; } = asks ?? [];
 
-    public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks)
-        => new($"{(asks.Count == 1 ? "a setting needs" : "settings need")} a value first: " +
-               string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})")), asks: asks);
+    /// <summary>The workspace that's up in the same checkout, when that's why: taking it over takes it down first.</summary>
+    public WorkspaceRecord? HeldBy { get; init; }
+
+    /// <param name="workspace">A main can't keep values, so it's told to give the settings defaults instead, with no
+    /// asks to answer.</param>
+    public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks, string? workspace = null)
+    {
+        var what = $"{(asks.Count == 1 ? "a setting needs" : "settings need")} a value first: " +
+                   string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})"));
+        return workspace == WorkspaceRecord.MainName
+            ? new($"{what}. main runs with the definitions' own values, so give {(asks.Count == 1 ? "it" : "them")} a default in the definition, or check a branch out in a slot and set {(asks.Count == 1 ? "it" : "them")} there")
+            : new(what, asks: asks);
+    }
 }
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
@@ -176,13 +186,23 @@ public sealed partial class WorkspaceService(
     /// <param name="beforeInfra">Called once the workspace's files are written and before its infra starts, with the
     /// record so far and the plan; a caller that will start the apps can have them building meanwhile.</param>
     /// <param name="values">Setting values to keep on the workspace, added to (or replacing) what it has.</param>
+    /// <param name="takeOver">When another definition's workspace is up in the same checkout (see <see cref="HolderOf"/>),
+    /// take that one down first, rather than refuse.</param>
     public WorkspaceRecord Up(LoadedOrchestration loaded, string workspace, string? branch, WorkspaceOptions? options = null,
         IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null,
-        IReadOnlyDictionary<string, string>? values = null)
+        IReadOnlyDictionary<string, string>? values = null, bool takeOver = false)
     {
         if (!loaded.Complete || loaded.Orchestration is not { } orchestration)
             throw new WorkspaceException($"{Path.GetFileName(loaded.OrchestrationPath)} isn't ready to run", loaded.Problems);
         if (CheckName(workspace) is { } bad) throw new WorkspaceException(bad);
+        if (workspace == WorkspaceRecord.MainName)
+        {
+            if (branch is not null)
+                throw new WorkspaceException("main runs the repos where they're checked out, so it can't have a branch of its own; check the branch out in a slot instead");
+            if (values is { Count: > 0 })
+                throw new WorkspaceException("main runs with the definitions' own values; check a branch out in a slot to set your own");
+            options = (options ?? new WorkspaceOptions()) with { InPlace = true };
+        }
 
         var id = loaded.Id;
         var existing = store.Get(id, workspace);
@@ -224,7 +244,7 @@ public sealed partial class WorkspaceService(
         var filesCheckedFor = loaded;
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new WorkspaceException("the plan has errors", problems));
-        if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk));
+        if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk, workspace));
         var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
         if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new WorkspaceException(why));
         // Before anything is made, so a folder in the way doesn't leave half a slot behind.
@@ -232,7 +252,13 @@ public sealed partial class WorkspaceService(
             throw step.Fail(new WorkspaceException(blocked));
         step.Done($"{dryPlan.Apps.Count} apps, {dryPlan.Containers.Count} containers, {dryPlan.Compose.Count} compose files");
 
-        if (inPlace) CheckNoOtherInPlace(id, workspace, loaded.RepoDirs.Values);
+        if (inPlace && HolderOf(id, workspace, loaded.RepoDirs.Values) is { } holder)
+        {
+            if (!takeOver) throw step.Fail(new WorkspaceException(HeldMessage(holder, id)) { HeldBy = holder });
+            step.Start($"Take over from {holder.SlotName}");
+            step.Done("taking it down; its data is kept");
+            Down(holder.Orchestration, holder.Name, progress, cancellation);
+        }
 
         var now = DateTimeOffset.UtcNow;
         var record = existing ?? new WorkspaceRecord(id, loaded.OrchestrationPath, workspace, branch, chosen!.PortPolicy,
@@ -245,6 +271,7 @@ public sealed partial class WorkspaceService(
             Error = null,
             Folder = inPlace ? null : record.Folder ?? WorkspaceFolder(loaded, id, workspace, settingsNow),
             Values = allValues,
+            CheckoutBranch = inPlace ? CheckoutBranchOf(loaded) : null,
         };
 
         try
@@ -317,6 +344,7 @@ public sealed partial class WorkspaceService(
         CancellationToken cancellation = default)
     {
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
+        if (record.IsMain) throw new WorkspaceException($"{record.SlotName}'s main is always there, so it can't be removed; take it down instead");
         var step = new Steps(progress);
 
         if (!options.Force && RemovalBlockers(record, options.DeleteBranch) is [var first, ..]) throw new WorkspaceException(first);
@@ -947,7 +975,7 @@ public sealed partial class WorkspaceService(
         });
         if (plan.HasErrors) throw new WorkspaceException("the plan has errors", plan.Problems);
         // A branch's definitions, read from its worktrees, can ask for more than the main checkouts' did.
-        if (plan.ToAsk.Count > 0) throw WorkspaceException.NeedsValues(plan.ToAsk);
+        if (plan.ToAsk.Count > 0) throw WorkspaceException.NeedsValues(plan.ToAsk, record.Name);
         // Saved and looked up under the workspace's own key, not the name the orchestration gives itself in code.
         return plan with { Orchestration = record.Orchestration };
     }
@@ -967,6 +995,8 @@ public sealed partial class WorkspaceService(
     /// </summary>
     public WorkspaceRecord SetValues(string orchestration, string workspace, IReadOnlyDictionary<string, string> set, IReadOnlyCollection<string>? unset = null)
     {
+        if (workspace == WorkspaceRecord.MainName)
+            throw new WorkspaceException("main runs with the definitions' own values; check a branch out in a slot to set your own");
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
         var merged = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var (k, v) in record.Values ?? new Dictionary<string, string>()) merged[k] = v;
@@ -1142,16 +1172,48 @@ public sealed partial class WorkspaceService(
     static bool SameDirs(IReadOnlyDictionary<string, string> a, IReadOnlyDictionary<string, string> b)
         => a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var other) && SamePath(kv.Value, other));
 
-    void CheckNoOtherInPlace(string orchestration, string workspace, IEnumerable<string> dirs)
+    /// <summary>
+    /// Another workspace that's up where <paramref name="loaded"/>'s repos are checked out, which would have to go down
+    /// for <paramref name="workspace"/> to run there in place; null when none is. Two definitions of one repo (its own
+    /// sprig.cs and a copy kept in sprig, or an orchestration that has it) each have a main in the same folder, and only
+    /// one can write its files and run its apps there at a time. One that's down holds nothing.
+    /// </summary>
+    public WorkspaceRecord? HolderOf(LoadedOrchestration loaded, string workspace = WorkspaceRecord.MainName)
+        => HolderOf(loaded.Id, workspace, loaded.RepoDirs.Values);
+
+    /// <summary>The same for a workspace that has come up before, from the folders it ran in last time, so it can be
+    /// said without reading its definitions.</summary>
+    public WorkspaceRecord? HolderOf(WorkspaceRecord record)
+        => record.InPlace ? HolderOf(record.Orchestration, record.Name, record.Repos.Select(r => r.Dir)) : null;
+
+    WorkspaceRecord? HolderOf(string orchestration, string workspace, IEnumerable<string> dirs)
     {
         var mine = dirs.ToArray();
-        foreach (var other in store.List().Where(r => !(r.Orchestration == orchestration && r.Name == workspace)))
-        {
-            var clash = other.Repos.Where(r => !r.Worktree).FirstOrDefault(r => mine.Any(d => SamePath(d, r.Dir)));
-            if (clash is not null)
-                throw new WorkspaceException($"{clash.Dir} already runs in place for workspace '{other.Name}' of {other.Orchestration}; remove that workspace first");
-        }
+        return store.List()
+            .Where(r => !(r.Orchestration == orchestration && r.Name == workspace))
+            .Where(r => r.State is WorkspaceState.Up or WorkspaceState.Starting)
+            .FirstOrDefault(r => r.Repos.Any(repo => !repo.Worktree && mine.Any(d => SamePath(d, repo.Dir))));
     }
+
+    /// <summary>Why <paramref name="id"/> can't run in place while <paramref name="holder"/> is up there.</summary>
+    static string HeldMessage(WorkspaceRecord holder, string id)
+    {
+        var where = holder.Repos.Where(r => !r.Worktree).Select(r => r.Dir.Replace('\\', '/')).FirstOrDefault() ?? "the checkout";
+        return $"{holder.SlotName} is up in {where}. Take it over to take {holder.SlotName} down (its data is kept) and start {id} there";
+    }
+
+    /// <summary>The branch the first repo's checkout is on, for showing beside a workspace that runs in place.</summary>
+    string? CheckoutBranchOf(LoadedOrchestration loaded)
+        => loaded.RepoDirs.Values.FirstOrDefault(Directory.Exists) is { } dir ? git.CurrentBranch(dir) : null;
+
+    /// <summary>
+    /// The main of <paramref name="id"/>: the stored one, or else one that has never come up, for listing. Every repo
+    /// and orchestration has a main, so it's shown before it's made; bringing it up saves it.
+    /// </summary>
+    public WorkspaceRecord MainOf(string id, string orchestrationPath)
+        => store.Get(id, WorkspaceRecord.MainName)
+           ?? new WorkspaceRecord(id, orchestrationPath, WorkspaceRecord.MainName, null, new WorkspaceOptions().PortPolicy,
+               [], [], [], WorkspaceState.Down, default, default);
 
     static string WorkspaceFolder(LoadedOrchestration loaded, string orchestration, string workspace, SprigSettings settingsNow)
     {

@@ -17,20 +17,35 @@ using Sprig.Engine.Orchestrations;
 
 namespace Sprig.App.ViewModels;
 
-public sealed record WorkspaceItem(WorkspaceRecord Record)
+/// <param name="HeldBy">For a main that's down, another definition's workspace that's up in the same checkout.</param>
+public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? HeldBy = null)
 {
-    /// <summary>A slot by its folder's name, as git and the file system show it; one in place by ID and name.</summary>
+    /// <summary>A slot by its folder's name, as git and the file system show it; main by its ID, the name the slots are
+    /// numbered from; another one in place by ID and name.</summary>
     public string Title => Display(Record);
-    public string Branch => Record.InPlace ? "repos in place" : Record.Branch ?? "free";
+    public string Branch => BranchOf(Record);
     public string State => Record.IsFree ? "free" : Record.State.ToString().ToLowerInvariant();
     public bool IsUp => Record.State == WorkspaceState.Up;
     public bool IsFailed => Record.State == WorkspaceState.Failed;
     public bool IsFree => Record.IsFree;
+    public bool IsMain => Record.IsMain;
 
     /// <summary>A slot with a branch checked out, which can be freed for the next one.</summary>
     public bool CanFree => !Record.InPlace && !Record.IsFree;
 
-    public static string Display(WorkspaceRecord record) => record.InPlace ? $"{record.Orchestration} / {record.Name}" : record.SlotName;
+    /// <summary>Main is always there and runs with the definitions' own values.</summary>
+    public bool CanRemove => !Record.IsMain;
+    public bool HasSettings => !Record.IsMain;
+
+    public bool IsHeld => HeldBy is not null;
+    public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is up in this checkout" : "";
+
+    public static string Display(WorkspaceRecord record)
+        => record.IsMain ? record.Orchestration : record.InPlace ? $"{record.Orchestration} / {record.Name}" : record.SlotName;
+
+    public static string BranchOf(WorkspaceRecord record)
+        => record.IsMain ? record.CheckoutBranch is { } on ? $"main checkout · {on}" : "main checkout"
+            : record.InPlace ? "repos in place" : record.Branch ?? "free";
 }
 
 /// <summary>One app or job of the selected workspace, with what the host says about it.</summary>
@@ -367,13 +382,16 @@ public partial class WorkspacesViewModel : PageViewModel
     // Rebuilding the list reloads the selected workspace's apps and log, so it's left alone unless something changed.
     protected override void OnWindowFocused()
     {
-        if (IsAddOpen || IsSettingsOpen || ConfirmingRemove || ConfirmingBulkRemove || IsWorking || HasPendingTrust) return;
+        if (IsAddOpen || IsSettingsOpen || ConfirmingRemove || ConfirmingBulkRemove || ConfirmingTakeOver || IsWorking || HasPendingTrust) return;
         var records = _services.Workspaces.List().Select(r => (r.Key, r.State, r.UpdatedAt));
         var names = _services.Orchestrations.List().Select(e => e.Id).Concat(_services.Stored.Repos().Select(r => r.Id));
-        if (!records.SequenceEqual(Workspaces.Select(w => (w.Record.Key, w.Record.State, w.Record.UpdatedAt)))
+        if (!records.SequenceEqual(Workspaces.Where(w => !IsUnmade(w.Record)).Select(w => (w.Record.Key, w.Record.State, w.Record.UpdatedAt)))
             || !names.SequenceEqual(OrchestrationNames))
             Refresh();
     }
+
+    /// <summary>A main that has never come up, listed so it can be started: <see cref="WorkspaceService.MainOf"/>.</summary>
+    internal static bool IsUnmade(WorkspaceRecord record) => record.CreatedAt == default;
 
     /// <summary>Raised after the list of workspaces is read again, so the nav can follow.</summary>
     public event Action? WorkspacesChanged;
@@ -382,15 +400,23 @@ public partial class WorkspacesViewModel : PageViewModel
     private void Refresh()
     {
         var keep = Selected?.Record.Key;
-        Workspaces.Clear();
-        foreach (var record in _services.Workspaces.List()) Workspaces.Add(new WorkspaceItem(record));
-        NavCount = Workspaces.Count(s => s.IsUp);
-
         var orchestration = NewOrchestration;
         OrchestrationNames.Clear();
         foreach (var entry in _services.Orchestrations.List()) OrchestrationNames.Add(entry.Id);
         // A repo can run on its own; IDs are unique across orchestrations and repos, so the names don't collide.
         foreach (var repo in _services.Stored.Repos()) OrchestrationNames.Add(repo.Id);
+
+        Workspaces.Clear();
+        var stored = _services.Workspaces.List();
+        // Every repo and orchestration has a main, listed before it has ever come up.
+        var mains = OrchestrationNames
+            .Where(id => !stored.Any(r => r.Orchestration == id && r.IsMain))
+            .Select(id => _services.Orchestrations.Resolve(id) is { } path ? _services.Workspaces.MainOf(id, path) : null)
+            .OfType<WorkspaceRecord>();
+        foreach (var record in stored.Concat(mains))
+            Workspaces.Add(new WorkspaceItem(record, record.IsMain && record.State != WorkspaceState.Up ? _services.Workspaces.HolderOf(record) : null));
+        NavCount = Workspaces.Count(s => s.IsUp);
+
         NewOrchestration = OrchestrationNames.Contains(orchestration ?? "") ? orchestration : OrchestrationNames.FirstOrDefault();
 
         OnPropertyChanged(nameof(IsEmpty));
@@ -422,6 +448,7 @@ public partial class WorkspacesViewModel : PageViewModel
         OnPropertyChanged(nameof(ShowRunControls));
         OnPropertyChanged(nameof(ShowStartChoices));
         ConfirmingRemove = false;
+        CancelTakeOver();
         DeleteBranch = false;
         ShowDetails(value?.Record);
     }
@@ -828,21 +855,66 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private Task Up() => UpAsync(retry: Up);
 
-    /// <summary>Bring the selected workspace up, asking for approval first when a definition needs it. True once it's up.</summary>
-    /// <param name="retry">What to carry on with once the user approves.</param>
+    /// <summary>Bring the selected workspace up, asking for approval first when a definition needs it, and before taking
+    /// over a checkout another definition is up in. True once it's up.</summary>
+    /// <param name="retry">What to carry on with once the user approves, or agrees to take over.</param>
     async Task<bool> UpAsync(Func<Task> retry)
     {
         if (Selected?.Record is not { } record) return false;
+        var takeOver = _takeOverAgreed;
+        _takeOverAgreed = false;
         var loaded = await LoadAsync(record.OrchestrationPath, retry, record.Name);
         if (loaded is null) return false;
+        if (record.InPlace && !takeOver && await AppServices.RunAsync(() => _services.Workspaces.HolderOf(loaded, record.Name)) is { } holder)
+        {
+            AskTakeOver(holder, record, retry);
+            return false;
+        }
         var title = WorkspaceItem.Display(record);
         // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
         var ok = await RunAsync($"Bringing {title} up",
-            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation),
+            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver),
             $"{title} is up.",
             retry: retry);
         Refresh();
         return ok;
+    }
+
+    // ---- taking over a checkout ----
+
+    /// <summary>Another definition is up in the checkout the selected main runs in, so starting it asks first.</summary>
+    [ObservableProperty] private bool _confirmingTakeOver;
+    [ObservableProperty] private string _takeOverTitle = "";
+    [ObservableProperty] private string _takeOverLine = "";
+
+    Func<Task>? _afterTakeOver;
+    bool _takeOverAgreed;
+
+    void AskTakeOver(WorkspaceRecord holder, WorkspaceRecord record, Func<Task> then)
+    {
+        var where = holder.Repos.Where(r => !r.Worktree).Select(r => r.Dir.Replace('\\', '/')).FirstOrDefault() ?? "the same checkout";
+        TakeOverTitle = $"Take over from {holder.SlotName}?";
+        TakeOverLine = $"{WorkspaceItem.Display(holder)} is up in {where}, and one definition runs in a checkout at a time. "
+                       + $"Taking over stops its apps and takes its infra down, keeping its data, then starts {record.Orchestration} there.";
+        _afterTakeOver = then;
+        ConfirmingTakeOver = true;
+    }
+
+    [RelayCommand]
+    private void CancelTakeOver()
+    {
+        ConfirmingTakeOver = false;
+        _afterTakeOver = null;
+    }
+
+    [RelayCommand]
+    private async Task TakeOver()
+    {
+        ConfirmingTakeOver = false;
+        if (_afterTakeOver is not { } next) return;
+        _afterTakeOver = null;
+        _takeOverAgreed = true;
+        await next();
     }
 
     [RelayCommand]
@@ -876,7 +948,7 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private async Task Remove()
     {
-        if (Selected?.Record is not { } record) return;
+        if (Selected?.Record is not { } record || record.IsMain) return;
         ConfirmingRemove = false;
         var options = new RemoveOptions(DeleteBranch && !record.InPlace);
         var title = WorkspaceItem.Display(record);

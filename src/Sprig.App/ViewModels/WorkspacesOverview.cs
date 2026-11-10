@@ -20,7 +20,7 @@ public sealed partial class OverviewRow(WorkspaceRecord record, Action checkedCh
     public string Key => record.Key;
     public string Name => WorkspaceItem.Display(record);
     public string Orchestration => record.Orchestration;
-    public string Branch => record.InPlace ? "repos in place" : record.Branch ?? "free";
+    public string Branch => WorkspaceItem.BranchOf(record);
     public string State => record.IsFree ? "free" : record.State.ToString().ToLowerInvariant();
     public bool IsUp => record.State == WorkspaceState.Up;
     public bool IsFailed => record.State == WorkspaceState.Failed;
@@ -104,6 +104,7 @@ public partial class WorkspacesViewModel
         var now = Clock();
         _overview = Workspaces.Select(s => s.Record)
             .OrderBy(r => r.Orchestration, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.IsMain ? 0 : 1)
             .ThenBy(r => r.State switch { WorkspaceState.Failed => 0, WorkspaceState.Up => 1, WorkspaceState.Starting => 2, _ => 3 })
             // Slots by number, so storefront--10 comes after storefront--2.
             .ThenBy(r => WorkspaceService.IsSlot(r.Name) ? int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture) : int.MaxValue)
@@ -115,10 +116,11 @@ public partial class WorkspacesViewModel
                 var ports = plan?.Ports.Select(p => p.Port).OfType<int>().ToArray() ?? [];
                 row.Ports = ports.Length == 0 ? "" : ports.Min() == ports.Max() ? $"{ports.Min()}" : $"{ports.Min()}–{ports.Max()}";
                 row.LastUp = record.State == WorkspaceState.Up ? "now"
+                    : IsUnmade(record) ? "never"
                     : record.State == WorkspaceState.Failed ? $"failed {Ago.Text(record.UpdatedAt, now)}"
                     : record.LastUpAt is { } up ? Ago.Text(up, now) : Ago.Text(record.UpdatedAt, now);
-                row.DownFor = record.State == WorkspaceState.Down ? now - record.UpdatedAt : TimeSpan.Zero;
-                row.Worktrees = record.InPlace ? "in place" : "…";
+                row.DownFor = record.State == WorkspaceState.Down && !IsUnmade(record) ? now - record.UpdatedAt : TimeSpan.Zero;
+                row.Worktrees = record.IsMain ? "main checkout" : record.InPlace ? "in place" : "…";
                 return row;
             }).ToList();
         CountOverviewApps();
@@ -145,7 +147,8 @@ public partial class WorkspacesViewModel
         CheckedChanged();
     }
 
-    static bool Stale(OverviewRow row) => row.IsDown && row.DownFor > TimeSpan.FromDays(7);
+    /// <summary>Down long enough to be worth removing; main is always there, so it never is.</summary>
+    static bool Stale(OverviewRow row) => row.IsDown && !row.Record.IsMain && row.DownFor > TimeSpan.FromDays(7);
 
     void CountOverviewApps()
     {
@@ -280,7 +283,7 @@ public partial class WorkspacesViewModel
     });
 
     [RelayCommand]
-    private Task BulkDown() => RunBulk("Taking down", CheckedRecords(), (record, progress, cancellation) =>
+    private Task BulkDown() => RunBulk("Taking down", CheckedRecords().Where(r => !IsUnmade(r)).ToArray(), (record, progress, cancellation) =>
         _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation));
 
     /// <summary>Free each ticked slot that has a branch, keeping its worktrees warm for the next one; free slots and
@@ -300,7 +303,8 @@ public partial class WorkspacesViewModel
     {
         ConfirmingBulkRemove = false;
         var options = new RemoveOptions(BulkDeleteBranches);
-        await RunBulk("Removing", CheckedRecords(), (record, progress, cancellation) =>
+        // Main is always there, so removing passes over it.
+        await RunBulk("Removing", CheckedRecords().Where(r => !r.IsMain).ToArray(), (record, progress, cancellation) =>
             _services.Workspaces.Remove(record.Orchestration, record.Name, options with { DeleteBranch = options.DeleteBranch && !record.InPlace },
                 progress, cancellation));
     }

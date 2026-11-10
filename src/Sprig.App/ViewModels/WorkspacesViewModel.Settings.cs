@@ -143,7 +143,7 @@ public partial class WorkspacesViewModel
     [RelayCommand]
     private async Task OpenSettings()
     {
-        if (Selected?.Record is not { } record) return;
+        if (Selected?.Record is not { } record || record.IsMain) return;
         var loaded = await LoadAsync(record.OrchestrationPath, OpenSettings, record.Name);
         if (loaded is null) return;
         WorkspaceSettings.Clear();

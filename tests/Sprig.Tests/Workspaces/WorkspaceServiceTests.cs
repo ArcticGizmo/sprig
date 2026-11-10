@@ -659,6 +659,70 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Main_runs_in_place_on_the_checkouts_branch_and_refuses_values_a_branch_and_removal()
+    {
+        var dir = Repo("shop-web", ("index.html", "hi"));
+        Git(dir, "switch", "-q", "-c", "develop");
+        var loaded = Load(("shop-web", Web));
+        Assert.Equal(WorkspaceState.Down, _workspaces.MainOf("storefront", loaded.OrchestrationPath).State);
+        Assert.Null(_workspaces.Get("storefront", "main"));
+
+        var record = _workspaces.Up(loaded, "main", null, new WorkspaceOptions());
+
+        Assert.True(record.IsMain);
+        Assert.Equal(dir, record.Repos.Single().Dir);
+        Assert.Equal("develop", record.CheckoutBranch);
+        Assert.Equal("storefront", record.SlotName);
+        Assert.NotNull(_workspaces.Get("storefront", "main"));
+        Assert.Contains("own values", Assert.Throws<WorkspaceException>(() =>
+            _workspaces.Up(loaded, "main", null, values: new Dictionary<string, string> { ["x"] = "1" })).Message);
+        Assert.Contains("own values", Assert.Throws<WorkspaceException>(() =>
+            _workspaces.SetValues("storefront", "main", new Dictionary<string, string> { ["x"] = "1" })).Message);
+        Assert.Contains("slot", Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "main", "feat-x")).Message);
+        Assert.Contains("can't be removed", Assert.Throws<WorkspaceException>(() =>
+            _workspaces.Remove("storefront", "main", new RemoveOptions())).Message);
+    }
+
+    [Fact]
+    public void Main_with_a_setting_that_has_no_default_says_to_give_it_one_rather_than_asking()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", WebWithKey));
+
+        var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "main", null));
+
+        Assert.Empty(e.Asks);
+        Assert.Contains("api-key", e.Message);
+        Assert.Contains("give it a default in the definition", e.Message);
+    }
+
+    [Fact]
+    public void One_definition_runs_in_a_checkout_at_a_time_and_taking_over_takes_the_other_down()
+    {
+        var dir = Repo("shop-web", ("index.html", "hi"));
+        var own = Load(("shop-web", Web));
+        var copy = Load(("shop-web", Web)) with { OrchestrationPath = Path.Combine(_root, "copy", "orchestration.cs"), Id = "shop-web-copy" };
+        _workspaces.Up(own, "main", null);
+
+        var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(copy, "main", null));
+
+        Assert.Equal("storefront", e.HeldBy?.Orchestration);
+        Assert.Contains($"storefront is up in {dir.Replace('\\', '/')}", e.Message);
+        Assert.Equal("storefront", _workspaces.HolderOf(copy)?.Orchestration);
+        Assert.Null(_workspaces.Get("shop-web-copy", "main"));
+
+        var taken = _workspaces.Up(copy, "main", null, takeOver: true);
+
+        Assert.Equal(WorkspaceState.Up, taken.State);
+        Assert.Equal(WorkspaceState.Down, _workspaces.Get("storefront", "main")!.State);
+        // The one taken over says who has the checkout now; one that's down holds nothing.
+        Assert.Equal("shop-web-copy", _workspaces.HolderOf(_workspaces.Get("storefront", "main")!)?.Orchestration);
+        _workspaces.Down("shop-web-copy", "main");
+        Assert.Null(_workspaces.HolderOf(own));
+        Assert.Equal(WorkspaceState.Up, _workspaces.Up(own, "main", null).State);
+    }
+
+    [Fact]
     public void A_bad_plan_fails_before_any_worktree_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));

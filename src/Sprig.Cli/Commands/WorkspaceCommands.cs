@@ -16,7 +16,7 @@ public class WorkspaceSettings : GlobalSettings
     public string Orchestration { get; set; } = "";
 
     [CommandArgument(1, "[workspace]")]
-    [Description("The workspace: its branch, slot number or folder name (default: the slot this folder is in, else local)")]
+    [Description("The workspace: its branch, slot number or folder name (default: the slot this folder is in, else main, the repo where it's checked out)")]
     public string Workspace { get; set; } = "";
 
     /// <summary>Whether words after the workspace name apps, so one that isn't an ID or a workspace is an app.</summary>
@@ -24,7 +24,7 @@ public class WorkspaceSettings : GlobalSettings
 
     /// <summary>
     /// Fills in what was left out: the ID from the current folder, and the workspace from the worktree it's in, else
-    /// <c>local</c>. Outside every repo, a first word that's the name of just one workspace means that workspace. Words
+    /// <c>main</c>. Outside every repo, a first word that's the name of just one workspace means that workspace. Words
     /// that turn out not to be an ID or one of its workspaces are handed back, for commands whose next argument is an
     /// app.
     /// </summary>
@@ -56,7 +56,7 @@ public class WorkspaceSettings : GlobalSettings
             workspace = words[0];
             words.RemoveAt(0);
         }
-        Workspace = workspace ?? "local";
+        Workspace = workspace ?? WorkspaceRecord.MainName;
         return words;
     }
 }
@@ -71,8 +71,12 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public string? Orchestration { get; set; }
 
         [CommandOption("-b|--branch <branch>")]
-        [Description("Check this branch out in a slot of worktrees: the slot it's in already, else the lowest free one, else a new one (default: the slot this folder is in, else the repos where they're checked out, as 'local')")]
+        [Description("Check this branch out in a slot of worktrees: the slot it's in already, else the lowest free one, else a new one (default: the slot this folder is in, else main, the repos where they're checked out)")]
         public string? Branch { get; set; }
+
+        [CommandOption("--take-over")]
+        [Description("When another definition's main is up in the same checkout, take it down (keeping its data) and start this one there, rather than be asked")]
+        public bool TakeOver { get; set; }
 
         [CommandOption("--slot <number>")]
         [Description("The slot to check the branch out in, e.g. 2 for storefront--2")]
@@ -126,8 +130,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         if (s.Branch is null && (s.From is not null || s.EmptyData || s.Unset.Length > 0 || s.FixSlot))
             throw new InvalidOperationException("--from, --empty-data, --unset and --fix-slot are for checking a branch out; name it with -b <branch>");
         var (id, slotHere) = s.Orchestration is { } given ? (given, null) : Here.Find(cli, s.Branch);
-        // Without a branch: the slot named, or the one this folder is in, else the repos in place as "local".
-        var workspace = s.Slot is { } slot ? slot.ToString(System.Globalization.CultureInfo.InvariantCulture) : slotHere ?? "local";
+        // Without a branch: the slot named, or the one this folder is in, else main.
+        var workspace = s.Slot is { } slot ? slot.ToString(System.Globalization.CultureInfo.InvariantCulture) : slotHere ?? WorkspaceRecord.MainName;
         if (OrchestrationLoad.Load(cli, id, s, s.Branch is null ? workspace : null) is not { } loaded) return 1;
         var root = Path.GetDirectoryName(loaded.OrchestrationPath)!;
 
@@ -176,10 +180,9 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         var runApps = !s.NoApps;
         SettingValues.Parse(s.Set, out var given);
         var values = new Dictionary<string, string>(given, StringComparer.Ordinal);
-        // A new workspace with no branch is the repos where they're checked out.
-        var options = s.Branch is null && workspace == "local" && cli.Workspaces.Get(loaded.Id, workspace) is null ? new WorkspaceOptions(InPlace: true) : null;
         IReadOnlyCollection<string>? unset = s.Unset;
         var (slot, fixSlot) = s.Branch is { } wanted ? AskAboutBrokenSlot(loaded, wanted, s) : (s.Slot, false);
+        var takeOver = s.TakeOver;
         for (var attempt = 1; ; attempt++)
         {
             string? held = null;
@@ -188,12 +191,21 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
                 Action<WorkspaceRecord, Plan>? beforeInfra = runApps ? (record, plan) => held = Prebuild(record, plan, s) : null;
                 var record = s.Branch is { } branch
                     ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(slot, s.From, s.EmptyData, fixSlot), progress, cancellation, beforeInfra, values, unset)
-                    : cli.Workspaces.Up(loaded, workspace, null, options, progress, cancellation, beforeInfra, values);
+                    : cli.Workspaces.Up(loaded, workspace, null, null, progress, cancellation, beforeInfra, values, takeOver);
                 return record;
             }
             catch (WorkspaceException e) when (e.Untrusted.Count > 0 && attempt < 3)
             {
                 if (!TrustFlow.Approve(cli, e.Untrusted, s)) return null;
+            }
+            catch (WorkspaceException e) when (e.HeldBy is { } holder && !takeOver)
+            {
+                if (!cli.Interactive(s.Json))
+                    throw new WorkspaceException($"{e.Message}, with --take-over");
+                cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(holder.SlotName)} is up in the same checkout.[/]");
+                if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Take {Markup.Escape(holder.SlotName)} down (keeping its data) and start {Markup.Escape(loaded.Id)} there?") { DefaultValue = false }))
+                    return null;
+                takeOver = true;
             }
             catch (WorkspaceException e) when (e.Asks.Count > 0 && attempt < 3 && cli.Interactive(s.Json))
             {
@@ -295,7 +307,9 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     void Summary(WorkspaceRecord record, Plan plan, string root, bool appsStart)
     {
         cli.Ansi.WriteLine();
-        cli.Ansi.MarkupLine(record.InPlace
+        cli.Ansi.MarkupLine(record.IsMain
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] is up in its main checkout{(record.CheckoutBranch is { } on ? $", on [bold]{Markup.Escape(on)}[/]" : "")}"
+            : record.InPlace
             ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/] is up  [dim](repos in place)[/]"
             : $"[bold]{Markup.Escape(record.Branch ?? "")}[/] is up in [bold]{Markup.Escape(record.SlotName)}[/]  [dim]({Markup.Escape((record.Folder ?? "").Replace('\\', '/'))})[/]");
 
@@ -438,7 +452,8 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
                 _ => "[dim]down[/]",
             };
             table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.SlotName),
-                r.InPlace ? "[dim](in place)[/]" : r.Branch is { } b ? Markup.Escape(b) : "[dim](detached)[/]", state,
+                r.IsMain ? $"[dim](main checkout{(r.CheckoutBranch is { } on ? $", on {Markup.Escape(on)}" : "")})[/]"
+                : r.InPlace ? "[dim](in place)[/]" : r.Branch is { } b ? Markup.Escape(b) : "[dim](detached)[/]", state,
                 Markup.Escape((r.Folder ?? string.Join(", ", r.Repos.Select(x => x.Dir))).Replace('\\', '/')),
                 r.UpdatedAt.LocalDateTime.ToString("g"));
         }

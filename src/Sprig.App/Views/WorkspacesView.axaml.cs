@@ -576,7 +576,7 @@ public partial class WorkspacesView : UserControl
             e.Handled = true;
             return;
         }
-        if (_vm is not { HasSelection: true, OnAppsTab: true } || _vm.IsAddOpen || _vm.ConfirmingRemove) return;
+        if (_vm is not { HasSelection: true, OnAppsTab: true } || _vm.IsAddOpen || _vm.ConfirmingRemove || _vm.ConfirmingTakeOver) return;
         if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             LogSearch.Focus();

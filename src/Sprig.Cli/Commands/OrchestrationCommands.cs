@@ -183,7 +183,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         public string? Orchestration { get; set; }
 
         [CommandOption("-b|--branch <branch>")]
-        [Description("The workspace to plan for, by its branch or slot number (default: the slot this folder is in, else 'local'). An existing workspace's definitions are read from its worktrees, and its values used")]
+        [Description("The workspace to plan for, by its branch or slot number (default: the slot this folder is in, else main). An existing workspace's definitions are read from its worktrees, and its values used")]
         public string? Workspace { get; set; }
 
         [CommandOption("--set <name=value>")]
@@ -197,7 +197,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
         var (id, worktreeOf) = s.Orchestration is { } named ? (named, null) : Here.Find(cli, s.Workspace);
-        var workspace = s.Workspace is { } word ? Here.WorkspaceName(cli, id, word) : worktreeOf ?? "local";
+        var workspace = s.Workspace is { } word ? Here.WorkspaceName(cli, id, word) : worktreeOf ?? Sprig.Engine.Workspaces.WorkspaceRecord.MainName;
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
 
         SettingValues.Parse(s.Set, out var given);

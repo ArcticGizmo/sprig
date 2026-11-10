@@ -187,15 +187,16 @@ public class WorkspacesViewModelTests
         Assert.Matches(@"PORT=95\d\d", File.ReadAllText(env));
         Assert.False(File.Exists(Path.Combine(repo, ".env.local")));
 
-        // A folder in the way of the next slot is said under the branch while typing, and Run it keeps the form open.
+        // A folder in the way of the next slot makes it broken, said under the branch while typing, with the choice of
+        // fixing it or using the slot after.
         var stray = Path.Combine(store.Root, "work", "web--2", "shop-web");
         Directory.CreateDirectory(stray);
         vm.OpenAddCommand.Execute(null);
         vm.NewBranch = "feat-z";
-        await WaitFor(() => vm.NewSlotBad && vm.NewSlotLine.Contains("already exists and isn't a worktree"));
-        await vm.CreateCommand.ExecuteAsync(null);
-        Assert.True(vm.IsAddOpen);
+        await WaitFor(() => vm.NewSlotBroken && vm.NewSlotLine.StartsWith("web--2 is broken:") && vm.NewSlotLine.Contains("isn't a worktree sprig can use"));
         Assert.True(vm.NewSlotBad);
+        Assert.Equal("Use web--3 instead", vm.NewNextSlotLabel);
+        Assert.False(vm.NewFixSlot);
         Directory.Delete(Path.Combine(store.Root, "work", "web--2"), recursive: true);
         vm.NewBranch = "feat-zz";
         await WaitFor(() => vm.NewSlotLine == "Goes in web--2, a new slot." && !vm.NewSlotBad);

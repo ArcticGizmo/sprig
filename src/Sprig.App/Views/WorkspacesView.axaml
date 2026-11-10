@@ -37,10 +37,17 @@
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="MinHeight" Value="34" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Rectangle.segmentdivider">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Fill" Value="#2EFFFFFF" />
+            <Setter Property="Margin" Value="0,8" />
         </Style>
         <Style Selector="Button.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#1AFFFFFF" />
@@ -1230,22 +1237,25 @@
                         </StackPanel>
                         <StackPanel Spacing="4">
                             <TextBlock Classes="phead" Text="WHAT TO CHECK OUT" />
-                            <!-- One of three, as a segmented control: the picked one is filled. -->
+                            <!-- One of three, as a segmented control: the picked one is filled. A faint divider parts each pair,
+                                 except beside the picked one, whose own edge does that. -->
                             <Border Classes="segmented">
-                                <UniformGrid Columns="3">
+                                <Grid ColumnDefinitions="*,1,*,1,*">
                                     <Button Classes="segment" Classes.on="{Binding NewModeNew}" Content="New branch"
                                             Command="{Binding PickNewModeCommand}" CommandParameter="{x:Static vm:NewCheckout.NewBranch}"
                                             AutomationProperties.AutomationId="new-workspace:mode-new"
                                             ToolTip.Tip="Make a branch, from the default branch or one you pick" />
-                                    <Button Classes="segment" Classes.on="{Binding NewModeExisting}" Content="Existing branch"
+                                    <Rectangle Grid.Column="1" Classes="segmentdivider" IsVisible="{Binding NewModeNone}" />
+                                    <Button Grid.Column="2" Classes="segment" Classes.on="{Binding NewModeExisting}" Content="Existing branch"
                                             Command="{Binding PickNewModeCommand}" CommandParameter="{x:Static vm:NewCheckout.Existing}"
                                             AutomationProperties.AutomationId="new-workspace:mode-existing"
                                             ToolTip.Tip="Check out a branch that's there already, locally or on a remote" />
-                                    <Button Classes="segment" Classes.on="{Binding NewModeNone}" Content="No branch"
+                                    <Rectangle Grid.Column="3" Classes="segmentdivider" IsVisible="{Binding NewModeNew}" />
+                                    <Button Grid.Column="4" Classes="segment" Classes.on="{Binding NewModeNone}" Content="No branch"
                                             Command="{Binding PickNewModeCommand}" CommandParameter="{x:Static vm:NewCheckout.NoBranch}"
                                             AutomationProperties.AutomationId="new-workspace:mode-none"
                                             ToolTip.Tip="Make a free slot, its worktrees detached, to check a branch out in later" />
-                                </UniformGrid>
+                                </Grid>
                             </Border>
                         </StackPanel>
                         <StackPanel Spacing="4" IsVisible="{Binding NewModeNew}">

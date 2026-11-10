@@ -636,6 +636,19 @@
                                    Text="Tags under a node are the infra it uses. Point at a node for all its links." />
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                            <TextBlock Classes="cell via" Text="Group by" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <Button Classes="chip" Classes.on="{Binding GraphByRepo}" Content="Repo" Margin="0,0,4,0"
+                                    Command="{Binding GroupGraphByRepoCommand}" AutomationProperties.AutomationId="workspace:graph-by-repo"
+                                    ToolTip.Tip="A box for each repo's apps and infra" />
+                            <Button Classes="chip" Classes.on="{Binding GraphByStartGroup}" Content="Start group" Margin="0,0,4,0"
+                                    Command="{Binding GroupGraphByStartGroupCommand}" IsVisible="{Binding CanGroupByStartGroup}"
+                                    AutomationProperties.AutomationId="workspace:graph-by-start-group"
+                                    ToolTip.Tip="A box for each group Start can start; infra goes with its group when only one uses it" />
+                            <Button Classes="chip" Classes.on="{Binding GraphByRole}" Content="Role"
+                                    Command="{Binding GroupGraphByRoleCommand}" AutomationProperties.AutomationId="workspace:graph-by-role"
+                                    ToolTip.Tip="A box for each kind of thing: web, APIs, workers, databases, queues…" />
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <Button Classes="chip" Classes.on="{Binding GraphLayered}" Content="Layered" Margin="0,0,4,0"
                                     Command="{Binding ShowLayeredGraphCommand}"
@@ -702,7 +715,9 @@
                                         Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphStartCommand}" CommandParameter="{Binding}" />
                                 <Button Classes="small" Margin="0,0,6,6" Content="Stop" IsVisible="{Binding CanStop}"
                                         Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphStopCommand}" CommandParameter="{Binding}" />
-                                <Button Classes="small" Margin="0,0,6,6" Content="Open ↗" IsVisible="{Binding HasUrl}" ToolTip.Tip="{Binding Url}"
+                                <!-- Tag holds the url, so the view opens it in a new window on a middle-click, as it does a link. -->
+                                <Button Classes="small opens" Margin="0,0,6,6" Content="Open ↗" IsVisible="{Binding HasUrl}" ToolTip.Tip="{Binding Url}"
+                                        Tag="{Binding Url}"
                                         Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphOpenCommand}" CommandParameter="{Binding}" />
                             </WrapPanel>
                         </StackPanel>

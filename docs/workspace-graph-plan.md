@@ -30,7 +30,13 @@ Then roles (user, same day): a definition says **what something is**, and sprig 
 - **Roles**: database, cache, queue, search, mail, storage, identity, proxy (infra), and web, api, worker (apps). Each has its own icon; search finds by role ("queue").
 - **Not offered**: colours or free-form icons. The ring's colour is the state, and a fixed set of roles keeps every repo's graph reading the same.
 
-Grouping by start group or role (a "Group by" switch) is the next step, if repo columns turn out not to be enough.
+Then **Group by** (2026-11-10): a **Repo | Start group | Role** switch beside Layered | Force, remembered (`UiState.GraphGroupBy`), choosing what the boxes gather. `WorkspaceGraph.GroupsOf` works it out.
+
+- **Repo**, the default: as before.
+- **Start group**, offered only when the definitions name groups: an app goes in the first group that names it, else "in no group". Infra goes in its users' group when they're all in one; infra shared across groups is left loose, its tags saying who uses it.
+- **Role**: a box per kind of thing (web, APIs, workers, jobs, databases, caches, queues…); apps and infra with no role go in "other apps" and "other infra", outside values with none stay loose.
+
+Open links on the graph (the card's **Open ↗**, and the pages in a node's or an app's menu) open as other links do: a click in the browser, a middle-click in a new window.
 
 A 3D layout was considered and turned down: on a flat screen its links cross again from any one angle, and reading it means turning it round.
 

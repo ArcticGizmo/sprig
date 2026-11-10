@@ -274,6 +274,19 @@ internal static partial class HeadlessRenderer
 
             vm.Workspaces.ShowLayeredGraphCommand.Execute(null);
             vm.Workspaces.Graph!.Select(null);
+
+            // Grouped by start group, then by role, then back by repo.
+            foreach (var (by, name) in new[] { (GraphGrouping.StartGroup, "graph-by-start-group"), (GraphGrouping.Role, "graph-by-role") })
+            {
+                vm.Workspaces.GraphGroupBy = by;
+                vm.Workspaces.FitGraphCommand.Execute(null);
+                Pump(TimeSpan.FromMilliseconds(500));
+                Save(window, Sibling(outFile, name));
+                var grouped = vm.Workspaces.Graph!.Layout.Boxes().ToArray();
+                Console.WriteLine($"{by}: grouped as {vm.Workspaces.GraphGroupBy}, boxes {string.Join(", ", grouped.Select(b => b.Group))}; overlapping: "
+                    + grouped.SelectMany((a, i) => grouped.Skip(i + 1).Where(b => a.Box.Overlaps(b.Box, 0))).Count());
+            }
+            vm.Workspaces.GraphGroupBy = GraphGrouping.Repo;
             window.Width = 1024;
             window.Height = 700;
             vm.Workspaces.FitGraphCommand.Execute(null);

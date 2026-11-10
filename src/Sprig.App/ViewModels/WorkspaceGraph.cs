@@ -144,6 +144,10 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     }
 }
 
+/// <summary>What the graph's boxes gather: each repo's nodes, each start group's, or each kind of thing.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<GraphGrouping>))]
+public enum GraphGrouping { Repo, StartGroup, Role }
+
 /// <summary>
 /// The workspace graph: its nodes, the links between them, where each sits, and which one is picked. The canvas draws
 /// it and redraws on <see cref="Changed"/>; the page acts on what the canvas asks for.
@@ -152,9 +156,15 @@ public sealed class WorkspaceGraph
 {
     public const double NodeRadius = 22;
 
+    /// <summary>The group drawn without a box: values from outside the workspace, and infra no one group has to itself.</summary>
+    public const string Loose = WorkspaceTopology.OutsideOwner;
+
     public IReadOnlyList<GraphNode> Nodes { get; }
     public IReadOnlyList<TopologyLink> Links { get; }
     public IGraphLayout Layout { get; }
+
+    /// <summary>Each node's box, by key: its title, or <see cref="Loose"/> for none.</summary>
+    public IReadOnlyDictionary<string, string> Groups { get; }
 
     /// <summary>At most this many tags show under a node; the rest are counted.</summary>
     public const int MaxTags = 3;
@@ -163,8 +173,9 @@ public sealed class WorkspaceGraph
 
     /// <param name="layered">In rows, what uses something above it; otherwise by forces, where dragged nodes keep the
     /// places in <paramref name="pinned"/>.</param>
+    /// <param name="startGroups">The groups Start can start, for <see cref="GraphGrouping.StartGroup"/>.</param>
     public WorkspaceGraph(IReadOnlyList<GraphNode> nodes, IReadOnlyList<TopologyLink> links, IReadOnlyDictionary<string, (double X, double Y)>? pinned,
-        bool layered = false)
+        bool layered = false, GraphGrouping grouping = GraphGrouping.Repo, IReadOnlyList<PlannedGroup>? startGroups = null)
     {
         Nodes = nodes;
         Links = links;
@@ -179,15 +190,71 @@ public sealed class WorkspaceGraph
                 .Select(l => _byKey[l.To]).OrderBy(t => t.IsOutside).ThenBy(t => t.TagName, StringComparer.Ordinal).ToArray();
             node.Refresh();
         }
+        var groups = GroupsOf(nodes, links, grouping, startGroups);
+        Groups = groups;
         if (layered)
-            Layout = new LayeredLayout(nodes.Select(n => (n.Key, n.Owner, Room(n), n.IsTag)), links.Select(l => (l.From, l.To)), WorkspaceTopology.OutsideOwner);
+            Layout = new LayeredLayout(nodes.Select(n => (n.Key, groups[n.Key], Room(n), n.IsTag)), links.Select(l => (l.From, l.To)), Loose);
         else
         {
-            var force = new ForceLayout(nodes.Select(n => (n.Key, n.Owner, Room(n))), links.Select(l => (l.From, l.To)), pinned, WorkspaceTopology.OutsideOwner);
+            var force = new ForceLayout(nodes.Select(n => (n.Key, groups[n.Key], Room(n))), links.Select(l => (l.From, l.To)), pinned, Loose);
             force.Settle();
             Layout = force;
         }
     }
+
+    public const string NoStartGroup = "in no group";
+    public const string Jobs = "jobs";
+    public const string OtherApps = "other apps";
+    public const string OtherInfra = "other infra";
+
+    /// <summary>
+    /// The box each node goes in. By start group, an app goes in the first group that names it, and infra goes with the
+    /// apps that use it when they're all in one group; infra shared across groups is left loose, its tags saying who uses
+    /// it. By role, each kind of thing has its own box: the web front ends, the APIs, the databases.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> GroupsOf(IReadOnlyList<GraphNode> nodes, IReadOnlyList<TopologyLink> links,
+        GraphGrouping grouping, IReadOnlyList<PlannedGroup>? startGroups)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        switch (grouping)
+        {
+            case GraphGrouping.StartGroup when startGroups is { Count: > 0 }:
+                foreach (var node in nodes.Where(n => !n.IsTag))
+                    result[node.Key] = startGroups.FirstOrDefault(g => g.Apps.Contains(node.Key, StringComparer.Ordinal))?.Name is { } name
+                        ? (name == Loose ? $"{name} (group)" : name) : NoStartGroup;
+                foreach (var node in nodes.Where(n => n.IsTag))
+                {
+                    var users = links.Where(l => l.To == node.Key && result.ContainsKey(l.From)).Select(l => result[l.From]).Distinct().ToArray();
+                    result[node.Key] = users is [var only] ? only : Loose;
+                }
+                break;
+            case GraphGrouping.Role:
+                foreach (var node in nodes)
+                    result[node.Key] = node.Kind == TopologyKind.Job ? Jobs
+                        : node.Role is { } role ? RoleTitle(role)
+                        : node.IsRunner ? OtherApps
+                        : node.IsInfra ? OtherInfra
+                        : Loose;
+                break;
+            default:
+                foreach (var node in nodes) result[node.Key] = node.IsOutside ? Loose : node.Owner;
+                break;
+        }
+        return result;
+    }
+
+    /// <summary>A role's box title, for the many of it.</summary>
+    static string RoleTitle(string role) => role switch
+    {
+        NodeRoles.Api => "APIs",
+        NodeRoles.Web => "web",
+        NodeRoles.Database => "databases",
+        NodeRoles.Cache => "caches",
+        NodeRoles.Queue => "queues",
+        NodeRoles.Worker => "workers",
+        NodeRoles.Proxy => "proxies",
+        _ => role,
+    };
 
     /// <summary>The room a node needs either side of its centre: its name and its tags are usually wider than its circle.</summary>
     static double Room(GraphNode node)

@@ -17,6 +17,7 @@ namespace Sprig.App;
 /// <param name="GraphPlaces">Workspace graph nodes dragged to a place of their own, per orchestration, as <c>[x, y]</c>
 /// by node key, so every workspace of it is laid out alike.</param>
 /// <param name="GraphForce">The workspace graph is laid out by forces rather than in rows.</param>
+/// <param name="GraphGroupBy">What the workspace graph's boxes gather; absent for each repo's nodes.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool DetailsClosed = false,
@@ -26,7 +27,8 @@ public sealed record UiStateData(
     Dictionary<string, string>? StartGroups = null,
     bool NavCollapsed = false,
     Dictionary<string, Dictionary<string, double[]>>? GraphPlaces = null,
-    bool GraphForce = false);
+    bool GraphForce = false,
+    Sprig.App.ViewModels.GraphGrouping GraphGroupBy = Sprig.App.ViewModels.GraphGrouping.Repo);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -92,6 +94,12 @@ public sealed class UiState(ISprigPaths paths)
     {
         get => Data.GraphForce;
         set => Save(Data with { GraphForce = value });
+    }
+
+    public Sprig.App.ViewModels.GraphGrouping GraphGroupBy
+    {
+        get => Data.GraphGroupBy;
+        set => Save(Data with { GraphGroupBy = value });
     }
 
     public IReadOnlyDictionary<string, (double X, double Y)> GraphPlaces(string orchestration)

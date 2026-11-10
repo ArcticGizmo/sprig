@@ -112,9 +112,25 @@ public partial class WorkspacesView : UserControl
         if (node.CanStop) Add("Stop", () => vm.GraphStopCommand.Execute(node));
         var links = node.App is { } row ? vm.LinksOf(row) : [];
         if (links.Count > 0 && menu.Items.Count > 0) menu.Items.Add(new Separator());
-        foreach (var link in links) Add($"{link.Label} ↗", () => OpenLink(link.Url, newWindow: false));
+        foreach (var link in links) menu.Items.Add(LinkItem(menu, link.Label, link.Url));
         if (menu.Items.Count == 0) return;
         menu.Open(at);
+    }
+
+    /// <summary>A page's item in a menu, opened as a link is: a click in the browser, a middle-click in a new window.</summary>
+    MenuItem LinkItem(ContextMenu menu, string label, string url)
+    {
+        var item = new MenuItem { Header = $"{label} ↗" };
+        ToolTip.SetTip(item, url);
+        item.Click += (_, _) => OpenLink(url, newWindow: false);
+        item.AddHandler(PointerReleasedEvent, (_, e) =>
+        {
+            if (e.InitialPressMouseButton != MouseButton.Middle) return;
+            e.Handled = true;
+            menu.Close();
+            OpenLink(url, newWindow: true);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        return item;
     }
 
     readonly ContextMenu _linkMenu;
@@ -244,13 +260,7 @@ public partial class WorkspacesView : UserControl
         // Its links too, so a page can be opened from the row without picking the app for its details first.
         var links = _vm?.LinksOf(app) ?? [];
         if (links.Count > 0) _appMenu.Items.Add(new Separator());
-        foreach (var link in links)
-        {
-            var item = new MenuItem { Header = $"{link.Label} ↗" };
-            ToolTip.SetTip(item, link.Url);
-            item.Click += (_, _) => OpenLink(link.Url, newWindow: false);
-            _appMenu.Items.Add(item);
-        }
+        foreach (var link in links) _appMenu.Items.Add(LinkItem(_appMenu, link.Label, link.Url));
         _appMenu.Placement = placement;
         _appMenu.Open(at);
     }
@@ -273,10 +283,11 @@ public partial class WorkspacesView : UserControl
 
     static string Apps(int n) => n == 1 ? "1 app" : $"{n} apps";
 
-    /// <summary>A <c>link</c> text with its url in <see cref="Control.Tag"/>, under the pointer.</summary>
-    static TextBlock? LinkAt(object? source)
-        => (source as Visual)?.FindAncestorOfType<TextBlock>(includeSelf: true) is { } text && text.Classes.Contains("link") && text.Tag is string { Length: > 0 }
-            ? text : null;
+    /// <summary>A <c>link</c> text, or an <c>opens</c> button, with its url in <see cref="Control.Tag"/>, under the pointer.</summary>
+    static Control? LinkAt(object? source)
+        => (source as Visual)?.GetSelfAndVisualAncestors().OfType<Control>()
+            .FirstOrDefault(c => (c is TextBlock && c.Classes.Contains("link")) || (c is Button && c.Classes.Contains("opens"))) is { Tag: string { Length: > 0 } } link
+            ? link : null;
 
     /// <summary>A double-click on a ticking box only ticks it twice, so it doesn't also open the workspace.</summary>
     void OnOverviewRowDoubleTapped(object? sender, TappedEventArgs e)
@@ -289,6 +300,8 @@ public partial class WorkspacesView : UserControl
     void OnLinkReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (LinkAt(e.Source) is not { IsPointerOver: true } link) return;
+        // A button's own click (or Enter on it) already opens it.
+        if (e.InitialPressMouseButton == MouseButton.Left && link is Button) return;
         if (e.InitialPressMouseButton == MouseButton.Left) OpenLink((string)link.Tag!, newWindow: false);
         else if (e.InitialPressMouseButton == MouseButton.Middle) OpenLink((string)link.Tag!, newWindow: true);
         else return;

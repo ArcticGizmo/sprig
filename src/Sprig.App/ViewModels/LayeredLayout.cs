@@ -281,9 +281,9 @@ public sealed class LayeredLayout : IGraphLayout
         var centres = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var group in groups)
         {
-            // Wide enough for its box's title too.
+            // Wide enough for its box's title too, with room for the title's least size when zoomed out to fit.
             var width = Math.Max(order.Where(p => p.Key.Group == group).Select(p => Width(p.Value)).DefaultIfEmpty(0).Max(),
-                group == _loose ? 0 : group.Length * 6.2 + 16);
+                group == _loose ? 0 : group.Length * 7.4 + 22);
             centres[group] = x + width / 2;
             _columns[group] = (x, x + width);
             x += width + GroupGap;

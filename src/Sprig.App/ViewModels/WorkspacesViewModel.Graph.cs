@@ -55,6 +55,7 @@ public partial class WorkspacesViewModel
         if (record is null || plan is null)
         {
             _targets = [];
+            _startGroups = [];
             CloseFollowers();
             Graph = null;
             GraphPicked = null;
@@ -72,7 +73,11 @@ public partial class WorkspacesViewModel
 
         var topology = WorkspaceTopology.Of(plan);
         var nodes = topology.Nodes.Select(n => new GraphNode(n, Apps.FirstOrDefault(a => a.Key == n.Key), _targets.FirstOrDefault(t => t.Key == n.Key))).ToArray();
-        var graph = new WorkspaceGraph(nodes, topology.Links, _services.Ui.GraphPlaces(record.Orchestration), layered: !GraphForce);
+        _startGroups = plan.Groups;
+        OnPropertyChanged(nameof(CanGroupByStartGroup));
+        NotifyGraphGrouping();
+        var graph = new WorkspaceGraph(nodes, topology.Links, _services.Ui.GraphPlaces(record.Orchestration), layered: !GraphForce,
+            grouping: GraphGroupBy, startGroups: plan.Groups);
         graph.Picked += OnGraphPicked;
         graph.LogRequested += OnGraphLog;
         graph.PinsChanged += OnGraphPinned;
@@ -230,6 +235,45 @@ public partial class WorkspacesViewModel
     }
 
     public bool GraphLayered => !GraphForce;
+
+    IReadOnlyList<PlannedGroup> _startGroups = [];
+
+    public bool CanGroupByStartGroup => _startGroups.Count > 0;
+
+    /// <summary>What the graph's boxes gather. Grouping by start group is remembered for an orchestration that names
+    /// none, which is drawn by repo meanwhile.</summary>
+    public GraphGrouping GraphGroupBy
+    {
+        get => _services.Ui.GraphGroupBy is GraphGrouping.StartGroup && !CanGroupByStartGroup ? GraphGrouping.Repo : _services.Ui.GraphGroupBy;
+        set
+        {
+            if (value == GraphGroupBy) return;
+            _services.Ui.GraphGroupBy = value;
+            NotifyGraphGrouping();
+            if (Selected?.Record is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
+        }
+    }
+
+    public bool GraphByRepo => GraphGroupBy == GraphGrouping.Repo;
+    public bool GraphByStartGroup => GraphGroupBy == GraphGrouping.StartGroup;
+    public bool GraphByRole => GraphGroupBy == GraphGrouping.Role;
+
+    void NotifyGraphGrouping()
+    {
+        OnPropertyChanged(nameof(GraphGroupBy));
+        OnPropertyChanged(nameof(GraphByRepo));
+        OnPropertyChanged(nameof(GraphByStartGroup));
+        OnPropertyChanged(nameof(GraphByRole));
+    }
+
+    [RelayCommand]
+    private void GroupGraphByRepo() => GraphGroupBy = GraphGrouping.Repo;
+
+    [RelayCommand]
+    private void GroupGraphByStartGroup() => GraphGroupBy = GraphGrouping.StartGroup;
+
+    [RelayCommand]
+    private void GroupGraphByRole() => GraphGroupBy = GraphGrouping.Role;
 
     [RelayCommand]
     private void ShowLayeredGraph() => GraphForce = false;

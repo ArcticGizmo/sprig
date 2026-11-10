@@ -48,13 +48,12 @@ public static class EnvFiles
     }
 
     /// <summary>A launch profile named <paramref name="profile"/>, placed first so <c>dotnet run</c> uses it by
-    /// default. Other profiles are kept as they are. Its env starts from the profile it puts second, so the app keeps
-    /// what that gave it (usually <c>ASPNETCORE_ENVIRONMENT</c>) under a plain <c>dotnet run</c>.</summary>
+    /// default. Other profiles, and the rest of the file, are kept as they're written, comments included. Its env starts
+    /// from the profile it puts second, so the app keeps what that gave it (usually <c>ASPNETCORE_ENVIRONMENT</c>) under
+    /// a plain <c>dotnet run</c>.</summary>
     public static void WriteLaunchProfile(string path, string profile, IReadOnlyList<KeyValuePair<string, string>> values)
     {
-        var root = ReadObject(path);
-        var old = root["profiles"] as JsonObject ?? [];
-
+        var old = ReadObject(path)["profiles"] as JsonObject ?? [];
         var displaced = old.Where(p => p.Key != profile).Select(p => p.Value as JsonObject)
             .FirstOrDefault(p => p?["commandName"]?.GetValue<string>() == "Project");
         var env = displaced?["environmentVariables"]?.DeepClone() as JsonObject ?? [];
@@ -70,82 +69,122 @@ public static class EnvFiles
             mine["applicationUrl"] = urls;
         mine["environmentVariables"] = env;
 
-        var profiles = new JsonObject { [profile] = mine };
-        foreach (var (name, value) in old.ToArray())
-        {
-            if (name == profile) continue;
-            old.Remove(name);
-            profiles[name] = value;
-        }
-        root.Remove("profiles");
-        root["profiles"] = profiles;
-        WriteJson(path, root);
+        var text = Edit(path);
+        string[] at = ["profiles", profile];
+        // Only moved when something else is first, so an up that changes nothing leaves the file alone.
+        if (text.Names(["profiles"]) is { Count: > 0 } names && names[0] != profile) text.Remove(at);
+        text.Set(at, mine.ToJsonString(Indented), first: true);
+        WriteText(path, text.Text);
     }
 
     public static void RemoveLaunchProfile(WrittenFile file)
     {
         if (!File.Exists(file.Path)) return;
-        var root = ReadObject(file.Path);
-        (root["profiles"] as JsonObject)?.Remove(file.Profile ?? "sprig");
-        if (file.Created && root["profiles"] is JsonObject { Count: 0 } && root.Count == 1) DeleteWithEmptyFolder(file.Path);
-        else WriteJson(file.Path, root);
+        var text = Edit(file.Path);
+        text.Remove(["profiles", file.Profile ?? "sprig"]);
+        // Taking the last profile out takes the emptied "profiles" with it, leaving nothing of a file sprig made.
+        if (file.Created && text.RootIsEmpty) DeleteWithEmptyFolder(file.Path);
+        else WriteText(file.Path, text.Text);
     }
 
-    /// <summary>Set each value in a JSON settings file, with <c>Section__Key</c> nested into sections the way .NET
-    /// configuration reads env vars. Returns the dotted keys it set.</summary>
-    public static IReadOnlyList<string> WriteAppSettings(string path, IReadOnlyList<KeyValuePair<string, string>> values)
+    /// <summary>What a comment above a key sprig took over begins with; the rest is the value it had, as written.</summary>
+    public const string KeptPrefix = "sprig took this over. Yours was: ";
+
+    /// <summary>A key's sections, from <c>Section__Key</c> (how .NET reads env vars) or <c>Section:Key</c> (how it
+    /// names settings).</summary>
+    public static string[] SettingPath(string key) => key.Split(["__", ":"], StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>A key as <see cref="WrittenFile.Keys"/> keeps it. Older records joined the sections with dots.</summary>
+    static string[] KeptPath(string key) => key.Contains(':') ? key.Split(':') : key.Split('.');
+
+    /// <summary>
+    /// Set each value in a JSON settings file, nested into sections (see <see cref="SettingPath"/>), changing only those
+    /// values' text. A key the file already had, that sprig didn't add itself, keeps its value in a comment above it
+    /// (<see cref="KeptPrefix"/>), so removing the workspace can put it back; the value stays in the file it was in.
+    /// Returns the keys it set, as <c>Section:Key</c>.
+    /// </summary>
+    /// <param name="owned">The keys sprig set here last time (<see cref="WrittenFile.Keys"/>): ones it added, unless
+    /// they carry a kept comment.</param>
+    public static IReadOnlyList<string> WriteAppSettings(string path, IReadOnlyList<KeyValuePair<string, string>> values,
+        IReadOnlyCollection<string>? owned = null)
     {
-        var root = ReadObject(path);
+        var text = Edit(path);
+        var mine = (owned ?? []).Select(k => string.Join(':', KeptPath(k))).ToHashSet(StringComparer.Ordinal);
         var keys = new List<string>();
         foreach (var (key, value) in values)
         {
-            var parts = key.Split("__", StringSplitOptions.RemoveEmptyEntries);
-            var node = root;
-            foreach (var part in parts[..^1])
-            {
-                if (node[part] is not JsonObject child)
-                {
-                    child = [];
-                    node[part] = child;
-                }
-                node = child;
-            }
-            node[parts[^1]] = value;
-            keys.Add(string.Join('.', parts));
+            var parts = SettingPath(key);
+            var name = string.Join(':', parts);
+            if (text.Get(parts) is { } had && !mine.Contains(name) && text.CommentAbove(parts, KeptPrefix) is null)
+                text.AddCommentAbove(parts, KeptPrefix + Compact(had));
+            text.Set(parts, JsoncText.Quote(value));
+            if (!keys.Contains(name)) keys.Add(name);
         }
-        WriteJson(path, root);
+        WriteText(path, text.Text);
         return keys;
     }
 
-    public static void RemoveAppSettings(WrittenFile file)
+    /// <summary>
+    /// Take sprig's keys back out. A key it took over gets the value its comment kept, and one it added goes, unless
+    /// the value has changed since sprig wrote it: then it's yours, and only sprig's comment goes.
+    /// </summary>
+    /// <param name="wrote">What sprig last wrote, by key as <see cref="SettingPath"/> reads it; null when unknown,
+    /// which counts as unchanged.</param>
+    public static void RemoveAppSettings(WrittenFile file, IReadOnlyDictionary<string, string>? wrote = null)
     {
         if (!File.Exists(file.Path)) return;
-        var root = ReadObject(file.Path);
+        var text = Edit(file.Path);
+        var written = wrote?.ToDictionary(w => string.Join(':', SettingPath(w.Key)), w => JsoncText.Quote(w.Value), StringComparer.Ordinal);
         foreach (var key in file.Keys ?? [])
         {
-            var parts = key.Split('.');
-            var chain = new List<JsonObject> { root };
-            foreach (var part in parts[..^1])
+            var parts = KeptPath(key);
+            var unchanged = written is null || !written.TryGetValue(string.Join(':', parts), out var mine) || text.Get(parts) == mine;
+            if (text.CommentAbove(parts, KeptPrefix) is { } kept)
             {
-                if (chain[^1][part] is not JsonObject child) break;
-                chain.Add(child);
+                if (unchanged) text.Set(parts, kept);
+                text.RemoveCommentAbove(parts, KeptPrefix);
             }
-            if (chain.Count != parts.Length) continue;
-            chain[^1].Remove(parts[^1]);
-            // Drop sections the removal left empty, innermost first.
-            for (var i = chain.Count - 1; i > 0 && chain[i].Count == 0; i--) chain[i - 1].Remove(parts[i - 1]);
+            else if (unchanged) text.Remove(parts);
         }
-        if (file.Created && root.Count == 0) File.Delete(file.Path);
-        else WriteJson(file.Path, root);
+        if (file.Created && text.RootIsEmpty) File.Delete(file.Path);
+        else WriteText(file.Path, text.Text);
     }
 
-    public static void Remove(WrittenFile file)
+    /// <param name="wrote">For <c>appSettings</c>, what sprig last wrote (see <see cref="RemoveAppSettings"/>).</param>
+    public static void Remove(WrittenFile file, IReadOnlyDictionary<string, string>? wrote = null)
     {
         switch (file.Kind)
         {
             case "dotenv": RemoveDotEnv(file); break;
             case "launchSettings": RemoveLaunchProfile(file); break;
-            case "appSettings": RemoveAppSettings(file); break;
+            case "appSettings": RemoveAppSettings(file, wrote); break;
+        }
+    }
+
+    /// <summary>The file as text to edit in place; an empty object when there's no file yet.</summary>
+    static JsoncText Edit(string path)
+    {
+        try
+        {
+            return new JsoncText(File.Exists(path) ? File.ReadAllText(path) : "");
+        }
+        catch (InvalidOperationException e)
+        {
+            throw new InvalidOperationException($"{path}: {e.Message}, so sprig won't change it");
+        }
+    }
+
+    /// <summary>A value on one line, for a comment.</summary>
+    static string Compact(string json)
+    {
+        try
+        {
+            return JsonNode.Parse(json, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true })
+                ?.ToJsonString(JsoncText.Readable) ?? json;
+        }
+        catch (JsonException)
+        {
+            return json.ReplaceLineEndings(" ");
         }
     }
 
@@ -190,7 +229,7 @@ public static class EnvFiles
         }
     }
 
-    static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, Encoder = JsoncText.Readable.Encoder };
 
     static void WriteJson(string path, JsonObject root) => WriteText(path, root.ToJsonString(Indented) + "\n");
 

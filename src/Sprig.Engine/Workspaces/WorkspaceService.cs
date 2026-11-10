@@ -395,8 +395,9 @@ public sealed partial class WorkspaceService(
         }
 
         step.Start("Files");
+        var wrote = Wrote(record);
         foreach (var file in record.Files.Where(f => !InWorktree(record, f.Path)))
-            EnvFiles.Remove(file);
+            EnvFiles.Remove(file, wrote.GetValueOrDefault(Path.GetFullPath(file.Path)));
         step.Done();
 
         foreach (var repo in record.Repos.Where(r => r.Worktree))
@@ -1223,11 +1224,14 @@ public sealed partial class WorkspaceService(
         if (problems.Count > 0) throw new WorkspaceException("sprig won't write into these files", problems);
 
         var written = new List<WrittenFile>();
+        // The plan saved by the last up, which this one hasn't replaced yet: what's in the files now, as sprig wrote it.
+        var before = Wrote(record);
         foreach (var target in Targets(plan, dirs))
         {
             var repo = record.Repos.Single(r => r.RepoPath == target.RepoPath);
             var path = target.Path;
-            var created = record.Files.FirstOrDefault(f => SamePath(f.Path, path))?.Created ?? !File.Exists(path);
+            var had = record.Files.FirstOrDefault(f => SamePath(f.Path, path));
+            var created = had?.Created ?? !File.Exists(path);
             var values = Dedupe(target.Values);
             switch (target.Kind)
             {
@@ -1241,15 +1245,36 @@ public sealed partial class WorkspaceService(
                     written.Add(new WrittenFile(path, target.Kind, created, target.Profile ?? "sprig"));
                     break;
                 case "appSettings":
-                    written.Add(new WrittenFile(path, target.Kind, created, Keys: EnvFiles.WriteAppSettings(path, values)));
+                    var keys = EnvFiles.WriteAppSettings(path, values, had?.Keys);
+                    written.Add(new WrittenFile(path, target.Kind, created, Keys: keys));
+                    // Keys an earlier up set here that this one doesn't.
+                    if (had?.Keys?.Select(k => string.Join(':', EnvFiles.SettingPath(k.Replace('.', ':')))).Except(keys).ToArray() is { Length: > 0 } dropped)
+                        EnvFiles.RemoveAppSettings(new WrittenFile(path, target.Kind, false, Keys: dropped), before.GetValueOrDefault(path));
                     break;
             }
         }
 
         // Undo what an earlier up wrote that this one no longer does.
         foreach (var gone in record.Files.Where(f => !written.Any(w => SamePath(w.Path, f.Path))))
-            EnvFiles.Remove(gone);
+            EnvFiles.Remove(gone, before.GetValueOrDefault(gone.Path));
         return written;
+    }
+
+    /// <summary>What the workspace's last up wrote into each file, by path, from the plan it saved; empty when there's
+    /// none to go by. Taking values out again compares against it, so a value changed by hand since is left alone.</summary>
+    Dictionary<string, IReadOnlyDictionary<string, string>> Wrote(WorkspaceRecord record)
+    {
+        var byPath = new Dictionary<string, IReadOnlyDictionary<string, string>>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        if (store.GetPlan(record.Orchestration, record.Name) is not { } plan) return byPath;
+        var dirs = record.Repos.ToDictionary(r => r.RepoPath, r => r.Dir, StringComparer.Ordinal);
+        if (plan.Apps.Any(a => !dirs.ContainsKey(a.RepoPath))) return byPath;
+        try
+        {
+            foreach (var target in Targets(plan, dirs))
+                byPath[Path.GetFullPath(target.Path)] = Dedupe(target.Values).ToDictionary(v => v.Key, v => v.Value, StringComparer.Ordinal);
+        }
+        catch (WorkspaceException) { /* a plan that can't be read back only means nothing to compare against */ }
+        return byPath;
     }
 
     /// <summary>One container or compose service as <c>up</c> starts it.</summary>

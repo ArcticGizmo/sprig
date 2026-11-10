@@ -64,8 +64,10 @@ public sealed class AppResource : IResource
         return this;
     }
 
-    /// <summary>Write values into a JSON settings file under the app's path, with <c>Section__Key</c> names nested into
-    /// sections. The app has to load it after its other settings (e.g.
+    /// <summary>Write values into a JSON settings file under the app's path, with <c>Section__Key</c> or
+    /// <c>Section:Key</c> names nested into sections. Only those values change: the file's comments and layout stay, a
+    /// value of yours that sprig takes over is kept in a comment above it and put back when the workspace goes. The app
+    /// has to load the file after its other settings (e.g.
     /// <c>builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true)</c>), or the values do nothing;
     /// sprig can't check that. The repo's .gitignore must cover the file.</summary>
     public AppResource AppSettings(string fileName, Action<FileValues> set)

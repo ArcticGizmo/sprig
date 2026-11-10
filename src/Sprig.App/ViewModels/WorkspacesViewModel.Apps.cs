@@ -291,7 +291,7 @@ public partial class WorkspacesViewModel
             after.Length > 0 ? string.Join(", ", after) : "nothing",
             ready.Length > 0 ? string.Join(" and ", ready) : app.Job ? "it finishes" : row.Port.Length > 0 && row.Port != "job" ? "its port opens" : "it starts",
             HostProtocol.LogFile(_services.Paths, record.Key, row.Key).Replace('\\', '/'),
-            app.Env.Select(e => new SettingRow(e.Key, e.File is { } file ? app.FileLabel(file) : null, e.Value.Value is { } v ? ValueMask.Apply(v) : "unresolved",
+            app.Env.Select(e => new SettingRow(e.Key, e.File is { } file ? app.FileLabel(file) : null, e.Value.Value is { } v ? SecretValues.Show(plan, e, v) : "unresolved",
                 string.Join(" → ", e.Value.Via), e.Value.Value is null)).ToArray(),
             app.Links ?? []);
     }

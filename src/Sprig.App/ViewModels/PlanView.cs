@@ -40,14 +40,14 @@ public sealed class PlanView
         Apps = plan.Apps.Select(a => new AppSection(
             $"{a.Owner} / {a.Name}",
             $"{a.Kind} · {a.Path}" + (a.WaitFor.Count > 0 ? $" · waits for {string.Join(", ", a.WaitFor)}" : ""),
-            a.Env.Select(e => Row(e.Key, e.File is { } file ? a.FileLabel(file) : null, e.Value))
-                .Concat(a.Run is { } run ? [Row("run", null, run)] : [])
+            a.Env.Select(e => Row(e.Key, e.File is { } file ? a.FileLabel(file) : null, e.Value, SecretValues.IsSecret(plan, e)))
+                .Concat(a.Run is { } run ? [Row("run", null, run, secret: false)] : [])
                 .ToArray())).ToArray();
 
         Containers = plan.Containers.Select(c => new ContainerRow(c.Owner, c.Name, c.Image, string.Join(", ", c.Ports), string.Join(", ", c.Volumes))).ToArray();
 
         Compose = plan.Compose.Select(c => new AppSection($"{c.Owner} / {c.File}", "changes sprig makes to the repo's compose file",
-            c.Overrides.Select(o => Row(o.Path, null, o.Value)).ToArray())).ToArray();
+            c.Overrides.Select(o => Row(o.Path, null, o.Value, SecretValues.LooksSecret(o.Path))).ToArray())).ToArray();
 
         Groups = plan.Groups.Select(g => new GroupRow(g.Name, string.Join(", ", g.Apps))).ToArray();
 
@@ -56,7 +56,9 @@ public sealed class PlanView
         Wiring = plan.Wires()
             .Where(w => w.Setting is not null)
             .Select(w => new WiringRow($"{w.ConsumerOwner} / {w.Consumer}", w.Key, Provider(w),
-                values.GetValueOrDefault((w.ConsumerOwner, w.Consumer, w.Key)) is { } v ? ValueMask.Apply(v) : "unresolved"))
+                values.GetValueOrDefault((w.ConsumerOwner, w.Consumer, w.Key)) is { } v
+                    ? SecretValues.LooksSecret(w.Key) || w.Setting is { } s && plan.IsSecretSetting(s) ? SecretValues.Hidden : ValueMask.Apply(v)
+                    : "unresolved"))
             .ToArray();
 
         Problems = Rows(plan.Problems, root);
@@ -84,8 +86,8 @@ public sealed class PlanView
             p.Message))
         .ToArray();
 
-    static SettingRow Row(string key, string? file, PlannedValue value)
-        => new(key, file, value.Value is { } v ? ValueMask.Apply(v) : Asked(value) is { } asked ? $"asked for: {asked}" : "unresolved",
+    static SettingRow Row(string key, string? file, PlannedValue value, bool secret)
+        => new(key, file, value.Value is { } v ? secret && v.Length > 0 ? SecretValues.Hidden : ValueMask.Apply(v) : Asked(value) is { } asked ? $"asked for: {asked}" : "unresolved",
             string.Join(" → ", value.Via), value.Value is null);
 
     static string? Asked(PlannedValue value)

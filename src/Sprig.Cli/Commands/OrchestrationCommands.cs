@@ -212,8 +212,8 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
             ComposeFiles: compose, Values: values));
         if (!plan.HasErrors) problems.AddRange(cli.Workspaces.CheckFiles(plan, loaded.ReadFrom));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };
-        if (s.Json) CliOutput.Json(plan);
-        else PlanPrinter.Print(cli.Ansi, plan, Path.GetDirectoryName(loaded.OrchestrationPath)!);
+        if (s.Json) CliOutput.Json(Shown.Plan(plan, s));
+        else PlanPrinter.Print(cli.Ansi, plan, Path.GetDirectoryName(loaded.OrchestrationPath)!, s.UnmaskSecrets);
         return plan.HasErrors ? 1 : 0;
     }
 }
@@ -246,7 +246,7 @@ static class OrchestrationLoad
 
 static class PlanPrinter
 {
-    public static void Print(IAnsiConsole console, Plan plan, string root)
+    public static void Print(IAnsiConsole console, Plan plan, string root, bool unmask = false)
     {
         console.MarkupLine($"[bold]{Markup.Escape(plan.Orchestration)}[/]  ·  workspace [bold]{Markup.Escape(plan.Workspace)}[/]");
         console.MarkupLine("[dim]Ports are a preview; they're leased when a workspace comes up.[/]");
@@ -275,8 +275,8 @@ static class PlanPrinter
                 .Title($"[bold]{Markup.Escape(app.Owner)} / {Markup.Escape(app.Name)}[/] [dim]({Markup.Escape(app.Kind)}{(app.Job ? " job" : "")}, {Markup.Escape(app.Path)})[/]")
                 .AddColumns("Setting", "Value", "Comes from");
             foreach (var env in app.Env)
-                table.AddRow(new Markup($"{Markup.Escape(env.Key)} [dim]({Markup.Escape(env.File is { } file ? app.FileLabel(file) : "no file")})[/]"), Value(env.Value), Via(env.Value));
-            if (app.Run is { } run) table.AddRow(new Markup("[dim]run[/]"), Value(run), Via(run));
+                table.AddRow(new Markup($"{Markup.Escape(env.Key)} [dim]({Markup.Escape(env.File is { } file ? app.FileLabel(file) : "no file")})[/]"), Value(env.Value, unmask ? null : SecretValues.IsSecret(plan, env)), Via(env.Value));
+            if (app.Run is { } run) table.AddRow(new Markup("[dim]run[/]"), Value(run, unmask ? null : false), Via(run));
             if (app.WaitFor.Count > 0) table.AddRow(new Markup("[dim]waits for[/]"), new SpectreText(string.Join(", ", app.WaitFor)), new SpectreText(""));
             var implied = (app.DependsOn ?? []).Where(d => !app.WaitFor.Any(w => d == $"{app.Owner}/{w}")).ToArray();
             if (implied.Length > 0)
@@ -304,7 +304,7 @@ static class PlanPrinter
         {
             var table = new Table().Border(TableBorder.Rounded)
                 .Title($"[bold]{Markup.Escape(compose.Owner)} / {Markup.Escape(compose.File)}[/]").AddColumns("Path", "Value", "Comes from");
-            foreach (var o in compose.Overrides) table.AddRow(new SpectreText(o.Path), Value(o.Value), Via(o.Value));
+            foreach (var o in compose.Overrides) table.AddRow(new SpectreText(o.Path), Value(o.Value, unmask ? null : SecretValues.LooksSecret(o.Path)), Via(o.Value));
             if (compose.Services.Count > 0)
                 table.AddRow(new Markup("[dim]keeps[/]"), new SpectreText(string.Join(", ", compose.Services.Select(x => x.Name))), new SpectreText(""));
             console.Write(table);
@@ -336,9 +336,11 @@ static class PlanPrinter
         }
     }
 
-    static SpectreText Value(PlannedValue v)
+    /// <param name="secret">Whether it's a secret, to hide; null when <c>--unmask-secrets</c> shows it as it is.</param>
+    static SpectreText Value(PlannedValue v, bool? secret)
     {
-        if (v.Value is not null) return new SpectreText(ValueMask.Apply(v.Value));
+        if (v.Value is not null)
+            return new SpectreText(secret is null ? v.Value : secret.Value && v.Value.Length > 0 ? SecretValues.Hidden : ValueMask.Apply(v.Value));
         var asked = (v.Sources ?? []).Where(x => x.Owner is null && x.Setting is not null).Select(x => x.Setting!).ToArray();
         return asked.Length > 0
             ? new SpectreText($"to ask: {string.Join(", ", asked)}", new Style(Color.Yellow))

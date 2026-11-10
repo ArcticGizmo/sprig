@@ -88,11 +88,31 @@ public static class Planner
 
             CheckUnusedBindings();
             var groups = PlanGroups();
+            var secrets = _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Settings)
+                .Where(s => s.Type == "secret").Select(s => s.Name).Distinct(StringComparer.Ordinal).ToArray();
+            CheckUndeclaredSecrets(apps, secrets);
 
             return new Plan(
                 input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
                 _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links),
-                _asks.Count > 0 ? _asks : null, SettingRoles());
+                _asks.Count > 0 ? _asks : null, SettingRoles(), secrets.Length > 0 ? secrets : null);
+        }
+
+        /// <summary>A value under a name that says it's secret, which no <c>Setting&lt;Secret&gt;</c> gives: sprig masks
+        /// it by its name, but only a declared secret is masked wherever it's used, so the author is told. Only apps'
+        /// values: a container's are mostly the preset's own local passwords (POSTGRES_PASSWORD), nothing to declare.</summary>
+        void CheckUndeclaredSecrets(IEnumerable<PlannedApp> apps, IReadOnlyCollection<string> secrets)
+        {
+            foreach (var env in apps.SelectMany(a => a.Env))
+            {
+                if (!SecretValues.LooksSecret(env.Key) || env.Value.Value is not { Length: > 0 } value || SecretValues.IsPlain(value)) continue;
+                var settings = (env.Value.Sources ?? []).Select(s => s.Setting).OfType<string>().ToArray();
+                if (settings.Any(secrets.Contains)) continue;
+                var from = settings.Length > 0 ? $"setting {settings[0]}, which isn't a Setting<Secret>" : "a value written in the definition";
+                _problems.Add(new PlanProblem(ProblemSeverity.Warning,
+                    $"{env.Key} looks secret but comes from {from}. Give it from a Setting<Secret> so sprig keeps it out of everything it shows.",
+                    env.Location));
+            }
         }
 
         /// <summary>Each setting a repo gave a role, by name; the first repo to say wins where two differ.</summary>
@@ -247,7 +267,7 @@ public static class Planner
                 }
                 if (Resolve(scope, link.Url, link.Location).Value is not { } url) continue; // resolving reported why
                 if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-                    Warn($"the quick link '{link.Label}' goes to '{url}', which isn't an http(s) address, so it's left out", link.Location);
+                    Warn($"the quick link '{link.Label}' goes to '{ValueMask.Apply(url)}', which isn't an http(s) address, so it's left out", link.Location);
                 else planned.Add(new PlannedLink(link.Label, url));
             }
             return planned;

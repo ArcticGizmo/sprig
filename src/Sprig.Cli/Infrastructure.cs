@@ -26,12 +26,43 @@ public sealed record CliContext(
     public bool Interactive(bool json) => !json && !Console.IsInputRedirected && !Console.IsOutputRedirected;
 }
 
-/// <summary>Base settings carrying the one global flag, so <c>--json</c> is accepted by every command.</summary>
+/// <summary>Base settings carrying the global flags, so <c>--json</c> and <c>--unmask-secrets</c> are accepted by every
+/// command.</summary>
 public class GlobalSettings : CommandSettings
 {
     [CommandOption("--json")]
     [Description("Machine-readable output")]
     public bool Json { get; set; }
+
+    // A flag only, never a setting or an environment variable, so it can't be left on and forgotten.
+    [CommandOption("--unmask-secrets")]
+    [Description("Show every value in full, secrets included. Without it, secrets are hidden and --json leaves out values that aren't ports, addresses or flags")]
+    public bool UnmaskSecrets { get; set; }
+}
+
+/// <summary>Records and plans as output shows them: trimmed (see <see cref="Sprig.Engine.Planning.SecretValues"/>)
+/// unless <c>--unmask-secrets</c> asks for everything, which is then said on stderr, so it shows in a log even when the
+/// output itself is piped elsewhere.</summary>
+static class Shown
+{
+    public static WorkspaceRecord Record(WorkspaceRecord record, Sprig.Engine.Planning.Plan? plan, GlobalSettings s)
+        => s.UnmaskSecrets ? Said(record) : record with { Values = Sprig.Engine.Planning.SecretValues.Trimmed(record.Values, plan) };
+
+    public static Sprig.Engine.Planning.Plan? Plan(Sprig.Engine.Planning.Plan? plan, GlobalSettings s)
+        => plan is null ? null : s.UnmaskSecrets ? Said(plan) : Sprig.Engine.Planning.SecretValues.Trimmed(plan);
+
+    /// <summary>A setting's value for the screen.</summary>
+    public static string Value(Sprig.Engine.Planning.Plan? plan, string setting, string value, GlobalSettings s)
+        => s.UnmaskSecrets ? Said(value) : Sprig.Engine.Planning.SecretValues.Show(plan, setting, value);
+
+    static bool _said;
+
+    static T Said<T>(T value)
+    {
+        if (!_said) Console.Error.WriteLine("sprig: secrets are shown unmasked in this output (--unmask-secrets)");
+        _said = true;
+        return value;
+    }
 }
 
 /// <summary>A minimal container over the instances the CLI constructs up front. Registered instances are

@@ -23,12 +23,16 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
         var plan = record is null ? null : cli.Workspaces.LastPlan(record.Orchestration, record.Name);
         var runners = record is null ? [] : (cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
             .Where(r => r.Workspace == record.Key).ToArray();
-        if (SettingsCommand.Read(cli, s.Orchestration, s.Workspace, new TrustingSettings { Trust = s.Trust, Json = s.Json }) is not { } settings)
+        if (SettingsCommand.Read(cli, s.Orchestration, s.Workspace, new TrustingSettings { Trust = s.Trust, Json = s.Json, UnmaskSecrets = s.UnmaskSecrets }) is not { } settings)
             return 1;
 
         if (s.Json)
         {
-            CliOutput.Json(new { ok = true, workspace = record, plan, runners, settings = settings.Rows });
+            CliOutput.Json(new
+            {
+                ok = true, workspace = record is null ? null : Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), runners,
+                settings = settings.Rows, secretsUnmasked = s.UnmaskSecrets,
+            });
             return 0;
         }
 

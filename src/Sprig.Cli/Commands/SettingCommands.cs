@@ -79,7 +79,7 @@ static class ValuesChange
         record = cli.Workspaces.SetValues(record.Orchestration, record.Name, set, unset);
         var changed = string.Join(", ", set.Keys.Concat(unset));
         if (record.State != WorkspaceState.Up)
-            return CliOutput.Ok(s.Json, $"{changed} kept on {record.Key}; it uses them next time it comes up", new { ok = true, values = Masked(record) });
+            return CliOutput.Ok(s.Json, $"{changed} kept on {record.Key}; it uses them next time it comes up", new { ok = true, values = s.UnmaskSecrets ? record.Values : Masked(record, cli) });
 
         try
         {
@@ -93,7 +93,7 @@ static class ValuesChange
         }
         var after = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
         var restart = Changed(before, after);
-        if (s.Json) { CliOutput.Json(new { ok = true, values = Masked(record), restart }); return 0; }
+        if (s.Json) { CliOutput.Json(new { ok = true, values = s.UnmaskSecrets ? record.Values : Masked(record, cli), restart }); return 0; }
         CliOutput.Success($"{changed} set on {record.Key}, and its files rewritten");
         if (restart.Count > 0)
             cli.Ansi.MarkupLine($"[dim]Restart what uses them: sprig start {Markup.Escape(string.Join(" ", restart))}{(s.Id is null && s.Workspace is null ? "" : $" (with {Markup.Escape(UpCommand.Words(record))} first)")}[/]");
@@ -107,8 +107,8 @@ static class ValuesChange
         .Select(a => a.Name)
         .ToArray();
 
-    public static IReadOnlyDictionary<string, string> Masked(WorkspaceRecord record)
-        => (record.Values ?? new Dictionary<string, string>()).ToDictionary(v => v.Key, v => ValueMask.Apply(v.Value));
+    public static IReadOnlyDictionary<string, string> Masked(WorkspaceRecord record, CliContext cli)
+        => SecretValues.Trimmed(record.Values, cli.Workspaces.LastPlan(record.Orchestration, record.Name)) ?? new Dictionary<string, string>();
 }
 
 [Description("Give settings values in a workspace, over the orchestration's and the repos' defaults. Kept for next time")]
@@ -168,7 +168,7 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
         var record = cli.Workspaces.Get(loaded.Id, workspace);
         var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, workspace, cli.Settings.Get(), new HashSet<int>(),
             Values: record?.Values));
-        return (loaded, record, Rows(loaded, plan, record).ToArray());
+        return (loaded, record, Rows(loaded, plan, record, s).ToArray());
     }
 
     internal static void Write(CliContext cli, string id, IReadOnlyList<Row> rows, string title)
@@ -186,7 +186,7 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
         cli.Ansi.MarkupLine("[dim]Change one with: sprig set name=value. Clear it with: sprig unset name[/]");
     }
 
-    static IEnumerable<Row> Rows(LoadedOrchestration loaded, Plan plan, WorkspaceRecord? record)
+    static IEnumerable<Row> Rows(LoadedOrchestration loaded, Plan plan, WorkspaceRecord? record, GlobalSettings s)
     {
         foreach (var repo in loaded.Repos.Values)
             foreach (var setting in repo.Settings)
@@ -197,16 +197,18 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
                     : setting.Default is not null ? "its default"
                     : "nothing yet";
                 var value = plan.ToAsk.Any(a => a.Owner == repo.Name && a.Name == setting.Name) ? null : ValueOf(plan, repo.Name, setting);
-                yield return new Row(repo.Name, setting.Name, setting.Type, value, from);
+                var shown = value is null ? null
+                    : s.Json && !s.UnmaskSecrets ? SecretValues.Trim(value, SecretValues.IsSecret(plan, setting.Name))
+                    : Shown.Value(plan, setting.Name, value, s);
+                yield return new Row(repo.Name, setting.Name, setting.Type, shown, from);
             }
     }
 
     /// <summary>What the setting comes to, from an env var that's just the setting; else the default as written.</summary>
-    static string? ValueOf(Plan plan, string owner, SettingModel setting)
+    static string ValueOf(Plan plan, string owner, SettingModel setting)
     {
         var whole = "{setting." + setting.Name + "}";
         var env = plan.Apps.Where(a => a.Owner == owner).SelectMany(a => a.Env).FirstOrDefault(e => e.Value.Template == whole);
-        var value = env?.Value.Value ?? setting.Default ?? "";
-        return setting.Type == "secret" && value.Length > 0 ? "••••••" : ValueMask.Apply(value);
+        return env?.Value.Value ?? setting.Default ?? "";
     }
 }

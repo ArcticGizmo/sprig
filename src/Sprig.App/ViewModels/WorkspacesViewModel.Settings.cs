@@ -21,7 +21,7 @@ public sealed partial class SettingInput(string name, string type, string repos,
     public string Type => type;
     public string Detail => $"{type} · {repos}";
     public string? Kept => kept;
-    public bool IsSecret => type == "secret";
+    public bool IsSecret => type == "secret" || Sprig.Engine.Planning.SecretValues.LooksSecret(name);
     public bool Required => otherwise is null;
     public string Hint => otherwise is null ? "Needs a value: nothing else gives one" : $"Empty: {otherwise}";
 

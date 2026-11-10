@@ -143,7 +143,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
             if (s.NoApps)
             {
-                if (s.Json) CliOutput.Json(new { ok = true, workspace = record, plan });
+                if (s.Json) CliOutput.Json(new { ok = true, workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), secretsUnmasked = s.UnmaskSecrets });
                 else Summary(record, plan, root, appsStart: false);
                 return 0;
             }
@@ -152,11 +152,11 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             var specs = RunnerSpecs.For(record, plan, Group(plan, s));
             if (specs.Count == 0)
             {
-                if (s.Json) CliOutput.Json(new { ok = true, workspace = record, plan, runners = Array.Empty<RunnerStatus>() });
+                if (s.Json) CliOutput.Json(new { ok = true, workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), runners = Array.Empty<RunnerStatus>(), secretsUnmasked = s.UnmaskSecrets });
                 else cli.Ansi.MarkupLine("[dim]The orchestration has no apps to run.[/]");
                 return 0;
             }
-            return s.Run ? new AppFollow(cli, record, specs).Run() : StartDetached(record, plan, specs, s.Json, cancellation);
+            return s.Run ? new AppFollow(cli, record, specs).Run() : StartDetached(record, plan, specs, s, cancellation);
         }
         catch (WorkspaceException e)
         {
@@ -264,13 +264,14 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         }
     }
 
-    int StartDetached(WorkspaceRecord record, Plan plan, IReadOnlyList<RunnerSpec> specs, bool json, CancellationToken cancellation)
+    int StartDetached(WorkspaceRecord record, Plan plan, IReadOnlyList<RunnerSpec> specs, Settings s, CancellationToken cancellation)
     {
+        var json = s.Json;
         cli.Ansi.WriteLine();
         StartCommand.Send(cli, specs, []);
         var runners = StartCommand.WaitUntilReady(cli, record.Key, specs, json, cancellation);
         var ok = runners.All(r => r.State.Satisfies());
-        if (json) CliOutput.Json(new { ok, workspace = record, plan, runners });
+        if (json) CliOutput.Json(new { ok, workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), runners, secretsUnmasked = s.UnmaskSecrets });
         else
         {
             var names = Markup.Escape(Words(record));
@@ -361,7 +362,7 @@ public sealed class FreeCommand(CliContext cli) : Command<WorkspaceSettings>
         s.Resolve(cli);
         var before = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}'");
         var record = cli.Workspaces.Free(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
-        if (s.Json) { CliOutput.Json(new { ok = true, workspace = record }); return 0; }
+        if (s.Json) { CliOutput.Json(new { ok = true, workspace = Shown.Record(record, cli.Workspaces.LastPlan(record.Orchestration, record.Name), s), secretsUnmasked = s.UnmaskSecrets }); return 0; }
         CliOutput.Success(before.IsFree ? $"{record.SlotName} was already free" : $"{record.SlotName} is free; '{before.Branch}' is kept, with its commits");
         cli.Ansi.MarkupLine($"[dim]Check the next branch out in it with: sprig up {Markup.Escape(record.Orchestration)} -b <branch>[/]");
         return 0;
@@ -436,7 +437,7 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
         var workspaces = cli.Workspaces.List().Where(r => s.Orchestration is null || r.Orchestration.Equals(s.Orchestration, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (s.Json) { CliOutput.Json(workspaces); return 0; }
+        if (s.Json) { CliOutput.Json(workspaces.Select(r => Shown.Record(r, cli.Workspaces.LastPlan(r.Orchestration, r.Name), s))); return 0; }
         if (workspaces.Length == 0)
         {
             cli.Ansi.MarkupLine("[dim]No workspaces. In a repo's folder, check a branch out in a slot of its own with: sprig up -b <branch> (or run it in place with: sprig up)[/]");

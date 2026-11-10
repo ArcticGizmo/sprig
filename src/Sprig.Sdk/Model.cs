@@ -25,6 +25,8 @@ public abstract record DefinitionModel(
     IReadOnlyList<ContainerModel> Containers);
 
 /// <param name="Groups">Slices of the repo's apps to start on their own.</param>
+/// <param name="WorktreeCopies">Files and folders git doesn't have that a worktree needs, copied from the repo's own
+/// checkout.</param>
 public sealed record RepoModel(
     int Schema,
     string Name,
@@ -35,8 +37,12 @@ public sealed record RepoModel(
     IReadOnlyList<ComposeFileModel> ComposeFiles,
     IReadOnlyList<SettingModel> Settings,
     IReadOnlyList<ExportModel> Exports,
-    IReadOnlyList<RepoGroupModel>? Groups = null)
+    IReadOnlyList<RepoGroupModel>? Groups = null,
+    IReadOnlyList<WorktreeCopyModel>? WorktreeCopies = null)
     : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
+
+/// <param name="Path">Relative to the repo's folder, with forward slashes.</param>
+public sealed record WorktreeCopyModel(string Path, SourceLocation Location);
 
 /// <param name="Apps">The repo's apps and jobs, by name.</param>
 public sealed record RepoGroupModel(string Name, IReadOnlyList<string> Apps, SourceLocation Location);

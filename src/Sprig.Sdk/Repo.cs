@@ -19,6 +19,7 @@ public sealed class RepoBuilder : DefinitionBuilder
     readonly List<SettingModel> _settings = [];
     readonly List<ExportModel> _exports = [];
     readonly List<RepoGroupModel> _groups = [];
+    readonly List<WorktreeCopyModel> _copies = [];
 
     internal RepoBuilder(string name, SourceLocation location) : base(name, location) { }
 
@@ -101,6 +102,18 @@ public sealed class RepoBuilder : DefinitionBuilder
         return this;
     }
 
+    /// <summary>
+    /// A file or folder the repo needs that git doesn't have, such as a <c>.env</c> holding secrets, copied from the
+    /// repo's own checkout into each worktree a slot makes. A copy the worktree already has is kept, so a change made
+    /// there stays. It must be one the repo ignores, so it can't be committed from a worktree by mistake.
+    /// </summary>
+    /// <param name="path">Relative to the repo's folder, e.g. <c>backend/src/.env</c>.</param>
+    public RepoBuilder CopyIntoWorktrees(string path, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        _copies.Add(new WorktreeCopyModel(path.Replace('\\', '/').Trim('/'), new SourceLocation(file, line)));
+        return this;
+    }
+
     internal RepoModel BuildRepo() => (RepoModel)Build();
 
     private protected override DefinitionModel Build() => new RepoModel(
@@ -113,7 +126,8 @@ public sealed class RepoBuilder : DefinitionBuilder
         ComposeFiles: _compose.Select(c => c.Build()).ToArray(),
         Settings: _settings.ToArray(),
         Exports: _exports.ToArray(),
-        Groups: _groups.Count > 0 ? _groups.ToArray() : null);
+        Groups: _groups.Count > 0 ? _groups.ToArray() : null,
+        WorktreeCopies: _copies.Count > 0 ? _copies.ToArray() : null);
 
     AppResource AddApp(string name, string kind, string path, string file, int line)
     {

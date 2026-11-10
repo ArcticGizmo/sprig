@@ -241,6 +241,7 @@ public sealed partial class WorkspaceService(
             ComposeFiles: loaded.ComposeFiles(problems), Values: allValues));
         problems.AddRange(dryPlan.Problems);
         if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
+        if (!inPlace) problems.AddRange(CheckCopies(loaded, loaded.ReadFrom));
         var filesCheckedFor = loaded;
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new WorkspaceException("the plan has errors", problems));
@@ -288,6 +289,15 @@ public sealed partial class WorkspaceService(
                 record = record with { Repos = record.Repos.Select(r => r with { Name = fresh[r.RepoPath].Name }).ToList() };
                 store.Save(record);
                 step.Done("read from the worktrees");
+            }
+
+            if (!inPlace && Copies(loaded).Any())
+            {
+                step.Start("Copy into worktrees");
+                // Checked again in the worktrees, since a branch can have its own .gitignore.
+                if (CheckCopies(loaded, dirs) is { Count: > 0 } copyProblems)
+                    throw new WorkspaceException("sprig won't copy these into the worktrees", copyProblems);
+                step.Done(string.Join("; ", CopyIntoWorktrees(loaded, record)));
             }
 
             step.Start("Ports");
@@ -1073,6 +1083,106 @@ public sealed partial class WorkspaceService(
                     }, target.Location));
         }
         return problems;
+    }
+
+    /// <summary>What each repo copies into its worktrees (<c>repo.CopyIntoWorktrees</c>), by repo path.</summary>
+    static IEnumerable<(string RepoPath, WorktreeCopyModel Copy)> Copies(LoadedOrchestration loaded)
+        => loaded.Orchestration!.Repos
+            .Where(r => loaded.Repos.ContainsKey(r.Path))
+            .SelectMany(r => (loaded.Repos[r.Path].WorktreeCopies ?? []).Select(c => (r.Path, c)));
+
+    /// <summary>
+    /// What each repo copies into its worktrees must stay inside the repo, and be something git ignores and doesn't
+    /// track: tracked, every worktree has it already; not ignored, a worktree's copy could be committed. Checked in
+    /// <paramref name="dirs"/>, the folders the workspace would use, by repo path.
+    /// </summary>
+    IReadOnlyList<PlanProblem> CheckCopies(LoadedOrchestration loaded, IReadOnlyDictionary<string, string> dirs)
+    {
+        var problems = new List<PlanProblem>();
+        foreach (var (repoPath, copy) in Copies(loaded))
+        {
+            var dir = dirs[repoPath];
+            var path = Path.GetFullPath(Path.Combine(dir, copy.Path));
+            if (copy.Path.Length == 0 || !InRepo(dir, path))
+            {
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"CopyIntoWorktrees(\"{copy.Path}\") names something outside the repo; give a path inside it, such as \"backend/src/.env\".", copy.Location));
+                continue;
+            }
+            if (!git.IsRepo(dir)) continue;
+            // A folder's ignore rule is often written "name/", which only matches when git is told it's a folder. A
+            // worktree has none of it yet, so the checkout it's copied from says which it is.
+            var folder = Directory.Exists(path) || Directory.Exists(Path.Combine(loaded.RepoDirs[repoPath], copy.Path));
+            var asked = folder ? path + '/' : path;
+            if (git.IsTracked(dir, path))
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"git tracks {copy.Path}, so every worktree has it already; take out CopyIntoWorktrees(\"{copy.Path}\").", copy.Location));
+            else if (!git.IsIgnored(dir, asked))
+                problems.Add(new PlanProblem(ProblemSeverity.Error, $"{copy.Path} isn't ignored by git, so a worktree's copy could be committed. Add it to the repo's .gitignore.", copy.Location));
+        }
+        return problems;
+    }
+
+    /// <summary>Copy what each repo names into its worktree from its own checkout, keeping what the worktree has
+    /// already. Says, per path, what happened.</summary>
+    IReadOnlyList<string> CopyIntoWorktrees(LoadedOrchestration loaded, WorkspaceRecord record)
+    {
+        var said = new List<string>();
+        foreach (var (repoPath, copy) in Copies(loaded))
+        {
+            var repo = record.Repos.Single(r => r.RepoPath == repoPath);
+            if (!repo.Worktree) continue;
+            var source = Path.Combine(repo.Source, copy.Path);
+            var target = Path.Combine(repo.Dir, copy.Path);
+            said.Add($"{copy.Path}: {Copy(source, target)}");
+        }
+        return said;
+    }
+
+    static string Copy(string source, string target)
+    {
+        if (File.Exists(source))
+        {
+            if (!File.Exists(target))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(source, target);
+                return "copied";
+            }
+            return SameContent(source, target) ? "already there" : "kept the worktree's own, which differs from the checkout's";
+        }
+        if (Directory.Exists(source))
+        {
+            int copied = 0, kept = 0;
+            var pending = new Stack<string>([source]);
+            while (pending.Count > 0)
+                foreach (var entry in new DirectoryInfo(pending.Pop()).EnumerateFileSystemInfos())
+                {
+                    // A link (a junction pnpm made, say) points somewhere else, which isn't the repo's to copy.
+                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+                    if (entry is DirectoryInfo sub)
+                    {
+                        pending.Push(sub.FullName);
+                        continue;
+                    }
+                    var to = Path.Combine(target, Path.GetRelativePath(source, entry.FullName));
+                    if (File.Exists(to))
+                    {
+                        kept++;
+                        continue;
+                    }
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Copy(entry.FullName, to);
+                    copied++;
+                }
+            return kept == 0 ? $"copied {copied} file{(copied == 1 ? "" : "s")}"
+                : $"copied {copied}, kept {kept} the worktree had already";
+        }
+        return "not in the checkout, so there was nothing to copy";
+    }
+
+    static bool SameContent(string a, string b)
+    {
+        var (left, right) = (new FileInfo(a), new FileInfo(b));
+        return left.Length == right.Length && File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b));
     }
 
     /// <param name="check">False when the plan step already checked these targets in these folders.</param>

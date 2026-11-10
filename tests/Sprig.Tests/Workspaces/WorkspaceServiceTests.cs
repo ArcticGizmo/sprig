@@ -722,6 +722,65 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Equal(WorkspaceState.Up, _workspaces.Up(own, "main", null).State);
     }
 
+    const string Secrets = ".env.local\n**/Properties/launchSettings.json\nbackend/src/.env\ncerts/\nnot-there.json\n";
+
+    [Fact]
+    public void What_git_does_not_have_is_copied_into_a_slots_worktree_and_the_worktrees_own_copy_is_kept()
+    {
+        var dir = RepoWith("shop-web", Secrets, ("index.html", "hi"));
+        Directory.CreateDirectory(Path.Combine(dir, "backend", "src"));
+        File.WriteAllText(Path.Combine(dir, "backend", "src", ".env"), "API_KEY=secret\n");
+        Directory.CreateDirectory(Path.Combine(dir, "certs", "dev"));
+        File.WriteAllText(Path.Combine(dir, "certs", "dev", "cert.pem"), "pem");
+        var loaded = Load(("shop-web", repo =>
+        {
+            Web(repo);
+            repo.CopyIntoWorktrees("backend/src/.env").CopyIntoWorktrees("certs").CopyIntoWorktrees("not-there.json");
+        }));
+        var events = new List<WorkspaceEvent>();
+
+        var record = _workspaces.CheckOut(loaded, "feat-x", progress: new SyncProgressList(events));
+
+        var worktree = record.Repos.Single().Dir;
+        Assert.Equal("API_KEY=secret\n", File.ReadAllText(Path.Combine(worktree, "backend", "src", ".env")));
+        Assert.Equal("pem", File.ReadAllText(Path.Combine(worktree, "certs", "dev", "cert.pem")));
+        Assert.False(_git.HasUncommittedChanges(worktree));
+        Assert.Equal("backend/src/.env: copied; certs: copied 1 file; not-there.json: not in the checkout, so there was nothing to copy",
+            events.Single(e => e.Step == "Copy into worktrees" && e.State == StepState.Done).Detail);
+
+        // A change made in the worktree stays when it comes up again.
+        File.WriteAllText(Path.Combine(worktree, "backend", "src", ".env"), "API_KEY=mine\n");
+        events.Clear();
+        _workspaces.Up(loaded, record.Name, null, progress: new SyncProgressList(events));
+        Assert.Equal("API_KEY=mine\n", File.ReadAllText(Path.Combine(worktree, "backend", "src", ".env")));
+        Assert.StartsWith("backend/src/.env: kept the worktree's own, which differs from the checkout's; certs: copied 0, kept 1",
+            events.Single(e => e.Step == "Copy into worktrees" && e.State == StepState.Done).Detail);
+
+        // Main runs in the checkout itself, which has them already.
+        _workspaces.Free("storefront", record.Name);
+        Assert.Equal(WorkspaceState.Up, _workspaces.Up(loaded, "main", null).State);
+    }
+
+    [Fact]
+    public void A_copy_that_git_tracks_or_does_not_ignore_or_that_leaves_the_repo_is_refused_before_any_worktree_is_made()
+    {
+        RepoWith("shop-web", Secrets, ("index.html", "hi"), ("settings.json", "{}"));
+        File.WriteAllText(Path.Combine(_root, "shop-web", "loose.txt"), "x");
+        var loaded = Load(("shop-web", repo =>
+        {
+            Web(repo);
+            repo.CopyIntoWorktrees("settings.json").CopyIntoWorktrees("loose.txt").CopyIntoWorktrees("../elsewhere/.env");
+        }));
+
+        var e = Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-x"));
+
+        Assert.Collection(e.Problems.Select(p => p.Message),
+            m => Assert.StartsWith("git tracks settings.json, so every worktree has it already", m),
+            m => Assert.StartsWith("loose.txt isn't ignored by git", m),
+            m => Assert.Contains("names something outside the repo", m));
+        Assert.False(Directory.Exists(Path.Combine(_root, "storefront--1")));
+    }
+
     [Fact]
     public void A_bad_plan_fails_before_any_worktree_is_made()
     {

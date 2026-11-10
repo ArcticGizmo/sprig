@@ -30,12 +30,14 @@ public sealed class DockerCompose(IProcessRunner runner)
 
     /// <summary>Start the project and wait until every service is running and, where it has a health check,
     /// healthy.</summary>
+    /// <param name="services">Only these services, and what compose says they depend on; null for all of them. Others
+    /// already running are left running.</param>
     /// <exception cref="ComposeUpException">Says which service failed and how, with the end of its log, rather than
     /// the whole command and everything compose printed (that already went to <paramref name="onOutput"/>).</exception>
-    public void Up(ComposeProject project, Action<string>? onOutput, CancellationToken cancellation)
+    public void Up(ComposeProject project, Action<string>? onOutput, CancellationToken cancellation, IReadOnlyCollection<string>? services = null)
     {
-        var result = Compose(project, ["up", "--detach", "--wait", "--wait-timeout", ((int)WaitTimeout.TotalSeconds).ToString(), "--remove-orphans"],
-            onOutput, cancellation);
+        var result = Compose(project, ["up", "--detach", "--wait", "--wait-timeout", ((int)WaitTimeout.TotalSeconds).ToString(), "--remove-orphans",
+            .. services ?? []], onOutput, cancellation);
         if (!result.Success) throw new ComposeUpException(Explain(project, result), result);
     }
 

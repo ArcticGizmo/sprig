@@ -53,6 +53,13 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         // Apps named outright start afresh; everything else, including what they depend on, is left alone if it's going.
         var restart = s.Apps.Length > 0 ? RunnerSpecs.Resolve(record, plan, s.Apps) : [];
 
+        // A workspace brought up for one group has only that group's infra running; the next starts what it adds.
+        if (cli.Workspaces.MissingInfra(record, plan, names) is { Count: > 0 } missing)
+        {
+            if (!s.Json) cli.Ansi.MarkupLine($"[blue]…[/] Starting what they use: {Markup.Escape(string.Join(", ", missing.Select(t => t.Key)))}");
+            cli.Workspaces.StartInfra(missing, new SyncProgress<Sprig.Engine.Workspaces.WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        }
+
         Send(cli, specs, restart);
         if (s.NoWait)
             return CliOutput.Ok(s.Json, $"starting {specs.Count} apps", new { ok = true, apps = specs.Select(x => x.Name) });

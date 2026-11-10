@@ -620,16 +620,26 @@ public partial class WorkspacesViewModel : PageViewModel
         if (Selected?.Record is not { } record || keys is { Count: 0 }) return;
         // Taken now: bringing the workspace up reads it afresh, choices and all.
         var group = keys is null ? StartChoice?.Group : null;
+        var starting = new Starting(group, keys);
         if (record.State != WorkspaceState.Up)
         {
-            if (!await UpAsync(retry: () => StartAsync(keys, open))) return;
+            if (!await UpAsync(retry: () => StartAsync(keys, open), starting)) return;
             if (Selected?.Record is not { State: WorkspaceState.Up } up) return;
             record = up;
         }
         if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
         try
         {
-            var names = keys ?? (group is not null ? RunnerSpecs.Group(plan, group) : null);
+            var names = starting.AppsIn(plan);
+            // Up for one group, only its infra is running; what this adds starts first, so its apps find it there.
+            var missing = await AppServices.RunAsync(() => _services.Workspaces.MissingInfra(record, plan, names));
+            if (missing.Count > 0)
+            {
+                var title = WorkspaceItem.Display(record);
+                if (!await RunAsync($"Starting what {(group is not null ? $"the {group} group" : keys is [var only] ? only : "the apps")} uses in {title}",
+                        (progress, cancellation) => _services.Workspaces.StartInfra(missing, progress, cancellation),
+                        $"{string.Join(", ", missing.Select(t => t.Key))} {(missing.Count == 1 ? "is" : "are")} running.")) return;
+            }
             await AppServices.RunAsync(() =>
             {
                 var specs = RunnerSpecs.For(record, plan, names);
@@ -858,7 +868,8 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>Bring the selected workspace up, asking for approval first when a definition needs it, and before taking
     /// over a checkout another definition is up in. True once it's up.</summary>
     /// <param name="retry">What to carry on with once the user approves, or agrees to take over.</param>
-    async Task<bool> UpAsync(Func<Task> retry)
+    /// <param name="starting">The apps about to be started, so only their infra comes up; null for all of it.</param>
+    async Task<bool> UpAsync(Func<Task> retry, Starting? starting = null)
     {
         if (Selected?.Record is not { } record) return false;
         var takeOver = _takeOverAgreed;
@@ -873,7 +884,8 @@ public partial class WorkspacesViewModel : PageViewModel
         var title = WorkspaceItem.Display(record);
         // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
         var ok = await RunAsync($"Bringing {title} up",
-            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver),
+            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver,
+                starting: starting),
             $"{title} is up.",
             retry: retry);
         Refresh();

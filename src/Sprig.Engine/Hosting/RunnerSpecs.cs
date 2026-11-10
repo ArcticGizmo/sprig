@@ -67,7 +67,7 @@ public static class RunnerSpecs
         return keys;
     }
 
-    static IEnumerable<PlannedApp> Closure(Plan plan, IReadOnlyList<string> keys)
+    internal static IEnumerable<PlannedApp> Closure(Plan plan, IReadOnlyList<string> keys)
     {
         var byKey = plan.Apps.ToDictionary(a => a.Key, StringComparer.Ordinal);
         var ordered = new List<PlannedApp>();

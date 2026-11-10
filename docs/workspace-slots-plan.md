@@ -85,7 +85,7 @@ Feedback from trying slots on a real repo, built the same day:
 - **Groups in a repo, and a launch-profile Start.** `repo.Group(name, apps…)` (model schema 13). Repos' groups of the same name join in an orchestration, and the orchestration's own group of that name replaces them. Start in the app gained a ▾ to pick every app or one group, remembered per repo or orchestration in `ui.json`. `sprig up --group` and `sprig start --group` do the same.
 - **Groups grow what's running** (user, 2026-11-09). Starting group B after group A leaves A's apps going and starts only the rest, so you can build up as you go.
 - **Restart what's running** (user, 2026-11-09). **Restart** in the app and `sprig restart [apps] [--group g] [--jobs]` restart every running app, each built again and in order. Stopped apps stay stopped and aren't waited for, since one may be running in an IDE on its port. Jobs are re-run only when asked (the ⋯ menu's **Restart running, jobs first**, or `--jobs`).
-- **Not done:** a group still brings up all of the workspace's infra. Leaving out the containers a group's apps don't use is the obvious next step for saving resources.
+- **A group starts only its infra** (built 2026-11-10): `WorkspaceService.InfraFor` follows the plan's topology from the group's apps (with what they depend on) to the containers they take values from or wait for, and on through infra that uses other infra. A value from another app doesn't count. Up starts only those services; the other projects' files are still written. Starting more on a workspace that's up asks docker what's running (`MissingInfra`) and starts the rest first (`StartInfra`). Still starting everything: Bring up, Bring up again, and the re-up after a value changes.
 
 ## For later
 

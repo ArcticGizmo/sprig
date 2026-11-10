@@ -58,6 +58,58 @@ public sealed partial class WorkspaceService
         return states;
     }
 
+    /// <summary>
+    /// The containers and compose services <paramref name="apps"/> use, by <see cref="InfraTarget.Key"/>: what they, and
+    /// the apps and jobs they depend on, take values from or wait for, and what that infra uses in turn. A value from
+    /// another app doesn't count, since that app isn't started for it. Null when <paramref name="apps"/> is: every one.
+    /// </summary>
+    /// <param name="apps">By key (<c>repo/app</c>) or name.</param>
+    public static IReadOnlySet<string>? InfraFor(Plan plan, IReadOnlyCollection<string>? apps)
+    {
+        if (apps is null) return null;
+        var keys = apps.SelectMany(n => plan.Apps.Where(a => a.Key == n || a.Name == n).Select(a => a.Key)).Distinct().ToArray();
+        var topology = WorkspaceTopology.Of(plan);
+        var infra = topology.Nodes.Where(n => n.IsInfra).Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
+        var uses = topology.Links.ToLookup(l => l.From, l => l.To, StringComparer.Ordinal);
+        var needed = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>(Hosting.RunnerSpecs.Closure(plan, keys).Select(a => a.Key));
+        while (pending.Count > 0)
+            foreach (var to in uses[pending.Pop()])
+                if (infra.Contains(to) && needed.Add(to)) pending.Push(to);
+        return needed;
+    }
+
+    /// <summary>The infra <paramref name="apps"/> use (see <see cref="InfraFor"/>) that isn't running, so starting them can
+    /// start it first; empty when it all is. When docker can't say, all of it, so starting it says what's wrong.</summary>
+    public IReadOnlyList<InfraTarget> MissingInfra(WorkspaceRecord record, Plan plan, IReadOnlyCollection<string>? apps)
+    {
+        var needed = InfraFor(plan, apps);
+        var targets = InfraTargets(record, plan).Where(t => needed?.Contains(t.Key) ?? true).ToArray();
+        if (targets.Length == 0) return [];
+        var states = InfraStates(targets);
+        return targets.Where(t => states?.GetValueOrDefault(t.Key) is not { State: "running" }).ToArray();
+    }
+
+    /// <summary>Start <paramref name="targets"/> (from <see cref="MissingInfra"/>), a step per compose project, each
+    /// waited for until it's healthy. What else is running is left running.</summary>
+    public void StartInfra(IReadOnlyList<InfraTarget> targets, IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
+    {
+        var step = new Steps(progress);
+        foreach (var project in targets.GroupBy(t => t.Project.Name))
+        {
+            step.Start($"Start {project.Key}");
+            try
+            {
+                docker.Up(project.First().Project, line => step.Output(line), cancellation, project.Select(t => t.Service).ToArray());
+            }
+            catch (ComposeUpException e)
+            {
+                throw step.Fail(new WorkspaceException(e.Message));
+            }
+            step.Done(string.Join(", ", project.Select(t => t.Key)));
+        }
+    }
+
     public void StartContainer(InfraTarget target) => docker.Start(target.Project, target.Service);
 
     public void StopContainer(InfraTarget target) => docker.Stop(target.Project, target.Service);

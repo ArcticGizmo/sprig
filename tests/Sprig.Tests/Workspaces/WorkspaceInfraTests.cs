@@ -112,6 +112,59 @@ public sealed class WorkspaceInfraTests : IDisposable
         Assert.Equal(["compose", "-p", "sprig-storefront-1", "start", "shop-services-pg"], _docker.Calls[^1]);
     }
 
+    /// <summary>The front end waits for search; the api waits for a migration job, which waits for the database. The
+    /// orchestration's mail is used by nothing.</summary>
+    (WorkspaceRecord, Plan) Grouped()
+    {
+        var orchestration = Orchestration.Describe("storefront");
+        var repo = Repo.Describe("shop-services");
+        var pg = repo.Postgres("pg");
+        var search = repo.ComposeFile("docker-compose.yml").Service("search");
+        search.Endpoint("http", 7700, scheme: "http");
+        var migrate = repo.DotNetJob("migrate", "src/Migrate").WaitFor(pg);
+        var api = repo.DotNet("api", "src/Api").Http().WaitFor(migrate);
+        var web = repo.Node("web", "web").Http().WaitFor(search);
+        repo.Group("front", web).Group("back", api);
+        orchestration.Repo("shop-services");
+        orchestration.Mailpit("mail");
+        var plan = Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["shop-services"] = repo.BuildRepo() },
+            "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
+        var now = DateTimeOffset.Now;
+        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.cs"), "1", "feat-a", "stable",
+            [new WorkspaceRepo("shop-services", "shop-services", Path.Combine(_store.Root, "shop-services"), Path.Combine(_store.Root, "storefront--1", "shop-services"), true, true)],
+            [], [], WorkspaceState.Up, now, now);
+        return (record, plan);
+    }
+
+    [Fact]
+    public void A_group_uses_the_infra_its_apps_and_what_they_depend_on_wait_for_and_nothing_else()
+    {
+        var (_, plan) = Grouped();
+
+        Assert.Equal(["shop-services/search"], WorkspaceService.InfraFor(plan, new Starting("front").AppsIn(plan))!);
+        Assert.Equal(["shop-services/pg"], WorkspaceService.InfraFor(plan, new Starting("back").AppsIn(plan))!);
+        Assert.Equal(["shop-services/pg"], WorkspaceService.InfraFor(plan, new Starting(Apps: ["api"]).AppsIn(plan))!);
+        Assert.Null(WorkspaceService.InfraFor(plan, new Starting().AppsIn(plan)));
+    }
+
+    [Fact]
+    public void Starting_another_group_starts_only_the_infra_it_adds_that_is_not_running()
+    {
+        var (record, plan) = Grouped();
+        _docker.Ps["sprig-storefront-1"] = """
+            {"Service":"shop-services-pg","State":"running","Health":"healthy","ExitCode":0}
+            """;
+
+        Assert.Empty(_workspaces.MissingInfra(record, plan, new Starting("back").AppsIn(plan)));
+        var missing = _workspaces.MissingInfra(record, plan, new Starting("front").AppsIn(plan));
+        Assert.Equal(["shop-services/search"], missing.Select(t => t.Key));
+
+        _workspaces.StartInfra(missing);
+
+        var up = _docker.Calls.Single(c => c.Contains("up"));
+        Assert.Equal(("sprig-storefront-1-shop-services", "search"), (up[up.ToList().IndexOf("-p") + 1], up[^1]));
+    }
+
     [Theory]
     [InlineData("running", "healthy", 0, "healthy", NodeHealth.Good, true)]
     [InlineData("running", "", 0, "running", NodeHealth.Good, true)]

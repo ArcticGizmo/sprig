@@ -41,6 +41,14 @@ public sealed class WorkspaceException(string message, IReadOnlyList<PlanProblem
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
 
+/// <summary>What's about to be started in a workspace, so only the infra it uses is: one of the definitions' groups, or
+/// apps by key or name. Each brings what it depends on.</summary>
+public sealed record Starting(string? Group = null, IReadOnlyCollection<string>? Apps = null)
+{
+    /// <summary>The apps it names in <paramref name="plan"/>; null for every one.</summary>
+    public IReadOnlyCollection<string>? AppsIn(Plan plan) => Group is { } group ? Hosting.RunnerSpecs.Group(plan, group) : Apps;
+}
+
 /// <summary>How one workspace runs, chosen when it's made and kept for its life.</summary>
 /// <param name="InPlace">Run the repos where they're checked out, rather than in worktrees of the workspace's own.</param>
 /// <param name="From">The branch new worktree branches start from; null for each repo's own default branch.</param>
@@ -188,9 +196,11 @@ public sealed partial class WorkspaceService(
     /// <param name="values">Setting values to keep on the workspace, added to (or replacing) what it has.</param>
     /// <param name="takeOver">When another definition's workspace is up in the same checkout (see <see cref="HolderOf"/>),
     /// take that one down first, rather than refuse.</param>
+    /// <param name="starting">The apps about to be started (a group, say): only the infra they use is started (see
+    /// <see cref="InfraFor"/>). Null for all of it.</param>
     public WorkspaceRecord Up(LoadedOrchestration loaded, string workspace, string? branch, WorkspaceOptions? options = null,
         IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null,
-        IReadOnlyDictionary<string, string>? values = null, bool takeOver = false)
+        IReadOnlyDictionary<string, string>? values = null, bool takeOver = false, Starting? starting = null)
     {
         if (!loaded.Complete || loaded.Orchestration is not { } orchestration)
             throw new WorkspaceException($"{Path.GetFileName(loaded.OrchestrationPath)} isn't ready to run", loaded.Problems);
@@ -312,7 +322,7 @@ public sealed partial class WorkspaceService(
             step.Done($"{record.Files.Count} files");
 
             beforeInfra?.Invoke(record, plan);
-            record = record with { Compose = StartInfra(plan, record, step, cancellation) };
+            record = record with { Compose = StartInfra(plan, record, step, cancellation, InfraFor(plan, starting?.AppsIn(plan))) };
             var upAt = DateTimeOffset.UtcNow;
             record = record with { State = WorkspaceState.Up, UpdatedAt = upAt, LastUpAt = upAt };
             store.Save(record);
@@ -520,9 +530,10 @@ public sealed partial class WorkspaceService(
     /// </summary>
     /// <param name="values">Values to set, over any the slot kept.</param>
     /// <param name="unset">Values the slot kept to clear, so their defaults apply again.</param>
+    /// <param name="starting">The apps about to be started; only their infra starts (see <see cref="Up"/>).</param>
     public WorkspaceRecord CheckOut(LoadedOrchestration loaded, string branch, CheckOutOptions? options = null,
         IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null,
-        IReadOnlyDictionary<string, string>? values = null, IReadOnlyCollection<string>? unset = null)
+        IReadOnlyDictionary<string, string>? values = null, IReadOnlyCollection<string>? unset = null, Starting? starting = null)
     {
         options ??= new CheckOutOptions();
         if (!git.IsValidBranchName(branch)) throw new WorkspaceException($"'{branch}' isn't a valid branch name");
@@ -542,7 +553,8 @@ public sealed partial class WorkspaceService(
             if (options.EmptyData) WipeData(record, new Steps(progress), cancellation);
             if (unset is { Count: > 0 }) SetValues(record.Orchestration, record.Name, new Dictionary<string, string>(), unset);
         }
-        return Up(loaded, slot, branch, new WorkspaceOptions(From: options.From, Track: options.Track), progress, cancellation, beforeInfra, values);
+        return Up(loaded, slot, branch, new WorkspaceOptions(From: options.From, Track: options.Track), progress, cancellation, beforeInfra, values,
+            starting: starting);
     }
 
     /// <summary>Why <paramref name="branch"/> can't be made new: it's there already, locally or on a remote, in one of the
@@ -1224,11 +1236,19 @@ public sealed partial class WorkspaceService(
         return written;
     }
 
-    IReadOnlyList<ComposeProject> StartInfra(Plan plan, WorkspaceRecord record, Steps step, CancellationToken cancellation)
+    /// <summary>One container or compose service as <c>up</c> starts it.</summary>
+    /// <param name="Key"><c>owner/name</c>, as the plan names it.</param>
+    /// <param name="Service">Its service in the compose project.</param>
+    sealed record InfraService(string Key, string Name, string Service, bool Checked);
+
+    /// <param name="needed">Only these, by key (see <see cref="InfraFor"/>); null for every one. Every project's file is
+    /// written and kept on the record either way, so the rest can be started later.</param>
+    IReadOnlyList<ComposeProject> StartInfra(Plan plan, WorkspaceRecord record, Steps step, CancellationToken cancellation,
+        IReadOnlySet<string>? needed = null)
     {
         var folder = store.Folder(record.Orchestration, record.Name);
         var projects = new List<ComposeProject>();
-        var checkedBy = new Dictionary<string, string[]>();
+        var services = new Dictionary<string, InfraService[]>();
 
         if (plan.Containers.Count > 0)
         {
@@ -1236,7 +1256,8 @@ public sealed partial class WorkspaceService(
             File.WriteAllText(file, ComposeYaml.ForContainers(plan.Containers));
             var project = new ComposeProject(ContainersProject(record), file, folder);
             projects.Add(project);
-            checkedBy[project.Name] = plan.Containers.Where(c => c.Health is not null).Select(c => c.Name).ToArray();
+            services[project.Name] = plan.Containers
+                .Select(c => new InfraService($"{c.Owner}/{c.Name}", c.Name, ComposeYaml.ServiceName(c.Owner, c.Name), c.Health is not null)).ToArray();
         }
         foreach (var compose in plan.Compose)
         {
@@ -1247,7 +1268,8 @@ public sealed partial class WorkspaceService(
             var project = new ComposeProject(RepoProject(record, repo.Name), file,
                 Path.GetDirectoryName(Path.GetFullPath(source))!);
             projects.Add(project);
-            checkedBy[project.Name] = compose.Services.Where(s => s.Health is not null).Select(s => s.Name).ToArray();
+            services[project.Name] = compose.Services
+                .Select(s => new InfraService($"{compose.Owner}/{s.Name}", s.Name, s.Name, s.Health is not null)).ToArray();
         }
 
         // Projects an earlier up started that this one no longer has.
@@ -1256,10 +1278,18 @@ public sealed partial class WorkspaceService(
 
         foreach (var project in projects)
         {
+            var wanted = services[project.Name].Where(s => needed?.Contains(s.Key) ?? true).ToArray();
             step.Start($"Start {project.Name}");
-            docker.Up(project, line => step.Output(line), cancellation);
-            var healthy = checkedBy[project.Name];
-            step.Done(healthy.Length > 0 ? $"running; healthy: {string.Join(", ", healthy)}" : "running");
+            if (wanted.Length == 0)
+            {
+                step.Done("left off: nothing being started uses it");
+                continue;
+            }
+            docker.Up(project, line => step.Output(line), cancellation,
+                needed is null ? null : wanted.Select(s => s.Service).ToArray());
+            var healthy = wanted.Where(s => s.Checked).Select(s => s.Name).ToArray();
+            var only = needed is null || wanted.Length == services[project.Name].Length ? "" : $"{string.Join(", ", wanted.Select(s => s.Name))} only; ";
+            step.Done(healthy.Length > 0 ? $"{only}running; healthy: {string.Join(", ", healthy)}" : $"{only}running");
         }
         return projects;
     }

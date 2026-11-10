@@ -78,6 +78,11 @@ public sealed class TestbedPlanTests : IDisposable
         Assert.Empty(plan.ToAsk);
         // The orchestration's Mailpit gives mail-smtp, so shop-services' own isn't started.
         Assert.DoesNotContain(plan.Containers, c => c.Owner == "shop-services");
+
+        // A group starts only the infra its apps use: the mobile app's catalog api sends no mail; the web group's orders api does.
+        Assert.Equal(["shop-services/postgres", "shop-services/rabbitmq", "shop-services/redis"],
+            Sprig.Engine.Workspaces.WorkspaceService.InfraFor(plan, new Sprig.Engine.Workspaces.Starting("mobile").AppsIn(plan))!.Order());
+        Assert.Contains("storefront/mail", Sprig.Engine.Workspaces.WorkspaceService.InfraFor(plan, new Sprig.Engine.Workspaces.Starting("web").AppsIn(plan))!);
     }
 
     [Fact]

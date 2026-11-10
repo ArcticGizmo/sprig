@@ -183,6 +183,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         IReadOnlyCollection<string>? unset = s.Unset;
         var (slot, fixSlot) = s.Branch is { } wanted ? AskAboutBrokenSlot(loaded, wanted, s) : (s.Slot, false);
         var takeOver = s.TakeOver;
+        // A group starts only the infra its apps use; without apps to start, all of it comes up.
+        var starting = s.NoApps ? null : new Starting(s.Group);
         for (var attempt = 1; ; attempt++)
         {
             string? held = null;
@@ -190,8 +192,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             {
                 Action<WorkspaceRecord, Plan>? beforeInfra = runApps ? (record, plan) => held = Prebuild(record, plan, s) : null;
                 var record = s.Branch is { } branch
-                    ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(slot, s.From, s.EmptyData, fixSlot), progress, cancellation, beforeInfra, values, unset)
-                    : cli.Workspaces.Up(loaded, workspace, null, null, progress, cancellation, beforeInfra, values, takeOver);
+                    ? cli.Workspaces.CheckOut(loaded, branch, new CheckOutOptions(slot, s.From, s.EmptyData, fixSlot), progress, cancellation, beforeInfra, values, unset, starting)
+                    : cli.Workspaces.Up(loaded, workspace, null, null, progress, cancellation, beforeInfra, values, takeOver, starting);
                 return record;
             }
             catch (WorkspaceException e) when (e.Untrusted.Count > 0 && attempt < 3)

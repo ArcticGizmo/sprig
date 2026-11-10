@@ -161,14 +161,17 @@ public class PlannerTests
         Assert.Equal("k", given.Apps.Single(a => a.Name == "web").Env.First().Value.Value);
     }
 
-    [Fact]
-    public void Two_apps_that_call_each_other_start_in_order_instead_of_waiting_forever()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Two_apps_that_call_each_other_start_in_the_same_order_whichever_is_declared_first(bool bFirst)
     {
         var f = new Fixture();
         f.Add("../r", repo =>
         {
-            var a = repo.Node("a", ".").Http();
-            var b = repo.Node("b", ".").Http();
+            AppResource a, b;
+            if (bFirst) { b = repo.DotNet("b", ".").Http(); a = repo.DotNet("a", ".").Http(); }
+            else { a = repo.DotNet("a", ".").Http(); b = repo.DotNet("b", ".").Http(); }
             a.EnvFile(".env", e => e.Set("B", b.Url));
             b.EnvFile(".env", e => e.Set("A", a.Url));
         });
@@ -178,6 +181,56 @@ public class PlannerTests
         Assert.Empty(plan.Problems);
         Assert.Equal(["r/b"], DependsOn(plan, "a"));
         Assert.Empty(DependsOn(plan, "b"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_front_end_waits_for_the_api_it_calls_and_nothing_waits_for_a_front_end_because_it_names_its_address(bool apisFirst)
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            AppResource client = null!, admin = null!, orders = null!, billing = null!, sync = null!;
+            void FrontEnds() { client = repo.Node("client", ".").Http(); admin = repo.App("admin-ui", ".").Http().Run("x"); }
+            void Backend()
+            {
+                orders = repo.DotNet("orders-api", ".").Http();
+                billing = repo.DotNet("billing-api", ".").Http();
+                sync = repo.DotNet("sync-worker", ".").Http();
+            }
+            if (apisFirst) { Backend(); FrontEnds(); } else { FrontEnds(); Backend(); }
+
+            client.EnvFile(".env", e => e.Set("API", orders.Url));
+            admin.EnvFile(".env", e => e.Set("API", billing.Url));
+            foreach (var api in new[] { orders, billing, sync })
+                api.EnvFile(".env", e => e.Set("CLIENT_URL", client.Url).Set("ADMIN_URL", admin.Url));
+            // The worker and an API point at each other: the worker calls the API, so it starts second.
+            orders.EnvFile(".env", e => e.Set("SYNC", sync.Url));
+            sync.EnvFile(".env", e => e.Set("ORDERS", orders.Url));
+        });
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal(["r/orders-api"], DependsOn(plan, "client"));
+        Assert.Equal(["r/billing-api"], DependsOn(plan, "admin-ui"));
+        Assert.Empty(DependsOn(plan, "orders-api"));
+        Assert.Empty(DependsOn(plan, "billing-api"));
+        Assert.Equal(["r/orders-api"], DependsOn(plan, "sync-worker"));
+    }
+
+    [Fact]
+    public void A_front_end_someone_waits_for_by_name_is_still_waited_for()
+    {
+        var f = new Fixture();
+        f.Add("../r", repo =>
+        {
+            var client = repo.Node("client", ".").Http();
+            repo.DotNet("e2e", ".").Http().WaitFor(client);
+        });
+
+        Assert.Equal(["r/client"], DependsOn(f.Plan(), "e2e"));
     }
 
     [Fact]

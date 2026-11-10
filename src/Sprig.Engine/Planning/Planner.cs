@@ -320,8 +320,10 @@ public static class Planner
 
         /// <summary>
         /// Each app's <see cref="PlannedApp.DependsOn"/>: what it waits for (a loop there is an error), then the apps its
-        /// values point at, each added only when it doesn't close a loop. Two services that call each other then start
-        /// in declaration order rather than waiting on each other forever.
+        /// values point at, each added only when it doesn't close a loop. A front end is never waited for this way: what
+        /// names its address (a CORS origin, a redirect) doesn't call it as it starts. The rest are tried downhill
+        /// first, from front ends and workers to the APIs they call, then by name, so two apps that point at each other
+        /// start the same way whatever order the definition gives them in.
         /// </summary>
         IReadOnlyList<PlannedApp> Order(List<PlannedApp> apps)
         {
@@ -330,11 +332,23 @@ public static class Planner
                 Problem($"{string.Join(" → ", loop)} wait for each other, so none of them could start", _locations[loop[0]]);
             else
             {
-                foreach (var app in apps)
-                    foreach (var target in _referencedBy[app.Key].Where(t => t != app.Key && edges.ContainsKey(t)).Order(StringComparer.Ordinal))
-                        if (!edges[app.Key].Contains(target) && !Reaches(edges, target, app.Key)) edges[app.Key].Add(target);
+                var byKey = apps.ToDictionary(a => a.Key, StringComparer.Ordinal);
+                var pointsAt = apps
+                    .SelectMany(a => _referencedBy[a.Key]
+                        .Where(t => t != a.Key && byKey.ContainsKey(t) && Role(byKey[t]) != NodeRoles.Web)
+                        .Select(t => (From: a, To: byKey[t])))
+                    .OrderBy(e => Tier(e.To) - Tier(e.From))
+                    .ThenBy(e => e.From.Key, StringComparer.Ordinal)
+                    .ThenBy(e => e.To.Key, StringComparer.Ordinal);
+                foreach (var (from, to) in pointsAt)
+                    if (!edges[from.Key].Contains(to.Key) && !Reaches(edges, to.Key, from.Key)) edges[from.Key].Add(to.Key);
             }
             return apps.Select(a => a with { DependsOn = edges[a.Key] }).ToArray();
+
+            static string? Role(PlannedApp app) => app.Job ? null : NodeRoles.OfApp(app.Role, app.Name, app.Kind);
+
+            // Higher calls lower: front ends and workers call APIs, and nothing calls a worker.
+            static int Tier(PlannedApp app) => Role(app) switch { NodeRoles.Web => 2, NodeRoles.Worker => 1, _ => 0 };
         }
 
         static bool Reaches(Dictionary<string, List<string>> edges, string from, string to)

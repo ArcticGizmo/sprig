@@ -41,7 +41,7 @@ public sealed partial record WorkspaceTopology(IReadOnlyList<TopologyNode> Nodes
         foreach (var app in plan.Apps)
             Add(new TopologyNode(app.Key, app.Owner, app.Name, app.Job ? TopologyKind.Job : TopologyKind.App,
                 app.Job ? "job" : ports.GetValueOrDefault((app.Owner, app.Name)) is { } port ? $":{port}" : "",
-                app.Job ? null : NodeRoles.OfApp(app.Role, app.Name)));
+                app.Job ? null : NodeRoles.OfApp(app.Role, app.Name, app.Kind)));
         foreach (var c in plan.Containers)
             Add(new TopologyNode($"{c.Owner}/{c.Name}", c.Owner, c.Name, TopologyKind.Container, c.Image, NodeRoles.OfInfra(c.Role, c.Name, c.Image)));
         foreach (var compose in plan.Compose)

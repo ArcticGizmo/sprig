@@ -52,8 +52,10 @@ public static partial class NodeRoles
     public static string? OfInfra(string? given, string name, string? image = null, string? value = null)
         => Valid(given) ?? FromWords(InfraWords, image) ?? FromWords(InfraWords, name) ?? FromValue(value);
 
-    /// <summary>An app: what it says, else its name, read for the kind of app (<c>orders-api</c>, <c>cdc-worker</c>).</summary>
-    public static string? OfApp(string? given, string name) => Valid(given) ?? FromWords(AppWords, name);
+    /// <summary>An app: what it says, else its name, read for the kind of app (<c>orders-api</c>, <c>cdc-worker</c>), else
+    /// a front end when it's a Node app.</summary>
+    public static string? OfApp(string? given, string name, string? kind = null)
+        => Valid(given) ?? FromWords(AppWords, name) ?? (kind == "node" ? Web : null);
 
     static string? Valid(string? role) => role is not null && Known.Contains(role) ? role : null;
 

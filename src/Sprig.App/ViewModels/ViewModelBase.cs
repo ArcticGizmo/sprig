@@ -16,6 +16,9 @@ public abstract partial class PageViewModel : ViewModelBase
 
     public bool HasNavSubtitle => NavSubtitle is not null;
 
+    /// <summary>False for a page that isn't ready to use yet: its nav row is greyed out and can't be clicked.</summary>
+    public virtual bool IsReady => true;
+
     /// <summary>True when this is the page currently shown — drives the left-nav highlight.</summary>
     [ObservableProperty] private bool _isActive;
 

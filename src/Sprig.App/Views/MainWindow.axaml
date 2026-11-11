@@ -51,6 +51,13 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
         </Style>
+        <!-- A page that isn't ready yet: shown, so it's known to be coming, but faded and not clickable. -->
+        <Style Selector="Button.nav:disabled Border.navitem">
+            <Setter Property="Opacity" Value="0.4" />
+        </Style>
+        <Style Selector="Button.nav:disabled">
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
         <Style Selector="Border.navitem.active PathIcon.navicon">
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         </Style>
@@ -98,8 +105,6 @@
                                        Foreground="{StaticResource DevBrush}" IsVisible="{Binding IsDevInstance}" />
                         </StackPanel>
                     </StackPanel>
-                    <TextBlock Classes="navtext" Text="experimental build"
-                               Foreground="{StaticResource WarnBrush}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
 
                 <!-- Pinned to the bottom of the nav -->
@@ -157,6 +162,7 @@
                                 <Button Classes="nav"
                                         AutomationProperties.AutomationId="{Binding Title, StringFormat='nav:{0}'}"
                                         ToolTip.Tip="{Binding Title}"
+                                        IsEnabled="{Binding IsReady}"
                                         Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
                                         CommandParameter="{Binding}">
                                     <Border Classes="navitem" Classes.active="{Binding IsActive}">

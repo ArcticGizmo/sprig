@@ -53,7 +53,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool IsDevInstance => AppProfile.IsDev;
 
-    public static string WindowTitle => "Sprig (experimental)" + AppProfile.DisplaySuffix;
+    public static string WindowTitle => "Sprig" + AppProfile.DisplaySuffix;
 
     /// <param name="checkForUpdates">Tests pass false so constructing the window never touches the network.</param>
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
@@ -61,7 +61,7 @@ public partial class MainWindowViewModel : ViewModelBase
         HostStatus = services.HostStatus;
         _ui = services.Ui;
         _navCollapsed = _ui.NavCollapsed;
-        Home = new HomeViewModel();
+        Home = new HomeViewModel(services);
         Repos = new ReposViewModel(services);
         Workspaces = new WorkspacesViewModel(services);
         Orchestrations = new OrchestrationsViewModel(services);
@@ -88,10 +88,17 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         Orchestrations.StartWorkspace = StartWorkspace;
         Repos.StartWorkspace = StartWorkspace;
-        Repos.OpenWorkspace = key =>
+        void OpenWorkspace(string key)
         {
             CurrentPage = Workspaces;
             Workspaces.Show(key);
+        }
+        Repos.OpenWorkspace = OpenWorkspace;
+        Home.OpenWorkspace = OpenWorkspace;
+        Home.AddRepo = () =>
+        {
+            CurrentPage = Repos;
+            Repos.OpenChooseCommand.Execute(null);
         };
 
         Pages = [Home, Repos, Workspaces, Orchestrations, Settings, About];
@@ -103,10 +110,12 @@ public partial class MainWindowViewModel : ViewModelBase
         if (checkForUpdates) _ = CheckForUpdatesAsync();
     }
 
-    /// <summary>Workspaces in the nav always lands on the list of them, the one place a workspace is picked from.</summary>
+    /// <summary>Workspaces in the nav always lands on the list of them, the one place a workspace is picked from. A page
+    /// that isn't ready stays shut.</summary>
     [RelayCommand]
     private void Navigate(PageViewModel page)
     {
+        if (!page.IsReady) return;
         CurrentPage = page;
         if (page == Workspaces) Workspaces.Show(null);
     }

@@ -56,7 +56,10 @@ public partial class OrchestrationsViewModel : PageViewModel
     bool _quietSelection;
 
     public override string Title => "Orchestrations";
-    public override string? NavSubtitle => "repos run together";
+    public override string? NavSubtitle => "not ready yet";
+
+    /// <summary>Greyed out in the nav until orchestrations get their redesign; links from a repo's page still open it.</summary>
+    public override bool IsReady => false;
 
     public ObservableCollection<OrchestrationItem> Orchestrations { get; } = [];
     public ObservableCollection<PendingTrustItem> PendingTrust { get; } = [];

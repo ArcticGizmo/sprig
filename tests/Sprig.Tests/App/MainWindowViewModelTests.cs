@@ -14,12 +14,25 @@ public class MainWindowViewModelTests
         Assert.Same(vm.Home, vm.CurrentPage);
         Assert.True(vm.Home.IsActive);
 
-        vm.NavigateCommand.Execute(vm.Orchestrations);
+        vm.NavigateCommand.Execute(vm.Repos);
 
-        Assert.Same(vm.Orchestrations, vm.CurrentPage);
-        Assert.True(vm.Orchestrations.IsActive);
+        Assert.Same(vm.Repos, vm.CurrentPage);
+        Assert.True(vm.Repos.IsActive);
         Assert.False(vm.Home.IsActive);
         Assert.Single(vm.Pages, p => p.IsActive);
+    }
+
+    [Fact]
+    public void Orchestrations_is_listed_but_not_ready_so_the_nav_leaves_it_shut()
+    {
+        using var store = new TempStore();
+        var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
+
+        vm.NavigateCommand.Execute(vm.Orchestrations);
+
+        Assert.Contains(vm.Orchestrations, vm.NavItems);
+        Assert.False(vm.Orchestrations.IsReady);
+        Assert.Same(vm.Home, vm.CurrentPage);
     }
 
     [Fact]
@@ -48,10 +61,21 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
-    public void Exactly_one_milestone_is_marked_next()
+    public void Home_shows_the_first_steps_until_there_is_a_repo_and_nothing_running_on_an_empty_store()
     {
-        var home = new HomeViewModel();
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        var vm = new MainWindowViewModel(services, checkForUpdates: false);
 
-        Assert.Single(home.Milestones, m => m.IsNext);
+        vm.Home.Refresh();
+        Assert.True(vm.Home.ShowSteps);
+        Assert.True(vm.Home.NothingRunning);
+
+        services.Stored.AddRepo("shop-web", Path.Combine(store.Root, "shop-web"), inRepo: false, "// web");
+        vm.Home.Refresh();
+        Assert.False(vm.Home.ShowSteps);
+
+        vm.Home.StartAddRepoCommand.Execute(null);
+        Assert.Same(vm.Repos, vm.CurrentPage);
     }
 }

@@ -345,6 +345,11 @@ internal static partial class HeadlessRenderer
             vm.Workspaces.SelectStaleCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "overview-ticked"));
+
+            // Home: what the sample has running, and the first steps, since nothing is on the Repos list.
+            vm.NavigateCommand.Execute(vm.Home);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "home"));
             window.Close();
 
             Console.WriteLine($"rendered {Sibling(outFile, "all")}, -small, -app, -infra and -overview ({lines} lines in the app's log)");

@@ -1,8 +1,10 @@
 using System;
+using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Engine.Authoring;
 
 namespace Sprig.App.ViewModels;
 
@@ -37,9 +39,10 @@ public partial class DefinitionEditorViewModel(AppServices services) : ViewModel
     [ObservableProperty] private bool _statusBad;
     [ObservableProperty] private bool _confirmingDiscard;
 
-    public bool IsDirty => IsEditing && Text != SavedText;
+    /// <summary>Completion and problems for the open file, which knows the repo it describes.</summary>
+    [ObservableProperty] private DefinitionLanguage? _language;
 
-    public Sprig.App.Authoring.LanguageHostClient Language => services.Language;
+    public bool IsDirty => IsEditing && Text != SavedText;
 
     /// <returns>Why it couldn't be opened, or null.</returns>
     public string? Open(string file, string title, string note)
@@ -48,6 +51,7 @@ public partial class DefinitionEditorViewModel(AppServices services) : ViewModel
         try { text = File.ReadAllText(file); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return e.Message; }
         Path = file;
+        Language = new DefinitionLanguage(new DefinitionContext(FolderOf(file), () => services.Stored.Repos().Select(r => r.Id).ToArray()));
         Title = title;
         Note = note;
         SavedText = text;
@@ -56,6 +60,15 @@ public partial class DefinitionEditorViewModel(AppServices services) : ViewModel
         ConfirmingDiscard = false;
         IsEditing = true;
         return null;
+    }
+
+    /// <summary>Where completions look for folders and files: the repo a definition describes (one kept in sprig
+    /// describes its entry's folder), or the folder an orchestration file sits in.</summary>
+    string? FolderOf(string file)
+    {
+        if (!services.Stored.IsKept(file)) return System.IO.Path.GetDirectoryName(file);
+        var id = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(file));
+        return id is null ? null : services.Stored.Repo(id)?.Folder;
     }
 
     [RelayCommand]

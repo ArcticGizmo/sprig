@@ -5,7 +5,7 @@ using TextMateSharp.Grammars;
 
 namespace Sprig.App.Controls;
 
-/// <summary>C# to read, not edit: the same colours as the editor, without the language host behind it.</summary>
+/// <summary>A definition to read, not edit: the same colours as the editor, without the language service behind it.</summary>
 public partial class CodeViewer : UserControl
 {
     public static readonly StyledProperty<string> TextProperty =
@@ -21,7 +21,7 @@ public partial class CodeViewer : UserControl
     {
         InitializeComponent();
         var textMate = new RegistryOptions(ThemeName.DarkPlus);
-        Editor.InstallTextMate(textMate).SetGrammar(textMate.GetScopeByLanguageId(textMate.GetLanguageByExtension(".cs").Id));
+        Editor.InstallTextMate(textMate).SetGrammar(textMate.GetScopeByLanguageId(textMate.GetLanguageByExtension(".yaml").Id));
         // As in CodeEditor: urls keep the string colour rather than an unreadable link blue.
         Editor.Options.EnableHyperlinks = false;
         Editor.Options.EnableEmailHyperlinks = false;

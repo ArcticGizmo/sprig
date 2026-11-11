@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Text.Json;
+using Sprig.Engine.Planning;
 using Sprig.Engine.Store;
 using Sprig.Model;
 
@@ -7,11 +7,11 @@ namespace Sprig.Engine.Definitions;
 
 public abstract record DefinitionResult(string Path, string Sha256, TimeSpan Elapsed);
 
-/// <summary>The model, either freshly evaluated or from the cache.</summary>
-public sealed record Evaluated(string Path, string Sha256, TimeSpan Elapsed, DefinitionModel Model, bool FromCache)
+/// <summary>The model read from the file.</summary>
+public sealed record Evaluated(string Path, string Sha256, TimeSpan Elapsed, DefinitionModel Model)
     : DefinitionResult(Path, Sha256, Elapsed);
 
-/// <summary>Not run: this exact content hasn't been approved. <paramref name="ApprovedSha256"/> is set when an earlier
+/// <summary>Not read: this exact content hasn't been approved. <paramref name="ApprovedSha256"/> is set when an earlier
 /// version was. Approve it under <paramref name="TrustPath"/>, which differs from <paramref name="Path"/> for a copy of a
 /// repo's definition in a workspace's worktree.</summary>
 public sealed record NeedsTrust(string Path, string Sha256, TimeSpan Elapsed, string? ApprovedSha256, string TrustPath)
@@ -20,25 +20,22 @@ public sealed record NeedsTrust(string Path, string Sha256, TimeSpan Elapsed, st
     public bool IsCopy => Path != TrustPath;
 }
 
-/// <summary>Not run: the file uses directives a definition may not.</summary>
-public sealed record Rejected(string Path, string Sha256, TimeSpan Elapsed, IReadOnlyList<DirectivePolicy.Violation> Violations)
-    : DefinitionResult(Path, Sha256, Elapsed);
-
-/// <summary>Ran, but didn't produce a model: a compile error, an exception, or the time limit.</summary>
-public sealed record Failed(string Path, string Sha256, TimeSpan Elapsed, string Reason, string Output)
+/// <summary>Read, but it doesn't describe anything sprig can run: each problem names its line.</summary>
+public sealed record Invalid(string Path, string Sha256, TimeSpan Elapsed, IReadOnlyList<PlanProblem> Problems)
     : DefinitionResult(Path, Sha256, Elapsed);
 
 /// <summary>
-/// Turns a sprig.cs into its model. Checks the directives, then trust, then the cache, and only then runs the
-/// definition. The model is cached by content hash and SDK version, so an unchanged definition never runs twice.
+/// Turns a definition file into its model, once its content is approved: a definition holds commands sprig will run,
+/// so one from someone else (a clone, a pulled branch) is never used unseen.
 /// </summary>
-public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, ISprigPaths paths, DefinitionRunnerOptions? options = null,
-    Git.GitClient? git = null)
+/// <param name="read">How a file's text becomes its model; <see cref="DefinitionReader.Read"/> unless a test stands in.</param>
+public sealed class DefinitionRunner(ITrustStore trust, ISprigPaths paths, Git.GitClient? git = null,
+    Func<string, string, ReadResult>? read = null)
 {
-    readonly DefinitionRunnerOptions _options = options ?? new DefinitionRunnerOptions();
     readonly TrustRules _trust = new(trust, new StoredDefinitions(paths), git);
+    readonly Func<string, string, ReadResult> _read = read ?? DefinitionReader.Read;
 
-    /// <param name="trustAs">The file whose approvals count for this one; a worktree's copy of a repo's sprig.cs is
+    /// <param name="trustAs">The file whose approvals count for this one; a worktree's copy of a repo's sprig.yaml is
     /// approved as the repo's own, so each version is approved once per repo rather than once per worktree.</param>
     public DefinitionResult Evaluate(string definitionPath, string? trustAs = null)
     {
@@ -48,67 +45,12 @@ public sealed class DefinitionRunner(ITrustStore trust, IDefinitionHost host, IS
         var text = File.ReadAllText(path);
         var sha = DefinitionHash.Of(text);
 
-        var violations = DirectivePolicy.Check(text, _options.AllowLocalSdkProject);
-        if (violations.Count > 0) return new Rejected(path, sha, clock.Elapsed, violations);
-
         var decision = _trust.Check(path, sha, trustPath);
         if (decision.State != TrustState.Trusted) return new NeedsTrust(path, sha, clock.Elapsed, decision.ApprovedSha256, trustPath);
 
-        // Two runs of one file at once share dotnet's build output for it, and the loser fails. The second caller waits,
-        // then usually finds the first one's model in the cache.
-        lock (RunLocks.GetOrAdd(OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path, _ => new object()))
-            return Run(path, sha, clock);
+        var result = _read(text, path);
+        return result.Model is { } model
+            ? new Evaluated(path, sha, clock.Elapsed, model)
+            : new Invalid(path, sha, clock.Elapsed, result.Problems);
     }
-
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> RunLocks = new();
-
-    DefinitionResult Run(string path, string sha, Stopwatch clock)
-    {
-        var cacheFile = CacheFile(sha);
-        if (_options.UseCache && TryRead(cacheFile) is { } cached)
-            return new Evaluated(path, sha, clock.Elapsed, cached, FromCache: true);
-
-        var outFile = Path.Combine(Path.GetTempPath(), $"sprig-model-{Guid.NewGuid():N}.json");
-        try
-        {
-            var result = host.Run(path, outFile, _options.Timeout);
-            if (result.TimedOut)
-                return new Failed(path, sha, clock.Elapsed, $"didn't finish within {_options.Timeout.TotalSeconds:0}s", result.Output);
-            if (result.ExitCode != 0)
-                return new Failed(path, sha, clock.Elapsed, $"exited with code {result.ExitCode}", result.Output);
-            if (TryRead(outFile) is not { } model)
-                return new Failed(path, sha, clock.Elapsed, "ran but wrote no model; does it end with 'return repo.Emit(args);'?", result.Output);
-            if (model.Schema != Sprig.Sdk.Schema)
-                return new Failed(path, sha, clock.Elapsed,
-                    $"was built with Sprig.Sdk {model.SdkVersion} (model schema {model.Schema}); this sprig reads schema {Sprig.Sdk.Schema}. Update its #:package line.",
-                    result.Output);
-
-            Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
-            File.Copy(outFile, cacheFile, overwrite: true);
-            return new Evaluated(path, sha, clock.Elapsed, model, FromCache: false);
-        }
-        finally
-        {
-            try { File.Delete(outFile); } catch { /* temp file */ }
-        }
-    }
-
-    string CacheFile(string sha) => Path.Combine(paths.Root, "cache", "models", $"{sha}-{Sprig.Sdk.Version}-s{Sprig.Sdk.Schema}.json");
-
-    static DefinitionModel? TryRead(string file)
-    {
-        if (!File.Exists(file)) return null;
-        try { return JsonSerializer.Deserialize(File.ReadAllText(file), ModelJsonContext.Default.DefinitionModel); }
-        catch (JsonException) { return null; }
-    }
-}
-
-public sealed record DefinitionRunnerOptions
-{
-    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(60);
-    public bool UseCache { get; init; } = true;
-
-    /// <summary>Lets a definition use <c>#:project</c> on a local Sprig.Sdk.csproj. On in dev builds, where the SDK
-    /// isn't published as a package yet.</summary>
-    public bool AllowLocalSdkProject { get; init; } = AppProfile.IsDev;
 }

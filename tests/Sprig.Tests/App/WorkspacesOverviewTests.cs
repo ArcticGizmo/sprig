@@ -17,7 +17,7 @@ public class WorkspacesOverviewTests
         void Save(string orchestration, string name, WorkspaceState state, double daysAgo, bool inPlace = false)
         {
             var at = Now.AddDays(-daysAgo);
-            store.Save(new WorkspaceRecord(orchestration, $@"C:\tb\{orchestration}.orchestration.cs", name, inPlace ? null : name, "stable", [], [], [], state, at, at,
+            store.Save(new WorkspaceRecord(orchestration, $@"C:\tb\{orchestration}.orchestration.yaml", name, inPlace ? null : name, "stable", [], [], [], state, at, at,
                 LastUpAt: state == WorkspaceState.Down ? at : null));
         }
         Save("storefront", "feat-a", WorkspaceState.Up, 0);
@@ -65,7 +65,7 @@ public class WorkspacesOverviewTests
     {
         using var temp = new TempStore();
         var vm = Make(temp, out var services);
-        new WorkspaceStore(services.Paths).Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "main", null, "stable",
+        new WorkspaceStore(services.Paths).Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "main", null, "stable",
             [], [], [], WorkspaceState.Down, Now.AddDays(-30), Now.AddDays(-30)));
         vm.RefreshCommand.Execute(null);
         var main = vm.OverviewRows.Single(r => r.Record.IsMain);

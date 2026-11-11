@@ -8,7 +8,7 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-[Description("Make the repo in this folder (or another) ready to run: its own sprig.cs, or a draft from its projects")]
+[Description("Make the repo in this folder (or another) ready to run: its own sprig.yaml, or a draft from its projects")]
 public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
@@ -22,7 +22,7 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         public string? Id { get; set; }
 
         [CommandOption("--in-repo")]
-        [Description("Write the draft into the folder as sprig.cs, rather than keeping it in sprig")]
+        [Description("Write the draft into the folder as sprig.yaml, rather than keeping it in sprig")]
         public bool InRepo { get; set; }
     }
 

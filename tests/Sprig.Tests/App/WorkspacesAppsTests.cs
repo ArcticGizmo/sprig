@@ -27,8 +27,8 @@ public class WorkspacesAppsTests
         var workspaces = new WorkspaceStore(services.Paths);
         var now = DateTimeOffset.Now;
         var repos = Sample.Select(a => a.Repo).Distinct().Select(r => new WorkspaceRepo($"../{r}", r, $@"C:\tb\{r}", $@"C:\tb\feat-x\{r}", true, true)).ToArray();
-        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "feat-x", "feat-x", "stable", repos, [], [], WorkspaceState.Up, now, now));
-        var at = new SourceLocation(@"C:\tb\shop-services\sprig.cs", 3);
+        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "feat-x", "feat-x", "stable", repos, [], [], WorkspaceState.Up, now, now));
+        var at = new SourceLocation(@"C:\tb\shop-services\sprig.yaml", 3);
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", "main", [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
             [.. Sample.Select(a => new PlannedApp(a.Repo, $"../{a.Repo}", a.App, "dotnet", ".",
                 a.App == "catalog-api" ? [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", ["postgres.tcp port 8002"]), null, at)] : [],

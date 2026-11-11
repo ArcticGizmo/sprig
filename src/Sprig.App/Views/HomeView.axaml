@@ -104,7 +104,7 @@
                             <StackPanel Grid.Column="1" Spacing="2">
                                 <TextBlock Text="Add a repo" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                 <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                           Text="Use its own sprig.cs, or write one kept in sprig, drafted from its projects." />
+                                           Text="Use its own sprig.yaml, or write one kept in sprig, drafted from its projects." />
                             </StackPanel>
                             <Button Grid.Column="2" Content="Add a repo" Command="{Binding StartAddRepoCommand}" VerticalAlignment="Center"
                                     Padding="12,6" FontSize="12.5" Background="{StaticResource AccentBrush}" Foreground="#0B1220"

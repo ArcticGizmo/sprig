@@ -27,7 +27,7 @@ public sealed record OrchestrationItem(string Name, string Path, bool NeedsAppro
 }
 
 /// <param name="Changed">An earlier version was approved; this content wasn't.</param>
-/// <param name="TrustPath">Where the approval is kept: the repo's own sprig.cs, for a copy in a workspace's worktree.</param>
+/// <param name="TrustPath">Where the approval is kept: the repo's own sprig.yaml, for a copy in a workspace's worktree.</param>
 public sealed record PendingTrustItem(string Path, string Sha256, bool Changed, string TrustPath)
 {
     public static PendingTrustItem From(NeedsTrust p) => new(p.Path.Replace('\\', '/'), p.Sha256, p.ApprovedSha256 is not null, p.TrustPath);
@@ -261,7 +261,7 @@ public partial class OrchestrationsViewModel : PageViewModel
     IReadOnlyList<string> _definitionFiles = [];
 
     /// <summary>Removing an orchestration keeps its approvals, so re-adding it asks nothing; this is the way to be asked
-    /// again, as on first use. Its repos' sprig.cs files are approved per file, so other orchestrations using them ask
+    /// again, as on first use. Its repos' sprig.yaml files are approved per file, so other orchestrations using them ask
     /// again too.</summary>
     [RelayCommand]
     private void ForgetApprovals()
@@ -488,7 +488,7 @@ public partial class OrchestrationsViewModel : PageViewModel
         PendingIsOrchestration = Selected is { } orchestration && PendingTrust.Any(p => string.Equals(p.Path, orchestration.DisplayPath, StringComparison.OrdinalIgnoreCase));
         _afterApproval = then;
         Review.Note = PendingIsOrchestration
-            ? "The orchestration names its repos, so once it's approved sprig asks about any of their sprig.cs files you haven't approved."
+            ? "The orchestration names its repos, so once it's approved sprig asks about any of their sprig.yaml files you haven't approved."
             : "";
         Review.Load(PendingTrust);
     }
@@ -542,7 +542,7 @@ public partial class OrchestrationsViewModel : PageViewModel
         if (id is not null) OpenRepo?.Invoke(id);
     }
 
-    /// <summary>A repo the orchestration names by folder: its own sprig.cs, opened here.</summary>
+    /// <summary>A repo the orchestration names by folder: its own sprig.yaml, opened here.</summary>
     [RelayCommand]
     private void EditRepoFile(RepoCard? card)
     {
@@ -636,7 +636,7 @@ public partial class OrchestrationsViewModel : PageViewModel
         var path = NewPath.Trim();
         if (path.Length == 0 || !File.Exists(path))
         {
-            Fail("Choose an orchestration file (a .orchestration.cs) that exists.");
+            Fail("Choose an orchestration file (a .orchestration.yaml) that exists.");
             return;
         }
         path = LongPath.Of(path);
@@ -664,13 +664,10 @@ public partial class OrchestrationsViewModel : PageViewModel
                 Refresh(entry.Id, replan: true);
                 return;
             case Evaluated:
-                Fail("That file describes a repo (Repo.Describe), not an orchestration.");
+                Fail("That file describes a repo (repo:), not an orchestration.");
                 return;
-            case Failed failed:
-                Fail($"It didn't run: {failed.Reason}. {FirstError(failed.Output)}");
-                return;
-            case Rejected rejected:
-                Fail(string.Join(" ", rejected.Violations.Select(v => $"Line {v.Line}: {v.Reason}.")));
+            case Invalid invalid:
+                Fail(string.Join(" ", invalid.Problems.Select(p => $"Line {p.Location?.Line}: {p.Message}.")));
                 return;
         }
     }
@@ -815,7 +812,4 @@ public partial class OrchestrationsViewModel : PageViewModel
         NewFailed = true;
         NewMessage = message;
     }
-
-    static string FirstError(string output)
-        => output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Contains(": error ", StringComparison.Ordinal)) ?? "";
 }

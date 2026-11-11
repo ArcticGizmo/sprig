@@ -22,8 +22,8 @@ public sealed class OrchestrationRegistryTests : IDisposable
     [Fact]
     public void An_id_taken_by_another_file_is_refused_rather_than_replacing_it()
     {
-        var first = File("a/storefront.orchestration.cs");
-        var second = File("b/storefront.orchestration.cs");
+        var first = File("a/storefront.orchestration.yaml");
+        var second = File("b/storefront.orchestration.yaml");
         _registry.Add("storefront", first);
 
         Assert.Throws<ArgumentException>(() => _registry.Add("storefront", second));
@@ -38,7 +38,7 @@ public sealed class OrchestrationRegistryTests : IDisposable
     [Fact]
     public void A_file_already_registered_keeps_its_id_because_its_workspaces_are_keyed_by_it()
     {
-        var path = File("storefront.orchestration.cs");
+        var path = File("storefront.orchestration.yaml");
         _registry.Add("storefront", path);
 
         var again = _registry.Add("something-else", path);
@@ -51,7 +51,7 @@ public sealed class OrchestrationRegistryTests : IDisposable
     [Fact]
     public void Entries_written_before_ids_read_their_name_as_the_id()
     {
-        var path = File("storefront.orchestration.cs");
+        var path = File("storefront.orchestration.yaml");
         System.IO.File.WriteAllText(Path.Combine(_store.Root, "orchestrations.json"),
             $$"""[{"name":"storefront","path":{{System.Text.Json.JsonSerializer.Serialize(path)}},"addedAt":"2026-11-03T00:00:00+00:00"}]""");
 
@@ -64,8 +64,8 @@ public sealed class OrchestrationRegistryTests : IDisposable
     [Fact]
     public void An_unregistered_file_is_offered_an_id_from_its_name_and_bad_ids_are_refused()
     {
-        Assert.Equal("shop", _registry.IdFor(Path.Combine(_store.Root, "shop.orchestration.cs")));
+        Assert.Equal("shop", _registry.IdFor(Path.Combine(_store.Root, "shop.orchestration.yaml")));
         Assert.NotNull(OrchestrationRegistry.CheckId("has space"));
-        Assert.Throws<ArgumentException>(() => _registry.Add("-bad", File("x.orchestration.cs")));
+        Assert.Throws<ArgumentException>(() => _registry.Add("-bad", File("x.orchestration.yaml")));
     }
 }

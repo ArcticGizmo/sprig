@@ -15,9 +15,9 @@ public sealed partial class ReviewFile(PendingTrustItem item) : ObservableObject
 {
     public PendingTrustItem Item { get; } = item;
 
-    /// <summary>A repo's sprig.cs is named by its folder, since every repo's file has the same name.</summary>
-    public string Name { get; } = string.Equals(System.IO.Path.GetFileName(item.Path), "sprig.cs", StringComparison.OrdinalIgnoreCase)
-        ? $"{System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(item.Path))}/sprig.cs"
+    /// <summary>A repo's sprig.yaml is named by its folder, since every repo's file has the same name.</summary>
+    public string Name { get; } = string.Equals(System.IO.Path.GetFileName(item.Path), "sprig.yaml", StringComparison.OrdinalIgnoreCase)
+        ? $"{System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(item.Path))}/sprig.yaml"
         : System.IO.Path.GetFileName(item.Path);
 
     public string Path => Item.Path;

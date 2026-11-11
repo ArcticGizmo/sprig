@@ -24,17 +24,17 @@ public class CodeReviewViewModelTests
     public async Task Each_file_is_shown_and_approved_on_its_own_and_the_last_approval_carries_on()
     {
         using var store = new TempStore();
-        var web = Write(store.Root, "shop-web/sprig.cs", "// web");
-        var api = Write(store.Root, "shop-services/sprig.cs", "// api");
+        var web = Write(store.Root, "shop-web/sprig.yaml", "// web");
+        var api = Write(store.Root, "shop-services/sprig.yaml", "// api");
         var services = new AppServices(store.Root);
         var carriedOn = 0;
         var review = new CodeReviewViewModel(services.Trust) { AllApproved = () => { carriedOn++; return Task.CompletedTask; } };
 
         review.Load([Pending(web), Pending(api)]);
 
-        Assert.Equal(["shop-web/sprig.cs", "shop-services/sprig.cs"], review.Files.Select(f => f.Name));
+        Assert.Equal(["shop-web/sprig.yaml", "shop-services/sprig.yaml"], review.Files.Select(f => f.Name));
         Assert.Equal("// web", review.Text);
-        Assert.Equal("Approve shop-web/sprig.cs", review.ApproveLabel);
+        Assert.Equal("Approve shop-web/sprig.yaml", review.ApproveLabel);
         Assert.Equal("Approve all 2", review.ApproveAllLabel);
 
         await review.ApproveCurrentCommand.ExecuteAsync(null);
@@ -56,8 +56,8 @@ public class CodeReviewViewModelTests
     public async Task The_dialog_closes_once_all_is_approved_but_stays_open_for_files_that_turn_up_next()
     {
         using var store = new TempStore();
-        var orchestration = Write(store.Root, "storefront.orchestration.cs", "// orchestration");
-        var web = Write(store.Root, "shop-web/sprig.cs", "// web");
+        var orchestration = Write(store.Root, "storefront.orchestration.yaml", "// orchestration");
+        var web = Write(store.Root, "shop-web/sprig.yaml", "// web");
         var review = new CodeReviewViewModel(new AppServices(store.Root).Trust);
         var rounds = new Queue<PendingTrustItem[]>([[Pending(web)], []]);
         review.AllApproved = () => { review.Load(rounds.Dequeue()); return Task.CompletedTask; };
@@ -67,7 +67,7 @@ public class CodeReviewViewModelTests
         await review.ApproveCurrentCommand.ExecuteAsync(null);
 
         Assert.True(review.IsOpen);
-        Assert.Equal("shop-web/sprig.cs", review.Current?.Name);
+        Assert.Equal("shop-web/sprig.yaml", review.Current?.Name);
 
         await review.ApproveCurrentCommand.ExecuteAsync(null);
 
@@ -78,7 +78,7 @@ public class CodeReviewViewModelTests
     public void A_file_that_changed_after_it_was_checked_cannot_be_approved_until_it_is_checked_again()
     {
         using var store = new TempStore();
-        var web = Write(store.Root, "shop-web/sprig.cs", "// web");
+        var web = Write(store.Root, "shop-web/sprig.yaml", "// web");
         var pending = Pending(web);
         File.WriteAllText(web, "// web, edited since");
         var review = new CodeReviewViewModel(new AppServices(store.Root).Trust);

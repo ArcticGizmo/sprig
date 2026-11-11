@@ -152,7 +152,7 @@ public static partial class DefinitionReader
             if (command is not null && command.Contains("${", StringComparison.Ordinal))
                 file.Error(f["command"]!, $"app '{app.Name}''s command has a reference in it, which typing the command yourself wouldn't fill in. " +
                     "Give the command as you'd type it, and the value in a file the app reads (files:)");
-            if (app.Kind == "app" && command is null && f["run"] is not null)
+            if (command is null && f["run"] is YamlScalarNode { Value: "command" })
                 file.Error(app.Key, $"app '{app.Name}' runs a command, so it needs 'command:'");
 
             var endpoints = app.Endpoints.ToList();

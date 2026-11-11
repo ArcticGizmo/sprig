@@ -19,11 +19,10 @@ namespace Sprig.App.Rendering;
 /// </summary>
 internal static partial class HeadlessRenderer
 {
-    /// <summary>The definition editor with a typo (an error) and an unused import's variable shadowed (a warning), so
-    /// both kinds of squiggle and the problems strip show.</summary>
+    /// <summary>The definition editor with a mistyped key and a reference to nothing, so the squiggles and the problems
+    /// strip show.</summary>
     public static int RenderCodeEditor(string outFile)
     {
-        var host = new Sprig.App.Authoring.LanguageHostClient();
         try
         {
             AppBuilder.Configure<App>()
@@ -33,11 +32,15 @@ internal static partial class HeadlessRenderer
                 .SetupWithoutStarting();
 
             var text = Sprig.App.Authoring.SampleDefinition.Text
-                .Replace(".Http(\"http\")\n    .WaitFor(pg);", ".Htp(\"http\")\n    .WaitFor(pg);")
-                .Replace("repo.Export<Url>", "#warning check the export name before committing\nrepo.Export<Url>")
+                .Replace("    wait-for: [pg]\n", "    wiat-for: [pg]\n")
+                .Replace("Url: ${inputs.mail-smtp}", "Url: ${inputs.mail-smpt}")
                 // An http url, which has to keep the string colour rather than be drawn as a link.
-                .Replace("// The catalog owns stock levels.", "var search = repo.Setting<Url>(\"search-url\", \"http://localhost:7700\");\n\n// The catalog owns stock levels.");
-            var editor = new Sprig.App.Controls.CodeEditor { Host = host, Text = text };
+                .Replace("inputs:\n", "inputs:\n  search-url:\n    type: url\n    default: http://localhost:7700\n");
+            var editor = new Sprig.App.Controls.CodeEditor
+            {
+                Language = new Sprig.Engine.Authoring.DefinitionLanguage(new Sprig.Engine.Authoring.DefinitionContext(null)),
+                Text = text,
+            };
             var window = new Avalonia.Controls.Window
             {
                 Width = 1000, Height = 640, Content = editor,
@@ -61,10 +64,6 @@ internal static partial class HeadlessRenderer
         {
             Console.Error.WriteLine($"headless render failed: {ex}");
             return 1;
-        }
-        finally
-        {
-            host.Dispose();
         }
     }
 
@@ -108,12 +107,6 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(800));
             window.CaptureRenderedFrame()?.Save(Sibling(outFile, "reopened"));
 
-            // A Dev build drafts definitions against the local SDK project, so their first line is a Windows path.
-            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace(
-                "#:package ArcticGizmo.Sprig.Sdk@0.9.0", @"#:project C:\Users\someone\src\sprig\src\Sprig.Sdk\Sprig.Sdk.csproj");
-            Pump(TimeSpan.FromMilliseconds(800));
-            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "project-path"));
-
             // Leaving a page and coming back takes the editor out of the window and puts it back.
             window.Content = null;
             Pump(TimeSpan.FromMilliseconds(200));
@@ -148,14 +141,14 @@ internal static partial class HeadlessRenderer
 
             var services = new AppServices(store);
             var root = Path.GetDirectoryName(Path.GetFullPath(orchestrationFile))!;
-            foreach (var file in Directory.EnumerateFiles(root, "*.orchestration.cs")
-                         .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.cs")).Where(File.Exists)))
+            foreach (var file in Directory.EnumerateFiles(root, "*.orchestration.yaml")
+                         .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.yaml")).Where(File.Exists)))
                 services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
             services.Orchestrations.Add("storefront", orchestrationFile);
             // One repo of each kind in the Repos list: its file in the repo, and a copy of one kept in sprig.
-            if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.cs")))
+            if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.yaml")))
                 services.Authoring.AddRepo(web, "shop-web");
-            if (Path.Combine(root, "shop-services") is var services_ && File.Exists(Path.Combine(services_, "sprig.cs")))
+            if (Path.Combine(root, "shop-services") is var services_ && File.Exists(Path.Combine(services_, "sprig.yaml")))
             {
                 services.Authoring.AddRepo(services_, "shop-services");
                 services.Authoring.CopyIntoSprig("shop-services", "shop-services-local");
@@ -174,9 +167,9 @@ internal static partial class HeadlessRenderer
 
             Save(window, outFile);
             var planned = vm.Orchestrations.Plan is not null;
-            // A failed definition's output is the only clue to why the render didn't plan.
-            if (vm.Orchestrations.HasLoadProblems && services.Definitions.Evaluate(orchestrationFile) is Sprig.Engine.Definitions.Failed failed)
-                Console.Error.WriteLine($"the orchestration {failed.Reason}:\n{failed.Output}");
+            // A definition's problems are the only clue to why the render didn't plan.
+            if (vm.Orchestrations.HasLoadProblems && services.Definitions.Evaluate(orchestrationFile) is Sprig.Engine.Definitions.Invalid invalid)
+                Console.Error.WriteLine("the orchestration:\n" + string.Join("\n", invalid.Problems.Select(p => $"  line {p.Location?.Line}: {p.Message}")));
 
             // One app picked, with one group shown: its wires stand out, and what the group doesn't start dims.
             if (vm.Orchestrations.Graph?.Boxes.SelectMany(b => b.Items).FirstOrDefault(i => i.Name == "web") is { } picked)
@@ -204,12 +197,12 @@ internal static partial class HeadlessRenderer
             while (vm.Repos.Check.EndsWith('…') && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo"));
-            // Its Write to the repo dialog, which says why it can't: the folder has its own sprig.cs already.
+            // Its Write to the repo dialog, which says why it can't: the folder has its own sprig.yaml already.
             vm.Repos.OpenDeriveCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo-write"));
             vm.Repos.CancelDeriveCommand.Execute(null);
-            // + Add's two cards, then the in-sprig form over a folder that has its own sprig.cs.
+            // + Add's two cards, then the in-sprig form over a folder that has its own sprig.yaml.
             vm.Repos.OpenChooseCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "repo-add"));

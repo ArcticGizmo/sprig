@@ -146,7 +146,7 @@ public partial class ReposViewModel : PageViewModel
     public string KeptExplanation => Selected switch
     {
         null => "",
-        { InRepo: true } => "Uses the repo's own sprig.cs. Workspaces run their branch's version, and sprig asks before running one you haven't approved.",
+        { InRepo: true } => "Uses the repo's own sprig.yaml. Workspaces run their branch's version, and sprig asks before running one you haven't approved.",
         _ => "Kept on this machine, so nothing is written to the repo. The same for every workspace, since no branch can change it.",
     };
 
@@ -157,7 +157,7 @@ public partial class ReposViewModel : PageViewModel
     {
         null => "",
         { InRepo: true } => "To try changes without touching the repo, copy it into sprig as a new ID.",
-        _ => "To put it in the repo, write it there as sprig.cs; that's used from a new ID, and this one stays in sprig.",
+        _ => "To put it in the repo, write it there as sprig.yaml; that's used from a new ID, and this one stays in sprig.",
     };
 
     public string DeriveTitle => Selected is { InRepo: true } ? "Copy into sprig" : "Write to the repo";
@@ -166,19 +166,19 @@ public partial class ReposViewModel : PageViewModel
     {
         null => "",
         { InRepo: true } => $"Copies {Selected.DisplayFile} into sprig as a new repo, kept on this machine. '{Selected.Id}' keeps using the repo's file, and so do the orchestrations that use it.",
-        _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.cs, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the orchestrations that use it.",
+        _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.yaml, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the orchestrations that use it.",
     };
 
-    public string AddTitle => AddInRepo ? "Use the repo's sprig.cs" : "Write one in sprig";
+    public string AddTitle => AddInRepo ? "Use the repo's sprig.yaml" : "Write one in sprig";
 
     public string AddExplanation => AddInRepo
-        ? "Choose a repo folder that has a sprig.cs. Workspaces run their branch's version, and nothing in it runs until you approve it."
-        : "Kept in sprig, so nothing is written to the repo. It starts from the folder's sprig.cs if it has one, or else a draft from its projects, and opens for editing.";
+        ? "Choose a repo folder that has a sprig.yaml. Workspaces run their branch's version, and nothing in it runs until you approve it."
+        : "Kept in sprig, so nothing is written to the repo. It starts from the folder's sprig.yaml if it has one, or else a draft from its projects, and opens for editing.";
 
-    public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.cs" : "Choose the repo's folder";
+    public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.yaml" : "Choose the repo's folder";
 
     public string RemoveNote => (Selected is { InRepo: true }
-        ? "It comes off the Repos list. The folder's own sprig.cs is left where it is. Orchestrations that use it will say it's missing."
+        ? "It comes off the Repos list. The folder's own sprig.yaml is left where it is. Orchestrations that use it will say it's missing."
         : "It comes off the Repos list, and the definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.")
         + " Its main checkout's containers and their data go too, and the values it wrote into the checkout are put back.";
 
@@ -299,18 +299,15 @@ public partial class ReposViewModel : PageViewModel
                 Say("", bad: false);
                 break;
             case Evaluated:
-                Say("Its definition describes an orchestration, not a repo (it calls Orchestration.Describe).", bad: true);
+                Say("Its definition describes an orchestration, not a repo (it starts with orchestration:).", bad: true);
                 break;
             case NeedsTrust pending:
                 _pending = pending;
                 NeedsApproval = true;
-                Say("Not approved yet, so it hasn't run. It's C# that sprig runs as you: read it, then approve it.", bad: true);
+                Say("Not approved yet. It names commands sprig runs as you: read it, then approve it.", bad: true);
                 break;
-            case Failed failed:
-                Say($"It doesn't run: {failed.Reason}. {FirstError(failed.Output)}", bad: true);
-                break;
-            case Rejected rejected:
-                Say(string.Join(" ", rejected.Violations.Select(v => $"Line {v.Line}: {v.Reason}.")), bad: true);
+            case Invalid invalid:
+                Say(string.Join(" ", invalid.Problems.Select(p => $"Line {p.Location?.Line}: {p.Message}.")), bad: true);
                 break;
         }
     }
@@ -646,7 +643,7 @@ public partial class ReposViewModel : PageViewModel
         }
         if (AddInRepo && !File.Exists(Path.Combine(folder, StoredDefinitions.RepoFileName)))
         {
-            FailAdd("That folder has no sprig.cs. Go back and choose Write one in sprig to start one.");
+            FailAdd("That folder has no sprig.yaml. Go back and choose Write one in sprig to start one.");
             return;
         }
         if (Ids.Check(id, "a repo ID") is { } bad)
@@ -673,7 +670,4 @@ public partial class ReposViewModel : PageViewModel
         AddFailed = true;
         AddMessage = message;
     }
-
-    static string FirstError(string output)
-        => output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Contains(": error ", StringComparison.Ordinal)) ?? "";
 }

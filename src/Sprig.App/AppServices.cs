@@ -29,9 +29,6 @@ public sealed class AppServices
     public StoredDefinitions Stored { get; }
     public OrchestrationAuthoring Authoring { get; }
 
-    /// <summary>Completion and errors for the definition editor, from a separate process so Roslyn can't take the app
-    /// down. Started on first use.</summary>
-    public Sprig.App.Authoring.LanguageHostClient Language { get; } = new();
     public WorkspaceService Workspaces { get; }
     public HostClient Host { get; }
     public HostStatus HostStatus { get; }
@@ -45,7 +42,7 @@ public sealed class AppServices
         Trust = new FileTrustStore(Paths);
         var processes = new ProcessRunner();
         var git = new GitClient(processes);
-        Definitions = new DefinitionRunner(Trust, new DotnetRunHost(), Paths, git: git);
+        Definitions = new DefinitionRunner(Trust, Paths, git);
         Orchestrations = new OrchestrationRegistry(Paths);
         Stored = new StoredDefinitions(Paths);
         TrustRules = new TrustRules(Trust, Stored, git);

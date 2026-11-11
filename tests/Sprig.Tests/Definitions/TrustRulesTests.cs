@@ -37,7 +37,7 @@ public sealed class TrustRulesTests : IDisposable
     string Repo()
     {
         var dir = Path.Combine(_store.Root, "src", "shop");
-        Write(Path.Combine(dir, "sprig.cs"), "// one");
+        Write(Path.Combine(dir, "sprig.yaml"), "// one");
         Git(dir, "init", "-q", "-b", "main");
         Git(dir, "add", ".");
         Commit(dir);
@@ -47,7 +47,7 @@ public sealed class TrustRulesTests : IDisposable
     [Fact]
     public void An_approved_definition_kept_in_sprig_stays_approved_however_it_is_edited()
     {
-        var file = Write(Path.Combine(_store.Paths.Root, "repos", "shop", "sprig.cs"), "// one");
+        var file = Write(Path.Combine(_store.Paths.Root, "repos", "shop", "sprig.yaml"), "// one");
         Approve(file);
 
         Write(file, "// two, from another editor");
@@ -60,7 +60,7 @@ public sealed class TrustRulesTests : IDisposable
     [Fact]
     public void A_definition_copied_into_sprig_unread_still_asks()
     {
-        var file = Write(Path.Combine(_store.Paths.Root, "repos", "shop", "sprig.cs"), "// from someone's repo");
+        var file = Write(Path.Combine(_store.Paths.Root, "repos", "shop", "sprig.yaml"), "// from someone's repo");
 
         Assert.Equal(TrustState.Unknown, Check(file));
     }
@@ -69,7 +69,7 @@ public sealed class TrustRulesTests : IDisposable
     public void An_uncommitted_edit_to_an_approved_version_in_a_repo_is_yours_and_stays_approved_once_committed()
     {
         var dir = Repo();
-        var file = Path.Combine(dir, "sprig.cs");
+        var file = Path.Combine(dir, "sprig.yaml");
         Approve(file);
 
         Write(file, "// two, not committed");
@@ -83,7 +83,7 @@ public sealed class TrustRulesTests : IDisposable
     public void A_version_that_arrived_in_a_commit_asks()
     {
         var dir = Repo();
-        var file = Path.Combine(dir, "sprig.cs");
+        var file = Path.Combine(dir, "sprig.yaml");
         Approve(file);
 
         Write(file, "// two, from a pulled branch");
@@ -96,7 +96,7 @@ public sealed class TrustRulesTests : IDisposable
     public void An_edit_to_a_committed_version_nobody_approved_asks()
     {
         var dir = Repo();
-        var file = Path.Combine(dir, "sprig.cs");
+        var file = Path.Combine(dir, "sprig.yaml");
         Approve(file);
         Write(file, "// two, from a pulled branch");
         Commit(dir);
@@ -110,12 +110,12 @@ public sealed class TrustRulesTests : IDisposable
     public void A_worktree_s_edit_counts_against_the_repo_s_approvals()
     {
         var dir = Repo();
-        var file = Path.Combine(dir, "sprig.cs");
+        var file = Path.Combine(dir, "sprig.yaml");
         Approve(file);
         var worktree = Path.Combine(_store.Root, "src", "shop--1");
         Git(dir, "worktree", "add", "-q", "-b", "feat", worktree);
 
-        var copy = Write(Path.Combine(worktree, "sprig.cs"), "// two, in the worktree");
+        var copy = Write(Path.Combine(worktree, "sprig.yaml"), "// two, in the worktree");
 
         Assert.Equal(TrustState.Trusted, Check(copy, trustAs: file));
     }

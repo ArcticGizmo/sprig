@@ -76,7 +76,16 @@ public static partial class DefinitionReader
             try { stream.Load(new StringReader(text)); }
             catch (YamlException e)
             {
-                _problems.Add(new PlanProblem(ProblemSeverity.Error, Clean(e), new SourceLocation(Path, (int)e.Start.Line)));
+                var message = Clean(e);
+                if (ReferenceInFlow(text, (int)e.Start.Line)) message += ". A value with ${…} inside { } or [ ] needs quotes, as in '${…}'";
+                _problems.Add(new PlanProblem(ProblemSeverity.Error, message, new SourceLocation(Path, (int)e.Start.Line)));
+                return null;
+            }
+            // YamlDotNet throws this, with no position, when the text ends inside a '{' or '['.
+            catch (InvalidOperationException)
+            {
+                var last = text.TrimEnd().Split('\n').Length;
+                _problems.Add(new PlanProblem(ProblemSeverity.Error, "the file ends before a '{' or '[' is closed", new SourceLocation(Path, last)));
                 return null;
             }
             if (stream.Documents.Count == 0)
@@ -88,6 +97,19 @@ public static partial class DefinitionReader
             if (stream.Documents[0].RootNode is YamlMappingNode root) return root;
             Error(stream.Documents[0].RootNode, "a definition is a set of 'key: value' lines, starting with 'schema:'");
             return null;
+        }
+
+        /// <summary>A ${…} after a '{' or '[' on the line the parser stopped at or the one before: inside those, YAML
+        /// ends a plain value at a brace, so the reference has to be quoted.</summary>
+        static bool ReferenceInFlow(string text, int line)
+        {
+            var lines = text.Split('\n');
+            for (var i = Math.Max(0, line - 2); i < Math.Min(lines.Length, line); i++)
+            {
+                var at = lines[i].IndexOf("${", StringComparison.Ordinal);
+                if (at > 0 && lines[i][..at].IndexOfAny(['{', '[']) >= 0) return true;
+            }
+            return false;
         }
 
         // YamlDotNet's messages start with the position, which the problem's location already gives.

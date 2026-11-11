@@ -54,7 +54,7 @@ public sealed class WorkspaceInfraTests : IDisposable
             "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         var now = DateTimeOffset.Now;
         var dir = Path.Combine(_store.Root, "storefront--1", "shop-services");
-        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.cs"), "1", "feat-a", "stable",
+        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.yaml"), "1", "feat-a", "stable",
             [new WorkspaceRepo("shop-services", "shop-services", Path.Combine(_store.Root, "shop-services"), dir, true, true)], [], [], WorkspaceState.Up, now, now);
         return (record, plan);
     }
@@ -130,7 +130,7 @@ public sealed class WorkspaceInfraTests : IDisposable
         var plan = Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["shop-services"] = repo.BuildRepo() },
             "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         var now = DateTimeOffset.Now;
-        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.cs"), "1", "feat-a", "stable",
+        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.yaml"), "1", "feat-a", "stable",
             [new WorkspaceRepo("shop-services", "shop-services", Path.Combine(_store.Root, "shop-services"), Path.Combine(_store.Root, "storefront--1", "shop-services"), true, true)],
             [], [], WorkspaceState.Up, now, now);
         return (record, plan);

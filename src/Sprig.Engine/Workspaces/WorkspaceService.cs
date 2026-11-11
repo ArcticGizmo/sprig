@@ -116,7 +116,7 @@ public sealed record WrittenFileStatus(string Path, string Kind, string? Repo, b
 /// <c>down</c> and <c>rm</c> undo that and nothing else.
 /// </summary>
 /// <param name="loader">Reads the repos' definitions again from a workspace's worktrees, so a branch that changes its
-/// sprig.cs is planned as the branch has it. Without one, definitions come only from the repos' own folders.</param>
+/// sprig.yaml is planned as the branch has it. Without one, definitions come only from the repos' own folders.</param>
 public sealed partial class WorkspaceService(
     WorkspaceStore store,
     PortLeases leases,
@@ -177,7 +177,7 @@ public sealed partial class WorkspaceService(
 
     /// <summary>
     /// Where approval for a definition file is kept. A file in a workspace's worktree counts as the same file in the repo
-    /// it came from, so each version of a repo's sprig.cs is approved once, whichever worktree it's in.
+    /// it came from, so each version of a repo's sprig.yaml is approved once, whichever worktree it's in.
     /// </summary>
     public string TrustPathFor(string file)
     {
@@ -1125,7 +1125,7 @@ public sealed partial class WorkspaceService(
             if (tracked)
                 problems.Add(new PlanProblem(ProblemSeverity.Error,
                     $"git tracks {relative}, so sprig won't write a workspace's values into it. Write them into a local file the app reads instead" +
-                    (target.Kind == "launchSettings" ? ", e.g. .AppSettings(\"appsettings.Local.json\", …)." : "."), target.Location));
+                    (target.Kind == "launchSettings" ? ", such as appsettings.Local.json." : "."), target.Location));
             else if (!ignored)
                 problems.Add(new PlanProblem(ProblemSeverity.Error,
                     $"{relative} isn't ignored by git, so a workspace's values could be committed. Add it to the repo's .gitignore" + target.Kind switch
@@ -1379,7 +1379,7 @@ public sealed partial class WorkspaceService(
     /// <summary>
     /// Another workspace that's up where <paramref name="loaded"/>'s repos are checked out, which would have to go down
     /// for <paramref name="workspace"/> to run there in place; null when none is. Two definitions of one repo (its own
-    /// sprig.cs and a copy kept in sprig, or an orchestration that has it) each have a main in the same folder, and only
+    /// sprig.yaml and a copy kept in sprig, or an orchestration that has it) each have a main in the same folder, and only
     /// one can write its files and run its apps there at a time. One that's down holds nothing.
     /// </summary>
     public WorkspaceRecord? HolderOf(LoadedOrchestration loaded, string workspace = WorkspaceRecord.MainName)

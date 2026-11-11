@@ -24,7 +24,7 @@ public partial class PathBox : UserControl
     public static readonly StyledProperty<string?> PlaceholderProperty =
         AvaloniaProperty.Register<PathBox, string?>(nameof(Placeholder));
 
-    /// <summary>A file-name suffix to offer and pick, e.g. <c>.orchestration.cs</c>. Null offers every file.</summary>
+    /// <summary>A file-name suffix to offer and pick, e.g. <c>.orchestration.yaml</c>. Null offers every file.</summary>
     public static readonly StyledProperty<string?> FileSuffixProperty =
         AvaloniaProperty.Register<PathBox, string?>(nameof(FileSuffix));
 

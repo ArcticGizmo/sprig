@@ -94,10 +94,10 @@ public class WorkspacesViewModelTests
         var workspaces = new WorkspaceStore(services.Paths);
         var now = DateTimeOffset.UtcNow;
         var repo = new WorkspaceRepo("../shop-services", "shop-services", @"C:\tb\shop-services", @"C:\tb\storefront--feat-x\shop-services", true, true);
-        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "feat-x", "feat-x", "stable", [repo], [],
+        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "feat-x", "feat-x", "stable", [repo], [],
             [new WrittenFile(@"C:\tb\storefront--feat-x\shop-services\src\Catalog.Api\Properties\launchSettings.json", "launchSettings", true, "sprig")],
             WorkspaceState.Up, now, now, @"C:\tb\storefront--feat-x"));
-        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "old", "old", "stable", [], [], [], WorkspaceState.Down, now, now));
+        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "old", "old", "stable", [], [], [], WorkspaceState.Down, now, now));
         var at = new SourceLocation("x", 1);
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", "main",
             [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
@@ -133,26 +133,27 @@ public class WorkspacesViewModelTests
         var services = new AppServices(store.Root);
         services.Settings.Save(new Sprig.Engine.Settings.SprigSettings { PortRangeStart = 9500, PortRangeEndExclusive = 9600 });
 
-        var sdk = Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
         var repo = Path.Combine(store.Root, "work", "shop-web");
         Directory.CreateDirectory(repo);
         File.WriteAllText(Path.Combine(repo, ".gitignore"), ".env.local\n");
-        File.WriteAllText(Path.Combine(repo, "sprig.cs"), $$"""
-            #:project {{sdk}}
-            using Sprig;
-            var repo = Repo.Describe("shop-web");
-            var web = repo.Node("web", ".").Http();
-            web.EnvFile(".env.local", e => e.Set("PORT", web.Port));
-            return repo.Emit(args);
+        File.WriteAllText(Path.Combine(repo, "sprig.yaml"), """
+            schema: 1
+            repo: shop-web
+            apps:
+              web: { run: node, ports: { http: any } }
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  PORT: ${web.port}
             """);
         Commit(repo);
-        var orchestration = Path.Combine(store.Root, "work", "web.orchestration.cs");
-        File.WriteAllText(orchestration, $$"""
-            #:project {{sdk}}
-            using Sprig;
-            var orchestration = Orchestration.Describe("web");
-            orchestration.Repo("shop-web");
-            return orchestration.Emit(args);
+        var orchestration = Path.Combine(store.Root, "work", "web.orchestration.yaml");
+        File.WriteAllText(orchestration, """
+            schema: 1
+            orchestration: web
+            repos:
+              shop-web: { path: shop-web }
             """);
         services.Orchestrations.Add("web", orchestration);
 
@@ -166,11 +167,11 @@ public class WorkspacesViewModelTests
         vm.NewBranch = "feat-x";
         await WaitFor(() => vm.NewSlotLine == "Goes in web--1, a new slot.");
         await vm.CreateCommand.ExecuteAsync(null);
-        Assert.EndsWith("web.orchestration.cs", Assert.Single(vm.PendingTrust).Path);
+        Assert.EndsWith("web.orchestration.yaml", Assert.Single(vm.PendingTrust).Path);
         Assert.True(vm.TrustInModal);
         Assert.False(vm.TrustOnPage);
         await vm.ApproveAllCommand.ExecuteAsync(null);
-        Assert.EndsWith("sprig.cs", Assert.Single(vm.PendingTrust).Path);
+        Assert.EndsWith("sprig.yaml", Assert.Single(vm.PendingTrust).Path);
         Assert.True(vm.IsAddOpen);
         await vm.ApproveAllCommand.ExecuteAsync(null);
 
@@ -227,8 +228,8 @@ public class WorkspacesViewModelTests
         Assert.Matches(@"PORT=95\d\d", File.ReadAllText(Path.Combine(repo, ".env.local")));
 
         // A second definition of the same checkout asks before taking it over, then takes the first one down.
-        var other = Path.Combine(store.Root, "work", "web-again.orchestration.cs");
-        File.WriteAllText(other, File.ReadAllText(orchestration).Replace("Describe(\"web\")", "Describe(\"web-again\")"));
+        var other = Path.Combine(store.Root, "work", "web-again.orchestration.yaml");
+        File.WriteAllText(other, File.ReadAllText(orchestration).Replace("orchestration: web", "orchestration: web-again"));
         services.Orchestrations.Add("web-again", other);
         vm.RefreshCommand.Execute(null);
         vm.Show("web-again/main");
@@ -262,19 +263,23 @@ public class WorkspacesViewModelTests
         var services = new AppServices(store.Root);
         services.Settings.Save(new Sprig.Engine.Settings.SprigSettings { PortRangeStart = 9600, PortRangeEndExclusive = 9700 });
 
-        var sdk = Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
         var repo = Path.Combine(store.Root, "work", "shop-web");
         Directory.CreateDirectory(repo);
         File.WriteAllText(Path.Combine(repo, ".gitignore"), ".env.local\n");
-        File.WriteAllText(Path.Combine(repo, "sprig.cs"), $$"""
-            #:project {{sdk}}
-            using Sprig;
-            var repo = Repo.Describe("shop-web");
-            var web = repo.Node("web", ".").Http();
-            web.EnvFile(".env.local", e => e
-                .Set("API", repo.Setting<Url>("api-url", "http://localhost:5100"))
-                .Set("KEY", repo.Setting<Secret>("api-key")));
-            return repo.Emit(args);
+        File.WriteAllText(Path.Combine(repo, "sprig.yaml"), """
+            schema: 1
+            repo: shop-web
+            inputs:
+              api-url: { type: url, default: http://localhost:5100 }
+              api-key: { type: secret }
+            apps:
+              web: { run: node, ports: { http: any } }
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  API: ${inputs.api-url}
+                  KEY: ${inputs.api-key}
             """);
         Commit(repo);
         var entry = services.Authoring.AddRepo(repo, "shop-web");
@@ -343,17 +348,19 @@ public class WorkspacesViewModelTests
         var services = new AppServices(store.Root);
         services.Settings.Save(new Sprig.Engine.Settings.SprigSettings { PortRangeStart = 9700, PortRangeEndExclusive = 9800 });
 
-        var sdk = Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
         var repo = Path.Combine(store.Root, "work", "shop-web");
         Directory.CreateDirectory(repo);
         File.WriteAllText(Path.Combine(repo, ".gitignore"), ".env.local\n");
-        File.WriteAllText(Path.Combine(repo, "sprig.cs"), $$"""
-            #:project {{sdk}}
-            using Sprig;
-            var repo = Repo.Describe("shop-web");
-            var web = repo.Node("web", ".").Http();
-            web.EnvFile(".env.local", e => e.Set("PORT", web.Port));
-            return repo.Emit(args);
+        File.WriteAllText(Path.Combine(repo, "sprig.yaml"), """
+            schema: 1
+            repo: shop-web
+            apps:
+              web: { run: node, ports: { http: any } }
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  PORT: ${web.port}
             """);
         Commit(repo);
         new Sprig.Engine.Processes.ProcessRunner().Run("git", ["-C", repo, "branch", "feat/ready"]).EnsureSuccess();
@@ -400,13 +407,6 @@ public class WorkspacesViewModelTests
     {
         for (var i = 0; i < 600 && !condition(); i++) await Task.Delay(100);
         Assert.True(condition());
-    }
-
-    static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "sprig.slnx"))) dir = dir.Parent;
-        return dir!.FullName;
     }
 
     [Fact]

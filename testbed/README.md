@@ -15,23 +15,23 @@ pwsh -File scripts/testbed.ps1 -Path D:\tb -Force
 
 Two orchestrations sit beside the repos:
 
-- `storefront.orchestration.cs` joins all three repos: `sprig up storefront -b feat-x` checks feat-x out in a slot of worktrees, `storefront--1`, and `sprig up storefront` runs the repos where they're checked out, as `main`.
+- `storefront.orchestration.yaml` joins all three repos: `sprig up storefront -b feat-x` checks feat-x out in a slot of worktrees, `storefront--1`, and `sprig up storefront` runs the repos where they're checked out, as `main`.
 - One repo on its own: in its folder, `sprig init` then `sprig up` runs it in place, apps and all (`--no-apps` stops at the infra). `sprig up -b feat-x` checks a branch out in a slot of its own, `shop-web--1`, and `sprig free feat-x` frees the slot for the next branch, keeping its data, ports and values. `sprig info` shows a workspace whole; `sprig settings`, `sprig set name=value` and `sprig unset name` show and change where its values come from.
 
 To use this checkout's build as `sprig`, run `.\scripts\dev-sprig.ps1 -Store <empty folder>` (or `scripts\dev-sprig.cmd` in cmd) in the terminal you test from.
-- `catalog.orchestration.cs` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`orchestration.UseRepo("id")`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
+- `catalog.orchestration.yaml` runs `shop-services` and `shop-mobile`, naming them by their IDs on the Repos list (`use: <id>`) instead of by folder. It plans once those IDs are listed. `testbed.ps1` prints the commands for that, and doesn't run them, so a fresh store stays empty for the hand-test checklist:
 
   ```sh
-  sprig repo add <testbed>/shop-services          # in repo: uses the folder's own sprig.cs
+  sprig repo add <testbed>/shop-services          # in repo: uses the folder's own sprig.yaml
   sprig repo add <testbed>/shop-mobile
   sprig repo copy shop-mobile --id shop-mobile-sprig   # in sprig: a copy to change without touching the repo
-  sprig orchestration add <testbed>/catalog.orchestration.cs
+  sprig orchestration add <testbed>/catalog.orchestration.yaml
   sprig plan catalog
   ```
 
   Running them again is harmless: an ID already listed for the same folder is left as it is.
 
-A repo on the Repos list also runs on its own, with no orchestration: `sprig up shop-services`. `shop-services` brings its own Mailpit for that (`repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl)`), which storefront's workspaces leave out, since storefront supplies one. `shop-web` and `shop-mobile` run on their own too: their API urls default to shop-services' usual ports (5100 and 5200), so they work against shop-services run in place, and `--set catalog-url=...` points a workspace elsewhere.
+A repo on the Repos list also runs on its own, with no orchestration: `sprig up shop-services`. `shop-services` brings its own Mailpit for that (its `mail-smtp` input defaults to `${mail.smtp-url}`), which storefront's workspaces leave out, since storefront supplies one. `shop-web` and `shop-mobile` run on their own too: their API urls default to shop-services' usual ports (5100 and 5200), so they work against shop-services run in place, and `--set catalog-url=...` points a workspace elsewhere.
 
 ## What proves the wiring
 

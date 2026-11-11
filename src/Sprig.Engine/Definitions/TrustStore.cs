@@ -14,7 +14,7 @@ public sealed record TrustEntry(string Path, string Sha256, DateTimeOffset Appro
 
 /// <summary>
 /// Which versions of each definition file the user has approved, by exact content. Sprig only runs a definition
-/// whose current hash was approved, so a branch that changes a sprig.cs asks once instead of running new code
+/// whose current hash was approved, so a branch that changes a sprig.yaml asks once instead of running new code
 /// silently. Approving a version keeps the earlier ones, so switching between branches doesn't ask again.
 /// </summary>
 public interface ITrustStore

@@ -13,8 +13,8 @@ public class OrchestrationsViewModelTests
     {
         using var store = new TempStore();
         Directory.CreateDirectory(store.Root);
-        var file = Path.Combine(store.Root, "storefront.orchestration.cs");
-        File.WriteAllText(file, "using Sprig;\nreturn Orchestration.Describe(\"shop\").Emit(args);");
+        var file = Path.Combine(store.Root, "storefront.orchestration.yaml");
+        File.WriteAllText(file, "schema: 1\norchestration: shop\nrepos: {}\n");
         var vm = new OrchestrationsViewModel(new AppServices(store.Root));
         vm.OpenAddCommand.Execute(null);
         vm.NewPath = file;
@@ -38,8 +38,8 @@ public class OrchestrationsViewModelTests
     {
         using var store = new TempStore();
         Directory.CreateDirectory(store.Root);
-        var file = Path.Combine(store.Root, "storefront.orchestration.cs");
-        File.WriteAllText(file, "using Sprig;\nreturn Orchestration.Describe(\"shop\").Emit(args);");
+        var file = Path.Combine(store.Root, "storefront.orchestration.yaml");
+        File.WriteAllText(file, "schema: 1\norchestration: shop\nrepos: {}\n");
         var services = new AppServices(store.Root);
         var vm = new OrchestrationsViewModel(services);
         vm.OpenAddCommand.Execute(null);
@@ -103,8 +103,8 @@ public class OrchestrationsViewModelTests
     {
         using var store = new TempStore();
         Directory.CreateDirectory(store.Root);
-        var file = Path.Combine(store.Root, "storefront.orchestration.cs");
-        var text = "using Sprig;\nreturn Orchestration.Describe(\"shop\").Emit(args);";
+        var file = Path.Combine(store.Root, "storefront.orchestration.yaml");
+        var text = "schema: 1\norchestration: shop\nrepos: {}\n";
         File.WriteAllText(file, text);
         var services = new AppServices(store.Root);
         services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(text));
@@ -126,10 +126,10 @@ public class OrchestrationsViewModelTests
         using var store = new TempStore();
         Directory.CreateDirectory(Path.Combine(store.Root, "a"));
         Directory.CreateDirectory(Path.Combine(store.Root, "b"));
-        var first = Path.Combine(store.Root, "a", "storefront.orchestration.cs");
-        var second = Path.Combine(store.Root, "b", "storefront.orchestration.cs");
-        File.WriteAllText(first, "using Sprig;\nreturn Orchestration.Describe(\"one\").Emit(args);");
-        File.WriteAllText(second, "using Sprig;\nreturn Orchestration.Describe(\"two\").Emit(args);");
+        var first = Path.Combine(store.Root, "a", "storefront.orchestration.yaml");
+        var second = Path.Combine(store.Root, "b", "storefront.orchestration.yaml");
+        File.WriteAllText(first, "schema: 1\norchestration: one\nrepos: {}\n");
+        File.WriteAllText(second, "schema: 1\norchestration: two\nrepos: {}\n");
         var vm = new OrchestrationsViewModel(new AppServices(store.Root));
 
         vm.NewPath = first;
@@ -146,7 +146,7 @@ public class OrchestrationsViewModelTests
         using var store = new TempStore();
         var vm = new OrchestrationsViewModel(new AppServices(store.Root));
         vm.OpenAddCommand.Execute(null);
-        vm.NewPath = Path.Combine(store.Root, "nope.orchestration.cs");
+        vm.NewPath = Path.Combine(store.Root, "nope.orchestration.yaml");
 
         await vm.AddCommand.ExecuteAsync(null);
 
@@ -157,18 +157,18 @@ public class OrchestrationsViewModelTests
     }
 
     [Theory]
-    [InlineData("C:/x/storefront.orchestration.cs", "storefront")]
-    [InlineData("C:/x/Shop.Orchestration.CS", "Shop")]
+    [InlineData("C:/x/storefront.orchestration.yaml", "storefront")]
+    [InlineData("C:/x/Shop.Orchestration.YAML", "Shop")]
     [InlineData("C:/x/shop.cs", "shop")]
-    [InlineData("C:/x/.orchestration.cs", "orchestration")]
-    [InlineData("C:/x/my shop!.orchestration.cs", "my-shop")]
+    [InlineData("C:/x/.orchestration.yaml", "orchestration")]
+    [InlineData("C:/x/my shop!.orchestration.yaml", "my-shop")]
     public void The_id_an_orchestration_is_offered_comes_from_its_file(string path, string expected)
         => Assert.Equal(expected, Sprig.Engine.Orchestrations.OrchestrationRegistry.IdFromFile(path));
 
     [Fact]
     public void The_plan_view_lists_wiring_between_repos_and_masks_passwords()
     {
-        var at = new SourceLocation(@"C:\tb\shop-web\sprig.cs", 7);
+        var at = new SourceLocation(@"C:\tb\shop-web\sprig.yaml", 7);
         var plan = new Plan("storefront", "plan", "stable", "main",
             [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
             [
@@ -189,7 +189,7 @@ public class OrchestrationsViewModelTests
         Assert.Equal("shop-services / catalog-api (catalog-url)", wire.Provider);
         Assert.Equal("http://localhost:8000", wire.Value);
         Assert.Equal("Host=a;Password=***", view.Apps[1].Rows[0].Value);
-        Assert.Equal("shop-web/sprig.cs:7", Assert.Single(view.Problems).Where);
+        Assert.Equal("shop-web/sprig.yaml:7", Assert.Single(view.Problems).Where);
         Assert.Equal("2 apps, 1 port.", view.Summary);
     }
 }
@@ -203,16 +203,16 @@ public class PathCompletionTests
         var root = Path.Combine(store.Root, "tb");
         Directory.CreateDirectory(Path.Combine(root, "shop-web"));
         Directory.CreateDirectory(Path.Combine(root, "shop-services"));
-        File.WriteAllText(Path.Combine(root, "storefront.orchestration.cs"), "");
+        File.WriteAllText(Path.Combine(root, "storefront.orchestration.yaml"), "");
         File.WriteAllText(Path.Combine(root, "notes.txt"), "");
 
         var typed = PathCompletion.ToPosix(root) + "/s";
         var all = PathCompletion.Suggest(typed);
-        var orchestrations = PathCompletion.Suggest(typed, f => f.EndsWith(".orchestration.cs"));
+        var orchestrations = PathCompletion.Suggest(typed, f => f.EndsWith(".orchestration.yaml"));
 
         var prefix = PathCompletion.ToPosix(root) + "/";
-        Assert.Equal([prefix + "shop-services/", prefix + "shop-web/", prefix + "storefront.orchestration.cs"], all);
-        Assert.Contains(prefix + "storefront.orchestration.cs", orchestrations);
+        Assert.Equal([prefix + "shop-services/", prefix + "shop-web/", prefix + "storefront.orchestration.yaml"], all);
+        Assert.Contains(prefix + "storefront.orchestration.yaml", orchestrations);
         Assert.DoesNotContain(all, s => s.Contains('\\'));
     }
 

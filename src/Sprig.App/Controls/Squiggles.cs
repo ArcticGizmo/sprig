@@ -5,19 +5,19 @@ using Avalonia;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
-using Sprig.App.Authoring;
+using Sprig.Engine.Authoring;
 
 namespace Sprig.App.Controls;
 
-/// <summary>A compile problem's place in the document. Kept in a segment collection tied to the document, so it moves
+/// <summary>A problem's place in the document. Kept in a segment collection tied to the document, so it moves
 /// with the code as it's typed above it until the next check replaces it.</summary>
-public sealed class ProblemMarker(HostDiagnostic problem) : TextSegment
+public sealed class ProblemMarker(EditorProblem problem) : TextSegment
 {
-    public HostDiagnostic Problem { get; } = problem;
+    public EditorProblem Problem { get; } = problem;
     public bool IsError => Problem.Severity == "Error";
 }
 
-/// <summary>Wavy underlines under compile errors (red) and warnings (amber), as an IDE draws them.</summary>
+/// <summary>Wavy underlines under errors (red) and warnings (amber), as an IDE draws them.</summary>
 public sealed class Squiggles : IBackgroundRenderer
 {
     static readonly IPen ErrorPen = new Pen(new SolidColorBrush(Color.Parse("#F87171")), 1.2);
@@ -30,21 +30,21 @@ public sealed class Squiggles : IBackgroundRenderer
     /// <summary>Start over on <paramref name="document"/>, as when the editor's whole text is replaced.</summary>
     public void Attach(TextDocument document) => _markers = new TextSegmentCollection<ProblemMarker>(document);
 
-    public void Show(TextDocument document, IEnumerable<HostDiagnostic> problems)
+    public void Show(TextDocument document, IEnumerable<EditorProblem> problems)
     {
         _markers.Clear();
         foreach (var problem in problems)
         {
             var start = Math.Clamp(problem.Start, 0, document.TextLength);
             var end = Math.Clamp(problem.End, start, document.TextLength);
-            // A zero-width problem (a missing ';') still needs something to underline.
+            // A zero-width problem still needs something to underline.
             if (end == start) (start, end) = end < document.TextLength ? (start, end + 1) : (Math.Max(0, start - 1), end);
             _markers.Add(new ProblemMarker(problem) { StartOffset = start, Length = end - start });
         }
     }
 
     /// <summary>Problems under <paramref name="offset"/>, errors first.</summary>
-    public IReadOnlyList<HostDiagnostic> At(int offset)
+    public IReadOnlyList<EditorProblem> At(int offset)
         => _markers.FindSegmentsContaining(offset).OrderBy(m => m.IsError ? 0 : 1).Select(m => m.Problem).ToArray();
 
     public void Draw(TextView textView, DrawingContext drawingContext)

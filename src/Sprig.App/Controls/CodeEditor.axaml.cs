@@ -13,23 +13,27 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.TextMate;
-using Sprig.App.Authoring;
+using Sprig.Engine.Authoring;
 using TextMateSharp.Grammars;
 
 namespace Sprig.App.Controls;
 
 /// <summary>
-/// A definition's C# with what a developer expects of an IDE: completion as a word is typed (and after a dot, or on
-/// Ctrl+Space), docs on hover, squiggles under problems and Alt+Shift+F to format. All of it comes from the language
-/// host, which runs in its own process: if it fails, this stays a plain text editor.
+/// A definition's YAML with what a developer expects of an IDE: completion as a word is typed (and after a dot in a
+/// reference, a colon, or on Ctrl+Space), what a key or reference means on hover, and squiggles under problems. All of
+/// it comes from <see cref="Language"/>; without one, this is a plain text editor.
 /// </summary>
 public partial class CodeEditor : UserControl
 {
     public static readonly StyledProperty<string> TextProperty =
         AvaloniaProperty.Register<CodeEditor, string>(nameof(Text), "", defaultBindingMode: BindingMode.TwoWay);
 
-    public static readonly StyledProperty<LanguageHostClient?> HostProperty =
-        AvaloniaProperty.Register<CodeEditor, LanguageHostClient?>(nameof(Host));
+    public static readonly StyledProperty<DefinitionLanguage?> LanguageProperty =
+        AvaloniaProperty.Register<CodeEditor, DefinitionLanguage?>(nameof(Language));
+
+    /// <summary>The file being edited, which problems are reported against.</summary>
+    public static readonly StyledProperty<string> FilePathProperty =
+        AvaloniaProperty.Register<CodeEditor, string>(nameof(FilePath), "sprig.yaml");
 
     public string Text
     {
@@ -37,15 +41,21 @@ public partial class CodeEditor : UserControl
         set => SetValue(TextProperty, value);
     }
 
-    public LanguageHostClient? Host
+    public DefinitionLanguage? Language
     {
-        get => GetValue(HostProperty);
-        set => SetValue(HostProperty, value);
+        get => GetValue(LanguageProperty);
+        set => SetValue(LanguageProperty, value);
     }
 
-    readonly ObservableCollection<HostDiagnostic> _problems = [];
+    public string FilePath
+    {
+        get => GetValue(FilePathProperty);
+        set => SetValue(FilePathProperty, value);
+    }
+
+    readonly ObservableCollection<EditorProblem> _problems = [];
     readonly Squiggles _squiggles = new();
-    readonly DispatcherTimer _diagnoseDelay = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    readonly DispatcherTimer _diagnoseDelay = new() { Interval = TimeSpan.FromMilliseconds(300) };
     readonly DispatcherTimer _hoverDelay = new() { Interval = TimeSpan.FromMilliseconds(450) };
     readonly DispatcherTimer _hideDelay = new() { Interval = TimeSpan.FromMilliseconds(350) };
     CompletionWindow? _completion;
@@ -56,11 +66,12 @@ public partial class CodeEditor : UserControl
     public CodeEditor()
     {
         InitializeComponent();
-        // AvaloniaEdit's built-in C# colours are made for a light background; a TextMate grammar with a dark theme
-        // keeps method names and strings readable on the app's dark panels.
+        // AvaloniaEdit's built-in colours are made for a light background; a TextMate grammar with a dark theme keeps
+        // keys and strings readable on the app's dark panels.
         var textMate = new RegistryOptions(ThemeName.DarkPlus);
-        Editor.InstallTextMate(textMate).SetGrammar(textMate.GetScopeByLanguageId(textMate.GetLanguageByExtension(".cs").Id));
+        Editor.InstallTextMate(textMate).SetGrammar(textMate.GetScopeByLanguageId(textMate.GetLanguageByExtension(".yaml").Id));
         Editor.Options.ConvertTabsToSpaces = true;
+        Editor.Options.IndentationSize = 2;
         // Links are drawn in a blue that can't be read on the dark panels, and a url in a definition is a value to
         // edit, not a page to visit, so it keeps the string colour.
         Editor.Options.EnableHyperlinks = false;
@@ -110,6 +121,12 @@ public partial class CodeEditor : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == LanguageProperty)
+        {
+            _diagnoseDelay.Stop();
+            _diagnoseDelay.Start();
+            return;
+        }
         if (change.Property != TextProperty || _syncing) return;
         var text = change.GetNewValue<string>() ?? "";
         if (Editor.Text == text) return;
@@ -136,14 +153,14 @@ public partial class CodeEditor : UserControl
     /// <summary>Check for problems now rather than after the typing pause; the headless renderer's timers don't tick.</summary>
     internal async Task DiagnoseAsync()
     {
-        if (Host is not { } host) return;
+        if (Language is not { } language) return;
         var text = Editor.Text;
+        var path = FilePath;
         try
         {
-            var response = await host.DiagnoseAsync(text);
-            // Typed on while the host answered: the offsets no longer fit, and the next check is already due.
+            var all = await Task.Run(() => language.Diagnose(text, path));
+            // Typed on while it was checked: the offsets no longer fit, and the next check is already due.
             if (Editor.Text != text) return;
-            var all = response.Diagnostics ?? [];
             _squiggles.Show(Editor.Document, all);
             Editor.TextArea.TextView.InvalidateLayer(_squiggles.Layer);
 
@@ -168,7 +185,7 @@ public partial class CodeEditor : UserControl
 
     void OnProblemClick(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Control)?.Tag is not HostDiagnostic problem) return;
+        if ((sender as Control)?.Tag is not EditorProblem problem) return;
         var offset = Math.Clamp(problem.Start, 0, Editor.Document.TextLength);
         Editor.CaretOffset = offset;
         Editor.ScrollTo(Editor.Document.GetLineByOffset(offset).LineNumber, 0);
@@ -184,88 +201,69 @@ public partial class CodeEditor : UserControl
             e.Handled = true;
             _ = ShowCompletionAsync(asked: true);
         }
-        else if (e.Key == Key.F && e.KeyModifiers == (KeyModifiers.Alt | KeyModifiers.Shift))
-        {
-            e.Handled = true;
-            _ = FormatAsync();
-        }
         else if (e.Key == Key.Escape)
         {
             HideHover();
         }
     }
 
-    async Task FormatAsync()
-    {
-        if (Host is not { } host) return;
-        var before = Editor.Text;
-        string? formatted;
-        try { formatted = (await host.FormatAsync(before)).Text; }
-        catch (Exception) { return; }
-        if (formatted is null || formatted == before || Editor.Text != before) return;
-
-        // Only the changed stretch is replaced, as one step, so the caret stays put and one undo reverts it.
-        var (start, length, inserted) = Diff(before, formatted);
-        var caret = Editor.CaretOffset;
-        Editor.Document.Replace(start, length, inserted);
-        Editor.CaretOffset = Math.Clamp(caret <= start ? caret : caret + inserted.Length - length, 0, Editor.Document.TextLength);
-    }
-
-    static (int Start, int Length, string Inserted) Diff(string before, string after)
-    {
-        var start = 0;
-        while (start < before.Length && start < after.Length && before[start] == after[start]) start++;
-        var endBefore = before.Length;
-        var endAfter = after.Length;
-        while (endBefore > start && endAfter > start && before[endBefore - 1] == after[endAfter - 1]) { endBefore--; endAfter--; }
-        return (start, endBefore - start, after[start..endAfter]);
-    }
-
     // ---- completion ----
 
-    static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+    static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c is '_' or '-';
 
-    /// <summary>A character that can't be part of a name accepts the highlighted item first, as in an IDE: typing
-    /// <c>(</c> after <c>Ht</c> gives <c>Http(</c>. A space or an operator just closes the list.</summary>
+    /// <summary>A character that ends what's being completed accepts the highlighted item first, as in an IDE: typing
+    /// <c>:</c> after <c>ru</c> gives <c>run:</c>, and <c>.</c> after <c>${cat</c> gives <c>${catalog-api.</c>. A space
+    /// just closes the list.</summary>
     void OnTextEntering(object? sender, TextInputEventArgs e)
     {
-        if (_completion is null || e.Text is not { Length: > 0 } typed || IsWordChar(typed[0])) return;
-        if (typed[0] is '(' or '.' or ';' or ',' or ')' or '<' or '[') _completion.CompletionList.RequestInsertion(e);
+        if (_completion is null || e.Text is not { Length: > 0 } typed || IsWordChar(typed[0]) || typed[0] == '/') return;
+        if (typed[0] is '.' or ':' or '}' or ',' or ']') _completion.CompletionList.RequestInsertion(e);
         else _completion.Close();
     }
 
     void OnTextEntered(object? sender, TextInputEventArgs e)
     {
         if (e.Text is not { Length: 1 } typed) return;
-        if (typed == ".")
+        var at = Editor.CaretOffset - 1;
+        char Before(int back) => at - back >= 0 ? Editor.Document.GetCharAt(at - back) : '\n';
+
+        // Where something new can start: a reference's next part, a value after its key, a list's next item, a path's
+        // next folder.
+        var opens = typed[0] switch
+        {
+            '.' or '/' or '[' => true,
+            '{' => Before(1) == '$',
+            ' ' => Before(1) is ':' or ',',
+            _ => false,
+        };
+        if (opens)
         {
             _ = ShowCompletionAsync(asked: false);
             return;
         }
         // The first letter of a word opens the list; the letters after it narrow the one that's open.
-        var at = Editor.CaretOffset - 1;
-        var startsWord = (char.IsLetter(typed[0]) || typed[0] == '_') && (at == 0 || !IsWordChar(Editor.Document.GetCharAt(at - 1)));
+        var startsWord = char.IsLetter(typed[0]) && !IsWordChar(Before(1));
         if (_completion is null && startsWord) _ = ShowCompletionAsync(asked: false);
     }
 
-    /// <param name="asked">Ctrl+Space: show the list even where a new name is probably being typed.</param>
+    /// <param name="asked">Ctrl+Space: show the list even with nothing typed.</param>
     async Task ShowCompletionAsync(bool asked)
     {
-        if (Host is not { } host) return;
+        if (Language is not { } language) return;
         var caret = Editor.CaretOffset;
-        HostResponse response;
-        try { response = await host.CompleteAsync(Editor.Text, caret); }
+        var text = Editor.Text;
+        EditorCompletions? response;
+        try { response = await Task.Run(() => language.Complete(text, caret)); }
         catch (Exception) { return; }
 
-        if (response.Items is not { Count: > 0 } items || (response.Suggestion == true && !asked)) return;
-        var start = response.SpanStart ?? caret;
-        // Typed on, or moved away, while the host answered.
-        if (Editor.CaretOffset < start || Editor.CaretOffset - start > 64 || start > Editor.Document.TextLength) return;
+        if (response is not { Items.Count: > 0 } || Editor.Text != text) return;
+        var start = response.SpanStart;
+        // Typed on, or moved away, while it was asked.
+        if (Editor.CaretOffset < start || Editor.CaretOffset - start > 200 || start > Editor.Document.TextLength) return;
 
         _completion?.Close();
         var window = new CompletionWindow(Editor.TextArea) { StartOffset = start, CloseWhenCaretAtBeginning = !asked };
-        foreach (var (item, index) in items.Select((item, index) => (item, index)).OrderBy(x => x.item.Sort ?? x.item.Label, StringComparer.Ordinal))
-            window.CompletionList.CompletionData.Add(new CompletionItem(item, index, host));
+        foreach (var item in response.Items) window.CompletionList.CompletionData.Add(new CompletionItem(item));
         var typed = Editor.Document.GetText(start, Editor.CaretOffset - start);
         if (typed.Length > 0) window.CompletionList.SelectItem(typed);
         if (typed.Length > 0 && window.CompletionList.CurrentList?.Count == 0) return;
@@ -274,11 +272,8 @@ public partial class CodeEditor : UserControl
         window.Show();
     }
 
-    /// <summary>One completion item. Its signature and docs are fetched when it's highlighted, not for the whole list.</summary>
-    sealed class CompletionItem(HostCompletionItem item, int index, LanguageHostClient host) : ICompletionData
+    sealed class CompletionItem(EditorCompletion item) : ICompletionData
     {
-        TextBlock? _description;
-
         public IImage? Image => null;
         public string Text => item.Label;
         public double Priority => 0;
@@ -288,31 +283,13 @@ public partial class CodeEditor : UserControl
             Inlines =
             [
                 new Avalonia.Controls.Documents.Run(item.Label),
-                new Avalonia.Controls.Documents.Run(item.Suffix ?? "") { Foreground = Brushes.Gray },
-                new Avalonia.Controls.Documents.Run(item.Kind is { Length: > 0 } kind ? $"   {kind}" : "") { Foreground = Brushes.Gray, FontSize = 11 },
+                new Avalonia.Controls.Documents.Run($"   {item.Kind}") { Foreground = Brushes.Gray, FontSize = 11 },
             ],
         };
 
-        public object? Description
-        {
-            get
-            {
-                if (_description is not null) return _description;
-                _description = new TextBlock { Text = item.Detail ?? "…", TextWrapping = TextWrapping.Wrap, MaxWidth = 480 };
-                _ = Fetch(_description);
-                return _description;
-            }
-        }
-
-        async Task Fetch(TextBlock target)
-        {
-            try
-            {
-                if ((await host.DescribeAsync(index)).Text is { Length: > 0 } text) target.Text = text;
-                else if (item.Detail is null) target.Text = item.Label;
-            }
-            catch (Exception) { target.Text = item.Label; }
-        }
+        public object? Description => item.Detail is { Length: > 0 } detail
+            ? new TextBlock { Text = detail, TextWrapping = TextWrapping.Wrap, MaxWidth = 480 }
+            : null;
 
         public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
             => textArea.Document.Replace(completionSegment, item.Label);
@@ -342,19 +319,22 @@ public partial class CodeEditor : UserControl
 
     async Task ShowHoverAsync()
     {
-        if (Host is not { } host || _completion is not null || OffsetAt(_hoverAt) is not { } offset) return;
+        if (_completion is not null || OffsetAt(_hoverAt) is not { } offset) return;
         var text = Editor.Text;
         var problems = _squiggles.At(offset);
-        HostHover? hover = null;
-        try { hover = (await host.HoverAsync(text, offset)).Hover; }
-        catch (Exception) { /* the problems alone are still worth showing */ }
+        EditorHover? hover = null;
+        if (Language is { } language)
+        {
+            try { hover = await Task.Run(() => language.Hover(text, offset)); }
+            catch (Exception) { /* the problems alone are still worth showing */ }
+        }
         if (Editor.Text != text || OffsetAt(_hoverAt) != offset || (hover is null && problems.Count == 0)) return;
 
         HoverProblem.IsVisible = problems.Count > 0;
-        HoverProblem.Text = string.Join("\n", problems.Select(p => $"{p.Id}: {p.Message}"));
+        HoverProblem.Text = string.Join("\n", problems.Select(p => p.Message));
         HoverProblem.Foreground = problems.Any(p => p.Severity == "Error") ? Brush("DangerBrush") : Brush("WarnBrush");
         HoverSignature.IsVisible = hover is not null;
-        HoverSignature.Text = hover?.Signature;
+        HoverSignature.Text = hover?.Title;
         HoverDocs.IsVisible = hover?.Docs is not null;
         HoverDocs.Text = hover?.Docs;
         var span = hover is not null ? (hover.Start, hover.End)

@@ -15,7 +15,7 @@ public sealed record RepoSettingRow(string Name, string From, bool HasValue);
 
 /// <summary>A repo of the selected orchestration, as its card on the Overview shows it.</summary>
 /// <param name="Path">The repo as the orchestration names it.</param>
-/// <param name="Use">Its Repos-list entry, when the orchestration names it with <c>UseRepo</c>.</param>
+/// <param name="Use">Its Repos-list entry, when the orchestration names it with <c>use:</c>.</param>
 /// <param name="InRepo">Where its definition is kept; null when there's none to use.</param>
 /// <param name="Problem">Why it has no model: not approved, doesn't run, or no definition.</param>
 public sealed record RepoCard(
@@ -95,7 +95,7 @@ public static class OrchestrationSummary
         if (reference.Use is { } use && entry is null) return $"'{use}' isn't on the Repos list";
         var file = entry?.DefinitionFile ?? System.IO.Path.Combine(loaded.RepoDirs.GetValueOrDefault(reference.Path) ?? reference.Path, OrchestrationLoader.RepoDefinitionFile);
         if (loaded.Untrusted.Any(u => SameFile(u.Path, file) || SameFile(u.TrustPath, file))) return "Not approved yet, so it hasn't run";
-        if (!System.IO.File.Exists(file)) return "No sprig.cs yet: commit one, or add it to Repos to keep one in sprig";
+        if (!System.IO.File.Exists(file)) return "No sprig.yaml yet: commit one, or add it to Repos to keep one in sprig";
         return "Its definition doesn't run; see the problems above";
     }
 

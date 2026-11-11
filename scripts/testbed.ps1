@@ -17,11 +17,6 @@
 .PARAMETER Force
   Delete and rebuild an existing testbed.
 
-.PARAMETER UsePackage
-  Keep the definitions' '#:package ArcticGizmo.Sprig.Sdk' lines and pack the SDK into artifacts/feed, with a nuget.config at
-  the testbed root pointing there. Without it, each definition references this checkout's Sprig.Sdk project
-  directly, so SDK changes show up without repacking.
-
 .EXAMPLE
   pwsh -File scripts/testbed.ps1
   pwsh -File scripts/testbed.ps1 -Path D:\scratch\testbed -Force
@@ -29,8 +24,7 @@
 [CmdletBinding()]
 param(
     [string] $Path,
-    [switch] $Force,
-    [switch] $UsePackage
+    [switch] $Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,37 +54,9 @@ function Copy-Template([string] $from, [string] $to) {
     }
 }
 
-$sdkProject = Join-Path $root 'src/Sprig.Sdk/Sprig.Sdk.csproj'
-
-function Set-SdkReference([string] $file) {
-    if ($UsePackage) { return }
-    $text = Get-Content -LiteralPath $file -Raw
-    $text = [regex]::Replace($text, '(?m)^#:package ArcticGizmo\.Sprig\.Sdk@\S+', "#:project $sdkProject")
-    Set-Content -LiteralPath $file -Value $text -NoNewline
-}
-
-if ($UsePackage) {
-    $feed = Join-Path $root 'artifacts/feed'
-    dotnet pack (Join-Path $root 'src/Sprig.Sdk') -c Release -o $feed -nologo | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "packing Sprig.Sdk failed" }
-    Set-Content -Path (Join-Path $Path 'nuget.config') -Value @"
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="sprig-local" value="$feed" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="sprig-local"><package pattern="ArcticGizmo.Sprig.Sdk" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>
-"@
-}
-
 foreach ($template in Get-ChildItem -LiteralPath $templates -Directory) {
     $repo = Join-Path $Path $template.Name
     Copy-Template $template.FullName $repo
-    Get-ChildItem -LiteralPath $repo -Filter 'sprig.cs' | ForEach-Object { Set-SdkReference $_.FullName }
 
     # A fixed identity, so the testbed's history doesn't depend on (or record) whoever built it.
     git -C $repo init --quiet --initial-branch=main
@@ -110,10 +76,9 @@ foreach ($template in Get-ChildItem -LiteralPath $templates -Directory) {
 }
 
 # An orchestration sits beside the repos it names, the way a team might keep one next to its checkouts.
-foreach ($orchestration in Get-ChildItem -LiteralPath (Join-Path $root 'testbed') -Filter '*.orchestration.cs') {
+foreach ($orchestration in Get-ChildItem -LiteralPath (Join-Path $root 'testbed') -Filter '*.orchestration.yaml') {
     $dest = Join-Path $Path $orchestration.Name
     Copy-Item -LiteralPath $orchestration.FullName -Destination $dest
-    Set-SdkReference $dest
     Write-Host "  $($orchestration.Name)  ->  $dest"
 }
 
@@ -129,11 +94,11 @@ if (Test-Path -LiteralPath $aspire) {
 
 Write-Host ""
 Write-Host "Testbed ready at $Path"
-Write-Host "Plan it:      sprig orchestration add `"$(Join-Path $Path 'storefront.orchestration.cs')`" ; sprig plan storefront"
+Write-Host "Plan it:      sprig orchestration add `"$(Join-Path $Path 'storefront.orchestration.yaml')`" ; sprig plan storefront"
 Write-Host "Run by hand:  see each repo's README."
 Write-Host ""
-Write-Host "catalog.orchestration.cs names its repos by ID, so it plans once they're on the Repos list:"
+Write-Host "catalog.orchestration.yaml names its repos by ID, so it plans once they're on the Repos list:"
 Write-Host "  sprig repo add `"$(Join-Path $Path 'shop-services')`""
 Write-Host "  sprig repo add `"$(Join-Path $Path 'shop-mobile')`""
 Write-Host "  sprig repo copy shop-mobile --id shop-mobile-sprig"
-Write-Host "  sprig orchestration add `"$(Join-Path $Path 'catalog.orchestration.cs')`" ; sprig plan catalog"
+Write-Host "  sprig orchestration add `"$(Join-Path $Path 'catalog.orchestration.yaml')`" ; sprig plan catalog"

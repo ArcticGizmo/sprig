@@ -391,19 +391,19 @@ internal static partial class HeadlessRenderer
         var root = Path.Combine(services.Paths.Root, "tb");
         var repos = SampleApps.Select(a => a.Repo).Distinct()
             .Select(r => new WorkspaceRepo($"../{r}", r, Path.Combine(root, r), Path.Combine(root, "storefront--feat-a", r), true, true)).ToArray();
-        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.cs"), "feat-a", "feat-a", "stable", repos, [], [],
+        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.yaml"), "feat-a", "feat-a", "stable", repos, [], [],
             WorkspaceState.Up, now, now, Path.Combine(root, "storefront--feat-a")));
-        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.cs"), "feat-b", "feat-b", "stable", [], [], [], WorkspaceState.Up, now, now));
-        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.cs"), "demo-oct", "demo-oct", "stable", [], [], [],
+        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.yaml"), "feat-b", "feat-b", "stable", [], [], [], WorkspaceState.Up, now, now));
+        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.yaml"), "demo-oct", "demo-oct", "stable", [], [], [],
             WorkspaceState.Failed, now.AddMinutes(-20), now.AddMinutes(-20), Error: "port 8002 is in use"));
         foreach (var (name, days) in new[] { ("feat-c", 3), ("hotfix-12", 6), ("spike-cache", 15) })
-            workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.cs"), name, name, "stable", [], [], [],
+            workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.yaml"), name, name, "stable", [], [], [],
                 WorkspaceState.Down, now.AddDays(-days), now.AddDays(-days)));
-        workspaces.Save(new WorkspaceRecord("services", Path.Combine(root, "services.orchestration.cs"), "local", null, "stable", [], [], [], WorkspaceState.Up, now, now));
-        workspaces.Save(new WorkspaceRecord("analytics", Path.Combine(root, "analytics.orchestration.cs"), "ingest-perf", "ingest-perf", "stable", [], [], [],
+        workspaces.Save(new WorkspaceRecord("services", Path.Combine(root, "services.orchestration.yaml"), "local", null, "stable", [], [], [], WorkspaceState.Up, now, now));
+        workspaces.Save(new WorkspaceRecord("analytics", Path.Combine(root, "analytics.orchestration.yaml"), "ingest-perf", "ingest-perf", "stable", [], [], [],
             WorkspaceState.Down, now.AddDays(-4), now.AddDays(-4)));
 
-        var at = new SourceLocation(Path.Combine(root, "shop-services", "sprig.cs"), 12);
+        var at = new SourceLocation(Path.Combine(root, "shop-services", "sprig.yaml"), 12);
         workspaces.SavePlan(new Plan("storefront", "feat-a", "stable", "main",
             [.. SampleApps.Where(a => a.Port is not null).Select(a => new PlannedPort(a.Repo, a.App, "http", a.Port!.Value, null, null)),
              new PlannedPort("shop-services", "postgres", "tcp", 8002, null, 5432),
@@ -430,7 +430,7 @@ internal static partial class HeadlessRenderer
             [new PlannedGroup("client", [.. SampleApps.Where(a => a.Repo == "shop-web").Select(a => $"{a.Repo}/{a.App}")]),
              new PlannedGroup("apis", [.. SampleApps.Where(a => a.Repo == "shop-services" && !a.Job).Select(a => $"{a.Repo}/{a.App}")])],
             [new PlanProblem(ProblemSeverity.Warning, "ingest-worker has no health check, so \"ready\" only means it started",
-                new SourceLocation(Path.Combine(root, "shop-analytics", "sprig.cs"), 14))],
+                new SourceLocation(Path.Combine(root, "shop-analytics", "sprig.yaml"), 14))],
             [new PlannedLink("Mail inbox", "http://localhost:8025"), new PlannedLink("Checkout flow", "http://localhost:5170/cart?seed=demo")]));
 
         var runners = new List<RunnerStatus>();

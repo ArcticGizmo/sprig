@@ -66,15 +66,15 @@ public sealed class OrchestrationRegistry(ISprigPaths paths)
         => Ids.Unused(Ids.Slug(wanted, "orchestration"),
             Load().Where(e => forPath is null || !SamePath(e.Path, forPath)).Select(e => e.Id).Concat(RepoIds()).ToHashSet(StringComparer.OrdinalIgnoreCase));
 
-    /// <summary>The ID an orchestration file suggests: its name without <c>.orchestration.cs</c>. An orchestration kept in sprig is always
-    /// <c>orchestration.cs</c>, so its folder (named by its ID) says it instead.</summary>
+    /// <summary>The ID an orchestration file suggests: its name without <c>.orchestration.yaml</c>. An orchestration kept in sprig is
+    /// always <c>orchestration.yaml</c>, so its folder (named by its ID) says it instead.</summary>
     public static string IdFromFile(string path)
     {
         var file = System.IO.Path.GetFileName(path);
         if (file.Equals(Definitions.StoredDefinitions.OrchestrationFileName, StringComparison.OrdinalIgnoreCase)
             && System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path)) is { Length: > 0 } folder)
             return Ids.Slug(folder, "orchestration");
-        foreach (var suffix in (string[])[".orchestration.cs", ".cs"])
+        foreach (var suffix in (string[])[".orchestration.yaml", ".orchestration.yml", ".yaml", ".yml"])
             if (file.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && file.Length > suffix.Length)
                 return Ids.Slug(file[..^suffix.Length], "orchestration");
         return Ids.Slug(System.IO.Path.GetFileNameWithoutExtension(file), "orchestration");

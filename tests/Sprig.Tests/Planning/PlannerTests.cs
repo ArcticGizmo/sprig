@@ -395,7 +395,7 @@ public class PlannerTests
 
         var warning = Assert.Single(plan.Problems);
         Assert.Equal(ProblemSeverity.Warning, warning.Severity);
-        Assert.Contains("also has 'mailpit', 'seq', which its sprig.cs doesn't name, so workspaces leave them out", warning.Message);
+        Assert.Contains("also has 'mailpit', 'seq', which its sprig.yaml doesn't name, so workspaces leave them out", warning.Message);
         var compose = Assert.Single(plan.Compose);
         Assert.Equal(["postgres", "redis"], compose.Services.Select(s => s.Name));
         Assert.Contains(compose.Overrides, o => o.Path == "services.postgres.container_name" && o.Generated);
@@ -437,7 +437,7 @@ public class PlannerTests
     {
         var f = new Fixture();
         f.Add("../r", repo => repo.DotNet("api", ".").Http());
-        var at = new SourceLocation("sprig.cs", 3);
+        var at = new SourceLocation("sprig.yaml", 3);
 
         var plan = f.PlanWith(i => i with
         {
@@ -450,7 +450,7 @@ public class PlannerTests
         var problem = Assert.Single(plan.Problems);
         Assert.Equal(ProblemSeverity.Error, problem.Severity);
         Assert.Contains("'api' would get Feature on its process, which running it yourself wouldn't", problem.Message);
-        Assert.Contains(".AppSettings(\"appsettings.Local.json\", …)", problem.Message);
+        Assert.Contains("Write it into a file the app reads, under files:", problem.Message);
         Assert.Equal(at, problem.Location);
     }
 
@@ -469,7 +469,7 @@ public class PlannerTests
 
         Assert.Equal(ProblemSeverity.Error, problem.Severity);
         Assert.Contains("'web' has {web.http.port} in its Run command", problem.Message);
-        Assert.Contains(".EnvFile(\".env.local\"", problem.Message);
+        Assert.Contains("the value in a file the app reads, under files:", problem.Message);
     }
 
     static PlannedEnv Env(Plan plan, string app, string key)
@@ -515,8 +515,8 @@ public class PlannerTests
 
         var ambiguous = f.Plan();
         var problem = Assert.Single(ambiguous.Problems);
-        Assert.Contains("a and b all export 'cache-url'", problem.Message);
-        Assert.Contains("orchestration.Bind(\"cache-url\"", problem.Message);
+        Assert.Contains("a and b all output 'cache-url'", problem.Message);
+        Assert.Contains("inputs: { cache-url: ${<repo>.outputs.cache-url} }", problem.Message);
 
         f.Orchestration.Bind("cache-url", a.Export("cache-url"));
         var settled = f.Plan();
@@ -544,7 +544,7 @@ public class PlannerTests
         f.Add("../db", repo => repo.Export<ConnectionString>("orders-db", "Host=x"));
         f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("DB", repo.Setting<Url>("orders-db"))));
 
-        Assert.Contains("web's setting 'orders-db' is a url, but db exports it as connectionstring", Assert.Single(f.Plan().Problems).Message);
+        Assert.Contains("web's input 'orders-db' is a url, but db outputs it as connectionstring", Assert.Single(f.Plan().Problems).Message);
     }
 
     [Fact]

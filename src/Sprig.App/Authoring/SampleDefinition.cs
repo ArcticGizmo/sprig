@@ -1,39 +1,53 @@
 namespace Sprig.App.Authoring;
 
-/// <summary>A small but realistic repo definition: what the headless editor render and the language host's tests read
-/// and complete against.</summary>
+/// <summary>A small but realistic repo definition: what the headless editor renders and the language service's tests
+/// read and complete against.</summary>
 public static class SampleDefinition
 {
     public const string Text = """
-        #:package ArcticGizmo.Sprig.Sdk@0.9.0
-        using Sprig;
+        schema: 1
+        repo: shop-services
 
-        var repo = Repo.Describe("shop-services");
+        containers:
+          pg: { preset: postgres }
 
-        var pg = repo.Container("pg", "postgres:17")
-            .Endpoint("tcp", targetPort: 5432);
+        inputs:
+          mail-smtp:
+            type: url
+            default: smtp://localhost:1025
 
-        var smtp = repo.Setting<Url>("mail-smtp", "smtp://localhost:1025");
+        apps:
+          # The catalog owns stock levels.
+          catalog-api:
+            run: dotnet
+            path: src/Catalog.Api
+            ports: { http: any }
+            wait-for: [pg]
 
-        // The catalog owns stock levels.
-        var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
-            .Http("http")
-            .WaitFor(pg);
+          orders-api:
+            run: dotnet
+            path: src/Orders.Api
+            ports: { http: any }
+            wait-for: [pg, catalog-api]
 
-        catalog.AppSettings("appsettings.Local.json", s => s
-            .Set("Urls", catalog.Url)
-            .Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog"));
+        files:
+          src/Catalog.Api/appsettings.Local.json:
+            read-by: [catalog-api]
+            values:
+              Urls: ${catalog-api.url}
+              ConnectionStrings:
+                Db: Host=localhost;Port=${pg.port};Database=catalog
 
-        var orders = repo.DotNet("orders-api", "src/Orders.Api")
-            .Http("http")
-            .WaitFor(pg, catalog);
+          src/Orders.Api/appsettings.Local.json:
+            read-by: [orders-api]
+            values:
+              Urls: ${orders-api.url}
+              Smtp:
+                Url: ${inputs.mail-smtp}
 
-        orders.AppSettings("appsettings.Local.json", s => s
-            .Set("Urls", orders.Url)
-            .Set("Smtp__Url", smtp));
-
-        repo.Export<Url>("catalog-url", catalog.Url);
-
-        return repo.Emit(args);
+        outputs:
+          catalog-url:
+            type: url
+            value: ${catalog-api.url}
         """;
 }

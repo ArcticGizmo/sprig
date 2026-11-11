@@ -69,7 +69,7 @@ public class CliAppTests
         var mobile = Path.Combine(store.Root, "src", "shop-mobile");
         Directory.CreateDirectory(web);
         Directory.CreateDirectory(mobile);
-        File.WriteAllText(Path.Combine(web, "sprig.cs"), "// shop-web's own");
+        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "// shop-web's own");
         File.WriteAllText(Path.Combine(mobile, "package.json"), """{ "name": "mobile", "scripts": { "dev": "vite" } }""");
         var stored = new Sprig.Engine.Definitions.StoredDefinitions(store.Paths);
 
@@ -90,15 +90,15 @@ public class CliAppTests
         Assert.Contains("\"inRepo\": false", Run(store, "repo", "ls", "--json").stdout);
 
         // A repo an orchestration uses stays unless removal is forced.
-        var orchestration = Path.Combine(store.Root, "src", "shop.orchestration.cs");
-        File.WriteAllText(orchestration, "var orchestration = Orchestration.Describe(\"shop\");\norchestration.UseRepo(\"web-sprig\");\nreturn orchestration.Emit(args);\n");
+        var orchestration = Path.Combine(store.Root, "src", "shop.orchestration.yaml");
+        File.WriteAllText(orchestration, "schema: 1\norchestration: shop\nrepos:\n  web: { use: web-sprig }\n");
         new Sprig.Engine.Orchestrations.OrchestrationRegistry(store.Paths).Add("shop", orchestration);
         var (refused, _, why) = Run(store, "repo", "rm", "web-sprig");
         Assert.Equal(1, refused);
         Assert.Contains("used by shop", why);
         Assert.Equal(0, Run(store, "repo", "rm", "web-sprig", "--force").code);
         Assert.Null(stored.Repo("web-sprig"));
-        Assert.True(File.Exists(Path.Combine(web, "sprig.cs")));
+        Assert.True(File.Exists(Path.Combine(web, "sprig.yaml")));
 
         // --in-sprig keeps a copy of the folder's own file, even with that file already listed.
         Assert.Equal(0, Run(store, "repo", "add", web, "--in-sprig").code);
@@ -121,15 +121,15 @@ public class CliAppTests
         Assert.Equal(0, code);
         Assert.Contains("\"existed\": false", stdout);
         Assert.False(stored.Repo("shop-web")!.InRepo);
-        Assert.False(File.Exists(Path.Combine(web, "sprig.cs")));
+        Assert.False(File.Exists(Path.Combine(web, "sprig.yaml")));
         Assert.Contains("\"existed\": true", Run(store, "init", web, "--json").stdout);
 
         Assert.Equal(0, Run(store, "init", api, "--in-repo").code);
         Assert.True(stored.Repo("api")!.InRepo);
-        Assert.Contains("Node(", File.ReadAllText(Path.Combine(api, "sprig.cs")));
+        Assert.Contains("run: node", File.ReadAllText(Path.Combine(api, "sprig.yaml")));
         // Sprig wrote it, so it runs without asking.
         Assert.Equal(Sprig.Engine.Definitions.TrustState.Trusted, new Sprig.Engine.Definitions.FileTrustStore(store.Paths)
-            .Check(Path.Combine(api, "sprig.cs"), Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(Path.Combine(api, "sprig.cs")))).State);
+            .Check(Path.Combine(api, "sprig.yaml"), Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(Path.Combine(api, "sprig.yaml")))).State);
     }
 
     [Fact]

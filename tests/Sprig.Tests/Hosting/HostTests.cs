@@ -322,7 +322,7 @@ public sealed class HostTests : IDisposable
         var settings = new Sprig.Engine.Settings.FileSettingsStore(_store.Paths);
         var trust = new Sprig.Engine.Definitions.FileTrustStore(_store.Paths);
         var cli = new Sprig.Cli.CliContext(_store.Paths, settings, trust,
-            new Sprig.Engine.Definitions.DefinitionRunner(trust, new Sprig.Engine.Definitions.DotnetRunHost(), _store.Paths),
+            new Sprig.Engine.Definitions.DefinitionRunner(trust, _store.Paths),
             new Sprig.Engine.Orchestrations.OrchestrationRegistry(_store.Paths),
             new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), settings,
                 new Sprig.Engine.Git.GitClient(processes), new Sprig.Engine.Compose.DockerCompose(processes), host: _client),

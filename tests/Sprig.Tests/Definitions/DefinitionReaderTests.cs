@@ -264,6 +264,30 @@ public class DefinitionReaderTests
     }
 
     [Fact]
+    public void A_reference_inside_braces_says_to_quote_it()
+    {
+        var (line, message) = Problem("""
+            schema: 1
+            repo: shop
+            apps:
+              web: { run: node, ports: { http: any } }
+            outputs:
+              web-url: { type: url, value: ${web.url} }
+            """);
+
+        Assert.Equal(6, line);
+        Assert.Contains("A value with ${…} inside { } or [ ] needs quotes", message);
+        Assert.True(Read("""
+            schema: 1
+            repo: shop
+            apps:
+              web: { run: node, ports: { http: any } }
+            outputs:
+              web-url: { type: url, value: '${web.url}' }
+            """).Ok);
+    }
+
+    [Fact]
     public void A_file_without_a_schema_or_from_a_newer_sprig_is_refused()
     {
         Assert.Contains("has no schema", Problem("repo: shop").Message);

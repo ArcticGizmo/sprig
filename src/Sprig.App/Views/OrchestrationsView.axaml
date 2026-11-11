@@ -246,7 +246,7 @@
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                     </Grid>
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
-                               Text="None yet. + Add makes one from a few repo folders, with nothing committed to them, or adds a .orchestration.cs." />
+                               Text="None yet. + Add makes one from a few repo folders, with nothing committed to them, or adds a .orchestration.yaml." />
                 </StackPanel>
                 <!-- Locked while the code has unsaved changes, so they can't be left behind by picking another. -->
                 <ListBox ItemsSource="{Binding Orchestrations}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,10,0,0"
@@ -297,7 +297,7 @@
                             <MenuFlyout Placement="BottomEdgeAlignedRight">
                                 <MenuItem Header="Check again" Command="{Binding ReplanCommand}" />
                                 <MenuItem Header="Forget approvals" Command="{Binding ForgetApprovalsCommand}"
-                                          ToolTip.Tip="Ask again before running this orchestration's file and its repos' sprig.cs files. Other orchestrations that use those repos ask again too." />
+                                          ToolTip.Tip="Ask again before running this orchestration's file and its repos' sprig.yaml files. Other orchestrations that use those repos ask again too." />
                                 <MenuItem Header="Remove…" Command="{Binding RemoveCommand}" />
                             </MenuFlyout>
                         </Button.Flyout>
@@ -837,7 +837,7 @@
                                 AutomationProperties.AutomationId="orchestration-add:existing">
                             <Border Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="I have a .orchestration.cs" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock Text="I have a .orchestration.yaml" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Text="Pick an orchestration file that's already written, in a repo or a folder of its own. Nothing in it runs until you approve it." />
                                 </StackPanel>
@@ -871,7 +871,7 @@
                 <StackPanel Spacing="12">
                     <TextBlock Text="New orchestration" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="Kept in sprig, so nothing is written to your repos. Each folder goes on the Repos list: one with its own sprig.cs uses it, one without gets a definition kept in sprig, drafted from what's in it." />
+                               Text="Kept in sprig, so nothing is written to your repos. Each folder goes on the Repos list: one with its own sprig.yaml uses it, one without gets a definition kept in sprig, drafted from what's in it." />
                     <StackPanel Spacing="4">
                         <TextBlock Classes="phead" Text="NAME" />
                         <TextBox Text="{Binding NewName}" PlaceholderText="e.g. storefront" />
@@ -923,9 +923,9 @@
                 <StackPanel Spacing="12">
                     <TextBlock Text="Add an orchestration file" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                               Text="Choose a .orchestration.cs file. It's listed straight away; nothing in it runs until you approve it." />
-                    <controls:PathBox x:Name="AddPath" Path="{Binding NewPath}" FileSuffix=".orchestration.cs"
-                                      PickerTitle="Choose an orchestration file" Placeholder="path/to/storefront.orchestration.cs" />
+                               Text="Choose a .orchestration.yaml file. It's listed straight away; nothing in it runs until you approve it." />
+                    <controls:PathBox x:Name="AddPath" Path="{Binding NewPath}" FileSuffix=".orchestration.yaml"
+                                      PickerTitle="Choose an orchestration file" Placeholder="path/to/storefront.orchestration.yaml" />
                     <TextBlock Classes="msg" Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap"
                                Classes.bad="{Binding AddFailed}"
                                IsVisible="{Binding AddMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

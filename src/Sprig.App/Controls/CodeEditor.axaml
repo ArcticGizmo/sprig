@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:host="clr-namespace:Sprig.App.Authoring"
+             xmlns:authoring="clr-namespace:Sprig.Engine.Authoring;assembly=Sprig.Engine"
              xmlns:ae="using:AvaloniaEdit"
              x:Class="Sprig.App.Controls.CodeEditor">
 
@@ -11,12 +11,12 @@
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
                     <TextBlock x:Name="ProblemsSummary" FontSize="12" Foreground="{StaticResource MutedBrush}" />
                     <TextBlock Grid.Column="1" FontSize="11" Foreground="#6E6E82"
-                               Text="Ctrl+Space completes · hover for docs · Alt+Shift+F formats" />
+                               Text="Ctrl+Space completes · hover for what a key or ${…} means" />
                 </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
                     <ItemsControl x:Name="ProblemList">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="host:HostDiagnostic">
+                            <DataTemplate x:DataType="authoring:EditorProblem">
                                 <Button Classes="problem" Tag="{Binding}" Click="OnProblemClick">
                                     <Grid ColumnDefinitions="64,*">
                                         <TextBlock Text="{Binding Line, StringFormat='line {0}'}" FontSize="12"
@@ -36,7 +36,7 @@
                            FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace"
                            Foreground="{StaticResource FgBrush}" Background="Transparent"
                            LineNumbersForeground="{StaticResource MutedBrush}" Padding="8" />
-            <!-- What an IDE shows on hover: a problem under the pointer, the symbol's signature and its docs. Placed
+            <!-- What an IDE shows on hover: a problem under the pointer, what the key or reference is and what it means. Placed
                  below the hovered line rather than at the pointer, which would cover what's hovered and close it. -->
             <Popup x:Name="HoverPopup" Placement="BottomEdgeAlignedLeft" VerticalOffset="2" IsLightDismissEnabled="False">
                 <Border x:Name="HoverCard" Background="#252532" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"

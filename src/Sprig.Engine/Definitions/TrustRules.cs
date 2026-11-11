@@ -6,14 +6,14 @@ namespace Sprig.Engine.Definitions;
 /// The trust store's answer, with the user's own edits approved rather than asked about. Approval exists so that
 /// looking at code from someone else (a clone, a pulled branch) never runs it; asking about an edit the user made
 /// protects nothing. What counts as theirs is always a change to a version they approved: a definition kept in sprig,
-/// wherever it was edited, and a repo's sprig.cs changed in its working tree but not committed, when the committed
+/// wherever it was edited, and a repo's sprig.yaml changed in its working tree but not committed, when the committed
 /// version was approved. A copy into sprig of a file nobody approved, or a version that arrived in a commit, still asks.
 /// </summary>
 public sealed class TrustRules(ITrustStore trust, StoredDefinitions stored, GitClient? git = null)
 {
     /// <param name="file">The file as it is on disk.</param>
     /// <param name="trustAs">The file whose approvals count for it, when that's another: a worktree's copy of a repo's
-    /// sprig.cs is approved as the repo's own.</param>
+    /// sprig.yaml is approved as the repo's own.</param>
     public TrustDecision Check(string file, string sha256, string? trustAs = null)
     {
         var trustPath = trustAs ?? file;

@@ -29,7 +29,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     (LoadedOrchestration loaded, Plan plan) Build()
     {
         var model = _orchestration.BuildOrchestration();
-        var loaded = new LoadedOrchestration(Path.Combine(_store.Root, "storefront.orchestration.cs"), model, _repos, [], [], [], _dirs);
+        var loaded = new LoadedOrchestration(Path.Combine(_store.Root, "storefront.orchestration.yaml"), model, _repos, [], [], [], _dirs);
         var plan = Planner.Build(new PlanInput(model, _repos, "plan", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         return (loaded, plan);
     }
@@ -232,7 +232,7 @@ public class ReposViewModelTests
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "sprig.cs"), "// never approved");
+        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "// never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(folder, "shop-web");
         var workspaces = new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths);
@@ -266,8 +266,8 @@ public class ReposViewModelTests
         var mobile = Path.Combine(store.Root, "src", "shop-mobile");
         Directory.CreateDirectory(web);
         Directory.CreateDirectory(mobile);
-        File.WriteAllText(Path.Combine(web, "sprig.cs"), "// never approved");
-        File.WriteAllText(Path.Combine(mobile, "sprig.cs"), "// never approved");
+        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "// never approved");
+        File.WriteAllText(Path.Combine(mobile, "sprig.yaml"), "// never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(web, "shop-web");
         var vm = new ReposViewModel(services) { IsActive = true };
@@ -296,7 +296,7 @@ public class ReposViewModelTests
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "sprig.cs"), "// shop-web's own, never approved");
+        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "// shop-web's own, never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(folder, "shop-web");
 
@@ -327,7 +327,7 @@ public class ReposViewModelTests
         Assert.Equal("// shop-web's own, never approved", File.ReadAllText(services.Stored.CopyFile("shop-web-sprig")));
         Assert.True(vm.Repos.Single(r => r.Id == "shop-web").InRepo);
 
-        // The folder has its own sprig.cs, so writing the copy back is refused before anything is asked.
+        // The folder has its own sprig.yaml, so writing the copy back is refused before anything is asked.
         vm.OpenDeriveCommand.Execute(null);
         Assert.True(vm.DeriveBlocked);
         Assert.Contains("'shop-web'", vm.DeriveMessage);
@@ -339,7 +339,7 @@ public class ReposViewModelTests
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "sprig.cs"), "// never approved");
+        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "// never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(folder, "shop-web", inRepo: false);
         var vm = new ReposViewModel(services) { IsActive = true };
@@ -380,7 +380,7 @@ public class ReposViewModelTests
         var mobile = Path.Combine(store.Root, "src", "shop-mobile");
         Directory.CreateDirectory(web);
         Directory.CreateDirectory(mobile);
-        File.WriteAllText(Path.Combine(web, "sprig.cs"), "// shop-web's own");
+        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "// shop-web's own");
         File.WriteAllText(Path.Combine(mobile, "package.json"), """{ "name": "mobile", "scripts": { "dev": "vite" } }""");
         var services = new AppServices(store.Root);
         var vm = new ReposViewModel(services);
@@ -389,15 +389,15 @@ public class ReposViewModelTests
         Assert.True(vm.IsChooseOpen);
         Assert.False(vm.IsAddOpen);
 
-        // "It has a sprig.cs" refuses a folder without one, before anything is added.
+        // "It has a sprig.yaml" refuses a folder without one, before anything is added.
         vm.OpenAddInRepoCommand.Execute(null);
         Assert.False(vm.IsChooseOpen);
-        Assert.Equal("Use the repo's sprig.cs", vm.AddTitle);
+        Assert.Equal("Use the repo's sprig.yaml", vm.AddTitle);
         vm.AddFolder = mobile;
         Assert.Equal("shop-mobile", vm.AddId);
         await vm.AddCommand.ExecuteAsync(null);
         Assert.True(vm.AddFailed);
-        Assert.Contains("no sprig.cs", vm.AddMessage);
+        Assert.Contains("no sprig.yaml", vm.AddMessage);
         Assert.Empty(services.Stored.Repos());
 
         vm.AddFolder = web;
@@ -406,7 +406,7 @@ public class ReposViewModelTests
         Assert.False(vm.IsAddOpen);
         Assert.True(services.Stored.Repo("shop-web")!.InRepo);
 
-        // "Write one in sprig" over a folder with its own sprig.cs starts from a copy of it, and opens it.
+        // "Write one in sprig" over a folder with its own sprig.yaml starts from a copy of it, and opens it.
         vm.BackToChooseCommand.Execute(null);
         vm.OpenAddInSprigCommand.Execute(null);
         Assert.Equal("Write one in sprig", vm.AddTitle);

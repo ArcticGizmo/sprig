@@ -31,7 +31,7 @@ public class HostStatusTests
         var now = DateTimeOffset.UtcNow;
         var workspaces = new WorkspaceStore(services.Paths);
         var repo = new WorkspaceRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);
-        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.cs", "feat-x", null, "stable", [repo], [], [],
+        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "feat-x", null, "stable", [repo], [], [],
             WorkspaceState.Up, now, now));
         workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", null, [],
             [new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, [])], [], [], [], []));

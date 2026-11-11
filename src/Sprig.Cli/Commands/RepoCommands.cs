@@ -20,13 +20,13 @@ static class RepoList
     public static string Kind(RepoEntry e) => e.InRepo ? "in repo" : "in sprig";
 }
 
-[Description("Put a repo folder on the Repos list, so orchestrations can use it with UseRepo(\"id\")")]
+[Description("Put a repo folder on the Repos list, so orchestrations can use it by ID (use: id)")]
 public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
     {
         [CommandArgument(0, "<folder>")]
-        [Description("The repo's folder. Its own sprig.cs is used if it has one; otherwise sprig drafts one and keeps it")]
+        [Description("The repo's folder. Its own sprig.yaml is used if it has one; otherwise sprig drafts one and keeps it")]
         public string Folder { get; set; } = "";
 
         [CommandOption("--id <id>")]
@@ -34,7 +34,7 @@ public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Sett
         public string? Id { get; set; }
 
         [CommandOption("--in-sprig")]
-        [Description("Keep its definition in sprig: a copy of the folder's sprig.cs if it has one, else a draft")]
+        [Description("Keep its definition in sprig: a copy of the folder's sprig.yaml if it has one, else a draft")]
         public bool InSprig { get; set; }
     }
 
@@ -54,7 +54,7 @@ public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Sett
     }
 }
 
-[Description("Copy an in-repo entry's sprig.cs into sprig as a new ID, to try changes without touching the repo")]
+[Description("Copy an in-repo entry's sprig.yaml into sprig as a new ID, to try changes without touching the repo")]
 public sealed class RepoCopyCommand(CliContext cli) : Command<RepoCopyCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
@@ -108,7 +108,7 @@ public sealed class RepoLsCommand(CliContext cli) : Command<GlobalSettings>
     }
 }
 
-[Description("Take a repo off the Repos list (the folder and its own sprig.cs are left alone)")]
+[Description("Take a repo off the Repos list (the folder and its own sprig.yaml are left alone)")]
 public sealed class RepoRmCommand(CliContext cli) : Command<RepoRmCommand.Settings>
 {
     public sealed class Settings : GlobalSettings

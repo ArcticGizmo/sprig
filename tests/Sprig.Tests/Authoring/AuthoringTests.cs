@@ -1,5 +1,3 @@
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Sprig.Engine.Authoring;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Planning;
@@ -38,8 +36,11 @@ public sealed class AuthoringTests : IDisposable
         File.WriteAllText(path, text);
     }
 
-    static void Parses(string text)
-        => Assert.DoesNotContain(CSharpSyntaxTree.ParseText(text, DefinitionEditor.ParseOptions).GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+    static void Reads(string text)
+    {
+        var read = DefinitionReader.Read(text, "sprig.yaml");
+        Assert.True(read.Ok, string.Join("\n", read.Problems.Select(p => $"{p.Location?.Line}: {p.Message}")));
+    }
 
     [Fact]
     public void A_repo_draft_describes_the_web_apps_it_finds_and_leaves_the_rest_as_comments()
@@ -47,23 +48,24 @@ public sealed class AuthoringTests : IDisposable
         var services = Scaffold.Repo(Dir("shop-services"), "shop-services");
         var web = Scaffold.Repo(Dir("shop-web"), "shop-web");
 
-        Assert.Contains("var catalogApi = repo.DotNet(\"catalog-api\", \"src/Catalog.Api\").Http();", services);
-        Assert.Contains("catalogApi.LaunchSettings(s => s.Set(\"Urls\", catalogApi.Url));", services);
+        Assert.Contains("  catalog-api:\n    run: dotnet\n    path: src/Catalog.Api\n    ports: { http: any }\n", services);
+        Assert.Contains("  src/Catalog.Api/Properties/launchSettings.json:\n    read-by: [catalog-api]\n    values:\n      Urls: ${catalog-api.url}\n", services);
         Assert.DoesNotContain("tests", services, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("// repo.DotNetJob(\"migrate\", \"tools/Migrate\");", services);
-        Assert.Contains("// repo.ComposeFile(\"docker-compose.yml\")", services);
+        Assert.Contains("  # migrate:\n  #   run: dotnet\n  #   path: tools/Migrate\n  #   once: true\n", services);
+        Assert.Contains("# compose:\n#   docker-compose.yml:", services);
         Assert.DoesNotContain("node_modules", services);
         // Every value goes in a file the app reads, and the command stays one you could type.
-        Assert.Contains("var web = repo.Node(\"web\", \".\").Http();", web);
-        Assert.Contains("web.EnvFile(\".env.local\", e => e.Set(\"PORT\", web.Port));", web);
+        Assert.Contains("  web:\n    run: node\n    ports: { http: any }\n", web);
+        Assert.Contains("  .env.local:\n    read-by: [web]\n    values:\n", web);
+        Assert.Contains("      PORT: ${web.port}\n", web);
         Assert.Contains("Vite doesn't read PORT by itself", web);
-        Assert.DoesNotContain(".Run(", web);
+        Assert.DoesNotContain("command:", web);
         Write("shop-services/src/Catalog.Api/Properties/launchSettings.json", "{}");
-        Assert.Contains("catalogApi.AppSettings(\"appsettings.Local.json\", s => s.Set(\"Urls\", catalogApi.Url));",
+        Assert.Contains("  src/Catalog.Api/appsettings.Local.json:\n    read-by: [catalog-api]\n",
             Scaffold.Repo(Dir("shop-services"), "shop-services"));
-        Assert.StartsWith("#:", services);
-        Parses(services);
-        Parses(web);
+        Assert.StartsWith("schema: 1\nrepo: shop-services\n", services);
+        Reads(services);
+        Reads(web);
     }
 
     [Fact]
@@ -78,27 +80,34 @@ public sealed class AuthoringTests : IDisposable
         var pnpm = Scaffold.Repo(Dir("shop-front"), "shop-front");
         var npm = Scaffold.Repo(Dir("shop-npm"), "shop-npm");
 
-        Assert.Contains("repo.Node(\"web\", \"apps/web\")", pnpm);
-        Assert.DoesNotContain("\"shop-front\", \".\"", pnpm);
-        Assert.Contains("repo.Node(\"admin\", \"admin\")", npm);
-        Assert.DoesNotContain("\"shop-npm\", \".\"", npm);
+        Assert.Contains("  web:\n    run: node\n    path: apps/web\n", pnpm);
+        Assert.DoesNotContain("shop-front:", pnpm);
+        Assert.Contains("  admin:\n    run: node\n    path: admin\n", npm);
+        Assert.DoesNotContain("shop-npm:", npm);
+        Reads(pnpm);
+        Reads(npm);
     }
 
     [Fact]
     public void An_orchestration_repo_named_by_folder_becomes_one_used_from_the_Repos_list_leaving_the_rest_as_written()
     {
         const string orchestration = """
-            var orchestration = Orchestration.Describe("storefront");
-            var web = orchestration.Repo("../shop-web");          // the front end
-            var services = orchestration.Repo("../shop-services");
-            return orchestration.Emit(args);
+            schema: 1
+            orchestration: storefront
+            repos:
+              web: { path: ../shop-web }          # the front end
+              services:
+                path: ../shop-services
             """;
 
         var used = DefinitionEditor.RepoToUseRepo(orchestration, "../shop-web", "shop-web");
+        var block = DefinitionEditor.RepoToUseRepo(used.Text, "../shop-services", "shop-services");
 
         Assert.True(used.Ok, used.Error);
-        Assert.Contains("var web = orchestration.UseRepo(\"shop-web\");          // the front end", used.Text);
-        Assert.Contains("orchestration.Repo(\"../shop-services\");", used.Text);
+        Assert.Contains("  web: { use: shop-web }          # the front end", used.Text);
+        Assert.Contains("    path: ../shop-services", used.Text);
+        Assert.EndsWith("  services:\n    use: shop-services", block.Text.ReplaceLineEndings("\n"));
+        Assert.Equal(["shop-web", "shop-services"], DefinitionEditor.UsedIds(block.Text));
         Assert.False(DefinitionEditor.RepoToUseRepo(orchestration, "../nope", "x").Ok);
     }
 
@@ -109,23 +118,23 @@ public sealed class AuthoringTests : IDisposable
     static bool Approved(ITrustStore trust, string file) => trust.Check(file, DefinitionHash.Of(File.ReadAllText(file))).State == TrustState.Trusted;
 
     [Fact]
-    public void A_new_orchestration_uses_each_folders_own_sprig_cs_or_drafts_one_in_sprig_and_reuses_entries()
+    public void A_new_orchestration_uses_each_folders_own_sprig_yaml_or_drafts_one_in_sprig_and_reuses_entries()
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
-        Write("shop-web/sprig.cs", "// shop-web's own");
+        Write("shop-web/sprig.yaml", "// shop-web's own");
 
         var entry = authoring.CreateOrchestration("storefront", [Dir("shop-web"), Dir("shop-services")]);
         var text = File.ReadAllText(entry.Path);
 
-        Assert.Contains("var shopWeb = orchestration.UseRepo(\"shop-web\");", text);
-        Assert.Contains("var shopServices = orchestration.UseRepo(\"shop-services\");", text);
+        Assert.Contains("  shop-web: { use: shop-web }\n", text);
+        Assert.Contains("  shop-services: { use: shop-services }\n", text);
         Assert.True(Stored.Repo("shop-web")!.InRepo);
-        Assert.Equal(Path.Combine(Dir("shop-web"), "sprig.cs"), Stored.Repo("shop-web")!.DefinitionFile);
+        Assert.Equal(Path.Combine(Dir("shop-web"), "sprig.yaml"), Stored.Repo("shop-web")!.DefinitionFile);
         var services = Stored.Repo("shop-services")!;
         Assert.False(services.InRepo);
         Assert.True(Approved(trust, services.DefinitionFile));
-        Assert.False(File.Exists(Path.Combine(Dir("shop-services"), "sprig.cs")));
+        Assert.False(File.Exists(Path.Combine(Dir("shop-services"), "sprig.yaml")));
 
         var second = authoring.CreateOrchestration("storefront", [Dir("shop-web"), Dir("shop-services")]);
         Assert.Equal("storefront-2", second.Id);
@@ -140,7 +149,7 @@ public sealed class AuthoringTests : IDisposable
         // Taking a repo off the list leaves the folder's own file where it is.
         authoring.DeleteRepo("shop-web");
         Assert.Null(Stored.Repo("shop-web"));
-        Assert.True(File.Exists(Path.Combine(Dir("shop-web"), "sprig.cs")));
+        Assert.True(File.Exists(Path.Combine(Dir("shop-web"), "sprig.yaml")));
     }
 
     [Fact]
@@ -148,8 +157,8 @@ public sealed class AuthoringTests : IDisposable
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
-        Write("shop-web/sprig.cs", "// shop-web's own");
-        var own = Path.Combine(Dir("shop-web"), "sprig.cs");
+        Write("shop-web/sprig.yaml", "// shop-web's own");
+        var own = Path.Combine(Dir("shop-web"), "sprig.yaml");
         var web = authoring.AddRepo(Dir("shop-web"), "web");
         Assert.Equal("shop-web-sprig", authoring.SuggestId(web, inRepo: false));
 
@@ -179,15 +188,15 @@ public sealed class AuthoringTests : IDisposable
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
-        var own = Path.Combine(Dir("shop-web"), "sprig.cs");
+        var own = Path.Combine(Dir("shop-web"), "sprig.yaml");
 
         Assert.Throws<ArgumentException>(() => authoring.AddRepo(Dir("shop-web"), "web", inRepo: true));
         var drafted = authoring.AddRepo(Dir("shop-web"), inRepo: false);
         Assert.Equal("shop-web", drafted.Id);
-        Assert.Contains("repo.Node(\"web\"", File.ReadAllText(drafted.DefinitionFile));
+        Assert.Contains("  web:\n    run: node\n", File.ReadAllText(drafted.DefinitionFile));
         Assert.True(Approved(trust, drafted.DefinitionFile));
 
-        Write("shop-web/sprig.cs", "// shop-web's own");
+        Write("shop-web/sprig.yaml", "// shop-web's own");
         trust.Approve(own, DefinitionHash.Of("// shop-web's own"));
         Assert.Equal("shop-web-sprig", authoring.SuggestNewId(Dir("shop-web"), inRepo: false));
         var copy = authoring.AddRepo(Dir("shop-web"), inRepo: false);
@@ -201,7 +210,7 @@ public sealed class AuthoringTests : IDisposable
     }
 
     [Fact]
-    public void Writing_a_repo_kept_in_sprig_to_its_folder_adds_a_separate_entry_and_never_writes_over_a_sprig_cs()
+    public void Writing_a_repo_kept_in_sprig_to_its_folder_adds_a_separate_entry_and_never_writes_over_a_sprig_yaml()
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
@@ -213,7 +222,7 @@ public sealed class AuthoringTests : IDisposable
 
         var inRepo = authoring.WriteToRepo("services-sprig", "services");
 
-        var own = Path.Combine(Dir("shop-services"), "sprig.cs");
+        var own = Path.Combine(Dir("shop-services"), "sprig.yaml");
         Assert.Equal("services", inRepo.Id);
         Assert.True(inRepo.InRepo);
         Assert.Equal(own, inRepo.DefinitionFile);
@@ -224,7 +233,7 @@ public sealed class AuthoringTests : IDisposable
         Assert.False(still.InRepo);
         Assert.Equal(Stored.CopyFile("services-sprig"), still.DefinitionFile);
 
-        // Once the folder has a sprig.cs, writing again is refused and the file is left alone.
+        // Once the folder has a sprig.yaml, writing again is refused and the file is left alone.
         File.WriteAllText(still.DefinitionFile, "// changed in sprig");
         Assert.Contains("'services'", authoring.WriteToRepoBlocker(still));
         Assert.Throws<IOException>(() => authoring.WriteToRepo("services-sprig", "services-2"));
@@ -252,7 +261,7 @@ public sealed class AuthoringTests : IDisposable
 
         // Case alone can change; another entry's ID can't be taken.
         Assert.Equal("Catalog", authoring.RenameRepo("catalog", "Catalog").Id);
-        Write("shop-web/sprig.cs", "// shop-web's own");
+        Write("shop-web/sprig.yaml", "// shop-web's own");
         authoring.AddRepo(Dir("shop-web"), "web");
         Assert.Throws<ArgumentException>(() => authoring.RenameRepo("Catalog", "WEB"));
         Assert.Throws<ArgumentException>(() => authoring.RenameRepo("Catalog", "not an id"));
@@ -272,31 +281,29 @@ public sealed class AuthoringTests : IDisposable
     {
         var trust = new FileTrustStore(_store.Paths);
         var authoring = Authoring(trust);
-        Write("shop-web/sprig.cs", "// shop-web's own");
+        Write("shop-web/sprig.yaml", "// shop-web's own");
         authoring.AddRepo(Dir("shop-web"), "web");
-        var orchestrationFile = Path.Combine(_repos, "storefront.orchestration.cs");
-        File.WriteAllText(orchestrationFile, "var orchestration = Orchestration.Describe(\"storefront\");\nvar web = orchestration.Repo(\"shop-web\");\nreturn orchestration.Emit(args);\n");
+        var orchestrationFile = Path.Combine(_repos, "storefront.orchestration.yaml");
+        File.WriteAllText(orchestrationFile, "schema: 1\norchestration: storefront\nrepos:\n  web: { path: shop-web }\n");
         trust.Approve(orchestrationFile, DefinitionHash.Of(File.ReadAllText(orchestrationFile)));
 
         var entry = authoring.UseFromRepos(orchestrationFile, "shop-web");
 
         Assert.Equal("web", entry.Id);
-        Assert.Contains("var web = orchestration.UseRepo(\"web\");", File.ReadAllText(orchestrationFile));
+        Assert.Contains("  web: { use: web }\n", File.ReadAllText(orchestrationFile));
         Assert.True(Approved(trust, orchestrationFile));
         Assert.Single(Stored.Repos());
     }
 
-    /// <summary>The drafts are only useful if they run, so this one compiles them with the real SDK.</summary>
+    /// <summary>The drafts are only useful if they plan.</summary>
     [Fact]
-    [Trait("Category", "Integration")]
     public void An_orchestration_made_in_the_app_over_repos_with_nothing_committed_plans()
     {
         var trust = new FileTrustStore(_store.Paths);
         var stored = new StoredDefinitions(_store.Paths);
         var registry = new OrchestrationRegistry(_store.Paths);
         var authoring = new OrchestrationAuthoring(stored, registry, trust);
-        var loader = new OrchestrationLoader(new DefinitionRunner(trust, new DotnetRunHost(), _store.Paths,
-            new DefinitionRunnerOptions { Timeout = TimeSpan.FromSeconds(120), AllowLocalSdkProject = true }), registry, stored);
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths), registry, stored);
 
         var entry = authoring.CreateOrchestration("trial run", [Dir("shop-web"), Dir("shop-services")]);
         var loaded = loader.Load(entry.Path);
@@ -306,6 +313,6 @@ public sealed class AuthoringTests : IDisposable
         var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, "plan", new SprigSettings(), new HashSet<int>()));
         Assert.False(plan.HasErrors, string.Join("\n", plan.Problems.Select(p => p.Message)));
         Assert.Equal(["shop-services/catalog-api", "shop-web/web"], plan.Apps.Select(a => $"{a.Owner}/{a.Name}").Order());
-        Assert.False(File.Exists(Path.Combine(Dir("shop-web"), "sprig.cs")));
+        Assert.False(File.Exists(Path.Combine(Dir("shop-web"), "sprig.yaml")));
     }
 }

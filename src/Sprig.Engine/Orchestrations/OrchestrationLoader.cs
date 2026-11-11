@@ -56,13 +56,12 @@ public sealed record LoadedOrchestration(
     }
 }
 
-/// <summary>Evaluates an orchestration and the <c>sprig.cs</c> of every repo it names. Repos are evaluated in parallel; each
-/// goes through the same directive, trust and cache checks as any definition.</summary>
+/// <summary>Reads an orchestration and the <c>sprig.yaml</c> of every repo it names, each once its content is approved.</summary>
 /// <param name="registry">Gives each orchestration its registered ID; without one, the ID comes from the file name.</param>
 /// <param name="stored">The Repos list, for repos an orchestration names with <c>UseRepo</c>.</param>
 public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRegistry? registry = null, StoredDefinitions? stored = null)
 {
-    public const string RepoDefinitionFile = "sprig.cs";
+    public const string RepoDefinitionFile = "sprig.yaml";
 
     /// <param name="workspaceDirs">A workspace's folder for each repo, keyed by the orchestration's repo path. Its definitions are
     /// read from there, so a branch's changes count, and approved as the repo's own.</param>
@@ -87,7 +86,7 @@ public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRe
             orchestration = Accept(orchestrationResult, problems, untrusted) switch
             {
                 OrchestrationModel t => t,
-                RepoModel => Fail($"{Path.GetFileName(path)} describes a repo, not an orchestration (it calls Repo.Describe)", path, problems),
+                RepoModel => Fail($"{Path.GetFileName(path)} describes a repo, not an orchestration (it starts with repo:)", path, problems),
                 _ => null,
             };
         }
@@ -110,7 +109,7 @@ public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRe
                 problems.Add(new PlanProblem(ProblemSeverity.Error, $"the repo folder '{readDir}' doesn't exist", reference.Location));
             else if (!File.Exists(file))
                 problems.Add(new PlanProblem(ProblemSeverity.Error, readDir == repoDir
-                    ? $"'{reference.Path}' has no {RepoDefinitionFile} to describe it; commit one, or add the folder on the Repos page and use it with orchestration.UseRepo(\"id\")"
+                    ? $"'{reference.Path}' has no {RepoDefinitionFile} to describe it; commit one, or add the folder on the Repos page and name it in the orchestration with use: <id>"
                     : $"'{reference.Path}' has no {RepoDefinitionFile} in the workspace's folder {readDir}", reference.Location));
             else
                 definitions.Add((reference, file, Path.Combine(repoDir, RepoDefinitionFile)));
@@ -137,9 +136,7 @@ public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRe
                 problems.Add(new PlanProblem(ProblemSeverity.Error, $"'{use}' uses {readDir}'s own {RepoDefinitionFile}, which isn't there", reference.Location));
         }
 
-        var evaluated = definitions.AsParallel().AsOrdered()
-            .Select(d => (d.reference, result: runner.Evaluate(d.file, d.trustAs)))
-            .ToList();
+        var evaluated = definitions.Select(d => (d.reference, result: runner.Evaluate(d.file, d.trustAs))).ToList();
         foreach (var (reference, result) in evaluated)
         {
             results.Add(result);
@@ -160,7 +157,7 @@ public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRe
     static OrchestrationModel Alone(string repoId, string entryFile)
     {
         var at = new SourceLocation(entryFile, 0);
-        return new OrchestrationModel(Sdk.Schema, $"{repoId}, on its own", Sdk.Version, at, Containers: [],
+        return new OrchestrationModel(DefinitionReader.CurrentSchema, $"{repoId}, on its own", "", at, Containers: [],
             Repos: [new RepoRefModel(repoId, at, Use: repoId)], Bindings: [], Groups: []);
     }
 
@@ -173,29 +170,12 @@ public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRe
             case NeedsTrust t:
                 untrusted.Add(t);
                 return null;
-            case Rejected r:
-                foreach (var v in r.Violations)
-                    problems.Add(new PlanProblem(ProblemSeverity.Error, $"{v.Directive}: {v.Reason}", new SourceLocation(r.Path, v.Line)));
-                return null;
-            case Failed f:
-                problems.Add(new PlanProblem(ProblemSeverity.Error, $"{Path.GetFileName(f.Path)} {f.Reason}{CompilerErrors(f.Output)}", new SourceLocation(f.Path, 0)));
+            case Invalid invalid:
+                problems.AddRange(invalid.Problems);
                 return null;
             default:
                 return null;
         }
-    }
-
-    /// <summary>The compiler's error lines from <c>dotnet run</c> output, without the build noise around them.</summary>
-    static string CompilerErrors(string output)
-    {
-        var errors = output.Split('\n')
-            .Select(l => l.Trim())
-            .Where(l => l.Contains(": error ", StringComparison.Ordinal))
-            .Select(l => l.Contains(" [", StringComparison.Ordinal) ? l[..l.LastIndexOf(" [", StringComparison.Ordinal)] : l)
-            .Distinct()
-            .Take(5)
-            .ToArray();
-        return errors.Length == 0 ? "" : "\n  " + string.Join("\n  ", errors);
     }
 
     static OrchestrationModel? Fail(string message, string path, List<PlanProblem> problems)

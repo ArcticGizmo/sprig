@@ -15,7 +15,7 @@ public class HereTests
         [new WorkspaceRepo("shop-web", "shop-web", Web, Worktree, Worktree: true, BranchCreated: true)],
         [], [], WorkspaceState.Up, DateTimeOffset.Now, DateTimeOffset.Now, Folder: Folder);
 
-    static readonly RepoEntry Listed = new("shop-web", Web, InRepo: true, Path.Combine(Web, "sprig.cs"));
+    static readonly RepoEntry Listed = new("shop-web", Web, InRepo: true, Path.Combine(Web, "sprig.yaml"));
 
     [Fact]
     public void The_repo_folder_and_below_is_the_repo_in_place()

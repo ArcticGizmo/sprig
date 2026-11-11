@@ -4,7 +4,7 @@ namespace Sprig.Engine.Definitions;
 
 /// <summary>One repo in sprig's Repos list: a folder, and the definition that describes it. An ID is one or the other
 /// for good, so what an orchestration using it runs never changes under it.</summary>
-/// <param name="InRepo">Described by the folder's own sprig.cs; otherwise by a definition kept in sprig.</param>
+/// <param name="InRepo">Described by the folder's own sprig.yaml; otherwise by a definition kept in sprig.</param>
 /// <param name="DefinitionFile">The file that describes it.</param>
 public sealed record RepoEntry(string Id, string Folder, bool InRepo, string DefinitionFile)
 {
@@ -14,12 +14,12 @@ public sealed record RepoEntry(string Id, string Folder, bool InRepo, string Def
 /// <summary>
 /// Orchestrations and the Repos list, kept in sprig's store rather than in a repo, so sprig can be tried on repos without
 /// committing anything to them. Each lives in a folder named by its ID. A repo is only ever used through its entry,
-/// so a copy kept in sprig never stands in for a repo's own sprig.cs unless the entry says so.
+/// so a copy kept in sprig never stands in for a repo's own sprig.yaml unless the entry says so.
 /// </summary>
 public sealed class StoredDefinitions(ISprigPaths paths)
 {
-    public const string OrchestrationFileName = "orchestration.cs";
-    public const string RepoFileName = "sprig.cs";
+    public const string OrchestrationFileName = "orchestration.yaml";
+    public const string RepoFileName = "sprig.yaml";
     const string EntryFileName = "repo.json";
 
     string ReposRoot => Path.Combine(paths.Root, "repos");
@@ -62,7 +62,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
         return new RepoEntry(id, folder, stored.InRepo, stored.InRepo ? Path.Combine(folder, RepoFileName) : CopyFile(id));
     }
 
-    /// <summary>The entry a new orchestration over <paramref name="folder"/> reuses: the one using its own sprig.cs if there
+    /// <summary>The entry a new orchestration over <paramref name="folder"/> reuses: the one using its own sprig.yaml if there
     /// is one, else the first kept in sprig.</summary>
     public RepoEntry? RepoFor(string folder)
     {
@@ -70,7 +70,7 @@ public sealed class StoredDefinitions(ISprigPaths paths)
         return matching.FirstOrDefault(e => e.InRepo) ?? matching.FirstOrDefault();
     }
 
-    /// <summary>The entry that uses <paramref name="folder"/>'s own sprig.cs. There's at most one, since two would
+    /// <summary>The entry that uses <paramref name="folder"/>'s own sprig.yaml. There's at most one, since two would
     /// describe the folder identically.</summary>
     public RepoEntry? InRepoFor(string folder) => Repos().FirstOrDefault(e => e.InRepo && SamePath(e.Folder, folder));
 
@@ -154,27 +154,5 @@ public sealed class StoredDefinitions(ISprigPaths paths)
     {
         var relative = Path.GetRelativePath(Path.GetFullPath(root), file);
         return !relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative) && relative != ".";
-    }
-}
-
-/// <summary>The <c>#:</c> line a new definition starts with, so it builds against the SDK this sprig reads.</summary>
-public static class SdkReference
-{
-    /// <summary>The SDK's id on nuget.org, the one package a definition may reference.</summary>
-    public const string PackageId = "ArcticGizmo.Sprig.Sdk";
-
-    public static string Line()
-        => LocalProject() is { } project ? $"#:project {project}" : $"#:package {PackageId}@{Sprig.Sdk.Version}";
-
-    // A dev build isn't published as a package yet, so its definitions build the SDK from this checkout.
-    static string? LocalProject()
-    {
-        if (!AppProfile.IsDev) return null;
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        {
-            var project = Path.Combine(dir.FullName, "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
-            if (File.Exists(Path.Combine(dir.FullName, "sprig.slnx")) && File.Exists(project)) return project;
-        }
-        return null;
     }
 }

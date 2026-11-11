@@ -1,14 +1,13 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.CodeAnalysis.CSharp;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Store;
 
 namespace Sprig.Engine.Authoring;
 
-/// <param name="Path">The repo's folder, for a <c>Repo(path)</c> line.</param>
-/// <param name="Use">An entry from the Repos list, for a <c>UseRepo(id)</c> line instead.</param>
+/// <param name="Path">The repo's folder, for a <c>path:</c> entry.</param>
+/// <param name="Use">An entry from the Repos list, for a <c>use:</c> entry instead.</param>
 public sealed record ScaffoldRepo(string? Path, string? Use = null);
 
 /// <summary>
@@ -23,94 +22,100 @@ public static partial class Scaffold
     public static string Orchestration(string name, IReadOnlyList<ScaffoldRepo> repos)
     {
         var text = new StringBuilder();
-        Header(text);
-        text.Append($"var orchestration = Orchestration.Describe({Literal(name)});\n\n");
-        var used = new HashSet<string>(StringComparer.Ordinal) { "orchestration", "args" };
+        text.Append($"schema: {DefinitionReader.CurrentSchema}\norchestration: {YamlText.Scalar(name)}\n\nrepos:\n");
+        var used = new HashSet<string>(StringComparer.Ordinal);
         foreach (var repo in repos)
         {
             if (repo.Use is { } use)
             {
-                text.Append($"var {Variable(use, used)} = orchestration.UseRepo({Literal(use)});\n");
+                text.Append($"  {Unique(use, used)}: {{ use: {YamlText.Scalar(use)} }}\n");
                 continue;
             }
-            var path = repo.Path ?? throw new ArgumentException("a repo needs a path or an entry to use");
-            var variable = Variable(System.IO.Path.GetFileName(path.TrimEnd('/', '\\')), used);
-            text.Append($"var {variable} = orchestration.Repo({Literal(path.Replace('\\', '/'))});\n");
+            var path = (repo.Path ?? throw new ArgumentException("a repo needs a path or an entry to use")).Replace('\\', '/');
+            text.Append($"  {Unique(Ids.Slug(System.IO.Path.GetFileName(path.TrimEnd('/')), "repo"), used)}: {{ path: {YamlText.Scalar(path)} }}\n");
         }
-        text.Append('\n');
-        text.Append("return orchestration.Emit(args);\n");
         return text.ToString();
     }
 
     /// <summary>A repo definition for the folder at <paramref name="repoDir"/>.</summary>
     public static string Repo(string repoDir, string name)
     {
-        var text = new StringBuilder();
-        Header(text);
-        text.Append($"var repo = Repo.Describe({Literal(name)});\n\n");
-
-        var used = new HashSet<string>(StringComparer.Ordinal) { "repo", "args" };
+        var apps = new StringBuilder();
+        var files = new StringBuilder();
+        var used = new HashSet<string>(StringComparer.Ordinal);
         var found = 0;
+
         foreach (var project in Files(repoDir, "*.csproj").Where(p => !IsTestProject(p)))
         {
-            var dir = Relative(repoDir, System.IO.Path.GetDirectoryName(project)!);
-            var appName = Ids.Slug(Kebab(System.IO.Path.GetFileNameWithoutExtension(project)), "app");
+            var projectDir = System.IO.Path.GetDirectoryName(project)!;
+            var dir = Relative(repoDir, projectDir);
+            var appName = Unique(Ids.Slug(Kebab(System.IO.Path.GetFileNameWithoutExtension(project)), "app"), used);
             if (IsWebProject(project))
             {
-                var variable = Variable(appName, used);
-                text.Append($"var {variable} = repo.DotNet({Literal(appName)}, {Literal(dir)}).Http();\n");
-                // Urls rather than ASPNETCORE_URLS: it outranks a "urls" in appsettings.json.
-                if (File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(project)!, "Properties", "launchSettings.json")))
+                apps.Append($"  {appName}:\n    run: dotnet\n    path: {YamlText.Scalar(dir)}\n    ports: {{ http: any }}\n");
+                if (File.Exists(System.IO.Path.Combine(projectDir, "Properties", "launchSettings.json")))
                 {
-                    text.Append("// Its launchSettings.json is probably committed, so the url goes in a local settings file. Load it last in\n");
-                    text.Append("// Program.cs: builder.Configuration.AddJsonFile(\"appsettings.Local.json\", optional: true);\n");
-                    text.Append($"{variable}.AppSettings(\"appsettings.Local.json\", s => s.Set(\"Urls\", {variable}.Url));\n\n");
+                    files.Append("  # Its launchSettings.json is probably committed, so the url goes in a local settings file. Load it last in\n");
+                    files.Append("  # Program.cs: builder.Configuration.AddJsonFile(\"appsettings.Local.json\", optional: true);\n");
+                    files.Append($"  {YamlText.Scalar(Join(dir, "appsettings.Local.json"))}:\n");
                 }
-                else text.Append($"{variable}.LaunchSettings(s => s.Set(\"Urls\", {variable}.Url));\n\n");
+                else files.Append($"  {YamlText.Scalar(Join(dir, "Properties/launchSettings.json"))}:\n");
+                files.Append($"    read-by: [{appName}]\n    values:\n      Urls: ${{{appName}.url}}\n");
                 found++;
             }
-            else if (File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(project)!, "Program.cs")))
+            else if (File.Exists(System.IO.Path.Combine(projectDir, "Program.cs")))
             {
-                text.Append($"// {appName} ({dir}) isn't a web app. If it should run, as a one-off job say:\n");
-                text.Append($"// repo.DotNetJob({Literal(appName)}, {Literal(dir)});\n\n");
+                apps.Append($"  # {appName} ({dir}) isn't a web app. If it should run, as a one-off job say:\n");
+                apps.Append($"  # {appName}:\n  #   run: dotnet\n  #   path: {dir}\n  #   once: true\n");
+                used.Remove(appName);
             }
         }
 
         foreach (var package in Files(repoDir, "package.json"))
         {
-            var dir = Relative(repoDir, System.IO.Path.GetDirectoryName(package)!);
+            var packageDir = System.IO.Path.GetDirectoryName(package)!;
+            var dir = Relative(repoDir, packageDir);
             // A workspace's root only holds its apps, which are found on their own; its dev script starts all of them.
             if (ReadPackage(package) is not { HasDev: true, Workspaces: false } info
-                || File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(package)!, "pnpm-workspace.yaml"))) continue;
-            var appName = Ids.Slug(Kebab(info.Name ?? (dir == "." ? name : System.IO.Path.GetFileName(dir))), "web");
-            var variable = Variable(appName, used);
-            text.Append($"var {variable} = repo.Node({Literal(appName)}, {Literal(dir)}).Http();\n");
+                || File.Exists(System.IO.Path.Combine(packageDir, "pnpm-workspace.yaml"))) continue;
+            var appName = Unique(Ids.Slug(Kebab(info.Name ?? (dir == "." ? name : System.IO.Path.GetFileName(dir))), "web"), used);
+            apps.Append($"  {appName}:\n    run: node\n");
+            if (dir != ".") apps.Append($"    path: {YamlText.Scalar(dir)}\n");
+            apps.Append("    ports: { http: any }\n");
+            files.Append($"  {YamlText.Scalar(Join(dir, ".env.local"))}:\n    read-by: [{appName}]\n    values:\n");
             if (info.Vite)
-                text.Append("// Vite doesn't read PORT by itself. In vite.config, take it from the env file:\n"
-                    + "// server: { port: Number(loadEnv(mode, process.cwd(), '').PORT), strictPort: true }\n");
-            text.Append($"{variable}.EnvFile(\".env.local\", e => e.Set(\"PORT\", {variable}.Port));\n\n");
+                files.Append("      # Vite doesn't read PORT by itself. In vite.config, take it from the env file:\n"
+                    + "      # server: { port: Number(loadEnv(mode, process.cwd(), '').PORT), strictPort: true }\n");
+            files.Append($"      PORT: ${{{appName}.port}}\n");
             found++;
         }
 
+        var text = new StringBuilder();
+        text.Append($"schema: {DefinitionReader.CurrentSchema}\nrepo: {YamlText.Scalar(name)}\n");
         foreach (var compose in new[] { "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml" })
         {
             if (!File.Exists(System.IO.Path.Combine(repoDir, compose))) continue;
-            text.Append($"// {compose} is here. Sprig runs the services you name, on ports of its own:\n");
-            text.Append($"// repo.ComposeFile({Literal(compose)}).Service(\"db\").Endpoint(\"tcp\", targetPort: 5432);\n\n");
+            text.Append($"\n# {compose} is here. Sprig runs the services you name, on ports of its own:\n");
+            text.Append($"# compose:\n#   {compose}:\n#     services:\n#       db:\n#         ports: {{ tcp: {{ container: 5432 }} }}\n");
             break;
         }
-
+        if (apps.Length > 0) text.Append("\napps:\n").Append(apps);
         if (found == 0)
-            text.Append("// No apps found to start from. Describe one, for example:\n"
-                + "// var api = repo.DotNet(\"api\", \"src/Api\").Http();\n"
-                + "// api.LaunchSettings(s => s.Set(\"Urls\", api.Url));\n"
-                + "// var web = repo.Node(\"web\", \".\").Http();\n"
-                + "// web.EnvFile(\".env.local\", e => e.Set(\"PORT\", web.Port));\n\n");
-        text.Append("return repo.Emit(args);\n");
+            text.Append("\n# No apps found to start from. Describe one, for example:\n"
+                + "# apps:\n#   api:\n#     run: dotnet\n#     path: src/Api\n#     ports: { http: any }\n"
+                + "# files:\n#   src/Api/Properties/launchSettings.json:\n#     read-by: [api]\n#     values:\n#       Urls: ${api.url}\n");
+        if (files.Length > 0) text.Append("\nfiles:\n").Append(files);
         return text.ToString();
     }
 
-    static void Header(StringBuilder text) => text.Append(SdkReference.Line()).Append("\nusing Sprig;\n\n");
+    static string Unique(string name, HashSet<string> used)
+    {
+        var candidate = name;
+        for (var n = 2; !used.Add(candidate); n++) candidate = $"{name}-{n}";
+        return candidate;
+    }
+
+    static string Join(string dir, string file) => dir == "." ? file : $"{dir}/{file}";
 
     sealed record PackageInfo(string? Name, bool HasDev, bool Vite, bool Workspaces);
 
@@ -173,23 +178,6 @@ public static partial class Scaffold
     /// <summary><c>Catalog.Api</c> → <c>catalog-api</c>.</summary>
     static string Kebab(string name)
         => CamelBoundary().Replace(name, "$1-$2").Replace('.', '-').Replace('_', '-').ToLowerInvariant();
-
-    /// <summary>A C# local name for <paramref name="name"/> (<c>shop-web</c> → <c>shopWeb</c>) not in
-    /// <paramref name="used"/>.</summary>
-    static string Variable(string name, HashSet<string> used)
-    {
-        var parts = Regex.Split(name, "[^A-Za-z0-9]+").Where(p => p.Length > 0).ToArray();
-        var variable = parts.Length == 0 ? "app"
-            : parts[0].ToLowerInvariant() + string.Concat(parts.Skip(1).Select(p => char.ToUpperInvariant(p[0]) + p[1..].ToLowerInvariant()));
-        if (char.IsDigit(variable[0])) variable = "_" + variable;
-        if (SyntaxFacts.GetKeywordKind(variable) != SyntaxKind.None || SyntaxFacts.GetContextualKeywordKind(variable) != SyntaxKind.None)
-            variable += "App";
-        var candidate = variable;
-        for (var n = 2; !used.Add(candidate); n++) candidate = $"{variable}{n}";
-        return candidate;
-    }
-
-    static string Literal(string value) => SymbolDisplay.FormatLiteral(value, quote: true);
 
     [GeneratedRegex("([a-z0-9])([A-Z])")]
     private static partial Regex CamelBoundary();

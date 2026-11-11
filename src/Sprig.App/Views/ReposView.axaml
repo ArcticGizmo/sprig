@@ -180,7 +180,7 @@
                                 Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
                     </Grid>
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
-                               Text="None yet. + Add uses a repo's own sprig.cs, or writes one kept in sprig." />
+                               Text="None yet. + Add uses a repo's own sprig.yaml, or writes one kept in sprig." />
                 </StackPanel>
                 <!-- Locked while a definition is open, so unsaved edits can't be left behind by picking another. -->
                 <ListBox ItemsSource="{Binding Repos}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,10,0,0"
@@ -366,7 +366,7 @@
                         <TextBlock Classes="phead" Text="NEW ID" />
                         <TextBox x:Name="RenameBox" Text="{Binding RenameId}" PlaceholderText="e.g. shop-web" AutomationProperties.AutomationId="repo-rename:id" />
                         <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="What orchestrations will call it: orchestration.UseRepo(&quot;the-id&quot;). Its definition and approval come with it." />
+                                   Text="What orchestrations will call it: use: the-id. Its definition and approval come with it." />
                     </StackPanel>
                     <TextBlock Text="{Binding RenameNote}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
                                IsVisible="{Binding RenameNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
@@ -393,14 +393,14 @@
                     <StackPanel Spacing="4">
                         <TextBlock Text="Add a repo" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                         <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="Does the repo have a sprig.cs already, or are you writing one?" />
+                                   Text="Does the repo have a sprig.yaml already, or are you writing one?" />
                     </StackPanel>
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                         <Button x:Name="ChooseInRepo" Classes="choice" Command="{Binding OpenAddInRepoCommand}"
                                 AutomationProperties.AutomationId="repo-add:in-repo">
                             <Border Classes="card">
                                 <StackPanel Spacing="8">
-                                    <TextBlock Text="It has a sprig.cs" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock Text="It has a sprig.yaml" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Text="Use the one committed in the repo. Each workspace runs its own branch's version." />
                                 </StackPanel>
@@ -412,7 +412,7 @@
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="Write one in sprig" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                               Text="Kept in sprig, so nothing is written to the repo. Starts from the folder's sprig.cs, or a draft of its projects." />
+                                               Text="Kept in sprig, so nothing is written to the repo. Starts from the folder's sprig.yaml, or a draft of its projects." />
                                 </StackPanel>
                             </Border>
                         </Button>
@@ -443,7 +443,7 @@
                         <TextBlock Classes="phead" Text="ID" />
                         <TextBox Text="{Binding AddId}" PlaceholderText="e.g. shop-web" />
                         <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="What orchestrations call it: orchestration.UseRepo(&quot;the-id&quot;). Several can describe the same folder." />
+                                   Text="What orchestrations call it: use: the-id. Several can describe the same folder." />
                     </StackPanel>
                     <TextBlock Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding AddFailed}" />
@@ -474,7 +474,7 @@
                         <TextBlock Classes="phead" Text="NEW ID" />
                         <TextBox Text="{Binding DeriveId}" PlaceholderText="e.g. shop-web" />
                         <TextBlock FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                                   Text="What orchestrations call it: orchestration.UseRepo(&quot;the-id&quot;). Point an orchestration at it yourself when you want it to switch." />
+                                   Text="What orchestrations call it: use: the-id. Point an orchestration at it yourself when you want it to switch." />
                     </StackPanel>
                     <TextBlock Text="{Binding DeriveMessage}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
                                IsVisible="{Binding DeriveFailed}" />

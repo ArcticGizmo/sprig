@@ -36,7 +36,7 @@ public static class CliApp
         var processes = new ProcessRunner();
         var host = new HostClient(paths);
         var git = new GitClient(processes);
-        var definitions = new DefinitionRunner(trust, new DotnetRunHost(), paths, git: git);
+        var definitions = new DefinitionRunner(trust, paths, git);
         var orchestrations = new OrchestrationRegistry(paths);
         var workspaces = new WorkspaceService(new WorkspaceStore(paths), new PortLeases(paths), settings,
             git, new DockerCompose(processes), host: host,

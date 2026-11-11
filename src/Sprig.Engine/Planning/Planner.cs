@@ -108,9 +108,9 @@ public static class Planner
                 if (!SecretValues.LooksSecret(env.Key) || env.Value.Value is not { Length: > 0 } value || SecretValues.IsPlain(value)) continue;
                 var settings = (env.Value.Sources ?? []).Select(s => s.Setting).OfType<string>().ToArray();
                 if (settings.Any(secrets.Contains)) continue;
-                var from = settings.Length > 0 ? $"setting {settings[0]}, which isn't a Setting<Secret>" : "a value written in the definition";
+                var from = settings.Length > 0 ? $"input {settings[0]}, which isn't type: secret" : "a value written in the definition";
                 _problems.Add(new PlanProblem(ProblemSeverity.Warning,
-                    $"{env.Key} looks secret but comes from {from}. Give it from a Setting<Secret> so sprig keeps it out of everything it shows.",
+                    $"{env.Key} looks secret but comes from {from}. Give it from an input of type: secret so sprig keeps it out of everything it shows.",
                     env.Location));
             }
         }
@@ -218,8 +218,7 @@ public static class Planner
             foreach (var e in app.Env)
             {
                 if (e.File is null)
-                    Problem($"'{app.Name}' would get {e.Key} on its process, which running it yourself wouldn't. Write it into a file the app reads: " +
-                        (app.Kind == "dotnet" ? ".AppSettings(\"appsettings.Local.json\", …) or .LaunchSettings(…)" : ".EnvFile(\".env.local\", …)"), e.Location);
+                    Problem($"'{app.Name}' would get {e.Key} on its process, which running it yourself wouldn't. Write it into a file the app reads, under files:", e.Location);
                 else if (e.Kind is not ("dotenv" or "appSettings" or "launchSettings"))
                     Problem($"'{app.Name}' writes {e.Key} into {e.File} as an unknown kind of file '{e.Kind}'", e.Location);
                 else if (e.Kind == "launchSettings" && app.Kind != "dotnet")
@@ -227,7 +226,7 @@ public static class Planner
             }
             if (app.Run is { } command && RunValues(command) is { Length: > 0 } carried)
                 Problem($"'{app.Name}' has {string.Join(", ", carried.Select(c => $"{{{c}}}"))} in its Run command, which typing the command yourself wouldn't fill in. " +
-                    "Give the command as you'd type it, and the value in a file the app reads, e.g. .EnvFile(\".env.local\", e => e.Set(\"PORT\", app.Port))", app.Location);
+                    "Give the command as you'd type it, and the value in a file the app reads, under files:", app.Location);
 
             _referenced = [];
             var env = app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location, e.Kind, e.Profile)).ToArray();
@@ -430,8 +429,8 @@ public static class Planner
             if (left.Length > 0)
             {
                 var (them, they) = left.Length == 1 ? ("it", "it") : ("them", "them");
-                Warn($"{scope.Owner}'s {file.File} also has {string.Join(", ", left.Select(s => $"'{s}'"))}, which its sprig.cs doesn't name, " +
-                     $"so workspaces leave {them} out. Name {they} with compose.Service(...) to keep {them}.", file.Location);
+                Warn($"{scope.Owner}'s {file.File} also has {string.Join(", ", left.Select(s => $"'{s}'"))}, which its sprig.yaml doesn't name, " +
+                     $"so workspaces leave {them} out. Name {they} under the file's services: to keep {them}.", file.Location);
             }
 
             foreach (var name in info.FixedNames.Where(named.Contains))
@@ -513,7 +512,7 @@ public static class Planner
         {
             var settings = _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Settings.Select(i => i.Name)).ToHashSet();
             foreach (var binding in input.Orchestration.Bindings.Where(b => !settings.Contains(b.Setting)))
-                Warn($"the orchestration binds '{binding.Setting}', but no repo has that setting", binding.Location);
+                Warn($"the orchestration binds '{binding.Setting}', but no repo has that input", binding.Location);
         }
 
         // ---- resolution ----
@@ -627,7 +626,7 @@ public static class Planner
             var key = scope.Owner + "|" + path;
             if (!visiting.Add(key))
             {
-                Problem($"'{path}' refers back to itself through a setting or export", location);
+                Problem($"'{path}' refers back to itself through an input or output", location);
                 return null;
             }
 
@@ -687,7 +686,7 @@ public static class Planner
         {
             if (scope.Repo is null)
             {
-                Problem($"the orchestration has no setting '{name}'; bind it to a value instead", location);
+                Problem($"the orchestration has no input '{name}'; give repos' inputs a value under inputs: instead", location);
                 return null;
             }
             var declared = scope.Repo.Settings.FirstOrDefault(i => i.Name == name);
@@ -724,14 +723,14 @@ public static class Planner
             if (exporters.Count > 1)
             {
                 var names = string.Join(" and ", exporters.Select(x => x.scope.Owner));
-                Problem($"{names} all export '{name}'; pick one in the orchestration with orchestration.Bind(\"{name}\", <repo>.Export(\"{name}\"))", at);
+                Problem($"{names} all output '{name}'; pick one in the orchestration: inputs: {{ {name}: ${{<repo>.outputs.{name}}} }}", at);
                 return null;
             }
 
             var (owner, export) = exporters[0];
-            if (declared is not null && declared.Type != export.Type)
+            if (declared is not null && declared.Type != export.Type && declared.Type != "text" && export.Type != "text")
             {
-                Problem($"{scope.Owner}'s setting '{name}' is a {declared.Type}, but {owner.Owner} exports it as {export.Type}", at);
+                Problem($"{scope.Owner}'s input '{name}' is a {declared.Type}, but {owner.Owner} outputs it as {export.Type}", at);
                 return null;
             }
             var value = ResolveTemplate(owner, export.Value, export.Location, visiting);

@@ -62,7 +62,7 @@ public sealed class OrchestrationAddCommand(CliContext cli) : Command<Orchestrat
     public sealed class Settings : TrustingSettings
     {
         [CommandArgument(0, "<file>")]
-        [Description("The orchestration file, e.g. storefront.orchestration.cs")]
+        [Description("The orchestration file, e.g. storefront.orchestration.yaml")]
         public string File { get; set; } = "";
 
         [CommandOption("--id <id>")]
@@ -86,8 +86,7 @@ public sealed class OrchestrationAddCommand(CliContext cli) : Command<Orchestrat
         {
             Evaluated { Model: OrchestrationModel t } => t,
             Evaluated => throw new InvalidOperationException($"{Path.GetFileName(path)} describes a repo, not an orchestration"),
-            Failed f => throw new InvalidOperationException($"{Path.GetFileName(path)} {f.Reason}\n{f.Output.Trim()}"),
-            Rejected r => throw new InvalidOperationException(string.Join("\n", r.Violations.Select(v => $"line {v.Line}: {v.Directive}: {v.Reason}"))),
+            Invalid invalid => throw new InvalidOperationException(string.Join("\n", invalid.Problems.Select(p => $"line {p.Location?.Line}: {p.Message}"))),
             _ => throw new InvalidOperationException("the orchestration couldn't be read"),
         };
 

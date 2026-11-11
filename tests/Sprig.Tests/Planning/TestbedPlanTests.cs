@@ -5,10 +5,8 @@ using Sprig.Engine.Orchestrations;
 
 namespace Sprig.Tests.Planning;
 
-/// <summary>Plans the testbed's real definitions (testbed/*.orchestration.cs and each repo's sprig.cs), compiled with
-/// <c>dotnet run</c>. Only the definition files are copied; the apps themselves aren't needed to plan.</summary>
-[Collection("dotnet-run")]
-[Trait("Category", "Integration")]
+/// <summary>Plans the testbed's real definitions (testbed/*.orchestration.yaml and each repo's sprig.yaml). Only the
+/// definition files are copied; the apps themselves aren't needed to plan.</summary>
 public sealed class TestbedPlanTests : IDisposable
 {
     readonly TempStore _store = new();
@@ -19,25 +17,22 @@ public sealed class TestbedPlanTests : IDisposable
     public TestbedPlanTests()
     {
         _trust = new FileTrustStore(_store.Paths);
-        _loader = new OrchestrationLoader(new DefinitionRunner(_trust, new DotnetRunHost(), _store.Paths,
-            new DefinitionRunnerOptions { Timeout = TimeSpan.FromSeconds(120), AllowLocalSdkProject = true }));
+        _loader = new OrchestrationLoader(new DefinitionRunner(_trust, _store.Paths));
         _root = Path.Combine(_store.Root, "testbed");
 
         var repoRoot = RepoRoot();
-        var sdk = Path.Combine(repoRoot, "src", "Sprig.Sdk", "Sprig.Sdk.csproj");
         foreach (var repo in new[] { "shop-services", "shop-web", "shop-mobile" })
-            Copy(Path.Combine(repoRoot, "testbed", "repos", repo, "sprig.cs"), Path.Combine(_root, repo, "sprig.cs"), sdk);
-        Copy(Path.Combine(repoRoot, "testbed", "storefront.orchestration.cs"), OrchestrationFile, sdk);
+            Copy(File.ReadAllText(Path.Combine(repoRoot, "testbed", "repos", repo, "sprig.yaml")), Path.Combine(_root, repo, "sprig.yaml"));
+        Copy(File.ReadAllText(Path.Combine(repoRoot, "testbed", "storefront.orchestration.yaml")), OrchestrationFile);
     }
 
     public void Dispose() => _store.Dispose();
 
-    string OrchestrationFile => Path.Combine(_root, "storefront.orchestration.cs");
+    string OrchestrationFile => Path.Combine(_root, "storefront.orchestration.yaml");
 
-    void Copy(string from, string to, string sdk)
+    void Copy(string text, string to)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-        var text = File.ReadAllText(from).Replace($"#:package {SdkReference.PackageId}@0.*", $"#:project {sdk}");
         File.WriteAllText(to, text);
         _trust.Approve(to, DefinitionHash.Of(text));
     }
@@ -66,7 +61,7 @@ public sealed class TestbedPlanTests : IDisposable
 
         var smtpPort = plan.Ports.Single(p => p.Resource == "mail" && p.Endpoint == "smtp").Port;
         var orders = plan.Apps.Single(a => a.Name == "orders-api");
-        Assert.Equal($"smtp://localhost:{smtpPort}", orders.Env.Single(e => e.Key == "Smtp__Url").Value.Value);
+        Assert.Equal($"smtp://localhost:{smtpPort}", orders.Env.Single(e => e.Key == "Smtp:Url").Value.Value);
 
         Assert.Equal(["shop-mobile/mobile", "shop-services/catalog-api"], plan.Groups.Single(g => g.Name == "mobile").Apps);
 
@@ -88,8 +83,8 @@ public sealed class TestbedPlanTests : IDisposable
     [Fact]
     public void Shop_web_runs_on_its_own_against_the_apis_by_their_usual_ports()
     {
-        var file = Path.Combine(_root, "web-only.orchestration.cs");
-        Copy(WriteOrchestration(file, "shop-web"), file, Path.Combine(RepoRoot(), "src", "Sprig.Sdk", "Sprig.Sdk.csproj"));
+        var file = Path.Combine(_root, "web-only.orchestration.yaml");
+        Copy("schema: 1\norchestration: web-only\nrepos:\n  shop-web: { path: shop-web }\n", file);
 
         var loaded = _loader.Load(file);
         Assert.True(loaded.Complete, string.Join("\n", loaded.Problems.Select(p => p.Message)));
@@ -103,33 +98,19 @@ public sealed class TestbedPlanTests : IDisposable
         Assert.Equal("http://localhost:5200", web.Env.Single(e => e.Key == "VITE_ORDERS_URL").Value.Value);
     }
 
-    static string WriteOrchestration(string file, string repo)
-    {
-        var source = file + ".src";
-        File.WriteAllText(source, $"""
-            #:package ArcticGizmo.Sprig.Sdk@0.*
-            using Sprig;
-
-            var orchestration = Orchestration.Describe("{Path.GetFileName(file).Split('.')[0]}");
-            orchestration.Repo("{repo}");
-            return orchestration.Emit(args);
-            """);
-        return source;
-    }
-
     [Fact]
-    public void A_compile_error_in_one_repo_is_reported_with_its_file_and_line()
+    public void A_mistake_in_one_repo_is_reported_with_its_file_and_line_and_the_others_still_load()
     {
-        var web = Path.Combine(_root, "shop-web", "sprig.cs");
-        var broken = File.ReadAllText(web).Replace("repo.Setting<Url>(\"orders-url\"", "repo.Imprt<Url>(\"orders-url\"");
-        File.WriteAllText(web, broken);
-        _trust.Approve(web, DefinitionHash.Of(broken));
+        var web = Path.Combine(_root, "shop-web", "sprig.yaml");
+        var broken = File.ReadAllText(web).Replace("${inputs.orders-url}", "${inputs.order-url}");
+        Copy(broken, web);
 
         var loaded = _loader.Load(OrchestrationFile);
 
         var problem = Assert.Single(loaded.Problems);
-        Assert.Contains("Imprt", problem.Message);
-        Assert.Contains("sprig.cs(", problem.Message);
+        Assert.Contains("there's no input 'order-url'", problem.Message);
+        Assert.Equal(web, problem.Location!.File);
+        Assert.Equal(broken.Split('\n').ToList().FindIndex(l => l.Contains("order-url}", StringComparison.Ordinal)) + 1, problem.Location.Line);
         Assert.Equal(2, loaded.Repos.Count);
     }
 }

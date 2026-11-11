@@ -41,6 +41,9 @@ public static class RunnerSpecs
         return (specs, jobs ? [.. running, .. specs.Where(s => s.Job).Select(s => s.Name)] : running);
     }
 
+    /// <summary>The jobs among <paramref name="specs"/>, by name.</summary>
+    public static IReadOnlyList<string> Jobs(IReadOnlyList<RunnerSpec> specs) => specs.Where(s => s.Job).Select(s => s.Name).ToArray();
+
     /// <summary>The apps of <paramref name="plan"/>'s group <paramref name="name"/>, for <see cref="For"/>, which adds what
     /// they depend on.</summary>
     public static IReadOnlyList<string> Group(Plan plan, string name)

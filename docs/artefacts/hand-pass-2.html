@@ -1,0 +1,483 @@
+<title>Sprig Hand Pass Two</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a sticky progress strip; sections of check rows with pass/fail/skip on the left. */
+:root {
+  --bg: #f6f7f3;
+  --surface: #ffffff;
+  --fg: #1d2420;
+  --muted: #5d6a62;
+  --line: #dde3dc;
+  --accent: #2f6b45;
+  --accent-soft: #e3efe6;
+  --pass: #2f7d4a;
+  --pass-soft: #dff1e5;
+  --fail: #b3362c;
+  --fail-soft: #f8e1de;
+  --skip: #8a6d1f;
+  --skip-soft: #f4ecd2;
+  --code-bg: #eef1ec;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+    --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+    --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+  --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+  --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); max-width: 64ch; margin: 8px 0 0; }
+code, pre { font-family: var(--font-mono); font-size: 12.5px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.setup { display: grid; gap: 10px; margin-top: 20px; }
+.cmd { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--code-bg); min-width: 0; }
+.cmd pre { margin: 0; padding: 8px 10px; overflow-x: auto; flex: 1; min-width: 0; white-space: pre; }
+.cmd button { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: 600 12px var(--font-body); padding: 0 12px; cursor: pointer; border-radius: 0 6px 6px 0; }
+.cmd button:hover { color: var(--accent); }
+.cmd-label { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+
+.strip { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 12px; margin-top: 24px; border-bottom: 1px solid var(--line); }
+.strip-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between; }
+.counts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.counts b { font-weight: 700; }
+.c-pass { color: var(--pass); } .c-fail { color: var(--fail); } .c-skip { color: var(--skip); } .c-todo { color: var(--muted); }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin-top: 10px; }
+.bar span { display: block; height: 100%; transition: width .25s ease; }
+.bar .b-pass { background: var(--pass); } .bar .b-fail { background: var(--fail); } .bar .b-skip { background: var(--skip); }
+.toggle { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.saved { font-size: 12px; color: var(--muted); }
+.saved.warn { color: var(--fail); }
+
+section { margin-top: 36px; }
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--fg); }
+.sec-head .tally { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-intro { color: var(--muted); font-size: 14px; margin: 8px 0 0; max-width: 70ch; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.states { display: flex; flex-direction: column; gap: 4px; }
+.states button { width: 52px; font: 600 11.5px var(--font-body); letter-spacing: .02em; padding: 5px 0; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.states button:hover { border-color: var(--muted); color: var(--fg); }
+.states button[aria-pressed="true"][data-s="pass"] { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+.states button[aria-pressed="true"][data-s="fail"] { background: var(--fail-soft); border-color: var(--fail); color: var(--fail); }
+.states button[aria-pressed="true"][data-s="skip"] { background: var(--skip-soft); border-color: var(--skip); color: var(--skip); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.body { min-width: 0; }
+.title { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.title .id { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.item.is-pass .title .label, .item.is-skip .title .label { color: var(--muted); }
+.how, .expect { margin: 6px 0 0; font-size: 14px; }
+.how ol { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.expect { padding-left: 10px; border-left: 3px solid var(--accent-soft); color: var(--fg); }
+.expect::before { content: "Expect  "; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.note-wrap { margin-top: 10px; }
+.note-wrap textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px/1.45 var(--font-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.item.is-fail .note-wrap textarea { border-color: var(--fail); }
+.note-link { background: none; border: 0; padding: 0; color: var(--accent); font: 500 13px var(--font-body); cursor: pointer; margin-top: 8px; }
+.item.done-hidden { display: none; }
+.foot { margin-top: 40px; color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) {
+  h1 { font-size: 24px; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .states { flex-direction: row; }
+}
+@media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">experimental branch · round two, before replacing main</div>
+  <h1>Sprig hand pass, round two</h1>
+  <p class="lede">Everything built since the first round: main and take-over, slots and the new-workspace form, groups and Restart, the Graph, Empty data, and the new approval rules. Work top to bottom; later rows use what earlier ones made. Mark each Pass, Fail or Skip, and add a note whenever something is off, however small. Your marks and notes are saved as you go.</p>
+
+  <div class="setup">
+    <div>
+      <p class="cmd-label">Fresh testbed repos beside the sprig checkout (<code>C:/Users/JonHowell/Documents/git/personal/sprig-testbed</code>). Run this again any time you want to start over.</p>
+      <div class="cmd"><pre id="cmd-reset">cd C:\Users\JonHowell\Documents\git\personal\sprig; pwsh -File scripts/testbed.ps1 -Force</pre><button type="button" data-copy="cmd-reset">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">Build, and make <code>sprig</code> in this PowerShell window mean this checkout's build, with an empty store of its own. Close the dev app first if it's open, or it won't rebuild.</p>
+      <div class="cmd"><pre id="cmd-dev">.\scripts\dev-sprig.ps1 -Store ..\sprig-store-handpass2</pre><button type="button" data-copy="cmd-dev">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">Open the app from the same window, so it uses the same store.</p>
+      <div class="cmd"><pre id="cmd-app">&amp; .\src\Sprig.App\bin\Debug\net10.0\sprig-gui.exe</pre><button type="button" data-copy="cmd-app">Copy</button></div>
+    </div>
+  </div>
+
+  <div class="strip" aria-live="polite">
+    <div class="strip-row">
+      <div class="counts" id="counts"></div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <label class="toggle"><input type="checkbox" id="hide-done"> Hide passed and skipped</label>
+        <span class="saved" id="saved">Connecting…</span>
+      </div>
+    </div>
+    <div class="bar" id="bar"><span class="b-pass"></span><span class="b-fail"></span><span class="b-skip"></span></div>
+  </div>
+
+  <div id="sections"></div>
+
+  <p class="foot">When you're done, tell Claude in the terminal. It reads these marks and notes directly and turns every fail note into a fix.</p>
+</div>
+
+<script>
+const T = "C:/Users/JonHowell/Documents/git/personal/sprig-testbed";
+const STORE = "C:/Users/JonHowell/Documents/git/personal/sprig-store-handpass2";
+const SECTIONS = [
+  {
+    id: "repos", title: "Repos and approval",
+    intro: "The store is empty, so the first look at each repo asks for approval. After that, only code that came from someone else should ask.",
+    items: [
+      { id: "R1", title: "Add a repo that has its own sprig.cs",
+        how: [`Repos page, <b>+ Add</b>, choose <b>It has a sprig.cs</b>, pick <code>${T}/shop-services</code>.`, `Read the review dialog, then approve.`],
+        expect: `The review dialog says approval covers exactly what you see, and that your own edits after that don't ask again while a change from someone else does. Once approved, the repo's page shows its cards: what it runs (catalog-api, orders-api, the migrate job), its infra, its settings and what it offers.` },
+      { id: "R2", title: "Add the other two",
+        how: [`Add <code>${T}/shop-web</code> and <code>${T}/shop-mobile</code> the same way.`],
+        expect: `Each asks once, then lists. Nothing else asks.` },
+      { id: "R3", title: "A copy kept in sprig asks nothing",
+        how: [`Repos page, <b>+ Add</b>, choose <b>Write one in sprig</b>, pick <code>${T}/shop-services</code> again, keeping the suggested ID (shop-services-sprig).`, `Change a comment in the editor and save.`],
+        expect: `The editor opens on a copy of the folder's sprig.cs under the new ID, with no approval asked, since the repo's own file was approved. Saving says it saved and runs. shop-services' own sprig.cs is unchanged.` },
+      { id: "R4", title: "Editing that copy elsewhere asks nothing",
+        how: [`Open <code>${STORE}/repos/shop-services-sprig/sprig.cs</code> in VS Code and add a comment line. Save.`, `Switch back to the app.`],
+        expect: `The page reloads when the window comes to the front and shows no approval panel.` },
+      { id: "R5", title: "Your uncommitted edit to a repo's sprig.cs asks nothing",
+        how: [`In <code>${T}/shop-web/sprig.cs</code>, change the pin to <code>"9171-9179"</code> and save, without committing.`, `Open shop-web's page in the app, or run <code>sprig plan shop-web</code>.`],
+        expect: `It plans with the new pin and asks nothing.` },
+      { id: "R6", title: "A version that arrives in a commit asks",
+        how: [`With the app in the background, in a terminal: change the pin back to <code>"9170-9179"</code> and add a comment, then <code>git -C ${T}/shop-web commit -qam "from a colleague"</code>.`, `Run <code>sprig plan shop-web</code>.`],
+        expect: `It refuses, saying the file isn't approved and how to approve it (<code>sprig trust add …</code> or <code>--trust</code>). Approve it with <code>--trust</code> before going on.` }
+    ]
+  },
+  {
+    id: "main", title: "Main, the checkout you already have",
+    intro: "Every repo and orchestration has a main row for the folder it's checked out in. It has no values of its own and can't be removed while its ID exists.",
+    items: [
+      { id: "M1", title: "Main is listed before it has ever run",
+        how: [`Open the Workspaces page.`],
+        expect: `Each repo has a main row first in its group, named after its ID (shop-services), saying "main checkout" and the branch. Its last up says never.` },
+      { id: "M2", title: "Start main, and its apps build while the infra comes up",
+        how: [`Select shop-services' main and press <b>Start</b>.`, `Once it's going, open catalog-api's log.`],
+        expect: `The progress window brings it up, then the apps start, migrate first. The log shows <code>sprig: building…</code>, then <code>sprig: waiting for the workspace's infra</code>, then the start: the build happened while the containers were coming up.` },
+      { id: "M3", title: "Main can't be freed, removed or given values",
+        how: [`With main selected, look at its buttons and the ⋯ menu.`],
+        expect: `No Free, no Settings, and no Remove… in ⋯.` },
+      { id: "M4", title: "Two definitions of one checkout take turns",
+        how: [`Select shop-services-sprig's main and press <b>Start</b>.`],
+        expect: `A dialog asks to take over from shop-services, saying its data is kept. Take over: shop-services goes down (its own step in the progress window) and the copy starts in the same folder. shop-services' row then says shop-services-sprig is up in this checkout.` },
+      { id: "M5", title: "Take it back",
+        how: [`Start shop-services' main again and take over.`],
+        expect: `The copy goes down and shop-services comes back with its data as it was.` }
+    ]
+  },
+  {
+    id: "empty", title: "Empty data",
+    intro: "Any workspace can start over with empty databases. If it was up, it comes back as it was.",
+    items: [
+      { id: "E1", title: "Empty a running main",
+        how: [`On shop-services' main, stop orders-api only (right-click it, Stop).`, `⋯ then <b>Empty data…</b>. Read the dialog and confirm.`],
+        expect: `The dialog says the containers go with their volumes, and that it comes back up with the apps that were running. Progress: Stop apps, Empty for each compose project, then Bring up. Then catalog-api starts again after migrate runs again. orders-api stays stopped.` },
+      { id: "E2", title: "Empty a main that's down",
+        how: [`Take shop-services down, then ⋯ <b>Empty data…</b>.`],
+        expect: `It empties and stays down. The summary says it starts that way next time it comes up.` },
+      { id: "E3", title: "From the terminal",
+        how: [`Start shop-services again, then run <code>sprig empty-data shop-services</code> and answer the question.`],
+        expect: `It asks first (and <code>-y</code> would skip that), empties, brings the infra back, and starts again the apps that were running, saying how many.` },
+      { id: "E4", title: "Nothing to empty",
+        how: [`Look at the ⋯ menu of shop-web's main, which has never come up.`],
+        expect: `No Empty data…, since it has no infra yet.` }
+    ]
+  },
+  {
+    id: "slots", title: "Slots and the new-workspace form",
+    intro: "A branch is checked out in a numbered slot of worktrees. The branch is the only name it has. A free slot keeps its packages, build output and data for the next branch.",
+    items: [
+      { id: "S1", title: "Register the storefront orchestration",
+        how: [`Orchestrations page, <b>+ Add</b>, choose adding an orchestration file, pick <code>${T}/storefront.orchestration.cs</code>, then approve.`],
+        expect: `It plans with no problems and draws its three repos and the values between them.` },
+      { id: "S2", title: "The form asks what to check out first",
+        how: [`Workspaces page, <b>New workspace</b>, pick storefront.`],
+        expect: `Three choices at the top: New branch, Existing branch, No branch. Existing branch offers a list of branches, the default marked. Its settings are listed with their defaults.` },
+      { id: "S3", title: "A new branch in a slot",
+        how: [`New branch <code>feat-a</code>, Create.`],
+        expect: `It's up as <code>storefront--1</code>, labelled feat-a, with a folder per repo inside (<code>storefront--1/shop-web</code> and so on), each on feat-a. git branch in any of them shows feat-a.` },
+      { id: "S4", title: "A repo on its own is the slot folder itself",
+        how: [`New workspace for shop-web, New branch <code>feat-b</code>.`],
+        expect: `Its worktree is <code>shop-web--1</code>, with no shop-web folder inside.` },
+      { id: "S5", title: "Free a slot, and check the next branch out in it",
+        how: [`On storefront--1, <b>Free</b>.`, `Then <b>Check out a branch</b> on the free row: New branch <code>feat-c</code>, and choose <b>Keep the data the last branch left</b>.`],
+        expect: `Freeing keeps feat-a and its commits; the row says free. Checking out reuses storefront--1 with no reinstall, and its logs start empty rather than showing feat-a's.` },
+      { id: "S6", title: "Free and Remove from the overview",
+        how: [`With nothing selected, tick main and storefront--1 in the overview.`],
+        expect: `Remove and Free appear only for what they can act on, and the remove dialog says the ticked main stays.` },
+      { id: "S7", title: "A broken slot asks what to do",
+        how: [`Make an empty folder <code>C:/Users/JonHowell/Documents/git/personal/storefront--2/shop-web</code> by hand.`, `New workspace for storefront, New branch <code>feat-d</code>.`],
+        expect: `The form says storefront--2 is broken and offers the next slot or fixing this one. Fix deletes what's in the way and makes the slot.` },
+      { id: "S8", title: "Remove refuses uncommitted changes",
+        how: [`Change a file in <code>storefront--2/shop-web</code>, then Remove… storefront--2.`],
+        expect: `It refuses, naming the worktree with changes. Revert the change and Remove works, leaving no folder behind.` }
+    ]
+  },
+  {
+    id: "run", title: "Groups, Start and Restart",
+    intro: "storefront names two groups: web (shop-web and shop-services) and mobile (shop-mobile and catalog-api).",
+    items: [
+      { id: "G1", title: "Start just a group, with only the infra it uses",
+        how: [`Take storefront--1 down. Then Start ▾, pick <b>mobile</b>.`],
+        expect: `Only mobile and catalog-api start, after migrate. On Infra, worktrees and files, Mailpit (only orders-api uses it) isn't running.` },
+      { id: "G2", title: "Starting another group grows what's running",
+        how: [`Start ▾, pick <b>web</b>.`],
+        expect: `Mailpit starts first, then web and orders-api. mobile keeps running; nothing restarts.` },
+      { id: "G3", title: "The pick is remembered",
+        how: [`Select another workspace, then come back.`],
+        expect: `Start ▾ still shows web.` },
+      { id: "G4", title: "Restart what's running, leaving a stopped app alone",
+        how: [`Stop orders-api, as if you'd taken it into your IDE. Then <b>Restart</b>.`],
+        expect: `Every running app builds again and comes back in order. orders-api stays stopped and nothing waits for it.` },
+      { id: "G5", title: "Restart with jobs first",
+        how: [`⋯ <b>Restart running, jobs first</b>.`],
+        expect: `migrate runs again before the apps come back.` },
+      { id: "G6", title: "Front ends wait for the APIs, never the other way",
+        how: [`Run <code>sprig plan storefront</code>.`],
+        expect: `web and mobile start after the APIs they call. No API "starts after" a front end.` },
+      { id: "G7", title: "Logs you can work with",
+        how: [`In a log, drag over a few lines (stack traces too) and Ctrl+C.`, `Right-click a line and look at what every app was doing then.`, `Turn timestamps off, switch workspaces, come back.`],
+        expect: `The copy is exactly those lines. The moment view lines the logs up. Timestamps stay off.` }
+    ]
+  },
+  {
+    id: "graph", title: "The Graph tab",
+    items: [
+      { id: "H1", title: "Layered by default",
+        how: [`On storefront--1, open <b>Graph</b>.`],
+        expect: `Front ends at the top, APIs below, migrate under them; infra shows as tags under the nodes that use it, each with its state's dot. Links are faint until you point at something.` },
+      { id: "H2", title: "Point, pick and search",
+        how: [`Point at catalog-api, then click it.`, `Ctrl+F and type <code>postgres</code>; Enter to step through.`],
+        expect: `Its links draw in full with their values and the rest fades. Search rings postgres and its users and dims the rest; Esc clears.` },
+      { id: "H3", title: "Group by",
+        how: [`Switch Repo, Start group and Role.`],
+        expect: `Repo boxes by repo; Start group boxes web and mobile, with shared infra left loose; Role boxes web, APIs, jobs, databases and so on. The choice is remembered.` },
+      { id: "H4", title: "A node's log and start/stop",
+        how: [`From catalog-api's menu, open its log.`, `Back on Graph, click postgres' tag to pick it, then stop and start it from its card.`],
+        expect: `The log opens on the Apps and logs tab. Postgres stops and starts, its dot following.` },
+      { id: "H5", title: "Force layout",
+        how: [`Switch to Force, drag a node, switch away and back.`],
+        expect: `It settles, the dragged node stays where you put it, and the layout is the same for every workspace of storefront.` }
+    ]
+  },
+  {
+    id: "files", title: "Values, files and secrets",
+    items: [
+      { id: "F1", title: "A slot's Settings",
+        how: [`On storefront--1, <b>Settings</b>: give <code>mail-smtp</code> a value of <code>smtp://localhost:2525</code> and save.`],
+        expect: `It says which apps to restart, and <code>sprig settings storefront feat-c</code> shows the value as coming from this workspace.` },
+      { id: "F2", title: "Settings files edited in place",
+        how: [`Open catalog-api's <code>Properties/launchSettings.json</code> in storefront--1 and add a comment line above sprig's profile. Bring it up again.`],
+        expect: `Your comment and the key order survive; only the values sprig sets change.` },
+      { id: "F3", title: "Passwords stay out of the output",
+        how: [`Run <code>sprig info storefront feat-c</code>, then again with <code>--unmask-secrets</code>.`],
+        expect: `The connection strings show their passwords masked. With the flag they show in full, and stderr says secrets are shown.` }
+    ]
+  },
+  {
+    id: "cli", title: "The terminal",
+    items: [
+      { id: "C1", title: "Up from a repo's folder",
+        how: [`<code>cd ${T}/shop-mobile</code>, then <code>sprig up</code>.`],
+        expect: `It brings up shop-mobile's main where it's checked out, starts the app in the background and waits until it's ready, then says how to watch and stop it.` },
+      { id: "C2", title: "A branch is enough from anywhere",
+        how: [`From your home folder: <code>sprig logs feat-c web</code> and <code>sprig info feat-c</code>.`],
+        expect: `Both find storefront's feat-c without the ID.` },
+      { id: "C3", title: "The app keeps up with the terminal",
+        how: [`With the app open on Workspaces, run <code>sprig stop shop-mobile</code> in the terminal, then switch back to the app.`],
+        expect: `The page shows the app stopped without you pressing anything.` }
+    ]
+  },
+  {
+    id: "misc", title: "Window, tray and look",
+    items: [
+      { id: "X1", title: "Close with apps running",
+        how: [`Close the window while storefront--1's apps run.`],
+        expect: `sprig tucks into the tray. Opening it again brings the same window back. Quit from the tray stops every app first.` },
+      { id: "X2", title: "Nav collapses to icons",
+        how: [`Collapse the nav, then hover its icons.`],
+        expect: `Icons only, each with a tooltip; the pages keep working.` },
+      { id: "X3", title: "Tidy up",
+        how: [`Remove the slots, then <code>sprig repo rm</code> each repo.`],
+        expect: `Each main goes with its repo, data included. <code>docker ps -a</code> and <code>docker volume ls</code> show nothing of this store's.` },
+      { id: "X4", title: "Overall look and feel",
+        how: [`Anything that felt off: wording, layout, a dialog that should have been a page, a slow step.`],
+        expect: `Note it here, however small.` }
+    ]
+  }
+];
+
+const ALL = SECTIONS.flatMap(s => s.items.map(i => ({ ...i, section: s.id })));
+const results = new Map();
+let db = null;
+const writeChains = new Map();
+const els = {};
+
+function render() {
+  const host = document.getElementById("sections");
+  host.innerHTML = "";
+  for (const sec of SECTIONS) {
+    const s = document.createElement("section");
+    s.innerHTML = `<div class="sec-head"><h2>${sec.title}</h2><span class="tally" id="tally-${sec.id}"></span></div>` +
+      (sec.intro ? `<p class="sec-intro">${sec.intro}</p>` : "");
+    for (const item of sec.items) s.appendChild(renderItem(item));
+    host.appendChild(s);
+  }
+  refresh();
+}
+
+function renderItem(item) {
+  const row = document.createElement("div");
+  row.className = "item";
+  row.id = "item-" + item.id;
+  row.innerHTML = `
+    <div class="states" role="group" aria-label="Result for ${item.id}">
+      <button type="button" data-s="pass" aria-pressed="false">Pass</button>
+      <button type="button" data-s="fail" aria-pressed="false">Fail</button>
+      <button type="button" data-s="skip" aria-pressed="false">Skip</button>
+    </div>
+    <div class="body">
+      <div class="title"><span class="id">${item.id}</span><span class="label">${item.title}</span></div>
+      <div class="how"><ol>${item.how.map(h => `<li>${h}</li>`).join("")}</ol></div>
+      <p class="expect">${item.expect}</p>
+      <button type="button" class="note-link">Add a note</button>
+      <div class="note-wrap" hidden><textarea id="note-${item.id}" aria-label="Note for ${item.id}" placeholder="What happened, and what you expected instead"></textarea></div>
+    </div>`;
+  const noteWrap = row.querySelector(".note-wrap");
+  const noteLink = row.querySelector(".note-link");
+  const textarea = row.querySelector("textarea");
+  row.querySelectorAll(".states button").forEach(b => b.addEventListener("click", () => {
+    const cur = results.get(item.id) || {};
+    const next = cur.status === b.dataset.s ? null : b.dataset.s;
+    results.set(item.id, { ...cur, status: next });
+    if (next === "fail") { noteWrap.hidden = false; noteLink.hidden = true; }
+    refresh();
+    save(item.id);
+  }));
+  noteLink.addEventListener("click", () => { noteWrap.hidden = false; noteLink.hidden = true; textarea.focus(); });
+  let timer = null;
+  textarea.addEventListener("input", () => {
+    const cur = results.get(item.id) || {};
+    results.set(item.id, { ...cur, note: textarea.value });
+    clearTimeout(timer);
+    timer = setTimeout(() => save(item.id), 800);
+  });
+  textarea.addEventListener("blur", () => { clearTimeout(timer); save(item.id); });
+  els[item.id] = { row, noteWrap, noteLink, textarea };
+  return row;
+}
+
+function refresh() {
+  const hide = document.getElementById("hide-done").checked;
+  const totals = { pass: 0, fail: 0, skip: 0, todo: 0 };
+  for (const item of ALL) {
+    const r = results.get(item.id) || {};
+    const st = r.status || null;
+    totals[st || "todo"]++;
+    const e = els[item.id];
+    if (!e) continue;
+    e.row.classList.toggle("is-pass", st === "pass");
+    e.row.classList.toggle("is-fail", st === "fail");
+    e.row.classList.toggle("is-skip", st === "skip");
+    e.row.classList.toggle("done-hidden", hide && (st === "pass" || st === "skip"));
+    e.row.querySelectorAll(".states button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === st)));
+    if (document.activeElement !== e.textarea && (r.note || "") !== e.textarea.value) e.textarea.value = r.note || "";
+    const hasNote = !!(r.note && r.note.trim()) || st === "fail";
+    if (hasNote) { e.noteWrap.hidden = false; e.noteLink.hidden = true; }
+  }
+  for (const sec of SECTIONS) {
+    const done = sec.items.filter(i => (results.get(i.id) || {}).status).length;
+    const fails = sec.items.filter(i => (results.get(i.id) || {}).status === "fail").length;
+    document.getElementById("tally-" + sec.id).textContent = `${done} of ${sec.items.length}` + (fails ? ` · ${fails} failed` : "");
+  }
+  const n = ALL.length;
+  document.getElementById("counts").innerHTML =
+    `<span class="c-pass"><b>${totals.pass}</b> passed</span><span class="c-fail"><b>${totals.fail}</b> failed</span>` +
+    `<span class="c-skip"><b>${totals.skip}</b> skipped</span><span class="c-todo"><b>${totals.todo}</b> to do, of ${n}</span>`;
+  const [bp, bf, bs] = document.querySelectorAll("#bar span");
+  bp.style.width = (totals.pass / n * 100) + "%";
+  bf.style.width = (totals.fail / n * 100) + "%";
+  bs.style.width = (totals.skip / n * 100) + "%";
+}
+
+function setSaved(text, warn) {
+  const el = document.getElementById("saved");
+  el.textContent = text;
+  el.classList.toggle("warn", !!warn);
+}
+
+function save(id) {
+  if (!db) return;
+  const r = results.get(id) || {};
+  const body = { status: r.status || null, note: r.note || "", item: id, at: new Date().toISOString() };
+  const prev = writeChains.get(id) || Promise.resolve();
+  const next = prev.then(() => db.collection("results").doc(id).set(body))
+    .then(() => setSaved("Saved"))
+    .catch(e => setSaved(e && e.code === "quota_exceeded" ? "Couldn't save: storage is full" : "Couldn't save the last change; it's kept on this page", true));
+  writeChains.set(id, next);
+}
+
+document.getElementById("hide-done").addEventListener("change", refresh);
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  const pre = document.getElementById(b.dataset.copy);
+  const text = pre.textContent;
+  const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1400); };
+  try {
+    navigator.clipboard.writeText(text).then(done, () => selectText(pre));
+  } catch { selectText(pre); }
+});
+function selectText(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const b = document.querySelector(`[data-copy="${node.id}"]`);
+  if (b) { b.textContent = "Press Ctrl+C"; setTimeout(() => (b.textContent = "Copy"), 2000); }
+}
+
+render();
+
+(async () => {
+  const claudeApi = window.claude;
+  db = claudeApi && claudeApi.use ? await claudeApi.use("db") : null;
+  if (!db) { setSaved("Not saving in this view: marks last until you close it", true); return; }
+  const slow = setTimeout(() => setSaved("Still loading saved marks…", true), 10000);
+  db.collection("results").onSnapshot(snap => {
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (!data) continue;
+      const local = results.get(d.id);
+      const editing = els[d.id] && document.activeElement === els[d.id].textarea;
+      results.set(d.id, { status: data.status || null, note: editing && local ? local.note : (data.note || "") });
+    }
+    if (!snap.metadata.fromCache) { clearTimeout(slow); setSaved(snap.empty ? "Saved as you go" : "Saved"); }
+    refresh();
+  }, err => {
+    clearTimeout(slow);
+    setSaved("Saved marks can't be reached; changes stay on this page", true);
+  });
+})();
+</script>

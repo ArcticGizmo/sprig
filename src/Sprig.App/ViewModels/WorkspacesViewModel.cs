@@ -628,9 +628,11 @@ public partial class WorkspacesViewModel : PageViewModel
         // Taken now: bringing the workspace up reads it afresh, choices and all.
         var group = keys is null ? StartChoice?.Group : null;
         var starting = new Starting(group, keys);
-        if (record.State != WorkspaceState.Up)
+        // Brought up here, its apps build while the infra comes up, and starting them releases those builds.
+        var prebuilt = record.State != WorkspaceState.Up;
+        if (prebuilt)
         {
-            if (!await UpAsync(retry: () => StartAsync(keys, open), starting)) return;
+            if (!await UpAsync(retry: () => StartAsync(keys, open), starting, build: starting)) return;
             if (Selected?.Record is not { State: WorkspaceState.Up } up) return;
             record = up;
         }
@@ -650,7 +652,7 @@ public partial class WorkspacesViewModel : PageViewModel
             await AppServices.RunAsync(() =>
             {
                 var specs = RunnerSpecs.For(record, plan, names);
-                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: keys ?? []));
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: prebuilt ? [] : keys ?? []));
                 if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
             });
             // Looked up after, since bringing the workspace up reads it afresh and its rows are new ones.
@@ -876,7 +878,10 @@ public partial class WorkspacesViewModel : PageViewModel
     /// over a checkout another definition is up in. True once it's up.</summary>
     /// <param name="retry">What to carry on with once the user approves, or agrees to take over.</param>
     /// <param name="starting">The apps about to be started, so only their infra comes up; null for all of it.</param>
-    async Task<bool> UpAsync(Func<Task> retry, Starting? starting = null)
+    /// <param name="build">The apps to build while the infra comes up, held until a start without a hold releases them,
+    /// which mustn't name them to restart; null to build nothing ahead.</param>
+    /// <param name="jobsAgain">Those apps' jobs run again even if they've finished.</param>
+    async Task<bool> UpAsync(Func<Task> retry, Starting? starting = null, Starting? build = null, bool jobsAgain = false)
     {
         if (Selected?.Record is not { } record) return false;
         var takeOver = _takeOverAgreed;
@@ -889,12 +894,16 @@ public partial class WorkspacesViewModel : PageViewModel
             return false;
         }
         var title = WorkspaceItem.Display(record);
+        string? held = null;
+        Action<WorkspaceRecord, Plan>? beforeInfra = build is null ? null
+            : (r, plan) => held = _services.Host.Prebuild(r, plan, build.AppsIn(plan), jobsAgain);
         // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
         var ok = await RunAsync($"Bringing {title} up",
             (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver,
-                starting: starting),
+                beforeInfra: beforeInfra, starting: starting),
             $"{title} is up.",
             retry: retry);
+        if (!ok && held is not null) _ = AppServices.RunAsync(() => _services.Host.TrySend(new HostRequest("stop", Workspace: held)));
         Refresh();
         return ok;
     }
@@ -984,9 +993,12 @@ public partial class WorkspacesViewModel : PageViewModel
         if (emptied && wasUp) await BringBackAsync(running);
     }
 
+    /// <param name="running">The apps that were running, by key; jobs among them are left to the apps that need them.</param>
     async Task BringBackAsync(IReadOnlyList<string> running)
     {
-        if (!await UpAsync(retry: () => BringBackAsync(running))) return;
+        // Built while the infra comes up. A migration that finished did so against the data that's gone, so jobs run again.
+        var build = new Starting(Apps: running);
+        if (!await UpAsync(retry: () => BringBackAsync(running), build: build, jobsAgain: true)) return;
         if (Selected?.Record is not { State: WorkspaceState.Up } record
             || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
         var apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
@@ -996,8 +1008,8 @@ public partial class WorkspacesViewModel : PageViewModel
             await AppServices.RunAsync(() =>
             {
                 var specs = RunnerSpecs.For(record, plan, apps);
-                // A migration that finished did so against the data that's gone, so jobs run again too.
-                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: [.. apps, .. specs.Where(s => s.Job).Select(s => s.Name)]));
+                // Releases the held builds; naming them to restart would build them again.
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: []));
                 if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
             });
             SayApps($"Starting {(apps.Length == 1 ? "the app that was running" : $"the {apps.Length} apps that were running")} again, after their jobs.", bad: false);

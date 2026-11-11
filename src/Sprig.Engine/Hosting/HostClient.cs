@@ -33,6 +33,27 @@ public sealed class HostClient(ISprigPaths paths)
     }
 
     /// <summary>
+    /// Have the host build <paramref name="apps"/> (null for every one) and what they depend on while the workspace's
+    /// infra comes up, holding them until a start for the workspace without a hold releases them. That release must not
+    /// name them to restart, or they'd be built again. Returns the workspace's key when it did, for stopping them should
+    /// bringing it up fail. Only a head start: null when it didn't, and starting them afterwards builds as usual.
+    /// </summary>
+    /// <param name="jobsAgain">Run their jobs again even if they've finished, as after the workspace's data is emptied.</param>
+    public string? Prebuild(Workspaces.WorkspaceRecord record, Planning.Plan plan, IReadOnlyCollection<string>? apps, bool jobsAgain = false)
+    {
+        try
+        {
+            var specs = RunnerSpecs.For(record, plan, apps);
+            if (specs.Count == 0) return null;
+            return Send(new HostRequest("start", specs, Restart: jobsAgain ? RunnerSpecs.Jobs(specs) : [], Hold: true)).Ok ? record.Key : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Stop a workspace's apps (or one of them) and wait until they've gone, so a caller can then remove what they were
     /// using. Returns the final state of each one stopped; empty when nothing was running or no host is.
     /// </summary>

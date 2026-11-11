@@ -246,23 +246,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     /// <summary>The apps <c>--group</c> picks; null for every app.</summary>
     static IReadOnlyList<string>? Group(Plan plan, Settings s) => s.Group is { } group ? RunnerSpecs.Group(plan, group) : null;
 
-    /// <summary>
-    /// Has the host build the apps while the infra comes up, held until starting them after <c>up</c> releases them.
-    /// Returns the workspace's key when it did. Only a head start: if it fails, starting them afterwards builds as usual.
-    /// </summary>
-    string? Prebuild(WorkspaceRecord record, Plan plan, Settings s)
-    {
-        try
-        {
-            var specs = RunnerSpecs.For(record, plan, Group(plan, s));
-            if (specs.Count == 0) return null;
-            return cli.Host.Send(new HostRequest("start", specs, Restart: [], Hold: true)).Ok ? record.Key : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
+    string? Prebuild(WorkspaceRecord record, Plan plan, Settings s) => cli.Host.Prebuild(record, plan, Group(plan, s));
 
     int StartDetached(WorkspaceRecord record, Plan plan, IReadOnlyList<RunnerSpec> specs, Settings s, CancellationToken cancellation)
     {
@@ -425,24 +409,32 @@ public sealed class EmptyDataCommand(CliContext cli) : Command<EmptyDataCommand.
             Console.Error.WriteLine($"{record.SlotName}'s data is empty, but it can't come back up yet; {again}");
             return 1;
         }
+        string[] apps = [];
+        string? held = null;
         try
         {
-            record = cli.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation);
+            record = cli.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, beforeInfra: (r, plan) =>
+            {
+                apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
+                // Their jobs run again: a migration that finished did so against the data that's gone.
+                if (apps.Length > 0) held = cli.Host.Prebuild(r, plan, apps, jobsAgain: true);
+            });
         }
-        catch (WorkspaceException e)
+        catch (Exception e) when (e is WorkspaceException or OperationCanceledException)
         {
+            if (held is not null) cli.Host.TrySend(new HostRequest("stop", Workspace: held));
+            if (e is OperationCanceledException) throw;
             Console.Error.WriteLine($"error: {record.SlotName}'s data is empty, but it didn't come back up: {e.Message}; {again}");
             return 1;
         }
 
         var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
-        var apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
         var specs = apps.Length == 0 ? [] : RunnerSpecs.For(record, plan, apps);
         if (specs.Count == 0)
             return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty and its infra is back up", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
 
-        // The jobs they depend on run again too: a migration that finished did so against the data that's gone.
-        StartCommand.Send(cli, specs, [.. apps, .. specs.Where(x => x.Job).Select(x => x.Name)]);
+        // Releases the held builds; naming them to restart would build them again.
+        StartCommand.Send(cli, specs, held is null ? RunnerSpecs.Jobs(specs) : []);
         var runners = StartCommand.WaitUntilReady(cli, record.Key, specs, s.Json, cancellation);
         var ok = runners.All(r => r.State.Satisfies());
         if (s.Json) CliOutput.Json(new { ok, workspace = record, restarted = apps, runners });

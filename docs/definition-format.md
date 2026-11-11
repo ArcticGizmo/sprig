@@ -12,7 +12,7 @@ repo: shop-services
 
 - **`schema` is required** and says which version of this format the file is written in. Sprig reads every version it has ever shipped, upgrading older ones as it reads them; it never rewrites the file unless asked.
 - **Unknown keys are errors**, so a typo is caught rather than ignored.
-- **Values are text.** A value that YAML would read as a number, a boolean or null (`3`, `on`, `yes`, `~`) is refused in a place that wants text; quote it.
+- **Values are read exactly as written.** `on`, `1.10` and `0123` stay that text; nothing is turned into a number or a boolean. Only a value starting with `{` (or another character YAML gives a meaning) needs quotes.
 - **Paths are relative to the repo's root** (an orchestration's: to the orchestration file), with forward slashes. An empty or missing `path` means the root.
 - **Commands are literal.** `command`, `health` and every other command is run exactly as written, as you'd type it. `${…}` isn't allowed in them: running the app yourself wouldn't fill it in. Values reach an app only through the files it reads.
 

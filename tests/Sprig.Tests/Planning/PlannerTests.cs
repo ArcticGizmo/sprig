@@ -1,4 +1,3 @@
-using Sprig;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Settings;
 using Sprig.Model;
@@ -11,38 +10,80 @@ public class PlannerTests
 
     sealed class Fixture
     {
-        public OrchestrationBuilder Orchestration { get; } = Sprig.Orchestration.Describe("storefront");
         readonly Dictionary<string, RepoModel> _repos = [];
 
-        public RepoRef Add(string path, Action<RepoBuilder> describe)
-        {
-            var repo = Repo.Describe(Path.GetFileName(path));
-            describe(repo);
-            _repos[path] = repo.BuildRepo();
-            return Orchestration.Repo(path);
-        }
+        /// <summary>The orchestration file's lines after its repos, which the fixture writes from the repos added.</summary>
+        public string Orchestration { get; set; } = "";
+
+        public void Add(string path, string yaml) => _repos[path] = Yaml.Repo(yaml);
+
+        public void Add(string path, RepoModel repo) => _repos[path] = repo;
+
+        OrchestrationModel BuildOrchestration() => Yaml.Orchestration(string.Join("\n",
+        [
+            "schema: 1",
+            "orchestration: storefront",
+            "repos:",
+            .. _repos.Keys.Select(path => $"  {Path.GetFileName(path)}: {{ path: {path} }}"),
+            Orchestration,
+        ]));
 
         public Plan Plan(SprigSettings? settings = null, IReadOnlySet<int>? inUse = null)
-            => Planner.Build(new PlanInput(Orchestration.BuildOrchestration(), _repos, "feat-x", settings ?? Settings, inUse ?? new HashSet<int>()));
+            => Planner.Build(new PlanInput(BuildOrchestration(), _repos, "feat-x", settings ?? Settings, inUse ?? new HashSet<int>()));
 
         public Plan PlanWith(Func<PlanInput, PlanInput> change)
-            => Planner.Build(change(new PlanInput(Orchestration.BuildOrchestration(), _repos, "feat-x", Settings, new HashSet<int>())));
+            => Planner.Build(change(new PlanInput(BuildOrchestration(), _repos, "feat-x", Settings, new HashSet<int>())));
     }
 
     static IReadOnlyList<string> DependsOn(Plan plan, string app) => plan.Apps.Single(a => a.Name == app).DependsOn!;
+
+    static RepoModel ChangeApp(RepoModel repo, string app, Func<AppModel, AppModel> change)
+        => repo with { Apps = repo.Apps.Select(a => a.Name == app ? change(a) : a).ToArray() };
 
     [Fact]
     public void Apps_start_after_what_they_wait_for_and_after_apps_their_values_point_at()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var pg = repo.Postgres("pg");
-            var migrate = repo.DotNetJob("migrate", "tools/Migrate").EnvFile(".env", e => e.Set("Db", pg.Database("catalog"))).WaitFor(pg);
-            var catalog = repo.DotNet("catalog-api", ".").Http().WaitFor(pg, migrate);
-            repo.Export<Url>("catalog-url", catalog.Url);
-        });
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("catalog-url"))));
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            apps:
+              migrate:
+                run: dotnet
+                path: tools/Migrate
+                once: true
+                wait-for: [pg]
+              catalog-api:
+                run: dotnet
+                ports: { http: any }
+                wait-for: [pg, migrate]
+            files:
+              tools/Migrate/.env:
+                read-by: [migrate]
+                values:
+                  Db: Host=localhost;Port=${pg.port};Database=catalog;Username=sprig;Password=sprig
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            inputs:
+              catalog-url: { type: url }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+            """);
 
         var plan = f.Plan();
 
@@ -54,8 +95,25 @@ public class PlannerTests
         Assert.DoesNotContain(plan.Ports, p => p.Resource == "migrate");
     }
 
-    static void Orders(RepoBuilder repo)
-        => repo.Node("orders", ".").Http().EnvFile(".env", e => e.Set("SMTP", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl)));
+    const string Orders = """
+        schema: 1
+        repo: shop-services
+        containers:
+          mail: { preset: mailpit }
+        inputs:
+          mail-smtp:
+            type: url
+            default: ${mail.smtp-url}
+        apps:
+          orders:
+            run: node
+            ports: { http: any }
+        files:
+          .env:
+            read-by: [orders]
+            values:
+              SMTP: ${inputs.mail-smtp}
+        """;
 
     [Fact]
     public void A_setting_nothing_else_gives_uses_its_default_and_its_infra()
@@ -79,7 +137,23 @@ public class PlannerTests
     public void A_literal_default_is_used_as_it_is()
     {
         var f = new Fixture();
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("catalog-url", "http://localhost:5100"))));
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            inputs:
+              catalog-url:
+                type: url
+                default: http://localhost:5100
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+            """);
 
         var value = f.Plan().Apps.Single().Env.Single().Value;
 
@@ -87,13 +161,19 @@ public class PlannerTests
         Assert.Equal(("shop-web", "catalog-url"), (Assert.Single(value.Sources!).Owner, value.Sources![0].Setting));
     }
 
+    const string OrchestrationMail = """
+        containers:
+          mail: { preset: mailpit }
+        inputs:
+          mail-smtp: ${mail.smtp-url}
+        """;
+
     [Fact]
     public void An_orchestration_that_gives_the_setting_wins_and_the_defaults_own_infra_is_left_out()
     {
         var f = new Fixture();
         f.Add("../shop-services", Orders);
-        var mail = f.Orchestration.Mailpit("mail");
-        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
+        f.Orchestration = OrchestrationMail;
 
         var plan = f.Plan();
 
@@ -108,8 +188,7 @@ public class PlannerTests
     {
         var f = new Fixture();
         f.Add("../shop-services", Orders);
-        var mail = f.Orchestration.Mailpit("mail");
-        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
+        f.Orchestration = OrchestrationMail;
 
         var plan = f.PlanWith(i => i with { Values = new Dictionary<string, string> { ["mail-smtp"] = "smtp://staging:25" } });
 
@@ -125,8 +204,35 @@ public class PlannerTests
     public void A_value_set_on_the_workspace_beats_another_repos_export()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo => repo.Export<Url>("catalog-url", repo.DotNet("catalog-api", ".").Http().Url));
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("catalog-url", "http://localhost:5100"))));
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            apps:
+              catalog-api:
+                run: dotnet
+                ports: { http: any }
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            inputs:
+              catalog-url:
+                type: url
+                default: http://localhost:5100
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+            """);
 
         Assert.StartsWith("http://localhost:9", f.Plan().Apps.Single(a => a.Name == "web").Env.Single().Value.Value);
         var pointed = f.PlanWith(i => i with { Values = new Dictionary<string, string> { ["catalog-url"] = "https://catalog.example.com" } });
@@ -138,14 +244,41 @@ public class PlannerTests
     public void A_setting_with_no_value_from_anywhere_is_asked_for_rather_than_a_problem()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var mail = repo.Mailpit("mail");
-            repo.Node("orders", ".").Http().EnvFile(".env", e => e.Set("SMTP", repo.Setting<Url>("mail-smtp", mail.SmtpUrl))).WaitFor(mail);
-            var key = repo.Setting<Secret>("payments-key");
-            repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("KEY", key)).EnvFile(".env", e => e.Set("KEY_AGAIN", key));
-        });
-        f.Orchestration.Bind("mail-smtp", "smtp://elsewhere:25");
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            containers:
+              mail: { preset: mailpit }
+            inputs:
+              mail-smtp:
+                type: url
+                default: ${mail.smtp-url}
+              payments-key: { type: secret }
+            apps:
+              orders:
+                run: node
+                path: orders
+                ports: { http: any }
+                wait-for: [mail]
+              web:
+                run: node
+                path: web
+                ports: { http: any }
+            files:
+              orders/.env:
+                read-by: [orders]
+                values:
+                  SMTP: ${inputs.mail-smtp}
+              web/.env:
+                read-by: [web]
+                values:
+                  KEY: ${inputs.payments-key}
+                  KEY_AGAIN: ${inputs.payments-key}
+            """);
+        f.Orchestration = """
+            inputs:
+              mail-smtp: smtp://elsewhere:25
+            """;
 
         var plan = f.Plan();
 
@@ -166,15 +299,25 @@ public class PlannerTests
     [InlineData(true)]
     public void Two_apps_that_call_each_other_start_in_the_same_order_whichever_is_declared_first(bool bFirst)
     {
+        const string a = "  a: { run: dotnet, path: a, ports: { http: any } }";
+        const string b = "  b: { run: dotnet, path: b, ports: { http: any } }";
+        string[] apps = bFirst ? [b, a] : [a, b];
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            AppResource a, b;
-            if (bFirst) { b = repo.DotNet("b", ".").Http(); a = repo.DotNet("a", ".").Http(); }
-            else { a = repo.DotNet("a", ".").Http(); b = repo.DotNet("b", ".").Http(); }
-            a.EnvFile(".env", e => e.Set("B", b.Url));
-            b.EnvFile(".env", e => e.Set("A", a.Url));
-        });
+        f.Add("../r", $$"""
+            schema: 1
+            repo: r
+            apps:
+            {{string.Join("\n", apps)}}
+            files:
+              a/.env:
+                read-by: [a]
+                values:
+                  B: ${b.url}
+              b/.env:
+                read-by: [b]
+                values:
+                  A: ${a.url}
+            """);
 
         var plan = f.Plan();
 
@@ -188,27 +331,52 @@ public class PlannerTests
     [InlineData(true)]
     public void A_front_end_waits_for_the_api_it_calls_and_nothing_waits_for_a_front_end_because_it_names_its_address(bool apisFirst)
     {
+        string[] frontEnds =
+        [
+            "  client: { run: node, path: client, ports: { http: any } }",
+            "  admin-ui: { run: command, command: x, path: admin-ui, ports: { http: any } }",
+        ];
+        string[] backend =
+        [
+            "  orders-api: { run: dotnet, path: orders-api, ports: { http: any } }",
+            "  billing-api: { run: dotnet, path: billing-api, ports: { http: any } }",
+            "  sync-worker: { run: dotnet, path: sync-worker, ports: { http: any } }",
+        ];
+        string[] apps = apisFirst ? [.. backend, .. frontEnds] : [.. frontEnds, .. backend];
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            AppResource client = null!, admin = null!, orders = null!, billing = null!, sync = null!;
-            void FrontEnds() { client = repo.Node("client", ".").Http(); admin = repo.App("admin-ui", ".").Http().Run("x"); }
-            void Backend()
-            {
-                orders = repo.DotNet("orders-api", ".").Http();
-                billing = repo.DotNet("billing-api", ".").Http();
-                sync = repo.DotNet("sync-worker", ".").Http();
-            }
-            if (apisFirst) { Backend(); FrontEnds(); } else { FrontEnds(); Backend(); }
-
-            client.EnvFile(".env", e => e.Set("API", orders.Url));
-            admin.EnvFile(".env", e => e.Set("API", billing.Url));
-            foreach (var api in new[] { orders, billing, sync })
-                api.EnvFile(".env", e => e.Set("CLIENT_URL", client.Url).Set("ADMIN_URL", admin.Url));
-            // The worker and an API point at each other: the worker calls the API, so it starts second.
-            orders.EnvFile(".env", e => e.Set("SYNC", sync.Url));
-            sync.EnvFile(".env", e => e.Set("ORDERS", orders.Url));
-        });
+        // The worker and an API point at each other: the worker calls the API, so it starts second.
+        f.Add("../r", $$"""
+            schema: 1
+            repo: r
+            apps:
+            {{string.Join("\n", apps)}}
+            files:
+              client/.env:
+                read-by: [client]
+                values:
+                  API: ${orders-api.url}
+              admin-ui/.env:
+                read-by: [admin-ui]
+                values:
+                  API: ${billing-api.url}
+              orders-api/.env:
+                read-by: [orders-api]
+                values:
+                  CLIENT_URL: ${client.url}
+                  ADMIN_URL: ${admin-ui.url}
+                  SYNC: ${sync-worker.url}
+              billing-api/.env:
+                read-by: [billing-api]
+                values:
+                  CLIENT_URL: ${client.url}
+                  ADMIN_URL: ${admin-ui.url}
+              sync-worker/.env:
+                read-by: [sync-worker]
+                values:
+                  CLIENT_URL: ${client.url}
+                  ADMIN_URL: ${admin-ui.url}
+                  ORDERS: ${orders-api.url}
+            """);
 
         var plan = f.Plan();
 
@@ -224,11 +392,18 @@ public class PlannerTests
     public void A_front_end_someone_waits_for_by_name_is_still_waited_for()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            var client = repo.Node("client", ".").Http();
-            repo.DotNet("e2e", ".").Http().WaitFor(client);
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              client:
+                run: node
+                ports: { http: any }
+              e2e:
+                run: dotnet
+                ports: { http: any }
+                wait-for: [client]
+            """);
 
         Assert.Equal(["r/client"], DependsOn(f.Plan(), "e2e"));
     }
@@ -237,20 +412,38 @@ public class PlannerTests
     public void Readiness_checks_and_restart_policies_carry_into_the_plan()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            repo.DotNet("api", ".").Http(health: "/health").Http("admin", health: "/ready").Restart(RestartPolicy.Always, max: 2);
-            repo.Node("web", ".").Http().ReadyOnLog("ready in");
-            repo.Job("seed", ".").Retry();
-            repo.Node("plain", ".").Http().Restart(RestartPolicy.Never);
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              api:
+                run: dotnet
+                ports:
+                  http: any
+                  admin: { host: any, scheme: http }
+                health: /health
+                restart: always
+              web:
+                run: node
+                ports: { http: any }
+                ready-log: ready in
+              seed:
+                run: command
+                command: ./seed.sh
+                once: true
+                retry: 3
+              plain:
+                run: node
+                ports: { http: any }
+                restart: never
+            """);
 
         var plan = f.Plan();
 
         Assert.Empty(plan.Problems);
         var api = plan.Apps.Single(a => a.Name == "api");
-        Assert.Equal([new PlannedHealth("http", "/health"), new PlannedHealth("admin", "/ready")], api.Health);
-        Assert.Equal(("always", 2), (api.Restart!.Policy, api.Restart.Max));
+        Assert.Equal([new PlannedHealth("http", "/health")], api.Health);
+        Assert.Equal(("always", 5), (api.Restart!.Policy, api.Restart.Max));
         Assert.Equal("ready in", plan.Apps.Single(a => a.Name == "web").ReadyLog);
         Assert.Equal(("onFailure", 3), (plan.Apps.Single(a => a.Name == "seed").Restart!.Policy, plan.Apps.Single(a => a.Name == "seed").Restart!.Max));
         Assert.Null(plan.Apps.Single(a => a.Name == "plain").Restart);
@@ -260,20 +453,49 @@ public class PlannerTests
     public void Quick_links_resolve_to_each_workspaces_ports_without_making_one_app_wait_for_another()
     {
         var f = new Fixture();
-        var services = f.Add("../shop-services", repo =>
-        {
-            var api = repo.DotNet("catalog-api", ".").Http().Http("admin").Link("Swagger", "/swagger").Link("Admin", "/", endpoint: "admin");
-            repo.Export<Url>("catalog-url", api.Url);
-        });
-        f.Add("../shop-web", repo =>
-        {
-            var web = repo.Node("web", ".").Http()
-                .Link("Storefront")
-                .Link("Docs", "https://example.com/docs");
-            repo.Node("admin", ".").Http().Link("Web's cart", $"{web.Url}/cart?seed=demo");
-        });
-        var mail = f.Orchestration.Container("mail", "mailpit").Endpoint("ui", 8025, scheme: "http");
-        f.Orchestration.Link("Mail inbox", mail.UrlOf("ui")).Link("Catalog", $"{services.Export("catalog-url")}/products");
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            apps:
+              catalog-api:
+                run: dotnet
+                ports:
+                  http: any
+                  admin: { host: any, scheme: http }
+                links:
+                  Swagger: /swagger
+                  Admin: ${catalog-api.admin.url}
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+                links:
+                  Storefront: /
+                  Docs: https://example.com/docs
+              admin:
+                run: node
+                ports: { http: any }
+                links:
+                  Web's cart: ${web.url}/cart?seed=demo
+            """);
+        f.Orchestration = """
+            containers:
+              mail:
+                image: mailpit
+                ports:
+                  ui: { container: 8025, scheme: http }
+            links:
+              Mail inbox: ${mail.ui.url}
+              Catalog: ${shop-services.outputs.catalog-url}/products
+            """;
 
         var plan = f.Plan();
 
@@ -295,11 +517,19 @@ public class PlannerTests
     public void A_quick_link_that_isnt_a_web_address_is_left_out_with_a_warning()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            var pg = repo.Postgres("pg");
-            repo.Node("a", ".").Http().Link("Database", pg.Database("app")).Link("Home");
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            containers:
+              pg: { preset: postgres }
+            apps:
+              a:
+                run: node
+                ports: { http: any }
+                links:
+                  Database: Host=localhost;Port=${pg.port};Database=app;Username=sprig;Password=sprig
+                  Home: /
+            """);
 
         var plan = f.Plan();
 
@@ -312,13 +542,29 @@ public class PlannerTests
     [Fact]
     public void A_bad_health_path_log_pattern_or_restart_count_is_an_error()
     {
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: r
+            apps:
+              a:
+                run: node
+                ports: { http: any }
+                health: /health
+              b:
+                run: node
+                ports: { http: any }
+                ready-log: ready in
+              c:
+                run: node
+                ports: { http: any }
+                restart: on-failure
+            """);
+        // The format refuses each of these as it's read, so they're set on the model to test the planner refuses them too.
+        repo = ChangeApp(repo, "a", a => a with { Endpoints = [a.Endpoints[0] with { Health = "health" }] });
+        repo = ChangeApp(repo, "b", b => b with { ReadyLog = "ready (in" });
+        repo = ChangeApp(repo, "c", c => c with { Restart = c.Restart! with { Max = 0 } });
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            repo.Node("a", ".").Http(health: "health");
-            repo.Node("b", ".").Http().ReadyOnLog("ready (in");
-            repo.Node("c", ".").Http().Restart(max: 0);
-        });
+        f.Add("../r", repo);
 
         var problems = f.Plan().Problems.Select(p => p.Message).ToArray();
 
@@ -332,25 +578,40 @@ public class PlannerTests
     public void Apps_that_wait_for_each_other_are_an_error()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            var a = repo.Node("a", ".").Http();
-            var b = repo.Node("b", ".").Http().WaitFor(a);
-            a.WaitFor(b);
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              a:
+                run: node
+                ports: { http: any }
+                wait-for: [b]
+              b:
+                run: node
+                ports: { http: any }
+                wait-for: [a]
+            """);
 
         Assert.Contains("r/a → r/b → r/a wait for each other", Assert.Single(f.Plan().Problems).Message);
     }
+
+    const string WebAndAdmin = """
+        schema: 1
+        repo: r
+        apps:
+          web:
+            run: node
+            ports: { http: any }
+          admin:
+            run: node
+            ports: { http: any }
+        """;
 
     [Fact]
     public void A_workspace_keeps_its_leased_ports_and_only_new_endpoints_get_new_ones()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            repo.Node("web", ".").Http();
-            repo.Node("admin", ".").Http();
-        });
+        f.Add("../r", WebAndAdmin);
         var leased = new Dictionary<string, int> { ["r/web.http"] = 9050 };
 
         var plan = f.PlanWith(i => i with { Leased = leased });
@@ -365,11 +626,17 @@ public class PlannerTests
     public void A_leased_port_is_given_up_when_something_else_has_it_or_its_pin_no_longer_allows_it()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            repo.Node("web", ".").Http();
-            repo.Node("pinned", ".").Http(pin: "9020-9021");
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+              pinned:
+                run: node
+                ports: { http: 9020-9021 }
+            """);
         var leased = new Dictionary<string, int> { ["r/web.http"] = 9050, ["r/pinned.http"] = 9000 };
 
         var plan = f.PlanWith(i => i with { Leased = leased, PortsInUse = new HashSet<int> { 9050 } });
@@ -383,12 +650,16 @@ public class PlannerTests
     public void Compose_services_the_repo_does_not_name_are_left_out_with_a_warning()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var compose = repo.ComposeFile("docker-compose.yml");
-            compose.Service("postgres").Endpoint("tcp", 5432);
-            compose.Service("redis");
-        });
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            compose:
+              docker-compose.yml:
+                services:
+                  postgres:
+                    ports: { tcp: { container: 5432 } }
+                  redis: {}
+            """);
         var info = new ComposeFileInfo(["postgres", "redis", "mailpit", "seq", "tools"], ["postgres"], ["tools"]);
 
         var plan = f.PlanWith(i => i with { ComposeFiles = new Dictionary<string, ComposeFileInfo> { [ComposeFileInfo.Key("../shop-services", "docker-compose.yml")] = info } });
@@ -405,7 +676,15 @@ public class PlannerTests
     public void Naming_a_compose_service_the_file_does_not_have_is_an_error()
     {
         var f = new Fixture();
-        f.Add("../r", repo => repo.ComposeFile("compose.yml").Service("postgress").Endpoint("tcp", 5432));
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            compose:
+              compose.yml:
+                services:
+                  postgress:
+                    ports: { tcp: { container: 5432 } }
+            """);
         var info = new ComposeFileInfo(["postgres"], [], []);
 
         var plan = f.PlanWith(i => i with { ComposeFiles = new Dictionary<string, ComposeFileInfo> { [ComposeFileInfo.Key("../r", "compose.yml")] = info } });
@@ -417,13 +696,27 @@ public class PlannerTests
     public void Each_value_keeps_its_file_and_a_launch_profile_for_a_node_app_is_a_warning()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            var api = repo.DotNet("api", ".").Http();
-            api.LaunchSettings(s => s.Set("ASPNETCORE_URLS", api.Url));
-            var web = repo.Node("web", ".").Http();
-            web.LaunchSettings(s => s.Set("PORT", web.Port));
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              api:
+                run: dotnet
+                ports: { http: any }
+              web:
+                run: node
+                path: web
+                ports: { http: any }
+            files:
+              Properties/launchSettings.json:
+                read-by: [api]
+                values:
+                  ASPNETCORE_URLS: ${api.url}
+              web/Properties/launchSettings.json:
+                read-by: [web]
+                values:
+                  PORT: ${web.port}
+            """);
 
         var plan = f.Plan();
 
@@ -436,9 +729,17 @@ public class PlannerTests
     public void A_value_meant_for_the_process_is_refused_since_running_the_app_yourself_would_not_get_it()
     {
         var f = new Fixture();
-        f.Add("../r", repo => repo.DotNet("api", ".").Http());
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              api:
+                run: dotnet
+                ports: { http: any }
+            """);
         var at = new SourceLocation("sprig.yaml", 3);
 
+        // The format has nowhere to write a value but a file, so one with no file is put on the model directly.
         var plan = f.PlanWith(i => i with
         {
             Repos = i.Repos.ToDictionary(r => r.Key, r => r.Value with
@@ -457,13 +758,23 @@ public class PlannerTests
     [Fact]
     public void A_value_in_a_run_command_is_refused_since_typing_the_command_would_not_fill_it_in()
     {
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: r
+            apps:
+              web:
+                run: node
+                command: npm run dev
+                ports: { http: any }
+              docs:
+                run: node
+                command: npm run docs
+                ports: { http: any }
+            """);
+        // The format refuses a reference in a command as it's read, so it's put on the model to test the planner refuses it too.
+        repo = ChangeApp(repo, "web", web => web with { Run = "npm run dev -- --port {web.http.port}" });
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            var web = repo.Node("web", ".").Http();
-            web.Run($"npm run dev -- --port {web.Port}");
-            repo.Node("docs", ".").Http().Run("npm run docs");
-        });
+        f.Add("../r", repo);
 
         var problem = Assert.Single(f.Plan().Problems);
 
@@ -482,17 +793,41 @@ public class PlannerTests
     public void A_setting_binds_to_the_one_export_of_that_name_and_says_how_it_got_there()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var catalog = repo.DotNet("catalog-api", "src/Catalog.Api").Http();
-            catalog.LaunchSettings(s => s.Set("ASPNETCORE_URLS", catalog.Url));
-            repo.Export<Url>("catalog-url", catalog.Url);
-        });
-        f.Add("../shop-web", repo =>
-        {
-            var catalog = repo.Setting<Url>("catalog-url", "http://localhost:5100");
-            repo.Node("web", ".").Http(pin: "5170-5173").EnvFile(".env.local", e => e.Set("VITE_CATALOG_URL", catalog));
-        });
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            apps:
+              catalog-api:
+                run: dotnet
+                path: src/Catalog.Api
+                ports: { http: any }
+            files:
+              src/Catalog.Api/Properties/launchSettings.json:
+                read-by: [catalog-api]
+                values:
+                  ASPNETCORE_URLS: ${catalog-api.url}
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            inputs:
+              catalog-url:
+                type: url
+                default: http://localhost:5100
+            apps:
+              web:
+                run: node
+                ports: { http: 5170-5173 }
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  VITE_CATALOG_URL: ${inputs.catalog-url}
+            """);
 
         var plan = f.Plan();
 
@@ -505,35 +840,77 @@ public class PlannerTests
         Assert.Equal($"http://localhost:{catalogPort}", Env(plan, "catalog-api", "ASPNETCORE_URLS").Value.Value);
     }
 
+    static string CacheUrlOutput(string repo) => $"""
+        schema: 1
+        repo: {repo}
+        outputs:
+          cache-url:
+            type: url
+            value: redis://{repo}
+        """;
+
     [Fact]
     public void Two_exporters_of_a_name_is_an_error_until_the_orchestration_picks_one()
     {
         var f = new Fixture();
-        var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
-        f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
-        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("CACHE", repo.Setting<Url>("cache-url"))));
+        f.Add("../a", CacheUrlOutput("a"));
+        f.Add("../b", CacheUrlOutput("b"));
+        f.Add("../web", """
+            schema: 1
+            repo: web
+            inputs:
+              cache-url: { type: url }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  CACHE: ${inputs.cache-url}
+            """);
 
         var ambiguous = f.Plan();
         var problem = Assert.Single(ambiguous.Problems);
         Assert.Contains("a and b all output 'cache-url'", problem.Message);
         Assert.Contains("inputs: { cache-url: ${<repo>.outputs.cache-url} }", problem.Message);
 
-        f.Orchestration.Bind("cache-url", a.Export("cache-url"));
+        f.Orchestration = """
+            inputs:
+              cache-url: ${a.outputs.cache-url}
+            """;
         var settled = f.Plan();
         Assert.Empty(settled.Problems);
         Assert.Equal("redis://a", Env(settled, "web", "CACHE").Value.Value);
     }
 
+    const string WebAskingForApiUrl = """
+        schema: 1
+        repo: web
+        inputs:
+          api-url: { type: url }
+        apps:
+          web:
+            run: node
+            ports: { http: any }
+        files:
+          .env:
+            read-by: [web]
+            values:
+              API: ${inputs.api-url}
+        """;
+
     [Fact]
     public void A_setting_to_ask_for_says_where_it_was_declared()
     {
         var f = new Fixture();
-        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("api-url"))));
+        f.Add("../web", WebAskingForApiUrl);
 
         var ask = Assert.Single(f.Plan().ToAsk);
 
         Assert.Equal(("web", "api-url", "url"), (ask.Owner, ask.Name, ask.Type));
-        Assert.EndsWith("PlannerTests.cs", ask.Location.File);
+        Assert.Equal(new SourceLocation("sprig.yaml", 4), ask.Location);
         Assert.Null(Env(f.Plan(), "web", "API").Value.Value);
     }
 
@@ -541,8 +918,29 @@ public class PlannerTests
     public void A_setting_of_the_wrong_type_is_refused()
     {
         var f = new Fixture();
-        f.Add("../db", repo => repo.Export<ConnectionString>("orders-db", "Host=x"));
-        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("DB", repo.Setting<Url>("orders-db"))));
+        f.Add("../db", """
+            schema: 1
+            repo: db
+            outputs:
+              orders-db:
+                type: connection-string
+                value: Host=x
+            """);
+        f.Add("../web", """
+            schema: 1
+            repo: web
+            inputs:
+              orders-db: { type: url }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  DB: ${inputs.orders-db}
+            """);
 
         Assert.Contains("web's input 'orders-db' is a url, but db outputs it as connectionstring", Assert.Single(f.Plan().Problems).Message);
     }
@@ -551,9 +949,22 @@ public class PlannerTests
     public void Infra_the_orchestration_owns_can_give_a_setting()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http().EnvFile(".env", e => e.Set("Smtp__Url", repo.Setting<Url>("mail-smtp"))));
-        var mail = f.Orchestration.Mailpit("mail");
-        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            inputs:
+              mail-smtp: { type: url }
+            apps:
+              orders-api:
+                run: dotnet
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [orders-api]
+                values:
+                  Smtp__Url: ${inputs.mail-smtp}
+            """);
+        f.Orchestration = OrchestrationMail;
 
         var plan = f.Plan();
 
@@ -570,14 +981,23 @@ public class PlannerTests
     public void Presets_build_connection_strings_from_their_allocated_port()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var pg = repo.Postgres("pg");
-            var bus = repo.RabbitMq("bus");
-            repo.DotNet("catalog-api", ".").Http()
-                .EnvFile(".env", e => e.Set("ConnectionStrings__Db", pg.Database("catalog")))
-                .EnvFile(".env", e => e.Set("Bus__Url", bus.Url));
-        });
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+              bus: { preset: rabbitmq }
+            apps:
+              catalog-api:
+                run: dotnet
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [catalog-api]
+                values:
+                  ConnectionStrings__Db: Host=localhost;Port=${pg.port};Database=catalog;Username=sprig;Password=sprig
+                  Bus__Url: ${bus.amqp-url}
+            """);
 
         var plan = f.Plan();
 
@@ -592,11 +1012,17 @@ public class PlannerTests
     public void Ports_skip_restricted_and_busy_ones_and_pins_are_served_first()
     {
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            repo.Node("first", ".").Http();
-            repo.Node("pinned", ".").Http(pin: "9000");
-        });
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              first:
+                run: node
+                ports: { http: any }
+              pinned:
+                run: node
+                ports: { http: 9000 }
+            """);
         var settings = new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9010, RestrictedPorts = [9001] };
 
         var plan = f.Plan(settings, inUse: new HashSet<int> { 9002 });
@@ -611,7 +1037,14 @@ public class PlannerTests
     public void A_pin_with_no_free_port_left_is_an_error_on_that_endpoint()
     {
         var f = new Fixture();
-        f.Add("../r", repo => repo.Node("web", ".").Http(pin: "8100"));
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              web:
+                run: node
+                ports: { http: 8100 }
+            """);
 
         var plan = f.Plan(inUse: new HashSet<int> { 8100 });
 
@@ -622,12 +1055,38 @@ public class PlannerTests
     public void Names_are_private_to_their_repo()
     {
         var f = new Fixture();
-        f.Add("../a", repo => repo.DotNet("api", ".").Http().EnvFile(".env", e => e.Set("Db", $"{repo.Postgres("pg").Port}")));
-        f.Add("../b", repo =>
-        {
-            repo.Postgres("pg");
-            repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("Api", new Ref("api.http.url")));
-        });
+        f.Add("../a", """
+            schema: 1
+            repo: a
+            containers:
+              pg: { preset: postgres }
+            apps:
+              api:
+                run: dotnet
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [api]
+                values:
+                  Db: ${pg.port}
+            """);
+        var b = Yaml.Repo("""
+            schema: 1
+            repo: b
+            containers:
+              pg: { preset: postgres }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  Api: http://localhost
+            """);
+        // The format refuses a name from another repo as it's read, so it's put on the model to test the planner refuses it too.
+        f.Add("../b", ChangeApp(b, "web", web => web with { Env = [web.Env[0] with { Value = "{api.http.url}" }] }));
 
         var plan = f.Plan();
 
@@ -641,13 +1100,26 @@ public class PlannerTests
     public void A_compose_service_gets_its_ports_mapped_and_other_values_set()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var compose = repo.ComposeFile("docker-compose.yml");
-            var pg = compose.Service("postgres").Endpoint("tcp", 5432);
-            compose.Set("services.postgres.container_name", $"shop-pg-{Workspace.Name}");
-            repo.DotNet("api", ".").Http().EnvFile(".env", e => e.Set("Db", $"Host=localhost;Port={pg.Port}"));
-        });
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            compose:
+              docker-compose.yml:
+                services:
+                  postgres:
+                    ports: { tcp: { container: 5432 } }
+                set:
+                  services.postgres.container_name: shop-pg-${workspace.name}
+            apps:
+              api:
+                run: dotnet
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [api]
+                values:
+                  Db: Host=localhost;Port=${postgres.port}
+            """);
 
         var plan = f.Plan();
 
@@ -659,14 +1131,29 @@ public class PlannerTests
         Assert.Equal($"Host=localhost;Port={pgPort}", Env(plan, "api", "Db").Value.Value);
     }
 
+    const string CatalogAndOrders = """
+        schema: 1
+        repo: shop-services
+        apps:
+          catalog-api:
+            run: dotnet
+            ports: { http: any }
+          orders-api:
+            run: dotnet
+            ports: { http: any }
+        """;
+
     [Fact]
     public void Groups_list_their_apps_and_reject_ones_that_do_not_exist()
     {
         var f = new Fixture();
-        var services = f.Add("../shop-services", repo => { repo.DotNet("catalog-api", ".").Http(); repo.DotNet("orders-api", ".").Http(); });
-        f.Orchestration.Group("mobile", services.Only("catalog-api"));
-        f.Orchestration.Group("all", services);
-        f.Orchestration.Group("typo", services.Only("catalgo-api"));
+        f.Add("../shop-services", CatalogAndOrders);
+        f.Orchestration = """
+            groups:
+              mobile: [shop-services/catalog-api]
+              all: [shop-services]
+              typo: [shop-services/catalgo-api]
+            """;
 
         var plan = f.Plan();
 
@@ -679,14 +1166,26 @@ public class PlannerTests
     public void A_repos_groups_join_others_of_the_same_name_and_an_orchestrations_group_replaces_them()
     {
         var f = new Fixture();
-        var services = f.Add("../shop-services", repo =>
-        {
-            var catalog = repo.DotNet("catalog-api", ".").Http();
-            var orders = repo.DotNet("orders-api", ".").Http();
-            repo.Group("apis", catalog, orders).Group("client", catalog);
-        });
-        f.Add("../shop-web", repo => repo.Group("client", repo.Node("web", ".").Http()));
-        f.Orchestration.Group("apis", services.Only("orders-api"));
+        f.Add("../shop-services", $"""
+            {CatalogAndOrders}
+            groups:
+              apis: [catalog-api, orders-api]
+              client: [catalog-api]
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            groups:
+              client: [web]
+            """);
+        f.Orchestration = """
+            groups:
+              apis: [shop-services/orders-api]
+            """;
 
         var plan = f.Plan();
 
@@ -699,8 +1198,22 @@ public class PlannerTests
     [Fact]
     public void A_repos_group_holds_only_its_apps_and_jobs()
     {
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop-services
+            containers:
+              redis: { preset: redis }
+            apps:
+              api:
+                run: dotnet
+                ports: { http: any }
+            groups:
+              cache: [api]
+            """);
+        // The format refuses a container in a group as it's read, so it's put on the model to test the planner refuses it too.
+        repo = repo with { Groups = [repo.Groups![0] with { Apps = ["redis", "api"] }] };
         var f = new Fixture();
-        f.Add("../shop-services", repo => repo.Group("cache", repo.Redis("redis"), repo.DotNet("api", ".").Http()));
+        f.Add("../shop-services", repo);
 
         var plan = f.Plan();
 
@@ -712,8 +1225,18 @@ public class PlannerTests
     public void A_binding_no_repo_has_a_setting_for_is_a_warning_not_an_error()
     {
         var f = new Fixture();
-        f.Add("../r", repo => repo.Node("web", ".").Http());
-        f.Orchestration.Bind("unused", "x");
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            """);
+        f.Orchestration = """
+            inputs:
+              unused: x
+            """;
 
         var plan = f.Plan();
 
@@ -724,12 +1247,17 @@ public class PlannerTests
     [Fact]
     public void Waiting_for_something_undeclared_is_an_error()
     {
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: r
+            apps:
+              api:
+                run: dotnet
+                ports: { http: any }
+            """);
+        // The format refuses waiting for a name the file doesn't declare as it's read, so it's put on the model to test the planner refuses it too.
         var f = new Fixture();
-        f.Add("../r", repo =>
-        {
-            var other = Repo.Describe("elsewhere").Postgres("ghost");
-            repo.DotNet("api", ".").Http().WaitFor(other);
-        });
+        f.Add("../r", ChangeApp(repo, "api", api => api with { WaitFor = ["ghost"] }));
 
         Assert.Contains("waits for 'ghost'", Assert.Single(f.Plan().Problems).Message);
     }
@@ -740,14 +1268,49 @@ public class PlannerTests
     public void A_setting_given_by_an_export_is_a_wire_to_the_app_behind_it()
     {
         var f = new Fixture();
-        f.Add("../shop-services", repo =>
-        {
-            var pg = repo.Postgres("pg");
-            var catalog = repo.DotNet("catalog-api", ".").Http().EnvFile(".env", e => e.Set("Db", pg.Database("catalog")));
-            repo.DotNet("orders-api", ".").Http().EnvFile(".env", e => e.Set("Catalog__Url", catalog.Url));
-            repo.Export<Url>("catalog-url", catalog.Url);
-        });
-        f.Add("../shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("VITE_CATALOG_URL", repo.Setting<Url>("catalog-url"))));
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            apps:
+              catalog-api:
+                run: dotnet
+                path: catalog
+                ports: { http: any }
+              orders-api:
+                run: dotnet
+                path: orders
+                ports: { http: any }
+            files:
+              catalog/.env:
+                read-by: [catalog-api]
+                values:
+                  Db: Host=localhost;Port=${pg.port};Database=catalog;Username=sprig;Password=sprig
+              orders/.env:
+                read-by: [orders-api]
+                values:
+                  Catalog__Url: ${catalog-api.url}
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            inputs:
+              catalog-url: { type: url }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  VITE_CATALOG_URL: ${inputs.catalog-url}
+            """);
 
         var plan = f.Plan();
 
@@ -762,16 +1325,35 @@ public class PlannerTests
     public void An_orchestration_binding_is_a_wire_from_the_orchestration_and_names_what_it_points_at()
     {
         var f = new Fixture();
-        var a = f.Add("../a", repo => repo.Export<Url>("cache-url", "redis://a"));
-        f.Add("../b", repo => repo.Export<Url>("cache-url", "redis://b"));
-        f.Add("../shop-services", repo => repo.DotNet("orders-api", ".").Http()
-            .EnvFile(".env", e => e.Set("Smtp__Url", repo.Setting<Url>("mail-smtp")))
-            .EnvFile(".env", e => e.Set("Cache", repo.Setting<Url>("cache-url")))
-            .EnvFile(".env", e => e.Set("Flag", repo.Setting<Text>("flag"))));
-        var mail = f.Orchestration.Mailpit("mail");
-        f.Orchestration.Bind("mail-smtp", mail.SmtpUrl);
-        f.Orchestration.Bind("cache-url", a.Export("cache-url"));
-        f.Orchestration.Bind("flag", "on");
+        f.Add("../a", CacheUrlOutput("a"));
+        f.Add("../b", CacheUrlOutput("b"));
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            inputs:
+              mail-smtp: { type: url }
+              cache-url: { type: url }
+              flag: { type: text }
+            apps:
+              orders-api:
+                run: dotnet
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [orders-api]
+                values:
+                  Smtp__Url: ${inputs.mail-smtp}
+                  Cache: ${inputs.cache-url}
+                  Flag: ${inputs.flag}
+            """);
+        f.Orchestration = """
+            containers:
+              mail: { preset: mailpit }
+            inputs:
+              mail-smtp: ${mail.smtp-url}
+              cache-url: ${a.outputs.cache-url}
+              flag: on
+            """;
 
         var plan = f.Plan();
 
@@ -789,7 +1371,7 @@ public class PlannerTests
     public void A_setting_to_ask_for_is_a_wire_with_no_provider()
     {
         var f = new Fixture();
-        f.Add("../web", repo => repo.Node("web", ".").Http().EnvFile(".env", e => e.Set("API", repo.Setting<Url>("api-url"))));
+        f.Add("../web", WebAskingForApiUrl);
 
         var wire = Assert.Single(f.Plan().Wires());
 

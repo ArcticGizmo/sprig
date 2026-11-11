@@ -43,13 +43,18 @@ public sealed class NodeRolesTests
     [Fact]
     public void Presets_say_what_they_are()
     {
-        var repo = Repo.Describe("shop");
-        repo.Postgres("pg");
-        repo.Redis("cache");
-        repo.RabbitMq("bus");
-        repo.Mailpit("mail");
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop
 
-        Assert.Equal(["database", "cache", "queue", "mail"], repo.BuildRepo().Containers.Select(c => c.Role));
+            containers:
+              pg: { preset: postgres }
+              cache: { preset: redis }
+              bus: { preset: rabbitmq }
+              mail: { preset: mailpit }
+            """);
+
+        Assert.Equal(["database", "cache", "queue", "mail"], repo.Containers.Select(c => c.Role));
     }
 
     [Theory]
@@ -62,15 +67,52 @@ public sealed class NodeRolesTests
     [Fact]
     public void Roles_given_in_a_definition_reach_the_graph_and_one_on_a_setting_makes_an_outside_value_infra()
     {
-        var repo = Repo.Describe("safety");
-        var events = repo.Setting<Url>("events-url", "https://events.example.com").Is(Role.Queue);
-        var token = repo.Setting<Text>("feature-flags", "on").Is(Role.Storage);
-        repo.ComposeFile("docker-compose.yml").Service("store").Endpoint("tcp", 9000).Is(Role.Storage);
-        repo.Container("ui", "nginx:1").Is(Role.Proxy);
-        repo.DotNet("ingest", ".").Is(Role.Worker).AppSettings("appsettings.Local.json", s => s.Set("Events", events).Set("Flags", token));
-        var orchestration = Orchestration.Describe("safety");
-        orchestration.Repo("safety");
-        var plan = Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["safety"] = repo.BuildRepo() },
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: safety
+
+            compose:
+              docker-compose.yml:
+                services:
+                  store:
+                    ports: { tcp: { container: 9000 } }
+                    role: storage
+
+            containers:
+              ui:
+                image: nginx:1
+                role: proxy
+
+            inputs:
+              events-url:
+                type: url
+                default: https://events.example.com
+                role: queue
+              feature-flags:
+                type: text
+                default: on
+                role: storage
+
+            apps:
+              ingest:
+                run: dotnet
+                role: worker
+
+            files:
+              appsettings.Local.json:
+                read-by: [ingest]
+                values:
+                  Events: ${inputs.events-url}
+                  Flags: ${inputs.feature-flags}
+            """);
+        var orchestration = Yaml.Orchestration("""
+            schema: 1
+            orchestration: safety
+
+            repos:
+              safety: { path: safety }
+            """, "safety.orchestration.yaml");
+        var plan = Planner.Build(new PlanInput(orchestration, new Dictionary<string, RepoModel> { ["safety"] = repo },
             "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
 
         var roles = WorkspaceTopology.Of(plan).Nodes.ToDictionary(n => n.Key, n => n.Role);

@@ -6,45 +6,106 @@ namespace Sprig.Tests.Planning;
 
 public sealed class WorkspaceTopologyTests
 {
-    readonly Dictionary<string, RepoModel> _repos = [];
-    readonly OrchestrationBuilder _orchestration = Orchestration.Describe("storefront");
-
-    void Add(string path, Action<RepoBuilder> describe)
+    static WorkspaceTopology Shop()
     {
-        var repo = Repo.Describe(path);
-        describe(repo);
-        _repos[path] = repo.BuildRepo();
-        _orchestration.Repo(path);
-    }
+        var services = Yaml.Repo("""
+            schema: 1
+            repo: shop-services
 
-    WorkspaceTopology Build()
-    {
-        var model = _orchestration.BuildOrchestration();
-        var plan = Planner.Build(new PlanInput(model, _repos, "feat-a", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
+            compose:
+              docker-compose.yml:
+                services:
+                  search:
+                    ports: { http: { container: 7700 } }
+
+            containers:
+              pg: { preset: postgres }
+              pg-admin:
+                image: dpage/pgadmin4
+                ports: { http: { container: 80 } }
+                env:
+                  DB: Host=localhost;Port=${pg.port};Database=catalog;Username=sprig;Password=sprig
+
+            inputs:
+              mail-smtp: { type: url }
+              payments-url:
+                type: url
+                default: https://payments.example.com
+              feature:
+                type: text
+                default: on
+              shared-db: { type: connection-string }
+
+            apps:
+              catalog-api:
+                run: dotnet
+                ports: { http: any }
+                wait-for: [pg, migrate]
+              orders-api:
+                run: dotnet
+                path: src/Orders
+                ports: { http: any }
+              migrate:
+                run: dotnet
+                path: tools/Migrate
+                once: true
+                wait-for: [pg]
+
+            files:
+              appsettings.Local.json:
+                read-by: [catalog-api]
+                values:
+                  Db: Host=localhost;Port=${pg.port};Database=catalog;Username=sprig;Password=sprig
+                  Urls: ${catalog-api.url}
+              src/Orders/appsettings.Local.json:
+                read-by: [orders-api]
+                values:
+                  Smtp: ${inputs.mail-smtp}
+                  Search: http://localhost:${search.port}
+                  Payments: ${inputs.payments-url}
+                  Flag: ${inputs.feature}
+                  Shared: ${inputs.shared-db}
+
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        var web = Yaml.Repo("""
+            schema: 1
+            repo: shop-web
+
+            inputs:
+              catalog-url: { type: url }
+
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+            """);
+        var orchestration = Yaml.Orchestration("""
+            schema: 1
+            orchestration: storefront
+
+            repos:
+              shop-services: { path: shop-services }
+              shop-web: { path: shop-web }
+
+            containers:
+              mail: { preset: mailpit }
+
+            inputs:
+              mail-smtp: ${mail.smtp-url}
+            """);
+        var repos = new Dictionary<string, RepoModel> { ["shop-services"] = services, ["shop-web"] = web };
+        var plan = Planner.Build(new PlanInput(orchestration, repos, "feat-a", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         return WorkspaceTopology.Of(plan);
-    }
-
-    void Shop()
-    {
-        Add("shop-services", repo =>
-        {
-            var pg = repo.Postgres("pg");
-            var search = repo.ComposeFile("docker-compose.yml").Service("search").Endpoint("http", 7700, scheme: "http");
-            repo.Container("pg-admin", "dpage/pgadmin4").Endpoint("http", 80, scheme: "http").Env("DB", pg.Database("catalog"));
-            var migrate = repo.DotNetJob("migrate", "tools/Migrate").WaitFor(pg);
-            var catalog = repo.DotNet("catalog-api", ".").Http().WaitFor(pg, migrate);
-            catalog.AppSettings("appsettings.Local.json", s => s.Set("Db", pg.Database("catalog")).Set("Urls", catalog.Url));
-            repo.DotNet("orders-api", "src/Orders").Http().AppSettings("appsettings.Local.json", s => s
-                .Set("Smtp", repo.Setting<Url>("mail-smtp"))
-                .Set("Search", $"http://localhost:{search.Port}")
-                .Set("Payments", repo.Setting<Url>("payments-url", "https://payments.example.com"))
-                .Set("Flag", repo.Setting<Text>("feature", "on"))
-                .Set("Shared", repo.Setting<ConnectionString>("shared-db")));
-            repo.Export<Url>("catalog-url", catalog.Url);
-        });
-        Add("shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env.local", e => e.Set("API", repo.Setting<Url>("catalog-url"))));
-        var mail = _orchestration.Mailpit("mail");
-        _orchestration.Bind("mail-smtp", mail.SmtpUrl);
     }
 
     static TopologyLink Link(WorkspaceTopology t, string from, string to) => t.Links.Single(l => l.From == from && l.To == to);
@@ -52,8 +113,7 @@ public sealed class WorkspaceTopologyTests
     [Fact]
     public void An_app_is_linked_to_its_own_repo_s_database_and_to_what_it_waits_for()
     {
-        Shop();
-        var t = Build();
+        var t = Shop();
 
         var db = Link(t, "shop-services/catalog-api", "shop-services/pg");
         Assert.Equal(["Db"], db.Values);
@@ -66,8 +126,7 @@ public sealed class WorkspaceTopologyTests
     [Fact]
     public void Values_across_repos_and_from_the_orchestration_are_linked_by_their_setting()
     {
-        Shop();
-        var t = Build();
+        var t = Shop();
 
         Assert.Equal(["catalog-url"], Link(t, "shop-web/web", "shop-services/catalog-api").Values);
         Assert.Equal(["mail-smtp"], Link(t, "shop-services/orders-api", "storefront/mail").Values);
@@ -78,8 +137,7 @@ public sealed class WorkspaceTopologyTests
     [Fact]
     public void Every_app_job_container_and_compose_service_is_a_node_of_its_kind()
     {
-        Shop();
-        var kinds = Build().Nodes.ToDictionary(n => n.Key, n => n.Kind);
+        var kinds = Shop().Nodes.ToDictionary(n => n.Key, n => n.Kind);
 
         Assert.Equal(TopologyKind.App, kinds["shop-services/catalog-api"]);
         Assert.Equal(TopologyKind.Job, kinds["shop-services/migrate"]);
@@ -91,8 +149,7 @@ public sealed class WorkspaceTopologyTests
     [Fact]
     public void An_address_from_outside_gets_a_node_a_flag_doesn_t_and_a_setting_nothing_gives_is_missing()
     {
-        Shop();
-        var t = Build();
+        var t = Shop();
 
         var payments = t.Nodes.Single(n => n.Key == "outside/payments-url");
         Assert.Equal(TopologyKind.Outside, payments.Kind);

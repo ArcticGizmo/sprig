@@ -8,20 +8,43 @@ public class SecretValuesTests
 {
     static Plan Shop()
     {
-        var orchestration = Orchestration.Describe("storefront");
-        var repo = Repo.Describe("shop-web");
-        var web = repo.Node("web", ".").Http();
-        web.EnvFile(".env.local", e => e
-            .Set("PORT", web.Port)
-            .Set("API_KEY", repo.Setting<Secret>("api-key"))
-            .Set("SIGNED_URL", $"https://cdn.example.com/?sig={repo.Setting<Secret>("cdn-signature")}")
-            .Set("API_URL", repo.Setting<Url>("api-url", "http://localhost:5100"))
-            .Set("DB", "Host=localhost;Port=5432;Username=shop;Password=pw")
-            .Set("FEATURE", "true")
-            .Set("STRIPE_TOKEN", "sk_live_abc")
-            .Set("DISPLAY_NAME", "Shop"));
-        orchestration.Repo("shop-web");
-        return Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["shop-web"] = repo.BuildRepo() },
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop-web
+
+            inputs:
+              api-key: { type: secret }
+              cdn-signature: { type: secret }
+              api-url:
+                type: url
+                default: http://localhost:5100
+
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  PORT: ${web.port}
+                  API_KEY: ${inputs.api-key}
+                  SIGNED_URL: https://cdn.example.com/?sig=${inputs.cdn-signature}
+                  API_URL: ${inputs.api-url}
+                  DB: Host=localhost;Port=5432;Username=shop;Password=pw
+                  FEATURE: true
+                  STRIPE_TOKEN: sk_live_abc
+                  DISPLAY_NAME: Shop
+            """);
+        var orchestration = Yaml.Orchestration("""
+            schema: 1
+            orchestration: storefront
+
+            repos:
+              shop-web: { path: shop-web }
+            """);
+        return Planner.Build(new PlanInput(orchestration, new Dictionary<string, RepoModel> { ["shop-web"] = repo },
             "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>(),
             Values: new Dictionary<string, string> { ["api-key"] = "abc123", ["cdn-signature"] = "s1g" }));
     }

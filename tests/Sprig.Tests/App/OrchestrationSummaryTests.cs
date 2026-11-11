@@ -13,51 +13,106 @@ public sealed class OrchestrationSummaryTests : IDisposable
     readonly TempStore _store = new();
     readonly Dictionary<string, RepoModel> _repos = [];
     readonly Dictionary<string, string> _dirs = [];
-    readonly OrchestrationBuilder _orchestration = Orchestration.Describe("storefront");
 
     public void Dispose() => _store.Dispose();
 
-    RepoRef Add(string path, Action<RepoBuilder> describe)
+    void Add(string yaml)
     {
-        var repo = Repo.Describe(path);
-        describe(repo);
-        _repos[path] = repo.BuildRepo();
-        _dirs[path] = Path.Combine(_store.Root, path);
-        return _orchestration.Repo(path);
+        var repo = Yaml.Repo(yaml);
+        _repos[repo.Name] = repo;
+        _dirs[repo.Name] = Path.Combine(_store.Root, repo.Name);
     }
 
-    (LoadedOrchestration loaded, Plan plan) Build()
+    (LoadedOrchestration loaded, Plan plan) Build(string orchestration)
     {
-        var model = _orchestration.BuildOrchestration();
+        var model = Yaml.Orchestration(orchestration);
         var loaded = new LoadedOrchestration(Path.Combine(_store.Root, "storefront.orchestration.yaml"), model, _repos, [], [], [], _dirs);
         var plan = Planner.Build(new PlanInput(model, _repos, "plan", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         return (loaded, plan);
     }
 
-    void Shop()
+    (LoadedOrchestration loaded, Plan plan) Shop()
     {
-        var services = Add("shop-services", repo =>
-        {
-            var pg = repo.Postgres("pg");
-            var migrate = repo.DotNetJob("migrate", "tools/Migrate").WaitFor(pg);
-            var catalog = repo.DotNet("catalog-api", ".").Http().WaitFor(pg, migrate);
-            repo.DotNet("orders-api", ".").Http().AppSettings("appsettings.Local.json", s => s.Set("Smtp__Url", repo.Setting<Url>("mail-smtp")));
-            repo.Export<Url>("catalog-url", catalog.Url);
-        });
-        var web = Add("shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env.local", e => e
-            .Set("API", repo.Setting<Url>("catalog-url"))
-            .Set("PAY", repo.Setting<Url>("payments-url"))));
-        var mail = _orchestration.Mailpit("mail");
-        _orchestration.Bind("mail-smtp", mail.SmtpUrl);
-        _orchestration.Group("web", web, services);
-        _orchestration.Group("api", services.Only("catalog-api"));
+        Add("""
+            schema: 1
+            repo: shop-services
+
+            containers:
+              pg: { preset: postgres }
+
+            inputs:
+              mail-smtp: { type: url }
+
+            apps:
+              catalog-api:
+                run: dotnet
+                ports: { http: any }
+                wait-for: [pg, migrate]
+              orders-api:
+                run: dotnet
+                ports: { http: any }
+              migrate:
+                run: dotnet
+                path: tools/Migrate
+                once: true
+                wait-for: [pg]
+
+            files:
+              appsettings.Local.json:
+                read-by: [orders-api]
+                values:
+                  Smtp:
+                    Url: ${inputs.mail-smtp}
+
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        Add("""
+            schema: 1
+            repo: shop-web
+
+            inputs:
+              catalog-url: { type: url }
+              payments-url: { type: url }
+
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+                  PAY: ${inputs.payments-url}
+            """);
+        return Build("""
+            schema: 1
+            orchestration: storefront
+
+            repos:
+              shop-services: { path: shop-services }
+              shop-web: { path: shop-web }
+
+            containers:
+              mail: { preset: mailpit }
+
+            inputs:
+              mail-smtp: ${mail.smtp-url}
+
+            groups:
+              web: [shop-web, shop-services]
+              api: [shop-services/catalog-api]
+            """);
     }
 
     [Fact]
     public void Cards_say_what_each_repo_runs_and_where_each_setting_comes_from()
     {
-        Shop();
-        var (loaded, plan) = Build();
+        var (loaded, plan) = Shop();
 
         var cards = OrchestrationSummary.Cards(loaded, plan, new StoredDefinitions(_store.Paths));
 
@@ -74,8 +129,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     [Fact]
     public void The_orchestration_says_what_it_adds_and_its_groups()
     {
-        Shop();
-        var (_, plan) = Build();
+        var (_, plan) = Shop();
 
         Assert.Equal([new AddedRow("mail", "mailpit, one per workspace. Gives mail-smtp.")], OrchestrationSummary.Added(plan));
         // A repo whose every app is in a group is named once.
@@ -85,8 +139,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     [Fact]
     public void The_picture_puts_what_the_orchestration_adds_first_and_each_repo_right_of_what_it_takes_from()
     {
-        Shop();
-        var (_, plan) = Build();
+        var (_, plan) = Shop();
 
         var graph = OrchestrationGraph.Build(plan, new Dictionary<string, string> { ["shop-web"] = "in sprig" });
 
@@ -102,8 +155,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     [Fact]
     public void Wires_join_what_offers_a_value_to_the_app_that_takes_it_and_a_setting_to_ask_for_is_a_stub()
     {
-        Shop();
-        var (_, plan) = Build();
+        var (_, plan) = Shop();
         var graph = OrchestrationGraph.Build(plan);
 
         var lines = graph.Lines(null, null);
@@ -121,8 +173,7 @@ public sealed class OrchestrationSummaryTests : IDisposable
     [Fact]
     public void Picking_an_app_lights_its_wires_and_showing_a_group_dims_what_it_does_not_start()
     {
-        Shop();
-        var (_, plan) = Build();
+        var (_, plan) = Shop();
         var graph = OrchestrationGraph.Build(plan);
         var items = graph.Boxes.SelectMany(b => b.Items).ToDictionary(i => i.Key);
 
@@ -142,16 +193,71 @@ public sealed class OrchestrationSummaryTests : IDisposable
     [Fact]
     public void A_setting_several_repos_offer_has_no_value_and_defaults_say_what_they_use()
     {
-        Add("shop-services", repo =>
-        {
-            repo.DotNet("orders-api", ".").Http().AppSettings("appsettings.Local.json", s => s
-                .Set("Smtp__Url", repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl))
-                .Set("Flag", repo.Setting<Text>("flag", "on")));
-            repo.Export<Url>("catalog-url", "http://a");
-        });
-        Add("shop-legacy", repo => repo.Export<Url>("catalog-url", "http://b"));
-        Add("shop-web", repo => repo.Node("web", ".").Http().EnvFile(".env.local", e => e.Set("API", repo.Setting<Url>("catalog-url"))));
-        var (loaded, plan) = Build();
+        Add("""
+            schema: 1
+            repo: shop-services
+
+            containers:
+              mail: { preset: mailpit }
+
+            inputs:
+              mail-smtp:
+                type: url
+                default: ${mail.smtp-url}
+              flag:
+                type: text
+                default: on
+
+            apps:
+              orders-api:
+                run: dotnet
+                ports: { http: any }
+
+            files:
+              appsettings.Local.json:
+                read-by: [orders-api]
+                values:
+                  Smtp:
+                    Url: ${inputs.mail-smtp}
+                  Flag: ${inputs.flag}
+
+            outputs:
+              catalog-url: { type: url, value: http://a }
+            """);
+        Add("""
+            schema: 1
+            repo: shop-legacy
+
+            outputs:
+              catalog-url: { type: url, value: http://b }
+            """);
+        Add("""
+            schema: 1
+            repo: shop-web
+
+            inputs:
+              catalog-url: { type: url }
+
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+            """);
+        var (loaded, plan) = Build("""
+            schema: 1
+            orchestration: storefront
+
+            repos:
+              shop-services: { path: shop-services }
+              shop-legacy: { path: shop-legacy }
+              shop-web: { path: shop-web }
+            """);
 
         var cards = OrchestrationSummary.Cards(loaded, plan, new StoredDefinitions(_store.Paths));
 
@@ -163,8 +269,13 @@ public sealed class OrchestrationSummaryTests : IDisposable
     [Fact]
     public void A_repo_that_has_not_run_says_why_on_its_card()
     {
-        _orchestration.UseRepo("nope");
-        var (loaded, _) = Build();
+        var (loaded, _) = Build("""
+            schema: 1
+            orchestration: storefront
+
+            repos:
+              nope: { use: nope }
+            """);
 
         var card = Assert.Single(OrchestrationSummary.Cards(loaded, null, new StoredDefinitions(_store.Paths)));
 
@@ -232,7 +343,7 @@ public class ReposViewModelTests
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "// never approved");
+        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "# never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(folder, "shop-web");
         var workspaces = new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths);
@@ -266,8 +377,8 @@ public class ReposViewModelTests
         var mobile = Path.Combine(store.Root, "src", "shop-mobile");
         Directory.CreateDirectory(web);
         Directory.CreateDirectory(mobile);
-        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "// never approved");
-        File.WriteAllText(Path.Combine(mobile, "sprig.yaml"), "// never approved");
+        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "# never approved");
+        File.WriteAllText(Path.Combine(mobile, "sprig.yaml"), "# never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(web, "shop-web");
         var vm = new ReposViewModel(services) { IsActive = true };
@@ -296,7 +407,7 @@ public class ReposViewModelTests
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "// shop-web's own, never approved");
+        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "# shop-web's own, never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(folder, "shop-web");
 
@@ -324,7 +435,7 @@ public class ReposViewModelTests
         Assert.Equal(2, vm.Repos.Count);
         Assert.Equal("in sprig", vm.Selected!.Kept);
         Assert.Equal("Write to the repo…", vm.DeriveLabel);
-        Assert.Equal("// shop-web's own, never approved", File.ReadAllText(services.Stored.CopyFile("shop-web-sprig")));
+        Assert.Equal("# shop-web's own, never approved", File.ReadAllText(services.Stored.CopyFile("shop-web-sprig")));
         Assert.True(vm.Repos.Single(r => r.Id == "shop-web").InRepo);
 
         // The folder has its own sprig.yaml, so writing the copy back is refused before anything is asked.
@@ -339,7 +450,7 @@ public class ReposViewModelTests
         using var store = new TempStore();
         var folder = Path.Combine(store.Root, "src", "shop-web");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "// never approved");
+        File.WriteAllText(Path.Combine(folder, "sprig.yaml"), "# never approved");
         var services = new AppServices(store.Root);
         services.Authoring.AddRepo(folder, "shop-web", inRepo: false);
         var vm = new ReposViewModel(services) { IsActive = true };
@@ -380,7 +491,7 @@ public class ReposViewModelTests
         var mobile = Path.Combine(store.Root, "src", "shop-mobile");
         Directory.CreateDirectory(web);
         Directory.CreateDirectory(mobile);
-        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "// shop-web's own");
+        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "# shop-web's own");
         File.WriteAllText(Path.Combine(mobile, "package.json"), """{ "name": "mobile", "scripts": { "dev": "vite" } }""");
         var services = new AppServices(store.Root);
         var vm = new ReposViewModel(services);
@@ -415,7 +526,7 @@ public class ReposViewModelTests
         await vm.AddCommand.ExecuteAsync(null);
         var copy = services.Stored.Repo("shop-web-sprig")!;
         Assert.False(copy.InRepo);
-        Assert.Equal("// shop-web's own", File.ReadAllText(copy.DefinitionFile));
+        Assert.Equal("# shop-web's own", File.ReadAllText(copy.DefinitionFile));
         Assert.True(vm.Editor.IsEditing);
     }
 

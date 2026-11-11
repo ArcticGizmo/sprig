@@ -388,6 +388,69 @@ public sealed class DownCommand(CliContext cli) : Command<WorkspaceSettings>
     }
 }
 
+[Description("Empty a workspace's data: delete its containers' volumes, then bring it back as it was, starting again the apps that were running. main included")]
+public sealed class EmptyDataCommand(CliContext cli) : Command<EmptyDataCommand.Settings>
+{
+    public sealed class Settings : WorkspaceSettings
+    {
+        [CommandOption("-y|--yes")]
+        [Description("Don't ask first")]
+        public bool Yes { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        s.Resolve(cli);
+        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace)
+                     ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}' yet, so it has no data to empty");
+        if (!s.Yes)
+        {
+            if (!cli.Interactive(s.Json)) throw new InvalidOperationException("emptying a workspace's data deletes its databases; pass --yes to confirm");
+            if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Empty {Markup.Escape(record.SlotName)}'s data: delete its containers' volumes, databases included?") { DefaultValue = false }))
+                return 1;
+        }
+
+        // Taken before, since emptying stops them.
+        var running = (cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
+            .Where(r => r.Workspace == record.Key && r.State.IsAlive()).Select(r => r.Name).ToArray();
+        var wasUp = record.State == WorkspaceState.Up;
+        var progress = new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json));
+        record = cli.Workspaces.EmptyData(s.Orchestration, s.Workspace, progress, cancellation);
+        if (!wasUp)
+            return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty; it starts that way next time it comes up", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
+
+        var again = $"bring it back with: {UpCommand.UpLine(record)}";
+        if (OrchestrationLoad.Load(cli, record.Orchestration, new TrustingSettings { Json = s.Json, UnmaskSecrets = s.UnmaskSecrets }, record.Name) is not { } loaded)
+        {
+            Console.Error.WriteLine($"{record.SlotName}'s data is empty, but it can't come back up yet; {again}");
+            return 1;
+        }
+        try
+        {
+            record = cli.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation);
+        }
+        catch (WorkspaceException e)
+        {
+            Console.Error.WriteLine($"error: {record.SlotName}'s data is empty, but it didn't come back up: {e.Message}; {again}");
+            return 1;
+        }
+
+        var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
+        var apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
+        var specs = apps.Length == 0 ? [] : RunnerSpecs.For(record, plan, apps);
+        if (specs.Count == 0)
+            return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty and its infra is back up", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
+
+        // The jobs they depend on run again too: a migration that finished did so against the data that's gone.
+        StartCommand.Send(cli, specs, [.. apps, .. specs.Where(x => x.Job).Select(x => x.Name)]);
+        var runners = StartCommand.WaitUntilReady(cli, record.Key, specs, s.Json, cancellation);
+        var ok = runners.All(r => r.State.Satisfies());
+        if (s.Json) CliOutput.Json(new { ok, workspace = record, restarted = apps, runners });
+        else if (ok) CliOutput.Success($"{record.SlotName}'s data is empty, and its infra and {(apps.Length == 1 ? "the app that was running are" : $"the {apps.Length} apps that were running are")} back");
+        return ok ? 0 : 1;
+    }
+}
+
 [Description("Remove a workspace: its containers and their data, its worktrees, and the values it wrote")]
 public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
 {

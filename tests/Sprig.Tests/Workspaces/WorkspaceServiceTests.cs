@@ -123,6 +123,23 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Emptying_data_leaves_main_down_with_everything_else_kept_and_says_when_there_is_no_infra()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web));
+        Assert.Contains("no data to empty", Assert.Throws<WorkspaceException>(() => _workspaces.EmptyData("storefront", WorkspaceRecord.MainName)).Message);
+        var up = _workspaces.Up(loaded, WorkspaceRecord.MainName, null);
+        var steps = new List<WorkspaceEvent>();
+
+        var emptied = _workspaces.EmptyData("storefront", WorkspaceRecord.MainName, new SyncProgressList(steps));
+
+        Assert.Equal(WorkspaceState.Down, emptied.State);
+        Assert.Equal(up.Files.Select(f => f.Path), emptied.Files.Select(f => f.Path));
+        Assert.Contains(steps, e => e is { Step: "Data", State: StepState.Done, Detail: "nothing to empty: it has no infra" });
+        Assert.Equal(WorkspaceState.Up, _workspaces.Up(loaded, WorkspaceRecord.MainName, null).State);
+    }
+
+    [Fact]
     public void Two_orchestrations_that_call_themselves_the_same_keep_separate_workspaces_under_their_ids()
     {
         Repo("shop-web", ("index.html", "hi"));

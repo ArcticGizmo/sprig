@@ -50,6 +50,6 @@ One checkout can have more than one definition: a repo's own `sprig.cs` and an i
 - **Renaming a repo** is refused while its main is up, and otherwise drops the old ID's main, data included, which the rename dialog says first. Other workspaces still block a rename.
 - **A main whose ID has gone** some other way gets Remove… on its page, so nothing is left that can't be cleared.
 
-## For later
+## Emptying data (2026-11-11)
 
-- Emptying a `main`'s data, since it can't be removed.
+Built for every workspace, main included (user, 2026-11-11: "empty and bring back"). **Empty data…** in the ⋯ menu, with a dialog, and `sprig empty-data [-y]`. `WorkspaceService.EmptyData` stops the apps and takes the compose projects down with their volumes, leaving the workspace down. The app and the CLI then bring it back up if it was up, and start again the apps that were running, with the jobs they depend on run again, since a finished migration ran against the old data. Checked on the testbed: Postgres's volume was made again, migrate ran again, and only the app that had been running came back.

@@ -85,6 +85,7 @@ public static class CliApp
         config.AddCommand<InfoCommand>("info");
         config.AddCommand<DownCommand>("down");
         config.AddCommand<FreeCommand>("free").WithAlias("release");
+        config.AddCommand<EmptyDataCommand>("empty-data");
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");
         config.AddCommand<StartCommand>("start");

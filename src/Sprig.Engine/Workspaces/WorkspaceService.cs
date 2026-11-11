@@ -357,6 +357,29 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>
+    /// Delete the workspace's infra data: its apps stop and its containers go, volumes and all, leaving it down with
+    /// everything else kept. A main can have this, though it can't be removed. Bringing it back up, and starting the
+    /// apps that were running, is the caller's, since that can need approval or a take-over.
+    /// </summary>
+    public WorkspaceRecord EmptyData(string orchestration, string workspace, IProgress<WorkspaceEvent>? progress = null,
+        CancellationToken cancellation = default)
+    {
+        var record = store.Get(orchestration, workspace)
+                     ?? throw new WorkspaceException($"{orchestration} has no workspace '{workspace}' yet, so it has no data to empty");
+        var step = new Steps(progress);
+        StopApps(record, step, cancellation);
+        if (record.Compose.Count == 0)
+        {
+            step.Start("Data");
+            step.Done("nothing to empty: it has no infra");
+        }
+        WipeData(record, step, cancellation);
+        if (!record.IsFree) record = record with { State = WorkspaceState.Down, UpdatedAt = DateTimeOffset.UtcNow };
+        store.Save(record);
+        return record;
+    }
+
+    /// <summary>
     /// Remove the workspace: its containers and volumes, the values it wrote, its worktrees (refusing ones with changes
     /// unless forced) and, when asked, its branches (refusing ones with unpushed commits unless forced).
     /// </summary>
@@ -804,7 +827,7 @@ public sealed partial class WorkspaceService(
         return record;
     }
 
-    /// <summary>Remove a free slot's infra volumes, so the next branch in it starts with empty data.</summary>
+    /// <summary>Remove the workspace's containers with their volumes, so its infra next starts with empty data.</summary>
     void WipeData(WorkspaceRecord record, Steps step, CancellationToken cancellation)
     {
         foreach (var project in record.Compose)

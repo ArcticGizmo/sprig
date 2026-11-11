@@ -38,6 +38,9 @@ public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? Held
     public bool CanRemove => !Record.IsMain || Orphaned;
     public bool HasSettings => !Record.IsMain;
 
+    /// <summary>It has infra whose data can go. A main that has never come up has none yet.</summary>
+    public bool CanEmptyData => Record.Compose.Count > 0;
+
     public bool IsHeld => HeldBy is not null;
     public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is up in this checkout" : "";
 
@@ -355,6 +358,7 @@ public partial class WorkspacesViewModel : PageViewModel
 
     [ObservableProperty] private bool _isWorking;
     [ObservableProperty] private bool _confirmingRemove;
+    [ObservableProperty] private bool _confirmingEmptyData;
     [ObservableProperty] private bool _deleteBranch;
 
     /// <summary>The view opens a progress window for each operation it's handed.</summary>
@@ -450,6 +454,7 @@ public partial class WorkspacesViewModel : PageViewModel
         OnPropertyChanged(nameof(ShowRunControls));
         OnPropertyChanged(nameof(ShowStartChoices));
         ConfirmingRemove = false;
+        ConfirmingEmptyData = false;
         CancelTakeOver();
         DeleteBranch = false;
         ShowDetails(value?.Record);
@@ -951,6 +956,57 @@ public partial class WorkspacesViewModel : PageViewModel
             (progress, cancellation) => _services.Workspaces.Free(record.Orchestration, record.Name, progress, cancellation),
             $"{record.SlotName} is free. '{record.Branch}' is kept with its commits, and the slot keeps its data, ports and values for the next branch.");
         Refresh();
+    }
+
+    [RelayCommand]
+    private void AskEmptyData() => ConfirmingEmptyData = true;
+
+    [RelayCommand]
+    private void CancelEmptyData() => ConfirmingEmptyData = false;
+
+    /// <summary>Delete the selected workspace's infra data, then bring it back as it was: up again if it was up, with the
+    /// apps that were running started again after the jobs they depend on, which run again against the empty data.</summary>
+    [RelayCommand]
+    private async Task EmptyData()
+    {
+        if (Selected is not { CanEmptyData: true, Record: var record }) return;
+        ConfirmingEmptyData = false;
+        // Taken before, since emptying stops them.
+        var running = await AppServices.RunAsync(() => (_services.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
+            .Where(r => r.Workspace == record.Key && r.State.IsAlive()).Select(r => r.Name).ToArray());
+        var wasUp = record.State == WorkspaceState.Up;
+        var title = WorkspaceItem.Display(record);
+        var emptied = await RunAsync($"Emptying {title}'s data",
+            (progress, cancellation) => _services.Workspaces.EmptyData(record.Orchestration, record.Name, progress, cancellation),
+            wasUp ? $"{title}'s data is empty. It comes back up next, with the apps that were running."
+                : $"{title}'s data is empty. It starts that way next time it comes up.");
+        Refresh();
+        if (emptied && wasUp) await BringBackAsync(running);
+    }
+
+    async Task BringBackAsync(IReadOnlyList<string> running)
+    {
+        if (!await UpAsync(retry: () => BringBackAsync(running))) return;
+        if (Selected?.Record is not { State: WorkspaceState.Up } record
+            || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
+        var apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
+        if (apps.Length == 0) return;
+        try
+        {
+            await AppServices.RunAsync(() =>
+            {
+                var specs = RunnerSpecs.For(record, plan, apps);
+                // A migration that finished did so against the data that's gone, so jobs run again too.
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: [.. apps, .. specs.Where(s => s.Job).Select(s => s.Name)]));
+                if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
+            });
+            SayApps($"Starting {(apps.Length == 1 ? "the app that was running" : $"the {apps.Length} apps that were running")} again, after their jobs.", bad: false);
+            await RefreshRunnersAsync();
+        }
+        catch (Exception e)
+        {
+            SayApps(e.Message, bad: true);
+        }
     }
 
     [RelayCommand]

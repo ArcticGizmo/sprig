@@ -159,7 +159,7 @@ Agreed with the user, and built the same day:
 - **Fixed:** `shop-web--feat-x` counts as the feat-x workspace, not only the `shop-web` worktree inside it.
 - **Helpers:** `scripts/dev-sprig.ps1` and `dev-sprig.cmd` put this checkout's build first on one terminal's PATH, with `-Store` for an empty store.
 
-Still open: a one-repo workspace could put its worktree straight in `shop-web--feat-x`, without the `shop-web` folder inside.
+A one-repo workspace's worktree is now the slot folder itself (`shop-web--1`, with no `shop-web` folder inside), done with workspace slots on 2026-11-09.
 
 ## Order
 

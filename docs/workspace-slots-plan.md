@@ -90,4 +90,4 @@ Feedback from trying slots on a real repo, built the same day:
 ## For later
 
 - Each repo's checkout as a fixed `main` slot (decision 7): built 2026-11-10, see docs/main-checkout-plan.md.
-- A slot pool size: making slots ahead of time, or capping how many there are.
+- A slot pool size: making slots ahead of time, or capping how many there are. Dropped for now (user, 2026-11-11): free slots already act as the warm cache, and making slots ahead only speeds up the first check-out into each. Revisit if disk use or first check-outs become a problem.

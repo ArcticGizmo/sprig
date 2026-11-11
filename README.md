@@ -9,23 +9,17 @@
 
 <br>
 
-> **This is the `experimental` branch.** Sprig is being rebuilt around code-first C# definitions and runners that launch your apps. The released app lives on `main`. Nothing here is released, and this build keeps its own store (`%LOCALAPPDATA%\sprig-exp`), so it never touches the released app's data.
+## What it does
 
-## Where it's going
+Each repo describes itself in a `sprig.cs` file: its apps, infra and the settings it takes. Sprig runs it where it's checked out (`main`), or runs any branch in a slot of worktrees of its own, with its own ports, data and env files, so several branches can be up at once without stepping on each other.
 
-Each repo describes itself in a `sprig.cs` file: its apps, ports, infra, and the values it shares or needs. A system file puts repos together and says how you want them run. Every capability is something you opt into:
+- Apps start in order, each after what it depends on, with a log per app and a graph of the whole workspace.
+- Groups start a slice of the apps, and only the infra that slice uses.
+- Stop one app and run it from your IDE on the same port; Restart leaves it alone.
+- Every value goes in a file the app reads, so a plain `dotnet run` or `pnpm dev` gets exactly what sprig's run gets.
+- A definition can live in the repo, or be kept in sprig so you can try it on a repo without committing anything.
 
-- Run a monorepo in place with no worktrees, or give each task its own worktrees.
-- Random ports, stable ports, or ports pinned to a set.
-- Groups, so you can start a slice instead of everything.
-- Runners that start apps in order, with dependencies, and a log pane per app.
-- Stop one app and debug it in your IDE on the same port.
-
-The plan, the decisions behind it and the milestones are in [docs/experimental-roadmap.md](docs/experimental-roadmap.md). The comparison with Aspire is in [docs/artefacts/authoring-redesign.html](docs/artefacts/authoring-redesign.html).
-
-## Status
-
-M0 (reset the branch) is done: the app shell, Settings, About and the updater remain, and the CLI has `open`, `update` and `shell`. M1, a spike on authoring definitions in C#, is next.
+The app and the `sprig` command do the same things. Data lives in `%LOCALAPPDATA%\sprig`. Orchestrations, running several repos together, are in the app but greyed out until their redesign. The plan and the decisions behind it are in [docs/experimental-roadmap.md](docs/experimental-roadmap.md).
 
 ## Build from source
 
@@ -40,7 +34,7 @@ To type `sprig` for this build in one terminal, ahead of any installed release, 
 
 | Project | Purpose |
 |---|---|
-| `Sprig.Sdk` | What `sprig.cs` definitions reference (`#:package Sprig.Sdk`). |
+| `Sprig.Sdk` | What `sprig.cs` definitions reference, published to nuget.org as `ArcticGizmo.Sprig.Sdk` with each release. |
 | `Sprig.Engine` | Evaluates definitions, resolves values, materialises workspaces and supervises runners. |
 | `Sprig.App` | The Avalonia desktop app. |
 | `Sprig.Cli` | The `sprig` command. |

@@ -5,7 +5,7 @@ namespace Sprig.App.Authoring;
 public static class SampleDefinition
 {
     public const string Text = """
-        #:package Sprig.Sdk@0.1.0-exp
+        #:package ArcticGizmo.Sprig.Sdk@0.9.0
         using Sprig;
 
         var repo = Repo.Describe("shop-services");

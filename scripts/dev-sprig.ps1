@@ -90,5 +90,5 @@ if ($resolved -notlike "$cliBin*") { Write-Warning "sprig still resolves to $res
 
 Write-Host ""
 Write-Host "sprig    -> $resolved"
-Write-Host "store    -> $(if ($env:SPRIG_STORE) { $env:SPRIG_STORE } else { "%LOCALAPPDATA%\sprig-exp (Dev)" })"
+Write-Host "store    -> $(if ($env:SPRIG_STORE) { $env:SPRIG_STORE } else { "%LOCALAPPDATA%\sprig (Dev)" })"
 Write-Host "For this terminal only. Undo with: .\scripts\dev-sprig.ps1 -Off"

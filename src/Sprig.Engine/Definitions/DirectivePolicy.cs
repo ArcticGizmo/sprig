@@ -25,7 +25,7 @@ public static class DirectivePolicy
             var reason = kind switch
             {
                 "package" when IsSdkPackage(value) => null,
-                "package" => "only the Sprig.Sdk package may be referenced",
+                "package" => $"only the {SdkReference.PackageId} package may be referenced",
                 "project" when allowLocalSdkProject && IsSdkProject(value) => null,
                 "project" => "a definition can't reference a local project",
                 _ => $"the #:{kind} directive isn't allowed in a definition",
@@ -38,7 +38,7 @@ public static class DirectivePolicy
     static bool IsSdkPackage(string value)
     {
         var id = value.Split('@', 2)[0].Trim();
-        return string.Equals(id, "Sprig.Sdk", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(id, SdkReference.PackageId, StringComparison.OrdinalIgnoreCase);
     }
 
     static bool IsSdkProject(string value)

@@ -202,7 +202,7 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
         if (s.Json) { CliOutput.Json(runners); return 0; }
         if (runners.Count == 0)
         {
-            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start [id] [workspace][/]");
+            cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start [[id]] [[workspace]][/]");
             return 0;
         }
         var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");

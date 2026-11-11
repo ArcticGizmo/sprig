@@ -110,7 +110,7 @@ internal static partial class HeadlessRenderer
 
             // A Dev build drafts definitions against the local SDK project, so their first line is a Windows path.
             editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace(
-                "#:package Sprig.Sdk@0.1.0-exp", @"#:project C:\Users\someone\src\sprig\src\Sprig.Sdk\Sprig.Sdk.csproj");
+                "#:package ArcticGizmo.Sprig.Sdk@0.9.0", @"#:project C:\Users\someone\src\sprig\src\Sprig.Sdk\Sprig.Sdk.csproj");
             Pump(TimeSpan.FromMilliseconds(800));
             window.CaptureRenderedFrame()?.Save(Sibling(outFile, "project-path"));
 

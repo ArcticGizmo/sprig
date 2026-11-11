@@ -18,7 +18,7 @@
   Delete and rebuild an existing testbed.
 
 .PARAMETER UsePackage
-  Keep the definitions' '#:package Sprig.Sdk' lines and pack the SDK into artifacts/feed, with a nuget.config at
+  Keep the definitions' '#:package ArcticGizmo.Sprig.Sdk' lines and pack the SDK into artifacts/feed, with a nuget.config at
   the testbed root pointing there. Without it, each definition references this checkout's Sprig.Sdk project
   directly, so SDK changes show up without repacking.
 
@@ -65,7 +65,7 @@ $sdkProject = Join-Path $root 'src/Sprig.Sdk/Sprig.Sdk.csproj'
 function Set-SdkReference([string] $file) {
     if ($UsePackage) { return }
     $text = Get-Content -LiteralPath $file -Raw
-    $text = [regex]::Replace($text, '(?m)^#:package Sprig\.Sdk@\S+', "#:project $sdkProject")
+    $text = [regex]::Replace($text, '(?m)^#:package ArcticGizmo\.Sprig\.Sdk@\S+', "#:project $sdkProject")
     Set-Content -LiteralPath $file -Value $text -NoNewline
 }
 
@@ -80,7 +80,7 @@ if ($UsePackage) {
     <add key="sprig-local" value="$feed" />
   </packageSources>
   <packageSourceMapping>
-    <packageSource key="sprig-local"><package pattern="Sprig.Sdk" /></packageSource>
+    <packageSource key="sprig-local"><package pattern="ArcticGizmo.Sprig.Sdk" /></packageSource>
     <packageSource key="nuget.org"><package pattern="*" /></packageSource>
   </packageSourceMapping>
 </configuration>

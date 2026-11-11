@@ -43,6 +43,16 @@ public class CliAppTests
     }
 
     [Fact]
+    public void Ps_with_nothing_running_says_how_to_start_something()
+    {
+        var (code, stdout, stderr) = Run("ps");
+
+        Assert.Equal(0, code);
+        Assert.Contains("sprig start [id] [workspace]", stdout);
+        Assert.Empty(stderr);
+    }
+
+    [Fact]
     public void An_unknown_command_fails_with_exit_code_1_and_a_json_error_when_asked()
     {
         var (code, stdout, _) = Run("ws", "ls", "--json");

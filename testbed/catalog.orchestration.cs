@@ -1,4 +1,4 @@
-#:package Sprig.Sdk@0.1.0-exp
+#:package ArcticGizmo.Sprig.Sdk@0.*
 using Sprig;
 
 // The catalog's API and the mobile app, named by their IDs on the Repos list rather than by folder, so this file

@@ -49,7 +49,14 @@ public sealed class PortLeases(ISprigPaths paths)
         if (data.Remove(workspace)) JsonFile.Write(File, data);
     }
 
-    Dictionary<string, Dictionary<string, int>> Load() => JsonFile.Read<Dictionary<string, Dictionary<string, int>>>(File) ?? [];
+    /// <summary>The old app kept a <c>ports.json</c> of another shape in the same store folder. One that can't be read
+    /// counts as holding nothing, and is replaced at the next change; ports in use are still found by asking what's
+    /// listening.</summary>
+    Dictionary<string, Dictionary<string, int>> Load()
+    {
+        try { return JsonFile.Read<Dictionary<string, Dictionary<string, int>>>(File) ?? []; }
+        catch (System.Text.Json.JsonException) { return []; }
+    }
 
     IDisposable Lock() => new FileLock(File + ".lock");
 

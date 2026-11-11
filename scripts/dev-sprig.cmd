@@ -64,7 +64,7 @@ call :which
 echo.
 echo sprig    -^> %sprig_dev_which%
 if defined SPRIG_STORE echo store    -^> %SPRIG_STORE%
-if not defined SPRIG_STORE echo store    -^> %%LOCALAPPDATA%%\sprig-exp (Dev)
+if not defined SPRIG_STORE echo store    -^> %%LOCALAPPDATA%%\sprig (Dev)
 if /i not "%sprig_dev_which%"=="%sprig_dev_bin%\sprig.exe" echo Warning: sprig still resolves to %sprig_dev_which%, ahead of the dev build.
 echo For this window only. Undo with: scripts\dev-sprig.cmd -Off
 goto finish

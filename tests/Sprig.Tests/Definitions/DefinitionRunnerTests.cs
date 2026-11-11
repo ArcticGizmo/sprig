@@ -5,13 +5,14 @@ namespace Sprig.Tests.Definitions;
 public class DirectivePolicyTests
 {
     [Theory]
-    [InlineData("#:package Sprig.Sdk@0.1.0")]
-    [InlineData("#:package sprig.sdk@0.*")]
+    [InlineData("#:package ArcticGizmo.Sprig.Sdk@0.9.0")]
+    [InlineData("#:package arcticgizmo.sprig.sdk@0.*")]
     public void The_sdk_package_is_allowed(string directive)
         => Assert.Empty(DirectivePolicy.Check(directive + "\nusing Sprig;", allowLocalSdkProject: false));
 
     [Theory]
-    [InlineData("#:package Newtonsoft.Json@13.0.3", "only the Sprig.Sdk package")]
+    [InlineData("#:package Newtonsoft.Json@13.0.3", "only the ArcticGizmo.Sprig.Sdk package")]
+    [InlineData("#:package Sprig.Sdk@0.1.0", "only the ArcticGizmo.Sprig.Sdk package")]
     [InlineData("#:project ../Other/Other.csproj", "local project")]
     [InlineData("#:property TreatWarningsAsErrors=false", "#:property")]
     [InlineData("#:sdk Microsoft.NET.Sdk.Web", "#:sdk")]

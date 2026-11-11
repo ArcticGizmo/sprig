@@ -317,9 +317,9 @@ Also in M4:
 ## Next: replacing `main` (proposed)
 
 1. **The user's hand pass over the app.** Trellises and Sprouts pages, runner rows, log pane, and the new approval prompt during bring-up. Fix what it finds.
-2. **The app gets the same head start as the CLI.** Bring-up from the app doesn't start the apps, so it doesn't prebuild; "Start all" straight after could use the held start too.
-3. **EDR sign-off.** Ask SecOps whether CrowdStrike or Defender raised non-blocking alerts for `sprig-host` (process trees, and its `--ctrl-c` helper attaching to app consoles). Nothing was blocked on this machine.
-4. **Merge mechanics.** The store moves from `sprig-exp` to `sprig` (the test guarding the released store changes with it), the version leaves `0.100.0-exp`, `Sprig.Host` gets a version, the changelog says `.sprig.json` is gone, and `Sprig.Sdk` is published as a package so definitions stop needing the local `#:project` line.
+2. **The app gets the same head start as the CLI.** **Done 2026-11-11:** Start on a workspace that's down, and Empty data's bring-back, have the host build the apps while the infra comes up (`HostClient.Prebuild`, shared with the CLI's `up` and `empty-data`).
+3. **EDR sign-off.** Ask SecOps whether CrowdStrike or Defender raised non-blocking alerts for `sprig-host` (process trees, and its `--ctrl-c` helper attaching to app consoles). Nothing was blocked on this machine. **Done (user, 2026-11-11).**
+4. **Merge mechanics.** The store moves from `sprig-exp` to `sprig` (the test guarding the released store changes with it), the version leaves `0.100.0-exp`, `Sprig.Host` gets a version, the changelog says `.sprig.json` is gone, and `Sprig.Sdk` is published as a package so definitions stop needing the local `#:project` line. **Done 2026-11-11** (user): the store is `sprig` / `sprig (Dev)` with no migration; the app is versioned from the last tag (`0.8.2`); the SDK publishes as `ArcticGizmo.Sprig.Sdk` from the release workflow (renamed `publish.yml` to match the nuget.org policy) through NuGet Trusted Publishing, at the tag's version; the home page shows what's running, and Orchestrations are greyed out in the nav until their redesign.
 
 ## M7: Authoring in the app, with trellises and repos kept in sprig (in progress)
 

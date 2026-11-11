@@ -37,7 +37,7 @@ public sealed class TestbedPlanTests : IDisposable
     void Copy(string from, string to, string sdk)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-        var text = File.ReadAllText(from).Replace("#:package Sprig.Sdk@0.1.0-exp", $"#:project {sdk}");
+        var text = File.ReadAllText(from).Replace($"#:package {SdkReference.PackageId}@0.*", $"#:project {sdk}");
         File.WriteAllText(to, text);
         _trust.Approve(to, DefinitionHash.Of(text));
     }
@@ -107,7 +107,7 @@ public sealed class TestbedPlanTests : IDisposable
     {
         var source = file + ".src";
         File.WriteAllText(source, $"""
-            #:package Sprig.Sdk@0.1.0-exp
+            #:package ArcticGizmo.Sprig.Sdk@0.*
             using Sprig;
 
             var orchestration = Orchestration.Describe("{Path.GetFileName(file).Split('.')[0]}");

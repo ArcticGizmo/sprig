@@ -4,16 +4,14 @@ namespace Sprig.Engine.Store;
 /// Tells a development instance apart from an installed release, so the two never share a central store.
 ///
 /// <c>SPRIG_DEV</c> wins if set; otherwise a Debug build is a dev instance and a Release build is not.
-/// The experimental model's store is kept apart from the released app's (<c>sprig</c>), whose maps and
-/// workspaces this build can't read and must never overwrite.
 /// </summary>
 public static class AppProfile
 {
     /// <summary>True when this process is an isolated development instance.</summary>
     public static bool IsDev { get; } = ComputeIsDev();
 
-    /// <summary>The store folder name under %LOCALAPPDATA%: <c>sprig-exp</c> or <c>sprig-exp (Dev)</c>.</summary>
-    public static string DataFolderName => IsDev ? "sprig-exp (Dev)" : "sprig-exp";
+    /// <summary>The store folder name under %LOCALAPPDATA%: <c>sprig</c> or <c>sprig (Dev)</c>.</summary>
+    public static string DataFolderName => IsDev ? "sprig (Dev)" : "sprig";
 
     /// <summary>Suffix for user-facing labels (e.g. the window title): <c>""</c> or <c>" (Dev)"</c>.</summary>
     public static string DisplaySuffix => IsDev ? " (Dev)" : "";

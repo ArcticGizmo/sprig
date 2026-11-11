@@ -5,7 +5,7 @@ namespace Sprig.Tests.Authoring;
 public class DefinitionEditorTests
 {
     const string Source = """
-        #:package Sprig.Sdk@0.1.0
+        #:package ArcticGizmo.Sprig.Sdk@0.9.0
         using Sprig;
 
         var repo = Repo.Describe("shop-services");

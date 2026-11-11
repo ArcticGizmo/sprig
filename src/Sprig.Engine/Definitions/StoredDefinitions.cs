@@ -160,8 +160,11 @@ public sealed class StoredDefinitions(ISprigPaths paths)
 /// <summary>The <c>#:</c> line a new definition starts with, so it builds against the SDK this sprig reads.</summary>
 public static class SdkReference
 {
+    /// <summary>The SDK's id on nuget.org, the one package a definition may reference.</summary>
+    public const string PackageId = "ArcticGizmo.Sprig.Sdk";
+
     public static string Line()
-        => LocalProject() is { } project ? $"#:project {project}" : $"#:package Sprig.Sdk@{Sprig.Sdk.Version}";
+        => LocalProject() is { } project ? $"#:project {project}" : $"#:package {PackageId}@{Sprig.Sdk.Version}";
 
     // A dev build isn't published as a package yet, so its definitions build the SDK from this checkout.
     static string? LocalProject()

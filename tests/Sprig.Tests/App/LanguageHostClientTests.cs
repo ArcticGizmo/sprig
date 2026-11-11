@@ -63,7 +63,7 @@ public sealed class LanguageHostClientTests : IDisposable
         var formatted = (await _client.FormatAsync(messy)).Text!;
 
         Assert.Contains("var orders = repo.DotNet", formatted);
-        Assert.StartsWith("#:package Sprig.Sdk@0.1.0-exp", formatted);
+        Assert.StartsWith("#:package ArcticGizmo.Sprig.Sdk@0.9.0", formatted);
     }
 
     [Fact]

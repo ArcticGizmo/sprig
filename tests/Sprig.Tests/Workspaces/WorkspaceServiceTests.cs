@@ -1,4 +1,3 @@
-using Sprig;
 using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
 using Sprig.Engine.Git;
@@ -63,33 +62,50 @@ public sealed class WorkspaceServiceTests : IDisposable
 
     static readonly WorkspaceOptions InPlace = new(InPlace: true);
 
-    LoadedOrchestration Load(params (string path, Action<RepoBuilder> describe)[] repos)
+    /// <summary>Each repo's definition is given its name, which is the folder the orchestration names it by.</summary>
+    LoadedOrchestration Load(params (string path, Func<string, string> yaml)[] repos)
+        => LoadModels(repos.Select(r => (r.path, RepoAt(r.path, r.yaml(r.path)))).ToArray());
+
+    RepoModel RepoAt(string path, string yaml) => Yaml.Repo(yaml, Path.Combine(_root, path, "sprig.yaml"));
+
+    LoadedOrchestration LoadModels(params (string path, RepoModel repo)[] repos)
     {
-        var orchestration = Orchestration.Describe("storefront");
-        var models = new Dictionary<string, RepoModel>();
-        var dirs = new Dictionary<string, string>();
-        foreach (var (path, describe) in repos)
-        {
-            orchestration.Repo(path);
-            var repo = Sprig.Repo.Describe(path);
-            describe(repo);
-            models[path] = repo.BuildRepo();
-            dirs[path] = Path.Combine(_root, path);
-        }
-        return new LoadedOrchestration(Path.Combine(_root, "storefront.orchestration.yaml"), orchestration.BuildOrchestration(), models, [], [], [], dirs);
+        var orchestration = Yaml.Orchestration("schema: 1\norchestration: storefront\nrepos:\n"
+            + string.Concat(repos.Select(r => $"  {r.path}: {{ path: {r.path} }}\n")));
+        var models = repos.ToDictionary(r => r.path, r => r.repo);
+        var dirs = repos.ToDictionary(r => r.path, r => Path.Combine(_root, r.path));
+        return new LoadedOrchestration(Path.Combine(_root, "storefront.orchestration.yaml"), orchestration, models, [], [], [], dirs);
     }
 
-    static void Web(RepoBuilder repo)
-    {
-        var web = repo.Node("web", ".").Http();
-        web.EnvFile(".env.local", e => e.Set("PORT", web.Port));
-    }
+    static string Web(string repo) => $$"""
+        schema: 1
+        repo: {{repo}}
+        apps:
+          web:
+            run: node
+            ports: { http: any }
+        files:
+          .env.local:
+            read-by: [web]
+            values:
+              PORT: ${web.port}
+        """;
 
-    static void Api(RepoBuilder repo)
-    {
-        var api = repo.DotNet("api", "src/Api").Http();
-        api.LaunchSettings(s => s.Set("ASPNETCORE_URLS", api.Url).Set("Feature", "on"));
-    }
+    static string Api(string repo) => $$"""
+        schema: 1
+        repo: {{repo}}
+        apps:
+          api:
+            run: dotnet
+            path: src/Api
+            ports: { http: any }
+        files:
+          src/Api/Properties/launchSettings.json:
+            read-by: [api]
+            values:
+              ASPNETCORE_URLS: ${api.url}
+              Feature: on
+        """;
 
     [Fact]
     public void Up_makes_worktrees_writes_ignored_env_files_and_keeps_its_ports()
@@ -183,11 +199,24 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Equal(("stable", "develop"), (told.PortPolicy, _workspaces.LastPlan("storefront", "feat-y")!.WorktreesFrom));
     }
 
-    static void WebWithApi(RepoBuilder repo)
-    {
-        var web = repo.Node("web", ".").Http();
-        web.EnvFile(".env.local", e => e.Set("PORT", web.Port).Set("API", repo.Setting<Url>("api-url", "http://localhost:5100")));
-    }
+    static string WebWithApi(string repo) => $$"""
+        schema: 1
+        repo: {{repo}}
+        inputs:
+          api-url:
+            type: url
+            default: http://localhost:5100
+        apps:
+          web:
+            run: node
+            ports: { http: any }
+        files:
+          .env.local:
+            read-by: [web]
+            values:
+              PORT: ${web.port}
+              API: ${inputs.api-url}
+        """;
 
     [Fact]
     public void Check_out_puts_each_branch_in_a_numbered_slot_labelled_by_its_branch()
@@ -630,7 +659,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         var problem = Assert.Single(e.Problems);
         Assert.StartsWith("git tracks src/Api/Properties/launchSettings.json", problem.Message);
         Assert.Contains("such as appsettings.Local.json", problem.Message);
-        Assert.EndsWith("WorkspaceServiceTests.cs", problem.Location!.File);
+        Assert.Equal(Path.Combine(_root, "shop-services", "sprig.yaml"), problem.Location!.File);
         Assert.False(Directory.Exists(Path.Combine(_root, "storefront--feat-x")));
         Assert.Null(_workspaces.Get("storefront", "feat-x"));
     }
@@ -639,11 +668,20 @@ public sealed class WorkspaceServiceTests : IDisposable
     public void A_target_the_repo_does_not_ignore_is_refused_with_what_to_add()
     {
         RepoWith("shop-services", "bin/\n", ("src/Api/Program.cs", "// api"));
-        var loaded = Load(("shop-services", repo =>
-        {
-            var api = repo.DotNet("api", "src/Api").Http();
-            api.AppSettings("appsettings.Local.json", s => s.Set("Urls", api.Url));
-        }));
+        var loaded = Load(("shop-services", repo => $$"""
+            schema: 1
+            repo: {{repo}}
+            apps:
+              api:
+                run: dotnet
+                path: src/Api
+                ports: { http: any }
+            files:
+              src/Api/appsettings.Local.json:
+                read-by: [api]
+                values:
+                  Urls: ${api.url}
+            """));
 
         var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "local", null, InPlace));
 
@@ -764,11 +802,10 @@ public sealed class WorkspaceServiceTests : IDisposable
         File.WriteAllText(Path.Combine(dir, "backend", "src", ".env"), "API_KEY=secret\n");
         Directory.CreateDirectory(Path.Combine(dir, "certs", "dev"));
         File.WriteAllText(Path.Combine(dir, "certs", "dev", "cert.pem"), "pem");
-        var loaded = Load(("shop-web", repo =>
-        {
-            Web(repo);
-            repo.CopyIntoWorktrees("backend/src/.env").CopyIntoWorktrees("certs").CopyIntoWorktrees("not-there.json");
-        }));
+        var loaded = Load(("shop-web", repo => $"""
+            {Web(repo)}
+            copy-into-worktrees: [backend/src/.env, certs, not-there.json]
+            """));
         var events = new List<WorkspaceEvent>();
 
         var record = _workspaces.CheckOut(loaded, "feat-x", progress: new SyncProgressList(events));
@@ -798,11 +835,12 @@ public sealed class WorkspaceServiceTests : IDisposable
     {
         RepoWith("shop-web", Secrets, ("index.html", "hi"), ("settings.json", "{}"));
         File.WriteAllText(Path.Combine(_root, "shop-web", "loose.txt"), "x");
-        var loaded = Load(("shop-web", repo =>
-        {
-            Web(repo);
-            repo.CopyIntoWorktrees("settings.json").CopyIntoWorktrees("loose.txt").CopyIntoWorktrees("../elsewhere/.env");
-        }));
+        var web = RepoAt("shop-web", $"""
+            {Web("shop-web")}
+            copy-into-worktrees: [settings.json, loose.txt]
+            """);
+        // The format refuses a path out of the repo as it reads it; a workspace mustn't rely on that.
+        var loaded = LoadModels(("shop-web", web with { WorktreeCopies = [.. web.WorktreeCopies!, new WorktreeCopyModel("../elsewhere/.env", web.Location)] }));
 
         var e = Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-x"));
 
@@ -817,7 +855,9 @@ public sealed class WorkspaceServiceTests : IDisposable
     public void A_bad_plan_fails_before_any_worktree_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));
-        var loaded = Load(("shop-web", repo => repo.Node("web", ".").Http().WaitFor(Sprig.Repo.Describe("elsewhere").Postgres("ghost"))));
+        var web = RepoAt("shop-web", Web("shop-web"));
+        // The format refuses a wait for something the file doesn't declare as it reads it; the plan mustn't rely on that.
+        var loaded = LoadModels(("shop-web", web with { Apps = [web.Apps[0] with { WaitFor = ["ghost"] }] }));
 
         var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "feat-x", null));
 
@@ -826,11 +866,27 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Null(_workspaces.Get("storefront", "feat-x"));
     }
 
-    static void WebWithKey(RepoBuilder repo)
-    {
-        var web = repo.Node("web", ".").Http();
-        web.EnvFile(".env.local", e => e.Set("PORT", web.Port).Set("API_KEY", repo.Setting<Secret>("api-key")).Set("API", repo.Setting<Url>("api-url", "http://localhost:5100")));
-    }
+    static string WebWithKey(string repo) => $$"""
+        schema: 1
+        repo: {{repo}}
+        inputs:
+          api-key:
+            type: secret
+          api-url:
+            type: url
+            default: http://localhost:5100
+        apps:
+          web:
+            run: node
+            ports: { http: any }
+        files:
+          .env.local:
+            read-by: [web]
+            values:
+              PORT: ${web.port}
+              API_KEY: ${inputs.api-key}
+              API: ${inputs.api-url}
+        """;
 
     [Fact]
     public void A_setting_with_no_value_is_asked_for_before_anything_is_made_and_a_value_given_is_kept()
@@ -859,47 +915,54 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Contains("API=http://localhost:5100", File.ReadAllText(envLocal));
     }
 
-    /// <summary>Stands in for reading: each definition's text names the builder whose model it is.</summary>
-    static Func<string, string, ReadResult> Scripted(Dictionary<string, Func<DefinitionBuilder>> models)
-        => (text, _) => new ReadResult(models[text.Trim()]() switch
-        {
-            RepoBuilder repo => repo.BuildRepo(),
-            OrchestrationBuilder orchestration => orchestration.BuildOrchestration(),
-            _ => throw new InvalidOperationException("not a repo or an orchestration"),
-        }, []);
+    static string WebWith(string feature) => $$"""
+        schema: 1
+        repo: shop-web
+        apps:
+          web:
+            run: node
+            ports: { http: any }
+        files:
+          .env.local:
+            read-by: [web]
+            values:
+              PORT: ${web.port}
+              FEATURE: {{feature}}
+        """;
 
-    static RepoBuilder WebWith(string feature)
-    {
-        var repo = Sprig.Repo.Describe("shop-web");
-        var web = repo.Node("web", ".").Http();
-        web.EnvFile(".env.local", e => e.Set("PORT", web.Port).Set("FEATURE", feature));
-        return repo;
-    }
+    const string Storefront = """
+        schema: 1
+        orchestration: storefront
+        repos:
+          shop-web: { path: shop-web }
+        """;
+
+    static string StorefrontUsing(string id) => $$"""
+        schema: 1
+        orchestration: storefront
+        repos:
+          shop-web: { use: {{id}} }
+        """;
 
     [Fact]
     public void A_branch_that_changes_sprig_yaml_is_run_as_the_branch_has_it_once_approved()
     {
-        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", "// web v1"));
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));
         Git(source, "checkout", "-q", "-b", "feat-x");
-        File.WriteAllText(Path.Combine(source, "sprig.yaml"), "// web v2");
+        File.WriteAllText(Path.Combine(source, "sprig.yaml"), WebWith("v2"));
         Git(source, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-am", "v2");
         Git(source, "checkout", "-q", "main");
         var orchestrationFile = Path.Combine(_root, "storefront.orchestration.yaml");
-        File.WriteAllText(orchestrationFile, "// orchestration");
+        File.WriteAllText(orchestrationFile, Storefront);
 
         var trust = new FileTrustStore(_store.Paths);
-        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths, read: Scripted(new()
-        {
-            ["// orchestration"] = () => { var t = Orchestration.Describe("storefront"); t.Repo("shop-web"); return t; },
-            ["// web v1"] = () => WebWith("v1"),
-            ["// web v2"] = () => WebWith("v2"),
-        })));
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths));
         var settings = new FileSettingsStore(_store.Paths);
         var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), settings, _git,
             new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
         var mainDefinition = Path.Combine(source, "sprig.yaml");
-        trust.Approve(orchestrationFile, DefinitionHash.Of("// orchestration"));
-        trust.Approve(mainDefinition, DefinitionHash.Of("// web v1"));
+        trust.Approve(orchestrationFile, DefinitionHash.Of(Storefront));
+        trust.Approve(mainDefinition, DefinitionHash.Of(WebWith("v1")));
         var loaded = loader.Load(orchestrationFile);
         Assert.True(loaded.Complete);
 
@@ -924,20 +987,11 @@ public sealed class WorkspaceServiceTests : IDisposable
     [Fact]
     public void Orchestrations_and_repo_copies_kept_in_sprig_sit_beside_a_repos_own_without_clashing()
     {
-        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", "// web v1"));
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));
         var stored = new StoredDefinitions(_store.Paths);
         var registry = new OrchestrationRegistry(_store.Paths);
         var trust = new FileTrustStore(_store.Paths);
-        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths, read: Scripted(new()
-        {
-            ["// own"] = () => { var t = Orchestration.Describe("storefront"); t.Repo(source); return t; },
-            ["// uses a"] = () => { var t = Orchestration.Describe("storefront"); t.UseRepo("web-a"); return t; },
-            ["// uses b"] = () => { var t = Orchestration.Describe("storefront"); t.UseRepo("web-b"); return t; },
-            ["// uses missing"] = () => { var t = Orchestration.Describe("storefront"); t.UseRepo("nope"); return t; },
-            ["// web v1"] = () => WebWith("v1"),
-            ["// copy a"] = () => WebWith("a"),
-            ["// copy b"] = () => WebWith("b"),
-        })), registry, stored);
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths), registry, stored);
         var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
             new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
 
@@ -948,12 +1002,17 @@ public sealed class WorkspaceServiceTests : IDisposable
             trust.Approve(file, DefinitionHash.Of(text));
             return file;
         }
-        var own = KeptOrchestration("own", "// own");
-        var usesA = KeptOrchestration("uses-a", "// uses a");
-        var usesB = KeptOrchestration("uses-b", "// uses b");
-        foreach (var (id, text) in new[] { ("web-a", "// copy a"), ("web-b", "// copy b") })
+        var own = KeptOrchestration("own", $$"""
+            schema: 1
+            orchestration: storefront
+            repos:
+              shop-web: { path: '{{source}}' }
+            """);
+        var usesA = KeptOrchestration("uses-a", StorefrontUsing("web-a"));
+        var usesB = KeptOrchestration("uses-b", StorefrontUsing("web-b"));
+        foreach (var (id, text) in new[] { ("web-a", WebWith("a")), ("web-b", WebWith("b")) })
             trust.Approve(stored.AddRepo(id, source, inRepo: false, text).DefinitionFile, DefinitionHash.Of(text));
-        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of("// web v1"));
+        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of(WebWith("v1")));
 
         var feature = new Dictionary<string, string>();
         foreach (var (file, workspace) in new[] { (own, "x1"), (usesA, "x2"), (usesB, "x3") })
@@ -966,38 +1025,33 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Equal("FEATURE=v1", feature["own"]);
         Assert.Equal("FEATURE=a", feature["uses-a"]);
         Assert.Equal("FEATURE=b", feature["uses-b"]);
-        Assert.Equal("// web v1", File.ReadAllText(Path.Combine(source, "sprig.yaml")));
+        Assert.Equal(WebWith("v1"), File.ReadAllText(Path.Combine(source, "sprig.yaml")));
         Assert.Equal(["web-a", "web-b"], stored.Repos().Select(r => r.Id));
 
-        var missing = KeptOrchestration("uses-missing", "// uses missing");
+        var missing = KeptOrchestration("uses-missing", StorefrontUsing("nope"));
         var problem = Assert.Single(loader.Load(missing).Problems);
         Assert.Contains("'nope' isn't in sprig's Repos list", problem.Message);
 
         // A copy kept in sprig is approved as itself, and once approved it's the user's own: changing it, in the app
         // or anywhere else, doesn't ask again.
-        File.WriteAllText(stored.CopyFile("web-a"), "// copy b");
+        File.WriteAllText(stored.CopyFile("web-a"), WebWith("b"));
         Assert.Empty(loader.Load(usesA).Untrusted);
     }
 
     [Fact]
     public void A_repo_used_by_id_brings_its_folder_and_reads_its_own_sprig_yaml_from_the_workspaces_worktree()
     {
-        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", "// web v1"));
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));
         var stored = new StoredDefinitions(_store.Paths);
         var trust = new FileTrustStore(_store.Paths);
-        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths, read: Scripted(new()
-        {
-            ["// orchestration"] = () => { var t = Orchestration.Describe("storefront"); t.UseRepo("web"); return t; },
-            ["// uses nothing"] = () => { var t = Orchestration.Describe("storefront"); t.UseRepo("nope"); return t; },
-            ["// web v1"] = () => WebWith("v1"),
-        })), stored: stored);
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths), stored: stored);
         var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
             new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
         stored.AddRepo("web", source, inRepo: true, definition: null);
         var orchestrationFile = Path.Combine(_root, "storefront.orchestration.yaml");
-        File.WriteAllText(orchestrationFile, "// orchestration");
-        trust.Approve(orchestrationFile, DefinitionHash.Of("// orchestration"));
-        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of("// web v1"));
+        File.WriteAllText(orchestrationFile, StorefrontUsing("web"));
+        trust.Approve(orchestrationFile, DefinitionHash.Of(StorefrontUsing("web")));
+        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of(WebWith("v1")));
 
         var record = workspaces.Up(loader.Load(orchestrationFile), "feat-x", null);
 
@@ -1008,26 +1062,23 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Contains("FEATURE=v1", File.ReadAllText(Path.Combine(repo.Dir, ".env.local")));
 
         var missingFile = Path.Combine(_root, "missing.orchestration.yaml");
-        File.WriteAllText(missingFile, "// uses nothing");
-        trust.Approve(missingFile, DefinitionHash.Of("// uses nothing"));
+        File.WriteAllText(missingFile, StorefrontUsing("nope"));
+        trust.Approve(missingFile, DefinitionHash.Of(StorefrontUsing("nope")));
         Assert.Contains("'nope' isn't in sprig's Repos list", Assert.Single(loader.Load(missingFile).Problems).Message);
     }
 
     [Fact]
     public void A_repo_on_the_list_runs_on_its_own_under_its_id_and_ids_are_shared_with_orchestrations()
     {
-        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", "// web v1"));
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));
         var stored = new StoredDefinitions(_store.Paths);
         var registry = new OrchestrationRegistry(_store.Paths);
         var trust = new FileTrustStore(_store.Paths);
-        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths, read: Scripted(new()
-        {
-            ["// web v1"] = () => WebWith("v1"),
-        })), registry, stored);
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths), registry, stored);
         var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
             new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
         stored.AddRepo("web", source, inRepo: true, definition: null);
-        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of("// web v1"));
+        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of(WebWith("v1")));
 
         var entry = registry.Resolve("web");
         Assert.Equal(stored.EntryFile("web"), entry);
@@ -1060,19 +1111,15 @@ public sealed class WorkspaceServiceTests : IDisposable
     [Fact]
     public void A_new_branch_from_main_needs_no_new_approval()
     {
-        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", "// web v1"));
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));
         var orchestrationFile = Path.Combine(_root, "storefront.orchestration.yaml");
-        File.WriteAllText(orchestrationFile, "// orchestration");
+        File.WriteAllText(orchestrationFile, Storefront);
         var trust = new FileTrustStore(_store.Paths);
-        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths, read: Scripted(new()
-        {
-            ["// orchestration"] = () => { var t = Orchestration.Describe("storefront"); t.Repo("shop-web"); return t; },
-            ["// web v1"] = () => WebWith("v1"),
-        })));
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths));
         var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
             new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
-        trust.Approve(orchestrationFile, DefinitionHash.Of("// orchestration"));
-        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of("// web v1"));
+        trust.Approve(orchestrationFile, DefinitionHash.Of(Storefront));
+        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of(WebWith("v1")));
 
         var record = workspaces.Up(loader.Load(orchestrationFile), "feat-y", null);
 

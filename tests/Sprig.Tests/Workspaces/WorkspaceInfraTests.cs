@@ -42,15 +42,29 @@ public sealed class WorkspaceInfraTests : IDisposable
 
     public void Dispose() => _store.Dispose();
 
+    static OrchestrationModel Storefront => Yaml.Orchestration("""
+        schema: 1
+        orchestration: storefront
+        repos:
+          shop-services: { path: shop-services }
+        containers:
+          mail: { preset: mailpit }
+        """);
+
     (WorkspaceRecord, Plan) Shop()
     {
-        var orchestration = Orchestration.Describe("storefront");
-        var repo = Repo.Describe("shop-services");
-        repo.Postgres("pg");
-        repo.ComposeFile("docker-compose.yml").Service("search").Endpoint("http", 7700, scheme: "http");
-        orchestration.Repo("shop-services");
-        orchestration.Mailpit("mail");
-        var plan = Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["shop-services"] = repo.BuildRepo() },
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            compose:
+              docker-compose.yml:
+                services:
+                  search:
+                    ports: { http: { container: 7700 } }
+            """);
+        var plan = Planner.Build(new PlanInput(Storefront, new Dictionary<string, RepoModel> { ["shop-services"] = repo },
             "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         var now = DateTimeOffset.Now;
         var dir = Path.Combine(_store.Root, "storefront--1", "shop-services");
@@ -116,18 +130,37 @@ public sealed class WorkspaceInfraTests : IDisposable
     /// orchestration's mail is used by nothing.</summary>
     (WorkspaceRecord, Plan) Grouped()
     {
-        var orchestration = Orchestration.Describe("storefront");
-        var repo = Repo.Describe("shop-services");
-        var pg = repo.Postgres("pg");
-        var search = repo.ComposeFile("docker-compose.yml").Service("search");
-        search.Endpoint("http", 7700, scheme: "http");
-        var migrate = repo.DotNetJob("migrate", "src/Migrate").WaitFor(pg);
-        var api = repo.DotNet("api", "src/Api").Http().WaitFor(migrate);
-        var web = repo.Node("web", "web").Http().WaitFor(search);
-        repo.Group("front", web).Group("back", api);
-        orchestration.Repo("shop-services");
-        orchestration.Mailpit("mail");
-        var plan = Planner.Build(new PlanInput(orchestration.BuildOrchestration(), new Dictionary<string, RepoModel> { ["shop-services"] = repo.BuildRepo() },
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            compose:
+              docker-compose.yml:
+                services:
+                  search:
+                    ports: { http: { container: 7700 } }
+            apps:
+              migrate:
+                run: dotnet
+                path: src/Migrate
+                once: true
+                wait-for: [pg]
+              api:
+                run: dotnet
+                path: src/Api
+                ports: { http: any }
+                wait-for: [migrate]
+              web:
+                run: node
+                path: web
+                ports: { http: any }
+                wait-for: [search]
+            groups:
+              front: [web]
+              back: [api]
+            """);
+        var plan = Planner.Build(new PlanInput(Storefront, new Dictionary<string, RepoModel> { ["shop-services"] = repo },
             "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
         var now = DateTimeOffset.Now;
         var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.yaml"), "1", "feat-a", "stable",

@@ -24,10 +24,10 @@ public sealed record Plan(
     IReadOnlyDictionary<string, string>? SettingRoles = null,
     IReadOnlyList<string>? SecretSettings = null)
 {
-    /// <summary>The role a repo gave a setting (<c>.Is(Role.Queue)</c>), by the setting's name.</summary>
+    /// <summary>The role a repo gave a setting (<c>role: queue</c>), by the setting's name.</summary>
     public string? RoleOfSetting(string name) => SettingRoles?.GetValueOrDefault(name);
 
-    /// <summary>A repo declared it <c>Setting&lt;Secret&gt;</c>, so its value, and any built from it, is kept out of
+    /// <summary>A repo declared it an input of <c>type: secret</c>, so its value, and any built from it, is kept out of
     /// what sprig shows.</summary>
     public bool IsSecretSetting(string name) => SecretSettings?.Contains(name) == true;
 

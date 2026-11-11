@@ -50,7 +50,7 @@ public static partial class DefinitionReader
             if (!file.CheckName(name, key, "a container")) continue;
             var resource = new Resource(name, "container", key);
             if (!scope.Declare(resource)) continue;
-            if (file.Fields(value, $"container '{name}'", "preset", "image", "ports", "env", "volumes", "health", "role", "values") is not { } fields) continue;
+            if (file.Fields(value, $"container '{name}'", DefinitionKeys.Names(DefinitionKeys.Container)) is not { } fields) continue;
 
             Preset? preset = null;
             if (file.Choice(fields["preset"], $"container '{name}''s preset", [.. Presets.Keys]) is { } presetName) preset = Presets[presetName];

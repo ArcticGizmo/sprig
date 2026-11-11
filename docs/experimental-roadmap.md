@@ -2,6 +2,8 @@
 
 Branch: `experimental`. Started 2026-11-03. Status: M0 to M6 done (M1 was a go: C# definitions confirmed, findings in [spikes/m1-authoring.md](spikes/m1-authoring.md); M6's Aspire comparison is in [spikes/m6-aspire.md](spikes/m6-aspire.md)). Next: the steps to replace `main`, below M6.
 
+On 2026-11-11 definitions moved from C# to YAML, read as data with a versioned schema: see [yaml-definitions-plan.md](yaml-definitions-plan.md) and [definition-format.md](definition-format.md). What follows about C#, the SDK and `dotnet run` is the history of how the branch got here.
+
 This branch rebuilds Sprig from scratch around two changes:
 
 1. **Code-first definitions.** Repos and systems are described in C#, with full IntelliSense, instead of being assembled from many small GUI forms.

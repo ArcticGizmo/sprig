@@ -98,7 +98,7 @@ public static class Planner
                 _asks.Count > 0 ? _asks : null, SettingRoles(), secrets.Length > 0 ? secrets : null);
         }
 
-        /// <summary>A value under a name that says it's secret, which no <c>Setting&lt;Secret&gt;</c> gives: sprig masks
+        /// <summary>A value under a name that says it's secret, which no input of <c>type: secret</c> gives: sprig masks
         /// it by its name, but only a declared secret is masked wherever it's used, so the author is told. Only apps'
         /// values: a container's are mostly the preset's own local passwords (POSTGRES_PASSWORD), nothing to declare.</summary>
         void CheckUndeclaredSecrets(IEnumerable<PlannedApp> apps, IReadOnlyCollection<string> secrets)

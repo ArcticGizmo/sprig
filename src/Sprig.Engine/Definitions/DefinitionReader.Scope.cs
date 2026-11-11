@@ -222,7 +222,7 @@ public static partial class DefinitionReader
             YamlNode? host = value;
             if (value is YamlMappingNode)
             {
-                var fields = file.Fields(value, $"port '{name}'", inContainer ? ["container", "host", "scheme"] : ["host", "scheme"])!;
+                var fields = file.Fields(value, $"port '{name}'", DefinitionKeys.Names(inContainer ? DefinitionKeys.Port : DefinitionKeys.AppPort))!;
                 host = fields["host"];
                 container = file.Number(fields["container"], $"port '{name}''s container port", 1, 65535) ?? container;
                 scheme = file.Text(fields["scheme"], $"port '{name}''s scheme") ?? scheme;

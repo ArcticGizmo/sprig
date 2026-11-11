@@ -5,7 +5,7 @@ description: Ship the current branch as the next Sprig release. Runs the test su
 
 # Release Next Version
 
-Takes the current branch from "done" to "published release": local tests → PR → squash-merge → tag the new `main` head → push the tag → watch the Release workflow to completion. Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which publishes the SDK to nuget.org, then builds and publishes the GitHub Release.
+Takes the current branch from "done" to "published release": local tests → PR → squash-merge → tag the new `main` head → push the tag → watch the Release workflow to completion. Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which builds and publishes the GitHub Release.
 
 Invoking this skill is the user's go-ahead for the outward-facing steps (pushing the branch, opening the PR, merging, deleting the merged remote branch, pushing the tag). Anything *not* listed here (force-pushes, deleting the local branch, re-tagging, deleting tags) is out of scope — stop and ask.
 
@@ -14,7 +14,7 @@ Invoking this skill is the user's go-ahead for the outward-facing steps (pushing
 - Repo is `ArcticGizmo/sprig`; **squash-merge only** (merge commits and rebase are disabled). `main` is not branch-protected, and the repo does **not** auto-delete head branches on merge — so step 4 deletes the remote branch explicitly.
 - Tags are **lightweight**, `vMAJOR.MINOR.PATCH`, and must match `<Version>` in `src/Sprig.App/Sprig.App.csproj` (the release build takes its version from the tag).
 - There is **no PR CI** — `publish.yml` is the only workflow, so PRs report no checks. The gate is therefore the local `dotnet test` run in step 2. If a `pull_request` workflow is ever added, wait for its checks too (see step 3).
-- The Release workflow (`publish.yml`, named so for nuget.org's Trusted Publishing policy, which matches on the file name) is a **single** `release` job on `windows-latest`: publish both exes → pack `ArcticGizmo.Sprig.Sdk` and push it to nuget.org (OIDC login, `NUGET_USER` secret) → `vpk pack` → generate and verify `SHA256SUMS.txt` → create the GitHub Release. A failure at any step means no Release is published at all. A tag-triggered run's `headBranch` is the tag name (e.g. `v0.7.1`). A healthy run takes roughly 2–5 minutes.
+- The Release workflow (`publish.yml`) is a **single** `release` job on `windows-latest`: publish both exes → `vpk pack` → generate and verify `SHA256SUMS.txt` → create the GitHub Release. A failure at any step means no Release is published at all. A tag-triggered run's `headBranch` is the tag name (e.g. `v0.7.1`). A healthy run takes roughly 2–5 minutes.
 - PR titles carry the version in parentheses, e.g. `Install the sprig cd shell shims (v0.7.1)`.
 - Use the Bash tool (Git Bash) for the snippets below.
 

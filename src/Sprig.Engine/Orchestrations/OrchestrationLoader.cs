@@ -58,7 +58,7 @@ public sealed record LoadedOrchestration(
 
 /// <summary>Reads an orchestration and the <c>sprig.yaml</c> of every repo it names, each once its content is approved.</summary>
 /// <param name="registry">Gives each orchestration its registered ID; without one, the ID comes from the file name.</param>
-/// <param name="stored">The Repos list, for repos an orchestration names with <c>UseRepo</c>.</param>
+/// <param name="stored">The Repos list, for repos an orchestration names with <c>use:</c>.</param>
 public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRegistry? registry = null, StoredDefinitions? stored = null)
 {
     public const string RepoDefinitionFile = "sprig.yaml";
@@ -157,7 +157,7 @@ public sealed class OrchestrationLoader(DefinitionRunner runner, OrchestrationRe
     static OrchestrationModel Alone(string repoId, string entryFile)
     {
         var at = new SourceLocation(entryFile, 0);
-        return new OrchestrationModel(DefinitionReader.CurrentSchema, $"{repoId}, on its own", "", at, Containers: [],
+        return new OrchestrationModel(DefinitionReader.CurrentSchema, $"{repoId}, on its own", at, Containers: [],
             Repos: [new RepoRefModel(repoId, at, Use: repoId)], Bindings: [], Groups: []);
     }
 

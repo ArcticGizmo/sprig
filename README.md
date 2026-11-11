@@ -11,7 +11,7 @@
 
 ## What it does
 
-Each repo describes itself in a `sprig.cs` file: its apps, infra and the settings it takes. Sprig runs it where it's checked out (`main`), or runs any branch in a slot of worktrees of its own, with its own ports, data and env files, so several branches can be up at once without stepping on each other.
+Each repo describes itself in a `sprig.yaml` file: its apps, infra and the inputs it takes ([the format](docs/definition-format.md)). Sprig runs it where it's checked out (`main`), or runs any branch in a slot of worktrees of its own, with its own ports, data and env files, so several branches can be up at once without stepping on each other.
 
 - Apps start in order, each after what it depends on, with a log per app and a graph of the whole workspace.
 - Groups start a slice of the apps, and only the infra that slice uses.
@@ -34,8 +34,7 @@ To type `sprig` for this build in one terminal, ahead of any installed release, 
 
 | Project | Purpose |
 |---|---|
-| `Sprig.Sdk` | What `sprig.cs` definitions reference, published to nuget.org as `ArcticGizmo.Sprig.Sdk` with each release. |
-| `Sprig.Engine` | Evaluates definitions, resolves values, materialises workspaces and supervises runners. |
+| `Sprig.Engine` | Reads `sprig.yaml` definitions, resolves values, materialises workspaces and supervises runners. |
 | `Sprig.App` | The Avalonia desktop app. |
 | `Sprig.Cli` | The `sprig` command. |
 

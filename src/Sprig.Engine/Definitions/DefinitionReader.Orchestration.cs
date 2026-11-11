@@ -5,13 +5,11 @@ namespace Sprig.Engine.Definitions;
 
 public static partial class DefinitionReader
 {
-    internal static readonly string[] OrchestrationKeys = ["schema", "orchestration", "repos", "containers", "inputs", "groups", "links"];
-
     sealed class OrchestrationReader(FileReader file)
     {
         public OrchestrationModel? Read(YamlMappingNode root)
         {
-            var top = file.Fields(root, "an orchestration file", OrchestrationKeys)!;
+            var top = file.Fields(root, "an orchestration file", DefinitionKeys.Names(DefinitionKeys.Orchestration))!;
             var name = file.Text(top["orchestration"], "the orchestration's name");
             if (name is null) return file.Fail<OrchestrationModel>(root, "the orchestration needs a name: 'orchestration: <name>'");
 
@@ -20,7 +18,7 @@ public static partial class DefinitionReader
             foreach (var (repo, key, value) in file.Entries(top["repos"], "repos"))
             {
                 if (!file.CheckName(repo, key, "a repo")) continue;
-                if (file.Fields(value, $"repo '{repo}'", "path", "use") is not { } fields) continue;
+                if (file.Fields(value, $"repo '{repo}'", DefinitionKeys.Names(DefinitionKeys.RepoRef)) is not { } fields) continue;
                 var use = file.Text(fields["use"], $"repo '{repo}''s use");
                 var path = fields["path"] is { } p ? file.Text(p, $"repo '{repo}''s path")?.Replace('\\', '/') : null;
                 if ((use is null) == (path is null))
@@ -80,7 +78,7 @@ public static partial class DefinitionReader
                 if (file.Text(value, $"link '{label}'") is { } raw && scope.Template(raw, value) is { } template)
                     links.Add(new LinkModel(label, template, file.At(key)));
 
-            return new OrchestrationModel(CurrentSchema, name, "", file.At(root), containers, repos, bindings, groups,
+            return new OrchestrationModel(CurrentSchema, name, file.At(root), containers, repos, bindings, groups,
                 links.Count > 0 ? links : null);
         }
     }

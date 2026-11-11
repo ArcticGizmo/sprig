@@ -33,3 +33,13 @@ Each file says its `schema`. The reader upgrades an older file's YAML step by st
 6. **JSON Schema** for schema 1, checked against the reader by a test, ready to host.
 
 Each piece is a commit, with the tests passing.
+
+## As built (2026-11-11)
+
+- **The reader** turns references into the planner's existing templates (`${catalog-api.url}` → `{catalog-api.http.url}`, `${inputs.x}` → `{setting.x}`, `${repo.outputs.x}` → `{export.<path>.x}`), and expands a resource's own `values:` and a preset's where they're used, so the planner, ports and workspaces didn't change. Every value is checked where it's declared, used or not. A shared file is written for each app in its `read-by`, with the path made relative to that app, which is how the engine already merged one file written by several apps.
+- **Checked against the C#**: before the C# went, each testbed definition read from YAML gave exactly the model its `sprig.cs` emitted (bar line numbers, the order apps are listed in, and `Section__Key` against `Section:Key` in JSON files, which sprig writes the same).
+- **Values are read as written.** YamlDotNet's representation model keeps a scalar's text, so `on` and `1.10` stay text, and only a value starting with `{` needs quotes. Inside `{ }` or `[ ]`, YAML ends a plain value at a brace, so `${…}` there needs quotes too; the reader says so when that's what broke the file.
+- **One table of keys** (`DefinitionKeys`) is what the reader accepts, what the editor offers and explains, and what the JSON Schema is generated from (`DefinitionSchema`, published as `docs/schema/v1/repo.json` and `orchestration.json`, which a test keeps equal to what sprig generates).
+- **The editor's language service** (`DefinitionLanguage`) runs in the app. It works out where the caret is from the lines above it, so it completes half-typed text, and reads the rest of the file leniently, leaving out the lines that don't parse yet. From the repo it offers folders, compose files and their services, files an app would read, and the keys a target file already has (names only, never values, since a `.env` holds secrets).
+- **Trust is unchanged**: a definition is approved by its text before it's read, since it names commands sprig runs.
+- **Not done yet**: the schema's `$id` (`arcticgizmo.github.io/sprig/schema/v1/…`) isn't hosted, so drafts don't carry a `# yaml-language-server: $schema=` line until it is; no command rewrites an older file to a newer schema, as there is only schema 1; the app and CLI still say "settings" where the format says inputs.

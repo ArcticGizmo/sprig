@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace Sprig.Engine.Planning;
 
 /// <summary>
-/// What a node in a workspace is, for how it's drawn: the role its definition gives it (<c>.Is(Role.Queue)</c>), else
+/// What a node in a workspace is, for how it's drawn: the role its definition gives it (<c>role: queue</c>), else
 /// one worked out from its image, its name or its value. Names are matched word by word (<c>safety-db</c> is a
 /// database, <c>rabbitmq-url</c> a queue), so a word only counts whole or as the start of one (<c>postgresql</c>).
 /// </summary>

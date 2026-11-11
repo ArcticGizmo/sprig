@@ -8,100 +8,20 @@ public sealed partial class DefinitionLanguage
 {
     // ---- what each part of the format holds, and what its keys mean ----
 
-    static readonly Dictionary<string, (string Key, string Doc)[]> KeysByShape = new(StringComparer.Ordinal)
+    static readonly Dictionary<string, (string Key, string Doc)[]> KeysByShape = new Dictionary<string, DefinitionKeys.Key[]>(StringComparer.Ordinal)
     {
-        ["repo:"] =
-        [
-            ("schema", "Which version of the format the file is written in. Sprig reads every version it has shipped."),
-            ("repo", "The repo's name, as orchestrations and the app show it."),
-            ("copy-into-worktrees", "Files git doesn't have, such as a .env of secrets, copied from the repo's own checkout into each worktree."),
-            ("compose", "Compose files the repo already has, by path, and the services in each that sprig runs on ports of its own."),
-            ("containers", "Containers sprig runs for the repo, from an image or a preset."),
-            ("inputs", "Values the repo can be given: by the workspace, an orchestration, or another repo's output of the same name."),
-            ("apps", "The repo's apps and jobs, by name."),
-            ("files", "Every file sprig writes values into, by path from the repo's root."),
-            ("outputs", "Values the repo gives to other repos in an orchestration."),
-            ("groups", "Slices of the apps to start on their own; starting one starts what its apps wait for too."),
-        ],
-        ["orchestration:"] =
-        [
-            ("schema", "Which version of the format the file is written in. Sprig reads every version it has shipped."),
-            ("orchestration", "The orchestration's name, as the app shows it."),
-            ("repos", "The repos it runs together, by a name of your choosing: each with path: (its folder from this file) or use: (its ID on the Repos list)."),
-            ("containers", "Containers the orchestration runs for all its repos, from an image or a preset."),
-            ("inputs", "A value for every repo's input of that name: literal, or a reference to one of its containers or a repo's output."),
-            ("groups", "Slices to start on their own: repos, or repo/app for one app of a repo."),
-            ("links", "Pages for the whole workspace, by label: a url, or a reference to one."),
-        ],
-        ["apps/*"] =
-        [
-            ("run", "How it runs: dotnet (dotnet run), node (the package's dev script, with npm or pnpm) or command."),
-            ("path", "The app's folder, from the repo's root. Empty or . for the root."),
-            ("command", "The command, exactly as you'd type it. Required for run: command; for the others it replaces the usual one. No references: values reach the app through files."),
-            ("ports", "Ports sprig reserves for each workspace: any, a port, or a list such as [8000, 8110-8115]. The app learns its port from a file it reads."),
-            ("health", "A path, such as /health, on its http port that answers with success once it's ready."),
-            ("ready-log", "A regular expression; it's ready once a line of its output matches."),
-            ("restart", "never (the default), on-failure or always: start it again when it exits on its own."),
-            ("once", "true for a job: it runs to completion each time the apps start, and what waits for it waits for success."),
-            ("retry", "For a job: how many times to try again after a failure."),
-            ("wait-for", "Apps, jobs, containers and compose services to wait for before starting it."),
-            ("links", "Pages worth opening, by label: a path on its http port, or a full url."),
-            ("role", "web, api or worker, where sprig can't tell."),
-            ("values", "Values of its own, referenced as ${app.name}."),
-        ],
-        ["containers/*"] =
-        [
-            ("preset", "postgres, redis, rabbitmq or mailpit: fills in the image, ports, health and role. What's written beside it is added or wins."),
-            ("image", "The image to run, such as redis:7."),
-            ("ports", "Ports, each with the port inside the container: tcp: { container: 6379 }."),
-            ("env", "Environment variables set inside the container."),
-            ("volumes", "Volumes, by name, to the path inside the container. Each workspace has its own."),
-            ("health", "A command run inside the container that exits 0 once it's ready."),
-            ("role", "What it is (database, cache, queue…), for how sprig draws it."),
-            ("values", "Values of its own, referenced as ${container.name}."),
-        ],
-        ["compose/*"] =
-        [
-            ("services", "The services sprig runs, each on ports of its own per workspace. Services not named here are left out."),
-            ("set", "Any other value in the file, by a dotted path such as services.db.container_name."),
-        ],
-        ["compose/*/services/*"] =
-        [
-            ("ports", "Ports, each with the port inside the container: tcp: { container: 5432 }."),
-            ("health", "A command run inside the service that exits 0 once it's ready, replacing the file's own check."),
-            ("role", "What it is (database, cache, queue…), for how sprig draws it."),
-            ("values", "Values of its own, referenced as ${service.name}."),
-        ],
-        ["ports/*"] =
-        [
-            ("container", "The port inside the container."),
-            ("host", "Where on this machine it may be: any, a port, or a list such as [8000, 8110-8115]."),
-            ("scheme", "How its url starts, such as http. A port with no scheme has no url."),
-        ],
-        ["inputs/*"] =
-        [
-            ("type", "url, connection-string, host-port, secret or text (the default). A secret is kept out of everything sprig shows."),
-            ("default", "What to use when nothing else gives a value. Without one, sprig asks when a workspace is made."),
-            ("role", "What the value points at (queue, identity…), for how sprig draws it."),
-        ],
-        ["outputs/*"] =
-        [
-            ("type", "url, connection-string, host-port, secret or text (the default)."),
-            ("value", "The value, usually a reference such as ${catalog-api.url}."),
-        ],
-        ["files/*"] =
-        [
-            ("read-by", "The apps that read the file."),
-            ("values", "What sprig writes into it. In a JSON file, write them nested as the file has them."),
-            ("format", "Only when the name doesn't say: dotenv, json or launch-settings."),
-            ("profile", "For a launch-settings file: the profile's name, sprig by default."),
-        ],
-        ["repos/*"] =
-        [
-            ("path", "The repo's folder, from this file."),
-            ("use", "The repo's ID on the Repos list: its folder and definition come from there."),
-        ],
-    };
+        ["repo:"] = DefinitionKeys.Repo,
+        ["orchestration:"] = DefinitionKeys.Orchestration,
+        ["apps/*"] = DefinitionKeys.App,
+        ["containers/*"] = DefinitionKeys.Container,
+        ["compose/*"] = DefinitionKeys.ComposeFile,
+        ["compose/*/services/*"] = DefinitionKeys.ComposeService,
+        ["ports/*"] = DefinitionKeys.Port,
+        ["inputs/*"] = DefinitionKeys.Input,
+        ["outputs/*"] = DefinitionKeys.Output,
+        ["files/*"] = DefinitionKeys.File,
+        ["repos/*"] = DefinitionKeys.RepoRef,
+    }.ToDictionary(e => e.Key, e => e.Value.Select(k => (k.Name, k.Doc)).ToArray(), StringComparer.Ordinal);
 
     static string Shape(IReadOnlyList<string> path)
     {

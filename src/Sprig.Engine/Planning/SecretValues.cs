@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace Sprig.Engine.Planning;
 
 /// <summary>
-/// What of a plan's values sprig can show. A value is secret when a <c>Setting&lt;Secret&gt;</c> gives it (or any part
+/// What of a plan's values sprig can show. A value is secret when an input of <c>type: secret</c> gives it (or any part
 /// of it), or its name says so (<c>API_KEY</c>, <c>Auth__ClientSecret</c>). Anything else has its passwords hidden
 /// (<see cref="ValueMask"/>). Output that leaves the screen, such as <c>--json</c>, goes further and keeps only values
 /// that are plainly addresses, ports or flags (<see cref="Trimmed"/>), since a secret the definition doesn't declare

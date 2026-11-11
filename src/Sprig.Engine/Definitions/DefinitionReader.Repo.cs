@@ -15,14 +15,6 @@ public static partial class DefinitionReader
         ["secret"] = "secret",
     };
 
-    internal static readonly string[] RepoKeys =
-        ["schema", "repo", "copy-into-worktrees", "compose", "containers", "inputs", "apps", "files", "outputs", "groups"];
-
-    internal static readonly string[] AppKeys =
-        ["run", "path", "command", "ports", "health", "ready-log", "restart", "once", "retry", "wait-for", "links", "role", "values"];
-
-    internal static readonly string[] FileKeys = ["read-by", "values", "format", "profile"];
-
     sealed class RepoReader(FileReader file)
     {
         readonly Scope _scope = new(file) { Inputs = new HashSet<string>(StringComparer.Ordinal) };
@@ -42,7 +34,7 @@ public static partial class DefinitionReader
 
         public RepoModel? Read(YamlMappingNode root)
         {
-            var top = file.Fields(root, "a repo file", RepoKeys)!;
+            var top = file.Fields(root, "a repo file", DefinitionKeys.Names(DefinitionKeys.Repo))!;
             var name = file.Text(top["repo"], "the repo's name");
             if (name is null) return file.Fail<RepoModel>(root, "the repo needs a name: 'repo: <name>'");
 
@@ -63,7 +55,7 @@ public static partial class DefinitionReader
                 .Select(c => file.RelativePath(c.Node, "a file to copy into worktrees") is { Length: > 0 } path ? new WorktreeCopyModel(path, file.At(c.Node)) : null)
                 .OfType<WorktreeCopyModel>().ToArray();
 
-            return new RepoModel(CurrentSchema, name, "", file.At(root), containers, appModels, composeFiles, settings, exports,
+            return new RepoModel(CurrentSchema, name, file.At(root), containers, appModels, composeFiles, settings, exports,
                 groups.Length > 0 ? groups : null, copies.Length > 0 ? copies : null);
         }
 
@@ -77,7 +69,7 @@ public static partial class DefinitionReader
             foreach (var (path, key, value) in file.Entries(node, "compose"))
             {
                 if (file.RelativePath(key, "a compose file") is not { Length: > 0 } composeFile) continue;
-                if (file.Fields(value, $"compose file '{path}'", "services", "set") is not { } fields) continue;
+                if (file.Fields(value, $"compose file '{path}'", DefinitionKeys.Names(DefinitionKeys.ComposeFile)) is not { } fields) continue;
 
                 var services = new List<ComposeServiceModel>();
                 foreach (var (service, serviceKey, serviceValue) in file.Entries(fields["services"], $"{path}'s services"))
@@ -85,7 +77,7 @@ public static partial class DefinitionReader
                     if (!file.CheckName(service, serviceKey, "a compose service")) continue;
                     var resource = new Resource(service, "compose service", serviceKey);
                     if (!_scope.Declare(resource)) continue;
-                    if (file.Fields(serviceValue, $"service '{service}'", "ports", "health", "role", "values") is not { } s) continue;
+                    if (file.Fields(serviceValue, $"service '{service}'", DefinitionKeys.Names(DefinitionKeys.ComposeService)) is not { } s) continue;
                     var endpoints = ReadPorts(file, s["ports"], resource, inContainer: true);
                     ReadValues(file, s["values"], resource);
                     services.Add(new ComposeServiceModel(service, file.At(serviceKey), endpoints,
@@ -115,7 +107,7 @@ public static partial class DefinitionReader
             foreach (var (name, key, value) in file.Entries(node, "apps"))
             {
                 if (!file.CheckName(name, key, "an app")) continue;
-                if (file.Fields(value, $"app '{name}'", AppKeys) is not { } fields) continue;
+                if (file.Fields(value, $"app '{name}'", DefinitionKeys.Names(DefinitionKeys.App)) is not { } fields) continue;
                 var job = file.Flag(fields["once"], $"app '{name}''s once") == true;
                 var resource = new Resource(name, job ? "job" : "app", key);
                 if (!_scope.Declare(resource)) continue;
@@ -229,7 +221,7 @@ public static partial class DefinitionReader
                     file.Error(key, $"input '{name}' is declared twice");
                     continue;
                 }
-                if (file.Fields(value, $"input '{name}'", "type", "default", "role") is not { } fields) continue;
+                if (file.Fields(value, $"input '{name}'", DefinitionKeys.Names(DefinitionKeys.Input)) is not { } fields) continue;
                 var type = file.Choice(fields["type"], $"input '{name}''s type", [.. ValueTypes.Keys]) ?? "text";
                 var role = file.Choice(fields["role"], $"input '{name}''s role", Roles);
                 inputs.Add(() =>
@@ -249,7 +241,7 @@ public static partial class DefinitionReader
             foreach (var (name, key, value) in file.Entries(node, "outputs"))
             {
                 if (!file.CheckName(name, key, "an output")) continue;
-                if (file.Fields(value, $"output '{name}'", "type", "value") is not { } fields) continue;
+                if (file.Fields(value, $"output '{name}'", DefinitionKeys.Names(DefinitionKeys.Output)) is not { } fields) continue;
                 var type = file.Choice(fields["type"], $"output '{name}''s type", [.. ValueTypes.Keys]) ?? "text";
                 if (fields["value"] is not { } v || file.Value(v, $"output '{name}''s value") is not { } raw)
                 {
@@ -268,7 +260,7 @@ public static partial class DefinitionReader
             foreach (var (written, key, value) in file.Entries(node, "files"))
             {
                 if (file.RelativePath(key, "a file") is not { Length: > 0 } path) continue;
-                if (file.Fields(value, $"file '{written}'", FileKeys) is not { } fields) continue;
+                if (file.Fields(value, $"file '{written}'", DefinitionKeys.Names(DefinitionKeys.File)) is not { } fields) continue;
 
                 var format = file.Choice(fields["format"], $"file '{written}''s format", "dotenv", "json", "launch-settings") ?? FormatOf(path);
                 if (format is null)

@@ -1,0 +1,691 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://arcticgizmo.github.io/sprig/schema/v1/repo.json",
+  "title": "A repo's sprig.yaml.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "Which version of the format the file is written in. Sprig reads every version it has shipped."
+    },
+    "repo": {
+      "type": "string",
+      "description": "The repo's name, as orchestrations and the app show it."
+    },
+    "copy-into-worktrees": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Files git doesn't have, such as a .env of secrets, copied from the repo's own checkout into each worktree."
+    },
+    "compose": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "services": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "ports": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "const": "any"
+                          },
+                          {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 65535
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "container": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535,
+                            "description": "The port inside the container."
+                          },
+                          "host": {
+                            "anyOf": [
+                              {
+                                "const": "any"
+                              },
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 65535
+                                  },
+                                  {
+                                    "type": "string",
+                                    "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 65535
+                                    },
+                                    {
+                                      "type": "string",
+                                      "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                                    }
+                                  ]
+                                }
+                              }
+                            ],
+                            "description": "Where on this machine it may be: any, a port, or a list such as [8000, 8110-8115]."
+                          },
+                          "scheme": {
+                            "type": "string",
+                            "description": "How its url starts, such as http. A port with no scheme has no url."
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "description": "Ports, each with the port inside the container: tcp: { container: 5432 }."
+                },
+                "health": {
+                  "type": "string",
+                  "description": "A command run inside the service that exits 0 once it's ready, replacing the file's own check."
+                },
+                "role": {
+                  "enum": [
+                    "database",
+                    "cache",
+                    "queue",
+                    "search",
+                    "mail",
+                    "storage",
+                    "identity",
+                    "proxy"
+                  ],
+                  "description": "What it is (database, cache, queue…), for how sprig draws it."
+                },
+                "values": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "description": "Values of its own, referenced as ${service.name}."
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "The services sprig runs, each on ports of its own per workspace. Services not named here are left out."
+          },
+          "set": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Any other value in the file, by a dotted path such as services.db.container_name."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Compose files the repo already has, by path, and the services in each that sprig runs on ports of its own."
+    },
+    "containers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "enum": [
+              "postgres",
+              "redis",
+              "rabbitmq",
+              "mailpit"
+            ],
+            "description": "postgres, redis, rabbitmq or mailpit: fills in the image, ports, health and role. What's written beside it is added or wins."
+          },
+          "image": {
+            "type": "string",
+            "description": "The image to run, such as redis:7."
+          },
+          "ports": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "const": "any"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "container": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "The port inside the container."
+                    },
+                    "host": {
+                      "anyOf": [
+                        {
+                          "const": "any"
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 65535
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                              }
+                            ]
+                          }
+                        }
+                      ],
+                      "description": "Where on this machine it may be: any, a port, or a list such as [8000, 8110-8115]."
+                    },
+                    "scheme": {
+                      "type": "string",
+                      "description": "How its url starts, such as http. A port with no scheme has no url."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "Ports, each with the port inside the container: tcp: { container: 6379 }."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Environment variables set inside the container."
+          },
+          "volumes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Volumes, by name, to the path inside the container. Each workspace has its own."
+          },
+          "health": {
+            "type": "string",
+            "description": "A command run inside the container that exits 0 once it's ready."
+          },
+          "role": {
+            "enum": [
+              "database",
+              "cache",
+              "queue",
+              "search",
+              "mail",
+              "storage",
+              "identity",
+              "proxy"
+            ],
+            "description": "What it is (database, cache, queue…), for how sprig draws it."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Values of its own, referenced as ${container.name}."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Containers sprig runs for the repo, from an image or a preset."
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "text",
+              "url",
+              "connection-string",
+              "host-port",
+              "secret"
+            ],
+            "description": "url, connection-string, host-port, secret or text (the default). A secret is kept out of everything sprig shows."
+          },
+          "default": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "description": "What to use when nothing else gives a value. Without one, sprig asks when a workspace is made."
+          },
+          "role": {
+            "enum": [
+              "database",
+              "cache",
+              "queue",
+              "search",
+              "mail",
+              "storage",
+              "identity",
+              "proxy",
+              "web",
+              "api",
+              "worker"
+            ],
+            "description": "What the value points at (queue, identity…), for how sprig draws it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Values the repo can be given: by the workspace, an orchestration, or another repo's output of the same name."
+    },
+    "apps": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "enum": [
+              "dotnet",
+              "node",
+              "command"
+            ],
+            "description": "How it runs: dotnet (dotnet run), node (the package's dev script, with npm or pnpm) or command."
+          },
+          "path": {
+            "type": "string",
+            "description": "The app's folder, from the repo's root. Empty or . for the root."
+          },
+          "command": {
+            "type": "string",
+            "description": "The command, exactly as you'd type it. Required for run: command; for the others it replaces the usual one. No references: values reach the app through files."
+          },
+          "ports": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "const": "any"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "anyOf": [
+                        {
+                          "const": "any"
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 65535
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                              }
+                            ]
+                          }
+                        }
+                      ],
+                      "description": "Where on this machine it may be: any, a port, or a list such as [8000, 8110-8115]."
+                    },
+                    "scheme": {
+                      "type": "string",
+                      "description": "How its url starts, such as http. A port with no scheme has no url."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "Ports sprig reserves for each workspace: any, a port, or a list such as [8000, 8110-8115]. The app learns its port from a file it reads."
+          },
+          "health": {
+            "type": "string",
+            "pattern": "^/",
+            "description": "A path, such as /health, on its http port that answers with success once it's ready."
+          },
+          "ready-log": {
+            "type": "string",
+            "description": "A regular expression; it's ready once a line of its output matches."
+          },
+          "restart": {
+            "enum": [
+              "never",
+              "on-failure",
+              "always"
+            ],
+            "description": "never (the default), on-failure or always: start it again when it exits on its own."
+          },
+          "once": {
+            "type": "boolean",
+            "description": "true for a job: it runs to completion each time the apps start, and what waits for it waits for success."
+          },
+          "retry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "For a job: how many times to try again after a failure."
+          },
+          "wait-for": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Apps, jobs, containers and compose services to wait for before starting it."
+          },
+          "links": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Pages worth opening, by label: a path on its http port, or a full url."
+          },
+          "role": {
+            "enum": [
+              "web",
+              "api",
+              "worker"
+            ],
+            "description": "web, api or worker, where sprig can't tell."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Values of its own, referenced as ${app.name}."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "run"
+        ]
+      },
+      "description": "The repo's apps and jobs, by name."
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "read-by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The apps that read the file."
+          },
+          "values": {
+            "$ref": "#/definitions/fileValues",
+            "description": "What sprig writes into it. In a JSON file, write them nested as the file has them."
+          },
+          "format": {
+            "enum": [
+              "dotenv",
+              "json",
+              "launch-settings"
+            ],
+            "description": "Only when the name doesn't say: dotenv, json or launch-settings."
+          },
+          "profile": {
+            "type": "string",
+            "description": "For a launch-settings file: the profile's name, sprig by default."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "read-by",
+          "values"
+        ]
+      },
+      "description": "Every file sprig writes values into, by path from the repo's root."
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "text",
+              "url",
+              "connection-string",
+              "host-port",
+              "secret"
+            ],
+            "description": "url, connection-string, host-port, secret or text (the default)."
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "description": "The value, usually a reference such as ${catalog-api.url}."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      },
+      "description": "Values the repo gives to other repos in an orchestration."
+    },
+    "groups": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Slices of the apps to start on their own; starting one starts what its apps wait for too."
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repo"
+  ],
+  "definitions": {
+    "fileValues": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          {
+            "$ref": "#/definitions/fileValues"
+          }
+        ]
+      }
+    }
+  }
+}

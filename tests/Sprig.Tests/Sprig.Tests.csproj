@@ -19,7 +19,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Sprig.Sdk\Sprig.Sdk.csproj" />
     <ProjectReference Include="..\..\src\Sprig.Engine\Sprig.Engine.csproj" />
     <ProjectReference Include="..\..\src\Sprig.App\Sprig.App.csproj" />
     <ProjectReference Include="..\..\src\Sprig.Cli\Sprig.Cli.csproj" />

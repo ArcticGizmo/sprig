@@ -2,25 +2,19 @@ using System.Text.Json.Serialization;
 
 namespace Sprig.Model;
 
-// The data a definition emits. The engine reads this, never the C#, so its shape is the contract between them.
-
-/// <summary>Source-generated because file-based apps default to Native AOT settings, which switch reflection-based
-/// JSON off. The engine reads the model with the same context.</summary>
-[JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    AllowOutOfOrderMetadataProperties = true)]
-[JsonSerializable(typeof(DefinitionModel))]
-public sealed partial class ModelJsonContext : JsonSerializerContext;
+// What a definition describes, in the one shape the planner works from, whichever schema the file was written in:
+// DefinitionReader upgrades older files before it builds these.
 
 public sealed record SourceLocation(string File, int Line);
 
-/// <summary>Either a repo's <c>sprig.cs</c> or an orchestration. Both can own containers.</summary>
+/// <summary>Either a repo's <c>sprig.yaml</c> or an orchestration. Both can own containers.</summary>
+/// <param name="Schema">The schema the file was written in.</param>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(RepoModel), "repo")]
 [JsonDerivedType(typeof(OrchestrationModel), "orchestration")]
 public abstract record DefinitionModel(
     int Schema,
     string Name,
-    string SdkVersion,
     SourceLocation Location,
     IReadOnlyList<ContainerModel> Containers);
 
@@ -30,7 +24,6 @@ public abstract record DefinitionModel(
 public sealed record RepoModel(
     int Schema,
     string Name,
-    string SdkVersion,
     SourceLocation Location,
     IReadOnlyList<ContainerModel> Containers,
     IReadOnlyList<AppModel> Apps,
@@ -39,7 +32,7 @@ public sealed record RepoModel(
     IReadOnlyList<ExportModel> Exports,
     IReadOnlyList<RepoGroupModel>? Groups = null,
     IReadOnlyList<WorktreeCopyModel>? WorktreeCopies = null)
-    : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
+    : DefinitionModel(Schema, Name, Location, Containers);
 
 /// <param name="Path">Relative to the repo's folder, with forward slashes.</param>
 public sealed record WorktreeCopyModel(string Path, SourceLocation Location);
@@ -50,14 +43,13 @@ public sealed record RepoGroupModel(string Name, IReadOnlyList<string> Apps, Sou
 public sealed record OrchestrationModel(
     int Schema,
     string Name,
-    string SdkVersion,
     SourceLocation Location,
     IReadOnlyList<ContainerModel> Containers,
     IReadOnlyList<RepoRefModel> Repos,
     IReadOnlyList<BindingModel> Bindings,
     IReadOnlyList<GroupModel> Groups,
     IReadOnlyList<LinkModel>? Links = null)
-    : DefinitionModel(Schema, Name, SdkVersion, Location, Containers);
+    : DefinitionModel(Schema, Name, Location, Containers);
 
 /// <summary>A page worth opening, named for what it's for: where you'd actually start, rather than wherever the
 /// endpoint's root lands.</summary>

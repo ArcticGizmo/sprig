@@ -52,20 +52,37 @@ public sealed class WorkspaceGraphCanvas : Control
     {
         NodeHealth.Good => Good,
         NodeHealth.Busy => Busy,
+        NodeHealth.Waiting => Waiting,
         NodeHealth.Bad => Bad,
         NodeHealth.Off => Off,
         _ => Unknown,
     };
 
-    static readonly IBrush Good = new SolidColorBrush(Color.Parse("#4ADE80"));
-    static readonly IBrush Busy = new SolidColorBrush(Color.Parse("#FBBF24"));
-    static readonly IBrush Bad = new SolidColorBrush(Color.Parse("#F87171"));
-    static readonly IBrush Off = new SolidColorBrush(Color.Parse("#6B7280"));
+    // The app's own brushes, so a state is the same colour here as in the apps list and the logs.
+    static readonly IBrush Good = Themed("OkBrush", "#4ADE80");
+    static readonly IBrush Busy = Themed("AccentBrush", "#60A5FA");
+    static readonly IBrush Waiting = Themed("WaitBrush", "#A78BFA");
+    static readonly IBrush Bad = Themed("DangerBrush", "#F87171");
+    static readonly IBrush Off = new SolidColorBrush(Color.Parse("#6E6E82"));
     static readonly IBrush Unknown = new SolidColorBrush(Color.Parse("#9CA3AF"));
+
+    /// <param name="fallback">For when there's no app to ask, as in tests.</param>
+    static IBrush Themed(string key, string fallback)
+        => Application.Current?.TryGetResource(key, null, out var found) == true && found is IBrush brush
+            ? brush : new SolidColorBrush(Color.Parse(fallback));
 
     const double R = WorkspaceGraph.NodeRadius;
 
     readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(16) };
+
+    /// <summary>Redraws while a node is building or starting, so its ring goes round; stopped when none is.</summary>
+    readonly DispatcherTimer _spinner = new() { Interval = TimeSpan.FromMilliseconds(33) };
+
+    /// <summary>Where the spinning arcs start this frame, in radians, from the clock so every one turns together.</summary>
+    double _spin;
+
+    const double SpinPeriodMs = 1100;
+    const double SpinSweep = Math.PI * 0.6;
     double _scale = 1;
     Vector _offset;
     bool _userMoved;
@@ -87,6 +104,19 @@ public sealed class WorkspaceGraphCanvas : Control
             InvalidateVisual();
             if (graph.Layout.Settled && _dragKey is null) _tick.Stop();
         };
+        _spinner.Tick += (_, _) => InvalidateVisual();
+    }
+
+    /// <summary>A circle's arc, clockwise from <paramref name="start"/> through <paramref name="sweep"/> radians.</summary>
+    static StreamGeometry Arc(Point centre, double r, double start, double sweep)
+    {
+        Point On(double angle) => new(centre.X + r * Math.Cos(angle), centre.Y + r * Math.Sin(angle));
+        var geometry = new StreamGeometry();
+        using var path = geometry.Open();
+        path.BeginFigure(On(start), isFilled: false);
+        path.ArcTo(On(start + sweep), new Size(r, r), 0, sweep > Math.PI, SweepDirection.Clockwise);
+        path.EndFigure(false);
+        return geometry;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -113,6 +143,7 @@ public sealed class WorkspaceGraphCanvas : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _tick.Stop();
+        _spinner.Stop();
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -168,8 +199,16 @@ public sealed class WorkspaceGraphCanvas : Control
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Back, new Rect(Bounds.Size));
-        if (Graph is not { } graph) return;
+        if (Graph is not { } graph)
+        {
+            _spinner.Stop();
+            return;
+        }
         if (!_userMoved) Fit(graph);
+        _spin = Environment.TickCount64 % (long)SpinPeriodMs / SpinPeriodMs * Math.PI * 2;
+        var spinning = graph.Nodes.Any(n => n.Health == NodeHealth.Busy);
+        if (spinning && !_spinner.IsEnabled) _spinner.Start();
+        else if (!spinning && _spinner.IsEnabled) _spinner.Stop();
 
         // Focus is the node pointed at, else the one picked: its links are drawn in full and the rest fade, so a dense
         // workspace reads one node at a time.
@@ -353,8 +392,19 @@ public sealed class WorkspaceGraphCanvas : Control
         using var _ = context.PushOpacity(dimmed ? 0.3 : 1);
         var state = HealthBrush(node.Health);
         if (selected) context.DrawEllipse(null, new Pen(Accent, 2), at, r + 6, r + 6);
-        var ring = new Pen(state, hovered ? 3.2 : 2.6, node.Health == NodeHealth.Busy || node.Kind == TopologyKind.Outside ? new DashStyle([3, 2], 0) : null);
-        context.DrawEllipse(hovered ? NodeFillHover : NodeFill, ring, at, r, r);
+        var width = hovered ? 3.2 : 2.6;
+        if (node.Health == NodeHealth.Busy)
+        {
+            // Building or starting goes round, so it reads apart from waiting, which holds still.
+            context.DrawEllipse(hovered ? NodeFillHover : NodeFill, null, at, r, r);
+            using (context.PushOpacity(0.25)) context.DrawEllipse(null, new Pen(state, width), at, r, r);
+            context.DrawGeometry(null, new Pen(state, width, lineCap: PenLineCap.Round), Arc(at, r, _spin, SpinSweep));
+        }
+        else
+        {
+            var ring = new Pen(state, width, node.Health == NodeHealth.Waiting || node.Kind == TopologyKind.Outside ? new DashStyle([3, 2], 0) : null);
+            context.DrawEllipse(hovered ? NodeFillHover : NodeFill, ring, at, r, r);
+        }
         DrawIcon(context, node, at, r);
 
         var size = NameSize;

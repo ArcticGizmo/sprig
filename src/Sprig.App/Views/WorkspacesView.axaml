@@ -689,19 +689,23 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center" ClipToBounds="True">
                         <StackPanel Orientation="Horizontal" Spacing="5">
-                            <Ellipse Width="9" Height="9" Fill="#4ADE80" VerticalAlignment="Center" />
+                            <Ellipse Width="9" Height="9" Fill="{StaticResource OkBrush}" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="ready or healthy" VerticalAlignment="Center" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="5">
-                            <Ellipse Width="9" Height="9" Fill="#FBBF24" VerticalAlignment="Center" />
-                            <TextBlock Classes="cell via" Text="starting" VerticalAlignment="Center" />
+                            <Ellipse Width="9" Height="9" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Classes="cell via" Text="building or starting" VerticalAlignment="Center" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="5">
-                            <Ellipse Width="9" Height="9" Fill="#F87171" VerticalAlignment="Center" />
+                            <Ellipse Width="9" Height="9" Fill="{StaticResource WaitBrush}" VerticalAlignment="Center" />
+                            <TextBlock Classes="cell via" Text="waiting" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Ellipse Width="9" Height="9" Fill="{StaticResource DangerBrush}" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="failed" VerticalAlignment="Center" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="5">
-                            <Ellipse Width="9" Height="9" Fill="#6B7280" VerticalAlignment="Center" />
+                            <Ellipse Width="9" Height="9" Fill="#6E6E82" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="stopped" VerticalAlignment="Center" />
                         </StackPanel>
                         <TextBlock Classes="cell via" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"

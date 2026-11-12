@@ -8,8 +8,9 @@ using Sprig.Engine.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
-/// <summary>How a node is doing, as one colour: <see cref="Unknown"/> for what sprig doesn't run.</summary>
-public enum NodeHealth { Good, Busy, Bad, Off, Unknown }
+/// <summary>How a node is doing, as one colour: <see cref="Unknown"/> for what sprig doesn't run. <see cref="Waiting"/>
+/// is held back by what it depends on, apart from <see cref="Busy"/> building or starting, as the apps list shows them.</summary>
+public enum NodeHealth { Good, Busy, Waiting, Bad, Off, Unknown }
 
 /// <summary>One app, job, container or outside value in the workspace graph, with its live state.</summary>
 /// <param name="app">The app's row, whose state the host keeps current; null for anything else, or an app the
@@ -103,6 +104,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         IsAlive = app.IsAlive;
         Health = app.IsBad || app.State == "restarting" ? NodeHealth.Bad
             : app.IsGood ? NodeHealth.Good
+            : app.IsWaiting ? NodeHealth.Waiting
             : app.IsBusy ? NodeHealth.Busy
             : NodeHealth.Off;
     }

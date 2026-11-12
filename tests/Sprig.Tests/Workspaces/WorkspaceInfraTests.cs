@@ -1,6 +1,7 @@
 using Sprig.App.ViewModels;
 using Sprig.Engine.Compose;
 using Sprig.Engine.Git;
+using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Processes;
 using Sprig.Engine.Settings;
@@ -214,6 +215,23 @@ public sealed class WorkspaceInfraTests : IDisposable
         node.Apply(new ComposeService("svc-pg", state, health, exit), known: true);
 
         Assert.Equal((shown, colour, alive), (node.State, node.Health, node.IsAlive));
+    }
+
+    [Theory]
+    [InlineData(RunnerState.Building, NodeHealth.Busy)]
+    [InlineData(RunnerState.Starting, NodeHealth.Busy)]
+    [InlineData(RunnerState.Waiting, NodeHealth.Waiting)]
+    [InlineData(RunnerState.Ready, NodeHealth.Good)]
+    [InlineData(RunnerState.Failed, NodeHealth.Bad)]
+    public void An_app_node_takes_the_colour_its_row_in_the_apps_list_has(RunnerState state, NodeHealth colour)
+    {
+        var row = new WorkspaceAppRow("shop/api", "shop / api", "", "", "", job: false);
+        row.Apply(new RunnerStatus("storefront/1", "shop/api", state, null, null, null, "api.log", DateTimeOffset.UtcNow));
+        var node = new GraphNode(new TopologyNode("shop/api", "shop", "api", TopologyKind.App, ":8000"), row, null);
+
+        node.Refresh();
+
+        Assert.Equal(colour, node.Health);
     }
 
     [Fact]

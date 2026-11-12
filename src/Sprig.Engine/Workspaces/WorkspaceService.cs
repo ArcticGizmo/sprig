@@ -165,6 +165,35 @@ public sealed partial class WorkspaceService(
 
     public Plan? LastPlan(string orchestration, string workspace) => store.GetPlan(orchestration, workspace);
 
+    /// <summary>
+    /// What <paramref name="record"/> would run, for one that has never come up and so has no <see cref="LastPlan"/>:
+    /// <paramref name="loaded"/> planned as it stands, and the record with the repos it would run them from (a main
+    /// that has never come up has none yet). Ports aren't held until it comes up, so the plan has none to show and no
+    /// quick links, which would go to them; its values hold ports picked only so they can be filled in.
+    /// </summary>
+    public (Plan Plan, WorkspaceRecord Record) Preview(LoadedOrchestration loaded, WorkspaceRecord record)
+    {
+        var orchestration = loaded.Orchestration ?? throw new WorkspaceException($"{Path.GetFileName(loaded.OrchestrationPath)} isn't ready to run", loaded.Problems);
+        var problems = new List<PlanProblem>();
+        var plan = Planner.Build(new PlanInput(orchestration, loaded.Repos, record.Name, settings.Get(), new HashSet<int>(),
+            ComposeFiles: loaded.ComposeFiles(problems), Values: record.Values));
+        var repos = record.Repos.Count > 0 ? record.Repos
+            : orchestration.Repos.Where(r => loaded.Repos.ContainsKey(r.Path) && loaded.RepoDirs.ContainsKey(r.Path))
+                .Select(r => new WorkspaceRepo(r.Path, loaded.Repos[r.Path].Name, loaded.RepoDirs[r.Path], loaded.RepoDirs[r.Path], Worktree: false, BranchCreated: false))
+                .ToList();
+        static PlannedMapping[] Unheld(IEnumerable<PlannedMapping> mappings) => [.. mappings.Select(m => m with { Host = null })];
+        plan = plan with
+        {
+            Ports = [],
+            Links = null,
+            Apps = [.. plan.Apps.Select(a => a with { Links = null })],
+            Containers = [.. plan.Containers.Select(c => c with { Mappings = Unheld(c.Mappings), Ports = [.. Unheld(c.Mappings).Select(m => m.ToString())] })],
+            Compose = [.. plan.Compose.Select(c => c with { Services = [.. c.Services.Select(s => s with { Mappings = Unheld(s.Mappings) })] })],
+            Problems = [.. problems, .. plan.Problems],
+        };
+        return (plan, record with { Repos = repos });
+    }
+
     /// <summary>The worktree of each repo of the orchestration at <paramref name="orchestrationPath"/>'s workspace, keyed by repo path,
     /// when it has worktrees that are all still there.</summary>
     public IReadOnlyDictionary<string, string>? Worktrees(string orchestrationPath, string workspace)

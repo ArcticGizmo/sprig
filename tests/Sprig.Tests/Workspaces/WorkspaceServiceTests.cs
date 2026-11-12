@@ -714,6 +714,40 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_main_that_has_never_come_up_previews_its_apps_from_the_checkout_without_ports_or_writing_anything()
+    {
+        var dir = Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", repo => $$"""
+            schema: 1
+            repo: {{repo}}
+            containers:
+              pg: { preset: postgres }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+                links: { Home: / }
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  PORT: ${web.port}
+            """));
+
+        var (plan, record) = _workspaces.Preview(loaded, _workspaces.MainOf("storefront", loaded.OrchestrationPath));
+
+        Assert.Equal("shop-web/web", plan.Apps.Single().Key);
+        Assert.Equal(dir, record.Repos.Single().Dir);
+        Assert.False(record.Repos.Single().Worktree);
+        Assert.Empty(plan.Ports);
+        Assert.Null(plan.Apps.Single().Links);
+        Assert.All(plan.Containers.Single().Mappings, m => Assert.Null(m.Host));
+        Assert.Null(_workspaces.Get("storefront", "main"));
+        Assert.Null(_workspaces.LastPlan("storefront", "main"));
+        Assert.False(File.Exists(Path.Combine(dir, ".env.local")));
+    }
+
+    [Fact]
     public void Main_runs_in_place_on_the_checkouts_branch_and_refuses_values_a_branch_and_removal()
     {
         var dir = Repo("shop-web", ("index.html", "hi"));

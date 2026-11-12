@@ -230,7 +230,7 @@ public partial class WorkspacesViewModel
             _services.Ui.GraphForce = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(GraphLayered));
-            if (Selected?.Record is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
+            if (_planRecord is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
         }
     }
 
@@ -250,7 +250,7 @@ public partial class WorkspacesViewModel
             if (value == GraphGroupBy) return;
             _services.Ui.GraphGroupBy = value;
             NotifyGraphGrouping();
-            if (Selected?.Record is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
+            if (_planRecord is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
         }
     }
 
@@ -288,7 +288,7 @@ public partial class WorkspacesViewModel
     [RelayCommand]
     private void ResetGraphLayout()
     {
-        if (Selected?.Record is not { } record || _plan is null) return;
+        if (_planRecord is not { } record || _plan is null) return;
         _services.Ui.SetGraphPlaces(record.Orchestration, new Dictionary<string, (double, double)>());
         BuildGraph(record, _plan, same: true);
     }

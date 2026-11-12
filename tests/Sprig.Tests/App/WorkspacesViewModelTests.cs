@@ -403,6 +403,46 @@ public class WorkspacesViewModelTests
         services.Workspaces.Remove("shop-web", "1", new RemoveOptions());
     }
 
+    [Fact]
+    public async Task A_main_that_has_never_come_up_shows_the_apps_and_groups_its_definition_names()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        var repo = Path.Combine(store.Root, "work", "shop-web");
+        Directory.CreateDirectory(repo);
+        File.WriteAllText(Path.Combine(repo, ".gitignore"), ".env.local\n");
+        File.WriteAllText(Path.Combine(repo, "sprig.yaml"), """
+            schema: 1
+            repo: shop-web
+            apps:
+              web: { run: node, ports: { http: any } }
+              admin: { run: node, path: admin, ports: { http: any } }
+            files:
+              .env.local:
+                read-by: [web]
+                values:
+                  PORT: ${web.port}
+            groups:
+              front: [web]
+            """);
+        Commit(repo);
+        var entry = services.Authoring.AddRepo(repo, "shop-web");
+        services.Trust.Approve(entry.DefinitionFile, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(entry.DefinitionFile)));
+
+        var vm = new WorkspacesViewModel(services);
+        vm.Show("shop-web/main");
+        await WaitFor(() => vm.Apps.Count == 2);
+
+        Assert.Equal(["admin", "web"], vm.Apps.Select(a => a.App).Order());
+        Assert.All(vm.Apps, a => Assert.Equal("", a.Url));
+        Assert.Equal(Path.Combine(repo, "admin").Replace('\\', '/'), vm.Apps.Single(a => a.App == "admin").Folder);
+        Assert.Contains("Not up yet", vm.AppsMessage);
+        Assert.Equal([null, "front"], vm.StartChoices.Select(c => c.Group));
+        Assert.NotNull(vm.Graph);
+        Assert.Null(services.Workspaces.Get("shop-web", "main"));
+        Assert.False(File.Exists(Path.Combine(repo, ".env.local")));
+    }
+
     static async Task WaitFor(Func<bool> condition)
     {
         for (var i = 0; i < 600 && !condition(); i++) await Task.Delay(100);

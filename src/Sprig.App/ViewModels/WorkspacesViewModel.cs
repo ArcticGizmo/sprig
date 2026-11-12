@@ -463,10 +463,49 @@ public partial class WorkspacesViewModel : PageViewModel
     void ShowDetails(WorkspaceRecord? record)
     {
         var plan = record is null ? null : _services.Workspaces.LastPlan(record.Orchestration, record.Name);
+        ShowPlan(record, plan, preview: false);
+        if (record is { IsFree: false } && plan is null) _ = PreviewAsync(record);
+    }
+
+    /// <summary>Plan a workspace that has never come up, so its page shows what it would run rather than nothing. Loading
+    /// its definitions never asks for approval here: one that needs it says so, and bringing it up asks.</summary>
+    async Task PreviewAsync(WorkspaceRecord record)
+    {
+        string? why = null;
+        (Plan Plan, WorkspaceRecord Record)? preview = null;
+        try
+        {
+            preview = await AppServices.RunAsync(() =>
+            {
+                var loaded = _services.Loader.Load(record.OrchestrationPath, _services.Workspaces.Worktrees(record.OrchestrationPath, record.Name));
+                if (loaded.Untrusted.Count > 0) { why = "Its definitions need approving before sprig can say what it runs. Bringing it up asks."; return null; }
+                if (loaded.Orchestration is null || loaded.Problems.Count > 0)
+                {
+                    why = "It can't be planned: " + string.Join("; ", loaded.Problems.Take(2).Select(p => p.Message));
+                    return null;
+                }
+                return ((Plan, WorkspaceRecord)?)_services.Workspaces.Preview(loaded, record);
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or WorkspaceException)
+        {
+            why = $"Its definitions couldn't be read: {e.Message}";
+        }
+        // Another workspace picked meanwhile, or this one came up and has a plan of its own now.
+        if (Selected?.Record.Key != record.Key || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not null) return;
+        if (preview is { } shown) ShowPlan(shown.Record, shown.Plan, preview: true);
+        else if (why is not null) SayApps(why, bad: true);
+    }
+
+    /// <param name="preview">Planned for showing only (<see cref="WorkspaceService.Preview"/>), since it has never come up.</param>
+    void ShowPlan(WorkspaceRecord? record, Plan? plan, bool preview)
+    {
         _plan = plan;
+        _planRecord = plan is null ? null : record;
         FillStartChoices(record, plan);
         WorkspaceLinks = plan?.Links ?? [];
         AppsMessage = "";
+        if (preview) SayApps("Not up yet: these are the apps its definitions name. The ports in their values are only examples until it comes up and is given its own.", bad: false);
         if (record is null || plan is null)
         {
             Apps = [];
@@ -502,6 +541,9 @@ public partial class WorkspacesViewModel : PageViewModel
 
     IReadOnlyList<RunnerStatus>? _lastRunners;
     Plan? _plan;
+
+    /// <summary>The record <see cref="_plan"/> was shown for: a preview's carries the repos a main gets once it comes up.</summary>
+    WorkspaceRecord? _planRecord;
     bool _polling;
 
     /// <summary>The selected workspace's logs: every app interleaved, or one app's.</summary>

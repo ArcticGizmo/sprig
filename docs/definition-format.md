@@ -161,6 +161,8 @@ Every file sprig writes values into, by path. Each is declared once.
 | `format` | Only when the name doesn't say: `dotenv`, `json` or `launch-settings`. |
 | `profile` | For `launch-settings`: the profile's name, `sprig` by default. |
 
+A file several apps read can hold each one's own values, such as `Orders_Port: ${orders-api.port}` beside `Billing_Port: ${billing-api.port}`. A value that names one of the file's readers is that reader's own: the others don't wait for it or show as using it.
+
 | Format | Taken from the name | What sprig writes |
 |---|---|---|
 | `dotenv` | `.env`, `.env.*`, `*.env` | A marked block of `KEY=value` at the top and the bottom, so its values win whichever way the file is read. Everything else in the file is left alone. Flat keys only. |

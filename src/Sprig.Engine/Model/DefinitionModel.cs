@@ -107,7 +107,10 @@ public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, st
 /// process; a container's goes in its compose definition and has no file.</summary>
 /// <param name="Kind"><c>dotenv</c>, <c>appSettings</c> or <c>launchSettings</c>; null for a container's.</param>
 /// <param name="Profile">The launch profile's name, for <c>launchSettings</c>.</param>
-public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location, string? Kind = null, string? Profile = null);
+/// <param name="SharedWith">The other apps that read the same file. A value naming one of them is that app's own (its
+/// port, say), there because they share the file, so it doesn't make this app use that one or wait for it.</param>
+public sealed record EnvModel(string Key, string Value, string? File, SourceLocation Location, string? Kind = null, string? Profile = null,
+    IReadOnlyList<string>? SharedWith = null);
 
 /// <param name="Default">A template for the value to use when nothing else gives one; null to be asked for one.</param>
 /// <param name="Role">What the value points at (<c>queue</c>, <c>identity</c>...), for how sprig draws it; null to

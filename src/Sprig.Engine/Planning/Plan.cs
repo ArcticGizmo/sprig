@@ -85,7 +85,8 @@ public sealed record PlannedPort(string Owner, string Resource, string Endpoint,
 /// <param name="Value">The resolved value, or null when it couldn't be resolved (see the plan's problems).</param>
 /// <param name="Via">How the value was reached, outermost first, e.g. "setting catalog-url ← shop-services". For
 /// people; <paramref name="Sources"/> says the same as data.</param>
-/// <param name="Sources">The endpoints and settings the value reached.</param>
+/// <param name="Sources">The endpoints and settings the value reached, leaving out the apps it shares a file with: their
+/// values are in it for them (<see cref="Sprig.Model.EnvModel.SharedWith"/>).</param>
 public sealed record PlannedValue(string Template, string? Value, IReadOnlyList<string> Via, IReadOnlyList<ValueSource>? Sources = null);
 
 /// <param name="File">Relative to the app's path; null only for a container's value, which goes in its compose

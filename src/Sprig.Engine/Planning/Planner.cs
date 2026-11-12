@@ -228,8 +228,21 @@ public static class Planner
                 Problem($"'{app.Name}' has {string.Join(", ", carried.Select(c => $"{{{c}}}"))} in its Run command, which typing the command yourself wouldn't fill in. " +
                     "Give the command as you'd type it, and the value in a file the app reads, under files:", app.Location);
 
-            _referenced = [];
-            var env = app.Env.Select(e => new PlannedEnv(e.Key, Resolve(scope, e.Value, e.Location), e.File, e.Location, e.Kind, e.Profile)).ToArray();
+            var referenced = new HashSet<string>(StringComparer.Ordinal);
+            var env = app.Env.Select(e =>
+            {
+                _referenced = [];
+                var value = Resolve(scope, e.Value, e.Location);
+                if (e.SharedWith is { Count: > 0 } shared)
+                {
+                    var others = shared.Select(name => $"{scope.Owner}/{name}").ToHashSet(StringComparer.Ordinal);
+                    _referenced.ExceptWith(others);
+                    value = value with { Sources = value.Sources?.Where(s => s.Setting is not null || !others.Contains($"{s.Owner}/{s.Resource}")).ToArray() };
+                }
+                referenced.UnionWith(_referenced);
+                return new PlannedEnv(e.Key, value, e.File, e.Location, e.Kind, e.Profile);
+            }).ToArray();
+            _referenced = referenced;
             var run = app.Run is null ? null : Resolve(scope, app.Run, app.Location);
             var key = $"{scope.Owner}/{app.Name}";
             _referencedBy[key] = _referenced;

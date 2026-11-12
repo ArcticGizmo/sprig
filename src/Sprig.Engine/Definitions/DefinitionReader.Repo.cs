@@ -287,8 +287,10 @@ public static partial class DefinitionReader
                 foreach (var app in readers)
                 {
                     var relative = System.IO.Path.GetRelativePath(Root(app.Path), Root(path)).Replace('\\', '/');
+                    string[] others = [.. readers.Where(r => r != app).Select(r => r.Name).Distinct()];
                     foreach (var (k, template, at) in values)
-                        app.Env.Add(new EnvModel(k, template, relative, file.At(at), kind, kind == "launchSettings" ? profile ?? "sprig" : null));
+                        app.Env.Add(new EnvModel(k, template, relative, file.At(at), kind, kind == "launchSettings" ? profile ?? "sprig" : null,
+                            others.Length > 0 ? others : null));
                 }
             }
         }

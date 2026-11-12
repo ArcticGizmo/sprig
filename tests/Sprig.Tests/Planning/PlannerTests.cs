@@ -389,6 +389,49 @@ public class PlannerTests
     }
 
     [Fact]
+    public void Apps_that_share_a_file_don_t_use_each_other_through_its_values_but_still_get_them_all()
+    {
+        var f = new Fixture();
+        // One .env every backend app reads, holding each one's own port; the worker calls orders-api through a file of its own.
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              web: { run: node, path: web, ports: { http: any } }
+              orders-api: { run: dotnet, path: orders-api, ports: { http: any } }
+              billing-api: { run: dotnet, path: billing-api, ports: { http: any } }
+              sync-worker: { run: dotnet, path: sync-worker, ports: { http: any } }
+            files:
+              backend.env:
+                read-by: [orders-api, billing-api, sync-worker]
+                values:
+                  Orders_Port: ${orders-api.port}
+                  Billing_Port: ${billing-api.port}
+                  Sync_Port: ${sync-worker.port}
+                  WEB_URL: ${web.url}
+              sync-worker/.env:
+                read-by: [sync-worker]
+                values:
+                  ORDERS: ${orders-api.url}
+            """);
+
+        var plan = f.Plan();
+        var links = WorkspaceTopology.Of(plan).Links;
+
+        Assert.Empty(plan.Problems);
+        Assert.Empty(DependsOn(plan, "orders-api"));
+        Assert.Empty(DependsOn(plan, "billing-api"));
+        Assert.Equal(["r/orders-api"], DependsOn(plan, "sync-worker"));
+        Assert.DoesNotContain(links, l => l.From == "r/orders-api" && l.To == "r/billing-api");
+        Assert.DoesNotContain(links, l => l.From == "r/billing-api" && l.To == "r/orders-api");
+        Assert.Equal(["ORDERS"], links.Single(l => l.From == "r/sync-worker" && l.To == "r/orders-api").Values);
+        Assert.Equal(["WEB_URL"], links.Single(l => l.From == "r/billing-api" && l.To == "r/web").Values);
+        var billing = plan.Apps.Single(a => a.Name == "billing-api").Env;
+        Assert.Equal(["Orders_Port", "Billing_Port", "Sync_Port", "WEB_URL"], billing.Select(e => e.Key));
+        Assert.All(billing, e => Assert.NotNull(e.Value.Value));
+    }
+
+    [Fact]
     public void A_front_end_someone_waits_for_by_name_is_still_waited_for()
     {
         var f = new Fixture();

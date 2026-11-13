@@ -143,6 +143,23 @@
         <Style Selector="Ellipse.dot.bad">
             <Setter Property="Fill" Value="{StaticResource DangerBrush}" />
         </Style>
+        <!-- Building or starting goes round, as the graph's ring does; the class is only set while it is, so nothing turns
+             for a row that's settled. -->
+        <Style Selector="Arc.spin">
+            <Setter Property="RenderTransform">
+                <RotateTransform />
+            </Setter>
+            <Style.Animations>
+                <Animation Duration="0:0:1.1" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="RotateTransform.Angle" Value="0" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="RotateTransform.Angle" Value="360" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
         <!-- A job that finished went fine and needs nothing: still green, but faded so the eye passes over it. -->
         <Style Selector="Ellipse.dot.done">
             <Setter Property="Opacity" Value="0.4" />
@@ -359,7 +376,7 @@
             <Setter Property="FontSize" Value="13" />
         </Style>
         <!-- Too narrow for the log and the details side by side: the details sit over the log's right edge instead. -->
-        <Style Selector="Grid.narrow > Border#DetailsPanel">
+        <Style Selector="Grid.narrow > Border#DetailsPanel, Grid.narrow > Border#GraphDetailsPanel">
             <Setter Property="Grid.Column" Value="0" />
             <Setter Property="HorizontalAlignment" Value="Right" />
             <Setter Property="ZIndex" Value="10" />
@@ -394,6 +411,55 @@
                             Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6" />
                 </Grid>
             </Border>
+        </DataTemplate>
+        <!-- The picked app's details under its name, in the Apps tab's details panel and the graph's. -->
+        <DataTemplate x:Key="AppDetailsBody" x:DataType="vm:WorkspacesViewModel">
+            <StackPanel Spacing="14">
+                <StackPanel Spacing="6" IsVisible="{Binding Details.HasLinks, FallbackValue=False}">
+                    <TextBlock Classes="phead" Text="QUICK LINKS" />
+                    <ItemsControl ItemsSource="{Binding Details.Links}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="planning:PlannedLink">
+                                <TextBlock Classes="link" Text="{Binding Label, StringFormat='{}{0} ↗'}" Tag="{Binding Url}" FontSize="13"
+                                           Margin="0,2" ToolTip.Tip="{Binding Url}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="7" ColumnSpacing="10">
+                    <TextBlock Classes="cell via" Text="Url" />
+                    <TextBlock Grid.Column="1" Classes="cell mono link" FontSize="12" Text="{Binding Details.Url}" Tag="{Binding Details.Url}"
+                               ToolTip.Tip="Click to open · middle-click for a new window · right-click to copy" />
+                    <TextBlock Grid.Row="1" Classes="cell via" Text="Folder" />
+                    <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="cell mono" FontSize="12" Text="{Binding Details.Folder}" />
+                    <TextBlock Grid.Row="2" Classes="cell via" Text="Values in" />
+                    <SelectableTextBlock Grid.Row="2" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ValuesIn}" />
+                    <TextBlock Grid.Row="3" Classes="cell via" Text="Starts after" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.StartsAfter}" />
+                    <TextBlock Grid.Row="4" Classes="cell via" Text="Ready when" />
+                    <TextBlock Grid.Row="4" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ReadyWhen}" />
+                    <TextBlock Grid.Row="5" Classes="cell via" Text="Restarts" />
+                    <TextBlock Grid.Row="5" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding PickedApp.Restarts}" />
+                </Grid>
+                <Button Classes="small" Content="Open folder" Command="{Binding OpenFolderCommand}" HorizontalAlignment="Left" />
+                <StackPanel Spacing="4" IsVisible="{Binding Details.HasSettings, FallbackValue=False}">
+                    <TextBlock Classes="phead" Text="VALUES" />
+                    <ItemsControl ItemsSource="{Binding Details.Settings}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SettingRow">
+                                <Border Classes="row">
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Key}" Foreground="{StaticResource TitleBrush}" />
+                                        <SelectableTextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Value}" />
+                                        <TextBlock Classes="cell via" FontSize="11" Text="{Binding Via}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                <SelectableTextBlock Classes="cell via" FontSize="11" Text="{Binding Details.LogFile, StringFormat='Log file: {0}'}" />
+            </StackPanel>
         </DataTemplate>
         <StreamGeometry x:Key="PinIcon">M9 3h6l-1 6 4 4H6l4-4z M11.25 13h1.5v8h-1.5z</StreamGeometry>
     </UserControl.Resources>
@@ -738,32 +804,56 @@
                                 ToolTip.Tip="Forget where nodes were dragged, for every workspace of this orchestration" />
                     </StackPanel>
                 </Grid>
-                <Panel Grid.Row="1">
+                <Grid x:Name="GraphArea" Grid.Row="1" ColumnDefinitions="*,Auto">
+                <Panel>
                     <controls:WorkspaceGraphCanvas x:Name="GraphCanvas" Graph="{Binding Graph}"
                                                    AutomationProperties.AutomationId="workspace:graph" />
                     <TextBlock IsVisible="{Binding GraphEmpty}" Classes="cell via" HorizontalAlignment="Center" VerticalAlignment="Center"
                                Text="Nothing to draw until the workspace has been planned. Bring it up first." />
+                </Panel>
 
-                    <!-- The picked node: what it is, how it's doing, what it uses, and what to do with it -->
-                    <Border IsVisible="{Binding HasGraphPicked}" Classes="panel" Width="320" Margin="0,8,22,22"
-                            HorizontalAlignment="Right" VerticalAlignment="Top" Padding="16,14" BoxShadow="0 8 24 0 #66000000">
-                        <StackPanel Spacing="10" DataContext="{Binding GraphPicked}" x:DataType="vm:GraphNode">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource FgBrush}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Classes="cell via" Text="{Binding Owner}" />
-                                </StackPanel>
-                                <Button Grid.Column="1" Classes="flat" Content="✕" FontSize="12" Padding="6,2" VerticalAlignment="Top"
-                                        Foreground="{StaticResource MutedBrush}" ToolTip.Tip="Close"
-                                        Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).CloseGraphCardCommand}" />
+                <!-- Folded: a strip on the right edge that opens the details again, as on the Apps tab -->
+                <Button Grid.Column="1" Classes="flat" Width="30" VerticalAlignment="Stretch" VerticalContentAlignment="Stretch"
+                        IsVisible="{Binding !DetailsOpen}" Command="{Binding ToggleDetailsCommand}" ToolTip.Tip="Show the node's details">
+                    <Border Classes="rail" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0" Padding="0,12">
+                        <StackPanel Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Top">
+                            <TextBlock Text="‹" FontSize="16" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" />
+                            <LayoutTransformControl HorizontalAlignment="Center">
+                                <LayoutTransformControl.LayoutTransform>
+                                    <RotateTransform Angle="90" />
+                                </LayoutTransformControl.LayoutTransform>
+                                <TextBlock Text="DETAILS" FontSize="10.5" FontWeight="SemiBold" LetterSpacing="1.5"
+                                           Foreground="{StaticResource MutedBrush}" />
+                            </LayoutTransformControl>
+                        </StackPanel>
+                    </Border>
+                </Button>
+
+                <!-- The picked node: what it is, how it's doing, what it uses, what to do with it, and an app's details -->
+                <Border x:Name="GraphDetailsPanel" Grid.Column="1" Width="300" IsVisible="{Binding DetailsOpen}" Background="{StaticResource PanelBgBrush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,10,16,14" Spacing="14">
+                        <Button Classes="flat" Command="{Binding ToggleDetailsCommand}" ToolTip.Tip="Fold the details away">
+                            <Grid ColumnDefinitions="*,Auto" Background="Transparent">
+                                <TextBlock Classes="phead" Text="DETAILS" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="›" FontSize="16" Foreground="{StaticResource MutedBrush}" Margin="6,0" />
                             </Grid>
+                        </Button>
+                        <TextBlock Classes="cell via" Text="Pick a node in the graph to see its details." TextWrapping="Wrap"
+                                   IsVisible="{Binding !HasGraphPicked}" />
+                        <StackPanel Spacing="10" DataContext="{Binding GraphPicked}" x:DataType="vm:GraphNode"
+                                    IsVisible="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).HasGraphPicked, FallbackValue=False}">
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="cell via" FontSize="11" Text="{Binding Owner}" />
+                                <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="7">
                                 <Ellipse Width="9" Height="9" VerticalAlignment="Center" Fill="{Binding HealthBrush}" />
-                                <TextBlock Classes="cell" Text="{Binding StateLine}" />
+                                <TextBlock Classes="cell" Text="{Binding StateLine}" TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock Classes="cell via" Text="{Binding KindLabel}" />
-                            <SelectableTextBlock Classes="cell mono" FontSize="12" Text="{Binding Url}" IsVisible="{Binding HasUrl}" />
+                            <TextBlock Classes="cell via" Text="{Binding KindLabel}" TextWrapping="Wrap" />
                             <StackPanel Spacing="3" IsVisible="{Binding HasUses}">
                                 <TextBlock Classes="phead" Text="USES" />
                                 <ItemsControl ItemsSource="{Binding Uses}">
@@ -797,8 +887,11 @@
                                         Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).GraphOpenCommand}" CommandParameter="{Binding}" />
                             </WrapPanel>
                         </StackPanel>
-                    </Border>
-                </Panel>
+                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource AppDetailsBody}" IsVisible="{Binding GraphShowsAppDetails}" />
+                    </StackPanel>
+                    </ScrollViewer>
+                </Border>
+                </Grid>
             </Grid>
 
             <!-- Infra, worktrees and files: the page's width up to 1200, centred -->
@@ -958,7 +1051,14 @@
                                                 <Ellipse Classes="dot" Width="8" Height="8" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                          Classes.up="{Binding Row.IsGood}" Classes.busy="{Binding Row.IsBusy}"
                                                          Classes.waiting="{Binding Row.IsWaiting}"
-                                                         Classes.bad="{Binding Row.IsProblem}" Classes.done="{Binding Row.IsFinished}" />
+                                                         Classes.bad="{Binding Row.IsProblem}" Classes.done="{Binding Row.IsFinished}"
+                                                         IsVisible="{Binding !Row.IsSpinning}" />
+                                                <Panel Width="10" Height="10" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       IsVisible="{Binding Row.IsSpinning}">
+                                                    <Ellipse Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8" Opacity="0.3" />
+                                                    <Arc Classes.spin="{Binding Row.IsSpinning}" Stroke="{StaticResource AccentBrush}" StrokeThickness="1.8"
+                                                         StrokeLineCap="Round" StartAngle="0" SweepAngle="110" />
+                                                </Panel>
                                                 <StackPanel Grid.Column="1">
                                                     <TextBlock Classes="appname" Text="{Binding Row.App}" FontSize="13"
                                                                Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
@@ -1124,50 +1224,7 @@
                                                Classes.bad="{Binding PickedApp.IsProblem, FallbackValue=False}"
                                                Classes.done="{Binding PickedApp.IsFinished, FallbackValue=False}" />
                                 </StackPanel>
-                                <StackPanel Spacing="6" IsVisible="{Binding Details.HasLinks, FallbackValue=False}">
-                                    <TextBlock Classes="phead" Text="QUICK LINKS" />
-                                    <ItemsControl ItemsSource="{Binding Details.Links}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="planning:PlannedLink">
-                                                <TextBlock Classes="link" Text="{Binding Label, StringFormat='{}{0} ↗'}" Tag="{Binding Url}" FontSize="13"
-                                                           Margin="0,2" ToolTip.Tip="{Binding Url}" />
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                                <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="7" ColumnSpacing="10">
-                                    <TextBlock Classes="cell via" Text="Url" />
-                                    <TextBlock Grid.Column="1" Classes="cell mono link" FontSize="12" Text="{Binding Details.Url}" Tag="{Binding Details.Url}"
-                                               ToolTip.Tip="Click to open · middle-click for a new window · right-click to copy" />
-                                    <TextBlock Grid.Row="1" Classes="cell via" Text="Folder" />
-                                    <SelectableTextBlock Grid.Row="1" Grid.Column="1" Classes="cell mono" FontSize="12" Text="{Binding Details.Folder}" />
-                                    <TextBlock Grid.Row="2" Classes="cell via" Text="Values in" />
-                                    <SelectableTextBlock Grid.Row="2" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ValuesIn}" />
-                                    <TextBlock Grid.Row="3" Classes="cell via" Text="Starts after" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.StartsAfter}" />
-                                    <TextBlock Grid.Row="4" Classes="cell via" Text="Ready when" />
-                                    <TextBlock Grid.Row="4" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ReadyWhen}" />
-                                    <TextBlock Grid.Row="5" Classes="cell via" Text="Restarts" />
-                                    <TextBlock Grid.Row="5" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding PickedApp.Restarts}" />
-                                </Grid>
-                                <Button Classes="small" Content="Open folder" Command="{Binding OpenFolderCommand}" HorizontalAlignment="Left" />
-                                <StackPanel Spacing="4" IsVisible="{Binding Details.HasSettings, FallbackValue=False}">
-                                    <TextBlock Classes="phead" Text="VALUES" />
-                                    <ItemsControl ItemsSource="{Binding Details.Settings}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:SettingRow">
-                                                <Border Classes="row">
-                                                    <StackPanel Spacing="1">
-                                                        <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Key}" Foreground="{StaticResource TitleBrush}" />
-                                                        <SelectableTextBlock Classes="cell mono" FontSize="11.5" Text="{Binding Value}" />
-                                                        <TextBlock Classes="cell via" FontSize="11" Text="{Binding Via}" />
-                                                    </StackPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                                <SelectableTextBlock Classes="cell via" FontSize="11" Text="{Binding Details.LogFile, StringFormat='Log file: {0}'}" />
+                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource AppDetailsBody}" />
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>

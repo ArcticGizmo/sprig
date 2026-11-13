@@ -126,6 +126,37 @@ public class WorkspacesViewModelTests
     }
 
     [Fact]
+    public void An_app_picked_in_the_graph_shows_its_details_there_and_on_the_apps_tab_and_infra_shows_only_its_own()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        var workspaces = new WorkspaceStore(services.Paths);
+        var now = DateTimeOffset.UtcNow;
+        var repo = new WorkspaceRepo("../shop-services", "shop-services", @"C:\tb\shop-services", @"C:\tb\storefront--feat-x\shop-services", true, true);
+        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "feat-x", "feat-x", "stable", [repo], [], [],
+            WorkspaceState.Up, now, now, @"C:\tb\storefront--feat-x"));
+        var at = new SourceLocation("x", 1);
+        PlannedApp App(string name) => new("shop-services", "../shop-services", name, "dotnet", $"src/{name}",
+            [new PlannedEnv("Urls", new PlannedValue("{x}", "http://localhost:8000", []), "Properties/launchSettings.json", at, "launchSettings", "sprig")], null, []);
+        workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", "main", [], [App("catalog-api"), App("orders-api")], [],
+            [new PlannedCompose("shop-services", "../shop-services", "docker-compose.yml", [], [new PlannedComposeService("postgres", [])])], [], []));
+
+        var vm = new WorkspacesViewModel(services);
+        vm.Show("storefront/feat-x");
+        Assert.False(vm.HasGraphPicked);
+
+        vm.Graph!.Select("shop-services/orders-api");
+        Assert.Equal("orders-api", vm.PickedApp!.App);
+        Assert.Equal("orders-api", vm.Details!.Name);
+        Assert.True(vm.GraphShowsAppDetails);
+
+        vm.Graph.Select("shop-services/postgres");
+        Assert.Equal("postgres", vm.GraphPicked!.Name);
+        Assert.False(vm.GraphShowsAppDetails);
+        Assert.Equal("orders-api", vm.PickedApp!.App);
+    }
+
+    [Fact]
     [Trait("Category", "Integration")]
     public async Task Run_it_asks_to_approve_the_definitions_then_brings_a_worktree_workspace_up()
     {

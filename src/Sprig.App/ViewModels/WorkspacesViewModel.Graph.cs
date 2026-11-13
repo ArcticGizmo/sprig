@@ -26,12 +26,15 @@ public partial class WorkspacesViewModel
     private WorkspaceGraph? _graph;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasGraphPicked))]
+    [NotifyPropertyChangedFor(nameof(HasGraphPicked), nameof(GraphShowsAppDetails))]
     private GraphNode? _graphPicked;
 
     public bool HasGraph => Graph is { Nodes.Count: > 0 };
     public bool GraphEmpty => !HasGraph;
     public bool HasGraphPicked => GraphPicked is not null;
+
+    /// <summary>The picked node is an app, so the graph's details panel goes on with what the Apps tab's shows for it.</summary>
+    public bool GraphShowsAppDetails => GraphPicked?.App is { } row && row == PickedApp && Details is not null;
     public bool OnGraphTab => Tab == WorkspaceTab.Graph;
 
     IReadOnlyList<InfraTarget> _targets = [];
@@ -108,7 +111,13 @@ public partial class WorkspacesViewModel
     /// <summary>The containers' logs, for the log pane.</summary>
     IReadOnlyList<(string App, ILogSource Source)> InfraLogSources() => _followers.Select(f => (f.Key, (ILogSource)f.Value)).ToArray();
 
-    void OnGraphPicked(GraphNode? node) => GraphPicked = node;
+    /// <summary>An app picked in the graph is the one whose details show, there and on the Apps tab.</summary>
+    void OnGraphPicked(GraphNode? node)
+    {
+        GraphPicked = node;
+        if (node?.App is { } row && Apps.Contains(row)) PickedApp = row;
+        OnPropertyChanged(nameof(GraphShowsAppDetails));
+    }
 
     void OnGraphLog(GraphNode node) => OpenNodeLog(node);
 
@@ -292,9 +301,6 @@ public partial class WorkspacesViewModel
         _services.Ui.SetGraphPlaces(record.Orchestration, new Dictionary<string, (double, double)>());
         BuildGraph(record, _plan, same: true);
     }
-
-    [RelayCommand]
-    private void CloseGraphCard() => Graph?.Select(null);
 
     [RelayCommand]
     private void GraphLog(GraphNode node) => OpenNodeLog(node);

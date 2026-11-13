@@ -36,6 +36,8 @@ public partial class WorkspacesView : UserControl
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
         LogList.TemplateApplied += (_, _) => HookLogScroller();
         LogArea.SizeChanged += (_, e) => SetNarrow(e.NewSize.Width < 760);
+        // The graph has the page's width, so it's measured on its own; its details go over it when it's too narrow.
+        GraphArea.SizeChanged += (_, e) => GraphArea.Classes.Set("narrow", e.NewSize.Width < 760);
 
         _copyLines.Click += (_, _) => CopySelectedLines();
         _allAt.Click += (_, _) =>

@@ -72,7 +72,7 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
     public bool IsJob => job;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StateLine), nameof(IsReady), nameof(IsStoppedOrDone), nameof(IsFinished))]
+    [NotifyPropertyChangedFor(nameof(StateLine), nameof(IsReady), nameof(IsStoppedOrDone), nameof(IsFinished), nameof(IsSpinning))]
     private string _state = "not running";
 
     [ObservableProperty]
@@ -82,13 +82,21 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
     [ObservableProperty] private bool _isGood;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsProblem), nameof(IsStoppedOrDone))]
+    [NotifyPropertyChangedFor(nameof(IsProblem), nameof(IsStoppedOrDone), nameof(IsSpinning))]
     private bool _isBad;
 
-    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSpinning))]
+    private bool _isBusy;
 
     /// <summary>Held back until what it depends on is ready, rather than doing anything itself.</summary>
-    [ObservableProperty] private bool _isWaiting;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSpinning))]
+    private bool _isWaiting;
+
+    /// <summary>Building, starting or stopping: its dot goes round, as its node does in the graph, while one waiting
+    /// holds still.</summary>
+    public bool IsSpinning => IsBusy && !IsWaiting && !IsProblem;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStoppedOrDone))]
@@ -132,7 +140,7 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
             null => ("not running", ""),
             RunnerState.Building => ("building", ""),
             RunnerState.Waiting => ("waiting", "for what it depends on"),
-            RunnerState.Starting => ("starting", ""),
+            RunnerState.Starting => ("starting", status.Error ?? ""),
             RunnerState.Ready => ("ready", restarts ?? ""),
             RunnerState.Running => ("running", ""),
             RunnerState.Completed => ("finished", restarts is null ? "" : $"after {restarts}"),

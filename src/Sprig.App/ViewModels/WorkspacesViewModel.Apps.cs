@@ -103,7 +103,9 @@ public partial class WorkspacesViewModel
     /// <summary>The app whose details show; the last one picked, even while every app's log is showing.</summary>
     [ObservableProperty] private WorkspaceAppRow? _pickedApp;
 
-    [ObservableProperty] private AppDetails? _details;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GraphShowsAppDetails))]
+    private AppDetails? _details;
     [ObservableProperty] private bool _detailsOpen = true;
 
     /// <summary>Whether All apps streams only the pinned apps rather than the ones the list shows.</summary>

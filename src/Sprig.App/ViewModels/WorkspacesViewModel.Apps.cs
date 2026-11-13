@@ -115,7 +115,7 @@ public partial class WorkspacesViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(OnAppsTab), nameof(OnInfraTab), nameof(OnGraphTab))]
-    private WorkspaceTab _tab = WorkspaceTab.Apps;
+    private WorkspaceTab _tab = WorkspaceTab.Graph;
 
     [ObservableProperty] private string _listCaption = "";
     [ObservableProperty] private string _foldLabel = "Collapse repos";
@@ -158,7 +158,8 @@ public partial class WorkspacesViewModel
             _closedRepos.Clear();
             AppFilter = "";
             StateFilter = AppStateFilter.All;
-            Tab = WorkspaceTab.Apps;
+            // The graph reads quickest for most things; a log is a click on a node away.
+            Tab = WorkspaceTab.Graph;
             Worktrees = [];
             WrittenFiles = [];
         }
@@ -168,6 +169,8 @@ public partial class WorkspacesViewModel
         if (!same || PinnedCount == 0) StreamPinned = false;
 
         BuildGraph(record, plan, same);
+        // Opening on the graph, its containers' states are wanted now rather than at the next tick.
+        if (!same && OnGraphTab) _ = PollInfraAsync(now: true);
         Logs.SetApps(record is null ? [] : Apps.Select(a => (a.Key, HostProtocol.LogFile(_services.Paths, record.Key, a.Key))).ToArray(), InfraLogSources());
         Logs.SetStream(InStream);
         var picked = PickedApp?.Key;

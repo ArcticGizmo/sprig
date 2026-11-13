@@ -731,15 +731,15 @@
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TrustPanel}" IsVisible="{Binding TrustOnPage}" />
 
                     <StackPanel Orientation="Horizontal" Spacing="18">
-                        <Button Classes="flat" Command="{Binding ShowAppsTabCommand}" HorizontalAlignment="Left">
-                            <Border Classes="tab" Classes.on="{Binding OnAppsTab}">
-                                <TextBlock Classes="tablabel" Text="Apps and logs" FontSize="13" FontWeight="SemiBold" />
-                            </Border>
-                        </Button>
                         <Button Classes="flat" Command="{Binding ShowGraphTabCommand}" HorizontalAlignment="Left"
                                 AutomationProperties.AutomationId="workspace:graph-tab">
                             <Border Classes="tab" Classes.on="{Binding OnGraphTab}">
                                 <TextBlock Classes="tablabel" Text="Graph" FontSize="13" FontWeight="SemiBold" />
+                            </Border>
+                        </Button>
+                        <Button Classes="flat" Command="{Binding ShowAppsTabCommand}" HorizontalAlignment="Left">
+                            <Border Classes="tab" Classes.on="{Binding OnAppsTab}">
+                                <TextBlock Classes="tablabel" Text="Apps and logs" FontSize="13" FontWeight="SemiBold" />
                             </Border>
                         </Button>
                         <Button Classes="flat" Command="{Binding ShowInfraTabCommand}" HorizontalAlignment="Left">

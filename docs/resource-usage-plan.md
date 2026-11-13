@@ -22,6 +22,16 @@ Branch: `resource-usage`. Written and built 2026-11-13. Not yet tried by hand. A
 - **The figures are drawn over each graph node** (user: "can we make the numbers appear above the nodes?"). CPU over memory, stacked, since on one line they're wider than the gap between nodes in a row. Like the names they never shrink below readable, so zoomed out, where two lines would reach a box's title, only memory shows: with many workspaces up, that's usually what runs out. To make room, `LayoutBox.Above` went from 52 to 92 and the layered layout's `RowGap` from 160 to 180, keeping a box one row below another clear of it. The sample renders a zoomed-in graph (`-graph-zoomed`).
 - **Tests**: a real host reports usage for a running app (processes counted through the job) and none once stopped; docker parsing, joining, units and normalising; the overview's sum and summary. 504 pass. The sample renders with made-up figures.
 
+## The Usage page (2026-11-13)
+
+Asked for the same day: "some kind of resource usage panel where you can order and see your overall worktree utilisation". The user chose its own page in the nav over a tab on the overview, and CPU and memory only, no disk.
+
+- **Nav**: Usage, between Workspaces and Orchestrations, "CPU and memory", a bar-chart icon.
+- **Machine**: memory and CPU bars, each with what sprig runs drawn inside what's in use and everything else after it, and a line in words ("23.7 GB of 31.8 GB in use · 10 GB of it what sprig runs"). From `MachineUsage` in the engine: `GlobalMemoryStatusEx` and `GetSystemTimes`, CPU between samples.
+- **Table**: every workspace using anything, with CPU, memory (and a bar against the heaviest), apps and infra running, and Open ›. A heading sorts by it, again the other way; memory, heaviest first, to begin with. A row opens out into its apps and containers, sorted the same way. Rows are moved, not rebuilt, each second, so an open row stays open. Workspaces that are up with nothing running are counted under the table.
+- **Polling**: the page asks for nothing new: the host poll brings apps, `InfraUsage` (now also polled from this page) brings containers, and the machine is sampled each second while the page shows.
+- **Tests**: order and totals, sorting both ways, an open row surviving a refresh, the machine's bars, and the machine sampler itself. The sample renders `-usage` and `-usage-open`.
+
 ## Not done
 
 - No history or sparkline: only the latest figure.

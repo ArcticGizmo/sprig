@@ -74,6 +74,10 @@ internal static partial class HeadlessRenderer
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(400));
+            // A workspace opens on its graph.
+            Save(window, Sibling(outFile, "opened"));
+            vm.Workspaces.ShowAppsTabCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(200));
             Wait(vm.Workspaces.Logs.PollAsync());
             Pump(TimeSpan.FromMilliseconds(600));
             Save(window, Sibling(outFile, "all"));
@@ -354,6 +358,30 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "overview-ticked"));
             vm.Workspaces.ClearCheckedCommand.Execute(null);
+
+            // The Usage page, with two more workspaces running something so there's an order to see.
+            const long mb = 1024 * 1024;
+            services.HostStatus.Hold([
+                .. runners,
+                new RunnerStatus("storefront/feat-b", "shop-services/orders-api", RunnerState.Ready, 2001, 8301, null, "o.log", DateTimeOffset.Now,
+                    Usage: new ResourceUsage(6.2, 980 * mb, 3)),
+                new RunnerStatus("storefront/feat-b", "shop-web/web", RunnerState.Ready, 2002, 8370, null, "w.log", DateTimeOffset.Now,
+                    Usage: new ResourceUsage(0.4, 1240 * mb, 6)),
+                new RunnerStatus("services/local", "core/api", RunnerState.Ready, 2003, 9000, null, "c.log", DateTimeOffset.Now,
+                    Usage: new ResourceUsage(1.1, 310 * mb, 1)),
+            ]);
+            vm.Usage.HoldMachine(new MachineSnapshot(63.5, 24_300 * mb, 32_600 * mb));
+            vm.NavigateCommand.Execute(vm.Usage);
+            Wait(vm.Usage.PollAsync(usage: false));
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "usage"));
+            vm.Usage.Rows.First().IsExpanded = true;
+            vm.Usage.SortCommand.Execute(UsageSort.Cpu);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "usage-open"));
+            Console.WriteLine($"usage rows: {string.Join(", ", vm.Usage.Rows.Select(r => $"{r.Name} {r.Cpu} {r.Memory}"))}");
+            services.HostStatus.Hold(runners);
+            vm.NavigateCommand.Execute(vm.Workspaces);
 
             // Main, run as the checkout is, with the user's own infra: one of it isn't listening.
             vm.Workspaces.Show("storefront/main");

@@ -7,10 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **A workspace opens on its graph** — Graph is the first tab now, ahead of Apps and logs, which is a click on a node away.
+
 ### Added
 - **CPU and memory for every app and container** — under each app's port, in its details, on the Infra tab and over every node in the graph. An app counts every process it starts, its build included.
 - **A CPU · MEMORY column on the Workspaces overview** — each workspace's apps and containers together, so the worktree hogging the machine owns up. The summary adds up the lot.
 - **CPU and Memory in `sprig ps`** — with a total for all apps underneath.
+- **A Usage page** — every workspace using anything, sortable by CPU, memory, apps or infra, each opening out into its apps and containers. Above it, the machine's memory and CPU, with sprig's share drawn inside what's in use, so you can tell whether it's your worktrees or the browser.
 
 ---
 

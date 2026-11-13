@@ -9,6 +9,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.2] - 2026-11-13
+
+Start means start, stop means stop, and you can finally see who's eating the RAM.
+
+### Added
+- **CPU and memory for every app and container** — builds and child processes included.
+- **Usage over each graph node** — CPU over memory; memory alone when zoomed out.
+- **A CPU · MEMORY column on the overview** — the hungry worktree owns up.
+- **A Usage page** — workspaces sorted by appetite, against the whole machine.
+- **CPU and Memory in `sprig ps`.**
+
+### Changed
+- **Making a workspace starts nothing** — infra waits until something needs it.
+- **Start brings its infra** — whatever you start, plus what it depends on.
+- **Stop all stops the infra too** — containers and data kept.
+- **Bring up, Take down and Stop apps are gone** — Start ▾, Restart, Stop all.
+- **Make ready again** — under ⋯; Start does it when a definition changes.
+- **State is what's running** — running, stopped, failed or free, everywhere.
+- **No window for start and stop** — a status line, with Cancel, instead.
+- **Containers start one at a time from the graph.**
+- **Random ports stay put through stop and start** — fresh only per branch.
+- **`sprig start` and `sprig stop` take infra by name.**
+- **`sprig up --no-apps` is now `--no-start`** — and means it.
+- **`sprig up --run`'s Ctrl+C stops the infra too.**
+- **A workspace opens on its graph.**
+
+---
+
 ## [v0.9.1] - 2026-11-13
 
 Main stops redecorating. It runs your checkout as it is, with your own infra, and writes nothing.

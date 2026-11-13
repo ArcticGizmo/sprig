@@ -1,0 +1,212 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             x:Class="Sprig.App.Views.UsageView"
+             x:DataType="vm:UsageViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+        </Style>
+        <Style Selector="TextBlock.via">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+        <Style Selector="Button.flat">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.flat /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.flat:pointerover TextBlock.phead">
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="Border.urow">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.urow:pointerover">
+            <Setter Property="Background" Value="#262633" />
+        </Style>
+        <Style Selector="Button.open TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.urow:pointerover Button.open TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Border.track">
+            <Setter Property="Background" Value="#1C1C26" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="Border.sprig">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Border.other">
+            <Setter Property="Background" Value="#4B5068" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,18,24,14">
+            <TextBlock Text="Usage" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <StackPanel Margin="24,18" Spacing="16" MaxWidth="1200" MinWidth="820" HorizontalAlignment="Stretch">
+
+                <!-- The machine: what's in use, with what sprig runs drawn first inside it -->
+                <Border Classes="panel">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="80,Auto,*" RowDefinitions="Auto,Auto" RowSpacing="12" ColumnSpacing="16">
+                            <TextBlock Classes="phead" Text="MEMORY" />
+                            <Border Grid.Column="1" Classes="track" Width="{x:Static vm:UsageViewModel.MachineBarWidth}" Height="12">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Classes="sprig" Width="{Binding MemorySprigWidth}" />
+                                    <Border Classes="other" Width="{Binding MemoryOtherWidth}" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Grid.Column="2" Classes="cell" Text="{Binding MemoryLine}" TextTrimming="CharacterEllipsis" />
+
+                            <TextBlock Grid.Row="1" Classes="phead" Text="CPU" />
+                            <Border Grid.Row="1" Grid.Column="1" Classes="track" Width="{x:Static vm:UsageViewModel.MachineBarWidth}" Height="12">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Classes="sprig" Width="{Binding CpuSprigWidth}" />
+                                    <Border Classes="other" Width="{Binding CpuOtherWidth}" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Classes="cell" Text="{Binding CpuLine}" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="16" Margin="96,0,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Border Classes="sprig" Width="10" Height="10" CornerRadius="2" VerticalAlignment="Center" />
+                                <TextBlock Classes="cell via" Text="what sprig runs" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Border Classes="other" Width="10" Height="10" CornerRadius="2" VerticalAlignment="Center" />
+                                <TextBlock Classes="cell via" Text="everything else" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Every workspace using anything, sorted by the heading clicked -->
+                <Border Classes="panel" Padding="0,10,0,6">
+                    <StackPanel>
+                        <Grid ColumnDefinitions="40,*,90,210,110,110,80" Margin="0,0,16,8">
+                            <Button Grid.Column="1" Classes="flat" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:UsageSort.Workspace}">
+                                <TextBlock Classes="phead" Text="{Binding WorkspaceHeading}" />
+                            </Button>
+                            <Button Grid.Column="2" Classes="flat" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:UsageSort.Cpu}">
+                                <TextBlock Classes="phead" Text="{Binding CpuHeading}" />
+                            </Button>
+                            <Button Grid.Column="3" Classes="flat" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:UsageSort.Memory}">
+                                <TextBlock Classes="phead" Text="{Binding MemoryHeading}" />
+                            </Button>
+                            <Button Grid.Column="4" Classes="flat" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:UsageSort.Apps}">
+                                <TextBlock Classes="phead" Text="{Binding AppsHeading}" />
+                            </Button>
+                            <Button Grid.Column="5" Classes="flat" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:UsageSort.Infra}">
+                                <TextBlock Classes="phead" Text="{Binding InfraHeading}" />
+                            </Button>
+                        </Grid>
+                        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" />
+
+                        <TextBlock Classes="cell via" Margin="18,14" IsVisible="{Binding NoRows}"
+                                   Text="Nothing sprig runs is using anything right now." />
+
+                        <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:UsageRow">
+                                    <StackPanel>
+                                        <Border Classes="urow" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                                                AutomationProperties.AutomationId="{Binding Key, StringFormat='usage:{0}'}">
+                                            <Grid ColumnDefinitions="*,80" Margin="0,0,16,0">
+                                                <Button Classes="flat" Command="{Binding ToggleCommand}" ToolTip.Tip="Show or hide its apps and containers">
+                                                    <Grid ColumnDefinitions="40,*,90,210,110,110" Margin="0,8">
+                                                        <TextBlock Text="{Binding Chevron}" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"
+                                                                       Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Cpu}" />
+                                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                            <Border Classes="track" Width="{x:Static vm:UsageViewModel.RowBarWidth}" Height="8">
+                                                                <Border Classes="sprig" Width="{Binding Bar}" HorizontalAlignment="Left" />
+                                                            </Border>
+                                                            <TextBlock Classes="cell mono" Text="{Binding Memory}" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" />
+                                                        <TextBlock Grid.Column="5" Classes="cell" Text="{Binding Infra}" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button Grid.Column="1" Classes="flat open" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                        IsVisible="{Binding CanOpen}" CommandParameter="{Binding}" ToolTip.Tip="Open this workspace"
+                                                        Command="{Binding $parent[UserControl].((vm:UsageViewModel)DataContext).OpenCommand}">
+                                                    <TextBlock Text="Open ›" FontSize="12.5" FontWeight="SemiBold" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Its apps and containers, sorted the same way -->
+                                        <ItemsControl ItemsSource="{Binding Parts}" IsVisible="{Binding IsExpanded}" Background="#16161E">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:UsagePart">
+                                                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,5"
+                                                            ToolTip.Tip="{Binding Tip}">
+                                                        <Grid ColumnDefinitions="40,*,90,210,110,110,96">
+                                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="14,0,0,0">
+                                                                <TextBlock Classes="cell" Text="{Binding Name}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding Kind}" />
+                                                            </StackPanel>
+                                                            <TextBlock Grid.Column="2" Classes="cell mono" FontSize="12" Text="{Binding Cpu}" />
+                                                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                                <Border Width="{x:Static vm:UsageViewModel.RowBarWidth}" Height="6">
+                                                                    <Border Classes="other" CornerRadius="3" Width="{Binding Bar}" HorizontalAlignment="Left" />
+                                                                </Border>
+                                                                <TextBlock Classes="cell mono" FontSize="12" Text="{Binding Memory}" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Classes="cell via" Margin="18,10,18,4" Text="{Binding IdleNote}"
+                                   IsVisible="{Binding IdleNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

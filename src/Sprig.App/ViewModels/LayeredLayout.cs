@@ -15,7 +15,8 @@ namespace Sprig.App.ViewModels;
 /// </summary>
 public sealed class LayeredLayout : IGraphLayout
 {
-    const double RowGap = 160;
+    // A node's usage above it and its labels below, plus a box's title when rows fall in different boxes (LayoutBox).
+    const double RowGap = 180;
     const double NodeGap = 24;
     const double GroupGap = 44;
     const int Sweeps = 12;

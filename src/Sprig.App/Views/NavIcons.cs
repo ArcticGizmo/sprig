@@ -12,7 +12,8 @@ public static class NavIcons
     static readonly Geometry Repos = Geometry.Parse("M3 5h7l2 2h9v12H3z");
     static readonly Geometry Workspaces = Geometry.Parse("M3 4h8v7H3z M13 4h8v7h-8z M3 13h8v7H3z M13 13h8v7h-8z");
     static readonly Geometry Orchestrations = Geometry.Parse("M3 3h6v6H3z M15 3h6v6h-6z M9 15h6v6H9z M9 5.25h6v1.5H9z M11.25 6.75h1.5v8.25h-1.5z");
-    static readonly Geometry Other = Geometry.Parse("M4 4h16v16H4z");
+    static readonly Geometry Usage = Geometry.Parse("M3 19h18v2H3z M4 11h4v7H4z M10 4h4v14h-4z M16 8h4v10h-4z");
+    static readonly Geometry Other =Geometry.Parse("M4 4h16v16H4z");
 
     public static readonly Geometry Settings = Geometry.Parse("M3 6h18v2H3z M3 11h18v2H3z M3 16h18v2H3z M6 4h3v6H6z M14 9h3v6h-3z M9 14h3v6H9z");
     public static readonly Geometry About = Geometry.Parse("F0 M12 2a10 10 0 1 1 0 20a10 10 0 1 1 0-20z M11 10h2v7h-2z M11 6h2v2h-2z");
@@ -25,6 +26,7 @@ public static class NavIcons
         HomeViewModel => Home,
         ReposViewModel => Repos,
         WorkspacesViewModel => Workspaces,
+        UsageViewModel => Usage,
         OrchestrationsViewModel => Orchestrations,
         _ => Other,
     });

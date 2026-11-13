@@ -156,8 +156,8 @@ public partial class WorkspacesViewModel
     [RelayCommand]
     private void CancelSettings() => IsSettingsOpen = false;
 
-    /// <summary>Keep the changed values on the workspace; one that's up comes up again so its files have them, and the
-    /// apps whose values changed are named for a restart.</summary>
+    /// <summary>Keep the changed values on the workspace; one that's ready is made ready again (starting nothing) so its
+    /// files have them, and the apps whose values changed are named for a restart.</summary>
     [RelayCommand]
     private async Task SaveSettings()
     {
@@ -178,7 +178,7 @@ public partial class WorkspacesViewModel
         Refresh();
         if (Selected?.IsUp != true)
         {
-            AppsMessage = "Kept. It uses them the next time it comes up.";
+            AppsMessage = "Kept. It uses them the next time it starts.";
             return;
         }
         if (!await UpAsync(retry: SaveSettings)) return;

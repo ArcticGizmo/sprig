@@ -426,7 +426,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
-                <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="7" ColumnSpacing="10">
+                <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="7" ColumnSpacing="10">
                     <TextBlock Classes="cell via" Text="Url" />
                     <TextBlock Grid.Column="1" Classes="cell mono link" FontSize="12" Text="{Binding Details.Url}" Tag="{Binding Details.Url}"
                                ToolTip.Tip="Click to open · middle-click for a new window · right-click to copy" />
@@ -440,6 +440,10 @@
                     <TextBlock Grid.Row="4" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding Details.ReadyWhen}" />
                     <TextBlock Grid.Row="5" Classes="cell via" Text="Restarts" />
                     <TextBlock Grid.Row="5" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding PickedApp.Restarts}" />
+                    <TextBlock Grid.Row="6" Classes="cell via" Text="Usage" />
+                    <TextBlock Grid.Row="6" Grid.Column="1" Classes="cell" FontSize="12" Text="{Binding PickedApp.UsageLine, FallbackValue='—'}"
+                               TextWrapping="Wrap"
+                               ToolTip.Tip="Every process it runs, its build included. CPU is a share of the whole machine; memory is what's in RAM." />
                 </Grid>
                 <Button Classes="small" Content="Open folder" Command="{Binding OpenFolderCommand}" HorizontalAlignment="Left" />
                 <StackPanel Spacing="4" IsVisible="{Binding Details.HasSettings, FallbackValue=False}">
@@ -465,7 +469,7 @@
             <Border Classes="approw" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="24,8"
                     Cursor="Hand" ToolTip.Tip="Double-click to open" DoubleTapped="OnOverviewRowDoubleTapped"
                     AutomationProperties.AutomationId="{Binding Key, StringFormat='overview:{0}'}">
-                <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12">
+                <Grid ColumnDefinitions="40,190,120,140,150,120,140,*,130,70" ColumnSpacing="12">
                     <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" Cursor="Arrow" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TitleBrush}"
@@ -476,16 +480,18 @@
                     <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Orchestration}" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                         <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
-                                 Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                                 Classes.up="{Binding IsRunning}" Classes.bad="{Binding IsFailed}" />
                         <TextBlock Classes="state" Text="{Binding State}" FontSize="12.5"
-                                   Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                                   Classes.up="{Binding IsRunning}" Classes.bad="{Binding IsFailed}" />
                     </StackPanel>
                     <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Ports}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="6" Classes="cell state" Text="{Binding Worktrees}" VerticalAlignment="Center"
+                    <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Usage}" VerticalAlignment="Center"
+                               ToolTip.Tip="{Binding UsageTip}" />
+                    <TextBlock Grid.Column="6" Classes="cell mono" FontSize="12" Text="{Binding Ports}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="7" Classes="cell state" Text="{Binding Worktrees}" VerticalAlignment="Center"
                                Classes.bad="{Binding WorktreesWarn}" />
-                    <TextBlock Grid.Column="7" Classes="cell via" Text="{Binding LastUp}" VerticalAlignment="Center" />
-                    <Button Grid.Column="8" Classes="flat open" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    <TextBlock Grid.Column="8" Classes="cell via" Text="{Binding LastUp}" VerticalAlignment="Center" />
+                    <Button Grid.Column="9" Classes="flat open" HorizontalAlignment="Right" VerticalAlignment="Center"
                             CommandParameter="{Binding}" ToolTip.Tip="Open this workspace"
                             Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenOverviewRowCommand}">
                         <TextBlock Text="Open ›" FontSize="12.5" FontWeight="SemiBold" />
@@ -538,7 +544,7 @@
                 </TextBox>
                 <Panel Grid.Column="1">
                     <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding NoneChecked}" VerticalAlignment="Center">
-                        <TextBlock Text="Double-click a workspace to open it. Tick workspaces to bring up, take down, free or remove several at once." FontSize="12.5"
+                        <TextBlock Text="Double-click a workspace to open it. Tick workspaces to start, stop, free or remove several at once." FontSize="12.5"
                                    Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
                         <Button Classes="flat" Command="{Binding SelectStaleCommand}" IsVisible="{Binding HasStale}" HorizontalAlignment="Left">
                             <TextBlock Text="{Binding StaleLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
@@ -547,8 +553,10 @@
                     <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8" IsVisible="{Binding HasChecked}">
                         <TextBlock Text="{Binding CheckedLabel}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
                                    VerticalAlignment="Center" Margin="0,0,4,0" />
-                        <Button Grid.Column="1" Classes="small" Content="Bring up" Command="{Binding BulkUpCommand}" IsEnabled="{Binding !IsWorking}" />
-                        <Button Grid.Column="2" Classes="small" Content="Take down" Command="{Binding BulkDownCommand}" IsEnabled="{Binding !IsWorking}" />
+                        <Button Grid.Column="1" Classes="small" Content="Start" Command="{Binding BulkStartCommand}" IsEnabled="{Binding !IsWorking}"
+                                ToolTip.Tip="Start everything in each: its infra, then its apps" />
+                        <Button Grid.Column="2" Classes="small" Content="Stop" Command="{Binding BulkStopCommand}" IsEnabled="{Binding !IsWorking}"
+                                ToolTip.Tip="Stop everything in each, apps and infra, keeping the containers and their data" />
                         <Button Grid.Column="3" Classes="small" Content="Free" Command="{Binding BulkFreeCommand}" IsEnabled="{Binding !IsWorking}"
                                 IsVisible="{Binding CanBulkFree}"
                                 ToolTip.Tip="Detach each one's worktrees and keep them, with their data, ports and build output, for the next branch. Branches and commits stay." />
@@ -572,17 +580,20 @@
                        Text="No workspaces match. Clear the search or pick All to see them all." />
 
             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsVisible="{Binding !IsEmpty}">
-                <StackPanel MinWidth="1060">
-                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12" Margin="24,8,24,6">
+                <StackPanel MinWidth="1190">
+                    <Grid ColumnDefinitions="40,190,120,140,150,120,140,*,130,70" ColumnSpacing="12" Margin="24,8,24,6">
                         <CheckBox IsChecked="{Binding AllChecked, Mode=OneWay}" Command="{Binding ToggleAllCheckedCommand}" ToolTip.Tip="Tick every one shown" />
                         <TextBlock Grid.Column="1" Classes="phead" Text="WORKSPACE" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="2" Classes="phead" Text="OF" VerticalAlignment="Center"
                                    ToolTip.Tip="The orchestration it's a workspace of, or the repo it runs on its own" />
                         <TextBlock Grid.Column="3" Classes="phead" Text="STATE" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="4" Classes="phead" Text="APPS" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="5" Classes="phead" Text="PORTS" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="6" Classes="phead" Text="WORKTREES" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="7" Classes="phead" Text="LAST UP" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="5" Classes="phead" Text="CPU · MEMORY" VerticalAlignment="Center"
+                                   ToolTip.Tip="Its apps and containers together. CPU is a share of the whole machine; memory is what's in RAM." />
+                        <TextBlock Grid.Column="6" Classes="phead" Text="PORTS" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="7" Classes="phead" Text="WORKTREES" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="8" Classes="phead" Text="LAST USED" VerticalAlignment="Center"
+                                   ToolTip.Tip="When it last started, stopped or was made ready" />
                     </Grid>
                     <!-- Main checkouts run as they are, with nothing written into them, so they're kept apart from sprig's own slots. -->
                     <TextBlock Classes="phead" Text="MAIN CHECKOUTS" Margin="24,14,24,6" IsVisible="{Binding HasOverviewMainRows}"
@@ -618,8 +629,8 @@
                                 </Border>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Classes="state" Text="{Binding Selected.State}" FontSize="12"
-                                           Classes.up="{Binding Selected.IsUp}" Classes.bad="{Binding Selected.IsFailed}" />
+                                <TextBlock Classes="state" Text="{Binding RunState}" FontSize="12"
+                                           Classes.up="{Binding IsRunning}" Classes.bad="{Binding RunStateFailed}" />
                                 <TextBlock Text="{Binding Selected.Branch}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
                                 <TextBlock Text="{Binding Selected.PortsLine}" FontSize="12"
                                            Foreground="{StaticResource MutedBrush}" />
@@ -669,14 +680,9 @@
                                     ToolTip.Tip="Every app that's going, built again and after what it depends on. Stopped apps stay stopped."
                                     AutomationProperties.AutomationId="workspace:restart-running"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Stop apps" Command="{Binding StopAppsCommand}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowRunControls}"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="{Binding Selected.TakeDownTip}"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowBringUp}" ToolTip.Tip="{Binding Selected.BringUpTip}"
+                            <Button Content="Stop all" Command="{Binding StopAllCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding ShowRunControls}" ToolTip.Tip="{Binding Selected.StopAllTip, FallbackValue=''}"
+                                    AutomationProperties.AutomationId="workspace:stop-all"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Free" Command="{Binding FreeCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
@@ -694,12 +700,12 @@
                                         <MenuItem Header="Restart running, jobs first" Command="{Binding RestartRunningWithJobsCommand}"
                                                   IsVisible="{Binding ShowRunControls}"
                                                   ToolTip.Tip="Run the jobs the running apps depend on (migrations, say) again, then restart the apps" />
-                                        <MenuItem Header="Bring up again" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}"
-                                                  IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="{Binding Selected.BringUpAgainTip}" />
+                                        <MenuItem Header="Make ready again" Command="{Binding MakeReadyCommand}" IsEnabled="{Binding !IsWorking}"
+                                                  IsVisible="{Binding ShowRunControls}" ToolTip.Tip="{Binding Selected.MakeReadyTip, FallbackValue=''}" />
                                         <MenuItem Header="Empty data…" Command="{Binding AskEmptyDataCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding Selected.CanEmptyData, FallbackValue=False}"
                                                   AutomationProperties.AutomationId="workspace:empty-data"
-                                                  ToolTip.Tip="Delete its infra's data, then bring it back as it was" />
+                                                  ToolTip.Tip="Delete its infra's data, then start again what was running" />
                                         <MenuItem Header="Remove…" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding Selected.CanRemove, FallbackValue=False}" />
                                     </MenuFlyout>
@@ -718,20 +724,26 @@
                     </Border>
                     <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
                                Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageOnPage}" />
-                    <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap"
-                               Classes.bad="{Binding AppsMessageIsBad}" IsVisible="{Binding HasAppsMessage}" />
+                    <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasAppsMessage}">
+                        <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center"
+                                   Classes.bad="{Binding AppsMessageIsBad}" />
+                        <Button Classes="flat" Command="{Binding CancelQuietCommand}" IsVisible="{Binding IsQuietWorking}" HorizontalAlignment="Left"
+                                VerticalAlignment="Center" ToolTip.Tip="Stop waiting; what has finished stays done">
+                            <TextBlock Text="Cancel" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
+                        </Button>
+                    </StackPanel>
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TrustPanel}" IsVisible="{Binding TrustOnPage}" />
 
                     <StackPanel Orientation="Horizontal" Spacing="18">
-                        <Button Classes="flat" Command="{Binding ShowAppsTabCommand}" HorizontalAlignment="Left">
-                            <Border Classes="tab" Classes.on="{Binding OnAppsTab}">
-                                <TextBlock Classes="tablabel" Text="Apps and logs" FontSize="13" FontWeight="SemiBold" />
-                            </Border>
-                        </Button>
                         <Button Classes="flat" Command="{Binding ShowGraphTabCommand}" HorizontalAlignment="Left"
                                 AutomationProperties.AutomationId="workspace:graph-tab">
                             <Border Classes="tab" Classes.on="{Binding OnGraphTab}">
                                 <TextBlock Classes="tablabel" Text="Graph" FontSize="13" FontWeight="SemiBold" />
+                            </Border>
+                        </Button>
+                        <Button Classes="flat" Command="{Binding ShowAppsTabCommand}" HorizontalAlignment="Left">
+                            <Border Classes="tab" Classes.on="{Binding OnAppsTab}">
+                                <TextBlock Classes="tablabel" Text="Apps and logs" FontSize="13" FontWeight="SemiBold" />
                             </Border>
                         </Button>
                         <Button Classes="flat" Command="{Binding ShowInfraTabCommand}" HorizontalAlignment="Left">
@@ -822,7 +834,7 @@
                     <controls:WorkspaceGraphCanvas x:Name="GraphCanvas" Graph="{Binding Graph}"
                                                    AutomationProperties.AutomationId="workspace:graph" />
                     <TextBlock IsVisible="{Binding GraphEmpty}" Classes="cell via" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Text="Nothing to draw until the workspace has been planned. Bring it up first." />
+                               Text="Nothing to draw until the workspace has been planned. Start it, or make it ready, first." />
                 </Panel>
 
                 <!-- Folded: a strip on the right edge that opens the details again, as on the Apps tab -->
@@ -867,6 +879,8 @@
                                 <TextBlock Classes="cell" Text="{Binding StateLine}" TextWrapping="Wrap" />
                             </StackPanel>
                             <TextBlock Classes="cell via" Text="{Binding KindLabel}" TextWrapping="Wrap" />
+                            <TextBlock Classes="cell" FontSize="12" Text="{Binding UsageText}" IsVisible="{Binding HasUsage}" TextWrapping="Wrap"
+                                       ToolTip.Tip="CPU is a share of the whole machine; memory is what's in RAM." />
                             <StackPanel Spacing="3" IsVisible="{Binding HasUses}">
                                 <TextBlock Classes="phead" Text="USES" />
                                 <ItemsControl ItemsSource="{Binding Uses}">
@@ -932,9 +946,11 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:WorkspaceInfraRow">
                                         <Border Classes="row">
-                                            <Grid ColumnDefinitions="220,*">
+                                            <Grid ColumnDefinitions="220,*,Auto" ColumnSpacing="10">
                                                 <TextBlock Classes="cell" Text="{Binding Name}" />
                                                 <SelectableTextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Ports}" />
+                                                <TextBlock Grid.Column="2" Classes="cell via mono" FontSize="12" Text="{Binding UsageText}"
+                                                           ToolTip.Tip="CPU is a share of the whole machine; memory is what's in RAM." />
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -1088,9 +1104,13 @@
                                                 <PathIcon Grid.Column="2" Width="11" Height="11" Margin="6,0,0,0" VerticalAlignment="Center"
                                                           Data="{StaticResource PinIcon}" Foreground="{StaticResource AccentBrush}"
                                                           IsVisible="{Binding Row.IsPinned}" ToolTip.Tip="Pinned" />
-                                                <TextBlock Grid.Column="3" Text="{Binding Row.Port}" FontSize="11.5" Margin="8,0,0,0"
-                                                           FontFamily="Cascadia Mono,Consolas,monospace" VerticalAlignment="Center"
-                                                           Foreground="{StaticResource MutedBrush}" />
+                                                <StackPanel Grid.Column="3" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Row.Port}" FontSize="11.5" HorizontalAlignment="Right"
+                                                               FontFamily="Cascadia Mono,Consolas,monospace" Foreground="{StaticResource MutedBrush}" />
+                                                    <TextBlock Text="{Binding Row.UsageText}" FontSize="10.5" HorizontalAlignment="Right"
+                                                               IsVisible="{Binding Row.HasUsage}" ToolTip.Tip="{Binding Row.UsageLine}"
+                                                               FontFamily="Cascadia Mono,Consolas,monospace" Foreground="#6E6E82" />
+                                                </StackPanel>
                                             </Grid>
                                         </Button>
                                         <Button Grid.Column="1" Classes="flat more" Width="20" Height="26" VerticalAlignment="Center"

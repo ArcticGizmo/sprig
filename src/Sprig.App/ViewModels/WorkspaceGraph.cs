@@ -63,6 +63,18 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     private bool _isAlive;
 
     public string StateLine => StateDetail.Length == 0 ? State : $"{State} · {StateDetail}";
+
+    /// <summary>A container's usage, from docker, for the picked node's card. An app's is in the details under it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UsageText), nameof(HasUsage))]
+    private Sprig.Engine.Hosting.ResourceUsage? _infraUsage;
+
+    public string UsageText => InfraUsage?.Line ?? "";
+    public bool HasUsage => InfraUsage is not null;
+
+    /// <summary>What it uses now, app or container, for drawing over the node.</summary>
+    public Sprig.Engine.Hosting.ResourceUsage? Usage => app?.Usage ?? InfraUsage;
+
     public bool CanStart => app is not null || target is not null;
     public bool CanStop => CanStart && IsAlive;
     public string StartLabel => IsAlive ? "Restart" : "Start";
@@ -96,11 +108,11 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         if (!IsRunner) return;
         if (app is null)
         {
-            (State, StateDetail, Health, IsAlive) = ("not in this workspace yet", "bring it up again to add it", NodeHealth.Off, false);
+            (State, StateDetail, Health, IsAlive) = ("not in this workspace yet", "start it, or make it ready again, to add it", NodeHealth.Off, false);
             return;
         }
         State = app.State;
-        StateDetail = app.Detail.StartsWith(app.State, StringComparison.OrdinalIgnoreCase) ? app.Detail[app.State.Length..].TrimStart(' ', '·') : app.Detail;
+        StateDetail =app.Detail.StartsWith(app.State, StringComparison.OrdinalIgnoreCase) ? app.Detail[app.State.Length..].TrimStart(' ', '·') : app.Detail;
         IsAlive = app.IsAlive;
         Health = app.IsBad || app.State == "restarting" ? NodeHealth.Bad
             : app.IsGood ? NodeHealth.Good
@@ -122,7 +134,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         }
         if (service is null)
         {
-            (State, StateDetail, Health, IsAlive) = ("not created", "the workspace is down", NodeHealth.Off, false);
+            (State, StateDetail, Health, IsAlive) = ("not started", "", NodeHealth.Off, false);
             return;
         }
         IsAlive = service.State is "running" or "restarting";

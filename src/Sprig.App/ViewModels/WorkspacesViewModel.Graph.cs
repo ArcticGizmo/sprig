@@ -102,6 +102,7 @@ public partial class WorkspacesViewModel
             _lastInfraPoll = DateTime.MinValue;
         }
         else if (_lastInfra is { } states) ApplyInfraStates(states);
+        ApplyInfraUsage();
         GraphPicked = null;
         if (graph.Find(picked) is { } again) graph.Select(again.Key);
     }
@@ -181,11 +182,39 @@ public partial class WorkspacesViewModel
         _lastInfra = states;
         if (Graph is { } graph)
         {
-            foreach (var node in graph.Nodes.Where(n => n.IsInfra)) node.Apply(states?.GetValueOrDefault(node.Key), states is not null);
+            foreach (var node in graph.Nodes.Where(n => n.IsInfra))
+            {
+                var service = states?.GetValueOrDefault(node.Key);
+                // Shown as starting while a start is under way, until docker says it's going.
+                if (IsQuietWorking && node.State == "starting" && service is not { State: "running" or "restarting" or "exited" or "dead" }) continue;
+                node.Apply(service, states is not null);
+            }
             graph.Invalidate();
         }
         if (InfraLogOpen && states?.GetValueOrDefault(Logs.Key) is { State: "running" or "restarting" }) _followers[Logs.Key].EnsureRunning();
         OnPropertyChanged(nameof(LogSub));
+        CountRunning();
+    }
+
+    void OnInfraUsage()
+    {
+        ApplyInfraUsage();
+        if (Selected is null) CountOverviewApps();
+        CountRunning();
+    }
+
+    /// <summary>Show what docker last said each of the selected workspace's containers uses, on the Infra tab and in the
+    /// graph's details.</summary>
+    void ApplyInfraUsage()
+    {
+        var usage = _services.InfraUsage.Usage;
+        ResourceUsage? Of(string key) => _targets.FirstOrDefault(t => t.Key == key) is { } t && usage.TryGetValue((t.Project.Name, t.Service), out var u) ? u : null;
+        foreach (var row in Infra) row.Usage = Of(row.Key);
+        if (Graph is { } graph)
+        {
+            foreach (var node in graph.Nodes.Where(n => n.IsInfra)) node.InfraUsage = Of(node.Key);
+            graph.Invalidate();
+        }
     }
 
     internal void ApplyOwnInfra(IReadOnlyList<OwnInfra> infra)
@@ -348,8 +377,8 @@ public partial class WorkspacesViewModel
         if (node.HasUrl) Browser.Open(node.Url);
     }
 
-    /// <summary>Start it, or restart it when it's going. An app starts after what it depends on; a container that
-    /// doesn't exist yet comes with the rest of the workspace's infra, by bringing it up.</summary>
+    /// <summary>Start it, or restart it when it's going. An app starts after what it depends on, infra included; a
+    /// container starts on its own, made the first time, once the workspace is ready.</summary>
     [RelayCommand]
     private async Task GraphStart(GraphNode node)
     {
@@ -358,12 +387,16 @@ public partial class WorkspacesViewModel
             await StartAsync([row.Key]);
             return;
         }
-        if (node.Target is not { } target || Selected?.Record is not { } record) return;
-        if (record.State != WorkspaceState.Up || node.State == "not created")
+        if (node.Target is null || Selected?.Record is not { } record) return;
+        if (record.State != WorkspaceState.Up)
         {
-            await UpAsync(retry: () => GraphStart(node));
-            return;
+            var key = node.Key;
+            if (!await UpAsync(retry: () => GraphStart(node))) return;
+            // Made ready, the graph was drawn again with nodes of its own.
+            if (Graph?.Find(key) is not { Target: not null } fresh) return;
+            node = fresh;
         }
+        var target = node.Target!;
         var restart = node.IsAlive;
         node.Pending(restart ? "restarting" : "starting");
         Graph?.Invalidate();
@@ -372,14 +405,15 @@ public partial class WorkspacesViewModel
             await AppServices.RunAsync(() =>
             {
                 if (restart) _services.Workspaces.StopContainer(target);
-                _services.Workspaces.StartContainer(target);
+                _services.Workspaces.StartInfra([target]);
             });
             SayApps($"{(restart ? "Restarted" : "Started")} {node.Name}.", bad: false);
         }
-        catch (ProcessException e)
+        catch (Exception e) when (e is ProcessException or WorkspaceException)
         {
             SayApps($"{node.Name} didn't {(restart ? "restart" : "start")}: {WorkspacesViewModel.Headline(e.Message)}", bad: true);
         }
+        _services.InfraUsage.Soon();
         await PollInfraAsync(now: true);
     }
 
@@ -404,6 +438,7 @@ public partial class WorkspacesViewModel
         {
             SayApps($"{node.Name} didn't stop: {WorkspacesViewModel.Headline(e.Message)}", bad: true);
         }
+        _services.InfraUsage.Soon();
         await PollInfraAsync(now: true);
     }
 }

@@ -24,6 +24,7 @@ public sealed class HostServer(ISprigPaths paths, TimeSpan idle)
 
         ConsoleSignal.Prepare();
         _ = WatchIdleAsync();
+        _ = SampleAsync();
         try
         {
             while (!_quit.IsCancellationRequested)
@@ -88,6 +89,16 @@ public sealed class HostServer(ISprigPaths paths, TimeSpan idle)
     {
         _quit.CancelAfter(TimeSpan.FromMilliseconds(100));
         return new HostResponse(true);
+    }
+
+    async Task SampleAsync()
+    {
+        using var beat = new PeriodicTimer(Supervisor.SampleEvery);
+        try
+        {
+            while (await beat.WaitForNextTickAsync(_quit.Token)) _supervisor.Sample();
+        }
+        catch (OperationCanceledException) { }
     }
 
     async Task WatchIdleAsync()

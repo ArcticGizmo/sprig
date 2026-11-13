@@ -18,6 +18,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public HomeViewModel Home { get; }
     public ReposViewModel Repos { get; }
     public WorkspacesViewModel Workspaces { get; }
+    public UsageViewModel Usage { get; }
     public OrchestrationsViewModel Orchestrations { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; }
@@ -64,6 +65,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Home = new HomeViewModel(services);
         Repos = new ReposViewModel(services);
         Workspaces = new WorkspacesViewModel(services);
+        Usage = new UsageViewModel(services);
         Orchestrations = new OrchestrationsViewModel(services);
         Settings = new SettingsViewModel(services);
         About = new AboutViewModel(Updater);
@@ -95,14 +97,15 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         Repos.OpenWorkspace = OpenWorkspace;
         Home.OpenWorkspace = OpenWorkspace;
+        Usage.OpenWorkspace = OpenWorkspace;
         Home.AddRepo = () =>
         {
             CurrentPage = Repos;
             Repos.OpenChooseCommand.Execute(null);
         };
 
-        Pages = [Home, Repos, Workspaces, Orchestrations, Settings, About];
-        NavItems = [Home, Repos, Workspaces, Orchestrations];
+        Pages = [Home, Repos, Workspaces, Usage, Orchestrations, Settings, About];
+        NavItems = [Home, Repos, Workspaces, Usage, Orchestrations];
 
         _currentPage = Home;
         Home.IsActive = true;

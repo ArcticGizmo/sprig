@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Sprig.Engine.Authoring;
 using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
@@ -32,6 +34,7 @@ public sealed class AppServices
     public WorkspaceService Workspaces { get; }
     public HostClient Host { get; }
     public HostStatus HostStatus { get; }
+    public InfraUsage InfraUsage { get; }
     public UiState Ui { get; }
 
     /// <param name="root">Store root; null means this profile's store.</param>
@@ -53,7 +56,13 @@ public sealed class AppServices
         Ui = new UiState(Paths);
         Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
             git, new DockerCompose(processes), host: Host, loader: Loader);
+        InfraUsage = new InfraUsage(Workspaces);
     }
+
+    /// <summary>How a workspace is doing, in a word, from what the host and docker last said (see
+    /// <see cref="WorkspaceService.RunState"/>).</summary>
+    public string RunState(WorkspaceRecord record)
+        => WorkspaceService.RunState(record, HostStatus.Runners ?? [], InfraUsage.Usage.Keys.Select(k => k.Project).ToHashSet(StringComparer.Ordinal));
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);
 

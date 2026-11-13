@@ -52,10 +52,9 @@ public class WorkspaceAppRowTests
         vm.ApplyRunners(null);
         Assert.Equal("not running", api.State);
 
-        // Down, so Bring up is what the header offers, and starting an app tries to bring it up: here its orchestration file
-        // doesn't exist, so that stops with why.
-        Assert.True(vm.ShowBringUp);
-        Assert.False(vm.ShowTakeDown);
+        // Stopped, and not ready, so starting an app makes the workspace ready first: here its orchestration file doesn't
+        // exist, so that stops with why.
+        Assert.Equal("stopped", vm.RunState);
         await vm.StartAppCommand.ExecuteAsync(api);
         Assert.True(vm.FormFailed);
         Assert.Contains("orchestration", vm.FormMessage);

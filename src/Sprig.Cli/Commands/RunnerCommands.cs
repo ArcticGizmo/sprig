@@ -1,25 +1,53 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Sprig.Engine.Hosting;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Workspaces;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-/// <summary>Settings for commands that act on some or all of a workspace's apps.</summary>
+/// <summary>Settings for commands that act on some or all of what a workspace runs: its apps and its infra.</summary>
 public class AppsSettings : WorkspaceSettings
 {
-    [CommandArgument(2, "[apps]")]
-    [Description("Only these apps, as <name> or <repo>/<name> (default: all of them)")]
+    [CommandArgument(2, "[names]")]
+    [Description("Only these apps or infra, as <name> or <repo>/<name> (default: everything)")]
     public string[] Apps { get; set; } = [];
 
     protected override bool TakesApps => true;
 
-    /// <summary><see cref="WorkspaceSettings.Resolve"/>, with any words it hands back counted as apps.</summary>
+    /// <summary><see cref="WorkspaceSettings.Resolve"/>, with any words it hands back counted as names.</summary>
     public void ResolveApps(CliContext cli) => Apps = [.. Resolve(cli), .. Apps];
+
+    /// <summary>The names sorted into apps (as given, for <see cref="RunnerSpecs.Resolve"/>) and infra (by key,
+    /// <c>owner/name</c>). One that's neither, or could be more than one piece of infra, is refused.</summary>
+    public static (IReadOnlyList<string> Apps, IReadOnlyList<string> Infra) Split(WorkspaceRecord record, Plan plan, IEnumerable<string> names)
+    {
+        var infraKeys = plan.Containers.Select(c => $"{c.Owner}/{c.Name}")
+            .Concat(plan.Compose.SelectMany(f => f.Services.Select(x => $"{f.Owner}/{x.Name}"))).ToArray();
+        var (apps, infra) = (new List<string>(), new List<string>());
+        foreach (var name in names)
+        {
+            if (plan.Apps.Any(a => a.Key == name || a.Name == name))
+            {
+                apps.Add(name);
+                continue;
+            }
+            var matches = infraKeys.Where(k => k == name || k[(k.IndexOf('/') + 1)..] == name).ToArray();
+            infra.Add(matches.Length switch
+            {
+                1 => matches[0],
+                0 => throw new InvalidOperationException($"{record.Orchestration} has no app or infra '{name}'; it has "
+                                                         + string.Join(", ", plan.Apps.Select(a => a.Key).Concat(infraKeys))),
+                _ => throw new InvalidOperationException($"'{name}' is in more than one repo; name it as <repo>/{name}"),
+            });
+        }
+        return (apps, infra);
+    }
 }
 
-[Description("Start a workspace's apps and jobs in the background sprig host, in dependency order, and wait until each is ready")]
+[Description("Start what a workspace runs, each after what it depends on (its infra included), and wait until each is ready. With nothing named, everything")]
 public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings>
 {
     public sealed class Settings : AppsSettings
@@ -31,34 +59,57 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         [CommandOption("--no-wait")]
         [Description("Return once the apps are starting, without waiting for them to be ready")]
         public bool NoWait { get; set; }
+
+        [CommandOption("--trust")]
+        [Description("When the workspace has to be made ready first, approve any definition that isn't approved yet, without asking")]
+        public bool Trust { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
         s.ResolveApps(cli);
-        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
-        var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} hasn't come up yet; run sprig up first");
-        if (record.IsFree)
+        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace);
+        if (record is null && s.Workspace != WorkspaceRecord.MainName)
+            throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'; check a branch out with: sprig up {s.Orchestration} -b <branch>");
+        if (record is { IsFree: true })
             throw new InvalidOperationException($"{record.SlotName} is free; check a branch out in it first: sprig up {record.Orchestration} -b <branch>");
-        if (record.State != Sprig.Engine.Workspaces.WorkspaceState.Up)
-            throw new InvalidOperationException($"{record.SlotName} is {record.State.ToString().ToLowerInvariant()}; bring its infra up first: {UpCommand.UpLine(record)}");
+        // Stopped, failed or never made ready: made ready now, starting nothing yet, so what's named can be looked up.
+        if (record is not { State: WorkspaceState.Up } || cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) is null)
+        {
+            if (Prepare(s, cancellation) is not { } ready) return 1;
+            record = ready;
+        }
+        var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
 
-        IReadOnlyCollection<string>? names = s.Apps.Length > 0 ? s.Apps : null;
+        var (apps, infra) = AppsSettings.Split(record, plan, s.Apps);
+        IReadOnlyCollection<string>? names = s.Apps.Length > 0 ? apps : null;
         if (s.Group is { } group)
         {
             if (names is not null) throw new InvalidOperationException("name apps or a group, not both");
             names = RunnerSpecs.Group(plan, group);
         }
-        var specs = RunnerSpecs.For(record, plan, names);
+        if (record.IsMain && infra.Count > 0)
+            throw new InvalidOperationException($"the main checkout runs with your own infra, so sprig doesn't start {string.Join(", ", infra)}; start it the way you usually do");
+        var specs = names is { Count: 0 } ? [] : RunnerSpecs.For(record, plan, names);
         // Apps named outright start afresh; everything else, including what they depend on, is left alone if it's going.
-        var restart = s.Apps.Length > 0 ? RunnerSpecs.Resolve(record, plan, s.Apps) : [];
+        var restart = apps.Count > 0 ? RunnerSpecs.Resolve(record, plan, apps) : [];
 
-        // A workspace brought up for one group has only that group's infra running; the next starts what it adds.
-        if (cli.Workspaces.MissingInfra(record, plan, names) is { Count: > 0 } missing)
+        // What the apps use that isn't running, and what was named.
+        var missing = cli.Workspaces.MissingInfra(record, plan, names).ToList();
+        if (infra.Count > 0)
         {
-            if (!s.Json) cli.Ansi.MarkupLine($"[blue]…[/] Starting what they use: {Markup.Escape(string.Join(", ", missing.Select(t => t.Key)))}");
-            cli.Workspaces.StartInfra(missing, new SyncProgress<Sprig.Engine.Workspaces.WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+            var states = cli.Workspaces.InfraStates(cli.Workspaces.InfraTargets(record, plan));
+            missing.AddRange(cli.Workspaces.InfraTargets(record, plan)
+                .Where(t => infra.Contains(t.Key) && missing.All(m => m.Key != t.Key) && states?.GetValueOrDefault(t.Key) is not { State: "running" }));
         }
+        if (missing.Count > 0)
+        {
+            if (!s.Json) cli.Ansi.MarkupLine($"[blue]…[/] Starting infra: {Markup.Escape(string.Join(", ", missing.Select(t => t.Key)))}");
+            cli.Workspaces.StartInfra(missing, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        }
+        if (specs.Count == 0)
+            return CliOutput.Ok(s.Json, missing.Count == 0 ? "already running" : $"started {string.Join(", ", missing.Select(t => t.Key))}",
+                new { ok = true, infra = missing.Select(t => t.Key) });
 
         Send(cli, specs, restart);
         if (s.NoWait)
@@ -68,6 +119,24 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         var failed = mine.Where(r => !r.State.Satisfies()).ToArray();
         if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, runners = mine });
         return failed.Length == 0 ? 0 : 1;
+    }
+
+    /// <summary>Make the workspace ready (worktrees, ports, files, its infra's definitions), starting nothing. Null,
+    /// after saying why, when it can't be.</summary>
+    WorkspaceRecord? Prepare(Settings s, CancellationToken cancellation)
+    {
+        var trusting = new TrustingSettings { Json = s.Json, UnmaskSecrets = s.UnmaskSecrets, Trust = s.Trust };
+        if (OrchestrationLoad.Load(cli, s.Orchestration, trusting, s.Workspace) is not { } loaded) return null;
+        try
+        {
+            return cli.Workspaces.Up(loaded, s.Workspace, null, progress: new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)),
+                cancellation: cancellation);
+        }
+        catch (WorkspaceException e)
+        {
+            Console.Error.WriteLine($"error: {e.Message}" + (e.HeldBy is not null ? $"; take the checkout over with: sprig up {s.Orchestration} --take-over" : ""));
+            return null;
+        }
     }
 
     internal static void Send(CliContext cli, IReadOnlyList<RunnerSpec> specs, IReadOnlyList<string> restart)
@@ -145,7 +214,7 @@ public sealed class RestartCommand(CliContext cli) : Command<RestartCommand.Sett
     {
         s.ResolveApps(cli);
         var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
-        var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} hasn't come up yet; run sprig up first");
+        var plan = cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration}/{s.Workspace} has never started, so there's nothing to restart; start it with: sprig start");
         if (s.Group is not null && s.Apps.Length > 0) throw new InvalidOperationException("name apps or a group, not both");
         IReadOnlyCollection<string>? within = s.Group is { } group ? RunnerSpecs.Group(plan, group) : s.Apps.Length > 0 ? s.Apps : null;
 
@@ -165,21 +234,38 @@ public sealed class RestartCommand(CliContext cli) : Command<RestartCommand.Sett
     }
 }
 
-[Description("Stop a workspace's apps (its infra keeps running; sprig down stops that)")]
+[Description("Stop what a workspace runs: the apps or infra named, just those (what uses them is left running), or with nothing named, everything, keeping its containers and data")]
 public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
 {
     protected override int Execute(CommandContext context, AppsSettings s, CancellationToken cancellation)
     {
         s.ResolveApps(cli);
-        var key = Sprig.Engine.Workspaces.WorkspaceRecord.KeyOf(s.Orchestration, s.Workspace);
-        if (cli.Host.TrySend(new HostRequest("list")) is not { } list)
-            return CliOutput.Ok(s.Json, "nothing is running", new { ok = true, stopped = Array.Empty<string>() });
+        if (s.Apps.Length == 0) return DownCommand.StopAll(cli, s, cancellation);
 
-        var targets = (list.Runners ?? [])
+        var key = WorkspaceRecord.KeyOf(s.Orchestration, s.Workspace);
+        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
+        var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)
+                   ?? throw new InvalidOperationException($"{record.SlotName} has never been made ready, so nothing of it is running");
+        var (apps, infra) = AppsSettings.Split(record, plan, s.Apps);
+        if (record.IsMain && infra.Count > 0)
+            throw new InvalidOperationException($"the main checkout runs with your own infra, so sprig doesn't stop {string.Join(", ", infra)}");
+        foreach (var target in cli.Workspaces.InfraTargets(record, plan).Where(t => infra.Contains(t.Key)))
+        {
+            cli.Workspaces.StopContainer(target);
+            if (!s.Json) CliOutput.Success($"{target.Key} stopped; its data is kept");
+        }
+        if (apps.Count == 0)
+        {
+            if (s.Json) CliOutput.Json(new { ok = true, stopped = infra });
+            return 0;
+        }
+
+        var list = cli.Host.TrySend(new HostRequest("list"));
+        var targets = (list?.Runners ?? [])
             .Where(r => r.Workspace == key && (r.State.IsAlive() || r.State == RunnerState.Stopping))
-            .Where(r => s.Apps.Length == 0 || s.Apps.Any(a => r.Name == a || r.Name.EndsWith("/" + a, StringComparison.Ordinal)))
+            .Where(r => apps.Any(a => r.Name == a || r.Name.EndsWith("/" + a, StringComparison.Ordinal)))
             .Select(r => r.Name).ToArray();
-        if (targets.Length == 0) return CliOutput.Ok(s.Json, "nothing to stop", new { ok = true, stopped = Array.Empty<string>() });
+        if (targets.Length == 0) return CliOutput.Ok(s.Json, infra.Count > 0 ? "no app named was running" : "nothing to stop", new { ok = true, stopped = infra });
 
         // In parallel, so a slow one doesn't hold up the rest.
         var results = targets.AsParallel().SelectMany(name => cli.Host.StopAndWait(key, name)).ToArray();
@@ -205,13 +291,19 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
             cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start [[id]] [[workspace]][/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "CPU", "Memory", "Since");
+        table.Columns[5].RightAligned();
+        table.Columns[6].RightAligned();
         // Runners are keyed "storefront/2"; people know the slot by its folder and branch.
         var records = cli.Workspaces.List().ToDictionary(w => w.Key);
         foreach (var r in runners)
             table.AddRow(Markup.Escape(records.TryGetValue(r.Workspace, out var w) ? $"{w.SlotName} ({w.Label})" : r.Workspace), Markup.Escape(r.Name), State(r),
-                r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "", r.Since.LocalDateTime.ToString("T"));
+                r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "",
+                r.Usage is { } u ? ResourceUsage.CpuText(u.Cpu) : "", r.Usage is { } m ? ResourceUsage.MemoryText(m.Memory) : "",
+                r.Since.LocalDateTime.ToString("T"));
         cli.Ansi.Write(table);
+        if (ResourceUsage.Sum(runners.Select(r => r.Usage)) is { } total)
+            cli.Ansi.MarkupLine($"[dim]All apps: {Markup.Escape(total.Text)} (CPU as a share of the whole machine; docker stats has the infra's)[/]");
         return 0;
     }
 

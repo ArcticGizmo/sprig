@@ -98,8 +98,23 @@ public sealed class DockerCompose(IProcessRunner runner)
     /// <summary>Start one service's container again, as <c>up</c> left it; it must have been created by an <c>up</c>.</summary>
     public void Start(ComposeProject project, string service) => Compose(project, ["start", service], null, default).EnsureSuccess();
 
+    /// <summary>Stop every container of the project, keeping them (and their data) for the next start.</summary>
+    public void StopAll(ComposeProject project, Action<string>? onOutput = null, CancellationToken cancellation = default)
+        => Compose(project, ["stop"], onOutput, cancellation).EnsureSuccess();
+
     /// <summary>Stop one service's container, keeping it (and its data) for <see cref="Start"/>.</summary>
     public void Stop(ComposeProject project, string service) => Compose(project, ["stop", service], null, default).EnsureSuccess();
+
+    /// <summary>What each running container of <paramref name="projects"/> uses (see <see cref="ContainerUsage"/>).</summary>
+    public IReadOnlyDictionary<(string Project, string Service), Hosting.ResourceUsage> Usage(IReadOnlySet<string>? projects = null)
+        => ContainerUsage.Read(runner, projects);
+
+    /// <summary>Every compose project with a container running, from one <c>docker ps</c>.</summary>
+    public IReadOnlySet<string> RunningProjects()
+    {
+        var r = runner.Run("docker", ["ps", "--filter", "label=com.docker.compose.project", "--format", "{{.Label \"com.docker.compose.project\"}}"]).EnsureSuccess();
+        return r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+    }
 
     /// <summary>How many of the project's containers are running.</summary>
     public int Running(string projectName)

@@ -65,6 +65,7 @@ internal static partial class HeadlessRenderer
             var services = new AppServices(store);
             var runners = SampleStore(services);
             services.HostStatus.Hold(runners);
+            HoldInfraUsage(services);
             services.Ui.SetPins("storefront", ["shop-services/orders-api", "shop-services/payments-api", "shop-web/web"]);
 
             var vm = new MainWindowViewModel(services, checkForUpdates: false);
@@ -73,6 +74,10 @@ internal static partial class HeadlessRenderer
             var window = new MainWindow { DataContext = vm, Width = 1440, Height = 900 };
             window.Show();
             Pump(TimeSpan.FromMilliseconds(400));
+            // A workspace opens on its graph.
+            Save(window, Sibling(outFile, "opened"));
+            vm.Workspaces.ShowAppsTabCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(200));
             Wait(vm.Workspaces.Logs.PollAsync());
             Pump(TimeSpan.FromMilliseconds(600));
             Save(window, Sibling(outFile, "all"));
@@ -250,6 +255,13 @@ internal static partial class HeadlessRenderer
             var canvas = window.GetVisualDescendants().OfType<Sprig.App.Controls.WorkspaceGraphCanvas>().First();
             Point NodeAt(string key) => canvas.TranslatePoint(canvas.PointOf(key)!.Value, window)!.Value;
 
+            // Zoomed in, where each node's CPU and memory both fit over it; then back to the whole picture.
+            window.MouseWheel(NodeAt("shop-services/orders-api"), new Vector(0, 8));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "graph-zoomed"));
+            vm.Workspaces.FitGraphCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+
             window.MouseDown(NodeAt("shop-services/orders-api"), MouseButton.Left);
             window.MouseUp(NodeAt("shop-services/orders-api"), MouseButton.Left);
             Pump(TimeSpan.FromMilliseconds(400));
@@ -346,6 +358,30 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "overview-ticked"));
             vm.Workspaces.ClearCheckedCommand.Execute(null);
+
+            // The Usage page, with two more workspaces running something so there's an order to see.
+            const long mb = 1024 * 1024;
+            services.HostStatus.Hold([
+                .. runners,
+                new RunnerStatus("storefront/feat-b", "shop-services/orders-api", RunnerState.Ready, 2001, 8301, null, "o.log", DateTimeOffset.Now,
+                    Usage: new ResourceUsage(6.2, 980 * mb, 3)),
+                new RunnerStatus("storefront/feat-b", "shop-web/web", RunnerState.Ready, 2002, 8370, null, "w.log", DateTimeOffset.Now,
+                    Usage: new ResourceUsage(0.4, 1240 * mb, 6)),
+                new RunnerStatus("services/local", "core/api", RunnerState.Ready, 2003, 9000, null, "c.log", DateTimeOffset.Now,
+                    Usage: new ResourceUsage(1.1, 310 * mb, 1)),
+            ]);
+            vm.Usage.HoldMachine(new MachineSnapshot(63.5, 24_300 * mb, 32_600 * mb));
+            vm.NavigateCommand.Execute(vm.Usage);
+            Wait(vm.Usage.PollAsync(usage: false));
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "usage"));
+            vm.Usage.Rows.First().IsExpanded = true;
+            vm.Usage.SortCommand.Execute(UsageSort.Cpu);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "usage-open"));
+            Console.WriteLine($"usage rows: {string.Join(", ", vm.Usage.Rows.Select(r => $"{r.Name} {r.Cpu} {r.Memory}"))}");
+            services.HostStatus.Hold(runners);
+            vm.NavigateCommand.Execute(vm.Workspaces);
 
             // Main, run as the checkout is, with the user's own infra: one of it isn't listening.
             vm.Workspaces.Show("storefront/main");
@@ -492,9 +528,27 @@ internal static partial class HeadlessRenderer
                         RunnerState.Exited => "exited with code 1 during start-up",
                         RunnerState.Restarting => "exited with code 134; restarting in 4s (3 of 5)",
                         _ => null,
-                    }, state == RunnerState.Restarting ? 3 : 0));
+                    }, state == RunnerState.Restarting ? 3 : 0, Usage: SampleUsage(state, i)));
         }
         return runners;
+    }
+
+    /// <summary>Made-up but steady figures: a build is busy, a server mostly idle, and what isn't running uses nothing.</summary>
+    static ResourceUsage? SampleUsage(RunnerState state, int i) => state switch
+    {
+        RunnerState.Building => new ResourceUsage(18.4, 640L * 1024 * 1024, 4),
+        _ when state.IsAlive() => new ResourceUsage(i * 7 % 23 / 10.0, (90L + i * 53 % 700) * 1024 * 1024, 1 + i % 3),
+        _ => null,
+    };
+
+    /// <summary>The sample's containers' usage, as docker would give it, by the projects they run under.</summary>
+    static void HoldInfraUsage(AppServices services)
+    {
+        var record = services.Workspaces.Get("storefront", "feat-a")!;
+        var plan = services.Workspaces.LastPlan("storefront", "feat-a")!;
+        services.InfraUsage.Hold(services.Workspaces.InfraTargets(record, plan)
+            .Select((t, i) => ((t.Project.Name, t.Service), new ResourceUsage(0.3 + i * 0.8, (60L + i * 210) * 1024 * 1024, 4 + i * 6)))
+            .ToDictionary(p => p.Item1, p => p.Item2));
     }
 
     /// <summary>What the sample's containers would say: one still waiting on its health check, which is why the worker

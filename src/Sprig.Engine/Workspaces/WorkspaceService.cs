@@ -38,6 +38,9 @@ public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false
 /// apps by key or name. Each brings what it depends on.</summary>
 public sealed record Starting(string? Group = null, IReadOnlyCollection<string>? Apps = null)
 {
+    /// <summary>Every app, and so all of the infra.</summary>
+    public static readonly Starting All = new();
+
     /// <summary>The apps it names in <paramref name="plan"/>; null for every one.</summary>
     public IReadOnlyCollection<string>? AppsIn(Plan plan) => Group is { } group ? Hosting.RunnerSpecs.Group(plan, group) : Apps;
 }
@@ -45,7 +48,8 @@ public sealed record Starting(string? Group = null, IReadOnlyCollection<string>?
 /// <summary>How one workspace runs, chosen when it's made and kept for its life.</summary>
 /// <param name="InPlace">Run the repos where they're checked out, rather than in worktrees of the workspace's own.</param>
 /// <param name="From">The branch new worktree branches start from; null for each repo's own default branch.</param>
-/// <param name="RandomPorts">Fresh ports each time it comes up, rather than keeping the ones it was given.</param>
+/// <param name="RandomPorts">Fresh ports for each branch checked out in it, drawn at random, rather than the ones it was
+/// first given for good. Either way they hold still while it's stopped and started.</param>
 /// <param name="Track">The remote an existing branch is taken from when a repo has no local one; null for whichever
 /// has it, origin first.</param>
 public sealed record WorkspaceOptions(bool InPlace = false, string? From = null, bool RandomPorts = false,
@@ -218,8 +222,9 @@ public sealed partial class WorkspaceService(
     /// <param name="values">Setting values to keep on the workspace, added to (or replacing) what it has.</param>
     /// <param name="takeOver">When another definition's workspace is up in the same checkout (see <see cref="HolderOf"/>),
     /// take that one down first, rather than refuse.</param>
-    /// <param name="starting">The apps about to be started (a group, say): only the infra they use is started (see
-    /// <see cref="InfraFor"/>). Null for all of it.</param>
+    /// <param name="starting">What's about to be started (a group, say, or <see cref="Starting.All"/>): the infra it uses
+    /// is started too (see <see cref="InfraFor"/>). Null to start nothing: the workspace is made ready, its infra's
+    /// definitions written, for a start later.</param>
     public WorkspaceRecord Up(LoadedOrchestration loaded, string workspace, string? branch, WorkspaceOptions? options = null,
         IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default, Action<WorkspaceRecord, Plan>? beforeInfra = null,
         IReadOnlyDictionary<string, string>? values = null, bool takeOver = false, Starting? starting = null)
@@ -350,10 +355,12 @@ public sealed partial class WorkspaceService(
             step.Done(record.IsMain ? "none: main runs the checkout as it is" : $"{record.Files.Count} files");
 
             beforeInfra?.Invoke(record, plan);
+            // Nothing starting, nothing's infra is needed: its definitions are written for whatever starts later.
+            var needed = starting is null ? new HashSet<string>() : InfraFor(plan, starting.AppsIn(plan));
             record = record with
             {
-                Compose = record.IsMain ? CheckOwnInfra(plan, record, step, cancellation, InfraFor(plan, starting?.AppsIn(plan)))
-                    : StartInfra(plan, record, step, cancellation, InfraFor(plan, starting?.AppsIn(plan))),
+                Compose = record.IsMain ? CheckOwnInfra(plan, record, step, cancellation, needed)
+                    : StartInfra(plan, record, step, cancellation, needed),
             };
             var upAt = DateTimeOffset.UtcNow;
             record = record with { State = WorkspaceState.Up, UpdatedAt = upAt, LastUpAt = upAt };
@@ -368,8 +375,8 @@ public sealed partial class WorkspaceService(
         }
     }
 
-    /// <summary>Stop the workspace's containers, keeping their volumes. Under the random port policy its ports go back
-    /// too.</summary>
+    /// <summary>Stop everything the workspace runs: its apps, then its containers, which are kept, data and all, for the
+    /// next start, as are its ports, whatever its port policy. A main's infra is the user's, so it's left running.</summary>
     public WorkspaceRecord Down(string orchestration, string workspace, IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
     {
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
@@ -379,10 +386,9 @@ public sealed partial class WorkspaceService(
         foreach (var project in record.Compose)
         {
             step.Start($"Stop {project.Name}");
-            docker.Down(project, volumes: false, line => step.Output(line), cancellation);
-            step.Done();
+            docker.StopAll(project, line => step.Output(line), cancellation);
+            step.Done("its containers and data are kept");
         }
-        if (record.PortPolicy == "random") leases.Release(record.Key);
         record = record with { State = WorkspaceState.Down, UpdatedAt = DateTimeOffset.UtcNow };
         store.Save(record);
         return record;
@@ -849,6 +855,8 @@ public sealed partial class WorkspaceService(
             git.Detach(repo.Dir);
             step.Done($"was on {record.Branch}");
         }
+        // Random ports belong to the branch; the next one in the slot draws its own.
+        if (record.PortPolicy == "random") leases.Release(record.Key);
         record = record with
         {
             Branch = null,
@@ -937,7 +945,7 @@ public sealed partial class WorkspaceService(
         if (record.InPlace != options.InPlace)
             return record.InPlace ? "runs its repos in place" : "has worktrees of its own";
         if (record.PortPolicy != options.PortPolicy)
-            return record.PortPolicy == "random" ? "takes fresh ports each time" : "keeps the ports it was given";
+            return record.PortPolicy == "random" ? "takes fresh ports for each branch" : "keeps the ports it was given";
         return null;
     }
 
@@ -1054,9 +1062,11 @@ public sealed partial class WorkspaceService(
         var compose = loaded.ComposeFiles(problems, dirs);
         if (problems.Count > 0) throw new WorkspaceException("the workspace's compose files couldn't be read", problems);
 
-        // Anything but a clean down may have left its containers listening on the leased ports.
+        // Anything but a clean stop may have left its containers listening on the leased ports.
         var wasUp = existing is not null && existing.State is not (WorkspaceState.Down or WorkspaceState.Released);
-        var keep = record.PortPolicy != "random" || wasUp;
+        // Random ports are drawn afresh for each branch checked out in the slot, not each start, so they hold still while
+        // it's stopped and started.
+        var keep = record.PortPolicy != "random" || existing is not null and not { State: WorkspaceState.Released };
         var listening = _listening();
 
         var plan = leases.Update(record.Key, (mine, others) =>
@@ -1415,12 +1425,13 @@ public sealed partial class WorkspaceService(
         foreach (var project in projects)
         {
             var wanted = services[project.Name].Where(s => needed?.Contains(s.Key) ?? true).ToArray();
-            step.Start($"Start {project.Name}");
             if (wanted.Length == 0)
             {
-                step.Done("left off: nothing being started uses it");
+                step.Start($"Infra {project.Name}");
+                step.Done(needed?.Count == 0 ? "ready; it starts with what uses it" : "left off: nothing being started uses it");
                 continue;
             }
+            step.Start($"Start {project.Name}");
             docker.Up(project, line => step.Output(line), cancellation,
                 needed is null ? null : wanted.Select(s => s.Service).ToArray());
             var healthy = wanted.Where(s => s.Checked).Select(s => s.Name).ToArray();

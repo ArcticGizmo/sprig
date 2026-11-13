@@ -41,7 +41,7 @@ public class MainWindowViewModelTests
         using var store = new TempStore();
         var vm = new MainWindowViewModel(new AppServices(store.Root), checkForUpdates: false);
 
-        Assert.Equal(["Home", "Repos", "Workspaces", "Orchestrations"], vm.NavItems.Select(p => p.Title));
+        Assert.Equal(["Home", "Repos", "Workspaces", "Usage", "Orchestrations"], vm.NavItems.Select(p => p.Title));
         Assert.Contains(vm.Workspaces, vm.NavItems);
         Assert.DoesNotContain(vm.Settings, vm.NavItems);
         Assert.DoesNotContain(vm.About, vm.NavItems);

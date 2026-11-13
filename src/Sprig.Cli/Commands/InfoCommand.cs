@@ -41,31 +41,24 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
         {
             cli.Ansi.MarkupLine($"[bold]{Markup.Escape(id)}[/] / [bold]{Markup.Escape(s.Workspace)}[/]  [dim]not made yet[/]");
             cli.Ansi.MarkupLine(s.Workspace == WorkspaceRecord.MainName
-                ? $"[dim]Bring it up with: sprig up {Markup.Escape(id)}[/]"
+                ? $"[dim]Start it with: sprig start {Markup.Escape(id)}[/]"
                 : $"[dim]Check a branch out with: sprig up {Markup.Escape(id)} -b <branch>[/]");
         }
-        else Header(record);
+        else Header(record, runners);
         cli.Ansi.WriteLine();
 
         if (record is not null && plan is not null)
         {
             Apps(record, plan, runners);
-            Infra(plan);
+            Infra(record, plan);
         }
         SettingsCommand.Write(cli, id, settings.Rows, "[bold]Inputs[/]");
         return 0;
     }
 
-    void Header(WorkspaceRecord record)
+    void Header(WorkspaceRecord record, IReadOnlyList<RunnerStatus> runners)
     {
-        var state = record.State switch
-        {
-            WorkspaceState.Up => "[green]up[/]",
-            WorkspaceState.Failed => $"[red]failed[/] [dim]{Markup.Escape(record.Error ?? "")}[/]",
-            WorkspaceState.Starting => "[yellow]starting[/]",
-            WorkspaceState.Released => "[dim]free[/]",
-            _ => "[dim]down[/]",
-        };
+        var state = WorkspacesCommand.RunState(record, runners, cli.Workspaces.RunningProjects());
         cli.Ansi.MarkupLine(record.IsMain
             ? $"[bold]{Markup.Escape(record.Orchestration)}[/]  {Markup.Escape(record.CheckoutBranch ?? "")}  {state}  [dim](main checkout)[/]"
             : record.InPlace
@@ -73,7 +66,7 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
             : $"[bold]{Markup.Escape(record.SlotName)}[/]  {Markup.Escape(record.Branch ?? "no branch")}  {state}");
         var folder = record.Folder ?? string.Join(", ", record.Repos.Select(r => r.Dir));
         cli.Ansi.MarkupLine($"[dim]Folder[/]   {Markup.Escape(folder.Replace('\\', '/'))}");
-        if (record.LastUpAt is { } at) cli.Ansi.MarkupLine($"[dim]Last up[/]  {Markup.Escape(at.LocalDateTime.ToString("g"))}");
+        if (record.LastUpAt is { } at) cli.Ansi.MarkupLine($"[dim]Ready since[/]  {Markup.Escape(at.LocalDateTime.ToString("g"))}");
     }
 
     void Apps(WorkspaceRecord record, Sprig.Engine.Planning.Plan plan, IReadOnlyList<RunnerStatus> runners)
@@ -92,14 +85,26 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
         cli.Ansi.Write(table);
     }
 
-    void Infra(Sprig.Engine.Planning.Plan plan)
+    void Infra(WorkspaceRecord record, Sprig.Engine.Planning.Plan plan)
     {
         if (plan.Containers.Count + plan.Compose.Count == 0) return;
-        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Infra[/]").AddColumns("Infra", "Ports");
-        foreach (var c in plan.Containers) table.AddRow(Markup.Escape($"{c.Owner}/{c.Name}"), Markup.Escape(string.Join(", ", c.Ports)));
+        var states = record.IsMain ? null : cli.Workspaces.InfraStates(cli.Workspaces.InfraTargets(record, plan));
+        var own = record.IsMain ? cli.Workspaces.OwnInfraOf(plan) : [];
+        string State(string key) => record.IsMain
+            ? own.FirstOrDefault(o => o.Key == key)?.Answering switch { true => "[green]yours, listening[/]", false => "[red]yours, not listening[/]", _ => "[dim]yours[/]" }
+            : states is null ? "[dim]docker isn't answering[/]"
+            : states.GetValueOrDefault(key) switch
+            {
+                { State: "running" } => "[green]running[/]",
+                { State: var other } => $"[dim]{Markup.Escape(other)}[/]",
+                null => "[dim]not started[/]",
+            };
+        var table = new Table().Border(TableBorder.Rounded).Title("[bold]Infra[/]").AddColumns("Infra", "State", "Ports");
+        foreach (var c in plan.Containers)
+            table.AddRow(Markup.Escape($"{c.Owner}/{c.Name}"), State($"{c.Owner}/{c.Name}"), Markup.Escape(string.Join(", ", c.Ports)));
         foreach (var c in plan.Compose)
             foreach (var svc in c.Services)
-                table.AddRow(Markup.Escape($"{c.Owner}/{svc.Name}"), Markup.Escape(string.Join(", ", svc.Mappings)));
+                table.AddRow(Markup.Escape($"{c.Owner}/{svc.Name}"), State($"{c.Owner}/{svc.Name}"), Markup.Escape(string.Join(", ", svc.Mappings)));
         cli.Ansi.Write(table);
     }
 }

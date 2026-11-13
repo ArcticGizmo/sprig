@@ -6,9 +6,9 @@ using Spectre.Console;
 namespace Sprig.Cli.Commands;
 
 /// <summary>
-/// <c>sprig up --run</c> after the infra is up: start the workspace's apps, follow their logs as one stream, and stop the
-/// apps on Ctrl+C. The infra stays up, since it holds data and is slow to bring back. A second Ctrl+C leaves at once;
-/// the host has the stop requests by then and finishes them on its own.
+/// <c>sprig up --run</c> once the workspace is ready: start its apps, follow their logs as one stream, and on Ctrl+C stop
+/// everything, apps and then infra, as <c>sprig stop</c> would. Containers and their data are kept. A second Ctrl+C
+/// leaves at once; the host has the stop requests by then and finishes them on its own.
 /// </summary>
 sealed class AppFollow(CliContext cli, WorkspaceRecord record, IReadOnlyList<RunnerSpec> specs)
 {
@@ -42,7 +42,9 @@ sealed class AppFollow(CliContext cli, WorkspaceRecord record, IReadOnlyList<Run
         foreach (var spec in specs) follower.Add(labels[spec.Name], HostProtocol.LogFile(cli.Paths, record.Key, spec.Name));
 
         var names = UpCommand.Words(record);
-        cli.Ansi.MarkupLine($"[dim]Following {specs.Count} apps. Ctrl+C stops them; the infra keeps running (sprig down {Markup.Escape(names)} stops it).[/]");
+        cli.Ansi.MarkupLine(record.IsMain
+            ? $"[dim]Following {specs.Count} apps. Ctrl+C stops them; your infra is left running.[/]"
+            : $"[dim]Following {specs.Count} apps. Ctrl+C stops them and the infra, keeping its data.[/]");
 
         if (FollowUntilStoppedOrDone(follower, stopRequested) is { } done) return done;
         return StopApps(follower);
@@ -95,7 +97,9 @@ sealed class AppFollow(CliContext cli, WorkspaceRecord record, IReadOnlyList<Run
             if (r.Error is { } why) cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(r.Name)}[/]  {Markup.Escape(why)}");
             else cli.Ansi.MarkupLine($"[green]{Glyph.Check(cli.Ansi)}[/] {Markup.Escape(r.Name)} stopped");
         }
-        cli.Ansi.MarkupLine($"[dim]The infra is still up. Stop it with: sprig down {Markup.Escape(UpCommand.Words(record))}[/]");
+        // The apps are stopped already, so this stops the infra, keeping its containers and data.
+        if (record.Compose.Count > 0)
+            cli.Workspaces.Down(record.Orchestration, record.Name, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, json: false)));
         return 0;
     }
 }

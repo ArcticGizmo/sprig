@@ -19,8 +19,8 @@ public sealed class LayoutBody(string key, string group, double radius)
 /// <summary>A group's (a repo's) box: round its nodes, with room above for its title and below for their labels.</summary>
 public readonly record struct LayoutBox(double Left, double Top, double Right, double Bottom)
 {
-    /// <summary>Above a node's centre: its circle and the box's title.</summary>
-    public const double Above = 52;
+    /// <summary>Above a node's centre: its circle, its CPU and memory, and the box's title.</summary>
+    public const double Above = 92;
 
     /// <summary>Below a node's centre: its circle, name, state and infra tags.</summary>
     public const double Below = 82;

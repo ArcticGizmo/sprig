@@ -64,8 +64,8 @@ public class ValuesSettings : TrustingSettings
 
 static class ValuesChange
 {
-    /// <summary>Keep the change on the workspace and, when it's up, bring it up again so its files have the new values,
-    /// then say which apps to restart.</summary>
+    /// <summary>Keep the change on the workspace and, when it's ready, make it ready again so its files have the new
+    /// values (starting nothing), then say which apps to restart.</summary>
     public static int Apply(CliContext cli, ValuesSettings s, IReadOnlyDictionary<string, string> set, IReadOnlyCollection<string> unset)
     {
         var (id, workspace) = s.Target(cli);
@@ -73,13 +73,13 @@ static class ValuesChange
             throw new InvalidOperationException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values: sprig up -b <branch> --set name=value");
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
         if (cli.Workspaces.Get(loaded.Id, workspace) is not { } record)
-            throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; give it values as it comes up: sprig up {(s.Id is null ? "" : $"{loaded.Id} ")}--set name=value");
+            throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; give it values as it's made: sprig up {(s.Id is null ? "" : $"{loaded.Id} ")}--set name=value");
 
         var before = cli.Workspaces.LastPlan(record.Orchestration, record.Name);
         record = cli.Workspaces.SetValues(record.Orchestration, record.Name, set, unset);
         var changed = string.Join(", ", set.Keys.Concat(unset));
         if (record.State != WorkspaceState.Up)
-            return CliOutput.Ok(s.Json, $"{changed} kept on {record.Key}; it uses them next time it comes up", new { ok = true, values = s.UnmaskSecrets ? record.Values : Masked(record, cli) });
+            return CliOutput.Ok(s.Json, $"{changed} kept on {record.Key}; it uses them next time it starts", new { ok = true, values = s.UnmaskSecrets ? record.Values : Masked(record, cli) });
 
         try
         {
@@ -88,7 +88,7 @@ static class ValuesChange
         catch (WorkspaceException e)
         {
             Console.Error.WriteLine($"error: kept, but {record.Key} couldn't take them: {e.Message}");
-            if (e.Asks.Count > 0) cli.Ansi.MarkupLine("[dim]Give it the rest with sprig set, or bring it up with: sprig up --set name=value[/]");
+            if (e.Asks.Count > 0) cli.Ansi.MarkupLine("[dim]Give it the rest with sprig set, or start it with: sprig up --set name=value[/]");
             return 1;
         }
         var after = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;

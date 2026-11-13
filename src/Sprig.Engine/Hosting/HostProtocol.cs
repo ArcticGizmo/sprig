@@ -78,8 +78,9 @@ public static class RunnerStates
 /// <param name="Exit">The exit code once it has ended.</param>
 /// <param name="Restarts">How many times it has been started again since it was asked to start.</param>
 /// <param name="Doing">What it's busy with while it builds, when that isn't plain building (<c>installing packages</c>).</param>
+/// <param name="Usage">What its processes, build included, use now; null when nothing of it is running.</param>
 public sealed record RunnerStatus(string Workspace, string Name, RunnerState State, int? Pid, int? Port, int? Exit, string LogFile,
-    DateTimeOffset Since, string? Error = null, int Restarts = 0, string? Doing = null);
+    DateTimeOffset Since, string? Error = null, int Restarts = 0, string? Doing = null, ResourceUsage? Usage = null);
 
 /// <summary>One request to the host, one JSON line each way.</summary>
 /// <param name="Specs">For <c>start</c>: the runners to have going.</param>

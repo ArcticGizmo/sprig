@@ -153,6 +153,15 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly TaskCompletionSource _stopAsked = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly Regex? _readyLog = spec.ReadyLog is { } pattern ? new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1)) : null;
+
+        /// <summary>A line saying where the app serves: ASP.NET's "Now listening on: http://localhost:5080", Vite's
+        /// "Local: http://localhost:5173/".</summary>
+        static readonly Regex Serving = new(@"(listening|local:|running|serving|available)\D{0,40}?https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(?<port>\d{2,5})",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+
+        // This run's own port has been announced, or another one has been reported in its place.
+        bool _servesOwnPort;
+        bool _otherPortSaid;
         StreamWriter? _log;
         DateOnly? _logDate;
         Process? _process;
@@ -220,6 +229,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     Write($"sprig: starting {spec.Command}");
                     var clock = Stopwatch.StartNew();
                     var logMatched = _readyLog is null ? null : new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    (_servesOwnPort, _otherPortSaid) = (false, false);
                     if (Launch(spec.Command, logMatched) is not { } process) return;
                     if (spec.Job) Set(RunnerState.Running, pid: process.Id);
                     else
@@ -466,12 +476,38 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         {
             if (line is null) return;
             Write(line);
+            NoticePort(line);
             if (logMatched is null || logMatched.Task.IsCompleted) return;
             try
             {
                 if (_readyLog!.IsMatch(AnsiText.Strip(line))) logMatched.TrySetResult();
             }
             catch (RegexMatchTimeoutException) { /* a pathological pattern; this line doesn't count */ }
+        }
+
+        /// <summary>
+        /// An app that serves on a port of its own choosing (one fixed in its dev script, say) never opens the one sprig
+        /// gave it, so it would sit at starting with no reason given. When it says it serves somewhere else, and hasn't
+        /// said it serves on its own port too, that's said once, in its log and beside its state.
+        /// </summary>
+        void NoticePort(string line)
+        {
+            if (spec.Port is not { } port || _servesOwnPort) return;
+            Match match;
+            try { match = Serving.Match(AnsiText.Strip(line)); }
+            catch (RegexMatchTimeoutException) { return; }
+            if (!match.Success || !int.TryParse(match.Groups["port"].Value, out var seen)) return;
+            if (seen == port)
+            {
+                _servesOwnPort = true;
+                lock (_gate) if (Status.State == RunnerState.Starting && _otherPortSaid) Status = Status with { Error = null };
+                return;
+            }
+            if (_otherPortSaid) return;
+            _otherPortSaid = true;
+            var why = $"it says it serves on {seen}, not the {port} sprig gave it";
+            Write($"sprig: {why}, so it isn't ready until {port} opens. Check it takes its port from the value sprig writes for it");
+            lock (_gate) if (Status.State == RunnerState.Starting) Status = Status with { Error = why };
         }
 
         /// <summary>

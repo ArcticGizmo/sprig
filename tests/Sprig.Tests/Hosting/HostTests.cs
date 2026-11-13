@@ -80,6 +80,25 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
+    public void An_app_that_says_it_serves_on_another_port_than_its_own_is_told_so_while_it_starts()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        var serving = OperatingSystem.IsWindows()
+            ? new CommandSpec("cmd.exe", ["/d", "/c", "echo   Local:   http://localhost:8520/ & ping -n 30 127.0.0.1 > nul"])
+            : new CommandSpec("/bin/sh", ["-c", "echo '  Local:   http://localhost:8520/'; sleep 30"]);
+
+        _client.Send(new HostRequest("start", [new RunnerSpec("storefront/feat-x", "shop/mobile", serving, _store.Root, Port: port)]));
+
+        var starting = Await("shop/mobile", r => r.Error is not null);
+        Assert.Equal(RunnerState.Starting, starting.State);
+        Assert.Equal($"it says it serves on 8520, not the {port} sprig gave it", starting.Error);
+        Assert.Contains("isn't ready until", ReadShared(starting.LogFile));
+    }
+
+    [Fact]
     public void A_failed_build_stops_the_app_from_starting_and_stopping_a_workspace_forgets_it()
     {
         var spec = new RunnerSpec("storefront/feat-x", "shop/web", Wait(30), _store.Root, Build: Exit(3), BuildKey: "shop");

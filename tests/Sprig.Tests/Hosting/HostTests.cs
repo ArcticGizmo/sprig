@@ -336,6 +336,8 @@ public sealed class HostTests : IDisposable
             Ansi = Spectre.Console.AnsiSupport.No,
             ColorSystem = Spectre.Console.ColorSystemSupport.NoColors,
             Out = new Spectre.Console.AnsiConsoleOutput(output),
+            // Spectre turns ANSI back on when it sees a CI such as GitHub Actions, whatever is asked for above.
+            Enrichment = new Spectre.Console.ProfileEnrichment { UseDefaultEnrichers = false },
         });
         var processes = new Sprig.Engine.Processes.ProcessRunner();
         var settings = new Sprig.Engine.Settings.FileSettingsStore(_store.Paths);

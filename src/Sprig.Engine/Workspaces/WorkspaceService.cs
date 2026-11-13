@@ -31,7 +31,7 @@ public sealed class WorkspaceException(string message, IReadOnlyList<PlanProblem
     /// asks to answer.</param>
     public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks, string? workspace = null)
     {
-        var what = $"{(asks.Count == 1 ? "a setting needs" : "settings need")} a value first: " +
+        var what = $"{(asks.Count == 1 ? "an input needs" : "inputs need")} a value first: " +
                    string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})"));
         return workspace == WorkspaceRecord.MainName
             ? new($"{what}. main runs with the definitions' own values, so give {(asks.Count == 1 ? "it" : "them")} a default in the definition, or check a branch out in a slot and set {(asks.Count == 1 ? "it" : "them")} there")

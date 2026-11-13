@@ -477,10 +477,10 @@ internal static partial class HeadlessRenderer
         void Db() => Add("ConnectionStrings__Db", "Host=localhost;Port=8002;Password=hunter2", "postgres.tcp port 8002", new("shop-services", "postgres", "tcp", null));
         void Redis(string owner) => Add("Redis__Url", "redis://localhost:8003", "redis.tcp port 8003",
             new("shop-services", "redis", "tcp", owner == "shop-services" ? null : "cache-url"));
-        void Mail() => Add("Mail__Smtp", "smtp://localhost:8011", "setting mail-smtp ← storefront", new("storefront", "mail", "smtp", "mail-smtp"));
+        void Mail() => Add("Mail__Smtp", "smtp://localhost:8011", "input mail-smtp ← storefront", new("storefront", "mail", "smtp", "mail-smtp"));
         void Kafka() => Add("Kafka__Brokers", "localhost:9092", "kafka.tcp port 9092", new("shop-analytics", "kafka", "tcp", null));
         void Uses(string key, string setting, string owner, string other)
-            => Add(key, $"http://localhost:{PortOf(other)}", $"setting {setting} ← {owner}", new(owner, other, "http", setting));
+            => Add(key, $"http://localhost:{PortOf(other)}", $"input {setting} ← {owner}", new(owner, other, "http", setting));
 
         if (port is { } p) Add("Urls", $"http://localhost:{p}", $"{app}.http port {p}", new(repo, app, "http", null));
         switch (app)
@@ -511,7 +511,7 @@ internal static partial class HeadlessRenderer
                 Kafka();
                 break;
             case "reports-api":
-                Add("ConnectionStrings__Reports", "Host=localhost;Port=8002;Password=hunter2", "setting reports-db ← shop-services",
+                Add("ConnectionStrings__Reports", "Host=localhost;Port=8002;Password=hunter2", "input reports-db ← shop-services",
                     new("shop-services", "postgres", "tcp", "reports-db"));
                 break;
             case "scheduler":
@@ -531,7 +531,7 @@ internal static partial class HeadlessRenderer
             Mail();
         }
         if (app == "payments-api")
-            Add("Payments__Url", "https://sandbox.payments.example.com", "setting payments-gateway ← this workspace",
+            Add("Payments__Url", "https://sandbox.payments.example.com", "input payments-gateway ← this workspace",
                 new(ValueSource.Workspace, null, null, "payments-gateway"));
         return env;
     }

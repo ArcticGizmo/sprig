@@ -149,7 +149,7 @@ public partial class WorkspacesViewModel
         WorkspaceSettings.Clear();
         foreach (var input in await AppServices.RunAsync(() => SettingInputs(loaded, record.Values))) WorkspaceSettings.Add(input);
         OnPropertyChanged(nameof(HasWorkspaceSettings));
-        SettingsMessage = WorkspaceSettings.Count == 0 ? "Its repos have no settings." : "";
+        SettingsMessage = WorkspaceSettings.Count == 0 ? "Its repos have no inputs." : "";
         IsSettingsOpen = true;
     }
 

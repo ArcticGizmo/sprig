@@ -190,7 +190,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         public string? Workspace { get; set; }
 
         [CommandOption("--set <name=value>")]
-        [Description("Plan with this value for a setting, over the workspace's own. Repeat for more")]
+        [Description("Plan with this value for an input, over the workspace's own. Repeat for more")]
         public string[] Set { get; set; } = [];
     }
 
@@ -253,7 +253,7 @@ static class PlanPrinter
 
         if (plan.ToAsk.Count > 0)
         {
-            var asks = new Table().Border(TableBorder.Rounded).Title("[bold]To ask[/]").AddColumns("Setting", "Type", "For", "Declared at");
+            var asks = new Table().Border(TableBorder.Rounded).Title("[bold]To ask[/]").AddColumns("Input", "Type", "For", "Declared at");
             foreach (var a in plan.ToAsk)
                 asks.AddRow(Markup.Escape(a.Name), Markup.Escape(a.Type), Markup.Escape(a.Owner),
                     Markup.Escape($"{Relative(a.Location.File, root)}{(a.Location.Line > 0 ? $":{a.Location.Line}" : "")}"));
@@ -272,7 +272,7 @@ static class PlanPrinter
         {
             var table = new Table().Border(TableBorder.Rounded)
                 .Title($"[bold]{Markup.Escape(app.Owner)} / {Markup.Escape(app.Name)}[/] [dim]({Markup.Escape(app.Kind)}{(app.Job ? " job" : "")}, {Markup.Escape(app.Path)})[/]")
-                .AddColumns("Setting", "Value", "Comes from");
+                .AddColumns("Input", "Value", "Comes from");
             foreach (var env in app.Env)
                 table.AddRow(new Markup($"{Markup.Escape(env.Key)} [dim]({Markup.Escape(env.File is { } file ? app.FileLabel(file) : "no file")})[/]"), Value(env.Value, unmask ? null : SecretValues.IsSecret(plan, env)), Via(env.Value));
             if (app.Run is { } run) table.AddRow(new Markup("[dim]run[/]"), Value(run, unmask ? null : false), Via(run));

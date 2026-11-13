@@ -81,7 +81,7 @@ public static class CliApp
         config.AddCommand<PlanCommand>("plan");
         config.AddCommand<SetCommand>("set");
         config.AddCommand<UnsetCommand>("unset");
-        config.AddCommand<SettingsCommand>("settings");
+        config.AddCommand<SettingsCommand>("inputs").WithAlias("settings");
         config.AddCommand<InfoCommand>("info");
         config.AddCommand<DownCommand>("down");
         config.AddCommand<FreeCommand>("free").WithAlias("release");

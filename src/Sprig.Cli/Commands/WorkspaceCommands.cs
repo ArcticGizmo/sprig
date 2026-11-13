@@ -111,7 +111,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public bool NoApps { get; set; }
 
         [CommandOption("--set <name=value>")]
-        [Description("Give a setting this value in the workspace, over the orchestration's and the repo's default. Kept for next time. Repeat for more")]
+        [Description("Give an input this value in the workspace, over the orchestration's and the repo's default. Kept for next time. Repeat for more")]
         public string[] Set { get; set; } = [];
     }
 
@@ -211,7 +211,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             }
             catch (WorkspaceException e) when (e.Asks.Count > 0 && attempt < 3 && cli.Interactive(s.Json))
             {
-                cli.Ansi.MarkupLine($"[yellow]{(e.Asks.Count == 1 ? "A setting has" : "Some settings have")} no value yet.[/] It's kept on the workspace.");
+                cli.Ansi.MarkupLine($"[yellow]{(e.Asks.Count == 1 ? "An input has" : "Some inputs have")} no value yet.[/] It's kept on the workspace.");
                 foreach (var ask in e.Asks.Where(a => !values.ContainsKey(a.Name)))
                 {
                     var prompt = new TextPrompt<string>($"  [bold]{Markup.Escape(ask.Name)}[/] [dim]({Markup.Escape(ask.Type)}, for {Markup.Escape(ask.Owner)})[/]:");

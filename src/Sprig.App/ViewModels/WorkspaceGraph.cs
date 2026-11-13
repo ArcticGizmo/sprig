@@ -41,7 +41,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         TopologyKind.Container => $"container · {node.Detail}",
         TopologyKind.ComposeService => "compose service",
         TopologyKind.Outside => "outside the workspace",
-        _ => "a setting with no value",
+        _ => "an input with no value",
     };
 
     [ObservableProperty]
@@ -91,7 +91,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     public void Refresh()
     {
         if (node.Kind == TopologyKind.Outside) (State, StateDetail, Health) = ("outside", ValueOrNothing(node.Detail), NodeHealth.Unknown);
-        else if (node.Kind == TopologyKind.Missing) (State, StateDetail, Health) = ("no value yet", "give it one in the workspace's Settings", NodeHealth.Bad);
+        else if (node.Kind == TopologyKind.Missing) (State, StateDetail, Health) = ("no value yet", "give it one in the workspace's Inputs", NodeHealth.Bad);
         else if (IsInfra && State.Length == 0) (State, Health) = ("checking…", NodeHealth.Unknown);
         if (!IsRunner) return;
         if (app is null)

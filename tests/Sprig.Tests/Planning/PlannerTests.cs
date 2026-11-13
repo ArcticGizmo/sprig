@@ -129,7 +129,7 @@ public class PlannerTests
         Assert.Equal(("shop-services", "mail"), (mail.Owner, mail.Name));
         var smtp = plan.Apps.Single().Env.Single().Value;
         Assert.Equal($"smtp://localhost:{plan.Ports.Single(p => p.Endpoint == "smtp").Port}", smtp.Value);
-        Assert.StartsWith("setting mail-smtp ← shop-services's default", smtp.Via[0]);
+        Assert.StartsWith("input mail-smtp ← shop-services's default", smtp.Via[0]);
         Assert.Equal("mail-smtp", Assert.Single(plan.Wires()).Setting);
     }
 
@@ -180,7 +180,7 @@ public class PlannerTests
         Assert.Empty(plan.Problems);
         Assert.Equal("storefront", Assert.Single(plan.Containers).Owner);
         Assert.DoesNotContain(plan.Ports, p => p.Owner == "shop-services" && p.Resource == "mail");
-        Assert.StartsWith("setting mail-smtp ← the orchestration", plan.Apps.Single().Env.Single().Value.Via[0]);
+        Assert.StartsWith("input mail-smtp ← the orchestration", plan.Apps.Single().Env.Single().Value.Via[0]);
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public class PlannerTests
         Assert.Empty(plan.Problems);
         var smtp = plan.Apps.Single().Env.Single().Value;
         Assert.Equal("smtp://staging:25", smtp.Value);
-        Assert.Equal("setting mail-smtp ← this workspace", smtp.Via[0]);
+        Assert.Equal("input mail-smtp ← this workspace", smtp.Via[0]);
         Assert.Equal(ValueSource.Workspace, Assert.Single(plan.Wires()).ProviderOwner);
         Assert.DoesNotContain(plan.Ports, p => p.Owner == "shop-services" && p.Resource == "mail");
     }
@@ -879,7 +879,7 @@ public class PlannerTests
         var env = Env(plan, "web", "VITE_CATALOG_URL");
         Assert.Equal($"http://localhost:{catalogPort}", env.Value.Value);
         Assert.Equal(".env.local", env.File);
-        Assert.Equal(["setting catalog-url ← shop-services", $"catalog-api.http port {catalogPort}"], env.Value.Via);
+        Assert.Equal(["input catalog-url ← shop-services", $"catalog-api.http port {catalogPort}"], env.Value.Via);
         Assert.Equal($"http://localhost:{catalogPort}", Env(plan, "catalog-api", "ASPNETCORE_URLS").Value.Value);
     }
 
@@ -1136,7 +1136,7 @@ public class PlannerTests
         Assert.Equal(2, plan.Containers.Count(c => c.Name == "pg"));
         Assert.NotEqual(plan.Ports.First(p => p.Owner == "a" && p.Resource == "pg").Port, plan.Ports.First(p => p.Owner == "b" && p.Resource == "pg").Port);
         var problem = Assert.Single(plan.Problems);
-        Assert.Contains("'api' isn't declared in b; to use something from another repo, make it a setting", problem.Message);
+        Assert.Contains("'api' isn't declared in b; to use something from another repo, make it an input", problem.Message);
     }
 
     [Fact]

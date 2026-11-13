@@ -6,7 +6,7 @@ using Spectre.Console.Cli;
 
 namespace Sprig.Cli.Commands;
 
-[Description("Show a workspace whole: where it is, its apps and infra and their state, and its settings")]
+[Description("Show a workspace whole: where it is, its apps and infra and their state, and its inputs")]
 public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
 {
     public sealed class Settings : WorkspaceSettings
@@ -52,7 +52,7 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
             Apps(record, plan, runners);
             Infra(plan);
         }
-        SettingsCommand.Write(cli, id, settings.Rows, "[bold]Settings[/]");
+        SettingsCommand.Write(cli, id, settings.Rows, "[bold]Inputs[/]");
         return 0;
     }
 

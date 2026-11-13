@@ -1198,7 +1198,7 @@ public partial class WorkspacesViewModel : PageViewModel
         }
         catch (WorkspaceException e) when (e.Asks.Count > 0)
         {
-            window.Finish($"{Headline(e.Message)}.\nGive {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Settings, then bring it up again.",
+            window.Finish($"{Headline(e.Message)}.\nGive {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Inputs, then bring it up again.",
                 ProgressState.Error);
             return false;
         }

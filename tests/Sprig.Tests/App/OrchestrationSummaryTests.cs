@@ -533,7 +533,7 @@ public class ReposViewModelTests
     [Theory]
     [InlineData("{catalog-api.http.url}", "catalog-api's url")]
     [InlineData("http://localhost:{web.http.port}/cart", "http://localhost:web's port/cart")]
-    [InlineData("{setting.mail-smtp}", "its setting mail-smtp")]
+    [InlineData("{setting.mail-smtp}", "its input mail-smtp")]
     [InlineData("Host=x;Password=hunter2", "Host=x;Password=***")]
     public void Offers_are_described_in_words(string template, string expected) => Assert.Equal(expected, ReposViewModel.Describe(template));
 

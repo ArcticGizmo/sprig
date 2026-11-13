@@ -309,7 +309,7 @@
                             <ItemsControl ItemsSource="{Binding Infra}" ItemTemplate="{StaticResource FactCard}" ItemsPanel="{StaticResource CardWrap}" />
                         </StackPanel>
                         <StackPanel Spacing="10">
-                            <TextBlock Classes="phead" Text="SETTINGS" />
+                            <TextBlock Classes="phead" Text="INPUTS" />
                             <TextBlock Classes="cell" Text="None" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasSettings}" />
                             <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding HasSettings}"
                                        Text="A value set on the workspace, or given by an orchestration, wins over the default." />

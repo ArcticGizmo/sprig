@@ -364,7 +364,7 @@ public partial class ReposViewModel : PageViewModel
         return string.Concat(parts.Select(p => p switch
         {
             TextPart t => ValueMask.Apply(t.Text),
-            RefPart { Path: var path } when path.StartsWith("setting.", StringComparison.Ordinal) => $"its setting {path["setting.".Length..]}",
+            RefPart { Path: var path } when path.StartsWith("setting.", StringComparison.Ordinal) => $"its input {path["setting.".Length..]}",
             RefPart { Path: var path } when path.Split('.') is [var resource, _, var what] => $"{resource}'s {what}",
             RefPart r => r.Path,
             _ => "",

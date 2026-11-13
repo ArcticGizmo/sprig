@@ -671,7 +671,7 @@ public static class Planner
             if (!scope.Resources.TryGetValue(resourceName, out var resource))
             {
                 Problem($"'{resourceName}' isn't declared in {scope.Owner}" +
-                        (scope.Repo is not null ? "; to use something from another repo, make it a setting" : ""), location);
+                        (scope.Repo is not null ? "; to use something from another repo, make it an input" : ""), location);
                 return null;
             }
             if (!resource.Endpoints.TryGetValue(endpointName, out var endpoint))
@@ -709,14 +709,14 @@ public static class Planner
             var at = declared?.Location ?? location;
 
             if (input.Values?.TryGetValue(name, out var set) == true)
-                return new Resolved(set, [$"setting {name} ← this workspace"], [new ValueSource(ValueSource.Workspace, null, null, name)]);
+                return new Resolved(set, [$"input {name} ← this workspace"], [new ValueSource(ValueSource.Workspace, null, null, name)]);
 
             var binding = input.Orchestration.Bindings.FirstOrDefault(b => b.Setting == name);
             if (binding is not null)
             {
                 var bound = Resolve(_orchestration, binding.Value, binding.Location);
                 if (bound.Value is null) return null;
-                return new Resolved(bound.Value, [$"setting {name} ← the orchestration", .. bound.Via], Crossed(bound.Sources ?? [], _orchestration.Owner, name));
+                return new Resolved(bound.Value, [$"input {name} ← the orchestration", .. bound.Via], Crossed(bound.Sources ?? [], _orchestration.Owner, name));
             }
 
             var exporters = _scopes
@@ -728,7 +728,7 @@ public static class Planner
             {
                 var own = ResolveTemplate(scope, fallback, at, visiting);
                 if (own is null) return null;
-                return new Resolved(own.Value.Value, [$"setting {name} ← {scope.Owner}'s default", .. own.Value.Via], Crossed(own.Value.Sources, scope.Owner, name));
+                return new Resolved(own.Value.Value, [$"input {name} ← {scope.Owner}'s default", .. own.Value.Via], Crossed(own.Value.Sources, scope.Owner, name));
             }
             if (exporters.Count == 0)
             {
@@ -751,7 +751,7 @@ public static class Planner
             }
             var value = ResolveTemplate(owner, export.Value, export.Location, visiting);
             if (value is null) return null;
-            return new Resolved(value.Value.Value, [$"setting {name} ← {owner.Owner}", .. value.Value.Via], Crossed(value.Value.Sources, owner.Owner, name));
+            return new Resolved(value.Value.Value, [$"input {name} ← {owner.Owner}", .. value.Value.Via], Crossed(value.Value.Sources, owner.Owner, name));
         }
 
         Resolved? ResolveNamedExport(Scope scope, string rest, SourceLocation location, HashSet<string> visiting)

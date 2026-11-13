@@ -669,7 +669,7 @@
                                     IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
                                     ToolTip.Tip="Free this slot for the next branch: its worktrees go to a detached HEAD. Its branch and commits stay, and so do its data, ports, values and build output."
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Settings" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                            <Button Content="Inputs" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding Selected.HasSettings, FallbackValue=False}"
                                     ToolTip.Tip="The values its repos take, and where each comes from"
                                     AutomationProperties.AutomationId="workspace:settings"
@@ -1434,7 +1434,7 @@
                             <RadioButton GroupName="new-data" IsChecked="{Binding NewEmptyData}" Content="Start with empty data" />
                         </StackPanel>
                         <StackPanel Spacing="6" IsVisible="{Binding HasNewSettings}">
-                            <TextBlock Classes="phead" Text="SETTINGS" />
+                            <TextBlock Classes="phead" Text="INPUTS" />
                             <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
                                 <ItemsControl ItemsSource="{Binding NewSettings}" ItemTemplate="{StaticResource SettingInputRow}" />
                             </ScrollViewer>
@@ -1463,7 +1463,7 @@
                     BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="640" Margin="32"
                     HorizontalAlignment="Stretch" VerticalAlignment="Center">
                 <StackPanel Spacing="12">
-                    <TextBlock Text="{Binding Selected.Record.Name, StringFormat='Settings of {0}', FallbackValue='Settings'}"
+                    <TextBlock Text="{Binding Selected.Record.Name, StringFormat='Inputs of {0}', FallbackValue='Inputs'}"
                                FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                     <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding HasWorkspaceSettings}"
                                Text="A value here is this workspace's own, and wins over the orchestration's and the repo's default. Leave one empty to use what's shown." />

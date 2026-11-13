@@ -111,13 +111,13 @@ static class ValuesChange
         => SecretValues.Trimmed(record.Values, cli.Workspaces.LastPlan(record.Orchestration, record.Name)) ?? new Dictionary<string, string>();
 }
 
-[Description("Give settings values in a workspace, over the orchestration's and the repos' defaults. Kept for next time")]
+[Description("Give a workspace's inputs values, over the orchestration's and the repos' defaults. Kept for next time")]
 public sealed class SetCommand(CliContext cli) : Command<SetCommand.Settings>
 {
     public sealed class Settings : ValuesSettings
     {
         [CommandArgument(0, "<name=value>")]
-        [Description("One or more settings to give a value")]
+        [Description("One or more inputs to give a value")]
         public string[] Pairs { get; set; } = [];
     }
 
@@ -137,7 +137,7 @@ public sealed class UnsetCommand(CliContext cli) : Command<UnsetCommand.Settings
     public sealed class Settings : ValuesSettings
     {
         [CommandArgument(0, "<name>")]
-        [Description("One or more settings to clear")]
+        [Description("One or more inputs to clear")]
         public string[] Names { get; set; } = [];
     }
 
@@ -145,7 +145,7 @@ public sealed class UnsetCommand(CliContext cli) : Command<UnsetCommand.Settings
         => ValuesChange.Apply(cli, s, new Dictionary<string, string>(), s.Names);
 }
 
-[Description("List each setting of a workspace's repos, its value, and where the value comes from")]
+[Description("List each input of a workspace's repos, its value, and where the value comes from")]
 public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
 {
     protected override int Execute(CommandContext context, ValuesSettings s, CancellationToken cancellation)
@@ -175,10 +175,10 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
     {
         if (rows.Count == 0)
         {
-            cli.Ansi.MarkupLine($"[dim]{Markup.Escape(id)}'s repos have no settings.[/]");
+            cli.Ansi.MarkupLine($"[dim]{Markup.Escape(id)}'s repos have no inputs.[/]");
             return;
         }
-        var table = new Table().Border(TableBorder.Rounded).Title(title).AddColumns("Repo", "Setting", "Type", "Value", "From");
+        var table = new Table().Border(TableBorder.Rounded).Title(title).AddColumns("Repo", "Input", "Type", "Value", "From");
         foreach (var r in rows)
             table.AddRow(new Markup(Markup.Escape(r.Repo)), new Markup(Markup.Escape(r.Name)), new Markup($"[dim]{Markup.Escape(r.Type)}[/]"),
                 new Markup(r.Value is null ? "[yellow]to ask[/]" : Markup.Escape(r.Value)), new Markup($"[dim]{Markup.Escape(r.From)}[/]"));

@@ -45,8 +45,11 @@ public class WorkspacesOverviewTests
         var vm = Make(temp, out _);
 
         Assert.Equal(["q4", "local", "demo", "feat-a", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
-        Assert.Equal("6 workspaces of 3 orchestrations · 2 up · 1 failed · 3 down", vm.OverviewSummary);
-        Assert.Equal(["All 6", "2 up", "1 failed", "3 down"], vm.OverviewChips.Select(c => c.Label));
+        // Read from what's running: local is ready, but nothing of it runs.
+        Assert.Equal("6 workspaces of 3 orchestrations · 1 running · 1 failed · 4 stopped", vm.OverviewSummary);
+        Assert.Equal(["All 6", "1 running", "1 failed", "4 stopped"], vm.OverviewChips.Select(c => c.Label));
+        Assert.Equal(("running", "stopped"), (vm.OverviewRows.Single(r => r.Record.Name == "feat-a").State, vm.OverviewRows.Single(r => r.Record.Name == "local").State));
+        Assert.Equal(1, vm.NavCount);
         var featA = vm.OverviewRows.Single(r => r.Record.Name == "feat-a");
         // A workspace of worktrees reads as its folder, as git and the file system show it.
         Assert.Equal(("storefront--feat-a", "services / local"), (featA.Name, vm.OverviewRows.Single(r => r.Record.Name == "local").Name));
@@ -56,8 +59,8 @@ public class WorkspacesOverviewTests
         Assert.Equal("3 days ago", vm.OverviewRows.Single(r => r.Record.Name == "feat-c").LastUp);
         Assert.Equal("in place", vm.OverviewRows.Single(r => r.Record.Name == "local").Worktrees);
 
-        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
-        Assert.Equal(["q4", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Stopped));
+        Assert.Equal(["q4", "local", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
     }
 
     [Fact]
@@ -83,7 +86,7 @@ public class WorkspacesOverviewTests
 
         Assert.Equal("5.0% · 1000 MB", featA.Usage);
         Assert.Equal("Apps: 4.0% CPU · 500 MB · 4 processes\nInfra: 1.0% CPU · 500 MB · 9 processes", featA.UsageTip);
-        Assert.Equal("6 workspaces of 3 orchestrations · 2 up · 1 failed · 3 down · using 15% CPU, 2.0 GB", vm.OverviewSummary);
+        Assert.Equal("6 workspaces of 3 orchestrations · 2 running · 1 failed · 3 stopped · using 15% CPU, 2.0 GB", vm.OverviewSummary);
     }
 
     [Fact]
@@ -102,8 +105,8 @@ public class WorkspacesOverviewTests
         Assert.False(vm.CanBulkFree);
         vm.AskBulkRemoveCommand.Execute(null);
         Assert.False(vm.ConfirmingBulkRemove);
-        // A month down, but always there, so not offered as stale either.
-        Assert.Equal("Select the 2 down for over a week", vm.StaleLabel);
+        // A month unused, but always there, so not offered as stale either.
+        Assert.Equal("Select the 2 unused for over a week", vm.StaleLabel);
 
         vm.OverviewRows.Single(r => r.Record.Name == "feat-a").IsChecked = true;
         vm.AskBulkRemoveCommand.Execute(null);
@@ -112,11 +115,11 @@ public class WorkspacesOverviewTests
     }
 
     [Fact]
-    public void The_shortcut_ticks_what_has_been_down_over_a_week_and_ticks_survive_a_refresh()
+    public void The_shortcut_ticks_what_has_been_unused_over_a_week_and_ticks_survive_a_refresh()
     {
         using var temp = new TempStore();
         var vm = Make(temp, out _);
-        Assert.Equal("Select the 2 down for over a week", vm.StaleLabel);
+        Assert.Equal("Select the 2 unused for over a week", vm.StaleLabel);
 
         vm.SelectStaleCommand.Execute(null);
 
@@ -163,7 +166,7 @@ public class WorkspacesOverviewTests
         Assert.True(vm.NoOverviewMatches);
 
         vm.OverviewSearch = "storefront";
-        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Stopped));
         Assert.Equal(["feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
 
         vm.OverviewSearch = "in place";

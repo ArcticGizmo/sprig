@@ -54,7 +54,7 @@ public class UsageViewModelTests
         Assert.Equal(("1 running", "—"), (vm.Rows[1].Apps, vm.Rows[1].Infra));
         Assert.Equal(["shop-postgres", "api", "web"], featA.Parts.Select(p => p.Name));
         Assert.Equal(["container", "app · shop", "app · shop"], featA.Parts.Select(p => p.Kind));
-        Assert.Equal("1 more is up with nothing of its own running.", vm.IdleNote);
+        Assert.Equal("1 more is ready with nothing running.", vm.IdleNote);
         Assert.Equal("MEMORY ▼", vm.MemoryHeading);
     }
 

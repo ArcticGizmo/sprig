@@ -762,7 +762,7 @@
                             <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !ShowsPlan}"
                                        Text="Nothing to show until it plans: see Overview." />
                             <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding ShowsPlan}"
-                                       Text="A preview: each workspace leases its own ports when it comes up." />
+                                       Text="A preview: each workspace leases its own ports when it's made." />
                             <Border Classes="panel" IsVisible="{Binding ShowsPlan}">
                                 <ItemsControl ItemsSource="{Binding Plan.Ports}">
                                     <ItemsControl.ItemTemplate>

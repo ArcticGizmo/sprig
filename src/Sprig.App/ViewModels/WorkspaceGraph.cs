@@ -108,7 +108,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         if (!IsRunner) return;
         if (app is null)
         {
-            (State, StateDetail, Health, IsAlive) = ("not in this workspace yet", "bring it up again to add it", NodeHealth.Off, false);
+            (State, StateDetail, Health, IsAlive) = ("not in this workspace yet", "start it, or make it ready again, to add it", NodeHealth.Off, false);
             return;
         }
         State = app.State;
@@ -134,7 +134,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         }
         if (service is null)
         {
-            (State, StateDetail, Health, IsAlive) = ("not created", "the workspace is down", NodeHealth.Off, false);
+            (State, StateDetail, Health, IsAlive) = ("not started", "", NodeHealth.Off, false);
             return;
         }
         IsAlive = service.State is "running" or "restarting";

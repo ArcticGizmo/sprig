@@ -1,4 +1,5 @@
 using Sprig.Engine.Compose;
+using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Processes;
 
@@ -50,6 +51,46 @@ public sealed partial class WorkspaceService
         => record.IsMain ? []
             : record.Compose.Select(p => p.Name).Append(ContainersProject(record)).Concat(record.Repos.Select(r => RepoProject(record, r.Name)))
                 .Distinct(StringComparer.Ordinal).ToArray();
+
+    /// <summary>
+    /// Whether what the workspace was last made ready from has been written since: its orchestration file, a repo's
+    /// sprig.yaml in the folder it runs from, a compose file it runs, or one of <paramref name="kept"/>. Starting
+    /// everything makes it ready again first when it has, so what starts is what's defined now. One never made ready has.
+    /// </summary>
+    /// <param name="kept">Definitions kept in sprig for its repos, which live outside their folders.</param>
+    public bool DefinitionsChanged(WorkspaceRecord record, IEnumerable<string>? kept = null)
+    {
+        if (record.LastUpAt is not { } since || store.GetPlan(record.Orchestration, record.Name) is not { } plan) return true;
+        var files = new List<string> { record.OrchestrationPath };
+        files.AddRange(record.Repos.Select(r => Path.Combine(r.Dir, Orchestrations.OrchestrationLoader.RepoDefinitionFile)));
+        files.AddRange(plan.Compose.Select(c => record.Repos.FirstOrDefault(r => r.RepoPath == c.RepoPath) is { } repo ? Path.Combine(repo.Dir, c.File) : null)
+            .OfType<string>());
+        files.AddRange(kept ?? []);
+        return files.Any(f => File.Exists(f) && File.GetLastWriteTimeUtc(f) > since.UtcDateTime);
+    }
+
+    /// <summary>Every compose project with a container running; null when docker doesn't answer.</summary>
+    public IReadOnlySet<string>? RunningProjects()
+    {
+        try { return docker.RunningProjects(); }
+        catch (ProcessException) { return null; }
+    }
+
+    /// <summary>
+    /// How a workspace is doing, in a word: <c>running</c> while any of its apps or containers is, else <c>stopped</c>;
+    /// or <c>starting</c>, <c>failed</c> or <c>free</c> from its record. Whether it's been made ready isn't shown: Start
+    /// does that when it has to.
+    /// </summary>
+    /// <param name="runningProjects">From <see cref="RunningProjects"/>; null when docker can't say, so only apps count.</param>
+    public static string RunState(WorkspaceRecord record, IEnumerable<Hosting.RunnerStatus> runners, IReadOnlySet<string>? runningProjects)
+    {
+        if (record.IsFree) return "free";
+        if (record.State == WorkspaceState.Starting) return "starting";
+        var running = runners.Any(r => r.Workspace == record.Key && r.State.IsAlive())
+                      || (runningProjects is not null && InfraProjects(record).Any(runningProjects.Contains));
+        if (running) return "running";
+        return record.State == WorkspaceState.Failed ? "failed" : "stopped";
+    }
 
     /// <summary>What each running container of <paramref name="projects"/> uses, by project and service. Null when docker
     /// doesn't answer.</summary>

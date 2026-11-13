@@ -480,9 +480,9 @@
                     <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Orchestration}" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                         <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
-                                 Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                                 Classes.up="{Binding IsRunning}" Classes.bad="{Binding IsFailed}" />
                         <TextBlock Classes="state" Text="{Binding State}" FontSize="12.5"
-                                   Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                                   Classes.up="{Binding IsRunning}" Classes.bad="{Binding IsFailed}" />
                     </StackPanel>
                     <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Usage}" VerticalAlignment="Center"
@@ -544,7 +544,7 @@
                 </TextBox>
                 <Panel Grid.Column="1">
                     <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding NoneChecked}" VerticalAlignment="Center">
-                        <TextBlock Text="Double-click a workspace to open it. Tick workspaces to bring up, take down, free or remove several at once." FontSize="12.5"
+                        <TextBlock Text="Double-click a workspace to open it. Tick workspaces to start, stop, free or remove several at once." FontSize="12.5"
                                    Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
                         <Button Classes="flat" Command="{Binding SelectStaleCommand}" IsVisible="{Binding HasStale}" HorizontalAlignment="Left">
                             <TextBlock Text="{Binding StaleLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
@@ -553,8 +553,10 @@
                     <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8" IsVisible="{Binding HasChecked}">
                         <TextBlock Text="{Binding CheckedLabel}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
                                    VerticalAlignment="Center" Margin="0,0,4,0" />
-                        <Button Grid.Column="1" Classes="small" Content="Bring up" Command="{Binding BulkUpCommand}" IsEnabled="{Binding !IsWorking}" />
-                        <Button Grid.Column="2" Classes="small" Content="Take down" Command="{Binding BulkDownCommand}" IsEnabled="{Binding !IsWorking}" />
+                        <Button Grid.Column="1" Classes="small" Content="Start" Command="{Binding BulkStartCommand}" IsEnabled="{Binding !IsWorking}"
+                                ToolTip.Tip="Start everything in each: its infra, then its apps" />
+                        <Button Grid.Column="2" Classes="small" Content="Stop" Command="{Binding BulkStopCommand}" IsEnabled="{Binding !IsWorking}"
+                                ToolTip.Tip="Stop everything in each, apps and infra, keeping the containers and their data" />
                         <Button Grid.Column="3" Classes="small" Content="Free" Command="{Binding BulkFreeCommand}" IsEnabled="{Binding !IsWorking}"
                                 IsVisible="{Binding CanBulkFree}"
                                 ToolTip.Tip="Detach each one's worktrees and keep them, with their data, ports and build output, for the next branch. Branches and commits stay." />
@@ -590,7 +592,8 @@
                                    ToolTip.Tip="Its apps and containers together. CPU is a share of the whole machine; memory is what's in RAM." />
                         <TextBlock Grid.Column="6" Classes="phead" Text="PORTS" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="7" Classes="phead" Text="WORKTREES" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="8" Classes="phead" Text="LAST UP" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="8" Classes="phead" Text="LAST USED" VerticalAlignment="Center"
+                                   ToolTip.Tip="When it last started, stopped or was made ready" />
                     </Grid>
                     <!-- Main checkouts run as they are, with nothing written into them, so they're kept apart from sprig's own slots. -->
                     <TextBlock Classes="phead" Text="MAIN CHECKOUTS" Margin="24,14,24,6" IsVisible="{Binding HasOverviewMainRows}"
@@ -626,8 +629,8 @@
                                 </Border>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Classes="state" Text="{Binding Selected.State}" FontSize="12"
-                                           Classes.up="{Binding Selected.IsUp}" Classes.bad="{Binding Selected.IsFailed}" />
+                                <TextBlock Classes="state" Text="{Binding RunState}" FontSize="12"
+                                           Classes.up="{Binding IsRunning}" Classes.bad="{Binding RunStateFailed}" />
                                 <TextBlock Text="{Binding Selected.Branch}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
                                 <TextBlock Text="{Binding Selected.PortsLine}" FontSize="12"
                                            Foreground="{StaticResource MutedBrush}" />
@@ -677,14 +680,9 @@
                                     ToolTip.Tip="Every app that's going, built again and after what it depends on. Stopped apps stay stopped."
                                     AutomationProperties.AutomationId="workspace:restart-running"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Stop apps" Command="{Binding StopAppsCommand}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowRunControls}"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="{Binding Selected.TakeDownTip}"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowBringUp}" ToolTip.Tip="{Binding Selected.BringUpTip}"
+                            <Button Content="Stop all" Command="{Binding StopAllCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
+                                    IsVisible="{Binding ShowRunControls}" ToolTip.Tip="{Binding Selected.StopAllTip, FallbackValue=''}"
+                                    AutomationProperties.AutomationId="workspace:stop-all"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Free" Command="{Binding FreeCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
@@ -702,12 +700,12 @@
                                         <MenuItem Header="Restart running, jobs first" Command="{Binding RestartRunningWithJobsCommand}"
                                                   IsVisible="{Binding ShowRunControls}"
                                                   ToolTip.Tip="Run the jobs the running apps depend on (migrations, say) again, then restart the apps" />
-                                        <MenuItem Header="Bring up again" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}"
-                                                  IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="{Binding Selected.BringUpAgainTip}" />
+                                        <MenuItem Header="Make ready again" Command="{Binding MakeReadyCommand}" IsEnabled="{Binding !IsWorking}"
+                                                  IsVisible="{Binding ShowRunControls}" ToolTip.Tip="{Binding Selected.MakeReadyTip, FallbackValue=''}" />
                                         <MenuItem Header="Empty data…" Command="{Binding AskEmptyDataCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding Selected.CanEmptyData, FallbackValue=False}"
                                                   AutomationProperties.AutomationId="workspace:empty-data"
-                                                  ToolTip.Tip="Delete its infra's data, then bring it back as it was" />
+                                                  ToolTip.Tip="Delete its infra's data, then start again what was running" />
                                         <MenuItem Header="Remove…" Command="{Binding AskRemoveCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding Selected.CanRemove, FallbackValue=False}" />
                                     </MenuFlyout>
@@ -830,7 +828,7 @@
                     <controls:WorkspaceGraphCanvas x:Name="GraphCanvas" Graph="{Binding Graph}"
                                                    AutomationProperties.AutomationId="workspace:graph" />
                     <TextBlock IsVisible="{Binding GraphEmpty}" Classes="cell via" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Text="Nothing to draw until the workspace has been planned. Bring it up first." />
+                               Text="Nothing to draw until the workspace has been planned. Start it, or make it ready, first." />
                 </Panel>
 
                 <!-- Folded: a strip on the right edge that opens the details again, as on the Apps tab -->

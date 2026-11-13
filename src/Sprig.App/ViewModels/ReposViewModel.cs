@@ -90,15 +90,12 @@ public partial class ReposViewModel : PageViewModel
         WorkspacesOfIt.Clear();
         if (repo is not null)
             foreach (var w in _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var state = _services.RunState(w);
                 WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
-                    w.IsMain ? "main checkout" : w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out", w.State switch
-                {
-                    Sprig.Engine.Workspaces.WorkspaceState.Up => "up",
-                    Sprig.Engine.Workspaces.WorkspaceState.Starting => "coming up",
-                    Sprig.Engine.Workspaces.WorkspaceState.Failed => "failed",
-                    Sprig.Engine.Workspaces.WorkspaceState.Released => "free",
-                    _ => "down",
-                }, w.State == Sprig.Engine.Workspaces.WorkspaceState.Up, w.State == Sprig.Engine.Workspaces.WorkspaceState.Failed));
+                    w.IsMain ? "main checkout" : w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out",
+                    state, state == "running", state == "failed"));
+            }
         OnPropertyChanged(nameof(HasWorkspaces));
     }
 
@@ -493,7 +490,7 @@ public partial class ReposViewModel : PageViewModel
         if (mine.Count(w => !w.IsMain) is > 0 and var n)
             return $"It has {Count(n, "workspace")} of its own, named by this ID. Remove {(n == 1 ? "it" : "them")} on the Workspaces page first.";
         return mine.Any(w => w.IsMain && w.State is WorkspaceState.Up or WorkspaceState.Starting)
-            ? "Its main checkout is up. Take it down on the Workspaces page first."
+            ? "Its main checkout is ready to run under this ID. Stop it on the Workspaces page first."
             : null;
     }
 

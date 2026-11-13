@@ -240,7 +240,7 @@ public sealed class WorkspaceInfraTests : IDisposable
         var node = new GraphNode(new TopologyNode("svc/pg", "svc", "pg", TopologyKind.Container, "postgres:17"), null, null);
 
         node.Apply(null, known: true);
-        Assert.Equal(("not created", NodeHealth.Off), (node.State, node.Health));
+        Assert.Equal(("not started", NodeHealth.Off), (node.State, node.Health));
 
         node.Apply(null, known: false);
         Assert.Equal(("unknown", NodeHealth.Unknown), (node.State, node.Health));

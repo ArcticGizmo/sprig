@@ -229,7 +229,7 @@ public partial class UsageViewModel : PageViewModel
             _ => Order(shown, r => r.Total.Memory, r => r.Name),
         });
         foreach (var gone in _rows.Keys.Except(shown.Select(r => r.Key)).ToArray()) _rows.Remove(gone);
-        IdleNote = idle == 0 ? "" : idle == 1 ? "1 more is up with nothing of its own running." : $"{idle} more are up with nothing of their own running.";
+        IdleNote = idle == 0 ? "" : idle == 1 ? "1 more is ready with nothing running." : $"{idle} more are ready with nothing running.";
         ShowMachine(ResourceUsage.Sum(shown.Select(r => (ResourceUsage?)r.Total)));
     }
 

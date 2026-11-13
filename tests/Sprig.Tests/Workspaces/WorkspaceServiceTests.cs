@@ -832,14 +832,17 @@ public sealed class WorkspaceServiceTests : IDisposable
                 preset: postgres
             """));
 
-        var e = Assert.Throws<WorkspaceException>(() => workspaces.Up(loaded, "main", null));
+        // Made ready without it, since nothing is starting yet.
+        Assert.Equal(WorkspaceState.Up, workspaces.Up(loaded, "main", null).State);
+
+        var e = Assert.Throws<WorkspaceException>(() => workspaces.Up(loaded, "main", null, starting: Starting.All));
         Assert.Contains("your own infra", e.Message);
         Assert.Contains("shop-web/db (on 5432)", e.Message);
         Assert.Equal(WorkspaceState.Failed, workspaces.Get("storefront", "main")!.State);
 
         listening.Add(5432);
         var events = new List<WorkspaceEvent>();
-        var record = workspaces.Up(loaded, "main", null, progress: new SyncProgressList(events));
+        var record = workspaces.Up(loaded, "main", null, progress: new SyncProgressList(events), starting: Starting.All);
         Assert.Equal(WorkspaceState.Up, record.State);
         Assert.Empty(record.Compose);
         Assert.Equal("shop-web/db on 5432", events.Single(e => e.Step == "Your infra" && e.State == StepState.Done).Detail);
@@ -852,6 +855,50 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Contains("shop-web/db (on 5432)", Assert.Throws<WorkspaceException>(() => workspaces.MissingInfra(record, plan, null)).Message);
         Assert.Contains("your own infra", Assert.Throws<WorkspaceException>(() => workspaces.EmptyData("storefront", "main")).Message);
         Assert.Equal(WorkspaceState.Down, workspaces.Down("storefront", "main").State);
+    }
+
+    /// <summary>Git for real; docker's calls kept rather than run, each answering as if it worked.</summary>
+    sealed class DockerRecorder(IProcessRunner real) : IProcessRunner
+    {
+        public List<IReadOnlyList<string>> Calls { get; } = [];
+
+        public ProcessResult Run(string executable, IReadOnlyList<string> arguments, string? workingDirectory = null,
+            CancellationToken cancellationToken = default, Action<string>? onOutput = null)
+        {
+            if (executable != "docker") return real.Run(executable, arguments, workingDirectory, cancellationToken, onOutput);
+            Calls.Add(arguments);
+            return new ProcessResult(executable, arguments, 0, "", "");
+        }
+    }
+
+    [Fact]
+    public void Making_a_workspace_ready_defines_its_infra_without_starting_it_and_stopping_keeps_the_containers()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var docker = new DockerRecorder(_processes);
+        var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(docker), listening: () => new HashSet<int>());
+        var loaded = Load(("shop-web", repo => $"""
+            {Web(repo)}
+            containers:
+              db:
+                preset: postgres
+            """));
+        bool Started(IReadOnlyList<string> call) => call.Contains("compose") && call.Contains("up");
+
+        var ready = workspaces.Up(loaded, "feat-x", null);
+
+        Assert.Equal(WorkspaceState.Up, ready.State);
+        Assert.True(File.Exists(Assert.Single(ready.Compose).File));
+        Assert.DoesNotContain(docker.Calls, Started);
+
+        workspaces.Up(loaded, "feat-x", null, starting: Starting.All);
+        Assert.Single(docker.Calls, Started);
+
+        var stopped = workspaces.Down("storefront", "feat-x");
+        Assert.Equal(WorkspaceState.Down, stopped.State);
+        Assert.Equal("stop", docker.Calls[^1][^1]);
+        Assert.DoesNotContain(docker.Calls, c => c.Contains("down"));
     }
 
     [Fact]

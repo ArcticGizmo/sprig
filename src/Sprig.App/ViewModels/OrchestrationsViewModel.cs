@@ -205,12 +205,12 @@ public partial class OrchestrationsViewModel : PageViewModel
             {
                 var needsApproval = NeedsApproval(e.Path);
                 var mine = workspaces.Where(s => s.Orchestration == e.Id).ToArray();
-                var up = mine.Count(s => s.State == WorkspaceState.Up);
+                var running = mine.Count(s => _services.RunState(s) == "running");
                 var caption = needsApproval ? "not approved yet"
                     : mine.Length == 0 ? "no workspaces"
-                    : up > 0 ? $"{Count(up, "workspace")} up"
-                    : $"{Count(mine.Length, "workspace")}, none up";
-                Orchestrations.Add(new OrchestrationItem(e.Id, e.Path, needsApproval, _services.Stored.IsKept(e.Path), caption, up > 0));
+                    : running > 0 ? $"{Count(running, "workspace")} running"
+                    : $"{Count(mine.Length, "workspace")}, none running";
+                Orchestrations.Add(new OrchestrationItem(e.Id, e.Path, needsApproval, _services.Stored.IsKept(e.Path), caption, running > 0));
             }
             NavCount = Orchestrations.Count;
             OnPropertyChanged(nameof(IsEmpty));
@@ -354,14 +354,11 @@ public partial class OrchestrationsViewModel : PageViewModel
         WorkspacesOfIt.Clear();
         if (Selected is { } orchestration)
             foreach (var s in _services.Workspaces.List().Where(s => s.Orchestration == orchestration.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
-                WorkspacesOfIt.Add(new WorkspaceRow(s.InPlace ? s.Name : $"{s.SlotName} · {s.Label}", s.State switch
-                {
-                    WorkspaceState.Up => "up",
-                    WorkspaceState.Released => "free",
-                    WorkspaceState.Starting => "coming up",
-                    WorkspaceState.Failed => $"failed{(s.Error is { } e ? $": {e.Split('\n')[0]}" : "")}",
-                    _ => "down",
-                }, s.State == WorkspaceState.Up, s.State == WorkspaceState.Failed));
+            {
+                var state = _services.RunState(s);
+                WorkspacesOfIt.Add(new WorkspaceRow(s.InPlace ? s.Name : $"{s.SlotName} · {s.Label}",
+                    state == "failed" && s.Error is { } e ? $"failed: {e.Split('\n')[0]}" : state, state == "running", state == "failed"));
+            }
         HasWorkspaces = WorkspacesOfIt.Count > 0;
     }
 
@@ -719,7 +716,7 @@ public partial class OrchestrationsViewModel : PageViewModel
     public string RemoveNote => (Selected is { InSprig: true }
         ? "It's kept only in sprig, so its file goes too. Repos it uses stay for others."
         : "Take it off the list? Its file is left where it is.")
-        + " Its main checkout goes with it, containers and data included. Take down or remove its slots first: without the orchestration they can't be brought up again.";
+        + " Its main checkout goes with it, containers and data included. Stop or remove its slots first: without the orchestration they can't be started again.";
 
     /// <summary>Why removing stopped, said in the dialog, which stays open.</summary>
     [ObservableProperty] private string _removeError = "";

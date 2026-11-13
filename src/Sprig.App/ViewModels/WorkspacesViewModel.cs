@@ -17,7 +17,7 @@ using Sprig.Engine.Orchestrations;
 
 namespace Sprig.App.ViewModels;
 
-/// <param name="HeldBy">For a main that's down, another definition's workspace that's up in the same checkout.</param>
+/// <param name="HeldBy">For a main that isn't ready, another definition's workspace that's ready in the same checkout.</param>
 /// <param name="Orphaned">Its repo or orchestration has gone, so nothing else would ever remove it.</param>
 public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? HeldBy = null, bool Orphaned = false)
 {
@@ -40,19 +40,18 @@ public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? Held
     public bool HasSettings => !Record.IsMain;
 
     public string PortsLine => Record.IsMain ? "its own ports, nothing written" : $"{Record.PortPolicy} ports";
-    public string BringUpTip => Record.IsMain
-        ? "Check your infra is running, without starting the apps. Sprig writes nothing into the checkout and starts no infra for it."
-        : "Its worktrees, env files and infra, without starting its apps.";
-    public string BringUpAgainTip => Record.IsMain ? "Check your infra is running again" : "Write its env files and start its infra afresh";
-    public string TakeDownTip => Record.IsMain
+    public string MakeReadyTip => Record.IsMain
+        ? "Read its definitions again, starting nothing. Sprig writes nothing into the checkout."
+        : "Read its definitions again and rewrite its env files and its infra's definitions, starting nothing. Start does this itself when a definition has changed.";
+    public string StopAllTip => Record.IsMain
         ? "Stop its apps. Your infra is yours, so it's left running."
-        : "Stop its apps and infra. Its data, worktrees and ports are kept.";
+        : "Stop its apps and its infra. The containers and their data, the worktrees and the ports are kept.";
 
     /// <summary>It has infra of sprig's whose data can go. A main's infra is the user's own, so it has none.</summary>
     public bool CanEmptyData => Record.Compose.Count > 0 && !Record.IsMain;
 
     public bool IsHeld => HeldBy is not null;
-    public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is up in this checkout" : "";
+    public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is using this checkout" : "";
 
     public static string Display(WorkspaceRecord record)
         => record.IsMain ? record.Orchestration : record.InPlace ? $"{record.Orchestration} / {record.Name}" : record.SlotName;
@@ -371,7 +370,7 @@ public partial class WorkspacesViewModel : PageViewModel
             {
                 null => $"Goes in {id}--{name}, a new slot.",
                 { IsFree: true } => $"Reuses {record.SlotName}, which is free: its folders, installed packages, ports and values carry over.",
-                _ => $"'{branch}' is already in {record.SlotName}, so it comes up there again.",
+                _ => $"'{branch}' is already in {record.SlotName}, so it's made ready there again.",
             }, false, record, null);
         }
         catch (WorkspaceException e)
@@ -469,7 +468,7 @@ public partial class WorkspacesViewModel : PageViewModel
         foreach (var record in stored.Concat(mains))
             Workspaces.Add(new WorkspaceItem(record, record.IsMain && record.State != WorkspaceState.Up ? _services.Workspaces.HolderOf(record) : null,
                 Orphaned: record.IsMain && !OrchestrationNames.Contains(record.Orchestration)));
-        NavCount = Workspaces.Count(s => s.IsUp);
+        CountRunning();
 
         NewOrchestration = OrchestrationNames.Contains(orchestration ?? "") ? orchestration : OrchestrationNames.FirstOrDefault();
 
@@ -487,18 +486,41 @@ public partial class WorkspacesViewModel : PageViewModel
         if (Selected is null) _ = LoadOverviewStatusAsync();
     }
 
-    /// <summary>The header offers the one that applies: take an up workspace down, or bring any other up. A free slot
-    /// has nothing to run until a branch is checked out in it.</summary>
-    public bool ShowTakeDown => Selected?.IsUp == true;
-    public bool ShowBringUp => Selected is { IsUp: false, IsFree: false };
+    /// <summary>A free slot has nothing to run until a branch is checked out in it.</summary>
     public bool ShowRunControls => Selected?.IsFree != true;
+
+    /// <summary>How the selected workspace is doing, in a word, from what's running (see
+    /// <see cref="WorkspaceService.RunState"/>).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(RunStateFailed))]
+    private string _runState = "";
+
+    public bool IsRunning => RunState == "running";
+    public bool RunStateFailed => RunState == "failed";
+
+    /// <summary>The compose projects with a container running, as far as the page knows: what docker last measured, and
+    /// the selected workspace's containers from the graph's last look.</summary>
+    IReadOnlySet<string> RunningProjects()
+    {
+        var projects = _services.InfraUsage.Usage.Keys.Select(k => k.Project).ToHashSet(StringComparer.Ordinal);
+        if (_lastInfra is { } states)
+            foreach (var target in _targets.Where(t => states.GetValueOrDefault(t.Key) is { State: "running" or "restarting" })) projects.Add(target.Project.Name);
+        return projects;
+    }
+
+    string RunStateOf(WorkspaceRecord record) => WorkspaceService.RunState(record, _lastRunners ?? [], RunningProjects());
+
+    /// <summary>The nav's count, and the selected workspace's state, after anything that changes what's running.</summary>
+    void CountRunning()
+    {
+        NavCount = Workspaces.Count(w => RunStateOf(w.Record) == "running");
+        RunState = Selected?.Record is { } record ? RunStateOf(record) : "";
+    }
 
     partial void OnSelectedChanged(WorkspaceItem? value)
     {
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(CanDeleteBranch));
-        OnPropertyChanged(nameof(ShowTakeDown));
-        OnPropertyChanged(nameof(ShowBringUp));
         OnPropertyChanged(nameof(ShowRunControls));
         OnPropertyChanged(nameof(ShowStartChoices));
         ConfirmingRemove = false;
@@ -509,6 +531,7 @@ public partial class WorkspacesViewModel : PageViewModel
         if (value?.Record.Key is { } key && key != _detailsFor) ResetDetails();
         _detailsFor = value?.Record.Key;
         ShowDetails(value?.Record);
+        RunState = value?.Record is { } record ? RunStateOf(record) : "";
     }
 
     string? _detailsFor;
@@ -560,8 +583,8 @@ public partial class WorkspacesViewModel : PageViewModel
         AppsMessage = "";
         if (preview)
             SayApps(record?.IsMain == true
-                ? "Not up yet: these are the apps its definitions name. Main runs them in the checkout as it is, with your own infra, which has to be running first."
-                : "Not up yet: these are the apps its definitions name. The ports in their values are only examples until it comes up and is given its own.", bad: false);
+                ? "Never started: these are the apps its definitions name. Main runs them in the checkout as it is, with your own infra, which has to be running first."
+                : "Never started: these are the apps its definitions name. The ports in their values are only examples until it starts and is given its own.", bad: false);
         if (record is null || plan is null)
         {
             Apps = [];
@@ -643,6 +666,7 @@ public partial class WorkspacesViewModel : PageViewModel
         StatesChanged();
         RefreshGraph();
         if (Selected is null) CountOverviewApps();
+        CountRunning();
     }
 
     /// <summary>Read the logs, and every few seconds the containers' states while the graph or a container's log shows.
@@ -688,8 +712,8 @@ public partial class WorkspacesViewModel : PageViewModel
     public bool ShowStartChoices => ShowRunControls && StartChoices.Count > 1;
     public string StartLabel => StartChoice?.Group is { } group ? $"Start {group}" : "Start all";
     public string StartTip => StartChoice?.Group is null
-        ? "Every app, after what each depends on; a workspace that's down is brought up first"
-        : $"{StartChoice.Apps}, after what each depends on; a workspace that's down is brought up first";
+        ? "Everything: all of its infra, and every app after what it depends on"
+        : $"{StartChoice.Apps}, after what each depends on, the infra they use included";
 
     /// <summary>The choices for <paramref name="plan"/>'s groups, with the one last picked for the orchestration (or repo)
     /// chosen, so every workspace of it starts the same slice.</summary>
@@ -733,17 +757,19 @@ public partial class WorkspacesViewModel : PageViewModel
     private async Task StartApp(WorkspaceAppRow row) => await StartAsync([row.Key], open: true);
 
     /// <summary>What Start's choice picks (every app, or a group), leaving alone what's already going; or the apps
-    /// <paramref name="keys"/> names, started afresh, after what they depend on. Starting means everything they need too:
-    /// a workspace that isn't up is brought up first.</summary>
+    /// <paramref name="keys"/> names, started afresh, after what they depend on. Starting means everything they need too,
+    /// infra included: a workspace that isn't ready is made ready first, and so is one whose definitions changed since,
+    /// when everything (or a group) is starting.</summary>
     /// <param name="open">Show the one app's log once it's starting.</param>
     async Task StartAsync(IReadOnlyList<string>? keys, bool open = false)
     {
         if (Selected?.Record is not { } record || keys is { Count: 0 }) return;
-        // Taken now: bringing the workspace up reads it afresh, choices and all.
+        // Taken now: making the workspace ready reads it afresh, choices and all.
         var group = keys is null ? StartChoice?.Group : null;
         var starting = new Starting(group, keys);
-        // Brought up here, its apps build while the infra comes up, and starting them releases those builds.
-        var prebuilt = record.State != WorkspaceState.Up;
+        // Made ready here, its apps build while the infra starts, and starting them releases those builds.
+        var prebuilt = record.State != WorkspaceState.Up
+                       || (keys is null && await AppServices.RunAsync(() => _services.Workspaces.DefinitionsChanged(record, KeptDefinitions(record))));
         if (prebuilt)
         {
             if (!await UpAsync(retry: () => StartAsync(keys, open), starting, build: starting)) return;
@@ -754,7 +780,7 @@ public partial class WorkspacesViewModel : PageViewModel
         try
         {
             var names = starting.AppsIn(plan);
-            // Up for one group, only its infra is running; what this adds starts first, so its apps find it there.
+            // What they use that isn't running starts first, so the apps find it there.
             var missing = await AppServices.RunAsync(() => _services.Workspaces.MissingInfra(record, plan, names));
             if (missing.Count > 0)
             {
@@ -782,6 +808,14 @@ public partial class WorkspacesViewModel : PageViewModel
         {
             SayApps(e.Message, bad: true);
         }
+    }
+
+    /// <summary>The definitions kept in sprig for <paramref name="record"/>'s repos, which live outside their folders.</summary>
+    IReadOnlyList<string> KeptDefinitions(WorkspaceRecord record)
+    {
+        static string Norm(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var sources = record.Repos.Select(r => Norm(r.Source)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return _services.Stored.Repos().Where(e => !e.InRepo && sources.Contains(Norm(e.Folder))).Select(e => e.DefinitionFile).ToArray();
     }
 
     [RelayCommand]
@@ -817,8 +851,28 @@ public partial class WorkspacesViewModel : PageViewModel
         }
     }
 
+    /// <summary>Stop everything the workspace runs: its apps, then its infra, keeping the containers and their data. A
+    /// main's infra is the user's, so it's left running.</summary>
     [RelayCommand]
-    private async Task StopApps() => await StopAsync(null);
+    private async Task StopAll()
+    {
+        if (Selected?.Record is not { } record) return;
+        // One never made ready has no infra of sprig's, and no record to stop it by.
+        if (IsUnmade(record))
+        {
+            await StopAsync(null);
+            return;
+        }
+        foreach (var row in Apps.Where(a => a.IsAlive)) row.MarkStopping();
+        var title = WorkspaceItem.Display(record);
+        await RunAsync($"Stopping {title}",
+            (progress, cancellation) => _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation),
+            record.IsMain ? $"{title} has stopped. Your infra is left running."
+                : $"{title} has stopped, its apps and its infra. Its containers, data, worktrees and ports are kept.");
+        _services.InfraUsage.Soon();
+        Refresh();
+        await RefreshRunnersAsync();
+    }
 
     [RelayCommand]
     private async Task StopApp(WorkspaceAppRow row) => await StopAsync([row]);
@@ -838,7 +892,7 @@ public partial class WorkspacesViewModel : PageViewModel
         var forced = stopped.Where(s => s.Error is not null).Select(s => $"{s.Name}: {s.Error}").ToArray();
         SayApps(forced.Length > 0 ? string.Join("; ", forced)
             : stopped.Count == 0 ? "Nothing was running."
-            : rows is null ? "The apps have stopped. The infra is still up."
+            : rows is null ? "The apps have stopped."
             : one is not null ? $"{one.Name} has stopped." : $"{stopped.Count} apps have stopped.",
             bad: forced.Length > 0);
         await RefreshRunnersAsync();
@@ -973,7 +1027,7 @@ public partial class WorkspacesViewModel : PageViewModel
         IsAddOpen = false;
         var ok = await RunAsync($"Checking out {branch} in {slotName}",
             (progress, cancellation) => _services.Workspaces.CheckOut(loaded, branch, options, progress, cancellation, values: values, unset: unset),
-            $"{branch} is up in {slotName}.", retry: Create);
+            $"{branch} is ready in {slotName}. Nothing is running yet: Start runs it, or any one part of it.", retry: Create);
         if (ok)
         {
             NewBranch = "";
@@ -985,13 +1039,14 @@ public partial class WorkspacesViewModel : PageViewModel
         Selected = Workspaces.FirstOrDefault(s => s.Record.Orchestration == loaded.Id && s.Record.Branch == branch) ?? Selected;
     }
 
+    /// <summary>Read the definitions again and rewrite the workspace's files, starting nothing.</summary>
     [RelayCommand]
-    private Task Up() => UpAsync(retry: Up);
+    private Task MakeReady() => UpAsync(retry: MakeReady);
 
-    /// <summary>Bring the selected workspace up, asking for approval first when a definition needs it, and before taking
-    /// over a checkout another definition is up in. True once it's up.</summary>
+    /// <summary>Make the selected workspace ready, asking for approval first when a definition needs it, and before
+    /// taking over a checkout another definition is using. True once it's ready.</summary>
     /// <param name="retry">What to carry on with once the user approves, or agrees to take over.</param>
-    /// <param name="starting">The apps about to be started, so only their infra comes up; null for all of it.</param>
+    /// <param name="starting">What's about to be started, so the infra it uses starts too; null to start nothing.</param>
     /// <param name="build">The apps to build while the infra comes up, held until a start without a hold releases them,
     /// which mustn't name them to restart; null to build nothing ahead.</param>
     /// <param name="jobsAgain">Those apps' jobs run again even if they've finished.</param>
@@ -1012,10 +1067,10 @@ public partial class WorkspacesViewModel : PageViewModel
         Action<WorkspaceRecord, Plan>? beforeInfra = build is null ? null
             : (r, plan) => held = _services.Host.Prebuild(r, plan, build.AppsIn(plan), jobsAgain);
         // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
-        var ok = await RunAsync($"Bringing {title} up",
+        var ok = await RunAsync(starting is null ? $"Making {title} ready" : $"Starting {title}",
             (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver,
                 beforeInfra: beforeInfra, starting: starting),
-            $"{title} is up.",
+            starting is null ? $"{title} is ready. Nothing was started." : $"{title} is ready, and what it starts is on its way.",
             retry: retry);
         if (!ok && held is not null) _ = AppServices.RunAsync(() => _services.Host.TrySend(new HostRequest("stop", Workspace: held)));
         Refresh();
@@ -1036,8 +1091,8 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         var where = holder.Repos.Where(r => !r.Worktree).Select(r => r.Dir.Replace('\\', '/')).FirstOrDefault() ?? "the same checkout";
         TakeOverTitle = $"Take over from {holder.SlotName}?";
-        TakeOverLine = $"{WorkspaceItem.Display(holder)} is up in {where}, and one definition runs in a checkout at a time. "
-                       + $"Taking over stops its apps and takes its infra down, keeping its data, then starts {record.Orchestration} there.";
+        TakeOverLine = $"{WorkspaceItem.Display(holder)} is using {where}, and one definition runs in a checkout at a time. "
+                       + $"Taking over stops it, apps and infra, keeping its data, then starts {record.Orchestration} there.";
         _afterTakeOver = then;
         ConfirmingTakeOver = true;
     }
@@ -1059,17 +1114,6 @@ public partial class WorkspacesViewModel : PageViewModel
         await next();
     }
 
-    [RelayCommand]
-    private async Task Down()
-    {
-        if (Selected?.Record is not { } record) return;
-        var title = WorkspaceItem.Display(record);
-        await RunAsync($"Stopping {title}",
-            (progress, cancellation) => _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation),
-            $"{title} is down. Its data, worktrees and ports are kept.");
-        Refresh();
-    }
-
     /// <summary>Free the selected slot for the next branch, keeping its branch, data, ports and values.</summary>
     [RelayCommand]
     private async Task Free()
@@ -1087,8 +1131,8 @@ public partial class WorkspacesViewModel : PageViewModel
     [RelayCommand]
     private void CancelEmptyData() => ConfirmingEmptyData = false;
 
-    /// <summary>Delete the selected workspace's infra data, then bring it back as it was: up again if it was up, with the
-    /// apps that were running started again after the jobs they depend on, which run again against the empty data.</summary>
+    /// <summary>Delete the selected workspace's infra data, then start again the apps that were running, with the infra
+    /// they use, after the jobs they depend on, which run again against the empty data.</summary>
     [RelayCommand]
     private async Task EmptyData()
     {
@@ -1101,8 +1145,8 @@ public partial class WorkspacesViewModel : PageViewModel
         var title = WorkspaceItem.Display(record);
         var emptied = await RunAsync($"Emptying {title}'s data",
             (progress, cancellation) => _services.Workspaces.EmptyData(record.Orchestration, record.Name, progress, cancellation),
-            wasUp ? $"{title}'s data is empty. It comes back up next, with the apps that were running."
-                : $"{title}'s data is empty. It starts that way next time it comes up.");
+            wasUp ? $"{title}'s data is empty. What was running starts again next."
+                : $"{title}'s data is empty. It starts that way next time.");
         Refresh();
         if (emptied && wasUp) await BringBackAsync(running);
     }
@@ -1110,9 +1154,9 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <param name="running">The apps that were running, by key; jobs among them are left to the apps that need them.</param>
     async Task BringBackAsync(IReadOnlyList<string> running)
     {
-        // Built while the infra comes up. A migration that finished did so against the data that's gone, so jobs run again.
+        // Built while the infra they use starts. A migration that finished did so against the data that's gone, so jobs run again.
         var build = new Starting(Apps: running);
-        if (!await UpAsync(retry: () => BringBackAsync(running), build: build, jobsAgain: true)) return;
+        if (!await UpAsync(retry: () => BringBackAsync(running), starting: build, build: build, jobsAgain: true)) return;
         if (Selected?.Record is not { State: WorkspaceState.Up } record
             || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
         var apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
@@ -1262,7 +1306,7 @@ public partial class WorkspacesViewModel : PageViewModel
         }
         catch (WorkspaceException e) when (e.Asks.Count > 0)
         {
-            window.Finish($"{Headline(e.Message)}.\nGive {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Inputs, then bring it up again.",
+            window.Finish($"{Headline(e.Message)}.\nGive {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Inputs, then start it again.",
                 ProgressState.Error);
             return false;
         }

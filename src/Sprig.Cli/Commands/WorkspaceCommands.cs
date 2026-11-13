@@ -61,7 +61,7 @@ public class WorkspaceSettings : GlobalSettings
     }
 }
 
-[Description("Bring a workspace up: a branch checked out in a slot of worktrees (or the repo where it is), ports, env files and infra, then its apps in the background")]
+[Description("Start a workspace: a branch checked out in a slot of worktrees (or the repo where it is), with its ports and env files, then its apps in the background and the infra they use")]
 public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 {
     public sealed class Settings : TrustingSettings
@@ -75,7 +75,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public string? Branch { get; set; }
 
         [CommandOption("--take-over")]
-        [Description("When another definition's main is up in the same checkout, take it down (keeping its data) and start this one there, rather than be asked")]
+        [Description("When another definition's main is running in the same checkout, stop it (keeping its data) and start this one there, rather than be asked")]
         public bool TakeOver { get; set; }
 
         [CommandOption("--slot <number>")]
@@ -103,12 +103,12 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         public string[] Unset { get; set; } = [];
 
         [CommandOption("--run")]
-        [Description("Follow the apps' logs together here, rather than leaving them in the background. Ctrl+C stops the apps; the infra keeps running")]
+        [Description("Follow the apps' logs together here, rather than leaving them in the background. Ctrl+C stops everything it started, keeping the infra's data")]
         public bool Run { get; set; }
 
-        [CommandOption("--no-apps")]
-        [Description("Stop once the worktrees, files and infra are ready, without starting the apps")]
-        public bool NoApps { get; set; }
+        [CommandOption("--no-start")]
+        [Description("Make it ready (worktrees, ports, files and its infra's definitions) and start nothing")]
+        public bool NoStart { get; set; }
 
         [CommandOption("--set <name=value>")]
         [Description("Give an input this value in the workspace, over the orchestration's and the repo's default. Kept for next time. Repeat for more")]
@@ -118,8 +118,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     protected override ValidationResult Validate(CommandContext context, Settings s)
     {
         if (SettingValues.Parse(s.Set, out _) is { } error) return ValidationResult.Error(error);
-        if (s.Run && s.NoApps) return ValidationResult.Error("--run follows the apps and --no-apps doesn't start them; choose one");
-        if (s.Group is not null && s.NoApps) return ValidationResult.Error("--group picks apps to start and --no-apps starts none; choose one");
+        if (s.Run && s.NoStart) return ValidationResult.Error("--run follows the apps and --no-start doesn't start them; choose one");
+        if (s.Group is not null && s.NoStart) return ValidationResult.Error("--group picks apps to start and --no-start starts none; choose one");
         return ValidationResult.Success();
     }
 
@@ -141,7 +141,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             var record = UpApproving(loaded, workspace, s, progress, cancellation);
             if (record is null) return 1;
             var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
-            if (s.NoApps)
+            if (s.NoStart)
             {
                 if (s.Json) CliOutput.Json(new { ok = true, workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), secretsUnmasked = s.UnmaskSecrets });
                 else Summary(record, plan, root, appsStart: false);
@@ -177,14 +177,14 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     WorkspaceRecord? UpApproving(LoadedOrchestration loaded, string workspace, Settings s,
         IProgress<WorkspaceEvent> progress, CancellationToken cancellation)
     {
-        var runApps = !s.NoApps;
+        var runApps = !s.NoStart;
         SettingValues.Parse(s.Set, out var given);
         var values = new Dictionary<string, string>(given, StringComparer.Ordinal);
         IReadOnlyCollection<string>? unset = s.Unset;
         var (slot, fixSlot) = s.Branch is { } wanted ? AskAboutBrokenSlot(loaded, wanted, s) : (s.Slot, false);
         var takeOver = s.TakeOver;
-        // A group starts only the infra its apps use; without apps to start, all of it comes up.
-        var starting = s.NoApps ? null : new Starting(s.Group);
+        // What starts brings the infra it uses; with nothing starting, none of it does.
+        var starting = s.NoStart ? null : new Starting(s.Group);
         for (var attempt = 1; ; attempt++)
         {
             string? held = null;
@@ -204,8 +204,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             {
                 if (!cli.Interactive(s.Json))
                     throw new WorkspaceException($"{e.Message}, with --take-over");
-                cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(holder.SlotName)} is up in the same checkout.[/]");
-                if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Take {Markup.Escape(holder.SlotName)} down (keeping its data) and start {Markup.Escape(loaded.Id)} there?") { DefaultValue = false }))
+                cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(holder.SlotName)} is running in the same checkout.[/]");
+                if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Stop {Markup.Escape(holder.SlotName)} (keeping its data) and start {Markup.Escape(loaded.Id)} there?") { DefaultValue = false }))
                     return null;
                 takeOver = true;
             }
@@ -295,10 +295,10 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         cli.Ansi.WriteLine();
         cli.Ansi.MarkupLine(record.IsMain
-            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] is up in its main checkout{(record.CheckoutBranch is { } on ? $", on [bold]{Markup.Escape(on)}[/]" : "")}  [dim](as it is, with your own infra)[/]"
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] is ready in its main checkout{(record.CheckoutBranch is { } on ? $", on [bold]{Markup.Escape(on)}[/]" : "")}  [dim](as it is, with your own infra)[/]"
             : record.InPlace
-            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/] is up  [dim](repos in place)[/]"
-            : $"[bold]{Markup.Escape(record.Branch ?? "")}[/] is up in [bold]{Markup.Escape(record.SlotName)}[/]  [dim]({Markup.Escape((record.Folder ?? "").Replace('\\', '/'))})[/]");
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/] is ready  [dim](repos in place)[/]"
+            : $"[bold]{Markup.Escape(record.Branch ?? "")}[/] is ready in [bold]{Markup.Escape(record.SlotName)}[/]  [dim]({Markup.Escape((record.Folder ?? "").Replace('\\', '/'))})[/]");
 
         var apps = new Table().Border(TableBorder.Rounded).AddColumns("App", "Folder", "Url", "Values in");
         foreach (var app in plan.Apps)
@@ -332,8 +332,8 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         if (warnings.Length > 0) PlanPrinter.Problems(cli.Ansi, warnings, root);
         var names = Markup.Escape(Words(record));
         if (!appsStart)
-            cli.Ansi.MarkupLine($"[dim]Start the apps: sprig start {names} (or from their folders: dotnet run, npm run dev). " +
-                                (record.IsMain ? $"Stop them with: sprig down {names}; your infra is left running[/]" : $"Stop the infra with: sprig down {names}[/]"));
+            cli.Ansi.MarkupLine($"[dim]Nothing is running yet. Start it: sprig start {names} (the apps, and the infra they use), or name what to start. " +
+                                (record.IsMain ? $"Stop it with: sprig stop {names}; your infra is left running[/]" : $"Stop it with: sprig stop {names}[/]"));
     }
 
     /// <summary>How to name the workspace on a command line: its ID, then its branch (or its name, in place).</summary>
@@ -359,14 +359,21 @@ public sealed class FreeCommand(CliContext cli) : Command<WorkspaceSettings>
     }
 }
 
-[Description("Stop a workspace's infra, keeping its data, worktrees and ports")]
+[Description("Stop everything a workspace runs, its apps and its infra, keeping its containers, data, worktrees and ports (the same as sprig stop with nothing named)")]
 public sealed class DownCommand(CliContext cli) : Command<WorkspaceSettings>
 {
     protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
     {
         s.Resolve(cli);
+        return StopAll(cli, s, cancellation);
+    }
+
+    internal static int StopAll(CliContext cli, WorkspaceSettings s, CancellationToken cancellation)
+    {
         var record = cli.Workspaces.Down(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => Echo(cli, e, s.Json)), cancellation);
-        return CliOutput.Ok(s.Json, record.IsFree ? $"{record.SlotName} is free, so nothing was running" : $"{record.SlotName} ({record.Label}) is down",
+        return CliOutput.Ok(s.Json, record.IsFree ? $"{record.SlotName} is free, so nothing was running"
+                : record.IsMain ? $"{record.SlotName} has stopped; your infra is left running"
+                : $"{record.SlotName} ({record.Label}) has stopped, its apps and its infra",
             new { ok = true, workspace = record });
     }
 
@@ -378,7 +385,7 @@ public sealed class DownCommand(CliContext cli) : Command<WorkspaceSettings>
     }
 }
 
-[Description("Empty a workspace's data: delete its containers' volumes, then bring it back as it was, starting again the apps that were running. main included")]
+[Description("Empty a workspace's data: delete its containers' volumes, then start again the apps that were running, and the infra they use")]
 public sealed class EmptyDataCommand(CliContext cli) : Command<EmptyDataCommand.Settings>
 {
     public sealed class Settings : WorkspaceSettings
@@ -407,9 +414,9 @@ public sealed class EmptyDataCommand(CliContext cli) : Command<EmptyDataCommand.
         var progress = new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json));
         record = cli.Workspaces.EmptyData(s.Orchestration, s.Workspace, progress, cancellation);
         if (!wasUp)
-            return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty; it starts that way next time it comes up", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
+            return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty; it starts that way next time", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
 
-        var again = $"bring it back with: {UpCommand.UpLine(record)}";
+        var again = $"start it again with: {UpCommand.UpLine(record)}";
         if (OrchestrationLoad.Load(cli, record.Orchestration, new TrustingSettings { Json = s.Json, UnmaskSecrets = s.UnmaskSecrets }, record.Name) is not { } loaded)
         {
             Console.Error.WriteLine($"{record.SlotName}'s data is empty, but it can't come back up yet; {again}");
@@ -419,25 +426,26 @@ public sealed class EmptyDataCommand(CliContext cli) : Command<EmptyDataCommand.
         string? held = null;
         try
         {
+            // What was running comes back, with the infra it uses; the rest stays stopped.
             record = cli.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, beforeInfra: (r, plan) =>
             {
                 apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
                 // Their jobs run again: a migration that finished did so against the data that's gone.
                 if (apps.Length > 0) held = cli.Host.Prebuild(r, plan, apps, jobsAgain: true);
-            });
+            }, starting: new Starting(Apps: running));
         }
         catch (Exception e) when (e is WorkspaceException or OperationCanceledException)
         {
             if (held is not null) cli.Host.TrySend(new HostRequest("stop", Workspace: held));
             if (e is OperationCanceledException) throw;
-            Console.Error.WriteLine($"error: {record.SlotName}'s data is empty, but it didn't come back up: {e.Message}; {again}");
+            Console.Error.WriteLine($"error: {record.SlotName}'s data is empty, but it didn't start again: {e.Message}; {again}");
             return 1;
         }
 
         var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
         var specs = apps.Length == 0 ? [] : RunnerSpecs.For(record, plan, apps);
         if (specs.Count == 0)
-            return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty and its infra is back up", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
+            return CliOutput.Ok(s.Json, $"{record.SlotName}'s data is empty; nothing was running, so nothing was started", new { ok = true, workspace = record, restarted = Array.Empty<string>() });
 
         // Releases the held builds; naming them to restart would build them again.
         StartCommand.Send(cli, specs, held is null ? RunnerSpecs.Jobs(specs) : []);
@@ -488,6 +496,16 @@ public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
 [Description("List workspaces")]
 public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesCommand.Settings>
 {
+    /// <summary>Whether it's running, in colour (see <see cref="WorkspaceService.RunState"/>).</summary>
+    internal static string RunState(WorkspaceRecord r, IReadOnlyList<RunnerStatus> runners, IReadOnlySet<string>? projects)
+        => WorkspaceService.RunState(r, runners, projects) switch
+        {
+            "running" => "[green]running[/]",
+            "failed" => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
+            "starting" => "[yellow]starting[/]",
+            var other => $"[dim]{other}[/]",
+        };
+
     public sealed class Settings : GlobalSettings
     {
         [CommandArgument(0, "[id]")]
@@ -504,6 +522,9 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
             cli.Ansi.MarkupLine("[dim]No workspaces. In a repo's folder, check a branch out in a slot of its own with: sprig up -b <branch> (or run it in place with: sprig up)[/]");
             return 0;
         }
+        var runners = cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+        var projects = cli.Workspaces.RunningProjects();
+        string State(WorkspaceRecord r) => RunState(r, runners, projects);
         // Main checkouts run as they are, with nothing written into them, so they're listed apart from the slots.
         var mains = workspaces.Where(r => r.IsMain).ToArray();
         if (mains.Length > 0)
@@ -526,15 +547,6 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
             cli.Ansi.Write(table);
         }
         return 0;
-
-        static string State(WorkspaceRecord r) => r.State switch
-        {
-            WorkspaceState.Up => "[green]up[/]",
-            WorkspaceState.Failed => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
-            WorkspaceState.Starting => "[yellow]starting[/]",
-            WorkspaceState.Released => "[dim]free[/]",
-            _ => "[dim]down[/]",
-        };
 
         static string Folder(WorkspaceRecord r) => Markup.Escape((r.Folder ?? string.Join(", ", r.Repos.Select(x => x.Dir))).Replace('\\', '/'));
     }

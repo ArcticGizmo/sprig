@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Sprig.Engine.Authoring;
 using Sprig.Engine.Compose;
 using Sprig.Engine.Definitions;
@@ -56,6 +58,11 @@ public sealed class AppServices
             git, new DockerCompose(processes), host: Host, loader: Loader);
         InfraUsage = new InfraUsage(Workspaces);
     }
+
+    /// <summary>How a workspace is doing, in a word, from what the host and docker last said (see
+    /// <see cref="WorkspaceService.RunState"/>).</summary>
+    public string RunState(WorkspaceRecord record)
+        => WorkspaceService.RunState(record, HostStatus.Runners ?? [], InfraUsage.Usage.Keys.Select(k => k.Project).ToHashSet(StringComparer.Ordinal));
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);
 

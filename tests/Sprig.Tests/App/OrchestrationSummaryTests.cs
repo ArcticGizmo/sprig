@@ -363,7 +363,8 @@ public class ReposViewModelTests
         vm.IsActive = true;
         await WaitFor(() => vm.NeedsApproval);
 
-        Assert.Equal([("shop-web--1", "on feat-x", "down"), ("shop-web--2", "no branch checked out", "free"), ("local", "in place", "up")],
+        // States are what's running: local is ready, but nothing of it runs.
+        Assert.Equal([("shop-web--1", "on feat-x", "stopped"), ("shop-web--2", "no branch checked out", "free"), ("local", "in place", "stopped")],
             vm.WorkspacesOfIt.Select(w => (w.Name, w.Where, w.State)));
         vm.OpenWorkspaceRowCommand.Execute(vm.WorkspacesOfIt[2]);
         Assert.Equal("shop-web/local", opened);

@@ -109,25 +109,25 @@ public sealed class LayeredLayoutTests
         TopologyNode N(string key, TopologyKind kind) => new(key, key.Split('/')[0], key.Split('/')[1], kind, "");
         var nodes = new[]
         {
-            new GraphNode(N("safety/spa-api", TopologyKind.App), null, null),
-            new GraphNode(N("safety/client", TopologyKind.App), null, null),
-            new GraphNode(N("safety/safety-db", TopologyKind.ComposeService), null, null),
+            new GraphNode(N("shop/orders-api", TopologyKind.App), null, null),
+            new GraphNode(N("shop/web", TopologyKind.App), null, null),
+            new GraphNode(N("shop/shop-db", TopologyKind.ComposeService), null, null),
             new GraphNode(N("outside/identity-url", TopologyKind.Outside), null, null),
         };
         TopologyLink[] links =
         [
-            new("safety/spa-api", "safety/safety-db", ["ConnectionStrings__Db"], false),
-            new("safety/spa-api", "outside/identity-url", ["identity-url"], false),
-            new("safety/client", "safety/spa-api", ["api-url"], false),
+            new("shop/orders-api", "shop/shop-db", ["ConnectionStrings__Db"], false),
+            new("shop/orders-api", "outside/identity-url", ["identity-url"], false),
+            new("shop/web", "shop/orders-api", ["api-url"], false),
         ];
 
         var graph = new WorkspaceGraph(nodes, links, null, layered: true);
 
-        var api = graph.Find("safety/spa-api")!;
+        var api = graph.Find("shop/orders-api")!;
         Assert.Equal(["db", "identity-url"], api.Tags.Select(t => t.TagName));
         Assert.True(graph.IsTagLink(links[0]));
         Assert.True(graph.IsTagLink(links[1]));
         Assert.False(graph.IsTagLink(links[2]));
-        Assert.Empty(graph.Find("safety/safety-db")!.Tags);
+        Assert.Empty(graph.Find("shop/shop-db")!.Tags);
     }
 }

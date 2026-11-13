@@ -25,7 +25,7 @@ Then (user, same day):
 
 Then roles (user, same day): a definition says **what something is**, and sprig decides how it looks.
 
-- **Worked out first**, so most repos need nothing: infra by its image, else its name, word by word (`safety-db` is a database, `rabbitmq-url` a queue); an outside value by its name, else its url's scheme or connection string (`amqp://` a queue, `Host=…` a database); an app by its name (`orders-api` an API, `cdc-worker` a worker). `Sprig.Engine.Planning.NodeRoles`.
+- **Worked out first**, so most repos need nothing: infra by its image, else its name, word by word (`shop-db` is a database, `rabbitmq-url` a queue); an outside value by its name, else its url's scheme or connection string (`amqp://` a queue, `Host=…` a database); an app by its name (`orders-api` an API, `sync-worker` a worker). `Sprig.Engine.Planning.NodeRoles`.
 - **Said where it can't be**: `.Is(Role.Queue)` on a container, compose service, app or setting, e.g. `repo.Setting<Url>("events-url").Is(Role.Queue)`. What's said wins. A setting given an infra role is drawn as infra even when its value doesn't look like an address. Presets say theirs (Postgres a database, Redis a cache, RabbitMQ a queue, Mailpit mail). Model schema 14.
 - **Roles**: database, cache, queue, search, mail, storage, identity, proxy (infra), and web, api, worker (apps). Each has its own icon; search finds by role ("queue").
 - **Not offered**: colours or free-form icons. The ring's colour is the state, and a fixed set of roles keeps every repo's graph reading the same.

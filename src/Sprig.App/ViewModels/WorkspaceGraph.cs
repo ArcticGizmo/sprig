@@ -83,7 +83,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     /// <summary>Taken with others as a tag: drawn without its links unless it, or what uses it, is in focus.</summary>
     public bool IsTag => IsInfra || IsOutside;
 
-    /// <summary>Its name as a tag, without its repo's name in front (<c>safety-db</c> in <c>safety</c> is <c>db</c>).</summary>
+    /// <summary>Its name as a tag, without its repo's name in front (<c>shop-db</c> in <c>shop</c> is <c>db</c>).</summary>
     public string TagName => Name.StartsWith(Owner + "-", StringComparison.OrdinalIgnoreCase) && Name.Length > Owner.Length + 1
         ? Name[(Owner.Length + 1)..] : Name;
 

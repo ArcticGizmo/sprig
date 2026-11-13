@@ -20,7 +20,7 @@ Remove now deletes whatever git leaves itself (links are removed, not followed).
 
 ### Second cause: pnpm's links (found 2026-11-10, after the user hit it again)
 
-The leftover `safety-virtual--1` held no files at all, just 5,157 folders, 3,407 of them pnpm junctions in `node_modules` whose targets in `.pnpm` git had already deleted. Reproduced on a scratch repo: git for Windows can't remove a junction once it dangles, yet **exits 0**. Remove before 8fc7e7b trusted that, deleted the record, and left the folder. That removal ran at 08:22, before the fix.
+The leftover `shop-web--1` held no files at all, just 5,157 folders, 3,407 of them pnpm junctions in `node_modules` whose targets in `.pnpm` git had already deleted. Reproduced on a scratch repo: git for Windows can't remove a junction once it dangles, yet **exits 0**. Remove before 8fc7e7b trusted that, deleted the record, and left the folder. That removal ran at 08:22, before the fix.
 
 Remove now shows the cleanup as steps of its own, so a failure to delete is seen rather than hidden:
 - **Worktree x**: what git did ("removed by git", "git stopped partway: …", "git had forgotten it already").

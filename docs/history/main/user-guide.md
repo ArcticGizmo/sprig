@@ -239,7 +239,7 @@ feature-x)"`) drops your *current* shell into it. Add `--json` for the structure
 **Say what a workspace is for.** A workspace's label is its headline in `ws ls`, `ws info` and the app, and its note is a short status line beneath. Both can be changed at any time; with no text they print the current value. Both belong to the claim: release clears them (keeping copies as `ReleasedLabel` and `ReleasedNote`), so a free workspace shows its live branch and the next claimer starts fresh. The last label still appears when you pick a free workspace to reuse, and dimmed in `pool status`, as a hint to the state it was left in.
 
 ```sh
-sprig ws label feature-x "Risk matrix overrides"
+sprig ws label feature-x "Basket discounts"
 sprig ws note feature-x "waiting on review"
 sprig ws label feature-x --clear   # back to showing the live branch
 ```

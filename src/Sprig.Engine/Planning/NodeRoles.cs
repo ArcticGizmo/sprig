@@ -4,7 +4,7 @@ namespace Sprig.Engine.Planning;
 
 /// <summary>
 /// What a node in a workspace is, for how it's drawn: the role its definition gives it (<c>role: queue</c>), else
-/// one worked out from its image, its name or its value. Names are matched word by word (<c>safety-db</c> is a
+/// one worked out from its image, its name or its value. Names are matched word by word (<c>shop-db</c> is a
 /// database, <c>rabbitmq-url</c> a queue), so a word only counts whole or as the start of one (<c>postgresql</c>).
 /// </summary>
 public static partial class NodeRoles
@@ -52,7 +52,7 @@ public static partial class NodeRoles
     public static string? OfInfra(string? given, string name, string? image = null, string? value = null)
         => Valid(given) ?? FromWords(InfraWords, image) ?? FromWords(InfraWords, name) ?? FromValue(value);
 
-    /// <summary>An app: what it says, else its name, read for the kind of app (<c>orders-api</c>, <c>cdc-worker</c>), else
+    /// <summary>An app: what it says, else its name, read for the kind of app (<c>orders-api</c>, <c>sync-worker</c>), else
     /// a front end when it's a Node app.</summary>
     public static string? OfApp(string? given, string name, string? kind = null)
         => Valid(given) ?? FromWords(AppWords, name) ?? (kind == "node" ? Web : null);

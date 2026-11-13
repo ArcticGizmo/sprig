@@ -26,8 +26,8 @@ Every primitive must:
 
 | Layer | Example | Changes | Owned by |
 |---|---|---|---|
-| **Slot** | `safety-3`, its worktree paths, its ports | never | Sprig |
-| **Purpose** | label "Risk matrix overrides", a status note, tags | whenever the holder likes | the claimer |
+| **Slot** | `shop-3`, its worktree paths, its ports | never | Sprig |
+| **Purpose** | label "Basket discounts", a status note, tags | whenever the holder likes | the claimer |
 | **Git state** | the branch (or detached ref) in each repo | whenever git or `ws switch` does | git, read live |
 
 ### Changes
@@ -38,8 +38,8 @@ Every primitive must:
 - **`ls` leads with purpose:**
 
   ```
-  safety-3  ● Risk matrix overrides   SFTY-2231-risk-overrides   client :8103   claimed 2h
-  safety-1  ○ (free)                  detached @ origin/main                    released 1d
+  shop-3  ● Basket discounts   SHOP-2231-basket-discounts   client :8103   claimed 2h
+  shop-1  ○ (free)                  detached @ origin/main                    released 1d
   ```
 
 ### Seeing it outside Sprig
@@ -53,9 +53,9 @@ Every primitive must:
 Namespaced key/value pairs on a claim, so a caller can mark the workspaces it owns and find them again:
 
 ```sh
-sprig pool checkout safety --branch SFTY-2231-risk-overrides --tag agent.session=7f3a --tag ci.run=4812
-sprig ws tag safety-3 review.pr=41
-sprig ws untag safety-3 review.pr
+sprig pool checkout shop --branch SHOP-2231-basket-discounts --tag agent.session=7f3a --tag ci.run=4812
+sprig ws tag shop-3 review.pr=41
+sprig ws untag shop-3 review.pr
 sprig ws ls --tag agent.session=7f3a --json
 ```
 
@@ -73,9 +73,9 @@ Sprig does not decide whether a claim is abandoned. A caller that knows its own 
 Sprig cannot know whether a PR has merged or is only queued, and should not try. So moving a worktree on and tidying up the old branch are separate jobs: the workspace moves on straight away, and the old branch stays in git for whoever cleans it up later.
 
 ```sh
-sprig ws switch safety-3 --new SFTY-2240-audit-log --from origin/main   # cut a new branch from a ref
-sprig ws switch safety-3 --branch SFTY-2199-hotfix                      # check out an existing branch
-sprig ws switch safety-3 --detach --from origin/main                    # park at a ref, no branch
+sprig ws switch shop-3 --new SHOP-2240-audit-log --from origin/main   # cut a new branch from a ref
+sprig ws switch shop-3 --branch SHOP-2199-hotfix                      # check out an existing branch
+sprig ws switch shop-3 --detach --from origin/main                    # park at a ref, no branch
 ```
 
 - Applies to every repo in the workspace, or to `--only <repos>`. `--from` defaults to each repo's base branch.
@@ -99,11 +99,11 @@ Statuslines, shell prompts, hooks, VS Code tasks and session monitors such as pe
 
 ```jsonc
 { "schema": 1,
-  "workspace": "safety-3", "map": "safety", "repo": "client", "module": "spa",
-  "label": "Risk matrix overrides", "note": "waiting on review", "colour": "#3b82f6",
+  "workspace": "shop-3", "map": "shop", "repo": "client", "module": "spa",
+  "label": "Basket discounts", "note": "waiting on review", "colour": "#3b82f6",
   "tags": { "agent.session": "7f3a" },
   "claimed": true, "claimedAt": "2026-10-28T09:12:00Z",
-  "repos": [ { "name": "client", "branch": "SFTY-2231-risk-overrides", "path": "…" } ],
+  "repos": [ { "name": "client", "branch": "SHOP-2231-basket-discounts", "path": "…" } ],
   "ports": { "client-spa.port": 8103 },
   "urls":  [ { "capability": "client-spa", "url": "http://localhost:8103" } ] }
 ```

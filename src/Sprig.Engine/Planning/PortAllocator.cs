@@ -32,11 +32,18 @@ public static class PortSet
             : throw new FormatException($"'{text.Trim()}' in pin \"{spec}\" isn't a port number");
 }
 
+/// <summary>A workspace that holds a port, as people know it (<c>storefront--2</c>), and whether it's up.</summary>
+public sealed record PortHolder(string Name, bool Up);
+
 /// <summary>
 /// Picks host ports for a plan: from the pin when there is one, else from the settings range, never a restricted
-/// port, never one already taken in this plan, and never one something on the machine is listening on.
+/// port, never one already taken in this plan, and never one something on the machine is listening on. A port another
+/// workspace holds is avoided too, so a workspace that's down comes back on the ports it had, except when the pin
+/// names that one port alone: every workspace would want the same one then, so only one that's up keeps it from the rest.
 /// </summary>
-public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUse, Random? random = null)
+/// <param name="held">Ports other workspaces hold, and who holds each.</param>
+public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUse, Random? random = null,
+    IReadOnlyDictionary<int, PortHolder>? held = null)
 {
     readonly HashSet<int> _taken = [];
 
@@ -44,14 +51,28 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
     /// current range: moving the range shouldn't move a workspace that's already working.</summary>
     public bool TryKeep(string? pin, int port)
     {
-        if (_taken.Contains(port) || inUse.Contains(port) || settings.RestrictedPorts.Contains(port)) return false;
+        IReadOnlyList<int>? pinned = null;
         if (pin is not null)
         {
-            try { if (!PortSet.Parse(pin).Contains(port)) return false; }
+            try { pinned = PortSet.Parse(pin); }
             catch (FormatException) { return false; }
+            if (!pinned.Contains(port)) return false;
         }
+        if (Why(port, pinned is [_]) is not null) return false;
         _taken.Add(port);
         return true;
+    }
+
+    /// <summary>Why <paramref name="port"/> can't be had; null when it can.</summary>
+    /// <param name="alone">The pin names this port alone.</param>
+    string? Why(int port, bool alone)
+    {
+        if (_taken.Contains(port)) return $"{port} is taken by another port in this plan";
+        if (settings.RestrictedPorts.Contains(port)) return $"{port} is restricted in sprig's settings";
+        if (held?.GetValueOrDefault(port) is { } holder && (holder.Up || !alone))
+            return $"{port} is held by {holder.Name}, which is {(holder.Up ? "up" : "down and keeps it to come back on")}";
+        if (inUse.Contains(port)) return $"something on this machine is listening on {port}";
+        return null;
     }
 
     /// <summary>Ports something on this machine is listening on right now.</summary>
@@ -69,7 +90,7 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
 
     public bool TryAllocate(string? pin, out int port, out string? error)
     {
-        IEnumerable<int> candidates;
+        IReadOnlyList<int> candidates;
         if (pin is not null)
         {
             try { candidates = PortSet.Parse(pin); }
@@ -79,12 +100,13 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
         {
             var count = settings.PortRangeEndExclusive - settings.PortRangeStart;
             var start = random is null || count <= 0 ? 0 : random.Next(count);
-            candidates = Enumerable.Range(0, Math.Max(count, 0)).Select(i => settings.PortRangeStart + (start + i) % count);
+            candidates = Enumerable.Range(0, Math.Max(count, 0)).Select(i => settings.PortRangeStart + (start + i) % count).ToArray();
         }
 
+        var alone = pin is not null && candidates.Count == 1;
         foreach (var candidate in candidates)
         {
-            if (_taken.Contains(candidate) || inUse.Contains(candidate) || settings.RestrictedPorts.Contains(candidate)) continue;
+            if (Why(candidate, alone) is not null) continue;
             _taken.Add(candidate);
             port = candidate;
             error = null;
@@ -92,8 +114,8 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
         }
 
         port = 0;
-        error = pin is null
-            ? $"no free port left in the range {settings.PortRangeStart}-{settings.PortRangeEndExclusive - 1}"
+        error = pin is null ? $"no free port left in the range {settings.PortRangeStart}-{settings.PortRangeEndExclusive - 1}"
+            : alone ? Why(candidates[0], alone: true)
             : $"every port in the pin \"{pin}\" is taken or restricted";
         return false;
     }

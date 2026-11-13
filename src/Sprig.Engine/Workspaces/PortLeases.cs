@@ -23,15 +23,16 @@ public sealed class PortLeases(ISprigPaths paths)
     }
 
     /// <summary>
-    /// Run <paramref name="decide"/> with this workspace's leases and every port other workspaces hold, all under the lock.
-    /// When it returns leases, they replace this workspace's.
+    /// Run <paramref name="decide"/> with this workspace's leases and every other workspace's, by workspace, all under the
+    /// lock. When it returns leases, they replace this workspace's.
     /// </summary>
-    public T Update<T>(string workspace, Func<IReadOnlyDictionary<string, int>, IReadOnlySet<int>, (T Result, IReadOnlyDictionary<string, int>? Leases)> decide)
+    public T Update<T>(string workspace,
+        Func<IReadOnlyDictionary<string, int>, IReadOnlyDictionary<string, Dictionary<string, int>>, (T Result, IReadOnlyDictionary<string, int>? Leases)> decide)
     {
         using var _ = Lock();
         var data = Load();
         var mine = data.TryGetValue(workspace, out var held) ? held : new Dictionary<string, int>();
-        var others = data.Where(kv => kv.Key != workspace).SelectMany(kv => kv.Value.Values).ToHashSet();
+        var others = data.Where(kv => kv.Key != workspace).ToDictionary(kv => kv.Key, kv => kv.Value);
 
         var (result, leases) = decide(mine, others);
         if (leases is not null)

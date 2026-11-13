@@ -4,7 +4,7 @@ using Sprig.Model;
 namespace Sprig.Engine.Planning;
 
 /// <param name="Repos">Each repo's model, keyed by the path the orchestration names it by.</param>
-/// <param name="PortsInUse">Ports to avoid: something listens on them, or another workspace holds them.</param>
+/// <param name="PortsInUse">Ports to avoid because something listens on them.</param>
 /// <param name="Leased">Ports this workspace already holds, by <see cref="PlannedPort.Key"/>. Each is kept while its pin
 /// still allows it and nothing else has it.</param>
 /// <param name="ComposeFiles">What's in each repo compose file, by <see cref="ComposeFileInfo.Key"/>. Without it the
@@ -15,6 +15,8 @@ namespace Sprig.Engine.Planning;
 /// repos in place, or for a plan that isn't a workspace's.</param>
 /// <param name="Values">Values set on the workspace, by setting name. They win over everything else, for every repo
 /// with a setting of that name.</param>
+/// <param name="Held">Ports other workspaces hold, and who holds each (see <see cref="PortAllocator"/>). Ports in
+/// <paramref name="PortsInUse"/> are avoided whoever holds them.</param>
 public sealed record PlanInput(
     OrchestrationModel Orchestration,
     IReadOnlyDictionary<string, RepoModel> Repos,
@@ -26,7 +28,8 @@ public sealed record PlanInput(
     Random? Random = null,
     string PortPolicy = "stable",
     string? WorktreesFrom = null,
-    IReadOnlyDictionary<string, string>? Values = null);
+    IReadOnlyDictionary<string, string>? Values = null,
+    IReadOnlyDictionary<int, PortHolder>? Held = null);
 
 /// <summary>The services in a repo's compose file.</summary>
 /// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between workspaces.</param>
@@ -177,7 +180,7 @@ public static class Planner
         /// <summary>Pinned endpoints go first, so an unpinned one can't take the only port a pin allows.</summary>
         void AllocatePorts()
         {
-            var allocator = new PortAllocator(input.Settings, input.PortsInUse, input.Random);
+            var allocator = new PortAllocator(input.Settings, input.PortsInUse, input.Random, input.Held);
             var all = _scopes.SelectMany(s => s.Resources.Values.SelectMany(r => r.Endpoints.Values.Select(e => (s, r, e)))).ToList();
 
             // Kept leases are claimed before anything new, so a fresh allocation can't take a port this workspace holds.

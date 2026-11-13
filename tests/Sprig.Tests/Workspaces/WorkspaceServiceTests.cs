@@ -512,6 +512,22 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_port_pinned_alone_passes_between_workspaces_that_are_down_but_not_to_one_while_its_holder_is_up()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", repo => Web(repo).Replace("ports: { http: any }", "ports: { http: 9350 }")));
+
+        _workspaces.Up(loaded, "feat-x", null);
+        var held = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "feat-y", null));
+        Assert.Contains("web.http: 9350 is held by storefront--feat-x, which is up", string.Join("\n", held.Problems.Select(p => p.Message)));
+
+        _workspaces.Down("storefront", "feat-x");
+        _workspaces.Up(loaded, "feat-y", null);
+
+        Assert.Equal(9350, _workspaces.LastPlan("storefront", "feat-y")!.Ports.Single().Port);
+    }
+
+    [Fact]
     public void Rm_removes_worktrees_and_the_branch_and_frees_the_ports()
     {
         var source = Repo("shop-web", ("index.html", "hi"));

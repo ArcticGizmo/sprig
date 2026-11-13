@@ -1057,10 +1057,10 @@ public sealed partial class WorkspaceService(
         var plan = leases.Update(record.Key, (mine, others) =>
         {
             // A running workspace listens on its own ports; they mustn't count against it.
-            var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).Concat(others).ToHashSet();
+            var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).ToHashSet();
             var built = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, record.Name, settingsNow, inUse,
                 Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null,
-                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values));
+                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values, Held: Holders(others)));
             if (built.HasErrors || built.ToAsk.Count > 0) return (built, null);
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });
@@ -1069,6 +1069,23 @@ public sealed partial class WorkspaceService(
         if (plan.ToAsk.Count > 0) throw WorkspaceException.NeedsValues(plan.ToAsk, record.Name);
         // Saved and looked up under the workspace's own key, not the name the orchestration gives itself in code.
         return plan with { Orchestration = record.Orchestration };
+    }
+
+    /// <summary>Who holds each port other workspaces lease, as people know them. Where two hold one port (a pin naming
+    /// it alone, taken while the other was down), the one that's up is the one that counts.</summary>
+    Dictionary<int, PortHolder> Holders(IReadOnlyDictionary<string, Dictionary<string, int>> others)
+    {
+        var records = store.List().ToDictionary(r => r.Key, StringComparer.Ordinal);
+        var holders = new Dictionary<int, PortHolder>();
+        foreach (var (key, ports) in others)
+        {
+            var record = records.GetValueOrDefault(key);
+            // A lease with no record behind it, or anything but a clean down, may have something listening there still.
+            var holder = new PortHolder(record?.SlotName ?? key, record is null || record.State is not (WorkspaceState.Down or WorkspaceState.Released));
+            foreach (var port in ports.Values)
+                if (!holders.TryGetValue(port, out var had) || (holder.Up && !had.Up)) holders[port] = holder;
+        }
+        return holders;
     }
 
     static IReadOnlyDictionary<string, string>? MergeValues(IReadOnlyDictionary<string, string>? kept, IReadOnlyDictionary<string, string>? given)

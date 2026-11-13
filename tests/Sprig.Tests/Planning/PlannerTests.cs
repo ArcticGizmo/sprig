@@ -1091,7 +1091,7 @@ public class PlannerTests
 
         var plan = f.Plan(inUse: new HashSet<int> { 8100 });
 
-        Assert.Contains("every port in the pin \"8100\" is taken", Assert.Single(plan.Problems).Message);
+        Assert.Equal("web.http: something on this machine is listening on 8100", Assert.Single(plan.Problems).Message);
     }
 
     [Fact]

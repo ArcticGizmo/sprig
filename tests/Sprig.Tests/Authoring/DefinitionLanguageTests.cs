@@ -28,7 +28,8 @@ public sealed class DefinitionLanguageTests : IDisposable
         File.WriteAllText(path, text);
     }
 
-    const string Definition = """
+    // A raw literal takes the source file's line endings, which a Windows checkout makes CRLF; the edits below match "\n".
+    static readonly string Definition = """
         schema: 1
         repo: shop
         compose:
@@ -52,7 +53,7 @@ public sealed class DefinitionLanguageTests : IDisposable
             path: web
             ports: { http: any }
 
-        """;
+        """.ReplaceLineEndings("\n");
 
     /// <summary>Completions at the <c>|</c> in <paramref name="text"/>.</summary>
     string[] At(string text)
@@ -79,6 +80,15 @@ public sealed class DefinitionLanguageTests : IDisposable
         Assert.Contains("read-by", At(Definition + "files:\n  web/.env:\n    |"));
         Assert.Contains("container", At(Definition.Replace("{ tcp: { container: 5432 } }", "{ tcp: { |")));
         Assert.Contains("outputs", At(Definition + "o|"));
+    }
+
+    [Fact]
+    public void A_file_with_CRLF_line_endings_completes_as_one_with_LF()
+    {
+        var crlf = Definition.ReplaceLineEndings("\r\n");
+        Assert.Contains("ready-log", At(crlf.Replace("    path: web\r\n", "    path: web\r\n    re|\r\n")));
+        Assert.Equal(["dotnet", "node", "command"], At(crlf.Replace("run: node", "run: |")));
+        Assert.Equal(["port", "url", "http", "admin", "swagger"], At(crlf + "files:\r\n  x.env:\r\n    values:\r\n      A: ${catalog-api.|"));
     }
 
     [Fact]

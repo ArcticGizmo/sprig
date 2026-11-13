@@ -4,6 +4,12 @@
   <PropertyGroup>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <!-- Trim analysis only runs in the release publish, never in build or test, and Avalonia's reflection bindings,
+         System.Text.Json, YamlDotNet and Spectre all raise it. Made errors by the settings above, it fails a release
+         that nothing earlier could catch. It's switched off rather than listed code by code, where a new code would
+         break the next release. TrimMode partial trims only assemblies that say they're trimmable, so the risk is in
+         those (YamlDotNet, Spectre): a trimmed sprig.exe has to read and plan a sprig.yaml before a release. -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
   </PropertyGroup>
 
 </Project>

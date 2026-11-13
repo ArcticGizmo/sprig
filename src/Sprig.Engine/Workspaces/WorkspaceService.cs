@@ -27,16 +27,9 @@ public sealed class WorkspaceException(string message, IReadOnlyList<PlanProblem
     /// <summary>The workspace that's up in the same checkout, when that's why: taking it over takes it down first.</summary>
     public WorkspaceRecord? HeldBy { get; init; }
 
-    /// <param name="workspace">A main can't keep values, so it's told to give the settings defaults instead, with no
-    /// asks to answer.</param>
-    public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks, string? workspace = null)
-    {
-        var what = $"{(asks.Count == 1 ? "an input needs" : "inputs need")} a value first: " +
-                   string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})"));
-        return workspace == WorkspaceRecord.MainName
-            ? new($"{what}. main runs with the definitions' own values, so give {(asks.Count == 1 ? "it" : "them")} a default in the definition, or check a branch out in a slot and set {(asks.Count == 1 ? "it" : "them")} there")
-            : new(what, asks: asks);
-    }
+    public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks)
+        => new($"{(asks.Count == 1 ? "an input needs" : "inputs need")} a value first: " +
+               string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})")), asks: asks);
 }
 
 public sealed record RemoveOptions(bool DeleteBranch = false, bool Force = false);
@@ -176,7 +169,7 @@ public sealed partial class WorkspaceService(
         var orchestration = loaded.Orchestration ?? throw new WorkspaceException($"{Path.GetFileName(loaded.OrchestrationPath)} isn't ready to run", loaded.Problems);
         var problems = new List<PlanProblem>();
         var plan = Planner.Build(new PlanInput(orchestration, loaded.Repos, record.Name, settings.Get(), new HashSet<int>(),
-            ComposeFiles: loaded.ComposeFiles(problems), Values: record.Values));
+            ComposeFiles: loaded.ComposeFiles(problems), Values: record.Values, Main: record.IsMain));
         var repos = record.Repos.Count > 0 ? record.Repos
             : orchestration.Repos.Where(r => loaded.Repos.ContainsKey(r.Path) && loaded.RepoDirs.ContainsKey(r.Path))
                 .Select(r => new WorkspaceRepo(r.Path, loaded.Repos[r.Path].Name, loaded.RepoDirs[r.Path], loaded.RepoDirs[r.Path], Worktree: false, BranchCreated: false))
@@ -239,7 +232,7 @@ public sealed partial class WorkspaceService(
             if (branch is not null)
                 throw new WorkspaceException("main runs the repos where they're checked out, so it can't have a branch of its own; check the branch out in a slot instead");
             if (values is { Count: > 0 })
-                throw new WorkspaceException("main runs with the definitions' own values; check a branch out in a slot to set your own");
+                throw new WorkspaceException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values");
             options = (options ?? new WorkspaceOptions()) with { InPlace = true };
         }
 
@@ -276,16 +269,22 @@ public sealed partial class WorkspaceService(
         }
         var problems = new List<PlanProblem>();
         var allValues = MergeValues(existing?.Values, values);
-        var dryPlan = Planner.Build(new PlanInput(orchestration, loaded.Repos, workspace, settingsNow, _listening(),
-            ComposeFiles: loaded.ComposeFiles(problems), Values: allValues));
+        var main = workspace == WorkspaceRecord.MainName;
+        var listening = _listening();
+        // Main always wants the same ports, so while it's up it's what's listening on them.
+        if (main && existing is { State: not (WorkspaceState.Down or WorkspaceState.Released) })
+            listening = listening.Except(leases.Get(existing.Key).Values).ToHashSet();
+        var dryPlan = Planner.Build(new PlanInput(orchestration, loaded.Repos, workspace, settingsNow, listening,
+            ComposeFiles: loaded.ComposeFiles(problems), Values: allValues, Main: main));
         problems.AddRange(dryPlan.Problems);
         if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
         if (!inPlace) problems.AddRange(CheckCopies(loaded, loaded.ReadFrom));
         var filesCheckedFor = loaded;
         if (problems.Any(p => p.Severity == ProblemSeverity.Error))
             throw step.Fail(new WorkspaceException("the plan has errors", problems));
-        if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk, workspace));
-        var needsDocker = dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
+        if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk));
+        // Main's infra is the user's, so sprig only needs docker to stop what it started for main before.
+        var needsDocker = main ? existing?.Compose.Count > 0 : dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
         if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new WorkspaceException(why));
         // Before anything is made, so a folder in the way doesn't leave half a slot behind.
         if (!inPlace && SlotBlocker(loaded, existing?.Folder ?? WorkspaceFolder(loaded, id, workspace, settingsNow), branch!) is { } blocked)
@@ -348,10 +347,14 @@ public sealed partial class WorkspaceService(
             record = record with { Files = WriteFiles(plan, record, check: !alreadyChecked) };
             store.Save(record);
             store.SavePlan(plan);
-            step.Done($"{record.Files.Count} files");
+            step.Done(record.IsMain ? "none: main runs the checkout as it is" : $"{record.Files.Count} files");
 
             beforeInfra?.Invoke(record, plan);
-            record = record with { Compose = StartInfra(plan, record, step, cancellation, InfraFor(plan, starting?.AppsIn(plan))) };
+            record = record with
+            {
+                Compose = record.IsMain ? CheckOwnInfra(plan, record, step, cancellation, InfraFor(plan, starting?.AppsIn(plan)))
+                    : StartInfra(plan, record, step, cancellation, InfraFor(plan, starting?.AppsIn(plan))),
+            };
             var upAt = DateTimeOffset.UtcNow;
             record = record with { State = WorkspaceState.Up, UpdatedAt = upAt, LastUpAt = upAt };
             store.Save(record);
@@ -387,14 +390,16 @@ public sealed partial class WorkspaceService(
 
     /// <summary>
     /// Delete the workspace's infra data: its apps stop and its containers go, volumes and all, leaving it down with
-    /// everything else kept. A main can have this, though it can't be removed. Bringing it back up, and starting the
-    /// apps that were running, is the caller's, since that can need approval or a take-over.
+    /// everything else kept. Bringing it back up, and starting the apps that were running, is the caller's, since that
+    /// can need approval or a take-over. A main's infra is the user's own, so its data is theirs to empty.
     /// </summary>
     public WorkspaceRecord EmptyData(string orchestration, string workspace, IProgress<WorkspaceEvent>? progress = null,
         CancellationToken cancellation = default)
     {
         var record = store.Get(orchestration, workspace)
                      ?? throw new WorkspaceException($"{orchestration} has no workspace '{workspace}' yet, so it has no data to empty");
+        if (record.IsMain)
+            throw new WorkspaceException("the main checkout runs with your own infra, so sprig has no data of its to empty; empty it the way you run it (docker compose down -v, say)");
         var step = new Steps(progress);
         StopApps(record, step, cancellation);
         if (record.Compose.Count == 0)
@@ -1060,13 +1065,13 @@ public sealed partial class WorkspaceService(
             var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).ToHashSet();
             var built = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, record.Name, settingsNow, inUse,
                 Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null,
-                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values, Held: Holders(others)));
+                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values, Held: Holders(others), Main: record.IsMain));
             if (built.HasErrors || built.ToAsk.Count > 0) return (built, null);
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });
         if (plan.HasErrors) throw new WorkspaceException("the plan has errors", plan.Problems);
         // A branch's definitions, read from its worktrees, can ask for more than the main checkouts' did.
-        if (plan.ToAsk.Count > 0) throw WorkspaceException.NeedsValues(plan.ToAsk, record.Name);
+        if (plan.ToAsk.Count > 0) throw WorkspaceException.NeedsValues(plan.ToAsk);
         // Saved and looked up under the workspace's own key, not the name the orchestration gives itself in code.
         return plan with { Orchestration = record.Orchestration };
     }
@@ -1104,7 +1109,7 @@ public sealed partial class WorkspaceService(
     public WorkspaceRecord SetValues(string orchestration, string workspace, IReadOnlyDictionary<string, string> set, IReadOnlyCollection<string>? unset = null)
     {
         if (workspace == WorkspaceRecord.MainName)
-            throw new WorkspaceException("main runs with the definitions' own values; check a branch out in a slot to set your own");
+            throw new WorkspaceException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values");
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
         var merged = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var (k, v) in record.Values ?? new Dictionary<string, string>()) merged[k] = v;
@@ -1344,6 +1349,27 @@ public sealed partial class WorkspaceService(
         }
         catch (WorkspaceException) { /* a plan that can't be read back only means nothing to compare against */ }
         return byPath;
+    }
+
+    /// <summary>
+    /// A main checkout's infra is the user's own, so rather than starting it, <c>up</c> checks it's listening and stops
+    /// with what isn't. Infra sprig started for main before it worked this way is stopped, its data kept, since it would
+    /// clash with theirs. Returns the compose projects main now has: none.
+    /// </summary>
+    IReadOnlyList<ComposeProject> CheckOwnInfra(Plan plan, WorkspaceRecord record, Steps step, CancellationToken cancellation, IReadOnlySet<string>? needed)
+    {
+        foreach (var old in record.Compose)
+        {
+            step.Start($"Stop {old.Name}");
+            docker.Down(old, volumes: false, line => step.Output(line), cancellation);
+            step.Done("sprig's own copy from before; main uses yours now, and this one's data is kept");
+        }
+        var infra = OwnInfraOf(plan, needed);
+        if (infra.Count == 0) return [];
+        step.Start("Your infra");
+        if (infra.Where(o => o.Answering == false).ToArray() is { Length: > 0 } missing) throw step.Fail(OwnInfraMissing(missing));
+        step.Done(string.Join(", ", infra.Select(o => o.Ports.Count == 0 ? $"{o.Key} (no port to check)" : $"{o.Key} on {string.Join(", ", o.Ports)}")));
+        return [];
     }
 
     /// <summary>One container or compose service as <c>up</c> starts it.</summary>

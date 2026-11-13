@@ -122,6 +122,12 @@
                           "scheme": {
                             "type": "string",
                             "description": "How its url starts, such as http. A port with no scheme has no url."
+                          },
+                          "main": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535,
+                            "description": "The port the repo's own config uses, for running its main checkout, where sprig writes nothing."
                           }
                         },
                         "additionalProperties": false
@@ -290,6 +296,12 @@
                     "scheme": {
                       "type": "string",
                       "description": "How its url starts, such as http. A port with no scheme has no url."
+                    },
+                    "main": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "The port the repo's own config uses, for running its main checkout, where sprig writes nothing."
                     }
                   },
                   "additionalProperties": false
@@ -502,6 +514,12 @@
                     "scheme": {
                       "type": "string",
                       "description": "How its url starts, such as http. A port with no scheme has no url."
+                    },
+                    "main": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "The port the repo's own config uses, for running its main checkout, where sprig writes nothing."
                     },
                     "health": {
                       "type": "string",

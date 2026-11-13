@@ -256,7 +256,7 @@ public class WorkspacesViewModelTests
         await vm.UpCommand.ExecuteAsync(null);
         Assert.True(vm.Selected!.IsUp);
         Assert.Equal("main checkout · main", vm.Selected.Branch);
-        Assert.Matches(@"PORT=95\d\d", File.ReadAllText(Path.Combine(repo, ".env.local")));
+        Assert.False(File.Exists(Path.Combine(repo, ".env.local")));
 
         // A second definition of the same checkout asks before taking it over, then takes the first one down.
         var other = Path.Combine(store.Root, "work", "web-again.orchestration.yaml");

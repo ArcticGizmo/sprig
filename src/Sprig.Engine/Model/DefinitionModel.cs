@@ -105,7 +105,10 @@ public sealed record VolumeModel(string Name, string Target);
 /// <param name="Scheme">How a url to this endpoint starts (<c>http</c>, <c>amqp</c>, ...); null when it has no url.</param>
 /// <param name="Health">An app's path on this endpoint (e.g. <c>/health</c>) that answers with a success status once
 /// the app is ready.</param>
-public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, string? Scheme, SourceLocation Location, string? Health = null);
+/// <param name="Main">The port the repo's own config uses, which a main checkout runs on since sprig writes nothing
+/// there.</param>
+public sealed record EndpointModel(string Name, int? TargetPort, string? Pin, string? Scheme, SourceLocation Location, string? Health = null,
+    int? Main = null);
 
 /// <summary>One value. An app's is written into <see cref="File"/>, relative to the app's path, never set on its
 /// process; a container's goes in its compose definition and has no file.</summary>

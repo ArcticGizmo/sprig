@@ -213,6 +213,8 @@ public sealed class LogTailTests : IDisposable
             Ansi = AnsiSupport.No,
             ColorSystem = ColorSystemSupport.NoColors,
             Out = new AnsiConsoleOutput(output),
+            // Spectre turns ANSI back on when it sees a CI such as GitHub Actions, whatever is asked for above.
+            Enrichment = new ProfileEnrichment { UseDefaultEnrichers = false },
         });
         var follower = new LogFollower(ansi, output, colour: false);
         follower.Add("api", File("api.log"));

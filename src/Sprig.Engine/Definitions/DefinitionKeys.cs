@@ -83,6 +83,7 @@ public static class DefinitionKeys
         new("container", "The port inside the container."),
         new("host", "Where on this machine it may be: any, a port, or a list such as [8000, 8110-8115]."),
         new("scheme", "How its url starts, such as http. A port with no scheme has no url."),
+        new("main", "The port the repo's own config uses, for running its main checkout, where sprig writes nothing."),
     ];
 
     public static readonly Key[] AppPort =

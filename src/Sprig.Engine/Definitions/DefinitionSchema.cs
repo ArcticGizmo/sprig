@@ -137,6 +137,7 @@ public static class DefinitionSchema
             ["scheme"] = Text(),
             ["container"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 65535 },
             ["health"] = new JsonObject { ["type"] = "string", ["pattern"] = "^/" },
+            ["main"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 65535 },
         };
         return new JsonObject { ["anyOf"] = new JsonArray(host, Object(keys, values)) };
     }

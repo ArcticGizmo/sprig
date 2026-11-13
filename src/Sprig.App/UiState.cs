@@ -7,7 +7,6 @@ namespace Sprig.App;
 
 /// <summary>How the app was left: what's folded away and what's pinned. Not settings, so it isn't on the Settings page.</summary>
 /// <param name="Pins">Pinned apps (<c>repo/app</c>) per orchestration, so a pin applies to every workspace of it.</param>
-/// <param name="DetailsClosed">The app details beside the log were folded away.</param>
 /// <param name="LogTimesHidden">The log's time column was turned off.</param>
 /// <param name="LogWrapOff">The log's long lines run on past the edge rather than wrapping.</param>
 /// <param name="WorkspaceChoices">The new-workspace form's last answers per orchestration, so the next workspace of it starts there.</param>
@@ -20,7 +19,6 @@ namespace Sprig.App;
 /// <param name="GraphGroupBy">What the workspace graph's boxes gather; absent for each repo's nodes.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
-    bool DetailsClosed = false,
     bool LogTimesHidden = false,
     bool LogWrapOff = false,
     Dictionary<string, Sprig.Engine.Workspaces.WorkspaceOptions>? WorkspaceChoices = null,
@@ -38,12 +36,6 @@ public sealed class UiState(ISprigPaths paths)
     string File => Path.Combine(paths.Root, "ui.json");
 
     UiStateData Data => _data ??= JsonFile.Read<UiStateData>(File) ?? new UiStateData();
-
-    public bool DetailsOpen
-    {
-        get => !Data.DetailsClosed;
-        set => Save(Data with { DetailsClosed = !value });
-    }
 
     public bool LogTimes
     {

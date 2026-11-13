@@ -139,20 +139,20 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
-    public void Emptying_data_leaves_main_down_with_everything_else_kept_and_says_when_there_is_no_infra()
+    public void Emptying_data_leaves_a_slot_down_with_everything_else_kept_and_says_when_there_is_no_infra()
     {
         Repo("shop-web", ("index.html", "hi"));
         var loaded = Load(("shop-web", Web));
-        Assert.Contains("no data to empty", Assert.Throws<WorkspaceException>(() => _workspaces.EmptyData("storefront", WorkspaceRecord.MainName)).Message);
-        var up = _workspaces.Up(loaded, WorkspaceRecord.MainName, null);
+        Assert.Contains("no data to empty", Assert.Throws<WorkspaceException>(() => _workspaces.EmptyData("storefront", "feat-x")).Message);
+        var up = _workspaces.Up(loaded, "feat-x", null);
         var steps = new List<WorkspaceEvent>();
 
-        var emptied = _workspaces.EmptyData("storefront", WorkspaceRecord.MainName, new SyncProgressList(steps));
+        var emptied = _workspaces.EmptyData("storefront", "feat-x", new SyncProgressList(steps));
 
         Assert.Equal(WorkspaceState.Down, emptied.State);
         Assert.Equal(up.Files.Select(f => f.Path), emptied.Files.Select(f => f.Path));
         Assert.Contains(steps, e => e is { Step: "Data", State: StepState.Done, Detail: "nothing to empty: it has no infra" });
-        Assert.Equal(WorkspaceState.Up, _workspaces.Up(loaded, WorkspaceRecord.MainName, null).State);
+        Assert.Equal(WorkspaceState.Up, _workspaces.Up(loaded, "feat-x", null).State);
     }
 
     [Fact]
@@ -804,16 +804,54 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
-    public void Main_with_a_setting_that_has_no_default_says_to_give_it_one_rather_than_asking()
+    public void Main_runs_the_checkout_as_it_is_writing_nothing_and_asking_for_nothing()
+    {
+        var dir = Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", WebWithKey));
+        var events = new List<WorkspaceEvent>();
+
+        var record = _workspaces.Up(loaded, "main", null, progress: new SyncProgressList(events));
+
+        Assert.Equal(WorkspaceState.Up, record.State);
+        Assert.Empty(record.Files);
+        Assert.False(File.Exists(Path.Combine(dir, ".env.local")));
+        Assert.Equal("none: main runs the checkout as it is", events.Single(e => e.Step == "Files" && e.State == StepState.Done).Detail);
+    }
+
+    [Fact]
+    public void Main_uses_your_own_infra_and_will_not_start_without_it()
     {
         Repo("shop-web", ("index.html", "hi"));
-        var loaded = Load(("shop-web", WebWithKey));
+        var listening = new HashSet<int>();
+        var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(_processes), listening: () => listening);
+        var loaded = Load(("shop-web", repo => $"""
+            {Web(repo)}
+            containers:
+              db:
+                preset: postgres
+            """));
 
-        var e = Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "main", null));
+        var e = Assert.Throws<WorkspaceException>(() => workspaces.Up(loaded, "main", null));
+        Assert.Contains("your own infra", e.Message);
+        Assert.Contains("shop-web/db (on 5432)", e.Message);
+        Assert.Equal(WorkspaceState.Failed, workspaces.Get("storefront", "main")!.State);
 
-        Assert.Empty(e.Asks);
-        Assert.Contains("api-key", e.Message);
-        Assert.Contains("give it a default in the definition", e.Message);
+        listening.Add(5432);
+        var events = new List<WorkspaceEvent>();
+        var record = workspaces.Up(loaded, "main", null, progress: new SyncProgressList(events));
+        Assert.Equal(WorkspaceState.Up, record.State);
+        Assert.Empty(record.Compose);
+        Assert.Equal("shop-web/db on 5432", events.Single(e => e.Step == "Your infra" && e.State == StepState.Done).Detail);
+
+        // Starting apps later checks again, and sprig never offers to start it.
+        var plan = workspaces.LastPlan("storefront", "main")!;
+        Assert.Empty(workspaces.MissingInfra(record, plan, null));
+        Assert.Empty(workspaces.InfraTargets(record, plan));
+        listening.Clear();
+        Assert.Contains("shop-web/db (on 5432)", Assert.Throws<WorkspaceException>(() => workspaces.MissingInfra(record, plan, null)).Message);
+        Assert.Contains("your own infra", Assert.Throws<WorkspaceException>(() => workspaces.EmptyData("storefront", "main")).Message);
+        Assert.Equal(WorkspaceState.Down, workspaces.Down("storefront", "main").State);
     }
 
     [Fact]

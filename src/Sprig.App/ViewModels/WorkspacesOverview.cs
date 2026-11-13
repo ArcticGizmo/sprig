@@ -65,6 +65,14 @@ public partial class WorkspacesViewModel
     public Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.Now;
 
     public ObservableCollection<OverviewRow> OverviewRows { get; } = [];
+
+    /// <summary><see cref="OverviewRows"/> split in two, since a main runs the checkout as it is and a slot is sprig's
+    /// own.</summary>
+    public ObservableCollection<OverviewRow> OverviewMainRows { get; } = [];
+    public ObservableCollection<OverviewRow> OverviewSlotRows { get; } = [];
+    public bool HasOverviewMainRows => OverviewMainRows.Count > 0;
+    public bool HasOverviewSlotRows => OverviewSlotRows.Count > 0;
+
     public ObservableCollection<OverviewChip> OverviewChips { get; } = [];
 
     [ObservableProperty] private OverviewFilter _overviewFilter = OverviewFilter.All;
@@ -134,7 +142,7 @@ public partial class WorkspacesViewModel
                     : record.State == WorkspaceState.Failed ? $"failed {Ago.Text(record.UpdatedAt, now)}"
                     : record.LastUpAt is { } up ? Ago.Text(up, now) : Ago.Text(record.UpdatedAt, now);
                 row.DownFor = record.State == WorkspaceState.Down && !IsUnmade(record) ? now - record.UpdatedAt : TimeSpan.Zero;
-                row.Worktrees = record.IsMain ? "main checkout" : record.InPlace ? "in place" : "…";
+                row.Worktrees = record.IsMain ? "the checkout, as it is" : record.InPlace ? "in place" : "…";
                 return row;
             }).ToList();
         CountOverviewApps();
@@ -197,6 +205,11 @@ public partial class WorkspacesViewModel
                      _ => true,
                  }))
             OverviewRows.Add(row);
+        OverviewMainRows.Clear();
+        OverviewSlotRows.Clear();
+        foreach (var row in OverviewRows) (row.Record.IsMain ? OverviewMainRows : OverviewSlotRows).Add(row);
+        OnPropertyChanged(nameof(HasOverviewMainRows));
+        OnPropertyChanged(nameof(HasOverviewSlotRows));
         NoOverviewMatches = _overview.Count > 0 && OverviewRows.Count == 0;
         foreach (var chip in OverviewChips) chip.IsOn = chip.Filter == OverviewFilter;
     }

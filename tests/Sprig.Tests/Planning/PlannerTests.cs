@@ -95,6 +95,100 @@ public class PlannerTests
         Assert.DoesNotContain(plan.Ports, p => p.Resource == "migrate");
     }
 
+    [Fact]
+    public void Main_runs_on_the_repos_own_ports_with_no_values_and_nothing_to_ask_and_still_starts_in_order()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            inputs:
+              api-key: { type: secret }
+            apps:
+              catalog-api:
+                run: dotnet
+                ports: { http: { host: any, main: 5100, health: /health } }
+              admin:
+                run: dotnet
+                ports: { http: 5080 }
+              worker:
+                run: node
+                ports: { http: { host: any, health: /health } }
+                links: { Home: / }
+            files:
+              .env:
+                read-by: [catalog-api]
+                values:
+                  Db: Host=localhost;Port=${pg.port}
+                  Key: ${inputs.api-key}
+            outputs:
+              catalog-url:
+                type: url
+                value: ${catalog-api.url}
+            """);
+        f.Add("../shop-web", """
+            schema: 1
+            repo: shop-web
+            inputs:
+              catalog-url: { type: url }
+            apps:
+              web:
+                run: node
+                ports: { http: any }
+            files:
+              .env:
+                read-by: [web]
+                values:
+                  API: ${inputs.catalog-url}
+            """);
+
+        var plan = f.PlanWith(i => i with { Main = true });
+
+        Assert.Empty(plan.Problems);
+        Assert.Empty(plan.ToAsk);
+        Assert.All(plan.Apps, a => Assert.Empty(a.Env));
+        int? Port(string resource) => plan.Ports.Single(p => p.Resource == resource).Port;
+        Assert.Equal((5432, 5100, 5080), (Port("pg"), Port("catalog-api"), Port("admin")));
+        Assert.Null(Port("worker"));
+        Assert.Null(Port("web"));
+        Assert.Equal("5432:5432", Assert.Single(plan.Containers).Ports.Single());
+        // A link to an app whose port its own config picks waits for the app to say it.
+        var home = Assert.Single(plan.Apps.Single(a => a.Name == "worker").Links!);
+        Assert.Equal("http://localhost:{port:shop-services/worker}", home.Url);
+        Assert.Null(HeardPort.Fill(home.Url, _ => null));
+        Assert.Equal("http://localhost:5173", HeardPort.Fill(home.Url, key => key == "shop-services/worker" ? 5173 : null));
+        Assert.Equal(["shop-services/catalog-api"], DependsOn(plan, "web"));
+        // With no values, what they'd point at is kept, so the graph and the infra a start needs come out the same.
+        Assert.Contains(new ValueSource("shop-services", "pg", null, null), plan.Apps.Single(a => a.Name == "catalog-api").Uses!);
+        Assert.Contains(new ValueSource("shop-services", "catalog-api", null, null), plan.Apps.Single(a => a.Name == "web").Uses!);
+        Assert.Contains("shop-services/pg", Sprig.Engine.Workspaces.WorkspaceService.InfraFor(plan, ["web"])!);
+    }
+
+    [Fact]
+    public void Main_stops_on_an_apps_port_that_something_else_has_rather_than_moving_but_expects_its_infra_there()
+    {
+        var f = new Fixture();
+        f.Add("../shop-services", """
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            apps:
+              admin:
+                run: dotnet
+                ports: { http: 5080 }
+            """);
+
+        var plan = f.PlanWith(i => i with { Main = true, PortsInUse = new HashSet<int> { 5080, 5432 } });
+
+        var problem = Assert.Single(plan.Problems);
+        Assert.Contains("its own port 5080", problem.Message);
+        Assert.Contains("listening on 5080", problem.Message);
+        Assert.Equal(5432, plan.Ports.Single(p => p.Resource == "pg").Port);
+    }
+
     const string Orders = """
         schema: 1
         repo: shop-services

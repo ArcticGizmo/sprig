@@ -9,6 +9,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.1] - 2026-11-13
+
+Main stops redecorating. It runs your checkout as it is, with your own infra, and writes nothing.
+
+### Added
+- **`main:` on a port** — the port your own config uses, for the main checkout.
+- **Main checkouts get their own section** — on the Workspaces page and in `sprig ls`.
+- **A MAIN CHECKOUT · YOUR INFRA badge** — so main never passes for a slot.
+- **Your infra in the graph** — "yours · listening", or "yours · not listening".
+
+### Changed
+- **Main writes nothing into the checkout** — no env files, no inputs to fill. Leftovers from earlier runs are tidied away.
+- **Main uses the infra you already run** — sprig never starts, stops or empties it.
+- **Main won't start without its infra** — it names what isn't listening.
+- **Main runs on the repo's own ports** — a taken app port stops it; slots are for moving.
+- **Main's links appear once each app says its port.**
+- **Double-clicking a graph node opens its details** — the log is on right-click.
+- **Details always start open** — folding them is no longer remembered (it was mostly forgotten).
+
+### Fixed
+- **`sprig plan` on main** — previews main, not a slot in disguise.
+
+---
+
 ## [v0.9.0] - 2026-11-13
 
 A rebuild. Maps, pools and stacks are out; repos describe themselves, and sprig runs them. Nothing from 0.8 is migrated, so delete the old app's folders under `%LOCALAPPDATA%\sprig` when you're ready.

@@ -494,11 +494,18 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         /// </summary>
         void NoticePort(string line)
         {
-            if (spec.Port is not { } port || _servesOwnPort) return;
+            if (_servesOwnPort) return;
             Match match;
             try { match = Serving.Match(AnsiText.Strip(line)); }
             catch (RegexMatchTimeoutException) { return; }
             if (!match.Success || !int.TryParse(match.Groups["port"].Value, out var seen)) return;
+            // A main checkout's app can have a port only its own config knows; what it says it serves on is that port.
+            if (spec.Port is not { } port)
+            {
+                _servesOwnPort = true;
+                lock (_gate) Status = Status with { Port = seen };
+                return;
+            }
             if (seen == port)
             {
                 _servesOwnPort = true;

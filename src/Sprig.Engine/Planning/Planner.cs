@@ -17,6 +17,8 @@ namespace Sprig.Engine.Planning;
 /// with a setting of that name.</param>
 /// <param name="Held">Ports other workspaces hold, and who holds each (see <see cref="PortAllocator"/>). Ports in
 /// <paramref name="PortsInUse"/> are avoided whoever holds them.</param>
+/// <param name="Main">The plan is a main checkout's, which runs the repos as they are: on their own ports, with nothing
+/// written into them and nothing asked for.</param>
 public sealed record PlanInput(
     OrchestrationModel Orchestration,
     IReadOnlyDictionary<string, RepoModel> Repos,
@@ -29,7 +31,8 @@ public sealed record PlanInput(
     string PortPolicy = "stable",
     string? WorktreesFrom = null,
     IReadOnlyDictionary<string, string>? Values = null,
-    IReadOnlyDictionary<int, PortHolder>? Held = null);
+    IReadOnlyDictionary<int, PortHolder>? Held = null,
+    bool Main = false);
 
 /// <summary>The services in a repo's compose file.</summary>
 /// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between workspaces.</param>
@@ -182,6 +185,11 @@ public static class Planner
         {
             var allocator = new PortAllocator(input.Settings, input.PortsInUse, input.Random, input.Held);
             var all = _scopes.SelectMany(s => s.Resources.Values.SelectMany(r => r.Endpoints.Values.Select(e => (s, r, e)))).ToList();
+            if (input.Main)
+            {
+                AllocateMainPorts(allocator, all);
+                return;
+            }
 
             // Kept leases are claimed before anything new, so a fresh allocation can't take a port this workspace holds.
             var kept = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -207,6 +215,38 @@ public static class Planner
             // Report in declaration order rather than allocation order.
             var order = all.Select((x, i) => (key: (x.s.Owner, x.r.Name, x.e.Model.Name), i)).ToDictionary(x => x.key, x => x.i);
             _ports.Sort((a, b) => order[(a.Owner, a.Resource, a.Endpoint)].CompareTo(order[(b.Owner, b.Resource, b.Endpoint)]));
+        }
+
+        /// <summary>A main checkout runs on the repo's own ports, never another, since nothing tells its apps of one. A
+        /// port the definition can't say is left unknown rather than guessed. Its infra is the user's own, already
+        /// running, so only its apps' ports have to be free.</summary>
+        void AllocateMainPorts(PortAllocator allocator, List<(Scope s, Resource r, Endpoint e)> all)
+        {
+            foreach (var (scope, resource, endpoint) in all)
+            {
+                int? port = MainPort(endpoint.Model);
+                if (resource.Kind is "app" or "job" && port is { } wanted && !allocator.TryTake(wanted, out var why))
+                {
+                    Problem($"{resource.Name}.{endpoint.Model.Name}: the main checkout runs on its own port {wanted}, but {why}. " +
+                            "Stop what's on it, or run the branch in a slot", endpoint.Model.Location);
+                    port = null;
+                }
+                ((Dictionary<string, Endpoint>)resource.Endpoints)[endpoint.Model.Name] = endpoint with { Port = port };
+                _ports.Add(new PlannedPort(scope.Owner, resource.Name, endpoint.Model.Name, port, endpoint.Model.Pin, endpoint.Model.TargetPort));
+            }
+        }
+
+        /// <summary>The port the repo's own config uses: what the definition says main runs on, the one port its host
+        /// names, or a container's own port, which is where a compose file usually publishes it.</summary>
+        static int? MainPort(EndpointModel endpoint)
+        {
+            if (endpoint.Main is { } main) return main;
+            if (endpoint.Pin is { } pin)
+            {
+                try { if (PortSet.Parse(pin) is [var only]) return only; }
+                catch (FormatException) { /* the reader reported it */ }
+            }
+            return endpoint.TargetPort;
         }
 
         // ---- planning each thing ----
@@ -245,6 +285,17 @@ public static class Planner
                 referenced.UnionWith(_referenced);
                 return new PlannedEnv(e.Key, value, e.File, e.Location, e.Kind, e.Profile);
             }).ToArray();
+            // Main writes no values, but they're resolved all the same: what they point at is what the repo's own config
+            // points at, so it's what the app waits for and uses.
+            IReadOnlyList<ValueSource>? uses = null;
+            if (input.Main)
+            {
+                uses = env.SelectMany(e => e.Value.Sources ?? []).Where(s => s.Owner is not null && s.Resource is not null)
+                    .Select(s => s with { Endpoint = null, Setting = null })
+                    .Concat(referenced.Select(r => r.Split('/', 2)).Select(r => new ValueSource(r[0], r[1], null, null)))
+                    .Distinct().ToArray();
+                env = [];
+            }
             _referenced = referenced;
             var run = app.Run is null ? null : Resolve(scope, app.Run, app.Location);
             var key = $"{scope.Owner}/{app.Name}";
@@ -257,7 +308,7 @@ public static class Planner
                 .Select(w => $"{scope.Owner}/{w}")
                 .ToArray();
             return new PlannedApp(scope.Owner, scope.RepoPath!, app.Name, app.Kind, app.Path, env, run, app.WaitFor,
-                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app), PlanLinks(scope, app.Links), app.Role);
+                app.Job, waitsFor, PlanHealth(app), PlanReadyLog(app), PlanRestart(app), PlanLinks(scope, app.Links), app.Role, uses);
         }
 
         /// <summary>The references in a Run command template; a command that doesn't parse is left to resolving to report.</summary>
@@ -280,8 +331,12 @@ public static class Planner
                     Warn("a quick link has no label", link.Location);
                     continue;
                 }
-                if (Resolve(scope, link.Url, link.Location).Value is not { } url) continue; // resolving reported why
-                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+                _inLinks = true;
+                var resolved = Resolve(scope, link.Url, link.Location).Value;
+                _inLinks = false;
+                if (resolved is not { } url) continue; // resolving reported why
+                var checkable = HeardPort.In(url) ? HeardPort.Fill(url, _ => 1)! : url;
+                if (!Uri.TryCreate(checkable, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
                     Warn($"the quick link '{link.Label}' goes to '{ValueMask.Apply(url)}', which isn't an http(s) address, so it's left out", link.Location);
                 else planned.Add(new PlannedLink(link.Label, url));
             }
@@ -330,6 +385,9 @@ public static class Planner
 
         // Apps whose endpoints the app being planned reaches through its values; null outside PlanApp.
         HashSet<string>? _referenced;
+
+        // A quick link is being resolved, which on main can wait for an app to say its port.
+        bool _inLinks;
         readonly Dictionary<string, HashSet<string>> _referencedBy = new(StringComparer.Ordinal);
         readonly Dictionary<string, SourceLocation> _locations = new(StringComparer.Ordinal);
 
@@ -419,16 +477,18 @@ public static class Planner
             {
                 var mappings = Mappings(scope.Resources[service.Name], service.Endpoints);
                 services.Add(new PlannedComposeService(service.Name, mappings, service.Health, service.Role));
-                if (mappings.Count == 0) continue;
+                if (input.Main || mappings.Count == 0) continue;
                 var value = string.Join(", ", mappings);
                 overrides.Add(new PlannedOverride($"services.{service.Name}.ports",
                     new PlannedValue(value, value, [$"ports for {service.Name}, replacing the file's own"]), Generated: true));
             }
-            foreach (var o in file.Overrides)
-                overrides.Add(new PlannedOverride(o.Path, Resolve(scope, o.Value, o.Location)));
+            // Main's infra is the user's own, run as they run it, so sprig changes nothing in it.
+            if (!input.Main)
+                foreach (var o in file.Overrides)
+                    overrides.Add(new PlannedOverride(o.Path, Resolve(scope, o.Value, o.Location)));
 
             CheckComposeFile(scope, file, overrides);
-            return new PlannedCompose(scope.Owner, scope.RepoPath!, file.File, overrides, services);
+            return new PlannedCompose(scope.Owner, scope.RepoPath!, file.File, input.Main ? [] : overrides, services);
         }
 
         /// <summary>A workspace keeps only the services the repo names: the others would start on the file's fixed host
@@ -679,8 +739,19 @@ public static class Planner
                 Problem($"'{resourceName}' has no endpoint named '{endpointName}'", location);
                 return null;
             }
-            if (endpoint.Port is not { } port) return null; // allocation already reported why
+            // Before the port, since on main an app's port can be unknown and it's still what this app reaches.
             if (resource.Kind == "app") _referenced?.Add($"{scope.Owner}/{resourceName}");
+            if (endpoint.Port is not { } port)
+            {
+                // Main's app is on whatever port its own config gives it, heard once it says where it listens; a link
+                // to it waits for that rather than being lost.
+                if (!(_inLinks && input.Main && resource.Kind == "app")) return null; // allocation reported why
+                var token = HeardPort.Token($"{scope.Owner}/{resourceName}");
+                ValueSource[] heard = [new(scope.Owner, resourceName, endpointName, null)];
+                if (what == "port") return new Resolved(token, [$"{resourceName}.{endpointName} port, once it says"], heard);
+                if (endpoint.Model.Scheme is not { } s) return null;
+                return new Resolved($"{s}://localhost:{token}", [$"{resourceName}.{endpointName} port, once it says"], heard);
+            }
 
             var label = $"{resourceName}.{endpointName} port {port}";
             ValueSource[] reached = [new(scope.Owner, resourceName, endpointName, null)];
@@ -732,7 +803,8 @@ public static class Planner
             }
             if (exporters.Count == 0)
             {
-                if (!_asks.Any(a => a.Owner == scope.Owner && a.Name == name))
+                // Main writes no values, so there's nothing to ask for one for.
+                if (!input.Main && !_asks.Any(a => a.Owner == scope.Owner && a.Name == name))
                     _asks.Add(new PlannedAsk(scope.Owner, name, declared?.Type ?? "text", at));
                 return null;
             }

@@ -38,6 +38,9 @@ public partial class WorkspacesViewModel
     public bool OnGraphTab => Tab == WorkspaceTab.Graph;
 
     IReadOnlyList<InfraTarget> _targets = [];
+
+    /// <summary>A main checkout's plan, whose infra is the user's and is looked at by its ports rather than asked of docker.</summary>
+    Plan? _ownInfraPlan;
     readonly Dictionary<string, ContainerLogFollower> _followers = new(StringComparer.Ordinal);
     DateTime _lastInfraPoll = DateTime.MinValue;
     bool _infraPolling;
@@ -53,8 +56,10 @@ public partial class WorkspacesViewModel
         {
             old.Picked -= OnGraphPicked;
             old.LogRequested -= OnGraphLog;
+            old.DetailsRequested -= OnGraphDetails;
             old.PinsChanged -= OnGraphPinned;
         }
+        _ownInfraPlan = record?.IsMain == true ? plan : null;
         if (record is null || plan is null)
         {
             _targets = [];
@@ -83,6 +88,7 @@ public partial class WorkspacesViewModel
             grouping: GraphGroupBy, startGroups: plan.Groups);
         graph.Picked += OnGraphPicked;
         graph.LogRequested += OnGraphLog;
+        graph.DetailsRequested += OnGraphDetails;
         graph.PinsChanged += OnGraphPinned;
         Graph = graph;
         // Another workspace starts with nothing looked for; the same one, read afresh, keeps the search.
@@ -121,6 +127,8 @@ public partial class WorkspacesViewModel
 
     void OnGraphLog(GraphNode node) => OpenNodeLog(node);
 
+    void OnGraphDetails(GraphNode node) => OpenDetails();
+
     void OnGraphPinned()
     {
         if (Graph is { } graph && Selected?.Record is { } record) _services.Ui.SetGraphPlaces(record.Orchestration, graph.Pins());
@@ -143,11 +151,18 @@ public partial class WorkspacesViewModel
     /// few seconds; a follow that ended because its container stopped starts again once the container runs.</summary>
     async Task PollInfraAsync(bool now = false)
     {
-        if (_infraHeld || _infraPolling || _targets.Count == 0 || !(OnGraphTab || InfraLogOpen)) return;
+        if (_infraHeld || _infraPolling || (_targets.Count == 0 && _ownInfraPlan is null) || !(OnGraphTab || InfraLogOpen)) return;
         if (!now && DateTime.UtcNow - _lastInfraPoll < InfraPollEvery) return;
         _infraPolling = true;
         try
         {
+            if (_ownInfraPlan is { } own)
+            {
+                var infra = await AppServices.RunAsync(() => _services.Workspaces.OwnInfraOf(own));
+                _lastInfraPoll = DateTime.UtcNow;
+                if (ReferenceEquals(own, _ownInfraPlan)) ApplyOwnInfra(infra);
+                return;
+            }
             var targets = _targets;
             var states = await AppServices.RunAsync(() => _services.Workspaces.InfraStates(targets));
             _lastInfraPoll = DateTime.UtcNow;
@@ -171,6 +186,13 @@ public partial class WorkspacesViewModel
         }
         if (InfraLogOpen && states?.GetValueOrDefault(Logs.Key) is { State: "running" or "restarting" }) _followers[Logs.Key].EnsureRunning();
         OnPropertyChanged(nameof(LogSub));
+    }
+
+    internal void ApplyOwnInfra(IReadOnlyList<OwnInfra> infra)
+    {
+        if (Graph is not { } graph) return;
+        foreach (var node in graph.Nodes.Where(n => n.IsInfra)) node.ApplyOwn(infra.FirstOrDefault(o => o.Key == node.Key));
+        graph.Invalidate();
     }
 
     /// <summary>For a rendered sample: these states stand, and docker isn't asked.</summary>

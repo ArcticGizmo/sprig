@@ -208,7 +208,7 @@ public sealed class PlanCommand(CliContext cli) : Command<PlanCommand.Settings>
         var problems = new List<PlanProblem>();
         var compose = loaded.ComposeFiles(problems);
         var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, workspace, cli.Settings.Get(), PortAllocator.Listening(),
-            ComposeFiles: compose, Values: values));
+            ComposeFiles: compose, Values: values, Main: workspace == Sprig.Engine.Workspaces.WorkspaceRecord.MainName));
         if (!plan.HasErrors) problems.AddRange(cli.Workspaces.CheckFiles(plan, loaded.ReadFrom));
         plan = plan with { Problems = [.. problems, .. plan.Problems] };
         if (s.Json) CliOutput.Json(Shown.Plan(plan, s));

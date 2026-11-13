@@ -139,6 +139,20 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         };
     }
 
+    /// <summary>Show a main checkout's infra, which the user runs, by whether it's listening; null when the plan doesn't
+    /// have it.</summary>
+    public void ApplyOwn(OwnInfra? own)
+    {
+        if (!IsInfra) return;
+        IsAlive = own?.Answering == true;
+        (State, StateDetail, Health) = own switch
+        {
+            { Answering: true } => ("yours · listening", $"on {string.Join(", ", own.Ports)}", NodeHealth.Good),
+            { Answering: false } => ("yours · not listening", $"nothing on {string.Join(", ", own.Ports)}", NodeHealth.Bad),
+            _ => ("yours", "no port to check", NodeHealth.Unknown),
+        };
+    }
+
     /// <summary>Shown at once on a click, until the next answer says how it went.</summary>
     public void Pending(string state)
     {
@@ -291,8 +305,11 @@ public sealed class WorkspaceGraph
     /// <summary>The picked node changed (null for none).</summary>
     public event Action<GraphNode?>? Picked;
 
-    /// <summary>A node was double-clicked: open its log.</summary>
+    /// <summary>Open a node's log.</summary>
     public event Action<GraphNode>? LogRequested;
+
+    /// <summary>A node was double-clicked: show its details, which are easily left folded away.</summary>
+    public event Action<GraphNode>? DetailsRequested;
 
     /// <summary>A node was dragged to a place of its own, to be kept.</summary>
     public event Action? PinsChanged;
@@ -355,6 +372,7 @@ public sealed class WorkspaceGraph
 
     public void Invalidate() => Changed?.Invoke();
     public void RequestLog(GraphNode node) => LogRequested?.Invoke(node);
+    public void RequestDetails(GraphNode node) => DetailsRequested?.Invoke(node);
     public void Pinned() => PinsChanged?.Invoke();
     public void Fit() => FitRequested?.Invoke();
 

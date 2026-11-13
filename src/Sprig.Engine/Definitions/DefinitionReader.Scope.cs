@@ -221,11 +221,13 @@ public static partial class DefinitionReader
             string? scheme = known is not null ? known.Value.Scheme : name is "http" or "https" ? name : null;
             YamlNode? host = value;
             string? health = null;
+            int? main = null;
             if (value is YamlMappingNode)
             {
                 var fields = file.Fields(value, $"port '{name}'", DefinitionKeys.Names(inContainer ? DefinitionKeys.Port : DefinitionKeys.AppPort))!;
                 host = fields["host"];
                 container = file.Number(fields["container"], $"port '{name}''s container port", 1, 65535) ?? container;
+                main = file.Number(fields["main"], $"port '{name}''s main port", 1, 65535);
                 scheme = file.Text(fields["scheme"], $"port '{name}''s scheme") ?? scheme;
                 if (!inContainer && file.Text(fields["health"], $"port '{name}''s health") is { } path)
                 {
@@ -243,7 +245,7 @@ public static partial class DefinitionReader
             }
             var pin = Pin(file, host, name);
             if (pin is { Ok: false }) continue;
-            endpoints.Add(new EndpointModel(name, container, pin?.Spec, scheme, file.At(key), health));
+            endpoints.Add(new EndpointModel(name, container, pin?.Spec, scheme, file.At(key), health, main));
             resource.Ports.Add(new PortInfo(name, scheme));
         }
         return endpoints;

@@ -344,24 +344,23 @@ public class WorkspacesAppsTests
     }
 
     [Fact]
-    public void Folding_the_details_is_remembered_but_a_narrow_window_folds_them_only_for_now()
+    public void Folding_the_details_lasts_only_until_the_app_starts_again_and_a_narrow_window_folds_them_only_for_now()
     {
         using var store = new TempStore();
         var vm = Make(store, out _);
         Assert.True(vm.DetailsOpen);
 
         vm.ToggleDetailsCommand.Execute(null);
-        var again = new WorkspacesViewModel(new AppServices(store.Root));
-        Assert.False(again.DetailsOpen);
-
-        again.ToggleDetailsCommand.Execute(null);
-        again.FitDetails(narrow: true);
-        Assert.False(again.DetailsOpen);
-        again.ToggleDetailsCommand.Execute(null);
-        again.ToggleDetailsCommand.Execute(null);
-        again.FitDetails(narrow: false);
-        Assert.True(again.DetailsOpen);
+        Assert.False(vm.DetailsOpen);
         Assert.True(new WorkspacesViewModel(new AppServices(store.Root)).DetailsOpen);
+
+        vm.ToggleDetailsCommand.Execute(null);
+        vm.FitDetails(narrow: true);
+        Assert.False(vm.DetailsOpen);
+        vm.ToggleDetailsCommand.Execute(null);
+        vm.ToggleDetailsCommand.Execute(null);
+        vm.FitDetails(narrow: false);
+        Assert.True(vm.DetailsOpen);
     }
 
     [Fact]

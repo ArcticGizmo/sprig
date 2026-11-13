@@ -7,21 +7,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-- **Start and stop mean everything** — infra no longer starts the moment a workspace is made. Making one makes it ready (worktrees, ports, files, its infra's definitions) and starts nothing. Start starts what you pick and what it depends on, infra included, making the workspace ready first if need be; Stop stops it. Stop all takes the apps and the infra with it, keeping the containers and their data.
-- **Bring up, Take down and Stop apps are gone** — the header is Start ▾, Restart, Stop all. Bring up again is now Make ready again, under ⋯, for after you've edited a definition; Start all does it on its own when it notices one changed.
-- **A workspace's state is what's running** — running, stopped, failed or free, on the page, the overview (whose chips and bulk buttons follow suit), the Repos and Orchestrations pages, `sprig ls` and `sprig info`. The nav counts what's running.
-- **Start and Stop all don't open a window** — the graph shows what's starting, a line under the header says what's happening (with Cancel, should docker hang), and a failure lands in the header. Making a workspace, freeing, emptying data and removing still show their steps.
-- **Ports hold still through stop and start** — a workspace with random ports used to hand them back on every stop and draw new ones on the next start. They now belong to the branch: kept while it's stopped and started, drawn afresh only when the slot is freed for another one. Stable ports were never handed back, and still aren't.
-- **A container starts on its own from the graph** — made the first time, without bringing anything else up.
-- **`sprig start` and `sprig stop` take infra too** — by name, beside apps; with nothing named, everything. `sprig start` makes a stopped workspace ready first. `sprig down` is `sprig stop` with nothing named, and `sprig up --run`'s Ctrl+C stops the infra as well as the apps. `sprig up --no-apps` is now `--no-start`, which starts nothing at all.
-- **A workspace opens on its graph** — Graph is the first tab now, ahead of Apps and logs, which is a click on a node away.
+---
+
+## [v0.9.2] - 2026-11-13
+
+Start means start, stop means stop, and you can finally see who's eating the RAM.
 
 ### Added
-- **CPU and memory for every app and container** — under each app's port, in its details, on the Infra tab and over every node in the graph. An app counts every process it starts, its build included.
-- **A CPU · MEMORY column on the Workspaces overview** — each workspace's apps and containers together, so the worktree hogging the machine owns up. The summary adds up the lot.
-- **CPU and Memory in `sprig ps`** — with a total for all apps underneath.
-- **A Usage page** — every workspace using anything, sortable by CPU, memory, apps or infra, each opening out into its apps and containers. Above it, the machine's memory and CPU, with sprig's share drawn inside what's in use, so you can tell whether it's your worktrees or the browser.
+- **CPU and memory for every app and container** — builds and child processes included.
+- **Usage over each graph node** — CPU over memory; memory alone when zoomed out.
+- **A CPU · MEMORY column on the overview** — the hungry worktree owns up.
+- **A Usage page** — workspaces sorted by appetite, against the whole machine.
+- **CPU and Memory in `sprig ps`.**
+
+### Changed
+- **Making a workspace starts nothing** — infra waits until something needs it.
+- **Start brings its infra** — whatever you start, plus what it depends on.
+- **Stop all stops the infra too** — containers and data kept.
+- **Bring up, Take down and Stop apps are gone** — Start ▾, Restart, Stop all.
+- **Make ready again** — under ⋯; Start does it when a definition changes.
+- **State is what's running** — running, stopped, failed or free, everywhere.
+- **No window for start and stop** — a status line, with Cancel, instead.
+- **Containers start one at a time from the graph.**
+- **Random ports stay put through stop and start** — fresh only per branch.
+- **`sprig start` and `sprig stop` take infra by name.**
+- **`sprig up --no-apps` is now `--no-start`** — and means it.
+- **`sprig up --run`'s Ctrl+C stops the infra too.**
+- **A workspace opens on its graph.**
 
 ---
 

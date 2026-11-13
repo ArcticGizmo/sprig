@@ -41,6 +41,7 @@ public static class DefinitionSchema
             ["health"] = new JsonObject { ["type"] = "string", ["pattern"] = "^/" },
             ["ready-log"] = Text(),
             ["restart"] = Choice(["never", "on-failure", "always"]),
+            ["max-restarts"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 100 },
             ["once"] = new JsonObject { ["type"] = "boolean" },
             ["retry"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1 },
             ["wait-for"] = Strings(),
@@ -128,6 +129,7 @@ public static class DefinitionSchema
             ["host"] = host.DeepClone().AsObject(),
             ["scheme"] = Text(),
             ["container"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 65535 },
+            ["health"] = new JsonObject { ["type"] = "string", ["pattern"] = "^/" },
         };
         return new JsonObject { ["anyOf"] = new JsonArray(host, Object(keys, values)) };
     }

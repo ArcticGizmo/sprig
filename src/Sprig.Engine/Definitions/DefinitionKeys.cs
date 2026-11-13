@@ -39,9 +39,10 @@ public static class DefinitionKeys
         new("path", "The app's folder, from the repo's root. Empty or . for the root."),
         new("command", "The command, exactly as you'd type it. Required for run: command; for the others it replaces the usual one. No references: values reach the app through files."),
         new("ports", "Ports sprig reserves for each workspace: any, a port, or a list such as [8000, 8110-8115]. The app learns its port from a file it reads."),
-        new("health", "A path, such as /health, on its http port that answers with success once it's ready."),
+        new("health", "A path, such as /health, on its first http port that answers with success once it's ready. For another port, give the port a health: of its own."),
         new("ready-log", "A regular expression; it's ready once a line of its output matches."),
         new("restart", "never (the default), on-failure or always: start it again when it exits on its own."),
+        new("max-restarts", "With restart: how many times in a row to start it again before leaving it exited. 5 by default; a run that lasts a while starts the count again."),
         new("once", "true for a job: it runs to completion each time the apps start, and what waits for it waits for success."),
         new("retry", "For a job: how many times to try again after a failure."),
         new("wait-for", "Apps, jobs, containers and compose services to wait for before starting it."),
@@ -84,7 +85,11 @@ public static class DefinitionKeys
         new("scheme", "How its url starts, such as http. A port with no scheme has no url."),
     ];
 
-    public static readonly Key[] AppPort = [.. Port.Where(k => k.Name != "container")];
+    public static readonly Key[] AppPort =
+    [
+        .. Port.Where(k => k.Name != "container"),
+        new("health", "A path, such as /health, on this port that answers with success once the app is ready. Every port with one must answer."),
+    ];
 
     public static readonly Key[] Input =
     [

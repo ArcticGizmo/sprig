@@ -44,7 +44,7 @@ ports:
   grpc: { host: any, scheme: http }
 ```
 
-The value says where on this machine the port may be. A map says more: `host` (the same any / number / list), `container` (the port inside a container, required for containers and compose services) and `scheme`. A port named `http` or `https` has that scheme; any other has none unless it says so, and so has no url.
+The value says where on this machine the port may be. A map says more: `host` (the same any / number / list), `container` (the port inside a container, required for containers and compose services) and `scheme`. An app's port can also have `health`: a path on that port that must answer with success before the app is ready, as in `admin: { host: any, scheme: http, health: /healthz }`. A port named `http` or `https` has that scheme; any other has none unless it says so, and so has no url.
 
 ## Repo file
 
@@ -119,9 +119,10 @@ groups:
 | `path` | The app's folder. |
 | `command` | Required for `run: command`; for the others, replaces the usual command. Literal. |
 | `ports` | See Ports. A job has none. |
-| `health` | A path (`/health`) on its first http(s) port that answers with success once it's ready. |
+| `health` | A path (`/health`) on its first http(s) port that answers with success once it's ready. For another port, give that port a `health` of its own (see Ports). |
 | `ready-log` | A regular expression; ready once a line of its output matches. |
 | `restart` | `never` (default), `on-failure` or `always`. |
+| `max-restarts` | With `restart`: how many times in a row to start it again before leaving it exited, 5 by default. A run that lasts a while starts the count again. |
 | `once` | `true` for a job: it runs to completion each time the apps start, and what waits for it waits for success. |
 | `retry` | For a job: tries again this many times after a failure. |
 | `wait-for` | Names of apps, jobs, containers and compose services to wait for. |

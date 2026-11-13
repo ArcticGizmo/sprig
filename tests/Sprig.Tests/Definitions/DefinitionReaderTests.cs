@@ -256,6 +256,29 @@ public class DefinitionReaderTests
         apps:
           migrate: { run: dotnet, once: true, restart: always }
         """, 4, "'restart' is for an app that keeps running")]
+    [InlineData("""
+        schema: 1
+        repo: shop
+        apps:
+          web: { run: node, ports: { http: any }, max-restarts: 3 }
+        """, 4, "has max-restarts but doesn't restart")]
+    [InlineData("""
+        schema: 1
+        repo: shop
+        apps:
+          web:
+            run: node
+            ports: { metrics: { host: any, health: /ready } }
+        """, 6, "isn't http; give it scheme: http")]
+    [InlineData("""
+        schema: 1
+        repo: shop
+        apps:
+          web:
+            run: node
+            ports: { http: { host: any, health: /ready } }
+            health: /health
+        """, 7, "has a health path of its own; give it in one place")]
     public void A_mistake_is_reported_on_its_line(string yaml, int line, string message)
     {
         var (at, text) = Problem(yaml);
@@ -376,6 +399,27 @@ public class DefinitionReaderTests
         Assert.Equal([("Swagger", "{api.http.url}/swagger"), ("Home", "{api.http.url}")], api.Links!.Select(l => (l.Label, l.Url)));
         Assert.Equal(("Now listening", "api"), (api.ReadyLog, api.Role));
         Assert.Equal(("app", "python serve.py {{port}}"), (apps["tool"].Kind, apps["tool"].Run));
+    }
+
+    [Fact]
+    public void A_health_path_can_be_on_any_http_port_and_restarts_can_be_capped()
+    {
+        var api = Repo("""
+            schema: 1
+            repo: shop
+            apps:
+              api:
+                run: dotnet
+                ports:
+                  http: any
+                  admin: { host: any, scheme: http, health: /healthz }
+                health: /health
+                restart: always
+                max-restarts: 12
+            """).Apps.Single();
+
+        Assert.Equal([("http", "/health"), ("admin", "/healthz")], api.Endpoints.Select(e => (e.Name, e.Health)));
+        Assert.Equal(("always", 12), (api.Restart!.Policy, api.Restart.Max));
     }
 
     [Fact]

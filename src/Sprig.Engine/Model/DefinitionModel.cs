@@ -80,7 +80,11 @@ public sealed record AppModel(
 /// <param name="Policy"><c>onFailure</c> (a non-zero exit) or <c>always</c> (any exit; for a job, the same as
 /// <c>onFailure</c>).</param>
 /// <param name="Max">Restarts in a row before giving up. A run that lasted a minute starts the count again.</param>
-public sealed record RestartModel(string Policy, int Max, SourceLocation Location);
+public sealed record RestartModel(string Policy, int Max, SourceLocation Location)
+{
+    /// <summary>For an app that says when to restart but not how many times.</summary>
+    public const int DefaultMax = 5;
+}
 
 /// <param name="Health">A command run inside the container that exits 0 once it's ready; null to only wait for it to
 /// be running.</param>

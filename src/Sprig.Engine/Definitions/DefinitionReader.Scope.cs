@@ -220,12 +220,19 @@ public static partial class DefinitionReader
             int? container = known?.Container;
             string? scheme = known is not null ? known.Value.Scheme : name is "http" or "https" ? name : null;
             YamlNode? host = value;
+            string? health = null;
             if (value is YamlMappingNode)
             {
                 var fields = file.Fields(value, $"port '{name}'", DefinitionKeys.Names(inContainer ? DefinitionKeys.Port : DefinitionKeys.AppPort))!;
                 host = fields["host"];
                 container = file.Number(fields["container"], $"port '{name}''s container port", 1, 65535) ?? container;
                 scheme = file.Text(fields["scheme"], $"port '{name}''s scheme") ?? scheme;
+                if (!inContainer && file.Text(fields["health"], $"port '{name}''s health") is { } path)
+                {
+                    if (!path.StartsWith('/')) file.Error(fields["health"]!, $"port '{name}''s health is a path on it, starting with /");
+                    else if (scheme is not ("http" or "https")) file.Error(fields["health"]!, $"port '{name}' has a health path but isn't http; give it scheme: http");
+                    else health = path;
+                }
                 if (inContainer && container is null && fields["container"] is null)
                     file.Error(value, $"port '{name}' needs the port inside the container: {{ container: 5432 }}");
             }
@@ -236,7 +243,7 @@ public static partial class DefinitionReader
             }
             var pin = Pin(file, host, name);
             if (pin is { Ok: false }) continue;
-            endpoints.Add(new EndpointModel(name, container, pin?.Spec, scheme, file.At(key)));
+            endpoints.Add(new EndpointModel(name, container, pin?.Spec, scheme, file.At(key), health));
             resource.Ports.Add(new PortInfo(name, scheme));
         }
         return endpoints;

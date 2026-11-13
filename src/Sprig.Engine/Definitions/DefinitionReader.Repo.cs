@@ -153,6 +153,8 @@ public static partial class DefinitionReader
                 var at = endpoints.FindIndex(e => e.Scheme is "http" or "https");
                 if (!health.StartsWith('/')) file.Error(f["health"]!, $"app '{app.Name}''s health is a path on its http port, starting with /");
                 else if (at < 0) file.Error(f["health"]!, $"app '{app.Name}' has a health path but no http port to ask it on: ports: {{ http: any }}");
+                else if (endpoints[at].Health is not null)
+                    file.Error(f["health"]!, $"app '{app.Name}''s port '{endpoints[at].Name}' has a health path of its own; give it in one place");
                 else endpoints[at] = endpoints[at] with { Health = health };
             }
 
@@ -161,15 +163,19 @@ public static partial class DefinitionReader
             {
                 if (file.Number(f["retry"], $"job '{app.Name}''s retry", 1, 100) is { } tries)
                     restart = new RestartModel("onFailure", tries, file.At(f["retry"]!));
+                if (f["max-restarts"] is { } notForJobs) file.Error(notForJobs, "'max-restarts' is for an app that keeps running; a job (once: true) has 'retry'");
             }
             else
             {
+                var max = file.Number(f["max-restarts"], $"app '{app.Name}''s max-restarts", 1, 100) ?? RestartModel.DefaultMax;
                 restart = file.Choice(f["restart"], $"app '{app.Name}''s restart", "never", "on-failure", "always") switch
                 {
-                    "on-failure" => new RestartModel("onFailure", 5, file.At(f["restart"]!)),
-                    "always" => new RestartModel("always", 5, file.At(f["restart"]!)),
+                    "on-failure" => new RestartModel("onFailure", max, file.At(f["restart"]!)),
+                    "always" => new RestartModel("always", max, file.At(f["restart"]!)),
                     _ => null,
                 };
+                if (restart is null && f["max-restarts"] is { } unused)
+                    file.Error(unused, $"app '{app.Name}' has max-restarts but doesn't restart; give it restart: on-failure or always");
             }
 
             var waitFor = new List<string>();

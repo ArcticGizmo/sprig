@@ -502,6 +502,11 @@
                     "scheme": {
                       "type": "string",
                       "description": "How its url starts, such as http. A port with no scheme has no url."
+                    },
+                    "health": {
+                      "type": "string",
+                      "pattern": "^/",
+                      "description": "A path, such as /health, on this port that answers with success once the app is ready. Every port with one must answer."
                     }
                   },
                   "additionalProperties": false
@@ -513,7 +518,7 @@
           "health": {
             "type": "string",
             "pattern": "^/",
-            "description": "A path, such as /health, on its http port that answers with success once it's ready."
+            "description": "A path, such as /health, on its first http port that answers with success once it's ready. For another port, give the port a health: of its own."
           },
           "ready-log": {
             "type": "string",
@@ -526,6 +531,12 @@
               "always"
             ],
             "description": "never (the default), on-failure or always: start it again when it exits on its own."
+          },
+          "max-restarts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "With restart: how many times in a row to start it again before leaving it exited. 5 by default; a run that lasts a while starts the count again."
           },
           "once": {
             "type": "boolean",

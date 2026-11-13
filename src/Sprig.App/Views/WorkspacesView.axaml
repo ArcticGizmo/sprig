@@ -724,8 +724,14 @@
                     </Border>
                     <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
                                Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageOnPage}" />
-                    <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap"
-                               Classes.bad="{Binding AppsMessageIsBad}" IsVisible="{Binding HasAppsMessage}" />
+                    <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasAppsMessage}">
+                        <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center"
+                                   Classes.bad="{Binding AppsMessageIsBad}" />
+                        <Button Classes="flat" Command="{Binding CancelQuietCommand}" IsVisible="{Binding IsQuietWorking}" HorizontalAlignment="Left"
+                                VerticalAlignment="Center" ToolTip.Tip="Stop waiting; what has finished stays done">
+                            <TextBlock Text="Cancel" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
+                        </Button>
+                    </StackPanel>
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TrustPanel}" IsVisible="{Binding TrustOnPage}" />
 
                     <StackPanel Orientation="Horizontal" Spacing="18">

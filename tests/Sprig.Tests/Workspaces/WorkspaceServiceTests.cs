@@ -192,6 +192,16 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.Equal(("random", "each repo's default branch"), (plan.PortPolicy, plan.WorktreesFrom));
         Assert.Contains("fresh ports", Assert.Throws<WorkspaceException>(() => _workspaces.Up(loaded, "feat-x", null, new WorkspaceOptions())).Message);
 
+        // Random ports hold still while it's stopped and started, and go back only when the slot is freed for another branch.
+        var ports = plan.Ports.Select(p => p.Port).ToArray();
+        _workspaces.Down("storefront", "feat-x");
+        _workspaces.Up(loaded, "feat-x", null);
+        Assert.Equal(ports, _workspaces.LastPlan("storefront", "feat-x")!.Ports.Select(p => p.Port));
+        var leases = new PortLeases(_store.Paths);
+        Assert.NotEmpty(leases.Get(record.Key));
+        _workspaces.Free("storefront", "feat-x");
+        Assert.Empty(leases.Get(record.Key));
+
         _workspaces.Remove("storefront", "feat-x", new RemoveOptions(DeleteBranch: true));
         Git(Path.Combine(_root, "shop-web"), "branch", "develop");
         var told = _workspaces.Up(loaded, "feat-y", null, new WorkspaceOptions(From: "develop"));

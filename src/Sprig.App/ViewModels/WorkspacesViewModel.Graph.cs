@@ -182,7 +182,13 @@ public partial class WorkspacesViewModel
         _lastInfra = states;
         if (Graph is { } graph)
         {
-            foreach (var node in graph.Nodes.Where(n => n.IsInfra)) node.Apply(states?.GetValueOrDefault(node.Key), states is not null);
+            foreach (var node in graph.Nodes.Where(n => n.IsInfra))
+            {
+                var service = states?.GetValueOrDefault(node.Key);
+                // Shown as starting while a start is under way, until docker says it's going.
+                if (IsQuietWorking && node.State == "starting" && service is not { State: "running" or "restarting" or "exited" or "dead" }) continue;
+                node.Apply(service, states is not null);
+            }
             graph.Invalidate();
         }
         if (InfraLogOpen && states?.GetValueOrDefault(Logs.Key) is { State: "running" or "restarting" }) _followers[Logs.Key].EnsureRunning();

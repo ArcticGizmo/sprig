@@ -772,6 +772,7 @@ public partial class WorkspacesViewModel : PageViewModel
                        || (keys is null && await AppServices.RunAsync(() => _services.Workspaces.DefinitionsChanged(record, KeptDefinitions(record))));
         if (prebuilt)
         {
+            if (_plan is { } before) ShowStarting(WorkspaceService.InfraFor(before, starting.AppsIn(before)));
             if (!await UpAsync(retry: () => StartAsync(keys, open), starting, build: starting)) return;
             if (Selected?.Record is not { State: WorkspaceState.Up } up) return;
             record = up;
@@ -784,8 +785,8 @@ public partial class WorkspacesViewModel : PageViewModel
             var missing = await AppServices.RunAsync(() => _services.Workspaces.MissingInfra(record, plan, names));
             if (missing.Count > 0)
             {
-                var title = WorkspaceItem.Display(record);
-                if (!await RunAsync($"Starting what {(group is not null ? $"the {group} group" : keys is [var only] ? only : "the apps")} uses in {title}",
+                ShowStarting(missing.Select(t => t.Key).ToHashSet(StringComparer.Ordinal));
+                if (!await RunQuietlyAsync($"Starting what {(group is not null ? $"the {group} group" : keys is [var only] ? only : "the apps")} uses",
                         (progress, cancellation) => _services.Workspaces.StartInfra(missing, progress, cancellation),
                         $"{string.Join(", ", missing.Select(t => t.Key))} {(missing.Count == 1 ? "is" : "are")} running.")) return;
             }
@@ -808,6 +809,16 @@ public partial class WorkspacesViewModel : PageViewModel
         {
             SayApps(e.Message, bad: true);
         }
+    }
+
+    /// <summary>The graph's infra about to start reads as starting at once, rather than at docker's next answer.</summary>
+    /// <param name="keys">By key; null for all of it.</param>
+    void ShowStarting(IReadOnlySet<string>? keys)
+    {
+        if (Graph is not { } graph) return;
+        foreach (var node in graph.Nodes.Where(n => n.IsInfra && n.Target is not null && !n.IsAlive && (keys?.Contains(n.Key) ?? true)))
+            node.Pending("starting");
+        graph.Invalidate();
     }
 
     /// <summary>The definitions kept in sprig for <paramref name="record"/>'s repos, which live outside their folders.</summary>
@@ -865,13 +876,22 @@ public partial class WorkspacesViewModel : PageViewModel
         }
         foreach (var row in Apps.Where(a => a.IsAlive)) row.MarkStopping();
         var title = WorkspaceItem.Display(record);
-        await RunAsync($"Stopping {title}",
+        await RunQuietlyAsync($"Stopping {title}",
             (progress, cancellation) => _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation),
             record.IsMain ? $"{title} has stopped. Your infra is left running."
                 : $"{title} has stopped, its apps and its infra. Its containers, data, worktrees and ports are kept.");
         _services.InfraUsage.Soon();
-        Refresh();
+        RefreshKeepingMessage();
         await RefreshRunnersAsync();
+    }
+
+    /// <summary>Read the workspaces again without losing what the line under the header says, which a start or stop
+    /// that ran without a window left there.</summary>
+    void RefreshKeepingMessage()
+    {
+        var (message, bad) = (AppsMessage, AppsMessageIsBad);
+        Refresh();
+        SayApps(message, bad);
     }
 
     [RelayCommand]
@@ -1067,13 +1087,14 @@ public partial class WorkspacesViewModel : PageViewModel
         Action<WorkspaceRecord, Plan>? beforeInfra = build is null ? null
             : (r, plan) => held = _services.Host.Prebuild(r, plan, build.AppsIn(plan), jobsAgain);
         // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
-        var ok = await RunAsync(starting is null ? $"Making {title} ready" : $"Starting {title}",
+        // Without a window: the graph shows what starts, and the header any failure.
+        var ok = await RunQuietlyAsync(starting is null ? $"Making {title} ready" : $"Starting {title}",
             (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver,
                 beforeInfra: beforeInfra, starting: starting),
-            starting is null ? $"{title} is ready. Nothing was started." : $"{title} is ready, and what it starts is on its way.",
+            starting is null ? $"{title} is ready. Nothing was started." : $"Starting {title}.",
             retry: retry);
         if (!ok && held is not null) _ = AppServices.RunAsync(() => _services.Host.TrySend(new HostRequest("stop", Workspace: held)));
-        Refresh();
+        RefreshKeepingMessage();
         return ok;
     }
 
@@ -1268,6 +1289,73 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         var end = message.IndexOf("\n\n", StringComparison.Ordinal);
         return (end < 0 ? message : message[..end]).Trim();
+    }
+
+    /// <summary>A start or stop running without a window, which Cancel under the header can stop.</summary>
+    [ObservableProperty] private bool _isQuietWorking;
+
+    CancellationTokenSource? _quietCancel;
+
+    [RelayCommand]
+    private void CancelQuiet() => _quietCancel?.Cancel();
+
+    /// <summary>
+    /// Run one operation off the UI thread without a window, for starting and stopping, where the graph shows what's
+    /// happening: a line under the header says what it's doing, then how it went. A failure's whole story (a service's
+    /// log, say) goes on the workspace's record, which the header shows.
+    /// </summary>
+    /// <param name="doing">What it's doing, in a few words: "Starting web--1".</param>
+    /// <param name="retry">Run again once the user approves definitions the operation found unapproved.</param>
+    async Task<bool> RunQuietlyAsync(string doing, Action<IProgress<WorkspaceEvent>, CancellationToken> work, string success, Func<Task>? retry = null)
+    {
+        using var cancel = new CancellationTokenSource();
+        _quietCancel = cancel;
+        IsWorking = true;
+        IsQuietWorking = true;
+        SayApps($"{doing}…", bad: false);
+        // Only infra is slow enough to be worth naming (a first pull of an image, say); the rest is over in a moment.
+        var progress = new Progress<WorkspaceEvent>(e =>
+        {
+            if (e.State == StepState.Running && e.Step.StartsWith("Start ", StringComparison.Ordinal) && IsQuietWorking)
+                SayApps($"{doing}: starting its infra…", bad: false);
+        });
+        var running = AppServices.RunAsync(() => work(progress, cancel.Token));
+        try
+        {
+            await FinishedOrAbandoned(running, cancel.Token);
+            await Task.Yield();
+            SayApps(success, bad: false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            SayApps(running.IsCompleted ? "Cancelled part-way. What had finished stays done."
+                : "Cancelled, but docker hasn't let go and is still going in the background; restarting Docker Desktop frees it.", bad: true);
+            return false;
+        }
+        catch (WorkspaceException e) when (e.Untrusted.Count > 0 && retry is not null)
+        {
+            AskForTrust(e.Untrusted, retry);
+            SayApps("The workspace's branch changes its definitions, so they need approving first. It carries on once they are.", bad: true);
+            return false;
+        }
+        catch (WorkspaceException e) when (e.Asks.Count > 0)
+        {
+            SayApps($"{Headline(e.Message)}. Give {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Inputs, then start it again.", bad: true);
+            return false;
+        }
+        catch (Exception e)
+        {
+            SayApps(Headline(e.Message), bad: true);
+            return false;
+        }
+        finally
+        {
+            _quietCancel = null;
+            IsQuietWorking = false;
+            if (running.IsCompleted) IsWorking = false;
+            else _ = running.ContinueWith(_ => Dispatcher.UIThread.Post(() => IsWorking = false), TaskScheduler.Default);
+        }
     }
 
     /// <summary>Run one operation off the UI thread, reporting into a progress window.</summary>

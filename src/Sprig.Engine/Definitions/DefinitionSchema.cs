@@ -81,7 +81,7 @@ public static class DefinitionSchema
     }));
 
     /// <summary>Where the schema for <paramref name="kind"/> (<c>repo</c> or <c>orchestration</c>) is published, from
-    /// docs/schema by the Schema workflow.</summary>
+    /// docs/schema by the Pages workflow.</summary>
     public static string Url(string kind) => $"https://arcticgizmo.github.io/sprig/schema/v{DefinitionReader.CurrentSchema}/{kind}.json";
 
     /// <summary>The first line of a file sprig drafts, so an IDE with the YAML language server completes and checks it.</summary>

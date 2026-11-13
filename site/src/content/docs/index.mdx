@@ -1,0 +1,57 @@
+---
+title: Sprig
+description: Describe your repos in code. Bring any slice of them up, isolated and fully wired.
+template: splash
+hero:
+  tagline: Describe each repo in a sprig.yaml. Run it where it's checked out, or run any branch beside it in a slot of its own, with its own ports, data and env files.
+  image:
+    file: ../../assets/logo.png
+    alt: The sprig logo.
+  actions:
+    - text: Install
+      link: /sprig/getting-started/install/
+      icon: right-arrow
+    - text: Quick start
+      link: /sprig/getting-started/quick-start/
+      variant: minimal
+    - text: View on GitHub
+      link: https://github.com/ArcticGizmo/sprig
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Each repo describes itself in a `sprig.yaml` file: its apps, its infra and the inputs it takes. Sprig runs it where it's checked out (`main`), or checks any branch out in a slot of worktrees of its own, so several branches can be up at once without stepping on each other.
+
+<CardGrid>
+  <Card title="Apps start in order" icon="rocket">
+    Each app starts after what it depends on, with a log per app and a graph of the whole workspace.
+  </Card>
+  <Card title="Start a slice" icon="list-format">
+    Groups start some of the apps, and only the infra those apps use.
+  </Card>
+  <Card title="Your IDE still works" icon="laptop">
+    Stop one app and run it from your IDE on the same port; Restart leaves it alone.
+  </Card>
+  <Card title="No hidden environment" icon="document">
+    Every value goes in a file the app reads, so a plain `dotnet run` or `pnpm dev` gets exactly what sprig's run gets.
+  </Card>
+  <Card title="Try it without committing" icon="pencil">
+    A definition can live in the repo, or be kept in sprig so you can try sprig on a repo without committing anything.
+  </Card>
+  <Card title="App or terminal" icon="seti:shell">
+    The desktop app and the `sprig` command do the same things.
+  </Card>
+</CardGrid>
+
+## From a terminal
+
+```sh
+sprig init            # make the repo in this folder runnable
+sprig up              # run it where it's checked out
+sprig up -b feat-x    # run a branch in a slot of its own
+sprig ps              # see what's running
+```
+
+Sprig runs on Windows. Data lives in `%LOCALAPPDATA%\sprig`.

@@ -1,0 +1,22 @@
+# The docs site's exact-pinned npm dependencies (site/package.json + package-lock.json) and the SHA-pinned actions
+# in pages.yml. Dependabot understands the `uses: owner/repo@<sha> # vX.Y.Z` form and bumps the SHA and the comment
+# together. The cooldown keeps an npm release at least two weeks old before it's proposed.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      site:
+        patterns: ['*']

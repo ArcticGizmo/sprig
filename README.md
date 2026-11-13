@@ -7,6 +7,10 @@
 <strong>Describe your repos in code. Bring any slice of them up, isolated and fully wired.</strong>
 </p>
 
+<p align="center">
+<a href="https://arcticgizmo.github.io/sprig/"><strong>Documentation</strong></a> · <a href="https://arcticgizmo.github.io/sprig/getting-started/install/">Install</a> · <a href="https://arcticgizmo.github.io/sprig/changelog/">What's new</a>
+</p>
+
 <br>
 
 ## What it does

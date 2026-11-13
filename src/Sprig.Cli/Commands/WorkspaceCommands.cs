@@ -295,7 +295,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         cli.Ansi.WriteLine();
         cli.Ansi.MarkupLine(record.IsMain
-            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] is up in its main checkout{(record.CheckoutBranch is { } on ? $", on [bold]{Markup.Escape(on)}[/]" : "")}"
+            ? $"[bold]{Markup.Escape(record.Orchestration)}[/] is up in its main checkout{(record.CheckoutBranch is { } on ? $", on [bold]{Markup.Escape(on)}[/]" : "")}  [dim](as it is, with your own infra)[/]"
             : record.InPlace
             ? $"[bold]{Markup.Escape(record.Orchestration)}[/] / [bold]{Markup.Escape(record.Name)}[/] is up  [dim](repos in place)[/]"
             : $"[bold]{Markup.Escape(record.Branch ?? "")}[/] is up in [bold]{Markup.Escape(record.SlotName)}[/]  [dim]({Markup.Escape((record.Folder ?? "").Replace('\\', '/'))})[/]");
@@ -315,10 +315,16 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         if (plan.Containers.Count + plan.Compose.Count > 0)
         {
             var infra = new Table().Border(TableBorder.Rounded).AddColumns("Infra", "Ports");
-            foreach (var c in plan.Containers) infra.AddRow(Markup.Escape($"{c.Owner}/{c.Name}"), Markup.Escape(string.Join(", ", c.Ports)));
-            foreach (var c in plan.Compose)
-                foreach (var svc in c.Services)
-                    infra.AddRow(Markup.Escape($"{c.Owner}/{svc.Name}"), Markup.Escape(string.Join(", ", svc.Mappings)));
+            if (record.IsMain)
+                foreach (var own in cli.Workspaces.OwnInfraOf(plan))
+                    infra.AddRow(Markup.Escape(own.Key), $"yours, on {Markup.Escape(string.Join(", ", own.Ports))}");
+            else
+            {
+                foreach (var c in plan.Containers) infra.AddRow(Markup.Escape($"{c.Owner}/{c.Name}"), Markup.Escape(string.Join(", ", c.Ports)));
+                foreach (var c in plan.Compose)
+                    foreach (var svc in c.Services)
+                        infra.AddRow(Markup.Escape($"{c.Owner}/{svc.Name}"), Markup.Escape(string.Join(", ", svc.Mappings)));
+            }
             cli.Ansi.Write(infra);
         }
 
@@ -327,7 +333,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         var names = Markup.Escape(Words(record));
         if (!appsStart)
             cli.Ansi.MarkupLine($"[dim]Start the apps: sprig start {names} (or from their folders: dotnet run, npm run dev). " +
-                                $"Stop the infra with: sprig down {names}[/]");
+                                (record.IsMain ? $"Stop them with: sprig down {names}; your infra is left running[/]" : $"Stop the infra with: sprig down {names}[/]"));
     }
 
     /// <summary>How to name the workspace on a command line: its ID, then its branch (or its name, in place).</summary>
@@ -498,25 +504,39 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
             cli.Ansi.MarkupLine("[dim]No workspaces. In a repo's folder, check a branch out in a slot of its own with: sprig up -b <branch> (or run it in place with: sprig up)[/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("ID", "Slot", "Branch", "State", "Folder", "Updated");
-        foreach (var r in workspaces)
+        // Main checkouts run as they are, with nothing written into them, so they're listed apart from the slots.
+        var mains = workspaces.Where(r => r.IsMain).ToArray();
+        if (mains.Length > 0)
         {
-            var state = r.State switch
-            {
-                WorkspaceState.Up => "[green]up[/]",
-                WorkspaceState.Failed => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
-                WorkspaceState.Starting => "[yellow]starting[/]",
-                WorkspaceState.Released => "[dim]free[/]",
-                _ => "[dim]down[/]",
-            };
-            table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.SlotName),
-                r.IsMain ? $"[dim](main checkout{(r.CheckoutBranch is { } on ? $", on {Markup.Escape(on)}" : "")})[/]"
-                : r.InPlace ? "[dim](in place)[/]" : r.Branch is { } b ? Markup.Escape(b) : "[dim](detached)[/]", state,
-                Markup.Escape((r.Folder ?? string.Join(", ", r.Repos.Select(x => x.Dir))).Replace('\\', '/')),
-                r.UpdatedAt.LocalDateTime.ToString("g"));
+            var table = new Table().Border(TableBorder.Rounded).Title("Main checkouts [dim](run as they are, with your own infra)[/]")
+                .AddColumns("ID", "On", "State", "Folder", "Updated");
+            foreach (var r in mains)
+                table.AddRow(Markup.Escape(r.Orchestration), r.CheckoutBranch is { } on ? Markup.Escape(on) : "[dim]?[/]", State(r),
+                    Folder(r), r.UpdatedAt.LocalDateTime.ToString("g"));
+            cli.Ansi.Write(table);
         }
-        cli.Ansi.Write(table);
+        var others = workspaces.Where(r => !r.IsMain).ToArray();
+        if (others.Length > 0)
+        {
+            var table = new Table().Border(TableBorder.Rounded).Title("Workspaces").AddColumns("ID", "Slot", "Branch", "State", "Folder", "Updated");
+            foreach (var r in others)
+                table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.SlotName),
+                    r.InPlace ? "[dim](in place)[/]" : r.Branch is { } b ? Markup.Escape(b) : "[dim](detached)[/]", State(r),
+                    Folder(r), r.UpdatedAt.LocalDateTime.ToString("g"));
+            cli.Ansi.Write(table);
+        }
         return 0;
+
+        static string State(WorkspaceRecord r) => r.State switch
+        {
+            WorkspaceState.Up => "[green]up[/]",
+            WorkspaceState.Failed => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
+            WorkspaceState.Starting => "[yellow]starting[/]",
+            WorkspaceState.Released => "[dim]free[/]",
+            _ => "[dim]down[/]",
+        };
+
+        static string Folder(WorkspaceRecord r) => Markup.Escape((r.Folder ?? string.Join(", ", r.Repos.Select(x => x.Dir))).Replace('\\', '/'));
     }
 }
 

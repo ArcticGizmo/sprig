@@ -63,6 +63,15 @@ public sealed class PortAllocator(SprigSettings settings, IReadOnlySet<int> inUs
         return true;
     }
 
+    /// <summary>Claim exactly <paramref name="port"/>, as a pin naming it alone would.</summary>
+    public bool TryTake(int port, out string? error)
+    {
+        error = Why(port, alone: true);
+        if (error is not null) return false;
+        _taken.Add(port);
+        return true;
+    }
+
     /// <summary>Why <paramref name="port"/> can't be had; null when it can.</summary>
     /// <param name="alone">The pin names this port alone.</param>
     string? Why(int port, bool alone)

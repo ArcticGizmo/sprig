@@ -461,6 +461,38 @@
                 <SelectableTextBlock Classes="cell via" FontSize="11" Text="{Binding Details.LogFile, StringFormat='Log file: {0}'}" />
             </StackPanel>
         </DataTemplate>
+        <DataTemplate x:Key="OverviewRowTemplate" x:DataType="vm:OverviewRow">
+            <Border Classes="approw" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="24,8"
+                    Cursor="Hand" ToolTip.Tip="Double-click to open" DoubleTapped="OnOverviewRowDoubleTapped"
+                    AutomationProperties.AutomationId="{Binding Key, StringFormat='overview:{0}'}">
+                <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12">
+                    <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" Cursor="Arrow" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TitleBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Orchestration}" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                        <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
+                                 Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                        <TextBlock Classes="state" Text="{Binding State}" FontSize="12.5"
+                                   Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Ports}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="6" Classes="cell state" Text="{Binding Worktrees}" VerticalAlignment="Center"
+                               Classes.bad="{Binding WorktreesWarn}" />
+                    <TextBlock Grid.Column="7" Classes="cell via" Text="{Binding LastUp}" VerticalAlignment="Center" />
+                    <Button Grid.Column="8" Classes="flat open" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            CommandParameter="{Binding}" ToolTip.Tip="Open this workspace"
+                            Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenOverviewRowCommand}">
+                        <TextBlock Text="Open ›" FontSize="12.5" FontWeight="SemiBold" />
+                    </Button>
+                </Grid>
+            </Border>
+        </DataTemplate>
         <StreamGeometry x:Key="PinIcon">M9 3h6l-1 6 4 4H6l4-4z M11.25 13h1.5v8h-1.5z</StreamGeometry>
     </UserControl.Resources>
 
@@ -552,42 +584,15 @@
                         <TextBlock Grid.Column="6" Classes="phead" Text="WORKTREES" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="7" Classes="phead" Text="LAST UP" VerticalAlignment="Center" />
                     </Grid>
-                    <ItemsControl ItemsSource="{Binding OverviewRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:OverviewRow">
-                                <Border Classes="approw" BorderThickness="0,0,0,1" BorderBrush="{StaticResource BorderBrush}" Padding="24,8"
-                                        Cursor="Hand" ToolTip.Tip="Double-click to open" DoubleTapped="OnOverviewRowDoubleTapped"
-                                        AutomationProperties.AutomationId="{Binding Key, StringFormat='overview:{0}'}">
-                                    <Grid ColumnDefinitions="40,190,120,140,150,140,*,130,70" ColumnSpacing="12">
-                                        <CheckBox IsChecked="{Binding IsChecked}" VerticalAlignment="Center" Cursor="Arrow" />
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TitleBrush}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Orchestration}" VerticalAlignment="Center" />
-                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                            <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
-                                                     Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
-                                            <TextBlock Classes="state" Text="{Binding State}" FontSize="12.5"
-                                                       Classes.up="{Binding IsUp}" Classes.bad="{Binding IsFailed}" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Ports}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="6" Classes="cell state" Text="{Binding Worktrees}" VerticalAlignment="Center"
-                                                   Classes.bad="{Binding WorktreesWarn}" />
-                                        <TextBlock Grid.Column="7" Classes="cell via" Text="{Binding LastUp}" VerticalAlignment="Center" />
-                                        <Button Grid.Column="8" Classes="flat open" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                CommandParameter="{Binding}" ToolTip.Tip="Open this workspace"
-                                                Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).OpenOverviewRowCommand}">
-                                            <TextBlock Text="Open ›" FontSize="12.5" FontWeight="SemiBold" />
-                                        </Button>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <!-- Main checkouts run as they are, with nothing written into them, so they're kept apart from sprig's own slots. -->
+                    <TextBlock Classes="phead" Text="MAIN CHECKOUTS" Margin="24,14,24,6" IsVisible="{Binding HasOverviewMainRows}"
+                               ToolTip.Tip="Each repo's and orchestration's own checkout, run as it is: on its own ports, with nothing written into it, and with your own infra, which sprig never starts or stops" />
+                    <ItemsControl ItemsSource="{Binding OverviewMainRows}" ItemTemplate="{StaticResource OverviewRowTemplate}"
+                                  IsVisible="{Binding HasOverviewMainRows}" />
+                    <TextBlock Classes="phead" Text="WORKSPACES" Margin="24,18,24,6" IsVisible="{Binding HasOverviewSlotRows}"
+                               ToolTip.Tip="Slots with a branch in worktrees of their own, on ports and values sprig gives them" />
+                    <ItemsControl ItemsSource="{Binding OverviewSlotRows}" ItemTemplate="{StaticResource OverviewRowTemplate}"
+                                  IsVisible="{Binding HasOverviewSlotRows}" />
                 </StackPanel>
             </ScrollViewer>
         </DockPanel>
@@ -602,13 +607,21 @@
                     </Button>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
                         <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Selected.Title}" FontSize="19" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
-                                       TextTrimming="CharacterEllipsis" />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock Text="{Binding Selected.Title}" FontSize="19" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <!-- Main is a runner over the user's own checkout and infra, so it says so where a slot shows nothing. -->
+                                <Border IsVisible="{Binding Selected.IsMain, FallbackValue=False}" BorderBrush="{StaticResource AccentBrush}"
+                                        BorderThickness="1" CornerRadius="10" Padding="8,1" VerticalAlignment="Center"
+                                        ToolTip.Tip="Sprig runs the apps here and nothing else: it writes nothing into the checkout, and your infra is yours to start and stop">
+                                    <TextBlock Text="MAIN CHECKOUT · YOUR INFRA" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                                </Border>
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <TextBlock Classes="state" Text="{Binding Selected.State}" FontSize="12"
                                            Classes.up="{Binding Selected.IsUp}" Classes.bad="{Binding Selected.IsFailed}" />
                                 <TextBlock Text="{Binding Selected.Branch}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
-                                <TextBlock Text="{Binding Selected.Record.PortPolicy, StringFormat='{}{0} ports'}" FontSize="12"
+                                <TextBlock Text="{Binding Selected.PortsLine}" FontSize="12"
                                            Foreground="{StaticResource MutedBrush}" />
                                 <TextBlock Text="{Binding Selected.HeldLine}" FontSize="12" Foreground="{StaticResource WarnBrush}"
                                            IsVisible="{Binding Selected.IsHeld, FallbackValue=False}"
@@ -660,10 +673,10 @@
                                     IsVisible="{Binding ShowRunControls}"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Take down" Command="{Binding DownCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="Stop its apps and infra. Its data, worktrees and ports are kept."
+                                    IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="{Binding Selected.TakeDownTip}"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Bring up" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowBringUp}" ToolTip.Tip="Its worktrees, env files and infra, without starting its apps."
+                                    IsVisible="{Binding ShowBringUp}" ToolTip.Tip="{Binding Selected.BringUpTip}"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
                             <Button Content="Free" Command="{Binding FreeCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
                                     IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
@@ -682,7 +695,7 @@
                                                   IsVisible="{Binding ShowRunControls}"
                                                   ToolTip.Tip="Run the jobs the running apps depend on (migrations, say) again, then restart the apps" />
                                         <MenuItem Header="Bring up again" Command="{Binding UpCommand}" IsEnabled="{Binding !IsWorking}"
-                                                  IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="Write its env files and start its infra afresh" />
+                                                  IsVisible="{Binding ShowTakeDown}" ToolTip.Tip="{Binding Selected.BringUpAgainTip}" />
                                         <MenuItem Header="Empty data…" Command="{Binding AskEmptyDataCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding Selected.CanEmptyData, FallbackValue=False}"
                                                   AutomationProperties.AutomationId="workspace:empty-data"

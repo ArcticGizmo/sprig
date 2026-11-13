@@ -46,6 +46,12 @@ ports:
 
 The value says where on this machine the port may be. A map says more: `host` (the same any / number / list), `container` (the port inside a container, required for containers and compose services) and `scheme`. An app's port can also have `health`: a path on that port that must answer with success before the app is ready, as in `admin: { host: any, scheme: http, health: /healthz }`. A port named `http` or `https` has that scheme; any other has none unless it says so, and so has no url.
 
+### In the main checkout
+
+A repo's main checkout runs as it is: sprig writes no files there and asks for no inputs, so each port is the one the repo's own config uses. Sprig takes that to be `main` on the port when it's given (`http: { host: any, main: 5000 }`), else the port's host when it names one port, else a container's or compose service's own port (Postgres on 5432).
+
+Main's infra is yours: sprig never starts, stops or empties its containers and compose services. It checks each is listening on its port, and bringing main up or starting its apps stops with what isn't, so start it the way you usually do (`docker compose up -d`) first. An app's port that none of the above give is unknown on main: its health check is skipped, links to it are left out, and sprig takes the port from the "listening on" line the app prints. An app's known port that something else has stops main; run the branch in a slot to use other ports.
+
 ## Repo file
 
 ```yaml

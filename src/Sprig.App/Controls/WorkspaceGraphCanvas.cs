@@ -15,7 +15,7 @@ namespace Sprig.App.Controls;
 /// <summary>
 /// Draws a <see cref="WorkspaceGraph"/>: a soft box per repo, a circle per node ringed in its state's colour, and an
 /// arrow from what uses a value to what gives it. A click picks a node, a drag moves it (and keeps it there), dragging
-/// the background pans, the wheel zooms, a double-click asks for the node's log, and a right-click for its menu.
+/// the background pans, the wheel zooms, a double-click asks for the node's details, and a right-click for its menu (its log among it).
 /// </summary>
 public sealed class WorkspaceGraphCanvas : Control
 {
@@ -717,7 +717,7 @@ public sealed class WorkspaceGraphCanvas : Control
             graph.Select(node.Key);
             if (e.ClickCount == 2)
             {
-                graph.RequestLog(node);
+                graph.RequestDetails(node);
                 e.Handled = true;
                 return;
             }

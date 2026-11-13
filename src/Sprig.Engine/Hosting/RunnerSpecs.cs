@@ -124,10 +124,13 @@ public static class RunnerSpecs
             buildKey = node.Root;
         }
 
+        // Main can't always know an app's port, since the repo's own config gives it; it goes without the check then.
         var health = (app.Health ?? [])
             .Select(h => plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name && p.Endpoint == h.Endpoint)?.Port is { } p
                 ? $"http://localhost:{p}{h.Path}"
+                : record.IsMain ? null
                 : throw new InvalidOperationException($"'{app.Key}' checks {h.Path} on {h.Endpoint}, which has no port"))
+            .OfType<string>()
             .ToArray();
         var restart = app.Restart is { } r ? new RestartSpec(r.Policy == "always", r.Max) : null;
 

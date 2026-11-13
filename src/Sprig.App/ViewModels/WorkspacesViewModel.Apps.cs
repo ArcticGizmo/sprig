@@ -295,13 +295,22 @@ public partial class WorkspacesViewModel
             HostProtocol.LogFile(_services.Paths, record.Key, row.Key).Replace('\\', '/'),
             app.Env.Select(e => new SettingRow(e.Key, e.File is { } file ? app.FileLabel(file) : null, e.Value.Value is { } v ? SecretValues.Show(plan, e, v) : "unresolved",
                 string.Join(" → ", e.Value.Via), e.Value.Value is null)).ToArray(),
-            app.Links ?? []);
+            Heard(app.Links ?? []));
     }
+
+    /// <summary>Links with a main checkout's app ports filled in, as the apps said them; one still waiting for an app
+    /// to say is left out until it does.</summary>
+    IReadOnlyList<PlannedLink> Heard(IReadOnlyList<PlannedLink> links)
+        => links.Any(l => HeardPort.In(l.Url))
+            ? links.Select(l => !HeardPort.In(l.Url) ? l
+                    : HeardPort.Fill(l.Url, key => Apps.FirstOrDefault(a => a.Key == key)?.HeardPort) is { } url ? l with { Url = url } : null)
+                .OfType<PlannedLink>().ToArray()
+            : links;
 
     /// <summary>What the app's menu offers to open: its own url, then the quick links its details list.</summary>
     public IReadOnlyList<PlannedLink> LinksOf(WorkspaceAppRow row)
     {
-        var links = _plan?.Apps.FirstOrDefault(a => a.Key == row.Key)?.Links ?? [];
+        var links = Heard(_plan?.Apps.FirstOrDefault(a => a.Key == row.Key)?.Links ?? []);
         if (row.Url.Length == 0) return links;
         var label = Uri.TryCreate(row.Url, UriKind.Absolute, out var uri) ? uri.Authority : row.Url;
         return [new PlannedLink(label, row.Url), .. links];
@@ -501,11 +510,29 @@ public partial class WorkspacesViewModel
 
     bool _narrow;
 
+    /// <summary>Whether the details are wanted with room for them. Never kept: a folded-away panel is easily forgotten,
+    /// so each workspace opens with them showing.</summary>
+    bool _detailsWanted = true;
+
     [RelayCommand]
     private void ToggleDetails()
     {
         DetailsOpen = !DetailsOpen;
-        if (!_narrow) _services.Ui.DetailsOpen = DetailsOpen;
+        if (!_narrow) _detailsWanted = DetailsOpen;
+    }
+
+    /// <summary>Show the details, as when a node is double-clicked in the graph.</summary>
+    void OpenDetails()
+    {
+        DetailsOpen = true;
+        if (!_narrow) _detailsWanted = true;
+    }
+
+    /// <summary>Each workspace opens with its details showing, room allowing.</summary>
+    void ResetDetails()
+    {
+        _detailsWanted = true;
+        DetailsOpen = !_narrow;
     }
 
     /// <summary>A window too narrow for the details beside the log folds them away, and opening them there (over the
@@ -513,7 +540,7 @@ public partial class WorkspacesViewModel
     public void FitDetails(bool narrow)
     {
         _narrow = narrow;
-        DetailsOpen = !narrow && _services.Ui.DetailsOpen;
+        DetailsOpen = !narrow && _detailsWanted;
     }
 
     [RelayCommand]

@@ -70,7 +70,7 @@ static class ValuesChange
     {
         var (id, workspace) = s.Target(cli);
         if (workspace == WorkspaceRecord.MainName)
-            throw new InvalidOperationException("main runs with the definitions' own values; check a branch out in a slot to set your own: sprig up -b <branch> --set name=value");
+            throw new InvalidOperationException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values: sprig up -b <branch> --set name=value");
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
         if (cli.Workspaces.Get(loaded.Id, workspace) is not { } record)
             throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; give it values as it comes up: sprig up {(s.Id is null ? "" : $"{loaded.Id} ")}--set name=value");

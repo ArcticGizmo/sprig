@@ -8,6 +8,11 @@ namespace Sprig.Engine.Workspaces;
 /// <param name="Key"><c>owner/name</c>, as the plan names the container or compose service.</param>
 public sealed record InfraTarget(string Key, ComposeProject Project, string Service);
 
+/// <summary>A container or compose service a main checkout uses, which the user runs themselves.</summary>
+/// <param name="Ports">Where it should be listening, as the plan has them.</param>
+/// <param name="Answering">Something listens on every one of its ports; null when it has none, so there's no telling.</param>
+public sealed record OwnInfra(string Key, IReadOnlyList<int> Ports, bool? Answering);
+
 public sealed partial class WorkspaceService
 {
     /// <summary>The compose project for the containers a workspace's definitions declare in code.</summary>
@@ -16,9 +21,11 @@ public sealed partial class WorkspaceService
     /// <summary>The compose project for one repo's own compose file, in a workspace.</summary>
     internal static string RepoProject(WorkspaceRecord record, string repo) => ComposeYaml.ProjectName("sprig", record.Orchestration, record.Name, repo);
 
-    /// <summary>Where each of the plan's containers and compose services runs, under the names <c>up</c> gave them.</summary>
+    /// <summary>Where each of the plan's containers and compose services runs, under the names <c>up</c> gave them. None
+    /// for a main checkout, whose infra the user runs (see <see cref="OwnInfraOf"/>).</summary>
     public IReadOnlyList<InfraTarget> InfraTargets(WorkspaceRecord record, Plan plan)
     {
+        if (record.IsMain) return [];
         var folder = store.Folder(record.Orchestration, record.Name);
         ComposeProject Project(string name, string file, string dir) => record.Compose.FirstOrDefault(p => p.Name == name) ?? new ComposeProject(name, file, dir);
 
@@ -79,11 +86,43 @@ public sealed partial class WorkspaceService
         return needed;
     }
 
+    /// <summary>
+    /// A main checkout's containers and compose services (of <paramref name="needed"/>, by key; null for all), and whether
+    /// each is listening where the plan says. Main never starts or stops them: they're the user's, run however they run
+    /// them, and sprig only looks.
+    /// </summary>
+    public IReadOnlyList<OwnInfra> OwnInfraOf(Plan plan, IReadOnlySet<string>? needed = null)
+    {
+        var listening = _listening();
+        var keys = plan.Containers.Select(c => (c.Owner, c.Name))
+            .Concat(plan.Compose.SelectMany(f => f.Services.Select(s => (f.Owner, s.Name))))
+            .Where(k => needed?.Contains($"{k.Owner}/{k.Name}") ?? true);
+        return keys.Select(k =>
+        {
+            var ports = plan.Ports.Where(p => p.Owner == k.Owner && p.Resource == k.Name).Select(p => p.Port).OfType<int>().ToArray();
+            return new OwnInfra($"{k.Owner}/{k.Name}", ports, ports.Length == 0 ? null : ports.All(listening.Contains));
+        }).ToArray();
+    }
+
+    /// <summary>Why a main checkout can't start: the infra it uses that isn't listening, since it's the user's to start.</summary>
+    static WorkspaceException OwnInfraMissing(IReadOnlyList<OwnInfra> missing)
+    {
+        var what = string.Join(", ", missing.Select(m => $"{m.Key} (on {string.Join(", ", m.Ports)})"));
+        return new WorkspaceException($"the main checkout runs with your own infra, and {(missing.Count == 1 ? "this isn't" : "these aren't")} listening: {what}. " +
+                                      "Start it the way you usually do (docker compose up -d, say), then start again");
+    }
+
     /// <summary>The infra <paramref name="apps"/> use (see <see cref="InfraFor"/>) that isn't running, so starting them can
-    /// start it first; empty when it all is. When docker can't say, all of it, so starting it says what's wrong.</summary>
+    /// start it first; empty when it all is. When docker can't say, all of it, so starting it says what's wrong. A main
+    /// checkout's infra is the user's to start, so for main what isn't listening is an error instead.</summary>
     public IReadOnlyList<InfraTarget> MissingInfra(WorkspaceRecord record, Plan plan, IReadOnlyCollection<string>? apps)
     {
         var needed = InfraFor(plan, apps);
+        if (record.IsMain)
+        {
+            if (OwnInfraOf(plan, needed).Where(o => o.Answering == false).ToArray() is { Length: > 0 } missing) throw OwnInfraMissing(missing);
+            return [];
+        }
         var targets = InfraTargets(record, plan).Where(t => needed?.Contains(t.Key) ?? true).ToArray();
         if (targets.Length == 0) return [];
         var states = InfraStates(targets);

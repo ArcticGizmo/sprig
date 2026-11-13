@@ -104,6 +104,8 @@ public sealed record PlannedEnv(string Key, PlannedValue Value, string? File, So
 /// <param name="Restart">Whether, and how often, to start it again after it exits on its own.</param>
 /// <param name="Links">Its quick links, each resolved to an absolute url.</param>
 /// <param name="Role">What its definition says it is (<c>web</c>, <c>api</c>, <c>worker</c>); null when it doesn't say.</param>
+/// <param name="Uses">A main checkout's app, which is given no values: the apps, containers and services its values
+/// would have pointed at, since its own config points at them all the same.</param>
 public sealed record PlannedApp(
     string Owner,
     string RepoPath,
@@ -119,7 +121,8 @@ public sealed record PlannedApp(
     string? ReadyLog = null,
     RestartModel? Restart = null,
     IReadOnlyList<PlannedLink>? Links = null,
-    string? Role = null)
+    string? Role = null,
+    IReadOnlyList<ValueSource>? Uses = null)
 {
     public string Key => $"{Owner}/{Name}";
 
@@ -140,7 +143,36 @@ public sealed record PlannedApp(
 }
 
 /// <summary>A quick link: a page worth opening by name.</summary>
+/// <param name="Url">On a main checkout, can hold <see cref="HeardPort"/> tokens for apps whose port only their own
+/// config knows.</param>
 public sealed record PlannedLink(string Label, string Url);
+
+/// <summary>
+/// A main checkout's app port that sprig only learns once the app says where it listens, standing in a link's url
+/// until then, so the link isn't lost for want of it.
+/// </summary>
+public static partial class HeardPort
+{
+    public static string Token(string appKey) => $"{{port:{appKey}}}";
+
+    public static bool In(string url) => url.Contains("{port:", StringComparison.Ordinal);
+
+    /// <summary>The url with each app's port filled in; null while an app it needs hasn't said.</summary>
+    public static string? Fill(string url, Func<string, int?> portOf)
+    {
+        var missing = false;
+        var filled = TokenPattern().Replace(url, m =>
+        {
+            if (portOf(m.Groups[1].Value) is { } port) return port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            missing = true;
+            return m.Value;
+        });
+        return missing ? null : filled;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\{port:([^}]+)\}")]
+    private static partial System.Text.RegularExpressions.Regex TokenPattern();
+}
 
 /// <summary>A path on one of an app's endpoints that answers with a success status once the app is ready.</summary>
 public sealed record PlannedHealth(string Endpoint, string Path);

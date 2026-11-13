@@ -1,6 +1,6 @@
 # The main checkout as a fixed `main` row: plan
 
-Branch: `experimental`. Written 2026-11-10. Status: agreed (user, 2026-11-10). Breaking changes allowed: the in-place `local` workspace goes, with no migration.
+Branch: `experimental`. Written 2026-11-10. Status: agreed (user, 2026-11-10). Breaking changes allowed: the in-place `local` workspace goes, with no migration. Since 2026-11-13, main writes no values and asks for none: see `main-runner-plan.md`.
 
 ## Why
 

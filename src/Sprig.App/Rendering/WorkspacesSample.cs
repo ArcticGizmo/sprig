@@ -345,6 +345,28 @@ internal static partial class HeadlessRenderer
             vm.Workspaces.SelectStaleCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "overview-ticked"));
+            vm.Workspaces.ClearCheckedCommand.Execute(null);
+
+            // Main, run as the checkout is, with the user's own infra: one of it isn't listening.
+            vm.Workspaces.Show("storefront/main");
+            vm.Workspaces.ShowAppsTabCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "main"));
+            Wait(vm.Workspaces.ShowGraphTabCommand.ExecuteAsync(null));
+            vm.Workspaces.ApplyOwnInfra(
+            [
+                new OwnInfra("shop-services/postgres", [5432], true),
+                new OwnInfra("shop-services/redis", [6379], true),
+                new OwnInfra("storefront/mail", [1025], true),
+                new OwnInfra("shop-analytics/kafka", [9092], false),
+            ]);
+            Pump(TimeSpan.FromMilliseconds(600));
+            Save(window, Sibling(outFile, "main-graph"));
+            canvas = window.GetVisualDescendants().OfType<Sprig.App.Controls.WorkspaceGraphCanvas>().First();
+            window.MouseDown(NodeAt("shop-analytics/kafka"), MouseButton.Left);
+            window.MouseUp(NodeAt("shop-analytics/kafka"), MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "main-graph-picked"));
 
             // Home: what the sample has running, and the first steps, since nothing is on the Repos list.
             vm.NavigateCommand.Execute(vm.Home);
@@ -400,6 +422,10 @@ internal static partial class HeadlessRenderer
             workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.yaml"), name, name, "stable", [], [], [],
                 WorkspaceState.Down, now.AddDays(-days), now.AddDays(-days)));
         workspaces.Save(new WorkspaceRecord("services", Path.Combine(root, "services.orchestration.yaml"), "local", null, "stable", [], [], [], WorkspaceState.Up, now, now));
+        workspaces.Save(new WorkspaceRecord("storefront", Path.Combine(root, "storefront.orchestration.yaml"), WorkspaceRecord.MainName, null, "stable",
+            [.. repos.Select(r => r with { Dir = r.Source, Worktree = false, BranchCreated = false })], [], [], WorkspaceState.Up, now, now) { CheckoutBranch = "main" });
+        workspaces.Save(new WorkspaceRecord("analytics", Path.Combine(root, "analytics.orchestration.yaml"), WorkspaceRecord.MainName, null, "stable", [], [], [],
+            WorkspaceState.Down, now.AddDays(-1), now.AddDays(-1)) { CheckoutBranch = "develop" });
         workspaces.Save(new WorkspaceRecord("analytics", Path.Combine(root, "analytics.orchestration.yaml"), "ingest-perf", "ingest-perf", "stable", [], [], [],
             WorkspaceState.Down, now.AddDays(-4), now.AddDays(-4)));
 
@@ -432,6 +458,21 @@ internal static partial class HeadlessRenderer
             [new PlanProblem(ProblemSeverity.Warning, "ingest-worker has no health check, so \"ready\" only means it started",
                 new SourceLocation(Path.Combine(root, "shop-analytics", "sprig.yaml"), 14))],
             [new PlannedLink("Mail inbox", "http://localhost:8025"), new PlannedLink("Checkout flow", "http://localhost:5170/cart?seed=demo")]));
+
+        // Main runs the same definitions in the checkout as it is: no values, and its infra on its own ports, the user's.
+        var feat = workspaces.GetPlan("storefront", "feat-a")!;
+        workspaces.SavePlan(feat with
+        {
+            Workspace = WorkspaceRecord.MainName,
+            WorktreesFrom = null,
+            Ports = [.. feat.Ports.Select(p => p.TargetPort is { } own ? p with { Port = own } : p)],
+            Apps = [.. feat.Apps.Select(a => a with
+            {
+                Env = [],
+                Uses = [.. a.Env.SelectMany(e => e.Value.Sources ?? []).Where(s => s.Owner is not null && s.Resource is not null)
+                    .Select(s => s with { Endpoint = null, Setting = null }).Distinct()],
+            })],
+        });
 
         var runners = new List<RunnerStatus>();
         var clock = DateTime.Now.AddMinutes(-2);

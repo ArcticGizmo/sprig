@@ -83,6 +83,11 @@ public sealed partial record WorkspaceTopology(IReadOnlyList<TopologyNode> Nodes
                     }
                 }
 
+        // A main checkout's apps have no values, only what they'd have pointed at.
+        foreach (var app in plan.Apps)
+            foreach (var used in app.Uses ?? [])
+                if (nodes.ContainsKey($"{used.Owner}/{used.Resource}")) Link(app.Key, $"{used.Owner}/{used.Resource}", used.Resource!);
+
         var waits = new HashSet<(string From, string To)>();
         foreach (var app in plan.Apps)
             foreach (var target in app.WaitFor.Select(w => w.Contains('/') ? w : $"{app.Owner}/{w}").Concat(app.DependsOn ?? []))

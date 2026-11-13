@@ -49,7 +49,7 @@ public sealed record WorkspaceRecord(
 
     public bool InPlace => Branch is null && Folder is null;
 
-    /// <summary>The repos' own checkouts, run with the definitions' defaults. It's always there, so it can't be removed,
+    /// <summary>The repos' own checkouts, run as they are: on their own ports, with nothing written into them. It's always there, so it can't be removed,
     /// and only one definition runs in a checkout at a time.</summary>
     public bool IsMain => InPlace && Name == MainName;
 

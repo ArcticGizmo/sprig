@@ -34,12 +34,22 @@ public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? Held
     /// <summary>A slot with a branch checked out, which can be freed for the next one.</summary>
     public bool CanFree => !Record.InPlace && !Record.IsFree;
 
-    /// <summary>Main is always there and runs with the definitions' own values, while its repo or orchestration is.</summary>
+    /// <summary>Main is always there while its repo or orchestration is, and runs the checkout as it is, so it has no
+    /// values to set.</summary>
     public bool CanRemove => !Record.IsMain || Orphaned;
     public bool HasSettings => !Record.IsMain;
 
-    /// <summary>It has infra whose data can go. A main that has never come up has none yet.</summary>
-    public bool CanEmptyData => Record.Compose.Count > 0;
+    public string PortsLine => Record.IsMain ? "its own ports, nothing written" : $"{Record.PortPolicy} ports";
+    public string BringUpTip => Record.IsMain
+        ? "Check your infra is running, without starting the apps. Sprig writes nothing into the checkout and starts no infra for it."
+        : "Its worktrees, env files and infra, without starting its apps.";
+    public string BringUpAgainTip => Record.IsMain ? "Check your infra is running again" : "Write its env files and start its infra afresh";
+    public string TakeDownTip => Record.IsMain
+        ? "Stop its apps. Your infra is yours, so it's left running."
+        : "Stop its apps and infra. Its data, worktrees and ports are kept.";
+
+    /// <summary>It has infra of sprig's whose data can go. A main's infra is the user's own, so it has none.</summary>
+    public bool CanEmptyData => Record.Compose.Count > 0 && !Record.IsMain;
 
     public bool IsHeld => HeldBy is not null;
     public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is up in this checkout" : "";
@@ -65,9 +75,15 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
     public string Name => name;
     public string Repo => repo;
     public string App => app.Length > 0 ? app : key[(key.IndexOf('/') + 1)..];
-    public string Port => port.Length > 0 ? port : job ? "job" : "";
+    public string Port => port.Length > 0 ? port : HeardPort is { } heard ? heard.ToString() : job ? "job" : "";
     public string Folder => folder;
-    public string Url => url;
+    public string Url => url.Length > 0 ? url : HeardPort is { } heard ? $"http://localhost:{heard}" : "";
+
+    /// <summary>For a main checkout's app, whose own config picks its port: the one it said it listens on. Kept once
+    /// heard, since that config rarely changes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Port), nameof(Url))]
+    private int? _heardPort;
     public string Values => values;
     public bool IsJob => job;
 
@@ -158,6 +174,7 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
         IsWaiting = status?.State == RunnerState.Waiting;
         IsAlive = status is not null && (status.State.IsAlive() || status.State == RunnerState.Stopping);
         Restarts = status?.Restarts ?? 0;
+        if (port.Length == 0 && !job && status?.Port is { } said) HeardPort = said;
     }
 }
 
@@ -384,7 +401,6 @@ public partial class WorkspacesViewModel : PageViewModel
         _services.HostStatus.Changed += ApplyRunners;
         OrchestrationNames.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOrchestrations));
         _lastRunners = _services.HostStatus.Runners;
-        DetailsOpen = _services.Ui.DetailsOpen;
         Logs.ShowTimes = _services.Ui.LogTimes;
         Logs.Wrap = _services.Ui.LogWrap;
         Refresh();
@@ -465,8 +481,13 @@ public partial class WorkspacesViewModel : PageViewModel
         ConfirmingEmptyData = false;
         CancelTakeOver();
         DeleteBranch = false;
+        // Read afresh, the same workspace keeps the details as they were left.
+        if (value?.Record.Key is { } key && key != _detailsFor) ResetDetails();
+        _detailsFor = value?.Record.Key;
         ShowDetails(value?.Record);
     }
+
+    string? _detailsFor;
 
     void ShowDetails(WorkspaceRecord? record)
     {
@@ -511,9 +532,12 @@ public partial class WorkspacesViewModel : PageViewModel
         _plan = plan;
         _planRecord = plan is null ? null : record;
         FillStartChoices(record, plan);
-        WorkspaceLinks = plan?.Links ?? [];
+        WorkspaceLinks = Heard(plan?.Links ?? []);
         AppsMessage = "";
-        if (preview) SayApps("Not up yet: these are the apps its definitions name. The ports in their values are only examples until it comes up and is given its own.", bad: false);
+        if (preview)
+            SayApps(record?.IsMain == true
+                ? "Not up yet: these are the apps its definitions name. Main runs them in the checkout as it is, with your own infra, which has to be running first."
+                : "Not up yet: these are the apps its definitions name. The ports in their values are only examples until it comes up and is given its own.", bad: false);
         if (record is null || plan is null)
         {
             Apps = [];
@@ -538,8 +562,12 @@ public partial class WorkspacesViewModel : PageViewModel
         ApplyRunners(_lastRunners);
         LoadWorkspace(record, plan);
 
-        Infra = plan.Containers.Select(c => new WorkspaceInfraRow($"{c.Owner} / {c.Name}", string.Join(", ", c.Ports)))
-            .Concat(plan.Compose.SelectMany(c => c.Services.Select(s => new WorkspaceInfraRow($"{c.Owner} / {s.Name}", string.Join(", ", s.Mappings)))))
+        // Main's infra is the user's own, so what matters is where sprig expects it, not what sprig maps.
+        string Own(string owner, string name) => plan.Ports.Where(p => p.Owner == owner && p.Resource == name).Select(p => p.Port).OfType<int>().ToArray() is { Length: > 0 } ports
+            ? $"yours, on {string.Join(", ", ports)}" : "yours";
+        Infra = plan.Containers.Select(c => new WorkspaceInfraRow($"{c.Owner} / {c.Name}", record.IsMain ? Own(c.Owner, c.Name) : string.Join(", ", c.Ports)))
+            .Concat(plan.Compose.SelectMany(c => c.Services.Select(s => new WorkspaceInfraRow($"{c.Owner} / {s.Name}",
+                record.IsMain ? Own(c.Owner, s.Name) : string.Join(", ", s.Mappings)))))
             .ToArray();
 
         Warnings = PlanView.Rows(plan.Problems.Where(p => p.Severity == ProblemSeverity.Warning), Path.GetDirectoryName(record.OrchestrationPath)!).ToArray();
@@ -577,8 +605,15 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         _lastRunners = runners;
         var key = Selected?.Record.Key;
+        var heard = Apps.Select(a => a.HeardPort).ToArray();
         foreach (var row in Apps)
             row.Apply(runners?.FirstOrDefault(r => r.Workspace == key && r.Name == row.Key));
+        // A main checkout's app saying its port fills in the links that waited for it.
+        if (!heard.SequenceEqual(Apps.Select(a => a.HeardPort)))
+        {
+            WorkspaceLinks = Heard(_plan?.Links ?? []);
+            if (PickedApp is { } picked && _plan is not null && Selected is not null) Details = DetailsOf(picked, Selected.Record, _plan);
+        }
         StatesChanged();
         RefreshGraph();
         if (Selected is null) CountOverviewApps();

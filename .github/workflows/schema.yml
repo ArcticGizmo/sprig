@@ -1,0 +1,42 @@
+name: Schema
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/schema/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+# Publishes the JSON Schema sprig generates for its definition files to GitHub Pages, at the address each schema
+# gives as its $id (https://arcticgizmo.github.io/sprig/schema/v1/repo.json), so IDEs can complete and check a
+# sprig.yaml. Only docs/schema goes up: the rest of docs/ is plans and history, not a site.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lay out the site
+        run: |
+          mkdir -p site
+          cp -r docs/schema site/schema
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

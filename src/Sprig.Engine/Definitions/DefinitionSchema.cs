@@ -80,13 +80,20 @@ public static class DefinitionSchema
         ["links"] = Values(),
     }));
 
+    /// <summary>Where the schema for <paramref name="kind"/> (<c>repo</c> or <c>orchestration</c>) is published, from
+    /// docs/schema by the Schema workflow.</summary>
+    public static string Url(string kind) => $"https://arcticgizmo.github.io/sprig/schema/v{DefinitionReader.CurrentSchema}/{kind}.json";
+
+    /// <summary>The first line of a file sprig drafts, so an IDE with the YAML language server completes and checks it.</summary>
+    public static string Comment(string kind) => $"# yaml-language-server: $schema={Url(kind)}\n";
+
     static JsonObject Root(string kind, string title, DefinitionKeys.Key[] keys, string[] required, Dictionary<string, JsonObject> values)
     {
         values["schema"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = DefinitionReader.CurrentSchema };
         var root = new JsonObject
         {
             ["$schema"] = "http://json-schema.org/draft-07/schema#",
-            ["$id"] = $"https://arcticgizmo.github.io/sprig/schema/v{DefinitionReader.CurrentSchema}/{kind}.json",
+            ["$id"] = Url(kind),
             ["title"] = title,
         };
         foreach (var (name, node) in Object(keys, values, required).ToArray()) root[name] = node!.DeepClone();

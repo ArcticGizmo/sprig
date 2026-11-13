@@ -22,6 +22,7 @@ public static partial class Scaffold
     public static string Orchestration(string name, IReadOnlyList<ScaffoldRepo> repos)
     {
         var text = new StringBuilder();
+        text.Append(DefinitionSchema.Comment("orchestration"));
         text.Append($"schema: {DefinitionReader.CurrentSchema}\norchestration: {YamlText.Scalar(name)}\n\nrepos:\n");
         var used = new HashSet<string>(StringComparer.Ordinal);
         foreach (var repo in repos)
@@ -91,6 +92,7 @@ public static partial class Scaffold
         }
 
         var text = new StringBuilder();
+        text.Append(DefinitionSchema.Comment("repo"));
         text.Append($"schema: {DefinitionReader.CurrentSchema}\nrepo: {YamlText.Scalar(name)}\n");
         foreach (var compose in new[] { "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml" })
         {

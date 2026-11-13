@@ -63,7 +63,7 @@ public sealed class AuthoringTests : IDisposable
         Write("shop-services/src/Catalog.Api/Properties/launchSettings.json", "{}");
         Assert.Contains("  src/Catalog.Api/appsettings.Local.json:\n    read-by: [catalog-api]\n",
             Scaffold.Repo(Dir("shop-services"), "shop-services"));
-        Assert.StartsWith("schema: 1\nrepo: shop-services\n", services);
+        Assert.StartsWith("# yaml-language-server: $schema=https://arcticgizmo.github.io/sprig/schema/v1/repo.json\nschema: 1\nrepo: shop-services\n", services);
         Reads(services);
         Reads(web);
     }

@@ -753,7 +753,9 @@
                         </TextBox>
                         <TextBlock Classes="cell via" Text="{Binding GraphSearchCaption}" VerticalAlignment="Center" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center" ClipToBounds="True">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center" ClipToBounds="True"
+                                Background="Transparent"
+                                ToolTip.Tip="Tags under a node are the infra it uses. Point at a node for all its links.">
                         <StackPanel Orientation="Horizontal" Spacing="5">
                             <Ellipse Width="9" Height="9" Fill="{StaticResource OkBrush}" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="ready or healthy" VerticalAlignment="Center" />
@@ -774,8 +776,6 @@
                             <Ellipse Width="9" Height="9" Fill="#6E6E82" VerticalAlignment="Center" />
                             <TextBlock Classes="cell via" Text="stopped" VerticalAlignment="Center" />
                         </StackPanel>
-                        <TextBlock Classes="cell via" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                                   Text="Tags under a node are the infra it uses. Point at a node for all its links." />
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                         <StackPanel Orientation="Horizontal" Margin="0,0,10,0">

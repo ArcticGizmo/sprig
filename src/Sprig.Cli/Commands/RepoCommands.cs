@@ -1,94 +1,136 @@
 using System.ComponentModel;
+using Sprig.Engine.Authoring;
+using Sprig.Engine.Definitions;
+using Sprig.Engine.Store;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using Sprig.Core.Config;
-using Sprig.Core.Init;
 
 namespace Sprig.Cli.Commands;
 
-// `sprig repo <sub>` — register the repositories sprig builds workspaces from.
+static class RepoList
+{
+    public static StoredDefinitions Stored(CliContext cli) => new(cli.Paths);
 
-[Description("Register a repo (name defaults to the folder)")]
+    public static OrchestrationAuthoring Authoring(CliContext cli) => new(Stored(cli), cli.Orchestrations, cli.Trust);
+
+    public static object Payload(RepoEntry e) => new { ok = true, id = e.Id, folder = e.Folder, inRepo = e.InRepo, definition = e.DefinitionFile };
+
+    public static object Row(RepoEntry e) => new { id = e.Id, folder = e.Folder, inRepo = e.InRepo, definition = e.DefinitionFile };
+
+    public static string Kind(RepoEntry e) => e.InRepo ? "in repo" : "in sprig";
+}
+
+[Description("Put a repo folder on the Repos list, so orchestrations can use it by ID (use: id)")]
 public sealed class RepoAddCommand(CliContext cli) : Command<RepoAddCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<path>")]
-        [Description("Path to the repository")]
-        public string Path { get; set; } = "";
+        [CommandArgument(0, "<folder>")]
+        [Description("The repo's folder. Its own sprig.yaml is used if it has one; otherwise sprig drafts one and keeps it")]
+        public string Folder { get; set; } = "";
 
-        [CommandOption("--name <name>")]
-        [Description("Registry name (defaults to the folder name)")]
-        public string? Name { get; set; }
+        [CommandOption("--id <id>")]
+        [Description("The ID orchestrations use for it (default: the folder's name, with -2, -3… when taken)")]
+        public string? Id { get; set; }
 
-        [CommandOption("--virtual")]
-        [Description("Keep the config in sprig instead of the repo, so nothing needs committing. Starts from --from, else the repo's .sprig.json, else a scaffold")]
-        public bool Virtual { get; set; }
-
-        [CommandOption("--from <file>")]
-        [Description("With --virtual: the .sprig.json to start the virtual config from")]
-        public string? From { get; set; }
+        [CommandOption("--in-sprig")]
+        [Description("Keep its definition in sprig: a copy of the folder's sprig.yaml if it has one, else a draft")]
+        public bool InSprig { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        if (s.From is not null && !s.Virtual)
-            throw new ArgumentException("--from only applies to a virtual repo — add --virtual");
+        var folder = LongPath.Of(s.Folder);
+        var stored = RepoList.Stored(cli);
 
-        if (!s.Virtual)
-        {
-            var added = cli.Repos.Add(s.Path, s.Name);
-            return CliOutput.Ok(s.Json, $"registered '{added.Name}' -> {added.Path}",
-                new { ok = true, name = added.Name, path = added.Path });
-        }
+        // Adding the same folder again is a no-op, so a setup script can run twice.
+        if (!s.InSprig && File.Exists(Path.Combine(folder, StoredDefinitions.RepoFileName))
+            && stored.InRepoFor(folder) is { } existing && (s.Id is null || s.Id == existing.Id))
+            return CliOutput.Ok(s.Json, $"'{existing.Id}' is already on the list, using {existing.DefinitionFile}", RepoList.Payload(existing));
 
-        var root = System.IO.Path.GetFullPath(s.Path);
-        var committed = System.IO.Path.Combine(root, ".sprig.json");
-        var config = s.From is not null ? SprigConfigLoader.LoadFromFile(s.From)
-            : File.Exists(committed) ? SprigConfigLoader.LoadFromFile(committed)
-            : new InitInspector(cli.Git).InspectMap(root).Config;
-        var name = s.Name ?? System.IO.Path.GetFileName(root.TrimEnd('\\', '/'));
-
-        var reg = cli.Repos.AddVirtual(root, name, config);
-        return CliOutput.Ok(s.Json, $"registered virtual repo '{reg.Name}' -> {reg.Path} (config: {reg.VirtualConfigPath})",
-            new { ok = true, name = reg.Name, path = reg.Path, @virtual = true, config = reg.VirtualConfigPath });
+        var entry = RepoList.Authoring(cli).AddRepo(folder, s.Id, s.InSprig ? false : null);
+        var how = entry.InRepo ? $"using {entry.DefinitionFile}" : $"with its definition kept in sprig at {entry.DefinitionFile}";
+        return CliOutput.Ok(s.Json, $"added '{entry.Id}' ({RepoList.Kind(entry)}), {how}", RepoList.Payload(entry));
     }
 }
 
-[Description("List registered repos")]
+[Description("Copy an in-repo entry's sprig.yaml into sprig as a new ID, to try changes without touching the repo")]
+public sealed class RepoCopyCommand(CliContext cli) : Command<RepoCopyCommand.Settings>
+{
+    public sealed class Settings : GlobalSettings
+    {
+        [CommandArgument(0, "<id>")]
+        [Description("The in-repo entry to copy. It and the orchestrations using it are left as they are")]
+        public string Id { get; set; } = "";
+
+        [CommandOption("--id <new-id>")]
+        [Description("The new entry's ID (default: the folder's name with -sprig after it)")]
+        public string? NewId { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        var stored = RepoList.Stored(cli);
+        var source = stored.Repo(s.Id) ?? throw new InvalidOperationException($"'{s.Id}' isn't on the Repos list");
+        var authoring = RepoList.Authoring(cli);
+
+        // An existing copy is kept rather than refreshed, so re-running never discards edits made in sprig.
+        if (s.NewId is { } wanted && stored.Repo(wanted) is { InRepo: false } kept && SameFolder(kept.Folder, source.Folder))
+            return CliOutput.Ok(s.Json, $"'{kept.Id}' is already kept in sprig at {kept.DefinitionFile}", RepoList.Payload(kept));
+
+        var copy = authoring.CopyIntoSprig(s.Id, s.NewId ?? authoring.SuggestId(source, inRepo: false));
+        return CliOutput.Ok(s.Json, $"copied '{s.Id}' into sprig as '{copy.Id}', at {copy.DefinitionFile}", RepoList.Payload(copy));
+    }
+
+    static bool SameFolder(string a, string b) => string.Equals(Path.GetFullPath(a).TrimEnd('\\', '/'), Path.GetFullPath(b).TrimEnd('\\', '/'),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+}
+
+[Description("List the repos on the Repos list")]
 public sealed class RepoLsCommand(CliContext cli) : Command<GlobalSettings>
 {
     protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
     {
-        var repos = cli.Repos.List();
-        if (s.Json) { CliOutput.Json(repos); return 0; }
-        if (repos.Count == 0) { cli.Ansi.MarkupLine("[dim]no repos registered[/]"); return 0; }
-
-        var table = CliFormat.Table("NAME", "PATH", "CONFIG");
-        foreach (var r in repos)
-            table.AddRow(Markup.Escape(r.Name), Markup.Escape(r.Path),
-                r.IsVirtual ? "[yellow]virtual[/] [dim](not committed)[/]" : "[dim]committed[/]");
+        var entries = RepoList.Stored(cli).Repos();
+        if (s.Json) { CliOutput.Json(entries.Select(RepoList.Row)); return 0; }
+        if (entries.Count == 0)
+        {
+            cli.Ansi.MarkupLine("[dim]No repos on the list. Add one with: sprig repo add <folder>[/]");
+            return 0;
+        }
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("ID", "Kind", "Folder", "Definition");
+        foreach (var e in entries)
+            table.AddRow(Markup.Escape(e.Id), RepoList.Kind(e),
+                Directory.Exists(e.Folder) ? Markup.Escape(e.Folder) : $"[red]{Markup.Escape(e.Folder)} (missing)[/]",
+                File.Exists(e.DefinitionFile) ? Markup.Escape(e.DefinitionFile) : $"[red]{Markup.Escape(e.DefinitionFile)} (missing)[/]");
         cli.Ansi.Write(table);
         return 0;
     }
 }
 
-[Description("Unregister a repo (a virtual repo's config is deleted with it)")]
+[Description("Take a repo off the Repos list (the folder and its own sprig.yaml are left alone)")]
 public sealed class RepoRmCommand(CliContext cli) : Command<RepoRmCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
     {
-        [CommandArgument(0, "<name>")]
-        [Description("Registry name to remove")]
-        public string Name { get; set; } = "";
+        [CommandArgument(0, "<id>")]
+        public string Id { get; set; } = "";
+
+        [CommandOption("--force")]
+        [Description("Remove it even though orchestrations use it (they stop planning until it's back)")]
+        public bool Force { get; set; }
     }
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var wasVirtual = cli.Repos.Get(s.Name)?.IsVirtual == true;
-        cli.Repos.Remove(s.Name);
-        return CliOutput.Ok(s.Json,
-            wasVirtual ? $"unregistered virtual repo '{s.Name}' and deleted its config" : $"unregistered '{s.Name}'",
-            new { ok = true, name = s.Name, action = "remove" });
+        if (RepoList.Stored(cli).Repo(s.Id) is null) throw new InvalidOperationException($"'{s.Id}' isn't on the Repos list");
+        var authoring = RepoList.Authoring(cli);
+        var usedBy = authoring.UsedBy(s.Id);
+        if (usedBy.Count > 0 && !s.Force)
+            throw new InvalidOperationException($"'{s.Id}' is used by {string.Join(", ", usedBy)}. Pass --force to remove it anyway");
+        // Its main is named by the ID, so it goes first; nothing could remove it afterwards.
+        cli.Workspaces.RemoveMain(s.Id, new SyncProgress<Sprig.Engine.Workspaces.WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        authoring.DeleteRepo(s.Id);
+        return CliOutput.Ok(s.Json, $"took '{s.Id}' off the list, with its main checkout", new { ok = true, id = s.Id, usedBy });
     }
 }

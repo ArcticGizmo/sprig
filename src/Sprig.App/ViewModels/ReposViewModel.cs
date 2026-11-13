@@ -1,855 +1,673 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Sprig.Core.Config;
-using Sprig.Core.Init;
-using Sprig.Core.Stacks;
-using Sprig.Core.Workspaces;
+using Sprig.Engine.Definitions;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Store;
+using Sprig.Engine.Workspaces;
+using Sprig.Model;
 
 namespace Sprig.App.ViewModels;
 
-/// <summary>One editable module definition in the "multiple modules" branch of Add repo: a name and the
-/// subdirectory it lives in. Sprig scans each path and scaffolds a module for it. The ✓/⚠ hint mirrors
-/// the editor's module-path check — informational only, it never blocks create.</summary>
-public partial class ModuleSpecRow : ObservableObject
+/// <summary>One repo in the Repos list. Its summary arrives once its definition has run.</summary>
+public partial class RepoItem(RepoEntry entry) : ObservableObject
 {
-    readonly Action<ModuleSpecRow> _remove;
-    readonly Func<string, bool> _dirExists;
+    public RepoEntry Entry { get; } = entry;
+    public string Id => Entry.Id;
+    public bool InRepo => Entry.InRepo;
+    public string DisplayFolder => Entry.Folder.Replace('\\', '/');
+    public string DisplayFile => Entry.DefinitionFile.Replace('\\', '/');
+    public string Kept => InRepo ? "in repo" : "in sprig";
+    public bool Missing => !File.Exists(Entry.DefinitionFile);
 
-    public ModuleSpecRow(Action<ModuleSpecRow> remove, Func<string, bool> dirExists)
-    {
-        _remove = remove;
-        _dirExists = dirExists;
-    }
-
-    /// <summary>Module name — the tab label and the module's identity (unique within the repo).</summary>
-    [ObservableProperty] private string _name = "";
-
-    /// <summary>Subdirectory the module lives in (e.g. <c>apps/web</c>); detection is scoped under it.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowPathFound), nameof(ShowPathMissing))]
-    private string _path = "";
-
-    /// <summary>Green ✓: the path names a directory that exists in the repo.</summary>
-    public bool ShowPathFound => Path.Trim().Length > 0 && _dirExists(Path.Trim());
-
-    /// <summary>Amber ⚠: a path was entered but no such directory exists yet (doesn't block create).</summary>
-    public bool ShowPathMissing => Path.Trim().Length > 0 && !_dirExists(Path.Trim());
-
-    /// <summary>Re-check the path hint — called when the repo folder above it changes.</summary>
-    public void RefreshPathHint()
-    {
-        OnPropertyChanged(nameof(ShowPathFound));
-        OnPropertyChanged(nameof(ShowPathMissing));
-    }
-
-    [RelayCommand] private void Remove() => _remove(this);
+    [ObservableProperty] private string _summary = "";
 }
 
+/// <summary>One card on a repo's page: an app, infra, a setting or an offer.</summary>
+/// <param name="Badge">What kind of thing it is, e.g. ".NET", "compose" or "url".</param>
+/// <param name="Path">Where it comes from: a folder, a compose file or an image. Shown in monospace under the name.</param>
+public sealed record RepoFact(string Name, string Badge, string? Path, IReadOnlyList<FactLine> Lines)
+{
+    public bool HasPath => Path is { Length: > 0 };
+}
+
+/// <summary>A labelled line on a card. <see cref="Chips"/> shows names (what it waits for, its ports) one per pill.</summary>
+public sealed record FactLine(string Label, string? Text, IReadOnlyList<string>? Chips = null, bool Mono = false)
+{
+    public bool HasText => Text is { Length: > 0 };
+    public bool HasChips => Chips is { Count: > 0 };
+}
+
+/// <summary>One of the repo's own workspaces, on its page.</summary>
+/// <param name="Where">"in place", or the branch its worktree is on.</param>
+public sealed record RepoWorkspaceRow(string Key, string Name, string Where, string State, bool IsUp, bool IsFailed);
+
+/// <summary>
+/// The Repos page: every repo sprig knows by ID, what each one runs, offers and needs, and where its definition is
+/// kept. A repo is described here once; orchestrations only pick repos and fill what they need.
+/// </summary>
 public partial class ReposViewModel : PageViewModel
 {
-    protected readonly AppServices Services;
+    readonly AppServices _services;
+
+    public override string Title => "Repos";
+    public override string? NavSubtitle => "what each repo runs";
+
+    public ObservableCollection<RepoItem> Repos { get; } = [];
+    public ObservableCollection<string> UsedBy { get; } = [];
+    public ObservableCollection<RepoFact> Runs { get; } = [];
+    public ObservableCollection<RepoFact> Infra { get; } = [];
+    public ObservableCollection<RepoFact> Offers { get; } = [];
+    public ObservableCollection<RepoFact> Settings { get; } = [];
+    public ObservableCollection<RepoWorkspaceRow> WorkspacesOfIt { get; } = [];
+
+    public bool HasWorkspaces => WorkspacesOfIt.Count > 0;
+
+    public DefinitionEditorViewModel Editor { get; }
+
+    /// <summary>Opens an orchestration on the Orchestrations page, by ID.</summary>
+    public Action<string>? OpenOrchestration { get; set; }
+
+    /// <summary>Opens the new-workspace form for a repo, to run it on its own.</summary>
+    public Action<string>? StartWorkspace { get; set; }
+
+    /// <summary>Opens a workspace on the Workspaces page, by its key, where its apps are started, stopped and followed.</summary>
+    public Action<string>? OpenWorkspace { get; set; }
+
+    [RelayCommand]
+    private void OpenWorkspaceRow(RepoWorkspaceRow? row)
+    {
+        if (row is not null) OpenWorkspace?.Invoke(row.Key);
+    }
+
+    void ListWorkspaces(RepoItem? repo)
+    {
+        WorkspacesOfIt.Clear();
+        if (repo is not null)
+            foreach (var w in _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase))
+                WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
+                    w.IsMain ? "main checkout" : w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out", w.State switch
+                {
+                    Sprig.Engine.Workspaces.WorkspaceState.Up => "up",
+                    Sprig.Engine.Workspaces.WorkspaceState.Starting => "coming up",
+                    Sprig.Engine.Workspaces.WorkspaceState.Failed => "failed",
+                    Sprig.Engine.Workspaces.WorkspaceState.Released => "free",
+                    _ => "down",
+                }, w.State == Sprig.Engine.Workspaces.WorkspaceState.Up, w.State == Sprig.Engine.Workspaces.WorkspaceState.Failed));
+        OnPropertyChanged(nameof(HasWorkspaces));
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(KeptExplanation), nameof(DeriveLabel), nameof(DeriveNote), nameof(RemoveNote))]
+    private RepoItem? _selected;
+
+    [ObservableProperty] private string _check = "";
+    [ObservableProperty] private bool _checkBad;
+    [ObservableProperty] private bool _hasModel;
+    [ObservableProperty] private bool _needsApproval;
+    [ObservableProperty] private bool _hasUsedBy;
+    [ObservableProperty] private bool _confirmingRemove;
+
+    [ObservableProperty] private bool _isChooseOpen;
+    [ObservableProperty] private bool _isAddOpen;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AddTitle), nameof(AddExplanation), nameof(AddPickerTitle))]
+    private bool _addInRepo;
+    [ObservableProperty] private string _addFolder = "";
+    [ObservableProperty] private string _addId = "";
+    [ObservableProperty] private string _addMessage = "";
+    [ObservableProperty] private bool _addFailed;
+
+    [ObservableProperty] private bool _isDeriveOpen;
+    [ObservableProperty] private string _deriveId = "";
+    [ObservableProperty] private string _deriveMessage = "";
+    [ObservableProperty] private bool _deriveFailed;
+    [ObservableProperty] private bool _deriveBlocked;
+
+    [ObservableProperty] private bool _isRenameOpen;
+    [ObservableProperty] private string _renameId = "";
+    [ObservableProperty] private string _renameMessage = "";
+    [ObservableProperty] private bool _renameFailed;
+    [ObservableProperty] private bool _renameBlocked;
+
+    NeedsTrust? _pending;
+
+    public bool HasSelection => Selected is not null;
+    public bool IsEmpty => Repos.Count == 0;
+    public bool HasOffers => Offers.Count > 0;
+    public bool HasSettings => Settings.Count > 0;
+    public bool HasInfra => Infra.Count > 0;
+
+    public string KeptExplanation => Selected switch
+    {
+        null => "",
+        { InRepo: true } => "Uses the repo's own sprig.yaml. Workspaces run their branch's version, and sprig asks before running one you haven't approved.",
+        _ => "Kept on this machine, so nothing is written to the repo. The same for every workspace, since no branch can change it.",
+    };
+
+    /// <summary>The one way to get the other kind: a new entry made from this one, which stays as it is.</summary>
+    public string DeriveLabel => Selected is { InRepo: true } ? "Copy into sprig…" : "Write to the repo…";
+
+    public string DeriveNote => Selected switch
+    {
+        null => "",
+        { InRepo: true } => "To try changes without touching the repo, copy it into sprig as a new ID.",
+        _ => "To put it in the repo, write it there as sprig.yaml; that's used from a new ID, and this one stays in sprig.",
+    };
+
+    public string DeriveTitle => Selected is { InRepo: true } ? "Copy into sprig" : "Write to the repo";
+
+    public string DeriveExplanation => Selected switch
+    {
+        null => "",
+        { InRepo: true } => $"Copies {Selected.DisplayFile} into sprig as a new repo, kept on this machine. '{Selected.Id}' keeps using the repo's file, and so do the orchestrations that use it.",
+        _ => $"Writes this definition to {Selected.DisplayFolder}/sprig.yaml, left uncommitted, and adds a new repo that uses it. '{Selected.Id}' stays in sprig as it is, and so do the orchestrations that use it.",
+    };
+
+    public string AddTitle => AddInRepo ? "Use the repo's sprig.yaml" : "Write one in sprig";
+
+    public string AddExplanation => AddInRepo
+        ? "Choose a repo folder that has a sprig.yaml. Workspaces run their branch's version, and nothing in it runs until you approve it."
+        : "Kept in sprig, so nothing is written to the repo. It starts from the folder's sprig.yaml if it has one, or else a draft from its projects, and opens for editing.";
+
+    public string AddPickerTitle => AddInRepo ? "Choose a repo folder with a sprig.yaml" : "Choose the repo's folder";
+
+    public string RemoveNote => (Selected is { InRepo: true }
+        ? "It comes off the Repos list. The folder's own sprig.yaml is left where it is. Orchestrations that use it will say it's missing."
+        : "It comes off the Repos list, and the definition sprig keeps for it goes with it. Orchestrations that use it will say it's missing.")
+        + " Its main checkout's containers and their data go too, and the values it wrote into the checkout are put back.";
+
+    /// <summary>Why removing stopped, said in the dialog, which stays open.</summary>
+    [ObservableProperty] private string _removeError = "";
 
     public ReposViewModel(AppServices services)
     {
-        Services = services;
-        Reload();
+        _services = services;
+        Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
+        // Only counted here, for the nav; reading the repos runs their definitions, so it waits until the page is shown.
+        NavCount = services.Stored.Repos().Count;
     }
 
-    public override string Title => "Repos";
-
-    /// <summary>Raised when the isolate quick-create begins, carrying the checklist view-model for the
-    /// view to open in its own non-blocking progress window.</summary>
-    public event Action<OperationProgressViewModel>? OperationStarted;
-
-    public ObservableCollection<RegisteredRepo> Repos { get; } = [];
-
-    [ObservableProperty] private RegisteredRepo? _selected;
-    [ObservableProperty] private RepoConfigViewModel? _selectedConfig;
-
-    /// <summary>Non-null while the selected repo's config is being edited in place.</summary>
-    [ObservableProperty] private RepoEditViewModel? _editor;
-    [ObservableProperty] private string _newPath = "";
-    [ObservableProperty] private string? _error;
-    [ObservableProperty] private string? _status;
-    [ObservableProperty] private bool _busy;
-
-    /// <summary>True while the "Add repo" modal is open.</summary>
-    [ObservableProperty] private bool _isAdding;
-
-    /// <summary>True when the entered path already contains a <c>.sprig.json</c>.</summary>
-    [ObservableProperty] private bool _pathHasConfig;
-
-    /// <summary>True when the entered path looks like a git repo (has a <c>.git</c>). Sprig can't
-    /// create worktrees without one, so the modal highlights this loudly.</summary>
-    [ObservableProperty] private bool _pathIsGitRepo;
-
-    /// <summary>Plain-language explanation of what "Add" will do for the entered path.</summary>
-    [ObservableProperty] private string _detectHint = "";
-
-    /// <summary>Keep the new repo's config in sprig instead of writing a <c>.sprig.json</c> into it — for trying
-    /// a config out on a repo you can't (or don't want to) commit to yet.</summary>
-    [ObservableProperty] private bool _addAsVirtual;
-
-    /// <summary>The registry name for a virtual repo. Needed because one checkout can be registered several
-    /// times, so the folder name alone can't identify it.</summary>
-    [ObservableProperty] private string _newName = "";
-
-    /// <summary>The name last suggested for <see cref="NewName"/>, so a changed folder re-suggests only when the
-    /// user hasn't typed their own.</summary>
-    string _suggestedName = "";
-
-    /// <summary>Whether the user chose "multiple modules" for a repo with no <c>.sprig.json</c> yet.
-    /// False = a single default module scanning the whole repo.</summary>
-    [ObservableProperty] private bool _multiModule;
-
-    /// <summary>The module definitions (name + path) for the "multiple modules" branch — each becomes a
-    /// scanned, scaffolded module. Populated with one blank row when that branch is chosen.</summary>
-    public ObservableCollection<ModuleSpecRow> ModuleSpecs { get; } = [];
-
-    /// <summary>Show the module-structure choice: a new git repo is entered that has no config yet, so
-    /// we can ask whether to scaffold one module or several before creating.</summary>
-    public bool NeedsModuleChoice => IsAdding && PathEntered && GitOk && !PathHasConfig;
-
-    partial void OnMultiModuleChanged(bool value)
+    protected override void OnActivated()
     {
-        // Entering the multi-module branch with no rows yet: seed one so there's something to fill in.
-        if (value && ModuleSpecs.Count == 0) AddModuleSpecRow();
-        OnPropertyChanged(nameof(AddButtonLabel));
+        if (!Editor.IsDirty) Refresh();
     }
 
-    /// <summary>Add a blank module definition row to the "multiple modules" list.</summary>
-    [RelayCommand]
-    private void AddModuleSpecRow()
-        => ModuleSpecs.Add(new ModuleSpecRow(r => ModuleSpecs.Remove(r), RepoSubdirExists));
-
-    /// <summary>True if a repo-relative path names a directory under the entered repo folder (best-effort).</summary>
-    public bool RepoSubdirExists(string rel)
+    // Rebuilding the list re-runs the selected repo's definition, so it's left alone unless the Repos list changed.
+    protected override void OnWindowFocused()
     {
-        var root = NewPath.Trim();
-        var sub = (rel ?? "").Trim();
-        if (root.Length == 0 || sub.Length == 0) return false;
-        try { return Directory.Exists(Path.Combine(root, sub)); }
-        catch { return false; }
+        if (Editor.IsEditing || IsChooseOpen || IsAddOpen || IsDeriveOpen || IsRenameOpen || ConfirmingRemove) return;
+        if (_services.Stored.Repos().SequenceEqual(Repos.Select(r => r.Entry))) ListWorkspaces(Selected);
+        else Refresh();
     }
 
-    /// <summary>
-    /// Subdirectory suggestions for a module-path field in the multi-module add flow: directories under
-    /// the entered repo folder whose trailing segment matches what's typed, returned as repo-relative
-    /// forward-slash paths with a trailing slash so you can drill in. Mirrors the editor's module-path
-    /// picker, but rooted at <see cref="NewPath"/> (the repo isn't registered yet). Pure + best-effort.
-    /// </summary>
-    public IReadOnlyList<string> SuggestRepoSubdirs(string input)
+    /// <summary>Show one repo, by ID.</summary>
+    public void Show(string id)
     {
-        var root = NewPath.Trim();
-        if (root.Length == 0) return [];
-        input = (input ?? "").Replace('\\', '/').TrimStart('/');
-        try
-        {
-            var slash = input.LastIndexOf('/');
-            var relDir = slash < 0 ? "" : input[..slash];
-            var prefix = slash < 0 ? input : input[(slash + 1)..];
-
-            var absDir = relDir.Length == 0
-                ? root
-                : Path.Combine(root, relDir.Replace('/', Path.DirectorySeparatorChar));
-            if (!Directory.Exists(absDir)) return [];
-
-            return Directory.EnumerateDirectories(absDir)
-                .Select(Path.GetFileName)
-                .Where(n => !string.IsNullOrEmpty(n) && n != ".git")
-                .Where(n => n!.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .Take(30)
-                .Select(n => relDir.Length == 0 ? $"{n}/" : $"{relDir}/{n}/")
-                .ToList();
-        }
-        catch { return []; }
+        Refresh();
+        Selected = Repos.FirstOrDefault(r => r.Id == id) ?? Selected;
     }
 
-    public bool HasSelected => Selected is not null;
-
-    /// <summary>
-    /// What sprig detected while scaffolding the repo just added — which env keys and compose ports became
-    /// declared inputs, and what it chose not to touch.
-    ///
-    /// <c>InitInspector</c> has always produced these notes and the CLI has always printed them
-    /// (<c>CliApp</c>); the app used to discard them, leaving a first-timer looking at a pre-filled form
-    /// with no account of where any of it came from. Dismissable, because it explains one action rather
-    /// than being a permanent panel.
-    /// </summary>
-    public ObservableCollection<string> ScaffoldNotes { get; } = [];
-
-    [ObservableProperty] private bool _hasScaffoldNotes;
-
-    void ShowScaffoldNotes(IReadOnlyList<string> notes)
+    void Refresh(string? keep = null)
     {
-        ScaffoldNotes.Clear();
-        foreach (var note in notes) ScaffoldNotes.Add(note);
-        HasScaffoldNotes = ScaffoldNotes.Count > 0;
-    }
-
-    /// <summary>Dismiss the scaffold explanation.</summary>
-    [RelayCommand]
-    private void DismissScaffoldNotes() => HasScaffoldNotes = false;
-
-    /// <summary>True while the edit form is shown (hides the read-only config view).</summary>
-    public bool IsEditing => Editor is not null;
-
-    /// <summary>Show the read-only config view: a repo is selected and we're not editing.</summary>
-    public bool ShowReadOnly => HasSelected && !IsEditing;
-
-    /// <summary>A repo is selected, its config loaded cleanly, and we're not already editing.</summary>
-    public bool CanEdit => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
-
-    /// <summary>A self-describing repo can stand up on its own (the ad-hoc create path) — no map needed.
-    /// Requires a VALID config: an invalid one (e.g. an old-schema import) would only fail the checkout, so
-    /// the button is disabled and the read-only view shows a fix-or-delete warning instead.</summary>
-    public bool CanIsolate => HasSelected && SelectedConfig is { Ok: true, IsValid: true } && !IsEditing;
-
-    /// <summary>True while the inline "name this workspace" prompt of the fast path is open.</summary>
-    [ObservableProperty] private bool _isIsolating;
-    [ObservableProperty] private string _isolateName = "";
-    [ObservableProperty] private string? _isolateError;
-
-    /// <summary>False when no repos are registered yet — drives the first-run empty state.</summary>
-    public bool HasRepos => Repos.Count > 0;
-
-    /// <summary>Adapts the modal's primary button to what the path actually needs — either way it
-    /// opens the editor afterwards, so the label says so.</summary>
-    public string AddButtonLabel => PathHasConfig ? (AddAsVirtual ? "Copy config & edit" : "Load & edit")
-        : MultiModule ? "Create modules & edit"
-        : "Create & edit";
-
-    /// <summary>The selected repo's config lives in sprig rather than the repo.</summary>
-    public bool SelectedIsVirtual => Selected?.IsVirtual == true;
-
-    /// <summary>Unregister and delete-config are separate actions only for a committed config; a virtual repo's
-    /// config has nowhere else to live, so it gets a single delete.</summary>
-    public bool ShowCommittedActions => HasSelected && !SelectedIsVirtual;
-
-    /// <summary>Copying the config into a new virtual repo needs a config that loaded.</summary>
-    public bool CanDuplicate => HasSelected && SelectedConfig is { Ok: true } && !IsEditing;
-
-    /// <summary>A path has been entered — drives the git-status highlight in the modal.</summary>
-    public bool PathEntered => !string.IsNullOrWhiteSpace(NewPath);
-
-    /// <summary>Entered path is a git repo — safe to register.</summary>
-    public bool GitOk => PathEntered && PathIsGitRepo;
-
-    /// <summary>Entered path is NOT a git repo — sprig won't be able to create worktrees here.</summary>
-    public bool GitMissing => PathEntered && !PathIsGitRepo;
-
-    partial void OnSelectedChanged(RegisteredRepo? value)
-    {
-        Editor = null; // leave edit mode when switching repos
-        IsIsolating = false;
-        IsDuplicating = false;
-        ConfirmingDelete = false;
-        ConfirmingWriteToRepo = false;
-        IsEditingJson = false;
-        JsonError = null;
-        SelectedConfig = value is null ? null : RepoConfigViewModel.LoadFile(value.ConfigPath);
-        OnPropertyChanged(nameof(HasSelected));
-        OnPropertyChanged(nameof(ShowReadOnly));
-        OnPropertyChanged(nameof(CanEdit));
-        OnPropertyChanged(nameof(CanIsolate));
-        OnPropertyChanged(nameof(SelectedIsVirtual));
-        OnPropertyChanged(nameof(ShowCommittedActions));
-        OnPropertyChanged(nameof(CanEditJson));
-    }
-
-    partial void OnSelectedConfigChanged(RepoConfigViewModel? value)
-    {
-        OnPropertyChanged(nameof(CanEdit));
-        OnPropertyChanged(nameof(CanIsolate));
-        OnPropertyChanged(nameof(CanDuplicate));
-    }
-
-    partial void OnEditorChanged(RepoEditViewModel? value)
-    {
-        OnPropertyChanged(nameof(IsEditing));
-        OnPropertyChanged(nameof(ShowReadOnly));
-        OnPropertyChanged(nameof(CanEdit));
-        OnPropertyChanged(nameof(CanIsolate));
-        OnPropertyChanged(nameof(CanDuplicate));
-        OnPropertyChanged(nameof(CanEditJson));
-    }
-
-    /// <summary>True while the inline "name the copy" prompt of Duplicate as virtual is open.</summary>
-    [ObservableProperty] private bool _isDuplicating;
-    [ObservableProperty] private string _duplicateName = "";
-    [ObservableProperty] private string? _duplicateError;
-
-    /// <summary>Open the name prompt for copying the selected repo's config into a new virtual repo — the way to
-    /// try several configs of one checkout side by side.</summary>
-    [RelayCommand]
-    private void BeginDuplicate()
-    {
-        if (Selected is null) return;
-        DuplicateError = null;
-        DuplicateName = UniqueRepoName(Selected.Name);
-        IsDuplicating = true;
-    }
-
-    [RelayCommand]
-    private void CancelDuplicate() => IsDuplicating = false;
-
-    [RelayCommand]
-    private void ConfirmDuplicate()
-    {
-        var source = Selected;
-        if (source is null) return;
-        RegisteredRepo copy;
-        try
-        {
-            var config = SprigConfigLoader.LoadFromFile(source.ConfigPath);
-            copy = Services.Repos.AddVirtual(source.Path, DuplicateName, config);
-        }
-        catch (Exception ex) { DuplicateError = ex.Message; return; }
-
-        IsDuplicating = false;
-        Reload();
-        Services.NotifyStoreChanged();
-        Selected = Repos.FirstOrDefault(r => r.Name == copy.Name);
-        if (Selected is not null) BeginEdit();
-        Status = $"created virtual repo '{copy.Name}' from '{source.Name}' — editing its configuration";
-    }
-
-    /// <summary>True while the overwrite confirm for Write to repo is showing (the repo already has a config).</summary>
-    [ObservableProperty] private bool _confirmingWriteToRepo;
-
-    /// <summary>Write the selected virtual repo's config into the repo as <c>.sprig.json</c>, ready to commit.
-    /// Asks first when that would replace the repo's existing config.</summary>
-    [RelayCommand]
-    private void WriteToRepo()
-    {
-        if (Selected is not { IsVirtual: true } repo) return;
-        if (File.Exists(Path.Combine(repo.Path, ".sprig.json"))) { ConfirmingWriteToRepo = true; return; }
-        WriteVirtualConfigToRepo(repo);
-    }
-
-    [RelayCommand]
-    private void ConfirmWriteToRepo()
-    {
-        ConfirmingWriteToRepo = false;
-        if (Selected is { IsVirtual: true } repo) WriteVirtualConfigToRepo(repo);
-    }
-
-    [RelayCommand]
-    private void CancelWriteToRepo() => ConfirmingWriteToRepo = false;
-
-    void WriteVirtualConfigToRepo(RegisteredRepo repo)
-    {
-        var target = Path.Combine(repo.Path, ".sprig.json");
-        try
-        {
-            // The committed config names the repo itself, not this variant of it, so keep the name the repo
-            // already goes by (or its folder's) rather than the virtual one.
-            var name = File.Exists(target) ? SprigConfigLoader.LoadFromFile(target).Name : "";
-            if (string.IsNullOrWhiteSpace(name)) name = Path.GetFileName(repo.Path.TrimEnd('\\', '/'));
-            var config = SprigConfigLoader.LoadFromFile(repo.ConfigPath);
-            SprigConfigWriter.Write(config with { Name = name }, target);
-        }
-        catch (Exception ex) { Error = ex.Message; return; }
-        Status = $"wrote {target} — commit it to share the config. '{repo.Name}' stays virtual until you delete it.";
-    }
-
-    /// <summary>True while the selected virtual repo's config is open as raw JSON — quicker than the form
-    /// when testing a config pasted or saved elsewhere.</summary>
-    [ObservableProperty] private bool _isEditingJson;
-    [ObservableProperty] private string _jsonText = "";
-    [ObservableProperty] private string? _jsonError;
-
-    /// <summary>Only a virtual repo's config is sprig's to overwrite. Offered even when the config won't parse,
-    /// since raw JSON is then the one way to repair it.</summary>
-    public bool CanEditJson => SelectedIsVirtual && !IsEditing && !IsEditingJson;
-
-    partial void OnIsEditingJsonChanged(bool value) => OnPropertyChanged(nameof(CanEditJson));
-
-    /// <summary>Open the selected virtual repo's config as raw JSON, read verbatim so a broken file still opens.</summary>
-    [RelayCommand]
-    private void BeginEditJson()
-    {
-        if (Selected is not { IsVirtual: true } repo) return;
-        JsonError = null;
-        try { JsonText = File.ReadAllText(repo.ConfigPath); }
-        catch (Exception ex) { JsonText = ""; JsonError = ex.Message; }
-        IsEditingJson = true;
-    }
-
-    /// <summary>Replace the JSON being edited with a file's contents. Nothing is saved until Apply.</summary>
-    public void LoadJsonFromFile(string path)
-    {
-        try
-        {
-            JsonText = File.ReadAllText(path);
-            JsonError = null;
-        }
-        catch (Exception ex) { JsonError = ex.Message; }
-    }
-
-    [RelayCommand]
-    private void CancelEditJson()
-    {
-        IsEditingJson = false;
-        JsonError = null;
-    }
-
-    /// <summary>Parse, validate and save the edited JSON over the virtual config. The name is forced to the
-    /// registry name, so a config pasted from another repo still resolves as this one.</summary>
-    [RelayCommand]
-    private void ApplyJson()
-    {
-        if (Selected is not { IsVirtual: true } repo) return;
-        SprigRepoConfig config;
-        try { config = SprigConfigLoader.Parse(JsonText) with { Name = repo.Name }; }
-        catch (SprigConfigException ex) { JsonError = ex.Message; return; }
-
-        var result = SprigConfigValidator.Validate(config);
-        if (!result.IsValid)
-        {
-            JsonError = string.Join("\n", result.Issues.Select(i => i.ToString()));
-            return;
-        }
-
-        try { SprigConfigWriter.Write(config, repo.ConfigPath); }
-        catch (Exception ex) { JsonError = ex.Message; return; }
-
-        IsEditingJson = false;
-        JsonError = null;
-        SelectedConfig = RepoConfigViewModel.LoadFile(repo.ConfigPath);
-        Status = $"saved JSON config for '{repo.Name}'";
-    }
-
-    /// <summary><paramref name="baseName"/> if no repo is registered under it, else the first free
-    /// <c>-2</c>, <c>-3</c>… variant.</summary>
-    string UniqueRepoName(string baseName)
-    {
-        var taken = Services.Repos.List().Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
-        if (!taken.Contains(baseName)) return baseName;
-        for (var i = 2; ; i++)
-            if (!taken.Contains($"{baseName}-{i}")) return $"{baseName}-{i}";
-    }
-
-    /// <summary>Open the inline "name this workspace" prompt for the single-repo fast path.</summary>
-    [RelayCommand]
-    private void BeginIsolate()
-    {
-        IsolateError = null;
-        IsolateName = Selected?.Name ?? "";
-        IsIsolating = true;
-    }
-
-    [RelayCommand]
-    private void CancelIsolate() => IsIsolating = false;
-
-    /// <summary>Create an isolated workspace directly from this repo — no map, just the one repo wired by its
-    /// own provides/needs (the "isolate one repo" path).</summary>
-    [RelayCommand]
-    private async Task ConfirmIsolate()
-    {
-        var repo = Selected;
-        var name = IsolateName.Trim();
-        if (repo is null) return;
-        if (name.Length == 0) { IsolateError = "enter a workspace name"; return; }
-
-        // Resolve + plan up front so pre-flight problems stay in the inline isolate form.
-        IReadOnlyList<ResolvedRepo> repos;
-        IReadOnlyList<WorkspaceStep> plan;
-        try
-        {
-            repos = await AppServices.RunAsync(() => Services.Workspaces.ResolveSingleRepo(repo));
-            plan = Services.Workspaces.PlanCreateFromMap(repos, name);
-        }
-        catch (Exception ex) { IsolateError = ex.Message; return; }
-
-        var modal = new OperationProgressViewModel($"Creating workspace '{name}'");
-        modal.Load(plan);
-        IsIsolating = false;
-        OperationStarted?.Invoke(modal);
-
-        Busy = true; IsolateError = null; Status = null;
-        try
-        {
-            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            var record = await AppServices.RunAsync(() => Services.Workspaces.CreateFromMap(name, null, repos, progress: progress));
-            var setupFail = SetupWarning.Summarize(record);
-            Status = setupFail is null
-                ? $"created workspace '{name}' — open the Workspaces tab to run or remove it"
-                : $"created workspace '{name}', but {setupFail} — the worktree was kept; finish setup manually";
-            Services.NotifyStoreChanged();
-            modal.Finish(
-                setupFail is null ? $"Created '{name}'." : $"Created '{name}', but {setupFail}.",
-                setupFail is null ? WorkspaceStepState.Done : WorkspaceStepState.Warning);
-        }
-        catch (Exception ex)
-        {
-            modal.Finish($"Couldn't create '{name}': {ex.Message}", WorkspaceStepState.Error);
-        }
-        finally { Busy = false; }
-    }
-
-    [RelayCommand]
-    private void BeginEdit()
-    {
-        if (Selected is null) return;
-        Error = null;
-        Status = null;
-        IsEditingJson = false;
-        try { Editor = RepoEditViewModel.Load(Selected.Path, Services.Git, Selected.VirtualConfigPath); }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    [RelayCommand]
-    private void CancelEdit() => Editor = null;
-
-    [RelayCommand]
-    private void SaveEdit()
-    {
-        if (Editor is null) return;
-        if (!Editor.Save()) return; // Editor.Error surfaces the validation/write failure in the form
-
-        var name = Editor.Name;
-        Editor = null;
-        // Reload the read-only view so the saved values show immediately.
-        SelectedConfig = Selected is null ? null : RepoConfigViewModel.LoadFile(Selected.ConfigPath);
-        Status = $"saved changes to '{name}'";
-    }
-
-    partial void OnPathHasConfigChanged(bool value)
-    {
-        OnPropertyChanged(nameof(AddButtonLabel));
-        OnPropertyChanged(nameof(NeedsModuleChoice));
-    }
-
-    partial void OnPathIsGitRepoChanged(bool value)
-    {
-        OnPropertyChanged(nameof(GitOk));
-        OnPropertyChanged(nameof(GitMissing));
-        OnPropertyChanged(nameof(NeedsModuleChoice));
-    }
-
-    partial void OnIsAddingChanged(bool value) => OnPropertyChanged(nameof(NeedsModuleChoice));
-
-    partial void OnNewPathChanged(string value)
-    {
-        OnPropertyChanged(nameof(PathEntered));
-        OnPropertyChanged(nameof(GitOk));
-        OnPropertyChanged(nameof(GitMissing));
-        OnPropertyChanged(nameof(NeedsModuleChoice));
-        foreach (var r in ModuleSpecs) r.RefreshPathHint();   // paths resolve under the entered folder
-
-        var p = value.Trim();
-        if (p.Length == 0) { PathHasConfig = false; PathIsGitRepo = false; DetectHint = ""; return; }
-
-        bool hasConfig, isGit;
-        try { hasConfig = File.Exists(Path.Combine(p, ".sprig.json")); }
-        catch { hasConfig = false; }
-        // A normal repo has a .git directory; worktrees/submodules use a .git file. Either counts.
-        try { isGit = Directory.Exists(Path.Combine(p, ".git")) || File.Exists(Path.Combine(p, ".git")); }
-        catch { isGit = false; }
-
-        PathHasConfig = hasConfig;
-        PathIsGitRepo = isGit;
-        if (AddAsVirtual) SuggestName();
-        UpdateDetectHint();
-    }
-
-    partial void OnAddAsVirtualChanged(bool value)
-    {
-        if (value) SuggestName();
-        UpdateDetectHint();
-        OnPropertyChanged(nameof(AddButtonLabel));
-    }
-
-    void UpdateDetectHint()
-    {
-        if (NewPath.Trim().Length == 0) { DetectHint = ""; return; }
-        DetectHint = (PathHasConfig, AddAsVirtual) switch
-        {
-            (true, false) => "Found a .sprig.json here — it'll be loaded so you can review and edit it.",
-            (false, false) => "No .sprig.json here — sprig will scaffold one from the repo, then open it for editing.",
-            (true, true) => "Found a .sprig.json here — sprig copies it as a starting point and keeps the copy itself. Nothing in the repo changes.",
-            (false, true) => "No .sprig.json here — sprig scaffolds one and keeps it itself. Nothing is written to the repo.",
-        };
-    }
-
-    /// <summary>Suggest a free registry name from the folder, unless the user has typed their own.</summary>
-    void SuggestName()
-    {
-        if (NewName.Length > 0 && NewName != _suggestedName) return;
-        var folder = Path.GetFileName(NewPath.Trim().TrimEnd('\\', '/'));
-        _suggestedName = folder.Length == 0 ? "" : UniqueRepoName(folder);
-        NewName = _suggestedName;
-    }
-
-    /// <summary>
-    /// Directory suggestions for the path auto-complete: children of the typed-so-far directory
-    /// whose name starts with the trailing fragment. Pure + best-effort (never throws).
-    /// </summary>
-    public IReadOnlyList<string> SuggestPaths(string input)
-    {
-        input = (input ?? "").Trim();
-        if (input.Length == 0) return [];
-        try
-        {
-            string dir, prefix;
-            if (Directory.Exists(input) && (input.EndsWith('\\') || input.EndsWith('/')))
-            {
-                dir = input;
-                prefix = "";
-            }
-            else
-            {
-                dir = Path.GetDirectoryName(input) ?? "";
-                prefix = Path.GetFileName(input);
-            }
-            if (dir.Length == 0 || !Directory.Exists(dir)) return [];
-
-            return Directory.EnumerateDirectories(dir)
-                .Where(d => Path.GetFileName(d).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                .Take(25)
-                .ToList();
-        }
-        catch { return []; }
-    }
-
-    /// <summary>
-    /// A folder path a guide has suggested, so opening Add repo lands with it already filled in. Cleared
-    /// once used. Lets "register your first repo" hand-hold to a single Confirm without the user having to
-    /// know where the sample lives.
-    /// </summary>
-    string? _primedPath;
-
-    /// <summary>Pre-fill the next Add-repo modal with this folder (a coachmark precondition).</summary>
-    public void PrimeAdd(string path) => _primedPath = path;
-
-    /// <summary>
-    /// Register a repo by path, driving the exact same flow as the modal's Confirm — so a guide's "Show me"
-    /// lands the user in the same editor, with the same StoreChanged, as doing it by hand. Detection is
-    /// synchronous, so <see cref="PathHasConfig"/> is correct immediately after setting the path.
-    /// </summary>
-    public Task AddPathAsync(string path)
-    {
-        NewPath = path;
-        return AddInternal(runInit: !PathHasConfig);
-    }
-
-    [RelayCommand]
-    private void OpenAdd()
-    {
-        NewPath = _primedPath ?? "";
-        _primedPath = null;
-        Error = null;
-        Status = null;
-        MultiModule = false;
-        ModuleSpecs.Clear();
-        AddAsVirtual = false;
-        NewName = _suggestedName = "";
-        IsAdding = true;
-    }
-
-    [RelayCommand]
-    private void CancelAdd()
-    {
-        IsAdding = false;
-        Error = null;
-    }
-
-    /// <summary>Single primary action for the modal — inits only when the repo has no config yet. When
-    /// the user chose "multiple modules", scaffold from their definitions; otherwise a single default.</summary>
-    [RelayCommand]
-    private Task ConfirmAdd()
-    {
-        if (PathHasConfig) return AddInternal(runInit: false);
-        if (MultiModule)
-        {
-            // Named rows become modules (paths optional). Blank-name rows are skipped — an empty name
-            // can't be a module — and if that leaves nothing, ask for at least one.
-            var specs = ModuleSpecs
-                .Select(r => new ModuleSpec(r.Name.Trim(), r.Path.Trim()))
-                .Where(s => s.Name.Length > 0)
-                .ToList();
-            if (specs.Count == 0)
-            {
-                Error = "add at least one module (give it a name), or choose Single module";
-                return Task.CompletedTask;
-            }
-            return AddInternal(runInit: true, specs);
-        }
-        return AddInternal(runInit: true);
-    }
-
-    [RelayCommand]
-    private Task Add() => AddInternal(runInit: false);
-
-    [RelayCommand]
-    private Task InitAndAdd() => AddInternal(runInit: true);
-
-    async Task AddInternal(bool runInit, IReadOnlyList<ModuleSpec>? moduleSpecs = null)
-    {
-        var path = NewPath.Trim();
-        if (string.IsNullOrEmpty(path)) { Error = "enter a repo path"; return; }
-
-        var asVirtual = AddAsVirtual;
-        var name = NewName.Trim();
-        Busy = true; Error = null; Status = null;
-        try
-        {
-            IReadOnlyList<string> notes = [];
-            var added = await AppServices.RunAsync(() =>
-            {
-                SprigRepoConfig? scaffolded = null;
-                if (runInit)
-                {
-                    // Given explicit module definitions, scan each one's path; otherwise a single default
-                    // module scanning the whole repo. Map-native: the proposal is provides/needs, not stack
-                    // inputs — the editor opens straight onto the capability surface.
-                    var proposal = moduleSpecs is { Count: > 0 }
-                        ? Services.Init.InspectMap(path, moduleSpecs)
-                        : Services.Init.InspectMap(path);
-                    scaffolded = proposal.Config;
-                    if (!asVirtual) SprigConfigWriter.Write(proposal.Config, Path.Combine(path, ".sprig.json"));
-                    // Keep the proposal's advisory notes. They explain which env keys and compose ports
-                    // became inputs and why — the exact question someone asks on landing in the editor
-                    // for the first time. The CLI has always printed these; the app used to bin them.
-                    notes = proposal.Notes;
-                }
-                return asVirtual
-                    ? Services.Repos.AddVirtual(path, name,
-                        scaffolded ?? SprigConfigLoader.LoadFromFile(Path.Combine(path, ".sprig.json")))
-                    : Services.Repos.Add(path);
-            });
-            NewPath = "";
-            IsAdding = false;
-            MultiModule = false;
-            ModuleSpecs.Clear();
-            AddAsVirtual = false;
-            NewName = _suggestedName = "";
-            Reload();
-            Services.NotifyStoreChanged();
-
-            // Drop straight into the editor for the repo just added — staying in the list view
-            // (with only a status line) was easy to miss and left the config a step away.
-            Selected = Repos.FirstOrDefault(r => r.Name == added.Name);
-            if (Selected is not null) BeginEdit();
-            Status = IsEditing
-                ? $"registered '{added.Name}' — editing its configuration"
-                : $"registered '{added.Name}'";
-
-            ShowScaffoldNotes(notes);
-        }
-        catch (Exception ex) { Error = ex.Message; }
-        finally { Busy = false; }
-    }
-
-    /// <summary>Open the selected repo's folder in the OS file manager, for a quick look inside.</summary>
-    [RelayCommand]
-    private void OpenInExplorer()
-        => Launch(p => new ProcessStartInfo { FileName = p, UseShellExecute = true });
-
-    /// <summary>Open the selected repo in VS Code (<c>code &lt;path&gt;</c> on the PATH).</summary>
-    [RelayCommand]
-    private void OpenInVsCode()
-        => Launch(p => new ProcessStartInfo { FileName = "code", Arguments = $"\"{p}\"", UseShellExecute = true });
-
-    /// <summary>Open a terminal at the selected repo's folder (Windows Terminal, else a shell).</summary>
-    [RelayCommand]
-    private void OpenInTerminal()
-    {
-        var path = Selected?.Path;
-        if (string.IsNullOrEmpty(path)) return;
-        try
-        {
-            if (OperatingSystem.IsWindows())
-                // Prefer Windows Terminal; fall back to PowerShell if wt isn't installed.
-                try { Process.Start(new ProcessStartInfo { FileName = "wt.exe", Arguments = $"-d \"{path}\"", UseShellExecute = true }); }
-                catch { Process.Start(new ProcessStartInfo { FileName = "powershell.exe", WorkingDirectory = path, UseShellExecute = true }); }
-            else if (OperatingSystem.IsMacOS())
-                Process.Start(new ProcessStartInfo { FileName = "open", Arguments = $"-a Terminal \"{path}\"" });
-            else
-                Process.Start(new ProcessStartInfo { FileName = "x-terminal-emulator", WorkingDirectory = path });
-        }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    /// <summary>Launch a process for the selected repo path; surfaces any failure in <see cref="Error"/>.</summary>
-    void Launch(Func<string, ProcessStartInfo> build)
-    {
-        var path = Selected?.Path;
-        if (string.IsNullOrEmpty(path)) return;
-        try { Process.Start(build(path)); }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    [RelayCommand]
-    private void Remove()
-    {
-        if (Selected is null) return;
-        // Unregistering a virtual repo deletes its only copy of the config, so it always goes via the confirm.
-        if (Selected.IsVirtual) { ConfirmingDelete = true; return; }
-        Services.Repos.Remove(Selected.Name);
-        Status = $"unregistered '{Selected.Name}'";
-        Reload();
-        Services.NotifyStoreChanged();
-    }
-
-    /// <summary>True while the "delete .sprig.json" confirm bar is showing for the selected repo.</summary>
-    [ObservableProperty] private bool _confirmingDelete;
-
-    /// <summary>Ask for confirmation before deleting the repo's <c>.sprig.json</c>.</summary>
-    [RelayCommand]
-    private void Delete()
-    {
-        if (Selected is not null) ConfirmingDelete = true;
-    }
-
-    [RelayCommand]
-    private void CancelDelete() => ConfirmingDelete = false;
-
-    /// <summary>Delete the selected repo's <c>.sprig.json</c> and unregister it — a full state reset.
-    /// The repo is no longer a sprig repo afterwards; re-add it to scaffold a fresh config.</summary>
-    [RelayCommand]
-    private void ConfirmDelete()
-    {
-        if (Selected is null) return;
-        ConfirmingDelete = false;
-
-        var name = Selected.Name;
-        if (Selected.IsVirtual)
-        {
-            Services.Repos.Remove(name);   // takes the sprig-held config with it; the repo itself is untouched
-            Status = $"deleted virtual repo '{name}' and its config";
-            Reload();
-            Services.NotifyStoreChanged();
-            return;
-        }
-
-        var configPath = Path.Combine(Selected.Path, ".sprig.json");
-        try
-        {
-            if (File.Exists(configPath)) File.Delete(configPath);
-        }
-        catch (Exception ex) { Error = ex.Message; return; }
-
-        Services.Repos.Remove(name);
-        Status = $"deleted .sprig.json and unregistered '{name}'";
-        Reload();
-        Services.NotifyStoreChanged();
-    }
-
-    void Reload()
-    {
+        keep ??= Selected?.Id;
         Repos.Clear();
-        foreach (var r in Services.Repos.List()) Repos.Add(r);
-        OnPropertyChanged(nameof(HasRepos));
+        foreach (var entry in _services.Stored.Repos()) Repos.Add(new RepoItem(entry));
         NavCount = Repos.Count;
+        OnPropertyChanged(nameof(IsEmpty));
+        Selected = Repos.FirstOrDefault(r => r.Id == keep) ?? Repos.FirstOrDefault();
+        _ = SummariseAsync([.. Repos]);
+    }
+
+    /// <summary>Each row's "3 apps · 3 infra". Definitions are cached by content, so this only runs what changed, and
+    /// never one that isn't approved.</summary>
+    async Task SummariseAsync(IReadOnlyList<RepoItem> items)
+    {
+        foreach (var item in items)
+        {
+            var result = await AppServices.RunAsync(() => _services.Definitions.Evaluate(item.Entry.DefinitionFile));
+            item.Summary = Summary(result);
+        }
+    }
+
+    static string Summary(DefinitionResult result) => result switch
+    {
+        Evaluated { Model: RepoModel m } => Count(m.Apps.Count, "app") + (InfraCount(m) is > 0 and var n ? $" · {n} infra" : ""),
+        Evaluated => "describes an orchestration",
+        NeedsTrust => "not approved yet",
+        _ => "doesn't run",
+    };
+
+    static int InfraCount(RepoModel m) => m.Containers.Count + m.ComposeFiles.Sum(f => f.Services.Count);
+
+    static string Count(int n, string what) => $"{n} {what}{(n == 1 ? "" : "s")}";
+
+    partial void OnSelectedChanged(RepoItem? value)
+    {
+        ConfirmingRemove = false;
+        UsedBy.Clear();
+        ClearModel();
+        ListWorkspaces(value);
+        if (value is null) return;
+        foreach (var id in _services.Authoring.UsedBy(value.Id)) UsedBy.Add(id);
+        HasUsedBy = UsedBy.Count > 0;
+        _ = CheckAsync(value);
+    }
+
+    void ClearModel()
+    {
+        Runs.Clear();
+        Infra.Clear();
+        Offers.Clear();
+        Settings.Clear();
+        HasModel = false;
+        NeedsApproval = false;
+        _pending = null;
+        RaiseSections();
+    }
+
+    void RaiseSections()
+    {
+        OnPropertyChanged(nameof(HasOffers));
+        OnPropertyChanged(nameof(HasSettings));
+        OnPropertyChanged(nameof(HasInfra));
+    }
+
+    /// <summary>Run the repo's definition on its own and show what it describes, so a mistake shows before any
+    /// orchestration uses it.</summary>
+    async Task CheckAsync(RepoItem repo)
+    {
+        if (repo.Missing)
+        {
+            Say($"{repo.DisplayFile} isn't there.", bad: true);
+            return;
+        }
+        Say("Running it…", bad: false);
+        var result = await AppServices.RunAsync(() => _services.Definitions.Evaluate(repo.Entry.DefinitionFile));
+        if (Selected?.Id != repo.Id) return;
+        repo.Summary = Summary(result);
+        ClearModel();
+        switch (result)
+        {
+            case Evaluated { Model: RepoModel model }:
+                Show(model);
+                Say("", bad: false);
+                break;
+            case Evaluated:
+                Say("Its definition describes an orchestration, not a repo (it starts with orchestration:).", bad: true);
+                break;
+            case NeedsTrust pending:
+                _pending = pending;
+                NeedsApproval = true;
+                Say("Not approved yet. It names commands sprig runs as you: read it, then approve it.", bad: true);
+                break;
+            case Invalid invalid:
+                Say(string.Join(" ", invalid.Problems.Select(p => $"Line {p.Location?.Line}: {p.Message}.")), bad: true);
+                break;
+        }
+    }
+
+    void Show(RepoModel model)
+    {
+        foreach (var app in model.Apps)
+            Runs.Add(RunCard(app));
+        foreach (var c in model.Containers)
+            Infra.Add(new RepoFact(c.Name, "container", c.Image, InfraLines(c.Endpoints, c.Health).ToArray()));
+        foreach (var file in model.ComposeFiles)
+            foreach (var service in file.Services)
+                Infra.Add(new RepoFact(service.Name, "compose", file.File, InfraLines(service.Endpoints, service.Health).ToArray()));
+        foreach (var export in model.Exports)
+            Offers.Add(new RepoFact(export.Name, export.Type, null, [new FactLine("Value", Describe(export.Value), Mono: true)]));
+        foreach (var setting in model.Settings)
+            Settings.Add(new RepoFact(setting.Name, setting.Type, null, setting.Default is { } own
+                ? [new FactLine("Default", DescribeDefault(own), Mono: true)]
+                : [new FactLine("Default", "none: asked for when a workspace is made")]));
+        HasModel = true;
+        RaiseSections();
+    }
+
+    static RepoFact RunCard(AppModel app)
+    {
+        var kind = app.Kind switch { "dotnet" => ".NET", "node" => "Node", _ => "command" };
+        var lines = new List<FactLine>();
+        if (app.Run is { } run) lines.Add(new FactLine("Runs", run, Mono: true));
+        if (app.Job) lines.Add(new FactLine("Once", "runs to the end, then what waits for it starts"));
+        if (app.Endpoints.Count > 0) lines.Add(new FactLine("Ports", null, app.Endpoints.Select(Port).ToArray()));
+        var health = app.Endpoints.FirstOrDefault(e => e.Health is not null)?.Health;
+        if (health is not null) lines.Add(new FactLine("Ready", health, Mono: true));
+        else if (app.ReadyLog is not null) lines.Add(new FactLine("Ready", $"on a log line matching {app.ReadyLog}"));
+        if (app.WaitFor.Count > 0) lines.Add(new FactLine("After", null, app.WaitFor));
+        return new RepoFact(app.Name, app.Job ? $"{kind} job" : kind, app.Path, lines);
+    }
+
+    static IEnumerable<FactLine> InfraLines(IReadOnlyList<EndpointModel> endpoints, string? health)
+    {
+        yield return endpoints.Count == 0 ? new FactLine("Ports", "none") : new FactLine("Ports", null, endpoints.Select(Port).ToArray());
+        if (health is not null) yield return new FactLine("Ready", health, Mono: true);
+    }
+
+    /// <summary>"http", "tcp 5432" inside a container, "http 8100-8110" when pinned.</summary>
+    static string Port(EndpointModel e)
+        => string.Join(" ", new[] { e.Name, e.TargetPort?.ToString(System.Globalization.CultureInfo.InvariantCulture), e.Pin }.Where(p => p is not null));
+
+    /// <summary>"{catalog-api.http.url}" → "catalog-api's url"; literal text is kept, with passwords masked.</summary>
+    public static string Describe(string template)
+    {
+        IReadOnlyList<TemplatePart> parts;
+        try { parts = TemplateText.Parse(template); }
+        catch (FormatException) { return template; }
+        return string.Concat(parts.Select(p => p switch
+        {
+            TextPart t => ValueMask.Apply(t.Text),
+            RefPart { Path: var path } when path.StartsWith("setting.", StringComparison.Ordinal) => $"its input {path["setting.".Length..]}",
+            RefPart { Path: var path } when path.Split('.') is [var resource, _, var what] => $"{resource}'s {what}",
+            RefPart r => r.Path,
+            _ => "",
+        }));
+    }
+
+    /// <summary>"its own mail" for a default built from the repo's infra, else the value in words.</summary>
+    public static string DescribeDefault(string template)
+    {
+        IReadOnlyList<TemplatePart> parts;
+        try { parts = TemplateText.Parse(template); }
+        catch (FormatException) { return template; }
+        var own = parts.OfType<RefPart>().Select(p => p.Path.Split('.')).Where(bits => bits.Length == 3).Select(bits => bits[0]).Distinct().ToArray();
+        return own.Length > 0 ? $"its own {string.Join(" and ", own)}" : Describe(template);
+    }
+
+    void Say(string message, bool bad)
+    {
+        Check = message;
+        CheckBad = bad;
+    }
+
+    async Task<(string, bool)> AfterSaveAsync()
+    {
+        if (Selected is not { } repo) return ("Saved.", false);
+        await CheckAsync(repo);
+        return CheckBad ? ($"Saved. {Check}", true) : ("Saved, and it runs.", false);
+    }
+
+    // ---- actions ----
+
+    [RelayCommand]
+    private void Edit()
+    {
+        if (Selected is not { Missing: false } repo) return;
+        var error = Editor.Open(repo.Entry.DefinitionFile, $"{repo.Id}: {repo.Kept}",
+            repo.InRepo
+                ? "In the repo, so saving leaves an uncommitted change there. Saving approves what you saved."
+                : "In sprig, so no branch can change it. Saving approves what you saved.");
+        if (error is not null) Say(error, bad: true);
+    }
+
+    [RelayCommand]
+    private async Task Approve()
+    {
+        if (_pending is not { } pending || Selected is not { } repo) return;
+        _services.Trust.Approve(pending.TrustPath, pending.Sha256);
+        await CheckAsync(repo);
+    }
+
+    [RelayCommand]
+    private void OpenDerive()
+    {
+        if (Selected is not { } repo) return;
+        OnPropertyChanged(nameof(DeriveTitle));
+        OnPropertyChanged(nameof(DeriveExplanation));
+        DeriveId = _services.Authoring.SuggestId(repo.Entry, inRepo: !repo.InRepo);
+        var blocked = repo.InRepo
+            ? repo.Missing ? $"{repo.DisplayFile} isn't there, so there's nothing to copy." : null
+            : _services.Authoring.WriteToRepoBlocker(repo.Entry);
+        DeriveBlocked = blocked is not null;
+        DeriveFailed = DeriveBlocked;
+        DeriveMessage = blocked ?? "";
+        IsDeriveOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelDerive() => IsDeriveOpen = false;
+
+    /// <summary>Make the new entry and show it. Nothing about the selected one changes.</summary>
+    [RelayCommand]
+    private async Task Derive()
+    {
+        if (Selected is not { } repo || DeriveBlocked) return;
+        var id = DeriveId.Trim();
+        if (Ids.Check(id, "a repo ID") is { } bad)
+        {
+            FailDerive(bad);
+            return;
+        }
+        RepoEntry made;
+        try
+        {
+            made = await AppServices.RunAsync(() => repo.InRepo
+                ? _services.Authoring.CopyIntoSprig(repo.Id, id)
+                : _services.Authoring.WriteToRepo(repo.Id, id));
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            FailDerive(e.Message);
+            return;
+        }
+        IsDeriveOpen = false;
+        Refresh(made.Id);
+    }
+
+    void FailDerive(string message)
+    {
+        DeriveFailed = true;
+        DeriveMessage = message;
+    }
+
+    [RelayCommand]
+    private void OpenRename()
+    {
+        if (Selected is not { InRepo: false } repo) return;
+        RenameId = repo.Id;
+        var blocked = _services.Authoring.RenameBlocker(repo.Entry) ?? WorkspacesBlockRename(repo);
+        RenameBlocked = blocked is not null;
+        RenameFailed = RenameBlocked;
+        RenameMessage = blocked ?? "";
+        RenameNote = !RenameBlocked && _services.Workspaces.Get(repo.Id, WorkspaceRecord.MainName) is not null
+            ? "Its main checkout's containers and their data go, since they're named by this ID. It starts afresh under the new one."
+            : "";
+        IsRenameOpen = true;
+    }
+
+    /// <summary>What renaming takes with it, said before it's done.</summary>
+    [ObservableProperty] private string _renameNote = "";
+
+    // Its workspaces' slot folders, worktrees and port leases are all named by the ID. Main goes with the old ID instead,
+    // as long as it's down.
+    string? WorkspacesBlockRename(RepoItem repo)
+    {
+        var mine = _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).ToArray();
+        if (mine.Count(w => !w.IsMain) is > 0 and var n)
+            return $"It has {Count(n, "workspace")} of its own, named by this ID. Remove {(n == 1 ? "it" : "them")} on the Workspaces page first.";
+        return mine.Any(w => w.IsMain && w.State is WorkspaceState.Up or WorkspaceState.Starting)
+            ? "Its main checkout is up. Take it down on the Workspaces page first."
+            : null;
+    }
+
+    [RelayCommand]
+    private void CancelRename() => IsRenameOpen = false;
+
+    [RelayCommand]
+    private async Task Rename()
+    {
+        if (Selected is not { } repo || RenameBlocked) return;
+        var id = RenameId.Trim();
+        if (id == repo.Id)
+        {
+            IsRenameOpen = false;
+            return;
+        }
+        if (Ids.Check(id, "a repo ID") is { } bad)
+        {
+            FailRename(bad);
+            return;
+        }
+        RepoEntry renamed;
+        try { renamed = await AppServices.RunAsync(() => _services.Authoring.RenameRepo(repo.Id, id)); }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            FailRename(e.Message);
+            return;
+        }
+        // Named by the old ID, which nothing else has now.
+        try { await AppServices.RunAsync(() => _services.Workspaces.RemoveMain(repo.Id)); }
+        catch (Exception e)
+        {
+            Refresh(renamed.Id);
+            FailRename($"Renamed, but the main checkout under the old ID couldn't be removed: {e.Message.Split('\n')[0]}. Remove it on the Workspaces page.");
+            return;
+        }
+        IsRenameOpen = false;
+        Refresh(renamed.Id);
+    }
+
+    void FailRename(string message)
+    {
+        RenameFailed = true;
+        RenameMessage = message;
+    }
+
+    /// <summary>Only once its definition runs: the form would only say why it can't.</summary>
+    [RelayCommand]
+    private void Start()
+    {
+        if (Selected is { } repo && HasModel) StartWorkspace?.Invoke(repo.Id);
+    }
+
+    [RelayCommand]
+    private void OpenOrchestrationById(string? id)
+    {
+        if (id is not null) OpenOrchestration?.Invoke(id);
+    }
+
+    /// <summary>Taking a repo kept in sprig off the list deletes its definition, and orchestrations using either kind
+    /// break, so it asks first.</summary>
+    [RelayCommand]
+    private async Task Remove()
+    {
+        if (Selected is not { } repo) return;
+        if (!ConfirmingRemove)
+        {
+            RemoveError = "";
+            ConfirmingRemove = true;
+            return;
+        }
+        // Its main is named by the ID, so it goes first; nothing could remove it afterwards.
+        try { await AppServices.RunAsync(() => _services.Workspaces.RemoveMain(repo.Id)); }
+        catch (Exception e)
+        {
+            RemoveError = $"Its main checkout couldn't be removed, so the repo is still listed: {e.Message.Split('\n')[0]}";
+            return;
+        }
+        ConfirmingRemove = false;
+        _services.Authoring.DeleteRepo(repo.Id);
+        Selected = null;
+        Refresh();
+    }
+
+    [RelayCommand]
+    private void CancelRemove() => ConfirmingRemove = false;
+
+    // ---- adding ----
+
+    // The ID follows the folder until it's typed over.
+    string _suggestedId = "";
+
+    partial void OnAddFolderChanged(string value)
+    {
+        var folder = value.Trim().TrimEnd('/', '\\');
+        if (Path.GetFileName(folder).Length == 0 || (AddId.Length > 0 && AddId != _suggestedId)) return;
+        _suggestedId = _services.Authoring.SuggestNewId(folder, AddInRepo);
+        AddId = _suggestedId;
+    }
+
+    /// <summary>+ Add starts with a choice, so neither form's fields show until it's made.</summary>
+    [RelayCommand]
+    private void OpenChoose()
+    {
+        IsAddOpen = false;
+        IsChooseOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelChoose() => IsChooseOpen = false;
+
+    [RelayCommand]
+    private void BackToChoose() => OpenChoose();
+
+    [RelayCommand]
+    private void OpenAddInRepo() => OpenAdd(inRepo: true);
+
+    [RelayCommand]
+    private void OpenAddInSprig() => OpenAdd(inRepo: false);
+
+    void OpenAdd(bool inRepo)
+    {
+        IsChooseOpen = false;
+        AddInRepo = inRepo;
+        _suggestedId = "";
+        AddId = "";
+        AddFolder = "";
+        AddMessage = "";
+        AddFailed = false;
+        IsAddOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelAdd() => IsAddOpen = false;
+
+    [RelayCommand]
+    private async Task Add()
+    {
+        AddMessage = "";
+        AddFailed = false;
+        var folder = AddFolder.Trim();
+        var id = AddId.Trim();
+        if (folder.Length == 0 || !Directory.Exists(folder))
+        {
+            FailAdd("Choose the repo's folder.");
+            return;
+        }
+        if (AddInRepo && !File.Exists(Path.Combine(folder, StoredDefinitions.RepoFileName)))
+        {
+            FailAdd("That folder has no sprig.yaml. Go back and choose Write one in sprig to start one.");
+            return;
+        }
+        if (Ids.Check(id, "a repo ID") is { } bad)
+        {
+            FailAdd(bad);
+            return;
+        }
+        RepoEntry entry;
+        var inRepo = AddInRepo;
+        try { entry = await AppServices.RunAsync(() => _services.Authoring.AddRepo(folder, id, inRepo)); }
+        catch (Exception e) when (e is ArgumentException or IOException)
+        {
+            FailAdd(e.Message);
+            return;
+        }
+        IsAddOpen = false;
+        Refresh(entry.Id);
+        // A draft is a starting point; open it so it can be finished.
+        if (!entry.InRepo) Edit();
+    }
+
+    void FailAdd(string message)
+    {
+        AddFailed = true;
+        AddMessage = message;
     }
 }

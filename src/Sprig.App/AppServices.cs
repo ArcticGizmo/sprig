@@ -1,96 +1,60 @@
-using Sprig.Core.Compose;
-using Sprig.Core.Docker;
-using Sprig.Core.Env;
-using Sprig.Core.Git;
-using Sprig.Core.Init;
-using Sprig.Core.Maps;
-using Sprig.Core.Pools;
-using Sprig.Core.Ports;
-using Sprig.Core.Processes;
-using Sprig.Core.Settings;
-using Sprig.Core.Stacks;
-using Sprig.Core.Store;
-using Sprig.Core.Workspaces;
+using Sprig.Engine.Authoring;
+using Sprig.Engine.Compose;
+using Sprig.Engine.Definitions;
+using Sprig.Engine.Git;
+using Sprig.Engine.Hosting;
+using Sprig.Engine.Processes;
+using Sprig.Engine.Settings;
+using Sprig.Engine.Workspaces;
+using Sprig.Engine.Store;
+using Sprig.Engine.Orchestrations;
 
 namespace Sprig.App;
 
 /// <summary>
-/// Composition root: wires the real <c>Sprig.Core</c> graph the UI drives. The UI holds only these
-/// services and never re-implements logic. All calls are synchronous/blocking (git/docker shell-outs),
-/// so ViewModels run them via <see cref="RunAsync"/> off the UI thread.
+/// Composition root: the engine services the UI drives. View-models hold these and never re-implement
+/// engine logic; blocking calls go through <see cref="RunAsync{T}"/> so the UI thread stays free.
 /// </summary>
 public sealed class AppServices
 {
     public ISprigPaths Paths { get; }
-    public IGitService Git { get; }
-    public IDockerService Docker { get; }
-    public WorkspaceService Workspaces { get; }
-
-    public WorkspaceReconciler Reconciler { get; }
-    public RepoRegistryStore Repos { get; }
-
-    /// <summary>The map model (the Graph Turn): definitions + the resolver that turns a map + selection into
-    /// a checkout, and the pool lifecycle over a map's <c>MaxSlots</c> ceiling (checkout / release / status).</summary>
-    public MapStore Maps { get; }
-    public MapResolver MapResolver { get; }
-    public MapPoolService MapPool { get; }
-
-    /// <summary>The Maps page's wiring view: what a map's checkout would do, and the fixes it offers.</summary>
-    public MapInspector MapInspector { get; }
-    public MapEditor MapEditor { get; }
-
-    public InitInspector Init { get; }
     public ISettingsStore Settings { get; }
-    public IPortStore Ports { get; }
+    public ITrustStore Trust { get; }
 
-    /// <summary>Builds (and removes) the guided tour's throwaway sample setup in <b>this</b> store.</summary>
-    public Core.Demo.SampleSetup Sample { get; }
+    /// <summary>The trust store with the user's own edits approved, for asking whether a file needs approval.</summary>
+    public TrustRules TrustRules { get; }
+    public DefinitionRunner Definitions { get; }
+    public OrchestrationRegistry Orchestrations { get; }
+    public OrchestrationLoader Loader { get; }
+    public StoredDefinitions Stored { get; }
+    public OrchestrationAuthoring Authoring { get; }
 
-    /// <summary>
-    /// True when this graph is serving the guided tour's throwaway sample rather than the user's real
-    /// store. Read by <c>MainWindowViewModel</c> to show the tour banner — nothing else should branch
-    /// on it (see docs/guided-tour-plan.md §7).
-    /// </summary>
-    public bool IsDemoStore { get; }
+    public WorkspaceService Workspaces { get; }
+    public HostClient Host { get; }
+    public HostStatus HostStatus { get; }
+    public UiState Ui { get; }
 
-    /// <param name="root">Store root; null means this profile's real store.</param>
-    /// <param name="isDemoStore">Declares this graph as the tour's sample. Stated by the caller rather
-    /// than guessed from <paramref name="root"/>, so a test or a headless render can stand up a tour
-    /// session in a temp directory.</param>
-    public AppServices(string? root = null, bool isDemoStore = false)
+    /// <param name="root">Store root; null means this profile's store.</param>
+    public AppServices(string? root = null)
     {
         Paths = new SprigPaths(root);
-        IsDemoStore = isDemoStore;
-        var runner = new ProcessRunner();
-        Git = new GitService(runner);
-        Docker = new DockerService(runner);
-        Settings = new FileSettingsStore(Paths);
-        var ports = new FilePortStore(Paths, Settings);
-        Ports = ports;
-        var instances = new InstanceStore(Paths);
-        Workspaces = new WorkspaceService(Git, ports, instances, new EnvClobberService(),
-            new ComposeGenerator(), Docker, Paths, new Core.Setup.SetupRunner(runner), Settings);
-        Reconciler = new WorkspaceReconciler(Git, instances);
-        Repos = new RepoRegistryStore(Paths);
-        Maps = new MapStore(Paths, Repos);
-        MapResolver = new MapResolver(Repos, Maps, Git, Paths);
-        MapPool = new MapPoolService(Maps, instances, MapResolver, Workspaces, Paths);
-        MapInspector = new MapInspector(Repos, Maps);
-        MapEditor = new MapEditor(Maps, Repos);
-        Init = new InitInspector(Git);
-        Sample = new Core.Demo.SampleSetup(Paths, runner, Repos, Maps, MapResolver, Workspaces);
+        Settings = new FileSettingsStore(Paths, dev: root is null && AppProfile.IsDev);
+        Trust = new FileTrustStore(Paths);
+        var processes = new ProcessRunner();
+        var git = new GitClient(processes);
+        Definitions = new DefinitionRunner(Trust, Paths, git);
+        Orchestrations = new OrchestrationRegistry(Paths);
+        Stored = new StoredDefinitions(Paths);
+        TrustRules = new TrustRules(Trust, Stored, git);
+        Loader = new OrchestrationLoader(Definitions, Orchestrations, Stored);
+        Authoring = new OrchestrationAuthoring(Stored, Orchestrations, Trust);
+        Host = new HostClient(Paths);
+        HostStatus = new HostStatus(Host);
+        Ui = new UiState(Paths);
+        Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
+            git, new DockerCompose(processes), host: Host, loader: Loader);
     }
 
-    /// <summary>
-    /// Raised after any repo/stack/workspace mutation, so state-driven surfaces (Home's rail, the
-    /// setup guide) can refresh without polling. A lightweight in-process signal, not a store watch.
-    /// </summary>
-    public event Action? StoreChanged;
-
-    /// <summary>Announce that the repo/stack/workspace stores changed.</summary>
-    public void NotifyStoreChanged() => StoreChanged?.Invoke();
-
-    /// <summary>Run a blocking Core call on a background thread (keeps the UI responsive).</summary>
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);
 
     public static Task RunAsync(Action work) => Task.Run(work);

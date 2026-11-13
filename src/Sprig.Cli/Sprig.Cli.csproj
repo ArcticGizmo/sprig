@@ -1,7 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Sprig.Core\Sprig.Core.csproj" />
+    <ProjectReference Include="..\Sprig.Engine\Sprig.Engine.csproj" />
+    <!-- Built alongside, not referenced: the CLI starts it as a separate process. -->
+    <ProjectReference Include="..\Sprig.Host\Sprig.Host.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

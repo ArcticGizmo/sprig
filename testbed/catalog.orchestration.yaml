@@ -1,0 +1,15 @@
+schema: 1
+orchestration: catalog
+
+# The catalog's API and the mobile app, named by their IDs on the Repos list rather than by folder, so this file holds
+# no paths. It plans once those IDs are listed (see testbed/README.md): shop-services uses its own sprig.yaml, and
+# shop-mobile-sprig a copy kept in sprig.
+repos:
+  shop-services: { use: shop-services }
+  shop-mobile: { use: shop-mobile-sprig }
+
+containers:
+  mail: { preset: mailpit }
+
+inputs:
+  mail-smtp: ${mail.smtp-url}

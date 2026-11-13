@@ -1,4 +1,4 @@
-using Sprig.Core.Store;
+using Sprig.Engine.Store;
 
 namespace Sprig.Tests.Store;
 

@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sprouts: apps beside the log</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#181820}
+a{color:#60A5FA}a:hover{color:#93C5FD}
+button{font-family:inherit;cursor:pointer}
+.row:hover{background:#262633}
+.navbtn:hover{background:#2D2D3C}
+.line:hover{background:#1C1C26}
+.pre:hover{text-decoration:underline}
+.pin{opacity:0}
+.row:hover .pin,.pin.on,.pin:focus-visible{opacity:1}
+.scroll::-webkit-scrollbar{width:10px;height:10px}
+.scroll::-webkit-scrollbar-thumb{background:#2D2D3C;border-radius:5px}
+input::placeholder{color:#6E6E82}
+</style>
+</helmet>
+<div style="width: 100%; height: 900px; display: flex; flex-wrap: wrap; background: #181820; color: #E1E1EB; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+  <!-- Left nav: sprouts live under Sprouts, grouped by trellis; ones that are down fold away -->
+  <nav aria-label="Main" style="flex: 0 0 216px; height: 100%; box-sizing: border-box; background: #1F1F2A; border-right: 1px solid #2D2D3C; display: flex; flex-direction: column; padding: 18px 10px 12px">
+    <div style="display: flex; align-items: baseline; gap: 8px; padding: 0 8px 4px">
+      <span style="font-size: 22px; font-weight: 600; color: #F5F5FA">sprig</span>
+      <span style="font-size: 11px; color: #FBBF24">experimental</span>
+    </div>
+    <button class="navbtn" style="margin-top: 14px; text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Home</button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0; padding: 14px 10px 4px">DEFINE</div>
+    <button class="navbtn" style="display: flex; justify-content: space-between; text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px"><span>Trellises</span><span style="font-size: 11px; color: #8C8CA0">3</span></button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0; padding: 14px 10px 4px">RUN</div>
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 0">
+      <a class="navbtn" href="SproutsOverview.dc.html" style="flex: 1; display: flex; justify-content: space-between; color: #F5F5FA; text-decoration: none; font-size: 14px; padding: 4px 10px; border-radius: 8px"><span>Sprouts</span><span style="font-size: 11px; color: #8C8CA0; padding-right: 6px">{{sproutsCount}}</span></a>
+      <button aria-label="New sprout" style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 6px; font-size: 12px; font-weight: 600; padding: 3px 9px">+ Add</button>
+    </div>
+    <div class="scroll" style="flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px">
+      <sc-for list="{{trellises}}" as="t" hint-placeholder-count="3">
+        <div>
+          <button onClick="{{t.toggle}}" aria-expanded="{{t.open}}" class="navbtn" style="width: 100%; display: flex; align-items: center; gap: 6px; background: transparent; border: 0; border-radius: 6px; color: #8C8CA0; padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-align: left">
+            <span aria-hidden="true" style="display: inline-block; width: 10px">{{t.chevron}}</span><span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{t.label}}</span><span style="font-weight: 500; letter-spacing: 0; color: {{t.captionColor}}">{{t.caption}}</span>
+          </button>
+          <sc-if value="{{t.open}}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{t.shown}}" as="s" hint-placeholder-count="2">
+              <button class="navbtn" onClick="{{s.pick}}" aria-current="{{s.current}}" style="width: 100%; display: flex; flex-direction: column; gap: 1px; text-align: left; border: 0; padding: 6px 10px 6px 26px; border-radius: 8px; background: {{s.bg}}">
+                <span style="display: flex; align-items: center; gap: 7px; font-size: 13px; color: #F5F5FA"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{s.dot}}"></span>{{s.name}}</span>
+                <span style="font-size: 11px; color: #8C8CA0; padding-left: 14px">{{s.sub}}</span>
+              </button>
+            </sc-for>
+            <sc-if value="{{t.hasDown}}" hint-placeholder-val="{{ true }}">
+              <button class="navbtn" onClick="{{t.toggleDown}}" aria-expanded="{{t.downOpen}}" style="width: 100%; display: flex; align-items: center; gap: 7px; text-align: left; border: 0; background: transparent; color: #8C8CA0; padding: 5px 10px 5px 26px; border-radius: 8px; font-size: 12px">
+                <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; border: 1px solid #6E6E82; box-sizing: border-box"></span>{{t.downLabel}}
+              </button>
+              <sc-if value="{{t.downOpen}}" hint-placeholder-val="{{ false }}">
+                <sc-for list="{{t.down}}" as="s" hint-placeholder-count="2">
+                  <button class="navbtn" onClick="{{s.pick}}" aria-current="{{s.current}}" style="width: 100%; display: flex; flex-direction: column; gap: 1px; text-align: left; border: 0; padding: 5px 10px 5px 26px; border-radius: 8px; background: {{s.bg}}">
+                    <span style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #B4B4C6"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{s.dot}}"></span>{{s.name}}</span>
+                    <span style="font-size: 11px; color: #8C8CA0; padding-left: 14px">{{s.sub}}</span>
+                  </button>
+                </sc-for>
+              </sc-if>
+            </sc-if>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <div style="border-top: 1px solid #2D2D3C; margin: 0 6px 6px"></div>
+    <button class="navbtn" style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Settings</button>
+    <button class="navbtn" style="display: flex; justify-content: space-between; text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px"><span>About</span><span style="font-size: 11px; color: #8C8CA0">0.100.0-exp</span></button>
+  </nav>
+
+  <!-- The selected sprout: a fixed-height workspace. The page never scrolls; each pane scrolls on its own. -->
+  <main style="flex: 999 1 560px; min-width: 0; height: 100%; display: flex; flex-direction: column">
+
+    <header style="padding: 16px 22px 0; border-bottom: 1px solid #2D2D3C; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px">
+        <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+          <h1 style="margin: 0; font-size: 19px; font-weight: 600; color: #F5F5FA">{{sproutTitle}}</h1>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #8C8CA0"><span style="color: {{sproutStateColor}}">{{sproutState}}</span><span>{{sproutBranch}}</span><span>stable ports</span><span>6 repos</span></div>
+        </div>
+        <div style="flex: 1"></div>
+        <div aria-label="App states" style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px">
+          <sc-for list="{{summary}}" as="c" hint-placeholder-count="4">
+            <button onClick="{{c.pick}}" aria-pressed="{{c.on}}" style="display: flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: #E1E1EB; font-size: 12px"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{c.dot}}"></span>{{c.label}}</button>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 6px">
+          <button style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12.5px">Start all</button>
+          <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 7px 12px; font-size: 12.5px">Stop apps</button>
+          <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 7px 12px; font-size: 12.5px">Take down</button>
+          <button aria-label="More sprout actions" style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 7px 10px; font-size: 12.5px">⋯</button>
+        </div>
+      </div>
+      <div role="tablist" aria-label="Sprout views" style="display: flex; gap: 18px">
+        <button role="tab" aria-selected="{{onApps}}" onClick="{{showApps}}" style="background: transparent; border: 0; border-bottom: 2px solid {{appsTabLine}}; color: {{appsTabFg}}; padding: 6px 0 9px; font-size: 13px; font-weight: 600">Apps and logs</button>
+        <button role="tab" aria-selected="{{onOverview}}" onClick="{{showOverview}}" style="display: flex; align-items: center; gap: 6px; background: transparent; border: 0; border-bottom: 2px solid {{overviewTabLine}}; color: {{overviewTabFg}}; padding: 6px 0 9px; font-size: 13px; font-weight: 600">Infra, worktrees and files<span style="background: #3A2F12; color: #FBBF24; border-radius: 999px; padding: 0 7px; font-size: 11px">1 warning</span></button>
+      </div>
+    </header>
+
+    <sc-if value="{{onApps}}" hint-placeholder-val="{{ true }}">
+    <div style="flex: 1; min-height: 0; display: flex; flex-wrap: wrap">
+
+      <!-- The list picks what the log shows: every app, or one app -->
+      <section aria-label="Apps" style="flex: 1 1 330px; max-width: 360px; min-width: 0; height: 100%; display: flex; flex-direction: column; border-right: 1px solid #2D2D3C">
+        <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #2D2D3C">
+          <label style="display: flex; align-items: center; gap: 8px; background: #14141B; border: 1px solid #2D2D3C; border-radius: 6px; padding: 0 10px">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8C8CA0" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Filter apps</span>
+            <input value="{{filter}}" onChange="{{onFilter}}" placeholder="Filter 20 apps" style="flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #E1E1EB; font: inherit; font-size: 12.5px; padding: 7px 0">
+          </label>
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; color: #8C8CA0"><span>{{listCaption}}</span><button onClick="{{toggleAllGroups}}" style="background: transparent; border: 0; color: #60A5FA; font-size: 11.5px; padding: 0">{{groupToggleLabel}}</button></div>
+        </div>
+        <div class="scroll" style="flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 10px">
+
+          <button onClick="{{showAll}}" aria-pressed="{{allActive}}" class="row" style="width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; border: 0; padding: 9px 12px; text-align: left; color: #E1E1EB; background: {{allRowBg}}; box-shadow: inset 2px 0 0 {{allRowEdge}}">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+            <span style="display: flex; flex-direction: column"><span style="font-weight: 600; color: #F5F5FA">All apps</span><span style="font-size: 11.5px; color: #8C8CA0">{{allRowCaption}}</span></span>
+            <span style="font-size: 11.5px; color: #8C8CA0">{{allCount}}</span>
+          </button>
+
+          <sc-if value="{{hasPinned}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; align-items: center; gap: 6px; color: #8C8CA0; padding: 10px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: 1px">
+              <span aria-hidden="true" style="display: inline-block; width: 10px"></span><span style="flex: 1">PINNED</span><span style="font-weight: 500; letter-spacing: 0">{{pinnedCaption}}</span>
+            </div>
+            <sc-for list="{{pinnedRows}}" as="a" hint-placeholder-count="3">
+              <div class="row" style="display: flex; align-items: center; gap: 4px; padding: 0 8px 0 0; background: {{a.rowBg}}; box-shadow: inset 2px 0 0 {{a.rowEdge}}">
+                <button onClick="{{a.pick}}" style="flex: 1; min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; background: transparent; border: 0; color: #E1E1EB; padding: 6px 0 6px 12px; text-align: left; font-size: 13px">
+                  <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: {{a.dot}}"></span>
+                  <span style="min-width: 0; display: flex; flex-direction: column">
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: {{a.weight}}; color: #F5F5FA">{{a.label}}</span>
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: {{a.stateColor}}">{{a.stateText}}</span>
+                  </span>
+                  <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #8C8CA0; padding-left: 8px">{{a.port}}</span>
+                </button>
+                <button class="pin {{a.pinClass}}" onClick="{{a.togglePin}}" aria-pressed="{{a.pinned}}" aria-label="{{a.pinLabel}}" title="{{a.pinLabel}}" style="background: transparent; border: 0; border-radius: 5px; color: {{a.pinColor}}; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4h6l-1 6 4 4H6l4-4z"></path><path d="M12 14v6"></path></svg></button>
+              </div>
+            </sc-for>
+          </sc-if>
+
+          <sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+            <div>
+              <button onClick="{{g.toggle}}" aria-expanded="{{g.open}}" style="width: 100%; display: flex; align-items: center; gap: 6px; background: transparent; border: 0; color: #8C8CA0; padding: 10px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-align: left">
+                <span aria-hidden="true" style="display: inline-block; width: 10px">{{g.chevron}}</span><span style="flex: 1">{{g.name}}</span><span style="font-weight: 500; letter-spacing: 0; color: {{g.captionColor}}">{{g.caption}}</span>
+              </button>
+              <sc-if value="{{g.open}}" hint-placeholder-val="{{ true }}">
+                <sc-for list="{{g.apps}}" as="a" hint-placeholder-count="3">
+                  <div class="row" style="display: flex; align-items: center; gap: 4px; padding: 0 8px 0 0; background: {{a.rowBg}}; box-shadow: inset 2px 0 0 {{a.rowEdge}}">
+                    <button onClick="{{a.pick}}" style="flex: 1; min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; background: transparent; border: 0; color: #E1E1EB; padding: 6px 0 6px 12px; text-align: left; font-size: 13px">
+                      <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: {{a.dot}}"></span>
+                      <span style="min-width: 0; display: flex; flex-direction: column">
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: {{a.weight}}; color: #F5F5FA">{{a.name}}</span>
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: {{a.stateColor}}">{{a.stateText}}</span>
+                      </span>
+                      <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #8C8CA0; padding-left: 8px">{{a.port}}</span>
+                    </button>
+                    <button class="pin {{a.pinClass}}" onClick="{{a.togglePin}}" aria-pressed="{{a.pinned}}" aria-label="{{a.pinLabel}}" title="{{a.pinLabel}}" style="background: transparent; border: 0; border-radius: 5px; color: {{a.pinColor}}; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4h6l-1 6 4 4H6l4-4z"></path><path d="M12 14v6"></path></svg></button>
+                  </div>
+                </sc-for>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <!-- The log the list picked. Each log keeps its own search, filter, pause and scroll position. -->
+      <section aria-label="Log" style="flex: 999 1 420px; min-width: 0; height: 100%; display: flex; flex-direction: column">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border-bottom: 1px solid #2D2D3C">
+          <div style="flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="font-size: 14px; font-weight: 600; color: #F5F5FA">{{logTitle}}</span>
+            <span style="font-size: 11.5px; color: {{logSubColor}}">{{logSub}}</span>
+          </div>
+          <sc-if value="{{allActive}}" hint-placeholder-val="{{ true }}">
+            <div role="group" aria-label="Which apps to stream" style="display: flex; border: 1px solid #2D2D3C; border-radius: 6px; overflow: hidden">
+              <button aria-pressed="{{scopeList}}" onClick="{{scopeToList}}" style="border: 0; background: {{scopeListBg}}; color: #E1E1EB; padding: 5px 10px; font-size: 12px">Apps in the list · {{allCount}}</button>
+              <button aria-pressed="{{scopePinned}}" onClick="{{scopeToPinned}}" style="border: 0; border-left: 1px solid #2D2D3C; background: {{scopePinnedBg}}; color: #E1E1EB; padding: 5px 10px; font-size: 12px">Pinned · {{pinnedCount}}</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{oneActive}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; gap: 6px">
+              <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 5px 10px; font-size: 12px">{{mainAction}}</button>
+              <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 5px 10px; font-size: 12px">Stop</button>
+            </div>
+          </sc-if>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #2D2D3C">
+          <label style="display: flex; align-items: center; gap: 6px; background: #14141B; border: 1px solid #2D2D3C; border-radius: 6px; padding: 0 8px; flex: 0 1 240px; min-width: 140px">
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search this log</span>
+            <input value="{{search}}" onChange="{{onSearch}}" placeholder="Search this log" style="flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: #E1E1EB; font: inherit; font-size: 12.5px; padding: 6px 0">
+          </label>
+          <button aria-pressed="{{problemsOnly}}" onClick="{{toggleProblems}}" style="border: 1px solid {{problemsBorder}}; background: {{problemsBg}}; color: #E1E1EB; border-radius: 6px; padding: 5px 10px; font-size: 12px">Warnings and errors</button>
+          <span style="flex: 1 1 120px; min-width: 0; font-size: 11.5px; color: #6E6E82">{{rememberNote}}</span>
+          <button aria-pressed="{{inspectorOpen}}" onClick="{{toggleInspector}}" style="border: 1px solid {{inspectorBorder}}; background: {{inspectorBg}}; color: #E1E1EB; border-radius: 6px; padding: 5px 10px; font-size: 12px">Details</button>
+        </div>
+
+        <div style="flex: 1; min-height: 0; display: flex; position: relative">
+          <div class="scroll" ref="{{logRef}}" onScroll="{{onLogScroll}}" style="flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column-reverse; background: #14141B; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px; line-height: 18px">
+            <div style="padding: 6px 0">
+              <sc-for list="{{lines}}" as="l" hint-placeholder-count="20">
+                <div class="line" style="display: grid; grid-template-columns: 88px {{prefixCol}} minmax(0, 1fr); gap: 10px; padding: 0 12px; background: {{l.bg}}">
+                  <span style="color: #5F5F74">{{l.time}}</span>
+                  <sc-if value="{{allActive}}" hint-placeholder-val="{{ true }}">
+                    <button class="pre" onClick="{{l.pick}}" title="Open {{l.app}}'s log" style="background: transparent; border: 0; padding: 0; text-align: right; color: {{l.color}}; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{l.app}}</button>
+                  </sc-if>
+                  <span style="color: {{l.fg}}; white-space: pre-wrap; overflow-wrap: anywhere">{{l.text}}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{noLines}}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 24px 12px; color: #8C8CA0; font-family: Inter, sans-serif">{{emptyText}}</div>
+              </sc-if>
+            </div>
+          </div>
+          <sc-if value="{{paused}}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{jumpToLatest}}" style="position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: #60A5FA; color: #0B1220; border: 0; border-radius: 999px; padding: 7px 14px; font-size: 12.5px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,.45)">Paused · {{newCount}} new lines · Jump to latest</button>
+          </sc-if>
+
+          <sc-if value="{{inspectorOpen}}" hint-placeholder-val="{{ true }}">
+            <aside aria-label="App details" class="scroll" style="flex: 0 0 300px; min-width: 0; overflow-y: auto; border-left: 1px solid #2D2D3C; background: #1F1F2A; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px">
+              <div style="display: flex; flex-direction: column; gap: 2px">
+                <div style="font-size: 11px; color: #8C8CA0">{{sel.repo}}</div>
+                <div style="font-size: 16px; font-weight: 600; color: #F5F5FA">{{sel.name}}</div>
+                <div style="font-size: 12px; color: {{sel.stateColor}}">{{sel.stateText}}</div>
+              </div>
+              <div style="display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 7px 10px; font-size: 12px">
+                <span style="color: #8C8CA0">Url</span><a href="#" style="font-family: 'Cascadia Mono', Consolas, monospace; overflow-wrap: anywhere">{{sel.url}}</a>
+                <span style="color: #8C8CA0">Folder</span><span style="font-family: 'Cascadia Mono', Consolas, monospace; overflow-wrap: anywhere">{{sel.folder}}</span>
+                <span style="color: #8C8CA0">Values in</span><span style="overflow-wrap: anywhere">{{sel.values}}</span>
+                <span style="color: #8C8CA0">Starts after</span><span>{{sel.after}}</span>
+                <span style="color: #8C8CA0">Ready when</span><span>{{sel.ready}}</span>
+                <span style="color: #8C8CA0">Restarts</span><span>{{sel.restarts}}</span>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 6px 10px; font-size: 12px">Open folder</button>
+                <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 6px 10px; font-size: 12px">Open in IDE</button>
+                <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 6px 10px; font-size: 12px">Copy env</button>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">VALUES</div>
+                <sc-for list="{{sel.env}}" as="e" hint-placeholder-count="4">
+                  <div style="display: flex; flex-direction: column; gap: 1px; padding: 5px 0; border-bottom: 1px solid #2D2D3C">
+                    <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #F5F5FA; overflow-wrap: anywhere">{{e.k}}</span>
+                    <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; overflow-wrap: anywhere">{{e.v}}</span>
+                    <span style="font-size: 11px; color: #8C8CA0">{{e.via}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="font-size: 11px; color: #8C8CA0; overflow-wrap: anywhere">Log file: {{sel.logFile}}</div>
+            </aside>
+          </sc-if>
+        </div>
+      </section>
+    </div>
+    </sc-if>
+
+    <!-- Everything about the sprout that isn't one app -->
+    <sc-if value="{{onOverview}}" hint-placeholder-val="{{ false }}">
+    <div class="scroll" style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; max-width: 1200px">
+        <section style="background: #1F1F2A; border: 1px solid #5C4A17; border-radius: 12px; padding: 14px 16px; grid-column: 1 / -1">
+          <h2 style="margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #FBBF24">WARNINGS</h2>
+          <div style="font-size: 12.5px">ingest-worker has no health check, so "ready" only means it started.</div>
+          <div style="font-size: 11.5px; color: #8C8CA0; font-family: 'Cascadia Mono', Consolas, monospace">shop-analytics/sprig.cs:14</div>
+        </section>
+        <section style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 14px 16px">
+          <h2 style="margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">INFRA (HOST PORT : CONTAINER PORT)</h2>
+          <sc-for list="{{infra}}" as="i" hint-placeholder-count="4">
+            <div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 80px; gap: 10px; padding: 6px 0; border-bottom: 1px solid #2D2D3C; font-size: 12.5px">
+              <span>{{i.name}}</span><span style="font-family: 'Cascadia Mono', Consolas, monospace">{{i.ports}}</span><span style="color: {{i.color}}">{{i.state}}</span>
+            </div>
+          </sc-for>
+        </section>
+        <section style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 14px 16px">
+          <h2 style="margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">WORKTREES</h2>
+          <sc-for list="{{worktrees}}" as="w" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: 130px minmax(0, 1fr) 90px; gap: 10px; padding: 6px 0; border-bottom: 1px solid #2D2D3C; font-size: 12.5px">
+              <span>{{w.repo}}</span><span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #8C8CA0; overflow-wrap: anywhere">{{w.folder}}</span><span style="color: {{w.color}}">{{w.status}}</span>
+            </div>
+          </sc-for>
+        </section>
+        <section style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 14px 16px; grid-column: 1 / -1">
+          <h2 style="margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">FILES SPRIG WROTE</h2>
+          <sc-for list="{{files}}" as="f" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) 180px 150px; gap: 10px; padding: 6px 0; border-bottom: 1px solid #2D2D3C; font-size: 12.5px">
+              <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; overflow-wrap: anywhere">{{f.path}}</span><span style="color: #8C8CA0">{{f.what}}</span><span style="color: #4ADE80">{{f.ignored}}</span>
+            </div>
+          </sc-for>
+        </section>
+      </div>
+    </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"liveLines":{"editor":"boolean","default":true},"$preview":{"width":1440,"height":900}}'>
+const RAW = [
+  ['shop-gateway', 'gateway', 'ready', 8100, 'api'],
+  ['shop-gateway', 'auth', 'ready', 8101, 'api'],
+  ['shop-gateway', 'bff', 'ready', 8102, 'api'],
+  ['shop-services', 'migrate', 'finished', null, 'job'],
+  ['shop-services', 'seed', 'finished', null, 'job'],
+  ['shop-services', 'catalog-api', 'ready', 8000, 'api'],
+  ['shop-services', 'orders-api', 'ready', 8001, 'api'],
+  ['shop-services', 'payments-api', 'failed', 8003, 'failing'],
+  ['shop-services', 'inventory-api', 'ready', 8004, 'api'],
+  ['shop-services', 'search-api', 'starting', 8005, 'api'],
+  ['shop-services', 'notifications', 'ready', 8006, 'api'],
+  ['shop-analytics', 'events-api', 'ready', 8200, 'api'],
+  ['shop-analytics', 'ingest-worker', 'restarting', null, 'flaky'],
+  ['shop-analytics', 'reports-api', 'building', 8202, 'build'],
+  ['shop-analytics', 'scheduler', 'ready', null, 'worker'],
+  ['shop-web', 'web', 'ready', 5170, 'vite'],
+  ['shop-web', 'admin', 'ready', 5171, 'vite'],
+  ['shop-web', 'storybook', 'stopped', 6006, 'none'],
+  ['shop-mobile', 'mobile', 'ready', 8010, 'vite'],
+  ['shop-docs', 'docs', 'ready', 5172, 'vite'],
+];
+const HUES = ['#60A5FA', '#4ADE80', '#FBBF24', '#F472B6', '#A78BFA', '#22D3EE', '#FB923C', '#A3E635', '#E879F9', '#2DD4BF'];
+const STATE = {
+  ready: { color: '#4ADE80', text: 'ready' },
+  finished: { color: '#8C8CA0', text: 'finished' },
+  failed: { color: '#F87171', text: 'exited with code 1 · 11:41:58' },
+  restarting: { color: '#FBBF24', text: 'restarting · 3 of 5' },
+  starting: { color: '#60A5FA', text: 'starting · waiting for /health' },
+  building: { color: '#60A5FA', text: 'building' },
+  stopped: { color: '#6E6E82', text: 'stopped' },
+};
+const SCRIPT = {
+  api: (a) => [`info: Now listening on: http://localhost:${a.port}`, 'GET /health 200 in 0.4ms', `GET /${a.noun}/mug 200 in 1.9ms`, `GET /${a.noun}/pot 200 in 2.2ms`, `POST /${a.noun} 201 in 12.3ms`, 'info: Received HTTP response headers after 1.79ms - 200', `GET /${a.noun}?page=2 200 in 3.1ms`],
+  vite: (a) => [`VITE v6.0.3  ready in 412 ms`, `➜  Local:   http://localhost:${a.port}/`, 'hmr update /src/components/Cart.vue', 'page reload src/App.vue', 'hmr update /src/pages/Checkout.vue'],
+  worker: () => ['info: tick: 0 jobs due', 'info: ran rollup-hourly in 82ms', 'info: tick: 1 job due'],
+  flaky: () => ['info: connecting to broker localhost:9092', 'warn: broker localhost:9092 not ready (NOT_COORDINATOR)', 'warn: broker localhost:9092 not ready (NOT_COORDINATOR)', 'fail: gave up waiting for the broker after 20s', 'sprig: exited with code 134; restarting in 4s (3 of 5)'],
+  failing: () => ['info: Starting payments-api', 'warn: Npgsql: connection to localhost:8002 refused, retry 1 of 3', 'warn: Npgsql: connection to localhost:8002 refused, retry 2 of 3', 'fail: Npgsql.NpgsqlException: Failed to connect to 127.0.0.1:8002', '      at Payments.Api.Program.Main(String[] args) in Program.cs:line 31', 'sprig: exited with code 1 after 4.1s'],
+  job: (a) => a.name === 'migrate' ? ['Applying migration 0006_products_sku', 'Applying migration 0007_orders_email', 'Done: 7 migrations', 'sprig: finished (exit 0) in 1.2s'] : ['Seeding 40 products, 12 customers', 'sprig: finished (exit 0) in 3.4s'],
+  build: () => ['sprig: dotnet build src/Reports.Api', '  Determining projects to restore...', '  Reports.Domain -> bin/Debug/net10.0/Reports.Domain.dll'],
+  none: () => [],
+};
+const APPS = RAW.map(([repo, name, state, port, kind], i) => {
+  const a = { key: `${repo}/${name}`, repo, name, state, port, kind, color: HUES[i % HUES.length], noun: name.replace(/-api$/, '') + 's' };
+  a.script = SCRIPT[kind](a);
+  a.once = kind !== 'api' && kind !== 'vite' && kind !== 'worker';
+  return a;
+});
+const BY_KEY = Object.fromEntries(APPS.map((a) => [a.key, a]));
+const PROBLEM = (a) => a.state === 'failed' || a.state === 'restarting';
+const RUNNING = (a) => ['ready', 'starting', 'building', 'restarting'].includes(a.state);
+const FILTERS = {
+  all: () => true,
+  problems: PROBLEM,
+  running: RUNNING,
+  stopped: (a) => !RUNNING(a) && !PROBLEM(a),
+};
+
+const TRELLISES = [
+  { name: 'storefront', sprouts: [
+    { name: 'feat-a', state: 'up', sub: '18 of 20 running', branch: 'branch feat-a' },
+    { name: 'feat-b', state: 'up', sub: 'up · apps stopped', branch: 'branch feat-b' },
+    { name: 'demo-oct', state: 'failed', sub: "failed: port 8002 in use", branch: 'branch demo-oct' },
+    { name: 'feat-c', state: 'down', sub: '3 days ago', branch: 'branch feat-c' },
+    { name: 'hotfix-12', state: 'down', sub: '6 days ago', branch: 'branch hotfix-12' },
+    { name: 'spike-cache', state: 'down', sub: '2 weeks ago', branch: 'branch spike-cache' },
+  ] },
+  { name: 'services', sprouts: [
+    { name: 'local', state: 'up', sub: 'in place · 3 running', branch: 'repos in place' },
+  ] },
+  { name: 'analytics', sprouts: [
+    { name: 'ingest-perf', state: 'down', sub: '4 days ago', branch: 'branch ingest-perf' },
+    { name: 'q4-reports', state: 'down', sub: '3 weeks ago', branch: 'branch q4-reports' },
+  ] },
+];
+const SPROUT_DOT = { up: '#4ADE80', down: '#6E6E82', failed: '#F87171' };
+
+function level(text) {
+  if (text.startsWith('fail:') || /exited with code [1-9]/.test(text) || text.startsWith('      at ')) return 'error';
+  if (text.startsWith('warn:')) return 'warn';
+  if (text.startsWith('sprig:')) return 'sprig';
+  return 'info';
+}
+
+function clock(ms) {
+  const d = new Date(Date.UTC(2026, 10, 4, 11, 41, 30) + ms);
+  const p = (n, w = 2) => String(n).padStart(w, '0');
+  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(d.getUTCMilliseconds(), 3)}`;
+}
+
+const VIEW_DEFAULTS = { search: '', problemsOnly: false, follow: true, frozenAt: 0 };
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.counters = {};
+    this.lines = [];
+    this.scrollMem = {};
+    for (let i = 0; i < 160; i++) this.emit(i);
+    this.state = {
+      tick: 0, view: 'apps', filter: '', status: 'all', closed: {}, scope: 'list',
+      active: 'all', selected: 'shop-services/payments-api',
+      pinned: ['shop-services/orders-api', 'shop-services/payments-api', 'shop-web/web'],
+      views: {}, inspector: true,
+      sprout: 'storefront/feat-a', navClosed: { analytics: true }, downOpen: {},
+    };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      if (this.props.liveLines === false) return;
+      this.emit(this.lines.length);
+      this.setState({ tick: this.state.tick + 1 });
+    }, 900);
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (prevState.active !== this.state.active && this.logEl) this.logEl.scrollTop = this.scrollMem[this.state.active] || 0;
+  }
+
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  emit(i) {
+    const live = APPS.filter((a) => a.script.length && !(a.once && (this.counters[a.key] || 0) >= a.script.length));
+    if (!live.length) return;
+    const a = live[(i * 7 + Math.floor(i / 3)) % live.length];
+    const n = this.counters[a.key] || 0;
+    this.counters[a.key] = n + 1;
+    const text = a.script[n % a.script.length];
+    this.lines.push({ id: i, app: a.key, time: clock(i * 370), text, level: level(text) });
+  }
+
+  view(key) { return { ...VIEW_DEFAULTS, ...this.state.views[key] }; }
+
+  setView(patch) {
+    const key = this.state.active;
+    this.setState({ views: { ...this.state.views, [key]: { ...this.view(key), ...patch } } });
+  }
+
+  open(key) { this.setState({ active: key, selected: key, view: 'apps' }); }
+
+  togglePin(key) {
+    const p = this.state.pinned;
+    this.setState({ pinned: p.includes(key) ? p.filter((k) => k !== key) : [...p, key] });
+  }
+
+  row(a, inPinned) {
+    const s = this.state;
+    const st = STATE[a.state];
+    const active = a.key === s.active;
+    const pinned = s.pinned.includes(a.key);
+    return {
+      name: a.name, label: inPinned ? `${a.name}` : a.name,
+      port: a.port ?? (a.kind === 'job' ? 'job' : ''), dot: st.color, stateColor: st.color,
+      stateText: inPinned ? `${a.repo} · ${a.kind === 'job' && a.state === 'finished' ? 'finished' : st.text}`
+        : a.kind === 'job' && a.state === 'finished' ? (a.name === 'migrate' ? 'finished in 1.2s' : 'finished in 3.4s') : st.text,
+      weight: active ? 600 : 500, rowBg: active ? '#262633' : 'transparent', rowEdge: active ? '#60A5FA' : 'transparent',
+      pinned, pinClass: pinned ? 'on' : '', pinColor: pinned ? '#60A5FA' : '#8C8CA0', pinLabel: pinned ? `Unpin ${a.name}` : `Pin ${a.name}`,
+      pick: () => this.open(a.key), togglePin: () => this.togglePin(a.key),
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const q = s.filter.trim().toLowerCase();
+    const visible = APPS.filter((a) => FILTERS[s.status](a) && (!q || a.key.includes(q)));
+    const visibleKeys = new Set(visible.map((a) => a.key));
+    const pinnedApps = s.pinned.map((k) => BY_KEY[k]);
+
+    const repos = [...new Set(APPS.map((a) => a.repo))];
+    const groups = repos.map((repo) => {
+      const all = APPS.filter((a) => a.repo === repo);
+      const shown = all.filter((a) => visibleKeys.has(a.key));
+      const bad = all.filter(PROBLEM).length;
+      const open = !s.closed[repo] || q.length > 0;
+      return {
+        name: repo.toUpperCase(), open, chevron: open ? '▾' : '▸',
+        caption: bad ? `${bad} need attention` : `${all.filter((a) => a.state === 'ready').length} of ${all.length} ready`,
+        captionColor: bad ? '#F87171' : '#8C8CA0',
+        toggle: () => this.setState({ closed: { ...s.closed, [repo]: !s.closed[repo] } }),
+        apps: shown.map((a) => this.row(a, false)),
+      };
+    }).filter((g) => g.apps.length > 0);
+    const anyOpen = repos.some((r) => !s.closed[r]);
+
+    const count = (f) => APPS.filter(f).length;
+    const summary = [
+      { id: 'all', label: `All ${APPS.length}`, dot: '#8C8CA0' },
+      { id: 'running', label: `${count((a) => a.state === 'ready')} ready`, dot: '#4ADE80' },
+      { id: 'problems', label: `${count(PROBLEM)} need attention`, dot: '#F87171' },
+      { id: 'stopped', label: `${count(FILTERS.stopped)} stopped or done`, dot: '#6E6E82' },
+    ].map((c) => ({ ...c, on: s.status === c.id, bg: s.status === c.id ? '#262633' : 'transparent', border: s.status === c.id ? '#60A5FA' : '#2D2D3C', pick: () => this.setState({ status: c.id }) }));
+
+    const allActive = s.active === 'all';
+    const streamKeys = s.scope === 'pinned' ? new Set(s.pinned) : visibleKeys;
+    const v = this.view(s.active);
+    const source = v.follow ? this.lines : this.lines.slice(0, v.frozenAt);
+    const term = v.search.trim().toLowerCase();
+    const lines = source
+      .filter((l) => (allActive ? streamKeys.has(l.app) : l.app === s.active))
+      .filter((l) => !v.problemsOnly || l.level === 'error' || l.level === 'warn')
+      .filter((l) => !term || l.text.toLowerCase().includes(term))
+      .slice(-500)
+      .map((l) => {
+        const a = BY_KEY[l.app];
+        return {
+          time: l.time, app: a.name, text: l.text, color: a.color,
+          fg: l.level === 'error' ? '#F87171' : l.level === 'warn' ? '#FBBF24' : l.level === 'sprig' ? '#8C8CA0' : '#E1E1EB',
+          bg: l.level === 'error' ? 'rgba(248,113,113,.08)' : 'transparent',
+          pick: () => this.open(a.key),
+        };
+      });
+
+    const one = allActive ? null : BY_KEY[s.active];
+    const sa = BY_KEY[s.selected];
+    const ss = STATE[sa.state];
+    const sub = ['shop-services', 'shop-analytics', 'shop-gateway'].includes(sa.repo)
+      ? (sa.kind === 'job' ? `tools/${sa.name[0].toUpperCase()}${sa.name.slice(1)}` : `src/${sa.name.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join('.')}`)
+      : '.';
+    const sel = {
+      repo: sa.repo, name: sa.name, stateColor: ss.color, stateText: ss.text,
+      url: sa.port ? `http://localhost:${sa.port}` : 'none (no endpoint)',
+      folder: `~/src/sprig-testbed/storefront--feat-a/${sa.repo}/${sub}`.replace(/\/\.$/, ''),
+      values: sa.kind === 'vite' ? '.env.local' : sa.kind === 'job' ? `none; sprig env storefront feat-a ${sa.name}` : 'Properties/launchSettings.json',
+      after: sa.repo === 'shop-services' && sa.kind !== 'job' ? 'migrate, seed, postgres' : sa.repo === 'shop-web' ? 'gateway, catalog-api' : 'nothing',
+      ready: sa.port && sa.kind !== 'vite' ? 'http answers /health' : 'it starts',
+      restarts: sa.state === 'restarting' ? '3 in a row (gives up after 5)' : sa.state === 'failed' ? 'none: it exited during start-up' : '0',
+      logFile: `logs/storefront/feat-a/${sa.key}.log`,
+      env: sa.kind === 'vite'
+        ? [{ k: 'PORT', v: String(sa.port), via: `${sa.name}.http port` }, { k: 'VITE_API_URL', v: 'http://localhost:8102', via: 'import bff-url ← shop-gateway' }, { k: 'VITE_BRANCH_FLAG', v: 'on', via: 'set in sprig.cs' }]
+        : [{ k: 'ASPNETCORE_URLS', v: sa.port ? `http://localhost:${sa.port}` : '(none)', via: `${sa.name}.http port` }, { k: 'ConnectionStrings__Db', v: 'Host=localhost;Port=8002;Password=***', via: 'postgres.tcp port 8002' }, { k: 'Mail__Smtp', v: 'smtp://localhost:8011', via: 'import mail-smtp ← storefront' }, { k: 'Catalog__Url', v: 'http://localhost:8000', via: 'import catalog-url ← shop-services' }],
+    };
+
+    const trellises = TRELLISES.map((t) => {
+      const item = (x) => {
+        const key = `${t.name}/${x.name}`;
+        const current = key === s.sprout;
+        return { name: x.name, sub: x.sub, dot: SPROUT_DOT[x.state], current, bg: current ? 'rgba(96,165,250,0.15)' : 'transparent', pick: () => this.setState({ sprout: key }) };
+      };
+      const shown = t.sprouts.filter((x) => x.state !== 'down').map(item);
+      const down = t.sprouts.filter((x) => x.state === 'down').map(item);
+      const open = !s.navClosed[t.name];
+      const downOpen = !!s.downOpen[t.name];
+      const up = t.sprouts.filter((x) => x.state === 'up').length;
+      const failed = t.sprouts.filter((x) => x.state === 'failed').length;
+      return {
+        label: t.name.toUpperCase(), open, chevron: open ? '▾' : '▸',
+        caption: failed ? `${up} up · ${failed} failed` : up ? `${up} up · ${t.sprouts.length}` : `${t.sprouts.length} down`,
+        captionColor: failed ? '#F87171' : up ? '#4ADE80' : '#8C8CA0',
+        toggle: () => this.setState({ navClosed: { ...s.navClosed, [t.name]: open } }),
+        shown, down, hasDown: down.length > 0, downOpen,
+        downLabel: downOpen ? `Hide ${down.length} down` : `${down.length} down`,
+        toggleDown: () => this.setState({ downOpen: { ...s.downOpen, [t.name]: !downOpen } }),
+      };
+    });
+    const [trellisName, sproutName] = s.sprout.split('/');
+    const sproutInfo = TRELLISES.find((t) => t.name === trellisName).sprouts.find((x) => x.name === sproutName);
+
+    const what = s.status === 'all' ? `${visible.length} apps` : `${visible.length} apps (${summary.find((c) => c.id === s.status).label.replace(/^\d+ /, '')})`;
+    return {
+      sproutsCount: String(TRELLISES.reduce((n, t) => n + t.sprouts.length, 0)),
+      trellises,
+      sproutTitle: `${trellisName} / ${sproutName}`,
+      sproutState: sproutInfo.state, sproutStateColor: SPROUT_DOT[sproutInfo.state], sproutBranch: sproutInfo.branch,
+      summary,
+      onApps: s.view === 'apps', onOverview: s.view === 'overview',
+      showApps: () => this.setState({ view: 'apps' }), showOverview: () => this.setState({ view: 'overview' }),
+      appsTabLine: s.view === 'apps' ? '#60A5FA' : 'transparent', appsTabFg: s.view === 'apps' ? '#F5F5FA' : '#8C8CA0',
+      overviewTabLine: s.view === 'overview' ? '#60A5FA' : 'transparent', overviewTabFg: s.view === 'overview' ? '#F5F5FA' : '#8C8CA0',
+      filter: s.filter, onFilter: (e) => this.setState({ filter: e.target.value }),
+      listCaption: `Showing ${what}`,
+      groupToggleLabel: anyOpen ? 'Collapse repos' : 'Expand repos',
+      toggleAllGroups: () => this.setState({ closed: anyOpen ? Object.fromEntries(repos.map((r) => [r, true])) : {} }),
+      groups,
+      hasPinned: pinnedApps.length > 0, pinnedRows: pinnedApps.map((a) => this.row(a, true)),
+      pinnedCaption: `${pinnedApps.length} · hover a row to pin`,
+      pinnedCount: String(pinnedApps.length),
+      allActive, oneActive: !allActive, allCount: String(visible.length), showAll: () => this.setState({ active: 'all' }),
+      allRowBg: allActive ? '#262633' : 'transparent', allRowEdge: allActive ? '#60A5FA' : 'transparent',
+      allRowCaption: s.scope === 'pinned' ? 'pinned apps, interleaved' : 'every app in the list, interleaved',
+      scopeList: s.scope === 'list', scopePinned: s.scope === 'pinned',
+      scopeListBg: s.scope === 'list' ? '#2D2D3C' : 'transparent', scopePinnedBg: s.scope === 'pinned' ? '#2D2D3C' : 'transparent',
+      scopeToList: () => this.setState({ scope: 'list' }), scopeToPinned: () => this.setState({ scope: 'pinned' }),
+      logTitle: allActive ? 'All apps' : `${one.repo} / ${one.name}`,
+      logSub: allActive ? (s.scope === 'pinned' ? `${pinnedApps.length} pinned apps. Click a name to open its own log.` : `${visible.length} apps, the ones the list shows. Click a name to open its own log.`) : STATE[one.state].text,
+      logSubColor: allActive ? '#8C8CA0' : STATE[one.state].color,
+      mainAction: one && RUNNING(one) ? 'Restart' : 'Start',
+      prefixCol: allActive ? '110px' : '0px',
+      search: v.search, onSearch: (e) => this.setView({ search: e.target.value }),
+      problemsOnly: v.problemsOnly, toggleProblems: () => this.setView({ problemsOnly: !v.problemsOnly }),
+      problemsBg: v.problemsOnly ? '#3A2F12' : 'transparent', problemsBorder: v.problemsOnly ? '#FBBF24' : '#2D2D3C',
+      rememberNote: 'Kept per log: search, filter, pause and where you scrolled to.',
+      inspectorOpen: s.inspector, toggleInspector: () => this.setState({ inspector: !s.inspector }),
+      inspectorBg: s.inspector ? '#262633' : 'transparent', inspectorBorder: s.inspector ? '#60A5FA' : '#2D2D3C',
+      lines, noLines: lines.length === 0,
+      emptyText: term ? `No lines match "${v.search}".` : allActive && s.scope === 'pinned' && !pinnedApps.length ? 'Pin apps in the list to stream just those.' : 'Nothing logged yet.',
+      logRef: (el) => { this.logEl = el; },
+      onLogScroll: (e) => {
+        const st = e.currentTarget.scrollTop;
+        this.scrollMem[s.active] = st;
+        const away = st < -24;
+        if (away && v.follow) this.setView({ follow: false, frozenAt: this.lines.length });
+        if (!away && !v.follow) this.setView({ follow: true });
+      },
+      paused: !v.follow, newCount: String(this.lines.length - v.frozenAt),
+      jumpToLatest: () => { this.setView({ follow: true }); this.scrollMem[s.active] = 0; if (this.logEl) this.logEl.scrollTop = 0; },
+      sel,
+      infra: [
+        { name: 'storefront / mail', ports: '8011:1025, 8012:8025', state: 'up', color: '#4ADE80' },
+        { name: 'shop-services / postgres', ports: '8002:5432', state: 'healthy', color: '#4ADE80' },
+        { name: 'shop-services / redis', ports: '8007:6379', state: 'up', color: '#4ADE80' },
+        { name: 'shop-analytics / kafka', ports: '9092:9092', state: 'starting', color: '#60A5FA' },
+      ],
+      worktrees: repos.map((r) => ({ repo: r, folder: `~/src/sprig-testbed/storefront--feat-a/${r}`, status: r === 'shop-web' ? '2 changed' : 'clean', color: r === 'shop-web' ? '#FBBF24' : '#4ADE80' })),
+      files: [
+        { path: 'shop-web/.env.local', what: 'sprig block: PORT, 2 urls', ignored: 'ignored by the repo' },
+        { path: 'shop-services/src/Catalog.Api/Properties/launchSettings.json', what: 'sprig launch profile', ignored: 'ignored by the repo' },
+        { path: 'shop-services/src/Orders.Api/appsettings.Local.json', what: '4 values', ignored: 'ignored by the repo' },
+        { path: 'shop-mobile/.env.local', what: 'sprig block: PORT, 1 url', ignored: 'ignored by the repo' },
+        { path: 'shop-gateway/appsettings.Local.json', what: '6 values', ignored: 'ignored by the repo' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

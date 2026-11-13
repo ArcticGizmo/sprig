@@ -10,7 +10,7 @@
     <Product>Sprig</Product>
     <Company>Sprig</Company>
     <Description>Worktree + infrastructure isolation for any git repo.</Description>
-    <Version>0.8.2</Version>
+    <Version>0.9.0</Version>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\sprig.ico</ApplicationIcon>
@@ -42,17 +42,20 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.5" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
     <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
     <PackageReference Include="Avalonia.Headless" Version="12.0.5" />
+    <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Msagl" Version="1.1.6" />
+    <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
     <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sprig.Core\Sprig.Core.csproj" />
+    <ProjectReference Include="..\Sprig.Engine\Sprig.Engine.csproj" />
+    <ProjectReference Include="..\Sprig.Host\Sprig.Host.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

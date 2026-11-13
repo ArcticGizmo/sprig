@@ -1,0 +1,4 @@
+<Project>
+  <!-- Stops the testbed apps inheriting sprig's own build settings (warnings as errors) when built in place. The
+       generated repos don't have this file and behave like any standalone repo. -->
+</Project>

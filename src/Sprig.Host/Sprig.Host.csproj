@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Runs a store's apps in the background, so they keep running when the CLI exits or the app's window closes, and
+       the CLI and the app see the same runners. Started on demand by either; spoken to over a named pipe. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>sprig-host</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sprig.Engine\Sprig.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

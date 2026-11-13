@@ -2,7 +2,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Sprig.App.Changelog;
-using Sprig.Core.Changelog;
+using Sprig.Engine.Changelog;
 
 namespace Sprig.App.Views;
 

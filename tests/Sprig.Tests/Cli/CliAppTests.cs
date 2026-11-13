@@ -1,725 +1,152 @@
 using Sprig.Cli;
-using Sprig.Core.Stacks;
-using Sprig.Core.Store;
 
 namespace Sprig.Tests.Cli;
 
-// Console capture swaps the process-global Console.Out/Error, so this collection must not run in
-// parallel with anything else that writes to the console.
-[CollectionDefinition("cli-console", DisableParallelization = true)]
-public sealed class CliConsoleCollection { }
-
-/// <summary>End-to-end dispatch tests: drive <see cref="CliApp"/> through its internal
-/// (args, ISprigPaths) seam against a throwaway store and assert on exit code + captured output.</summary>
 [Collection("cli-console")]
-public sealed class CliAppTests : IDisposable
+public class CliAppTests
 {
-    readonly string _root;
-    readonly SprigPaths _paths;
-
-    public CliAppTests()
+    static (int code, string stdout, string stderr) Run(params string[] args)
     {
-        _root = Path.Combine(Path.GetTempPath(), "sprig-cli-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_root);
-        _paths = new SprigPaths(_root);
+        using var store = new TempStore();
+        return Run(store, args);
     }
 
-    public void Dispose()
+    static (int code, string stdout, string stderr) Run(TempStore store, params string[] args)
     {
-        try { Directory.Delete(_root, recursive: true); } catch { /* best-effort temp cleanup */ }
-    }
-
-    (int exit, string @out, string err) Run(params string[] args)
-    {
-        var outW = new StringWriter();
-        var errW = new StringWriter();
         var (prevOut, prevErr) = (Console.Out, Console.Error);
-        Console.SetOut(outW);
-        Console.SetError(errW);
-        try { return (CliApp.Run(args, _paths), outW.ToString(), errW.ToString()); }
-        finally { Console.SetOut(prevOut); Console.SetError(prevErr); }
-    }
-
-    // Register a repo with the minimum a stack needs: a directory holding a valid .sprig.json.
-    void SeedRepo(string name)
-    {
-        var dir = Path.Combine(_root, "repos", name);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"),
-            $$"""{ "schema": 1, "name": "{{name}}", "modules": [] }""");
-        new RepoRegistryStore(_paths).Add(dir, name);
-    }
-
-    // Write a workspace record whose repos have real on-disk worktrees (so `cd` finds them), each with an
-    // optional .sprig.json declaring modules. `modules` maps repo name → module (name, path) pairs.
-    void SeedWorkspace(string workspace, params string[] repos)
-        => SeedWorkspace(workspace, repos, modules: null);
-
-    void SeedWorkspace(string workspace, string[] repos,
-        IReadOnlyDictionary<string, (string Name, string Path)[]>? modules)
-    {
-        var instanceRepos = new List<InstanceRepo>();
-        foreach (var name in repos)
+        var (stdout, stderr) = (new StringWriter(), new StringWriter());
+        Console.SetOut(stdout);
+        Console.SetError(stderr);
+        try
         {
-            var worktree = Path.Combine(_root, "worktrees", $"{name}--{workspace}");
-            Directory.CreateDirectory(worktree);
-            var mods = modules is not null && modules.TryGetValue(name, out var m) ? m : [];
-            var modJson = string.Join(",", mods.Select(x =>
-                $$"""{ "name": "{{x.Name}}", "path": "{{x.Path}}" }"""));
-            File.WriteAllText(Path.Combine(worktree, ".sprig.json"),
-                $$"""{ "schema": 1, "name": "{{name}}", "modules": [{{modJson}}] }""");
-            foreach (var mod in mods.Where(x => x.Path.Length > 0))
-                Directory.CreateDirectory(Path.Combine(worktree, mod.Path.Replace('/', Path.DirectorySeparatorChar)));
-            instanceRepos.Add(new InstanceRepo { Name = name, SourcePath = worktree, WorktreePath = worktree });
+            var code = CliApp.Run(args, store.Paths);
+            return (code, stdout.ToString(), stderr.ToString());
         }
-        new InstanceStore(_paths).Save(new InstanceRecord { Workspace = workspace, Repos = instanceRepos });
+        finally
+        {
+            Console.SetOut(prevOut);
+            Console.SetError(prevErr);
+        }
     }
 
     [Fact]
-    public void Version_prints_and_exits_zero()
+    public void Help_lists_only_the_commands_this_build_has()
     {
-        var (exit, o, _) = Run("--version");
-        Assert.Equal(0, exit);
-        Assert.False(string.IsNullOrWhiteSpace(o));
+        var (code, stdout, _) = Run("--help");
+
+        Assert.Equal(0, code);
+        Assert.Contains("open", stdout);
+        Assert.Contains("update", stdout);
+        Assert.Contains("shell", stdout);
+        Assert.DoesNotContain("pool", stdout);
+        Assert.DoesNotContain("map", stdout);
     }
 
     [Fact]
-    public void Unknown_command_exits_one()
+    public void Ps_with_nothing_running_says_how_to_start_something()
     {
-        var (exit, _, err) = Run("wibble");
-        Assert.Equal(1, exit);
-        Assert.Contains("Unknown command", err);
+        var (code, stdout, stderr) = Run("ps");
+
+        Assert.Equal(0, code);
+        Assert.Contains("sprig start [id] [workspace]", stdout);
+        Assert.Empty(stderr);
     }
 
     [Fact]
-    public void Ls_on_empty_store_is_friendly()
+    public void An_unknown_command_fails_with_exit_code_1_and_a_json_error_when_asked()
     {
-        var (exit, o, _) = Run("ws", "ls");
-        Assert.Equal(0, exit);
-        Assert.Contains("no workspaces", o);
+        var (code, stdout, _) = Run("ws", "ls", "--json");
+
+        Assert.Equal(1, code);
+        Assert.Contains("\"ok\": false", stdout);
     }
 
     [Fact]
-    public void Ls_json_on_empty_store_is_an_empty_array()
+    public void Repos_are_added_copied_into_sprig_and_removed_from_the_command_line_and_adding_twice_is_harmless()
     {
-        var (exit, o, _) = Run("ws", "ls", "--json");
-        Assert.Equal(0, exit);
-        Assert.Equal("[]", o.Trim());
+        using var store = new TempStore();
+        var web = Path.Combine(store.Root, "src", "shop-web");
+        var mobile = Path.Combine(store.Root, "src", "shop-mobile");
+        Directory.CreateDirectory(web);
+        Directory.CreateDirectory(mobile);
+        File.WriteAllText(Path.Combine(web, "sprig.yaml"), "// shop-web's own");
+        File.WriteAllText(Path.Combine(mobile, "package.json"), """{ "name": "mobile", "scripts": { "dev": "vite" } }""");
+        var stored = new Sprig.Engine.Definitions.StoredDefinitions(store.Paths);
+
+        Assert.Equal(0, Run(store, "repo", "add", web).code);
+        Assert.Equal(0, Run(store, "repo", "add", web).code);
+        Assert.Equal(0, Run(store, "repo", "add", web, "--id", "shop-web").code);
+        Assert.Equal(1, Run(store, "repo", "add", web, "--id", "web-again").code);
+        Assert.Equal(0, Run(store, "repo", "add", mobile, "--id", "mobile").code);
+        Assert.Equal(0, Run(store, "repo", "copy", "shop-web", "--id", "web-sprig").code);
+        File.WriteAllText(stored.CopyFile("web-sprig"), "// edited in sprig");
+        Assert.Equal(0, Run(store, "repo", "copy", "shop-web", "--id", "web-sprig").code);
+
+        Assert.Equal(["mobile", "shop-web", "web-sprig"], stored.Repos().Select(e => e.Id));
+        Assert.True(stored.Repo("shop-web")!.InRepo);
+        Assert.False(stored.Repo("mobile")!.InRepo);
+        Assert.True(File.Exists(stored.CopyFile("mobile")));
+        Assert.Equal("// edited in sprig", File.ReadAllText(stored.CopyFile("web-sprig")));
+        Assert.Contains("\"inRepo\": false", Run(store, "repo", "ls", "--json").stdout);
+
+        // A repo an orchestration uses stays unless removal is forced.
+        var orchestration = Path.Combine(store.Root, "src", "shop.orchestration.yaml");
+        File.WriteAllText(orchestration, "schema: 1\norchestration: shop\nrepos:\n  web: { use: web-sprig }\n");
+        new Sprig.Engine.Orchestrations.OrchestrationRegistry(store.Paths).Add("shop", orchestration);
+        var (refused, _, why) = Run(store, "repo", "rm", "web-sprig");
+        Assert.Equal(1, refused);
+        Assert.Contains("used by shop", why);
+        Assert.Equal(0, Run(store, "repo", "rm", "web-sprig", "--force").code);
+        Assert.Null(stored.Repo("web-sprig"));
+        Assert.True(File.Exists(Path.Combine(web, "sprig.yaml")));
+
+        // --in-sprig keeps a copy of the folder's own file, even with that file already listed.
+        Assert.Equal(0, Run(store, "repo", "add", web, "--in-sprig").code);
+        Assert.Equal("// shop-web's own", File.ReadAllText(stored.Repo("shop-web-sprig")!.DefinitionFile));
     }
 
     [Fact]
-    public void Unknown_flag_is_rejected()
+    public void Init_drafts_a_definition_kept_in_sprig_or_written_into_the_folder_and_running_it_twice_is_harmless()
     {
-        // Strict parsing: a typo'd flag fails loudly rather than being silently ignored.
-        var (exit, _, err) = Run("ws", "ls", "--bogus");
-        Assert.Equal(1, exit);
-        Assert.Contains("Unknown option", err);
+        using var store = new TempStore();
+        var web = Path.Combine(store.Root, "src", "shop-web");
+        var api = Path.Combine(store.Root, "src", "api");
+        Directory.CreateDirectory(web);
+        Directory.CreateDirectory(api);
+        File.WriteAllText(Path.Combine(web, "package.json"), """{ "name": "web", "scripts": { "dev": "vite" } }""");
+        File.WriteAllText(Path.Combine(api, "package.json"), """{ "name": "api", "scripts": { "dev": "node server.js" } }""");
+        var stored = new Sprig.Engine.Definitions.StoredDefinitions(store.Paths);
+
+        var (code, stdout, _) = Run(store, "init", web, "--json");
+        Assert.Equal(0, code);
+        Assert.Contains("\"existed\": false", stdout);
+        Assert.False(stored.Repo("shop-web")!.InRepo);
+        Assert.False(File.Exists(Path.Combine(web, "sprig.yaml")));
+        Assert.Contains("\"existed\": true", Run(store, "init", web, "--json").stdout);
+
+        Assert.Equal(0, Run(store, "init", api, "--in-repo").code);
+        Assert.True(stored.Repo("api")!.InRepo);
+        Assert.Contains("run: node", File.ReadAllText(Path.Combine(api, "sprig.yaml")));
+        // Sprig wrote it, so it runs without asking.
+        Assert.Equal(Sprig.Engine.Definitions.TrustState.Trusted, new Sprig.Engine.Definitions.FileTrustStore(store.Paths)
+            .Check(Path.Combine(api, "sprig.yaml"), Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(Path.Combine(api, "sprig.yaml")))).State);
     }
 
     [Fact]
-    public void Workspace_verbs_are_only_under_ws()
+    public void Up_without_an_id_outside_any_listed_repo_says_to_init()
     {
-        // The verbs were removed from the top level to keep it uncluttered — a bare `ls` is now unknown,
-        // while `ws ls` is the one true home.
-        Assert.Equal(1, Run("ls").exit);
-        Assert.Equal(0, Run("ws", "ls").exit);
+        var (code, _, stderr) = Run("up");
+
+        Assert.Equal(1, code);
+        Assert.Contains("sprig init", stderr);
     }
 
     [Fact]
-    public void Ws_with_no_verb_shows_its_workspace_verbs()
+    public void A_bad_value_for_set_is_refused_before_anything_runs()
     {
-        // The `ws` branch on its own prints its command list (Spectre help) rather than running a verb.
-        var (_, o, _) = Run("ws");
-        Assert.Contains("COMMANDS", o);
-        Assert.Contains("create", o);
-        Assert.Contains("reconcile", o);
-    }
+        var (code, _, stderr) = Run("up", "shop-web", "--set", "no-equals-sign");
 
-    [Fact]
-    public void Ws_create_without_a_name_fails()
-    {
-        // The name argument is optional (so -i can omit it), but a non-interactive create still needs one.
-        var (exit, _, err) = Run("ws", "create");
-        Assert.Equal(1, exit);
-        Assert.Contains("requires a workspace name", err);
-    }
-
-    [Fact]
-    public void Interactive_create_rejects_json()
-    {
-        // -i drives prompts; pairing it with the machine-output flag is nonsense, so it's refused up front.
-        var (exit, o, _) = Run("ws", "create", "-i", "--json");
-        Assert.Equal(1, exit);
-        Assert.Contains("\"ok\": false", o);
-    }
-
-    [Fact]
-    public void Interactive_create_refuses_without_a_terminal()
-    {
-        // Under the test host stdin isn't a terminal, so -i must bail (never block waiting on a prompt).
-        var (exit, _, _) = Run("ws", "create", "-i");
-        Assert.Equal(1, exit);
-    }
-
-    [Fact]
-    public void Ws_rejects_a_non_workspace_verb()
-    {
-        // `pool` is a top-level namespace, not a workspace verb, so it's unknown under `ws`.
-        var (exit, _, err) = Run("ws", "pool");
-        Assert.Equal(1, exit);
-        Assert.Contains("Unknown command", err);
-    }
-
-    [Fact]
-    public void The_stack_namespace_is_gone()
-    {
-        // Stacks were retired (the Graph Turn) — `stack` is no longer a command.
-        var (exit, _, err) = Run("stack", "ls");
-        Assert.Equal(1, exit);
-        Assert.Contains("Unknown command", err);
-    }
-
-    [Theory]
-    [InlineData("map", "import")]
-    [InlineData("repo", "add")]
-    [InlineData("settings", "set")]
-    public void Namespace_help_lists_its_own_subcommands(string ns, string marker)
-    {
-        var (exit, o, _) = Run(ns, "--help");
-        Assert.Equal(0, exit);
-        Assert.Contains("COMMANDS", o);    // Spectre's hierarchical help for the branch
-        Assert.Contains(marker, o);        // one of the branch's own subcommands
-        Assert.Contains($"sprig {ns}", o); // the USAGE line names the namespace (plain when redirected)
-    }
-
-    [Fact]
-    public void Namespace_help_does_not_run_the_default_subcommand()
-    {
-        // `map --help` prints the branch help; it must not fall through to a subcommand.
-        var (exit, o, _) = Run("map", "--help");
-        Assert.Equal(0, exit);
-        Assert.Contains("COMMANDS", o);
-        Assert.DoesNotContain("no maps defined", o);
-    }
-
-    [Fact]
-    public void Rm_refuses_without_yes()
-    {
-        var (exit, _, err) = Run("ws", "rm", "nope");
-        Assert.Equal(1, exit);
-        Assert.Contains("--yes", err);
-    }
-
-    [Fact]
-    public void Interactive_rm_rejects_json()
-    {
-        var (exit, o, _) = Run("ws", "rm", "-i", "--json");
-        Assert.Equal(1, exit);
-        Assert.Contains("\"ok\": false", o);
-    }
-
-    [Fact]
-    public void Interactive_rm_refuses_without_a_terminal()
-    {
-        // stdin isn't a terminal under the test host, so -i must bail rather than block on a prompt.
-        var (exit, _, _) = Run("ws", "rm", "-i");
-        Assert.Equal(1, exit);
-    }
-
-    // -i and --ni are opposites. Asserting on "opposites" (not "Unknown option") also proves --ni is a
-    // registered flag on each command — the shared Interactivity rule is wired in everywhere.
-    [Theory]
-    [InlineData("create")]
-    [InlineData("rm")]
-    public void Ws_verb_rejects_i_and_ni_together(string verb)
-    {
-        var (exit, _, err) = Run("ws", verb, "-i", "--ni");
-        Assert.Equal(1, exit);
-        Assert.Contains("opposites", err);
-    }
-
-    [Fact]
-    public void Settings_roundtrip_through_show_json()
-    {
-        Assert.Equal(0, Run("settings", "set", "--start", "7000", "--end", "7500", "--restrict", "7100,7200").exit);
-        var (exit, o, _) = Run("settings", "show", "--json");
-        Assert.Equal(0, exit);
-        Assert.Contains("\"portRangeStart\": 7000", o);
-        Assert.Contains("7100", o);
-    }
-
-    [Fact]
-    public void Settings_accepts_equals_form_and_reports_validation_errors_as_json()
-    {
-        Assert.Equal(0, Run("settings", "set", "--start=8000", "--end=9000").exit);
-        var (exit, o, _) = Run("settings", "set", "--start", "9000", "--end", "8000", "--json");
-        Assert.Equal(1, exit);
-        Assert.Contains("\"ok\": false", o);
-    }
-
-    // Seed a map (in the central store) referencing the given already-registered repos.
-    void SeedMap(string name, params string[] repos)
-        => new Sprig.Core.Maps.MapStore(_paths, new RepoRegistryStore(_paths))
-            .Save(new Sprig.Core.Maps.MapDefinition
-            {
-                Name = name,
-                Repos = repos.Select(Sprig.Core.Maps.MapRepo.Local).ToList(),
-            });
-
-    [Fact]
-    public void Pool_status_of_a_fresh_map_reports_the_empty_pool()
-    {
-        SeedRepo("alpha");
-        SeedMap("demo", "alpha");
-
-        var (exit, o, _) = Run("pool", "status", "demo");
-        Assert.Equal(0, exit);
-        Assert.Contains("demo", o);
-        Assert.Contains("no workspaces yet", o);
-    }
-
-    [Fact]
-    public void Pool_status_of_an_unknown_map_fails()
-    {
-        var (exit, _, err) = Run("pool", "status", "ghost");
-        Assert.Equal(1, exit);
-        Assert.Contains("unknown map", err);
-    }
-
-    void SeedRepoConfig(string name, string json)
-    {
-        var dir = Path.Combine(_root, "repos", name);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".sprig.json"), json);
-        new RepoRegistryStore(_paths).Add(dir, name);
-    }
-
-    void SeedHubAndGap()
-    {
-        SeedRepoConfig("auth", """
-            { "schema": 1, "name": "auth",
-              "provides": [ { "capability": "auth-api", "ports": { "port": true }, "shapes": { "url": "http://localhost:${sprig.auth-api.port}" } } ] }
-            """);
-        SeedRepoConfig("billing", """
-            { "schema": 1, "name": "billing",
-              "needs": [ { "capability": "auth-api" }, { "capability": "payments" } ],
-              "env": [ { "file": ".env", "set": { "AUTH_URL": "${sprig.auth-api.url}", "PAY_URL": "${sprig.payments.url}", "MAIL_HOST": "localhost:1025" } } ] }
-            """);
-        SeedRepoConfig("catalog", """
-            { "schema": 1, "name": "catalog", "needs": [ { "capability": "auth-api" } ] }
-            """);
-        SeedMap("store", "auth", "billing", "catalog");
-    }
-
-    [Fact]
-    public void Map_show_reports_hubs_gaps_fixed_values_and_the_fix()
-    {
-        SeedHubAndGap();
-
-        var (exit, o, _) = Run("map", "show", "store");
-
-        Assert.Equal(0, exit);
-        Assert.Contains("1 need can't be met", o);
-        Assert.Contains("payments", o);
-        Assert.Contains("unmet", o);
-        Assert.Contains("auth › app", o);
-        Assert.Contains("2 modules", o);
-        Assert.Contains("MAIL_HOST = localhost:1025", o);
-        Assert.Contains("sprig map constant store billing payments url=<value>", o);
-    }
-
-    [Fact]
-    public void Map_check_fails_until_the_gap_has_a_constant()
-    {
-        SeedHubAndGap();
-
-        var (exit, o, _) = Run("map", "check", "store");
-        Assert.Equal(1, exit);
-        Assert.Contains("payments", o);
-
-        var (setExit, _, setErr) = Run("map", "default", "store", "billing", "payments", "url=https://pay.sandbox.test");
-        Assert.True(setExit == 0, setErr);
-
-        var (after, o2, _) = Run("map", "check", "store");
-        Assert.Equal(0, after);
-        Assert.Contains("every need is met", o2);
-    }
-
-    [Fact]
-    public void Map_check_json_names_the_state_of_each_need()
-    {
-        SeedHubAndGap();
-
-        var (exit, o, _) = Run("map", "check", "store", "--json");
-
-        Assert.Equal(1, exit);
-        Assert.Contains("\"ok\": false", o);
-        Assert.Contains("\"State\": \"gap\"", o);
-        Assert.Contains("\"State\": \"wired\"", o);
-    }
-
-    [Fact]
-    public void Map_wire_settles_two_providers_and_rm_removes_it()
-    {
-        SeedRepoConfig("a", """{ "schema": 1, "name": "a", "provides": [ { "capability": "cache", "ports": { "port": true } } ] }""");
-        SeedRepoConfig("b", """{ "schema": 1, "name": "b", "provides": [ { "capability": "cache", "ports": { "port": true } } ] }""");
-        SeedRepoConfig("web", """{ "schema": 1, "name": "web", "needs": [ { "capability": "cache" } ] }""");
-        SeedMap("m", "a", "b", "web");
-
-        var (before, o, _) = Run("map", "check", "m");
-        Assert.Equal(1, before);
-        Assert.Contains("sprig map wire m web cache a/cache", o);
-
-        Assert.Equal(0, Run("map", "wire", "m", "web", "cache", "b/cache").exit);
-        Assert.Equal(0, Run("map", "check", "m").exit);
-
-        Assert.Equal(0, Run("map", "wire", "m", "web", "cache", "--rm").exit);
-        Assert.Equal(1, Run("map", "check", "m").exit);
-    }
-
-    [Fact]
-    public void Map_default_rejects_a_value_without_an_output_name()
-    {
-        SeedHubAndGap();
-        var (exit, _, err) = Run("map", "default", "store", "billing", "payments", "https://pay.sandbox.test");
-        Assert.Equal(1, exit);
-        Assert.Contains("output=value", err);
-    }
-
-    [Fact]
-    public void Map_ls_lists_defined_maps()
-    {
-        SeedRepo("alpha");
-        SeedMap("demo", "alpha");
-
-        var (exit, o, _) = Run("map", "ls");
-        Assert.Equal(0, exit);
-        Assert.Contains("demo", o);
-        Assert.Contains("alpha", o);
-    }
-
-    [Fact]
-    public void Create_without_a_map_or_repo_fails()
-    {
-        var (exit, _, err) = Run("ws", "create", "feat");
-        Assert.Equal(1, exit);
-        Assert.Contains("--map", err);
-    }
-
-    // `sprig path` owns the resolution (workspace → repo → module) and prints the directory; `sprig cd`
-    // is the window-opening front-end over the same resolver. Resolution is exercised here against `path`
-    // so nothing spawns a terminal window under test.
-
-    [Fact]
-    public void Path_single_repo_resolves_the_worktree_path()
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, o, _) = Run("path", "feat");
-        Assert.Equal(0, exit);
-        Assert.EndsWith($"api--feat", o.Trim()); // one repo → implied, root module → worktree root
-    }
-
-    [Fact]
-    public void Path_unknown_workspace_fails()
-    {
-        var (exit, _, err) = Run("path", "nope");
-        Assert.Equal(1, exit);
-        Assert.Contains("unknown workspace", err);
-    }
-
-    [Fact]
-    public void Path_without_a_workspace_and_no_i_fails()
-    {
-        var (exit, _, err) = Run("path");
-        Assert.Equal(1, exit);
-        Assert.Contains("workspace is required", err);
-    }
-
-    [Fact]
-    public void Path_multi_repo_needs_a_repo_named()
-    {
-        SeedWorkspace("feat", "api", "web");
-        var (exit, _, err) = Run("path", "feat");
-        Assert.Equal(1, exit);
-        Assert.Contains("name one", err);
-        Assert.Contains("api", err);
-        Assert.Contains("web", err);
-    }
-
-    [Fact]
-    public void Path_selects_a_named_repo()
-    {
-        SeedWorkspace("feat", "api", "web");
-        var (exit, o, _) = Run("path", "feat", "web");
-        Assert.Equal(0, exit);
-        Assert.EndsWith("web--feat", o.Trim());
-    }
-
-    [Fact]
-    public void Path_unknown_repo_lists_the_options()
-    {
-        SeedWorkspace("feat", "api", "web");
-        var (exit, _, err) = Run("path", "feat", "ghost");
-        Assert.Equal(1, exit);
-        Assert.Contains("no repo 'ghost'", err);
-    }
-
-    [Fact]
-    public void Path_resolves_a_module_subdirectory()
-    {
-        SeedWorkspace("feat", ["mono"],
-            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web"), ("api", "apps/api")] });
-        var (exit, o, _) = Run("path", "feat", "mono", "web");
-        Assert.Equal(0, exit);
-        var expected = Path.Combine("apps", "web");
-        Assert.EndsWith(expected, o.Trim());
-    }
-
-    [Fact]
-    public void Path_module_defaults_to_the_root()
-    {
-        SeedWorkspace("feat", ["mono"],
-            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
-        var (exit, o, _) = Run("path", "feat", "mono");
-        Assert.Equal(0, exit);
-        Assert.EndsWith("mono--feat", o.Trim()); // no module arg → worktree root, not apps/web
-    }
-
-    [Fact]
-    public void Here_resolves_a_module_directory_as_json()
-    {
-        SeedWorkspace("feat", ["mono"],
-            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
-        Run("ws", "label", "feat", "Risk matrix overrides");
-        var dir = Path.Combine(_root, "worktrees", "mono--feat", "apps", "web");
-
-        var (exit, o, _) = Run("here", "--path", dir, "--json");
-        Assert.Equal(0, exit);
-        using var doc = System.Text.Json.JsonDocument.Parse(o);
-        var root = doc.RootElement;
-        Assert.Equal(1, root.GetProperty("schema").GetInt32());
-        Assert.Equal("feat", root.GetProperty("workspace").GetString());
-        Assert.Equal("mono", root.GetProperty("repo").GetString());
-        Assert.Equal("web", root.GetProperty("module").GetString());
-        Assert.Equal("Risk matrix overrides", root.GetProperty("label").GetString());
-    }
-
-    [Fact]
-    public void Here_outside_a_workspace_exits_one()
-    {
-        var (exit, _, err) = Run("here", "--path", _root);
-        Assert.Equal(1, exit);
-        Assert.Contains("not in a sprig workspace", err);
-    }
-
-    [Fact]
-    public void Label_sets_shows_and_clears()
-    {
-        SeedWorkspace("feat", "api");
-        Assert.Equal(0, Run("ws", "label", "feat", "Audit log").exit);
-        Assert.Equal("Audit log", Run("ws", "label", "feat").@out.Trim());
-
-        Assert.Equal(0, Run("ws", "label", "feat", "--clear").exit);
-        Assert.Null(new InstanceStore(_paths).TryLoad("feat")!.Label);
-    }
-
-    [Fact]
-    public void Label_rejects_text_with_clear()
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, _, err) = Run("ws", "label", "feat", "x", "--clear");
-        Assert.Equal(1, exit);
-        Assert.Contains("not both", err);
-    }
-
-    [Fact]
-    public void Note_json_round_trips()
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, o, _) = Run("ws", "note", "feat", "waiting on review", "--json");
-        Assert.Equal(0, exit);
-        Assert.Contains("\"note\": \"waiting on review\"", o);
-    }
-
-    [Fact]
-    public void Tag_untag_and_ls_filter()
-    {
-        SeedWorkspace("a", "api");
-        SeedWorkspace("b", "api");
-        Assert.Equal(0, Run("ws", "tag", "a", "agent.session=7f3a", "ci.run=12").exit);
-        Assert.Equal(0, Run("ws", "tag", "b", "agent.session=other").exit);
-
-        var mine = Run("ws", "ls", "--tag", "agent.session=7f3a", "--json").@out;
-        using (var doc = System.Text.Json.JsonDocument.Parse(mine))
-            Assert.Equal(["a"], doc.RootElement.EnumerateArray().Select(e => e.GetProperty("Workspace").GetString()));
-
-        // A bare key matches any value; repeating --tag requires all.
-        using (var doc = System.Text.Json.JsonDocument.Parse(Run("ws", "ls", "--tag", "agent.session", "--json").@out))
-            Assert.Equal(2, doc.RootElement.GetArrayLength());
-        using (var doc = System.Text.Json.JsonDocument.Parse(Run("ws", "ls", "--tag", "agent.session", "--tag", "ci.run", "--json").@out))
-            Assert.Equal(1, doc.RootElement.GetArrayLength());
-
-        Assert.Equal(0, Run("ws", "untag", "a", "ci.run").exit);
-        Assert.Equal("agent.session=7f3a", Run("ws", "tag", "a").@out.Trim());
-    }
-
-    [Fact]
-    public void Switch_takes_exactly_one_mode()
-    {
-        SeedWorkspace("a", "api");
-        Assert.Contains("only one of", Run("ws", "switch", "a", "--new", "x", "--detach").err);
-        Assert.Contains("needs one of", Run("ws", "switch", "a", "--ni").err);
-        Assert.Contains("not --branch", Run("ws", "switch", "a", "--branch", "x", "--from", "main").err);
-    }
-
-    [Fact]
-    public void Tag_rejects_a_bad_key()
-    {
-        SeedWorkspace("a", "api");
-        var (exit, _, err) = Run("ws", "tag", "a", "session=1");
-        Assert.Equal(1, exit);
-        Assert.Contains("not a valid tag key", err);
-    }
-
-    [Fact]
-    public void Ls_leads_with_the_label_and_json_adds_a_live_head()
-    {
-        SeedWorkspace("feat", "api");
-        Run("ws", "label", "feat", "Audit log");
-
-        Assert.Contains("Audit log", Run("ws", "ls").@out);
-        // The seeded worktree isn't a git checkout, so its live head is unknown (null) — but the field is there.
-        using var doc = System.Text.Json.JsonDocument.Parse(Run("ws", "ls", "--json").@out);
-        var repo = doc.RootElement[0].GetProperty("Repos")[0];
-        Assert.True(repo.TryGetProperty("Head", out _));
-    }
-
-    [Fact]
-    public void Path_root_keyword_selects_the_worktree_root()
-    {
-        SeedWorkspace("feat", ["mono"],
-            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
-        var (exit, o, _) = Run("path", "feat", "mono", "root");
-        Assert.Equal(0, exit);
-        Assert.EndsWith("mono--feat", o.Trim());
-    }
-
-    [Fact]
-    public void Path_emits_only_the_path()
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, o, _) = Run("path", "feat");
-        Assert.Equal(0, exit);
-        // A single clean line — nothing a script (or a `Set-Location (sprig path …)` wrapper) would trip on.
-        Assert.Single(o.Trim().Split('\n', StringSplitOptions.RemoveEmptyEntries));
-    }
-
-    [Fact]
-    public void Path_unknown_module_lists_root_and_the_modules()
-    {
-        SeedWorkspace("feat", ["mono"],
-            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
-        var (exit, _, err) = Run("path", "feat", "mono", "ghost");
-        Assert.Equal(1, exit);
-        Assert.Contains("no module 'ghost'", err);
-        Assert.Contains("(root)", err);
-        Assert.Contains("web", err);
-    }
-
-    [Fact]
-    public void Path_json_reports_the_resolved_target()
-    {
-        SeedWorkspace("feat", ["mono"],
-            new Dictionary<string, (string, string)[]> { ["mono"] = [("web", "apps/web")] });
-        var (exit, o, _) = Run("path", "feat", "mono", "web", "--json");
-        Assert.Equal(0, exit);
-        Assert.Contains("\"ok\": true", o);
-        Assert.Contains("\"repo\": \"mono\"", o);
-        Assert.Contains("\"module\": \"web\"", o);
-    }
-
-    [Fact]
-    public void Path_interactive_refuses_without_a_terminal()
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, _, _) = Run("path", "-i");
-        Assert.Equal(1, exit);
-    }
-
-    [Fact]
-    public void Cd_without_a_workspace_and_no_i_fails()
-    {
-        var (exit, _, err) = Run("cd");
-        Assert.Equal(1, exit);
-        Assert.Contains("workspace is required", err);
-    }
-
-    [Fact]
-    public void Cd_unknown_workspace_fails()
-    {
-        var (exit, _, err) = Run("cd", "nope");
-        Assert.Equal(1, exit);
-        Assert.Contains("unknown workspace", err);
-    }
-
-    [Fact]
-    public void Cd_rejects_json() // cd has no machine output — `--json` isn't a flag it accepts
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, o, _) = Run("cd", "feat", "--json");
-        Assert.Equal(1, exit);
-        Assert.Contains("\"ok\": false", o);
-    }
-
-    [Fact]
-    public void Cd_interactive_refuses_without_a_terminal()
-    {
-        SeedWorkspace("feat", "api");
-        var (exit, _, _) = Run("cd", "-i");
-        Assert.Equal(1, exit);
-    }
-
-    [Theory]
-    [InlineData("cd")]
-    [InlineData("path")]
-    public void Navigate_rejects_i_and_ni_together(string cmd)
-    {
-        var (exit, _, err) = Run(cmd, "-i", "--ni");
-        Assert.Equal(1, exit);
-        Assert.Contains("opposites", err);
-    }
-
-    [Fact]
-    public void Path_ni_forces_non_interactive() // --ni parses and keeps it non-interactive: it errors, never prompts
-    {
-        SeedWorkspace("feat", "api", "web");
-        var (exit, _, err) = Run("path", "feat", "--ni");
-        Assert.Equal(1, exit);
-        Assert.Contains("name one", err); // resolved from args, not asked — a multi-repo workspace can't be inferred
-    }
-
-    // The single-target verbs take an optional workspace: named runs straight through, omitted picks at a
-    // terminal. Under the test host stdin isn't a terminal, so an omitted name must fail rather than block.
-    [Theory]
-    [InlineData("up")]
-    [InlineData("down")]
-    [InlineData("restart")]
-    [InlineData("status")]
-    [InlineData("info")]
-    public void Single_workspace_verb_without_a_name_and_no_terminal_fails(string verb)
-    {
-        var (exit, _, err) = Run("ws", verb);
-        Assert.Equal(1, exit);
-        Assert.Contains("workspace is required", err);
-    }
-
-    [Fact]
-    public void Named_single_workspace_verb_bypasses_the_picker()
-    {
-        // A named verb resolves the positional directly (no pick), so an unknown name reports as such
-        // rather than falling into the "requires a workspace" prompt path.
-        var (exit, _, err) = Run("ws", "info", "nope");
-        Assert.Equal(1, exit);
-        Assert.Contains("unknown workspace", err);
+        Assert.Equal(1, code);
+        Assert.Contains("isn't name=value", stderr);
     }
 }

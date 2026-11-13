@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- Applies to every project under the repo, including anything added later. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

@@ -6,7 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Sprig.App.Changelog;
-using Sprig.Core.Changelog;
+using Sprig.Engine.Changelog;
 
 namespace Sprig.App.Views;
 

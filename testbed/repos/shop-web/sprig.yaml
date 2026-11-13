@@ -1,0 +1,26 @@
+schema: 1
+repo: shop-web
+
+inputs:
+  # shop-services' APIs when it runs in place; a workspace or an orchestration can point them elsewhere.
+  catalog-url:
+    type: url
+    default: http://localhost:5100
+  orders-url:
+    type: url
+    default: http://localhost:5200
+
+apps:
+  web:
+    run: node
+    command: npm run dev
+    # Pinned, the way an auth provider's registered callback ports would be.
+    ports: { http: 9170-9179 }
+
+files:
+  .env.local:
+    read-by: [web]
+    values:
+      PORT: ${web.port}
+      VITE_CATALOG_URL: ${inputs.catalog-url}
+      VITE_ORDERS_URL: ${inputs.orders-url}

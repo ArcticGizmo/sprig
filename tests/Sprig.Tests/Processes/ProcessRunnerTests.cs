@@ -1,4 +1,4 @@
-using Sprig.Core.Processes;
+using Sprig.Engine.Processes;
 
 namespace Sprig.Tests.Processes;
 

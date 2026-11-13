@@ -1,0 +1,38 @@
+# Infra for running shop-services by hand on the default ports. Each host port can be moved with an env var
+# (e.g. PG_PORT=15432) when something else already uses the default. Mailpit is a shared dev tool, so it's only
+# started with the "standalone" profile; under sprig the storefront orchestration supplies one per workspace.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop
+      POSTGRES_DB: catalog
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: shop
+      RABBITMQ_DEFAULT_PASS: shop
+    ports:
+      - "${RABBIT_PORT:-5672}:5672"
+      - "${RABBIT_UI_PORT:-15672}:15672"
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: ["standalone"]
+    ports:
+      - "${SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+volumes:
+  pgdata:

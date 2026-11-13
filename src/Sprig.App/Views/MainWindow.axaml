@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Sprig.App.ViewModels"
-        xmlns:coach="clr-namespace:Sprig.App.Coach"
+        xmlns:views="clr-namespace:Sprig.App.Views"
         x:Class="Sprig.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1280" Height="820"
@@ -44,82 +44,111 @@
         <Style Selector="Border.navitem.active > Grid > TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
         </Style>
-
-        <!-- Setup-guide spine pills -->
-        <Style Selector="Border.wstep">
-            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
-            <Setter Property="CornerRadius" Value="20" />
-            <Setter Property="Padding" Value="10,4" />
-        </Style>
-        <Style Selector="Border.wstep TextBlock">
+        <Style Selector="PathIcon.navicon">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Margin" Value="0,0,12,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-            <Setter Property="FontSize" Value="12" />
         </Style>
-        <Style Selector="Border.wstep.done">
-            <Setter Property="Background" Value="#264ADE80" />
+        <!-- A page that isn't ready yet: shown, so it's known to be coming, but faded and not clickable. -->
+        <Style Selector="Button.nav:disabled Border.navitem">
+            <Setter Property="Opacity" Value="0.4" />
         </Style>
-        <Style Selector="Border.wstep.done TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        <Style Selector="Button.nav:disabled">
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+        <Style Selector="Border.navitem.active PathIcon.navicon">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         </Style>
 
-        <!-- Inline link button (guide strip) -->
-        <Style Selector="Button.link">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-            <Setter Property="Cursor" Value="Hand" />
+        <!-- Collapsed, the nav is its icons alone; each row names itself in a tooltip instead. -->
+        <Style Selector="Border.sidenav">
+            <Setter Property="Width" Value="216" />
         </Style>
-        <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
+        <Style Selector="Border.sidenav.collapsed">
+            <Setter Property="Width" Value="60" />
+        </Style>
+        <!-- On a wrapper wherever the text has an IsVisible of its own, which a style can't override. -->
+        <Style Selector="Border.sidenav.collapsed :is(Control).navtext">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed PathIcon.navicon">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed Border.navitem">
+            <Setter Property="Padding" Value="14,10" />
+        </Style>
+        <Style Selector="Border.sidenav.collapsed StackPanel.navhead">
+            <Setter Property="Margin" Value="15,20,15,18" />
+        </Style>
+        <Style Selector="Border.sidenav:not(.collapsed) Button.nav">
+            <Setter Property="ToolTip.ServiceEnabled" Value="False" />
         </Style>
     </Window.Styles>
 
-    <Grid ColumnDefinitions="200,*">
+    <Grid ColumnDefinitions="Auto,*">
 
         <!-- Left nav -->
-        <Border Grid.Column="0" Background="{StaticResource PanelBgBrush}"
+        <Border Grid.Column="0" Classes="sidenav" Classes.collapsed="{Binding NavCollapsed}" Background="{StaticResource PanelBgBrush}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0"
                 IsEnabled="{Binding !Updater.IsActive}">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="18,20,18,18">
+                <StackPanel Classes="navhead" DockPanel.Dock="Top" Margin="18,20,18,18">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <!-- Source set in code-behind: SprigLogo.Create() → a Skia-rendered vector, crisp at any DPI. -->
                         <Image x:Name="LogoImage" Width="30" Height="30" VerticalAlignment="Center" />
-                        <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
-                                   Foreground="{StaticResource TitleBrush}" />
-                        <!-- Dev instances write to a separate store; flag it so it's obvious at a glance. -->
-                        <TextBlock Text="- DEV" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"
-                                   Foreground="{StaticResource DevBrush}" IsVisible="{Binding IsDevInstance}" />
+                        <StackPanel Classes="navtext" Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="sprig" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TitleBrush}" />
+                            <!-- Dev instances write to a separate store; flag it so it's obvious at a glance. -->
+                            <TextBlock Text="- DEV" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"
+                                       Foreground="{StaticResource DevBrush}" IsVisible="{Binding IsDevInstance}" />
+                        </StackPanel>
                     </StackPanel>
-                    <TextBlock Text="worktree + infra isolation"
-                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" />
                 </StackPanel>
 
-                <!-- Pinned to the bottom of the nav, below the workflow pages -->
+                <!-- Pinned to the bottom of the nav -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="8,4,8,10" Spacing="2">
                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Margin="4,0,4,4" />
-                    <!-- Update-available entry: shown only when the launch-time check found a newer release
-                         (ShowUpdateNotice), and hidden inside any guided experience so it can't shift the
-                         coachmark anchors. Clicking installs the update the check already located. The
-                         accent Background is a local value so the nav hover style can't grey it out. -->
-                    <Button Classes="nav" Command="{Binding UpdateNowCommand}" IsVisible="{Binding ShowUpdateNotice}">
+                    <!-- The accent Background is a local value so the nav hover style can't grey it out. -->
+                    <Button Classes="nav" Command="{Binding UpdateNowCommand}" IsVisible="{Binding ShowUpdateNotice}"
+                            ToolTip.Tip="{Binding UpdateNotice}">
                         <Border Classes="navitem" Background="{StaticResource AccentBrush}">
-                            <TextBlock Text="{Binding UpdateNotice}" FontSize="12.5" TextWrapping="Wrap"
-                                       VerticalAlignment="Center" Foreground="#0B1220" />
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Classes="navicon" Data="{x:Static views:NavIcons.Update}" Foreground="#0B1220" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="{Binding UpdateNotice}" FontSize="12.5" TextWrapping="Wrap"
+                                           VerticalAlignment="Center" Foreground="#0B1220" />
+                            </Grid>
                         </Border>
                     </Button>
-                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}">
+                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding Settings}" ToolTip.Tip="Settings">
                         <Border Classes="navitem" Classes.active="{Binding Settings.IsActive}">
-                            <TextBlock Text="Settings" FontSize="14"
-                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Classes="navicon" Data="{x:Static views:NavIcons.Settings}" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="Settings" FontSize="14"
+                                           VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
+                            </Grid>
                         </Border>
                     </Button>
-                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding About}">
+                    <Button Classes="nav" Command="{Binding NavigateCommand}" CommandParameter="{Binding About}"
+                            ToolTip.Tip="{Binding About.Version, StringFormat='About · {0}'}">
                         <Border Classes="navitem" Classes.active="{Binding About.IsActive}">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="About" FontSize="14"
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <PathIcon Classes="navicon" Data="{x:Static views:NavIcons.About}" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="About" FontSize="14"
                                            VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
-                                <TextBlock Grid.Column="1" Text="{Binding About.Version}" FontSize="11"
+                                <TextBlock Grid.Column="2" Classes="navtext" Text="{Binding About.Version}" FontSize="11"
+                                           VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
+                            </Grid>
+                        </Border>
+                    </Button>
+                    <!-- Its tip is wanted either way, so the tooltip service is turned back on for it. -->
+                    <Button Classes="nav" Command="{Binding ToggleNavCommand}" ToolTip.Tip="{Binding NavToggleTip}" ToolTip.ServiceEnabled="True"
+                            AutomationProperties.AutomationId="nav:toggle">
+                        <Border Classes="navitem">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <PathIcon Classes="navicon" Data="{Binding NavCollapsed, Converter={x:Static views:NavIcons.ForCollapsed}}" />
+                                <TextBlock Grid.Column="1" Classes="navtext" Text="Collapse" FontSize="14"
                                            VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" />
                             </Grid>
                         </Border>
@@ -129,30 +158,28 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding NavItems}" Margin="8,4">
                         <ItemsControl.DataTemplates>
-                            <!-- Section label ("Set up" / "Run") -->
-                            <DataTemplate DataType="vm:NavHeaderViewModel" x:CompileBindings="False">
-                                <TextBlock Text="{Binding Label}" FontSize="10" FontWeight="SemiBold"
-                                           LetterSpacing="1.5" Foreground="{StaticResource MutedBrush}"
-                                           Margin="12,14,12,4" />
-                            </DataTemplate>
-                            <!-- Navigable page (matches any PageViewModel subclass) -->
                             <DataTemplate DataType="vm:PageViewModel" x:CompileBindings="False">
-                                <!-- Anchor id bound from the page title (nav:<Title>), so a coachmark can point
-                                     at a specific nav entry — e.g. the tour showing where you'd go next. -->
                                 <Button Classes="nav"
                                         AutomationProperties.AutomationId="{Binding Title, StringFormat='nav:{0}'}"
+                                        ToolTip.Tip="{Binding Title}"
+                                        IsEnabled="{Binding IsReady}"
                                         Command="{Binding $parent[ItemsControl].DataContext.NavigateCommand}"
                                         CommandParameter="{Binding}">
                                     <Border Classes="navitem" Classes.active="{Binding IsActive}">
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="14"
-                                                       VerticalAlignment="Center" Foreground="{StaticResource FgBrush}" />
-                                            <Border Grid.Column="1" IsVisible="{Binding ShowNavCount}"
-                                                    Background="{StaticResource ButtonBgBrush}" CornerRadius="10"
-                                                    Padding="7,1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding NavCount}" FontSize="11"
-                                                           Foreground="{StaticResource MutedBrush}" />
-                                            </Border>
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <PathIcon Classes="navicon" Data="{Binding Converter={x:Static views:NavIcons.ForPage}}" />
+                                            <StackPanel Grid.Column="1" Classes="navtext" Spacing="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}" FontSize="14" Foreground="{StaticResource FgBrush}" />
+                                                <TextBlock Text="{Binding NavSubtitle}" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                                           IsVisible="{Binding HasNavSubtitle}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Panel Grid.Column="2" Classes="navtext" VerticalAlignment="Center">
+                                                <Border IsVisible="{Binding ShowNavCount}"
+                                                        Background="{StaticResource ButtonBgBrush}" CornerRadius="10" Padding="7,1">
+                                                    <TextBlock Text="{Binding NavCount}" FontSize="11"
+                                                               Foreground="{StaticResource MutedBrush}" />
+                                                </Border>
+                                            </Panel>
                                         </Grid>
                                     </Border>
                                 </Button>
@@ -164,78 +191,10 @@
         </Border>
 
         <!-- Content -->
-        <DockPanel Grid.Column="1" LastChildFill="True" IsEnabled="{Binding !Updater.IsActive}">
-            <!-- Sandbox banner. Persistent and unmissable: everything on screen while this shows is a
-                 throwaway sample, and the user must never mistake it for their own setup. Neutral copy so it
-                 reads true in both the tour (fully built) and a guide (built only part-way). -->
-            <Border DockPanel.Dock="Top" Padding="16,10" Background="#3BF59E0B"
-                    BorderBrush="{StaticResource WarnBrush}" BorderThickness="0,0,0,1"
-                    IsVisible="{Binding IsTour}">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-                    <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
-                        <TextBlock Text="SANDBOX" FontSize="10" FontWeight="SemiBold" LetterSpacing="1.5"
-                                   Foreground="{StaticResource WarnBrush}" />
-                        <TextBlock Text="You're in a throwaway sample built for learning. Nothing here is yours, and it's all deleted when you leave — so click around freely."
-                                   FontSize="12" Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <Button Grid.Column="1" Classes="link" Content="Leave, keep the sample"
-                            Command="{Binding ExitTourKeepingSampleCommand}" VerticalAlignment="Center" />
-                    <Button Grid.Column="2" Content="Exit tour" Command="{Binding ExitTourCommand}"
-                            Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold"
-                            Padding="14,8" VerticalAlignment="Center" />
-                </Grid>
-            </Border>
-            <!-- The tour is now coachmarks (the CoachOverlay below), not a top strip — so it dims the page and
-                 rings each target like the guides do. The update-available notice moved to the left nav
-                 (just above Settings) so it never shifts the content layout the coachmarks anchor to. -->
-            <!-- Guided setup strip (opt-in from Home; auto-advances as the store changes) -->
-            <Border DockPanel.Dock="Top" IsVisible="{Binding Guide.IsActive}"
-                    Background="#1460A5FA" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,1"
-                    Padding="24,12">
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="18">
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <Border Classes="wstep" Classes.done="{Binding Guide.State.ReposDone}">
-                            <TextBlock Text="Repos" />
-                        </Border>
-                        <TextBlock Text="→" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                        <Border Classes="wstep" Classes.done="{Binding Guide.State.MapsDone}">
-                            <TextBlock Text="Maps" />
-                        </Border>
-                        <TextBlock Text="→" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                        <Border Classes="wstep" Classes.done="{Binding Guide.State.WorkspacesDone}">
-                            <TextBlock Text="Workspaces" />
-                        </Border>
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center" Margin="8,0,0,0">
-                        <TextBlock Text="{Binding Guide.StepCounter}" FontSize="10" FontWeight="SemiBold"
-                                   LetterSpacing="1.5" Foreground="{StaticResource AccentBrush}" />
-                        <TextBlock Text="{Binding Guide.Heading}" FontSize="14" FontWeight="SemiBold"
-                                   Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding Guide.Hint}" FontSize="12"
-                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                    </StackPanel>
-
-                    <Button Grid.Column="2" Classes="link" Content="Back" Command="{Binding Guide.BackCommand}"
-                            IsVisible="{Binding Guide.CanGoBack}" VerticalAlignment="Center" />
-                    <Button Grid.Column="3" Content="{Binding Guide.Cta}" Command="{Binding Guide.DoStepCommand}"
-                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold"
-                            Padding="14,8" VerticalAlignment="Center" />
-                    <Button Grid.Column="4" Classes="link" Content="Skip" Command="{Binding Guide.SkipCommand}"
-                            VerticalAlignment="Center" />
-                </Grid>
-            </Border>
-
-            <ContentControl Content="{Binding CurrentPage}" Margin="0" />
-        </DockPanel>
-
-        <!-- Coachmark layer: a sibling of everything, spanning both columns, so it can highlight a nav item,
-             a page control, or a shape drawn inside the wiring canvas. AnchorRoot is set in code-behind. -->
-        <coach:CoachOverlay x:Name="Coachmarks" Grid.Column="0" Grid.ColumnSpan="2"
-                            DataContext="{Binding Coach}" />
+        <ContentControl Grid.Column="1" Content="{Binding CurrentPage}" IsEnabled="{Binding !Updater.IsActive}" />
 
         <!-- Update overlay: dims and blocks the whole window from the "update" click until Velopack takes the
-             process over, so nothing can be changed mid-install. Above the coachmarks, which it outranks. -->
+             process over, so nothing can be changed mid-install. -->
         <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="100" Background="#B3060A12"
                 IsVisible="{Binding Updater.IsActive}">
             <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"

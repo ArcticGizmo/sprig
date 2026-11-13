@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:authoring="clr-namespace:Sprig.Engine.Authoring;assembly=Sprig.Engine"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="Sprig.App.Controls.CodeEditor">
+
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,8"
+                MaxHeight="140">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
+                    <TextBlock x:Name="ProblemsSummary" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                    <TextBlock Grid.Column="1" FontSize="11" Foreground="#6E6E82"
+                               Text="Ctrl+Space completes · hover for what a key or ${…} means" />
+                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                    <ItemsControl x:Name="ProblemList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="authoring:EditorProblem">
+                                <Button Classes="problem" Tag="{Binding}" Click="OnProblemClick">
+                                    <Grid ColumnDefinitions="64,*">
+                                        <TextBlock Text="{Binding Line, StringFormat='line {0}'}" FontSize="12"
+                                                   Foreground="{StaticResource MutedBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Message}" FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="{StaticResource DangerBrush}" />
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+        <Panel>
+            <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontSize="13.5"
+                           FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace"
+                           Foreground="{StaticResource FgBrush}" Background="Transparent"
+                           LineNumbersForeground="{StaticResource MutedBrush}" Padding="8" />
+            <!-- What an IDE shows on hover: a problem under the pointer, what the key or reference is and what it means. Placed
+                 below the hovered line rather than at the pointer, which would cover what's hovered and close it. -->
+            <Popup x:Name="HoverPopup" Placement="BottomEdgeAlignedLeft" VerticalOffset="2" IsLightDismissEnabled="False">
+                <Border x:Name="HoverCard" Background="#252532" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="6" Padding="10,8" MaxWidth="560">
+                    <StackPanel Spacing="6">
+                        <SelectableTextBlock x:Name="HoverProblem" FontSize="12.5" TextWrapping="Wrap" />
+                        <SelectableTextBlock x:Name="HoverSignature" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource TitleBrush}"
+                                             FontFamily="Cascadia Code,Cascadia Mono,Consolas,monospace" />
+                        <SelectableTextBlock x:Name="HoverDocs" FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}" />
+                    </StackPanel>
+                </Border>
+            </Popup>
+        </Panel>
+    </DockPanel>
+
+    <UserControl.Styles>
+        <Style Selector="Button.problem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0,1" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+    </UserControl.Styles>
+</UserControl>

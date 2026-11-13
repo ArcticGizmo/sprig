@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sprouts: log docked under the table</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#181820}
+a{color:#60A5FA}a:hover{color:#93C5FD}
+</style>
+</helmet>
+<div style="width: 100%; height: 900px; display: flex; flex-wrap: wrap; background: #181820; color: #E1E1EB; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+  <nav aria-label="Main" style="flex: 0 0 216px; height: 100%; box-sizing: border-box; background: #1F1F2A; border-right: 1px solid #2D2D3C; padding: 18px 18px">
+    <div style="font-size: 22px; font-weight: 600; color: #F5F5FA">sprig</div>
+    <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 14px; font-size: 14px; color: #8C8CA0"><span>Home</span><span>Trellises</span><span style="color: #F5F5FA">Sprouts</span><span style="padding-left: 10px; font-size: 13px; color: #F5F5FA">storefront / feat-a</span><span style="padding-left: 10px; font-size: 13px">storefront / feat-b</span><span style="padding-left: 10px; font-size: 13px">services / local</span></div>
+  </nav>
+  <main style="flex: 999 1 560px; min-width: 0; height: 100%; display: flex; flex-direction: column">
+    <header style="padding: 16px 22px 12px; border-bottom: 1px solid #2D2D3C; display: flex; align-items: center; gap: 16px">
+      <h1 style="margin: 0; font-size: 19px; font-weight: 600; color: #F5F5FA">storefront / feat-a</h1>
+      <span style="color: #4ADE80; font-size: 12px">up</span>
+      <span style="flex: 1"></span>
+      <button style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12.5px">Start all</button>
+      <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 7px 12px; font-size: 12.5px">Stop apps</button>
+    </header>
+    <div style="flex: 1; min-height: 0; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 150px 150px 170px 190px minmax(0, 1fr) 150px; gap: 12px; padding: 7px 22px; font-size: 11px; font-weight: 600; letter-spacing: 1px; color: #8C8CA0; border-bottom: 1px solid #2D2D3C">
+        <span>REPO</span><span>APP</span><span>STATE</span><span>URL</span><span>FOLDER</span><span></span>
+      </div>
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="20">
+        <div style="display: grid; grid-template-columns: 150px 150px 170px 190px minmax(0, 1fr) 150px; gap: 12px; align-items: center; padding: 0 22px; height: 27px; border-bottom: 1px solid #23232F; background: {{r.bg}}">
+          <span style="color: #8C8CA0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis">{{r.repo}}</span>
+          <span style="font-weight: 600; color: #F5F5FA">{{r.name}}</span>
+          <span style="color: {{r.color}}; overflow: hidden; white-space: nowrap; text-overflow: ellipsis">{{r.state}}</span>
+          <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px">{{r.url}}</span>
+          <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #8C8CA0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis">{{r.folder}}</span>
+          <span style="display: flex; gap: 4px; justify-content: flex-end"><button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 4px; font-size: 11px; padding: 2px 7px">Restart</button><button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 4px; font-size: 11px; padding: 2px 7px">Log</button></span>
+        </div>
+      </sc-for>
+    </div>
+    <div aria-hidden="true" style="height: 6px; background: #2D2D3C; cursor: row-resize"></div>
+    <section aria-label="Log" style="flex: 0 0 236px; display: flex; flex-direction: column; background: #14141B">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 22px; border-bottom: 1px solid #2D2D3C; font-size: 12.5px"><span style="font-weight: 600; color: #F5F5FA">orders-api</span><span style="color: #8C8CA0">drag the bar up for more lines, and the table loses rows</span></div>
+      <div style="flex: 1; overflow: hidden; padding: 6px 22px; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px; line-height: 18px; display: flex; flex-direction: column; justify-content: flex-end">
+        <sc-for list="{{log}}" as="l" hint-placeholder-count="10">
+          <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="color: #5F5F74">{{l.t}}</span>  {{l.text}}</div>
+        </sc-for>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+const RAW = [
+  ['shop-gateway', 'gateway', 'ready', 8100], ['shop-gateway', 'auth', 'ready', 8101], ['shop-gateway', 'bff', 'ready', 8102],
+  ['shop-services', 'migrate', 'finished in 1.2s'], ['shop-services', 'seed', 'finished in 3.4s'], ['shop-services', 'catalog-api', 'ready', 8000],
+  ['shop-services', 'orders-api', 'ready', 8001], ['shop-services', 'payments-api', 'exited with code 1', 8003], ['shop-services', 'inventory-api', 'ready', 8004],
+  ['shop-services', 'search-api', 'starting', 8005], ['shop-services', 'notifications', 'ready', 8006], ['shop-analytics', 'events-api', 'ready', 8200],
+  ['shop-analytics', 'ingest-worker', 'restarting · 3 of 5'], ['shop-analytics', 'reports-api', 'building', 8202], ['shop-analytics', 'scheduler', 'ready'],
+  ['shop-web', 'web', 'ready', 5170], ['shop-web', 'admin', 'ready', 5171], ['shop-web', 'storybook', 'stopped', 6006],
+  ['shop-mobile', 'mobile', 'ready', 8010], ['shop-docs', 'docs', 'ready', 5172],
+];
+const COLOR = (s) => s.startsWith('ready') ? '#4ADE80' : s.startsWith('exited') ? '#F87171' : s.startsWith('restarting') ? '#FBBF24' : s.startsWith('start') || s.startsWith('build') ? '#60A5FA' : '#8C8CA0';
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      rows: RAW.map(([repo, name, state, port]) => ({
+        repo, name, state, color: COLOR(state), url: port ? `http://localhost:${port}` : '',
+        folder: `~/src/sprig-testbed/storefront--feat-a/${repo}`, bg: name === 'orders-api' ? '#262633' : 'transparent',
+      })),
+      log: [
+        'GET /orders/1042 200 in 3.1ms', 'info: Received HTTP response headers after 1.79ms - 200', 'GET /health 200 in 0.4ms',
+        'POST /orders 201 in 12.3ms', 'info: Sending HTTP request GET http://localhost:8000/products/mug', 'GET /orders?page=2 200 in 2.8ms',
+        'info: End processing HTTP request after 1.91ms - 200', 'GET /health 200 in 0.3ms', 'POST /orders 201 in 10.9ms', 'GET /orders/1043 200 in 2.2ms',
+      ].map((text, i) => ({ t: `11:42:${String(10 + i).padStart(2, '0')}.${String(100 + i * 37).slice(0, 3)}`, text })),
+    };
+  }
+}
+</script>
+</body>
+</html>

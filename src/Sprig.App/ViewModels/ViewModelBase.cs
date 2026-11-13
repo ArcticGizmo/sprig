@@ -11,6 +11,14 @@ public abstract partial class PageViewModel : ViewModelBase
     /// <summary>Nav label / header for the page.</summary>
     public abstract string Title { get; }
 
+    /// <summary>A few words under the nav label saying what the page holds; null for none.</summary>
+    public virtual string? NavSubtitle => null;
+
+    public bool HasNavSubtitle => NavSubtitle is not null;
+
+    /// <summary>False for a page that isn't ready to use yet: its nav row is greyed out and can't be clicked.</summary>
+    public virtual bool IsReady => true;
+
     /// <summary>True when this is the page currently shown — drives the left-nav highlight.</summary>
     [ObservableProperty] private bool _isActive;
 
@@ -29,4 +37,15 @@ public abstract partial class PageViewModel : ViewModelBase
 
     /// <summary>Called when this page becomes the current page. Override to refresh live data.</summary>
     protected virtual void OnActivated() { }
+
+    /// <summary>The window came back to the front, perhaps after a terminal changed the store. Only the page shown hears
+    /// of it.</summary>
+    public void WindowFocused()
+    {
+        if (IsActive) OnWindowFocused();
+    }
+
+    /// <summary>Reload what a terminal may have changed, unless a dialog or an edit is in progress, which a reload would
+    /// lose.</summary>
+    protected virtual void OnWindowFocused() { }
 }

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sprouts overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#181820}
+a{color:#F5F5FA;text-decoration:none}a:hover{color:#93C5FD;text-decoration:underline}
+button{font-family:inherit;cursor:pointer}
+.trow:hover{background:#1F1F2A}
+.scroll::-webkit-scrollbar{width:10px;height:10px}
+.scroll::-webkit-scrollbar-thumb{background:#2D2D3C;border-radius:5px}
+</style>
+</helmet>
+<div style="width: 100%; height: 900px; display: flex; flex-wrap: wrap; background: #181820; color: #E1E1EB; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+  <nav aria-label="Main" style="flex: 0 0 216px; height: 100%; box-sizing: border-box; background: #1F1F2A; border-right: 1px solid #2D2D3C; padding: 18px 10px">
+    <div style="display: flex; align-items: baseline; gap: 8px; padding: 0 8px 4px">
+      <span style="font-size: 22px; font-weight: 600; color: #F5F5FA">sprig</span>
+      <span style="font-size: 11px; color: #FBBF24">experimental</span>
+    </div>
+    <div style="margin-top: 18px; display: flex; flex-direction: column; gap: 2px; font-size: 14px">
+      <span style="padding: 8px 10px">Home</span>
+      <span style="padding: 8px 10px">Trellises</span>
+      <span style="padding: 8px 10px; border-radius: 8px; background: rgba(96,165,250,0.15); color: #F5F5FA; display: flex; justify-content: space-between">Sprouts<span style="font-size: 11px; color: #8C8CA0">9</span></span>
+      <span style="padding: 4px 10px 0 26px; font-size: 11px; color: #8C8CA0; letter-spacing: 1px; font-weight: 600">STOREFRONT ▾</span>
+      <span style="padding: 4px 10px 4px 26px; font-size: 13px">feat-a</span>
+      <span style="padding: 4px 10px 4px 26px; font-size: 13px">feat-b</span>
+      <span style="padding: 4px 10px 4px 26px; font-size: 13px">demo-oct</span>
+      <span style="padding: 4px 10px 4px 26px; font-size: 12px; color: #8C8CA0">3 down</span>
+      <span style="padding: 8px 10px 0 26px; font-size: 11px; color: #8C8CA0; letter-spacing: 1px; font-weight: 600">SERVICES ▾</span>
+      <span style="padding: 4px 10px 4px 26px; font-size: 13px">local</span>
+      <span style="padding: 8px 10px 0 26px; font-size: 11px; color: #8C8CA0; letter-spacing: 1px; font-weight: 600">ANALYTICS ▸</span>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; height: 100%; display: flex; flex-direction: column">
+    <header style="padding: 18px 24px 14px; border-bottom: 1px solid #2D2D3C; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #F5F5FA">Sprouts</h1>
+        <span style="font-size: 12px; color: #8C8CA0">9 sprouts of 3 trellises · 3 up · 1 failed · 5 down</span>
+      </div>
+      <div style="flex: 1"></div>
+      <div role="group" aria-label="Show" style="display: flex; flex-wrap: wrap; gap: 6px">
+        <sc-for list="{{chips}}" as="c" hint-placeholder-count="4">
+          <button onClick="{{c.pick}}" aria-pressed="{{c.on}}" style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: #E1E1EB; font-size: 12px"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{c.dot}}"></span>{{c.label}}</button>
+        </sc-for>
+      </div>
+      <button style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 600; font-size: 12.5px">+ New sprout</button>
+    </header>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 24px; border-bottom: 1px solid #2D2D3C; background: {{barBg}}; min-height: 34px">
+      <sc-if value="{{hasSelection}}" hint-placeholder-val="{{ false }}">
+        <span style="font-weight: 600; color: #F5F5FA">{{selectedLabel}}</span>
+        <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 6px 11px; font-size: 12.5px">Bring up</button>
+        <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 6px; padding: 6px 11px; font-size: 12.5px">Take down</button>
+        <button style="background: transparent; color: #F87171; border: 1px solid #F87171; border-radius: 6px; padding: 5px 11px; font-size: 12.5px">Remove…</button>
+        <button onClick="{{clear}}" style="background: transparent; color: #8C8CA0; border: 0; padding: 6px 4px; font-size: 12.5px">Clear</button>
+        <span style="flex: 1 1 260px; font-size: 12px; color: #FBBF24">{{guardNote}}</span>
+      </sc-if>
+      <sc-if value="{{noSelection}}" hint-placeholder-val="{{ true }}">
+        <span style="color: #8C8CA0; font-size: 12.5px">Tick sprouts to bring up, take down or remove several at once.</span>
+        <button onClick="{{selectStale}}" style="background: transparent; color: #60A5FA; border: 0; padding: 0; font-size: 12.5px">Select the 2 down for over a week</button>
+      </sc-if>
+    </div>
+
+    <div class="scroll" style="flex: 1; min-height: 0; overflow: auto">
+      <div style="min-width: 980px">
+        <div style="display: grid; grid-template-columns: 40px 170px 120px 150px 150px 150px minmax(0, 1fr) 120px; gap: 12px; align-items: center; padding: 8px 24px; font-size: 11px; font-weight: 600; letter-spacing: 1px; color: #8C8CA0; border-bottom: 1px solid #2D2D3C; position: sticky; top: 0; background: #181820">
+          <label style="display: flex"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Select all shown</span><input type="checkbox" checked="{{allChecked}}" onChange="{{toggleAll}}"></label>
+          <span>SPROUT</span><span>TRELLIS</span><span>STATE</span><span>APPS</span><span>PORTS</span><span>WORKTREES</span><span>LAST UP</span>
+        </div>
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+          <div class="trow" style="display: grid; grid-template-columns: 40px 170px 120px 150px 150px 150px minmax(0, 1fr) 120px; gap: 12px; align-items: center; padding: 9px 24px; border-bottom: 1px solid #23232F; background: {{r.bg}}">
+            <label style="display: flex"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Select {{r.title}}</span><input type="checkbox" checked="{{r.checked}}" onChange="{{r.toggle}}"></label>
+            <span style="display: flex; flex-direction: column; gap: 1px; min-width: 0"><a href="Main.dc.html" style="font-weight: 600">{{r.name}}</a><span style="font-size: 11.5px; color: #8C8CA0">{{r.branch}}</span></span>
+            <span style="color: #B4B4C6">{{r.trellis}}</span>
+            <span style="display: flex; align-items: center; gap: 7px; color: {{r.color}}"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: {{r.color}}"></span>{{r.state}}</span>
+            <span style="color: #B4B4C6">{{r.apps}}</span>
+            <span style="font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #B4B4C6">{{r.ports}}</span>
+            <span style="color: {{r.wtColor}}">{{r.worktrees}}</span>
+            <span style="color: #8C8CA0">{{r.last}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+const SPROUTS = [
+  { trellis: 'storefront', name: 'feat-a', branch: 'feat-a', state: 'up', apps: '18 of 20 running', ports: '5170–8202', worktrees: '1 of 6 has changes', dirty: true, last: 'now', days: 0 },
+  { trellis: 'storefront', name: 'feat-b', branch: 'feat-b', state: 'up', apps: 'apps stopped', ports: '5173–8302', worktrees: 'all clean', last: 'now', days: 0 },
+  { trellis: 'storefront', name: 'demo-oct', branch: 'demo-oct', state: 'failed', apps: 'none running', ports: '5174–8402', worktrees: 'all clean', last: 'failed 20 min ago', days: 0 },
+  { trellis: 'storefront', name: 'feat-c', branch: 'feat-c', state: 'down', apps: '—', ports: '5175–8502', worktrees: 'all clean', last: '3 days ago', days: 3 },
+  { trellis: 'storefront', name: 'hotfix-12', branch: 'hotfix-12', state: 'down', apps: '—', ports: '5176–8602', worktrees: '1 unpushed commit', dirty: true, last: '6 days ago', days: 6 },
+  { trellis: 'storefront', name: 'spike-cache', branch: 'spike-cache', state: 'down', apps: '—', ports: '5177–8702', worktrees: 'all clean', last: '2 weeks ago', days: 14 },
+  { trellis: 'services', name: 'local', branch: 'repos in place', state: 'up', apps: '3 of 3 running', ports: '8000–8006', worktrees: 'in place', last: 'now', days: 0 },
+  { trellis: 'analytics', name: 'ingest-perf', branch: 'ingest-perf', state: 'down', apps: '—', ports: '8200–8209', worktrees: 'all clean', last: '4 days ago', days: 4 },
+  { trellis: 'analytics', name: 'q4-reports', branch: 'q4-reports', state: 'down', apps: '—', ports: '8210–8219', worktrees: '2 files changed', dirty: true, last: '3 weeks ago', days: 21 },
+];
+const COLOR = { up: '#4ADE80', down: '#8C8CA0', failed: '#F87171' };
+const key = (x) => `${x.trellis}/${x.name}`;
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { show: 'all', picked: {} };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const shown = SPROUTS.filter((x) => s.show === 'all' || x.state === s.show);
+    const picked = SPROUTS.filter((x) => s.picked[key(x)]);
+    const dirty = picked.filter((x) => x.dirty);
+    const count = (st) => SPROUTS.filter((x) => x.state === st).length;
+    const chips = [
+      { id: 'all', label: `All ${SPROUTS.length}`, dot: '#8C8CA0' },
+      { id: 'up', label: `${count('up')} up`, dot: '#4ADE80' },
+      { id: 'failed', label: `${count('failed')} failed`, dot: '#F87171' },
+      { id: 'down', label: `${count('down')} down`, dot: '#6E6E82' },
+    ].map((c) => ({ ...c, on: s.show === c.id, bg: s.show === c.id ? '#262633' : 'transparent', border: s.show === c.id ? '#60A5FA' : '#2D2D3C', pick: () => this.setState({ show: c.id }) }));
+    const allChecked = shown.length > 0 && shown.every((x) => s.picked[key(x)]);
+    return {
+      chips,
+      rows: shown.map((x) => {
+        const checked = !!s.picked[key(x)];
+        return {
+          ...x, title: key(x), color: COLOR[x.state], checked, bg: checked ? '#1F2533' : 'transparent',
+          wtColor: x.dirty ? '#FBBF24' : '#8C8CA0',
+          toggle: () => this.setState({ picked: { ...s.picked, [key(x)]: !checked } }),
+        };
+      }),
+      allChecked,
+      toggleAll: () => this.setState({ picked: { ...s.picked, ...Object.fromEntries(shown.map((x) => [key(x), !allChecked])) } }),
+      hasSelection: picked.length > 0, noSelection: picked.length === 0,
+      selectedLabel: `${picked.length} selected`,
+      barBg: picked.length ? '#1F2533' : 'transparent',
+      guardNote: dirty.length
+        ? `${dirty.map((x) => x.name).join(', ')} ${dirty.length === 1 ? 'has' : 'have'} work that isn't committed or pushed; removing skips ${dirty.length === 1 ? 'it' : 'them'} and says why.`
+        : '',
+      clear: () => this.setState({ picked: {} }),
+      selectStale: () => this.setState({ picked: Object.fromEntries(SPROUTS.filter((x) => x.state === 'down' && x.days > 7).map((x) => [key(x), true])) }),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+using Sprig.App;
+using Sprig.App.ViewModels;
+using Sprig.Engine.Hosting;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Workspaces;
+
+namespace Sprig.Tests.App;
+
+public class WorkspacesOverviewTests
+{
+    static readonly DateTimeOffset Now = new(2026, 11, 4, 12, 0, 0, TimeSpan.FromHours(11));
+
+    static WorkspacesViewModel Make(TempStore temp, out AppServices services)
+    {
+        services = new AppServices(temp.Root);
+        var store = new WorkspaceStore(services.Paths);
+        void Save(string orchestration, string name, WorkspaceState state, double daysAgo, bool inPlace = false)
+        {
+            var at = Now.AddDays(-daysAgo);
+            store.Save(new WorkspaceRecord(orchestration, $@"C:\tb\{orchestration}.orchestration.yaml", name, inPlace ? null : name, "stable", [], [], [], state, at, at,
+                LastUpAt: state == WorkspaceState.Down ? at : null));
+        }
+        Save("storefront", "feat-a", WorkspaceState.Up, 0);
+        Save("storefront", "demo", WorkspaceState.Failed, 0.01);
+        Save("storefront", "feat-c", WorkspaceState.Down, 3);
+        Save("storefront", "spike", WorkspaceState.Down, 15);
+        Save("services", "local", WorkspaceState.Up, 0, inPlace: true);
+        Save("analytics", "q4", WorkspaceState.Down, 21);
+        store.SavePlan(new Plan("storefront", "feat-a", "stable", "main",
+            [new PlannedPort("shop", "api", "http", 8000, null, null), new PlannedPort("shop", "web", "http", 5170, null, null)],
+            [new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, []), new PlannedApp("shop", "../shop", "web", "node", ".", [], null, [])],
+            [], [], [], []));
+        services.HostStatus.Apply([new RunnerStatus("storefront/feat-a", "shop/api", RunnerState.Ready, 1, 8000, null, "a.log", Now)]);
+
+        var vm = new WorkspacesViewModel(services) { Clock = () => Now };
+        vm.Show(null);
+        vm.RefreshCommand.Execute(null);
+        return vm;
+    }
+
+    [Fact]
+    public void Every_workspace_is_listed_by_orchestration_with_counts_and_what_each_has_running()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out _);
+
+        Assert.Equal(["q4", "local", "demo", "feat-a", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
+        Assert.Equal("6 workspaces of 3 orchestrations · 2 up · 1 failed · 3 down", vm.OverviewSummary);
+        Assert.Equal(["All 6", "2 up", "1 failed", "3 down"], vm.OverviewChips.Select(c => c.Label));
+        var featA = vm.OverviewRows.Single(r => r.Record.Name == "feat-a");
+        // A workspace of worktrees reads as its folder, as git and the file system show it.
+        Assert.Equal(("storefront--feat-a", "services / local"), (featA.Name, vm.OverviewRows.Single(r => r.Record.Name == "local").Name));
+        Assert.Equal("1 of 2 running", featA.Apps);
+        Assert.Equal("5170–8000", featA.Ports);
+        Assert.Equal("now", featA.LastUp);
+        Assert.Equal("3 days ago", vm.OverviewRows.Single(r => r.Record.Name == "feat-c").LastUp);
+        Assert.Equal("in place", vm.OverviewRows.Single(r => r.Record.Name == "local").Worktrees);
+
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
+        Assert.Equal(["q4", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
+    }
+
+    [Fact]
+    public void A_ticked_main_is_never_counted_for_removing_or_freeing_and_the_dialog_says_it_stays()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out var services);
+        new WorkspaceStore(services.Paths).Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "main", null, "stable",
+            [], [], [], WorkspaceState.Down, Now.AddDays(-30), Now.AddDays(-30)));
+        vm.RefreshCommand.Execute(null);
+        var main = vm.OverviewRows.Single(r => r.Record.IsMain);
+
+        main.IsChecked = true;
+        Assert.True(vm.HasChecked);
+        Assert.False(vm.CanBulkRemove);
+        Assert.False(vm.CanBulkFree);
+        vm.AskBulkRemoveCommand.Execute(null);
+        Assert.False(vm.ConfirmingBulkRemove);
+        // A month down, but always there, so not offered as stale either.
+        Assert.Equal("Select the 2 down for over a week", vm.StaleLabel);
+
+        vm.OverviewRows.Single(r => r.Record.Name == "feat-a").IsChecked = true;
+        vm.AskBulkRemoveCommand.Execute(null);
+        Assert.True(vm.ConfirmingBulkRemove);
+        Assert.Equal(("Remove 1 workspace?", "The main checkout you ticked stays: it's always there."), (vm.BulkRemoveTitle, vm.MainsPassedOver));
+    }
+
+    [Fact]
+    public void The_shortcut_ticks_what_has_been_down_over_a_week_and_ticks_survive_a_refresh()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out _);
+        Assert.Equal("Select the 2 down for over a week", vm.StaleLabel);
+
+        vm.SelectStaleCommand.Execute(null);
+
+        Assert.Equal(["q4", "spike"], vm.OverviewRows.Where(r => r.IsChecked).Select(r => r.Record.Name));
+        Assert.Equal("2 selected", vm.CheckedLabel);
+        Assert.True(vm.HasChecked);
+
+        vm.RefreshCommand.Execute(null);
+        Assert.Equal(2, vm.CheckedCount);
+
+        vm.ClearCheckedCommand.Execute(null);
+        Assert.False(vm.HasChecked);
+        vm.ToggleAllCheckedCommand.Execute(null);
+        Assert.Equal(6, vm.CheckedCount);
+        Assert.True(vm.AllChecked);
+    }
+
+    [Fact]
+    public void Opening_a_row_shows_that_workspace()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out _);
+
+        vm.OpenOverviewRowCommand.Execute(vm.OverviewRows.Single(r => r.Record.Name == "feat-a"));
+
+        Assert.Equal("storefront/feat-a", vm.Selected!.Record.Key);
+
+        vm.BackToListCommand.Execute(null);
+
+        Assert.Null(vm.Selected);
+    }
+
+    [Fact]
+    public void The_search_matches_every_word_against_name_orchestration_or_branch_and_works_with_the_state_chips()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out _);
+
+        vm.OverviewSearch = "feat";
+        Assert.Equal(["feat-a", "feat-c"], vm.OverviewRows.Select(r => r.Record.Name));
+
+        vm.OverviewSearch = "STOREFRONT down";
+        Assert.Empty(vm.OverviewRows);
+        Assert.True(vm.NoOverviewMatches);
+
+        vm.OverviewSearch = "storefront";
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Down));
+        Assert.Equal(["feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
+
+        vm.OverviewSearch = "in place";
+        vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.All));
+        Assert.Equal(["local"], vm.OverviewRows.Select(r => r.Record.Name));
+
+        vm.ClearOverviewSearchCommand.Execute(null);
+        Assert.Equal(6, vm.OverviewRows.Count);
+        Assert.False(vm.NoOverviewMatches);
+    }
+}

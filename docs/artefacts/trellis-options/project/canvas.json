@@ -1,0 +1,26 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-05T10:00:00Z" },
+  "title": "Trellis page options",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Today: what the page asks you to hold" },
+    "Model.dc.html": { "x": 1520, "y": 0, "w": 1440, "h": 900, "title": "The model underneath, and names for it" },
+    "OptionA.dc.html": { "x": 0, "y": 1320, "w": 1440, "h": 900, "title": "A · Summary first", "expand": "fill" },
+    "OptionB.dc.html": { "x": 1520, "y": 1320, "w": 1440, "h": 900, "title": "B · Picture first", "expand": "fill" },
+    "OptionC.dc.html": { "x": 0, "y": 2340, "w": 1440, "h": 900, "title": "C · Repos get their own page", "expand": "fill" },
+    "OptionD.dc.html": { "x": 1520, "y": 2340, "w": 1440, "h": 900, "title": "D · A checklist to the first sprout", "expand": "fill" }
+  },
+  "order": ["Main.dc.html", "Model.dc.html", "OptionA.dc.html", "OptionB.dc.html", "OptionC.dc.html", "OptionD.dc.html"],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "Where it hurts, and the model underneath", "kind": "title1", "maxW": 2960 },
+    "t2": { "x": 0, "y": 1020, "text": "Four ways to lay out the trellis page", "kind": "title1", "maxW": 2960 },
+    "rec": { "x": 3040, "y": 0, "w": 560, "fill": "green", "size": "m", "text": "Recommended blend\n\n1. Names: keep Trellis and Sprout. Drop \"virtual\". Every definition, repo or trellis, carries one badge: in repo or in sprig.\n\n2. Repos get their own page (C), so the Trellises column is one list and a repo is described in one place.\n\n3. The trellis page opens on a summary (A) whose centre is the picture (B): repos, what the trellis adds, and the wires between them.\n\n4. The full plan moves to a Values tab, and per app to the sprout's Details panel, which already shows values and where each came from.\n\n5. D's checklist shows only while something blocks a first sprout (approval, an unfilled need)." },
+    "sA": { "x": 3040, "y": 1320, "w": 480, "fill": "blue", "text": "A · Summary first\n\nThe page answers four questions in order: what's in it, can it run, how will sprouts run, start one. Values, ports and code move to tabs.\n\n+ Smallest change from today; the plan is reused as it is.\n+ \"Start a sprout\" lives where you decide to start one.\n− Repos are still described here, so without C the line between trellis and repo stays fuzzy." },
+    "sB": { "x": 3600, "y": 1320, "w": 480, "fill": "blue", "text": "B · Picture first\n\nRepos as boxes, the trellis's own infra in a dashed box, and each need drawn as a wire to whatever fills it. Click anything for its values.\n\n+ Shows what a trellis is: the thing that joins repos.\n+ Groups light up their slice.\n− Needs real layout work (the Live graph on the roadmap); 20 apps have to fold into their repos.\n− Values sit one click further away." },
+    "sC": { "x": 3040, "y": 2340, "w": 480, "fill": "purple", "text": "C · Repos get their own page\n\nA repo is described once, on Repos: what it runs, offers and needs, and where its definition lives. A trellis only picks repos and fills the gaps.\n\n+ Pulls apart the two ideas today's page mixes.\n+ \"In repo / in sprig\" becomes one switch on the repo, not three buttons inside a trellis.\n− One more nav item, and authoring means moving between two pages." },
+    "sD": { "x": 3600, "y": 2340, "w": 480, "fill": "orange", "text": "D · A checklist to the first sprout\n\nThe page is the steps to a running sprout, each with its state and the one action that clears it.\n\n+ Best for a first trellis: approvals and problems have an obvious home.\n− Once everything is green it's furniture. Better as a banner on A than as the page." }
+  },
+  "designSystems": []
+}

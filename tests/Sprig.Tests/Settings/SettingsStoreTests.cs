@@ -1,4 +1,4 @@
-using Sprig.Core.Settings;
+using Sprig.Engine.Settings;
 
 namespace Sprig.Tests.Settings;
 
@@ -13,6 +13,16 @@ public class SettingsStoreTests
         Assert.Equal(8000, settings.PortRangeStart);
         Assert.Equal(9000, settings.PortRangeEndExclusive);
         Assert.Empty(settings.RestrictedPorts);
+    }
+
+    [Fact]
+    public void A_dev_store_defaults_to_the_9000s_so_it_never_takes_an_installed_sprigs_ports()
+    {
+        using var s = new TempStore();
+        var store = new FileSettingsStore(s.Paths, dev: true);
+
+        Assert.Equal((9000, 10000), (store.Get().PortRangeStart, store.Get().PortRangeEndExclusive));
+        Assert.Equal((9000, 10000), (store.Defaults().PortRangeStart, store.Defaults().PortRangeEndExclusive));
     }
 
     [Fact]
@@ -32,17 +42,6 @@ public class SettingsStoreTests
         Assert.Equal(9000, got.PortRangeStart);
         Assert.Equal(9500, got.PortRangeEndExclusive);
         Assert.Equal([9100, 9200], got.RestrictedPorts);
-    }
-
-    [Fact]
-    public void Save_then_get_roundtrips_dismissed_update_version()
-    {
-        using var s = new TempStore();
-        var store = new FileSettingsStore(s.Paths);
-
-        store.Save(new SprigSettings { DismissedUpdateVersion = "0.4.2" });
-
-        Assert.Equal("0.4.2", store.Get().DismissedUpdateVersion);
     }
 
     [Fact]

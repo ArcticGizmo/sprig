@@ -1,0 +1,222 @@
+using Sprig.App;
+using Sprig.App.Controls;
+using Sprig.App.ViewModels;
+using Sprig.Engine.Planning;
+using Sprig.Model;
+
+namespace Sprig.Tests.App;
+
+public class OrchestrationsViewModelTests
+{
+    [Fact]
+    public async Task An_unapproved_orchestration_is_listed_and_selected_by_its_file_name_but_runs_nothing_until_approved()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(store.Root);
+        var file = Path.Combine(store.Root, "storefront.orchestration.yaml");
+        File.WriteAllText(file, "schema: 1\norchestration: shop\nrepos: {}\n");
+        var vm = new OrchestrationsViewModel(new AppServices(store.Root));
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = file;
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsAddOpen);
+        var item = Assert.Single(vm.Orchestrations);
+        Assert.Equal("storefront", item.Name);
+        Assert.True(item.NeedsApproval);
+        Assert.Equal(item, vm.Selected);
+        var pending = Assert.Single(vm.PendingTrust);
+        Assert.Equal(file.Replace('\\', '/'), pending.Path);
+        Assert.False(pending.Changed);
+        Assert.True(vm.PendingIsOrchestration);
+        Assert.Null(vm.Plan);
+    }
+
+    [Fact]
+    public async Task Removing_one_kept_in_the_repo_asks_first_and_leaves_its_file()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(store.Root);
+        var file = Path.Combine(store.Root, "storefront.orchestration.yaml");
+        File.WriteAllText(file, "schema: 1\norchestration: shop\nrepos: {}\n");
+        var services = new AppServices(store.Root);
+        var vm = new OrchestrationsViewModel(services);
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = file;
+        await vm.AddCommand.ExecuteAsync(null);
+        // Its main came up once, so there's a record of it, named by the ID.
+        var now = DateTimeOffset.UtcNow;
+        new Sprig.Engine.Workspaces.WorkspaceStore(services.Paths).Save(new Sprig.Engine.Workspaces.WorkspaceRecord("storefront", file, "main", null,
+            "stable", [], [], [], Sprig.Engine.Workspaces.WorkspaceState.Down, now, now));
+
+        await vm.RemoveCommand.ExecuteAsync(null);
+        Assert.True(vm.ConfirmingRemove);
+        Assert.Contains("left where it is", vm.RemoveNote);
+        Assert.Contains("main checkout goes with it", vm.RemoveNote);
+        Assert.Single(vm.Orchestrations);
+
+        vm.CancelRemoveCommand.Execute(null);
+        Assert.Single(vm.Orchestrations);
+
+        await vm.RemoveCommand.ExecuteAsync(null);
+        await vm.RemoveCommand.ExecuteAsync(null);
+        Assert.False(vm.ConfirmingRemove);
+        Assert.Empty(vm.Orchestrations);
+        Assert.True(File.Exists(file));
+        Assert.Null(services.Workspaces.Get("storefront", "main"));
+    }
+
+    [Fact]
+    public void Add_asks_which_kind_first_and_back_returns_to_that_choice()
+    {
+        using var store = new TempStore();
+        var vm = new OrchestrationsViewModel(new AppServices(store.Root));
+
+        vm.OpenChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsAddOpen);
+        Assert.False(vm.IsNewOpen);
+
+        vm.OpenAddCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+        Assert.True(vm.IsAddOpen);
+
+        vm.BackToChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsAddOpen);
+
+        vm.OpenNewCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+        Assert.True(vm.IsNewOpen);
+
+        vm.BackToChooseCommand.Execute(null);
+        Assert.True(vm.IsChooseOpen);
+        Assert.False(vm.IsNewOpen);
+
+        vm.CancelChooseCommand.Execute(null);
+        Assert.False(vm.IsChooseOpen);
+    }
+
+    [Fact]
+    public async Task Forgetting_approvals_makes_an_approved_orchestration_ask_again_as_on_first_use()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(store.Root);
+        var file = Path.Combine(store.Root, "storefront.orchestration.yaml");
+        var text = "schema: 1\norchestration: shop\nrepos: {}\n";
+        File.WriteAllText(file, text);
+        var services = new AppServices(store.Root);
+        services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(text));
+        services.Orchestrations.Add("storefront", file);
+        var vm = new OrchestrationsViewModel(services);
+        Assert.False(Assert.Single(vm.Orchestrations).NeedsApproval);
+
+        vm.ForgetApprovalsCommand.Execute(null);
+        await vm.ReplanCommand.ExecuteAsync(null);
+
+        Assert.True(Assert.Single(vm.Orchestrations).NeedsApproval);
+        Assert.Equal(file.Replace('\\', '/'), Assert.Single(vm.PendingTrust).Path);
+        Assert.Empty(services.Trust.List());
+    }
+
+    [Fact]
+    public async Task A_guessed_name_steps_aside_for_an_orchestration_already_registered_under_it()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(Path.Combine(store.Root, "a"));
+        Directory.CreateDirectory(Path.Combine(store.Root, "b"));
+        var first = Path.Combine(store.Root, "a", "storefront.orchestration.yaml");
+        var second = Path.Combine(store.Root, "b", "storefront.orchestration.yaml");
+        File.WriteAllText(first, "schema: 1\norchestration: one\nrepos: {}\n");
+        File.WriteAllText(second, "schema: 1\norchestration: two\nrepos: {}\n");
+        var vm = new OrchestrationsViewModel(new AppServices(store.Root));
+
+        vm.NewPath = first;
+        await vm.AddCommand.ExecuteAsync(null);
+        vm.NewPath = second;
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Equal(["storefront", "storefront-2"], vm.Orchestrations.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task A_path_that_is_not_a_file_is_refused_with_a_reason_and_the_modal_stays_open()
+    {
+        using var store = new TempStore();
+        var vm = new OrchestrationsViewModel(new AppServices(store.Root));
+        vm.OpenAddCommand.Execute(null);
+        vm.NewPath = Path.Combine(store.Root, "nope.orchestration.yaml");
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsAddOpen);
+        Assert.True(vm.AddFailed);
+        Assert.Contains("Choose an orchestration file", vm.AddMessage);
+        Assert.Empty(vm.Orchestrations);
+    }
+
+    [Theory]
+    [InlineData("C:/x/storefront.orchestration.yaml", "storefront")]
+    [InlineData("C:/x/Shop.Orchestration.YAML", "Shop")]
+    [InlineData("C:/x/shop.cs", "shop")]
+    [InlineData("C:/x/.orchestration.yaml", "orchestration")]
+    [InlineData("C:/x/my shop!.orchestration.yaml", "my-shop")]
+    public void The_id_an_orchestration_is_offered_comes_from_its_file(string path, string expected)
+        => Assert.Equal(expected, Sprig.Engine.Orchestrations.OrchestrationRegistry.IdFromFile(path));
+
+    [Fact]
+    public void The_plan_view_lists_wiring_between_repos_and_masks_passwords()
+    {
+        var at = new SourceLocation(@"C:\tb\shop-web\sprig.yaml", 7);
+        var plan = new Plan("storefront", "plan", "stable", "main",
+            [new PlannedPort("shop-services", "catalog-api", "http", 8000, null, null)],
+            [
+                new PlannedApp("shop-web", "shop-web", "web", "node", ".",
+                    [new PlannedEnv("VITE_CATALOG_URL", new PlannedValue("{import.catalog-url}", "http://localhost:8000",
+                        ["import catalog-url ← shop-services", "catalog-api.http port 8000"],
+                        [new ValueSource("shop-services", "catalog-api", "http", "catalog-url")]), ".env.local", at)],
+                    null, []),
+                new PlannedApp("shop-services", "shop-services", "catalog-api", "dotnet", "src/Catalog.Api",
+                    [new PlannedEnv("Db", new PlannedValue("x", "Host=a;Password=hunter2", []), null, at)], null, []),
+            ],
+            [], [], [], [new PlanProblem(ProblemSeverity.Warning, "careful", at)]);
+
+        var view = new PlanView(plan, @"C:\tb");
+
+        var wire = Assert.Single(view.Wiring);
+        Assert.Equal("shop-web / web", wire.Consumer);
+        Assert.Equal("shop-services / catalog-api (catalog-url)", wire.Provider);
+        Assert.Equal("http://localhost:8000", wire.Value);
+        Assert.Equal("Host=a;Password=***", view.Apps[1].Rows[0].Value);
+        Assert.Equal("shop-web/sprig.yaml:7", Assert.Single(view.Problems).Where);
+        Assert.Equal("2 apps, 1 port.", view.Summary);
+    }
+}
+
+public class PathCompletionTests
+{
+    [Fact]
+    public void Suggests_folders_first_with_a_trailing_slash_then_matching_files_with_forward_slashes()
+    {
+        using var store = new TempStore();
+        var root = Path.Combine(store.Root, "tb");
+        Directory.CreateDirectory(Path.Combine(root, "shop-web"));
+        Directory.CreateDirectory(Path.Combine(root, "shop-services"));
+        File.WriteAllText(Path.Combine(root, "storefront.orchestration.yaml"), "");
+        File.WriteAllText(Path.Combine(root, "notes.txt"), "");
+
+        var typed = PathCompletion.ToPosix(root) + "/s";
+        var all = PathCompletion.Suggest(typed);
+        var orchestrations = PathCompletion.Suggest(typed, f => f.EndsWith(".orchestration.yaml"));
+
+        var prefix = PathCompletion.ToPosix(root) + "/";
+        Assert.Equal([prefix + "shop-services/", prefix + "shop-web/", prefix + "storefront.orchestration.yaml"], all);
+        Assert.Contains(prefix + "storefront.orchestration.yaml", orchestrations);
+        Assert.DoesNotContain(all, s => s.Contains('\\'));
+    }
+
+    [Fact]
+    public void A_folder_that_does_not_exist_suggests_nothing()
+        => Assert.Empty(PathCompletion.Suggest("Z:/definitely/not/here/x"));
+}

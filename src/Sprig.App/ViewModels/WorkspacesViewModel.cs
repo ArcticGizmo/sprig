@@ -1,1178 +1,1238 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Sprig.Core.Graph;
-using Sprig.Core.Maps;
-using Sprig.Core.Pools;
-using Sprig.Core.Store;
-using Sprig.Core.Workspaces;
+using Sprig.App.Logs;
+using Sprig.Engine.Definitions;
+using Sprig.Engine.Hosting;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Workspaces;
+using Sprig.Engine.Orchestrations;
 
 namespace Sprig.App.ViewModels;
 
+/// <param name="HeldBy">For a main that's down, another definition's workspace that's up in the same checkout.</param>
+/// <param name="Orphaned">Its repo or orchestration has gone, so nothing else would ever remove it.</param>
+public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? HeldBy = null, bool Orphaned = false)
+{
+    /// <summary>A slot by its folder's name, as git and the file system show it; main by its ID, the name the slots are
+    /// numbered from; another one in place by ID and name.</summary>
+    public string Title => Display(Record);
+    public string Branch => BranchOf(Record);
+    public string State => Record.IsFree ? "free" : Record.State.ToString().ToLowerInvariant();
+    public bool IsUp => Record.State == WorkspaceState.Up;
+    public bool IsFailed => Record.State == WorkspaceState.Failed;
+    public bool IsFree => Record.IsFree;
+    public bool IsMain => Record.IsMain;
+
+    /// <summary>A slot with a branch checked out, which can be freed for the next one.</summary>
+    public bool CanFree => !Record.InPlace && !Record.IsFree;
+
+    /// <summary>Main is always there and runs with the definitions' own values, while its repo or orchestration is.</summary>
+    public bool CanRemove => !Record.IsMain || Orphaned;
+    public bool HasSettings => !Record.IsMain;
+
+    /// <summary>It has infra whose data can go. A main that has never come up has none yet.</summary>
+    public bool CanEmptyData => Record.Compose.Count > 0;
+
+    public bool IsHeld => HeldBy is not null;
+    public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is up in this checkout" : "";
+
+    public static string Display(WorkspaceRecord record)
+        => record.IsMain ? record.Orchestration : record.InPlace ? $"{record.Orchestration} / {record.Name}" : record.SlotName;
+
+    public static string BranchOf(WorkspaceRecord record)
+        => record.IsMain ? record.CheckoutBranch is { } on ? $"main checkout · {on}" : "main checkout"
+            : record.InPlace ? "repos in place" : record.Branch ?? "free";
+}
+
+/// <summary>One app or job of the selected workspace, with what the host says about it.</summary>
+/// <param name="key">The app as the host names it, <c>repo/app</c>.</param>
+/// <param name="name">For messages: <c>repo / app</c>.</param>
+/// <param name="repo">The repo's name.</param>
+/// <param name="app">The app's own name.</param>
+/// <param name="port">Its main port, or "" when it has none.</param>
+public sealed partial class WorkspaceAppRow(string key, string name, string folder, string url, string values, bool job,
+    string repo = "", string app = "", string port = "") : ObservableObject
+{
+    public string Key => key;
+    public string Name => name;
+    public string Repo => repo;
+    public string App => app.Length > 0 ? app : key[(key.IndexOf('/') + 1)..];
+    public string Port => port.Length > 0 ? port : job ? "job" : "";
+    public string Folder => folder;
+    public string Url => url;
+    public string Values => values;
+    public bool IsJob => job;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateLine), nameof(IsReady), nameof(IsStoppedOrDone), nameof(IsFinished), nameof(IsSpinning))]
+    private string _state = "not running";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateLine))]
+    private string _detail = "";
+
+    [ObservableProperty] private bool _isGood;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProblem), nameof(IsStoppedOrDone), nameof(IsSpinning))]
+    private bool _isBad;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSpinning))]
+    private bool _isBusy;
+
+    /// <summary>Held back until what it depends on is ready, rather than doing anything itself.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSpinning))]
+    private bool _isWaiting;
+
+    /// <summary>Building, starting or stopping: its dot goes round, as its node does in the graph, while one waiting
+    /// holds still.</summary>
+    public bool IsSpinning => IsBusy && !IsWaiting && !IsProblem;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsStoppedOrDone))]
+    private bool _isAlive;
+
+    [ObservableProperty] private int _restarts;
+
+    /// <summary>Its log is the one showing.</summary>
+    [ObservableProperty] private bool _isSelected;
+
+    /// <summary>Ctrl- or Shift-clicked, so one menu acts on it and the others marked with it.</summary>
+    [ObservableProperty] private bool _isMarked;
+    [ObservableProperty] private bool _isPinned;
+
+    public bool HasDetail => Detail.Length > 0;
+    public string StateLine => Detail.Length == 0 ? State
+        : Detail.StartsWith(State, StringComparison.OrdinalIgnoreCase) ? Detail : $"{State} · {Detail}";
+    public bool IsReady => State == "ready";
+    public bool IsFinished => State == "finished";
+
+    /// <summary>Exited, failed, or going round restarts: worth a look.</summary>
+    public bool IsProblem => IsBad || State == "restarting";
+
+    public bool IsStoppedOrDone => !IsAlive && !IsBad;
+
+    partial void OnDetailChanged(string value) => OnPropertyChanged(nameof(HasDetail));
+
+    partial void OnStateChanged(string value) => OnPropertyChanged(nameof(IsProblem));
+
+    public void MarkStopping()
+    {
+        (State, Detail, IsGood, IsBad, IsBusy, IsWaiting) = ("stopping", "", false, false, true, false);
+    }
+
+    /// <summary>Show <paramref name="status"/>; null when the host has no runner for this app.</summary>
+    public void Apply(RunnerStatus? status)
+    {
+        var restarts = status is { Restarts: > 0 } ? $"restarted {status.Restarts}×" : null;
+        (State, Detail) = status?.State switch
+        {
+            null => ("not running", ""),
+            RunnerState.Building => ("building", status.Doing ?? ""),
+            RunnerState.Waiting => ("waiting", "for what it depends on"),
+            RunnerState.Starting => ("starting", status.Error ?? ""),
+            RunnerState.Ready => ("ready", restarts ?? ""),
+            RunnerState.Running => ("running", ""),
+            RunnerState.Completed => ("finished", restarts is null ? "" : $"after {restarts}"),
+            RunnerState.Restarting => ("restarting", status.Error ?? ""),
+            RunnerState.Exited => ("exited", status.Error ?? $"code {status.Exit}"),
+            RunnerState.Failed => ("failed", status.Error ?? ""),
+            RunnerState.Stopping => ("stopping", ""),
+            RunnerState.Stopped => ("stopped", status.Error ?? ""),
+            _ => (status.State.ToString().ToLowerInvariant(), ""),
+        };
+        IsGood = status?.State is RunnerState.Ready or RunnerState.Completed;
+        IsBad = status?.State is RunnerState.Failed or RunnerState.Exited;
+        IsBusy = status?.State is RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Running
+            or RunnerState.Restarting or RunnerState.Stopping;
+        IsWaiting = status?.State == RunnerState.Waiting;
+        IsAlive = status is not null && (status.State.IsAlive() || status.State == RunnerState.Stopping);
+        Restarts = status?.Restarts ?? 0;
+    }
+}
+
+public sealed record WorkspaceInfraRow(string Name, string Ports);
+
+/// <summary>What Start starts, like a launch profile: every app (<see cref="Group"/> null) or one group.</summary>
+/// <param name="Apps">What it starts, in words.</param>
+public sealed record StartChoice(string? Group, string Label, string Apps);
+
+/// <summary>
+/// The Workspaces page: every workspace with its state, the folders, urls and ports of the selected one, and a form to make
+/// a new one. Up, down and remove run in the background and report to a progress window the view opens. The selected
+/// workspace's apps can be started and stopped in the sprig host, each showing its state, with one app's log beside them.
+/// </summary>
 public partial class WorkspacesViewModel : PageViewModel
 {
-    protected readonly AppServices Services;
-    readonly Navigator _nav;
-
-    public WorkspacesViewModel(AppServices services, Navigator nav)
-    {
-        Services = services;
-        _nav = nav;
-        _ = RefreshAsync();
-    }
+    readonly AppServices _services;
+    Func<Task>? _afterApproval;
 
     public override string Title => "Workspaces";
+    public override string? NavSubtitle => "running copies";
 
-    /// <summary>Raised when a create/teardown begins, carrying the checklist view-model for the view to
-    /// open in its own non-blocking progress window (keeps this view-model free of Avalonia window types).</summary>
-    public event Action<OperationProgressViewModel>? OperationStarted;
+    public ObservableCollection<WorkspaceItem> Workspaces { get; } = [];
+    public ObservableCollection<string> OrchestrationNames { get; } = [];
+    public ObservableCollection<PendingTrustItem> PendingTrust { get; } = [];
 
-    /// <summary>False when no maps exist — a workspace can't be created without one (upstream empty state).</summary>
-    [ObservableProperty] private bool _hasAnyMaps;
+    /// <summary>The files waiting for approval, read and approved one at a time.</summary>
+    public CodeReviewViewModel Review { get; }
 
-    /// <summary>Empty-state shortcut: jump to Maps and open the New-map editor.</summary>
-    [RelayCommand] private void BuildMap() => _nav.NewMap();
+    [ObservableProperty] private WorkspaceItem? _selected;
+    [ObservableProperty] private IReadOnlyList<WorkspaceAppRow> _apps = [];
+    [ObservableProperty] private IReadOnlyList<WorkspaceInfraRow> _infra = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWarnings), nameof(WarningsBadge))]
+    private IReadOnlyList<ProblemRow> _warnings = [];
 
-    /// <summary>Every workspace, flat — the identity set the detail pane's <see cref="Selected"/> is drawn
-    /// from. The list surface renders <see cref="Pools"/> instead; both share the same item instances so
-    /// selecting a row in a pool group drives this.</summary>
-    public ObservableCollection<WorkspaceItemViewModel> Workspaces { get; } = [];
-
-    /// <summary>The maps' pools — one group per map (plus a residual "(ad-hoc)" group for any
-    /// pre-pool workspaces) — the grouped surface the list renders.</summary>
-    public ObservableCollection<PoolGroupViewModel> Pools { get; } = [];
+    public bool HasWarnings => Warnings.Count > 0;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(RestartCommand),
-        nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
-        nameof(ClaimCommand), nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
-    private WorkspaceItemViewModel? _selected;
+    [NotifyPropertyChangedFor(nameof(TrustInModal), nameof(TrustOnPage), nameof(MessageInModal), nameof(MessageOnPage))]
+    private bool _isAddOpen;
+    [ObservableProperty] private string? _newOrchestration;
+    [ObservableProperty] private string _newBranch = "";
+    [ObservableProperty] private string _newFrom = "";
+
+    /// <summary>The slot asked for, when the form was opened from a free one.</summary>
+    int? _newSlot;
+
+    /// <summary>Which slot the branch would go in, in words.</summary>
+    [ObservableProperty] private string _newSlotLine = "";
+    [ObservableProperty] private bool _newSlotBad;
+
+    /// <summary>The branch would reuse a free slot, so there's data to keep or empty.</summary>
+    [ObservableProperty] private bool _newReusesSlot;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UpCommand), nameof(DownCommand), nameof(RestartCommand),
-        nameof(ReconcileCommand), nameof(RepairCommand), nameof(RemoveCommand), nameof(ReleaseCommand),
-        nameof(ClaimCommand), nameof(RefreshCommand), nameof(NewWorkspaceCommand),
-        nameof(RefreshStatusCommand), nameof(OpenDockerCommand), nameof(OpenWorkspaceInVsCodeCommand))]
-    private bool _busy;
+    [NotifyPropertyChangedFor(nameof(NewKeepData))]
+    private bool _newEmptyData;
 
-    [ObservableProperty] private string? _error;
-    [ObservableProperty] private string? _statusMessage;
+    public bool NewKeepData
+    {
+        get => !NewEmptyData;
+        set => NewEmptyData = !value;
+    }
 
-    // Remove confirmation state.
+    /// <summary>The slot the branch would reuse; its kept values fill the form's settings.</summary>
+    WorkspaceRecord? _newSlotRecord;
+
+    /// <summary>The slot the branch would go in is broken, so the form asks whether to fix it or use the next one.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewSlotBroken), nameof(NewFixSlotLabel), nameof(NewNextSlotLabel))]
+    private BrokenSlot? _newBroken;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewUseNextSlot))]
+    private bool _newFixSlot;
+
+    public bool NewUseNextSlot
+    {
+        get => !NewFixSlot;
+        set => NewFixSlot = !value;
+    }
+
+    public bool NewSlotBroken => NewBroken is not null;
+    public string NewFixSlotLabel => NewBroken is { } b ? $"Fix {b.SlotName}: delete what's in the way and make it again" : "";
+    public string NewNextSlotLabel => NewBroken is { } b ? $"Use {b.NextName} instead" : "";
+
+    /// <summary>An orchestration's workspaces start from the branch its last one started from.</summary>
+    partial void OnNewOrchestrationChanged(string? value)
+    {
+        if (value is null) return;
+        NewFrom = _services.Ui.WorkspaceChoices(value).From ?? "";
+        if (!IsAddOpen) return;
+        NewBranchChoices = [];
+        FillSlotChoices(value);
+        CheckSlotSoon(immediately: true);
+        _ = LoadNewSettingsAsync(value);
+    }
+
+    partial void OnNewBranchChanged(string value)
+    {
+        if (IsAddOpen) CheckSlotSoon();
+    }
+
+    static readonly TimeSpan SlotCheckDelay = TimeSpan.FromMilliseconds(300);
+    CancellationTokenSource? _slotCheck;
+
+    /// <summary>The definitions of the form's orchestration or repo, once read, so checking a slot can look at its
+    /// folders. Kept per ID, since reading them can take a while.</summary>
+    LoadedOrchestration? _newLoaded;
+    string? _newLoadedFor;
+
+    /// <summary>Check the slot once typing pauses, off the UI thread. The line keeps saying what it said until the
+    /// answer arrives, so the form doesn't flicker on every keystroke.</summary>
+    void CheckSlotSoon(bool immediately = false)
+    {
+        _slotCheck?.Cancel();
+        _slotCheck = new CancellationTokenSource();
+        _ = CheckSlotAsync(immediately ? TimeSpan.Zero : SlotCheckDelay, _slotCheck.Token);
+    }
+
+    async Task CheckSlotAsync(TimeSpan delay, CancellationToken cancel)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, cancel);
+        }
+        catch (OperationCanceledException) { return; }
+        if (NewOrchestration is not { } id)
+        {
+            ShowSlot("", bad: false, null);
+            return;
+        }
+        if (NewMode == NewCheckout.NoBranch)
+        {
+            var at = NewFrom.Trim() is { Length: > 0 } f ? f : null;
+            var (freeLine, freeBad) = await AppServices.RunAsync(() => FreeSlotPreview(id, at));
+            if (cancel.IsCancellationRequested) return;
+            ShowSlot(freeLine, freeBad, null);
+            return;
+        }
+        var (branch, _) = NewTarget();
+        var slot = _newSlot;
+        var loaded = _newLoadedFor == id ? _newLoaded : null;
+        var makes = NewMode == NewCheckout.NewBranch;
+        var (line, bad, record, broken) = await AppServices.RunAsync(() => SlotPreview(id, branch, slot, loaded, makes));
+        if (cancel.IsCancellationRequested) return;
+
+        var before = _newSlotRecord?.Key;
+        ShowSlot(line, bad, record, broken);
+        if (record?.Key != before) _ = LoadNewSettingsAsync(id);
+    }
+
+    /// <summary>Which slot the branch would go in (the one it's in already, a free one to reuse, or a new one), or what
+    /// stands in the way of it: a broken slot (which the form then asks about), or the branch checked out somewhere
+    /// else.</summary>
+    /// <param name="makes">The branch is to be made, so one of that name already there stands in the way.</param>
+    (string Line, bool Bad, WorkspaceRecord? Record, BrokenSlot? Broken) SlotPreview(string id, string branch, int? slot, LoadedOrchestration? loaded,
+        bool makes)
+    {
+        try
+        {
+            var (name, record) = _services.Workspaces.SlotFor(id, branch, slot);
+            if (makes && branch.Length > 0 && loaded is not null && _services.Workspaces.BranchTaken(loaded, branch) is { } taken)
+                return ($"{char.ToUpperInvariant(taken[0])}{taken[1..]}.", true, record, null);
+            if (loaded is not null && _services.Workspaces.BrokenSlotFor(loaded, branch, slot) is { } broken)
+                return ($"{broken.Why}.", true, record, broken);
+            if (branch.Length > 0 && loaded is not null && _services.Workspaces.CheckOutBlocker(loaded, branch, slot) is { } blocked)
+                return (blocked, true, record, null);
+            return (record switch
+            {
+                null => $"Goes in {id}--{name}, a new slot.",
+                { IsFree: true } => $"Reuses {record.SlotName}, which is free: its folders, installed packages, ports and values carry over.",
+                _ => $"'{branch}' is already in {record.SlotName}, so it comes up there again.",
+            }, false, record, null);
+        }
+        catch (WorkspaceException e)
+        {
+            return (e.Message, true, null, null);
+        }
+    }
+
+    void ShowSlot(string line, bool bad, WorkspaceRecord? record, BrokenSlot? broken = null)
+    {
+        _newSlotRecord = record;
+        NewReusesSlot = record?.IsFree == true;
+        NewSlotLine = line;
+        NewSlotBad = bad;
+        // A different broken slot asks afresh, starting from the choice that deletes nothing.
+        if (broken?.SlotName != NewBroken?.SlotName) NewFixSlot = false;
+        NewBroken = broken;
+    }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MessageInModal), nameof(MessageOnPage))]
+    private string _formMessage = "";
+    [ObservableProperty] private bool _formFailed;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TrustInModal), nameof(TrustOnPage))]
+    private bool _hasPendingTrust;
+
+    // Approvals and form messages belong to whichever is in front: the new-workspace modal, or the selected workspace.
+    public bool TrustInModal => HasPendingTrust && IsAddOpen;
+    public bool TrustOnPage => HasPendingTrust && !IsAddOpen;
+    public bool MessageInModal => FormMessage.Length > 0 && IsAddOpen;
+    public bool MessageOnPage => FormMessage.Length > 0 && !IsAddOpen;
+
+    [ObservableProperty] private bool _isWorking;
     [ObservableProperty] private bool _confirmingRemove;
-    [ObservableProperty] private bool _removeForce;
+    [ObservableProperty] private bool _confirmingEmptyData;
+    [ObservableProperty] private bool _deleteBranch;
 
-    // Create-workspace flow.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
-    private bool _isCreating;
-    [ObservableProperty] private string? _newMap;
-    [ObservableProperty] private string _newName = "";
-    [ObservableProperty] private string? _createError;
+    /// <summary>The view opens a progress window for each operation it's handed.</summary>
+    public event Action<OperationProgressViewModel>? ProgressStarted;
 
-    /// <summary>The chosen map's repos, each tickable — untick one to create a <i>partial</i>
-    /// workspace without it (the resolver's <c>--without</c>). Rebuilt whenever the map selection changes.</summary>
-    public ObservableCollection<WorkspaceRepoChoiceViewModel> NewRepos { get; } = [];
+    public bool IsEmpty => Workspaces.Count == 0;
+    public bool HasSelection => Selected is not null;
+    public bool HasOrchestrations => OrchestrationNames.Count > 0;
+    public bool CanDeleteBranch => Selected?.Record is { InPlace: false, Branch: not null };
 
-    /// <summary>The map definition behind <see cref="NewRepos"/>. Null until a map is picked.</summary>
-    MapDefinition? _newMapDef;
-
-    /// <summary>The chosen map's repos resolved to their configs, cached so <see cref="PartialHint"/> can
-    /// project the wiring of any slice synchronously (no git). Null when the map couldn't be resolved.</summary>
-    IReadOnlyList<ResolvedRepo>? _newMapRepos;
-
-    /// <summary>Only worth showing the repo checklist when there's a choice to make.</summary>
-    public bool CanChooseRepos => NewRepos.Count > 1;
-
-    /// <summary>True once at least one repo is unticked — the workspace will be partial.</summary>
-    public bool IsPartialSelection => NewRepos.Any(r => !r.Included);
-
-    /// <summary>Plain-language consequence of the current deselection: which repos are left out, and any
-    /// needs the remaining slice can no longer satisfy (a gap to supply a default for). Null when the whole
-    /// map is selected.</summary>
-    public string? PartialHint
+    public WorkspacesViewModel(AppServices services)
     {
-        get
-        {
-            if (_newMapDef is null || !IsPartialSelection) return null;
-            var excluded = NewRepos.Where(r => !r.Included).Select(r => r.Name).ToList();
-            var kept = NewRepos.Where(r => r.Included).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
-            if (kept.Count == 0) return "Pick at least one repo.";
-
-            var hint = $"Partial workspace — no worktree, env or compose for {string.Join(", ", excluded)}.";
-
-            // Project the remaining slice (pure, no git) to warn about needs the dropped repos provided.
-            if (_newMapRepos is not null)
-            {
-                var slice = _newMapRepos.Where(r => kept.Contains(r.Name)).ToList();
-                var gaps = MapGraphProjection.Project(_newMapDef, slice).Gaps
-                    .Select(g => g.Need.Capability).Distinct().ToList();
-                if (gaps.Count > 0)
-                    hint += $" Needs left unmet (supply a default): {string.Join(", ", gaps)}.";
-            }
-            return hint;
-        }
+        _services = services;
+        Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
+        _services.HostStatus.Changed += ApplyRunners;
+        OrchestrationNames.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOrchestrations));
+        _lastRunners = _services.HostStatus.Runners;
+        DetailsOpen = _services.Ui.DetailsOpen;
+        Logs.ShowTimes = _services.Ui.LogTimes;
+        Logs.Wrap = _services.Ui.LogWrap;
+        Refresh();
     }
 
-    /// <summary>Recompute the partial-selection surface after a repo is ticked or unticked.</summary>
-    void OnRepoChoiceChanged()
+    protected override void OnActivated() => Refresh();
+
+    // Rebuilding the list reloads the selected workspace's apps and log, so it's left alone unless something changed.
+    protected override void OnWindowFocused()
     {
-        OnPropertyChanged(nameof(IsPartialSelection));
-        OnPropertyChanged(nameof(PartialHint));
+        if (IsAddOpen || IsSettingsOpen || ConfirmingRemove || ConfirmingBulkRemove || ConfirmingTakeOver || IsWorking || HasPendingTrust) return;
+        var records = _services.Workspaces.List().Select(r => (r.Key, r.State, r.UpdatedAt));
+        var names = _services.Orchestrations.List().Select(e => e.Id).Concat(_services.Stored.Repos().Select(r => r.Id));
+        if (!records.SequenceEqual(Workspaces.Where(w => !IsUnmade(w.Record)).Select(w => (w.Record.Key, w.Record.State, w.Record.UpdatedAt)))
+            || !names.SequenceEqual(OrchestrationNames))
+            Refresh();
     }
 
-    /// <summary>The in-flight checklist load, so opening the modal can wait for the repos to land
-    /// (and so a test can too) rather than racing a fire-and-forget.</summary>
-    Task _repoLoad = Task.CompletedTask;
+    /// <summary>A main that has never come up, listed so it can be started: <see cref="WorkspaceService.MainOf"/>.</summary>
+    internal static bool IsUnmade(WorkspaceRecord record) => record.CreatedAt == default;
 
-    partial void OnNewMapChanged(string? value) => _repoLoad = LoadMapReposAsync(value);
+    /// <summary>Raised after the list of workspaces is read again, so the nav can follow.</summary>
+    public event Action? WorkspacesChanged;
 
-    /// <summary>Load the picked map's repos into the checklist (all ticked by default, so the default create
-    /// is the whole map), and resolve them once off-thread so the partial hint can project any slice.</summary>
-    async Task LoadMapReposAsync(string? mapName)
-    {
-        NewRepos.Clear();
-        _newMapDef = null;
-        _newMapRepos = null;
-        NotifyRepoChoicesChanged();
-        if (string.IsNullOrEmpty(mapName)) return;
-
-        MapDefinition? def;
-        try { def = await AppServices.RunAsync(() => Services.Maps.Get(mapName)); }
-        catch { def = null; }
-        // A slow load losing a race with a newer pick must not repopulate the old map's repos.
-        if (def is null || def.Name != NewMap) return;
-
-        _newMapDef = def;
-        foreach (var repo in def.Repos)
-            NewRepos.Add(new WorkspaceRepoChoiceViewModel(repo.Name, OnRepoChoiceChanged));
-        // Best-effort: resolve the repos' configs so the hint can project gaps. Never blocks the form.
-        try { _newMapRepos = (await AppServices.RunAsync(() => Services.MapResolver.Resolve(mapName, null))).Repos; }
-        catch { _newMapRepos = null; }
-        NotifyRepoChoicesChanged();
-    }
-
-    void NotifyRepoChoicesChanged()
-    {
-        OnPropertyChanged(nameof(CanChooseRepos));
-        OnRepoChoiceChanged();
-    }
-
-    /// <summary>Bring the new workspace's infra up right after creating it (default on).</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
-    private bool _startInfraOnCreate = true;
-
-    /// <summary>Whether the Docker engine is reachable, probed while the create modal is open.
-    /// Optimistically true until the probe answers, so the warning never flashes before we know.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowDockerWarning))]
-    private bool _dockerRunning = true;
-
-    /// <summary>True while the engine probe is in flight (drives the "Checking…" affordance).</summary>
-    [ObservableProperty] private bool _checkingDocker;
-
-    /// <summary>Warn in the create modal when "start infra" is asked for but the engine isn't running —
-    /// so the user finds out before hitting Create, not as an after-the-fact soft warning.</summary>
-    public bool ShowDockerWarning => IsCreating && StartInfraOnCreate && !DockerRunning && !CheckingDocker;
-
-    partial void OnCheckingDockerChanged(bool value) => OnPropertyChanged(nameof(ShowDockerWarning));
-
-    /// <summary>Re-probe the engine when "start infra" is (re)ticked — it may have come up meanwhile.</summary>
-    partial void OnStartInfraOnCreateChanged(bool value)
-    {
-        if (value && IsCreating) _ = ProbeDockerAsync();
-    }
-
-    /// <summary>Probe the Docker engine off the UI thread and update <see cref="DockerRunning"/>.</summary>
-    async Task ProbeDockerAsync()
-    {
-        CheckingDocker = true;
-        try { DockerRunning = await AppServices.RunAsync(() => Services.Docker.IsEngineRunning()); }
-        catch { DockerRunning = false; }
-        finally { CheckingDocker = false; }
-    }
-
-    /// <summary>Re-run the engine probe (the modal's "Recheck" affordance after starting Docker).</summary>
     [RelayCommand]
-    private Task RecheckDocker() => ProbeDockerAsync();
-
-    /// <summary>Launch Docker Desktop from the create modal (no workspace selected yet, unlike
-    /// <see cref="OpenDockerCommand"/>).</summary>
-    [RelayCommand]
-    private void OpenDockerDesktop()
+    private void Refresh()
     {
-        try
-        {
-            var exe = DockerDesktopPath();
-            if (exe is null)
-            {
-                CreateError = "Docker Desktop wasn't found in its default location — start it manually, then Recheck.";
-                return;
-            }
-            Process.Start(new ProcessStartInfo { FileName = exe, UseShellExecute = true });
-        }
-        catch (Exception ex) { CreateError = $"couldn't open Docker Desktop: {ex.Message}"; }
-    }
+        var keep = Selected?.Record.Key;
+        var orchestration = NewOrchestration;
+        OrchestrationNames.Clear();
+        foreach (var entry in _services.Orchestrations.List()) OrchestrationNames.Add(entry.Id);
+        // A repo can run on its own; IDs are unique across orchestrations and repos, so the names don't collide.
+        foreach (var repo in _services.Stored.Repos()) OrchestrationNames.Add(repo.Id);
 
-    public ObservableCollection<string> AvailableMaps { get; } = [];
-
-    bool HasSelection => Selected is not null && !Busy;
-    bool NotBusy => !Busy;
-
-    /// <summary>Bound by the view to toggle the empty-state vs. detail panel.</summary>
-    public bool HasSelected => Selected is not null;
-
-    /// <summary>False when no workspaces exist at all — drives the first-run empty state.</summary>
-    public bool HasWorkspaces => Workspaces.Count > 0;
-
-    /// <summary>True once there's at least one pool (map) or residual group to show. Drives the list
-    /// surface — a map with an empty pool still shows, since that's where Checkout lives.</summary>
-    public bool HasPools => Pools.Count > 0;
-
-    partial void OnSelectedChanged(WorkspaceItemViewModel? value)
-    {
-        ConfirmingRemove = false;
-        Error = null;
-        StatusMessage = null;
-        OnPropertyChanged(nameof(HasSelected));
-        if (value is not null) _ = LoadStatusAsync(value);
-    }
-
-    /// <summary>Probe docker for the workspace's live containers and fill its display flags.</summary>
-    async Task LoadStatusAsync(WorkspaceItemViewModel item)
-    {
-        if (!item.HasInfra) { item.SetContainers([], dockerAvailable: true); return; }
-        try
-        {
-            var list = await AppServices.RunAsync(() => Services.Workspaces.Status(item.Name));
-            item.SetContainers(list, dockerAvailable: true);
-        }
-        catch (WorkspaceException)
-        {
-            // RequireWithInfra throws this when docker compose isn't available.
-            item.SetContainers([], dockerAvailable: false);
-        }
-        catch (Exception)
-        {
-            item.SetContainers([], dockerAvailable: false);
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(NotBusy))]
-    private Task RefreshAsync() => Guard(LoadAsync, status: null);
-
-    /// <summary>Gathered pool state, ready to turn into view-models on the UI thread. Built off-thread
-    /// (every field is a blocking Core call) so the refresh never stalls the UI.</summary>
-    sealed record PoolData(
-        IReadOnlyList<(string Map, int MaxSlots, IReadOnlyList<InstanceRecord> Records)> Pools,
-        IReadOnlyList<InstanceRecord> Orphans,
-        bool HasMaps);
-
-    /// <summary>Read the pool of every map, plus any workspace that belongs to no current map.
-    /// Runs on a background thread.</summary>
-    PoolData GatherPools()
-    {
-        var maps = Services.Maps.List();
-        var pools = new List<(string, int, IReadOnlyList<InstanceRecord>)>();
-        var claimedByPool = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var map in maps.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
-        {
-            var status = Services.MapPool.Status(map.Name);
-            pools.Add((status.Map, status.MaxSlots, status.Workspaces));
-            foreach (var w in status.Workspaces) claimedByPool.Add(w.Workspace);
-        }
-
-        // Anything a pool didn't account for (Map null, or a map since deleted) still needs a home
-        // in the list — gather it into the residual group rather than dropping it silently.
-        var orphans = Services.Workspaces.List()
-            .Where(r => !claimedByPool.Contains(r.Workspace))
-            .OrderBy(r => r.Workspace, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return new PoolData(pools, orphans, maps.Count > 0);
-    }
-
-    /// <summary>The load currently in flight, so overlapping refresh requests coalesce onto it rather than
-    /// interleaving two Clear/rebuild passes. In the app the UI thread already serialises these; this makes
-    /// it deterministic anywhere (e.g. a test with no synchronization context, where the ctor's initial
-    /// refresh could otherwise race an explicit one).</summary>
-    Task? _inFlightLoad;
-
-    /// <summary>Rebuild <see cref="Workspaces"/> and <see cref="Pools"/> from the store, preserving the
-    /// current selection by name. The one refresh path for both the command and post-mutation reloads.</summary>
-    Task LoadAsync()
-    {
-        if (_inFlightLoad is { IsCompleted: false }) return _inFlightLoad;
-        return _inFlightLoad = LoadCore();
-    }
-
-    async Task LoadCore()
-    {
-        var keep = Selected?.Name;
-        var data = await AppServices.RunAsync(GatherPools);
-
-        HasAnyMaps = data.HasMaps;
         Workspaces.Clear();
-        Pools.Clear();
+        var stored = _services.Workspaces.List();
+        // Every repo and orchestration has a main, listed before it has ever come up.
+        var mains = OrchestrationNames
+            .Where(id => !stored.Any(r => r.Orchestration == id && r.IsMain))
+            .Select(id => _services.Orchestrations.Resolve(id) is { } path ? _services.Workspaces.MainOf(id, path) : null)
+            .OfType<WorkspaceRecord>();
+        foreach (var record in stored.Concat(mains))
+            Workspaces.Add(new WorkspaceItem(record, record.IsMain && record.State != WorkspaceState.Up ? _services.Workspaces.HolderOf(record) : null,
+                Orphaned: record.IsMain && !OrchestrationNames.Contains(record.Orchestration)));
+        NavCount = Workspaces.Count(s => s.IsUp);
 
-        foreach (var (map, maxSlots, records) in data.Pools)
-        {
-            var items = records.Select(r => new WorkspaceItemViewModel(r, Services.Workspaces.Urls(r))).ToList();
-            foreach (var item in items) Workspaces.Add(item);
-            Pools.Add(new PoolGroupViewModel(map, maxSlots, items));
-        }
-        if (data.Orphans.Count > 0)
-        {
-            var items = data.Orphans.Select(r => new WorkspaceItemViewModel(r)).ToList();
-            foreach (var item in items) Workspaces.Add(item);
-            Pools.Add(new PoolGroupViewModel("(ad-hoc)", maxSlots: 0, items, isPool: false));
-        }
+        NewOrchestration = OrchestrationNames.Contains(orchestration ?? "") ? orchestration : OrchestrationNames.FirstOrDefault();
 
-        OnPropertyChanged(nameof(HasWorkspaces));
-        OnPropertyChanged(nameof(HasPools));
-        NavCount = Workspaces.Count;
-        Selected = Workspaces.FirstOrDefault(w => w.Name == keep) ?? Workspaces.FirstOrDefault();
+        OnPropertyChanged(nameof(IsEmpty));
+        Selected = Workspaces.FirstOrDefault(s => s.Record.Key == keep);
+        BuildOverview();
+        if (Selected is null && IsActive) _ = LoadOverviewStatusAsync();
+        WorkspacesChanged?.Invoke();
     }
 
-    [RelayCommand(CanExecute = nameof(NotBusy))]
-    private async Task NewWorkspace()
+    /// <summary>Show one workspace, by its key; null shows them all.</summary>
+    public void Show(string? key)
     {
-        CreateError = null;
-        NewName = "";
-        NewMap = null;
-        StartInfraOnCreate = true;
-        var names = await AppServices.RunAsync(() => Services.Maps.List().Select(m => m.Name).ToList());
-        AvailableMaps.Clear();
-        foreach (var n in names) AvailableMaps.Add(n);
-        NewMap = AvailableMaps.FirstOrDefault();
-        await _repoLoad;        // open with the repo checklist already filled in
-        DockerRunning = true;   // optimistic until the probe answers
-        IsCreating = true;
-        if (StartInfraOnCreate) _ = ProbeDockerAsync();
+        Selected = key is null ? null : Workspaces.FirstOrDefault(s => s.Record.Key == key);
+        if (Selected is null) _ = LoadOverviewStatusAsync();
+    }
+
+    /// <summary>The header offers the one that applies: take an up workspace down, or bring any other up. A free slot
+    /// has nothing to run until a branch is checked out in it.</summary>
+    public bool ShowTakeDown => Selected?.IsUp == true;
+    public bool ShowBringUp => Selected is { IsUp: false, IsFree: false };
+    public bool ShowRunControls => Selected?.IsFree != true;
+
+    partial void OnSelectedChanged(WorkspaceItem? value)
+    {
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(CanDeleteBranch));
+        OnPropertyChanged(nameof(ShowTakeDown));
+        OnPropertyChanged(nameof(ShowBringUp));
+        OnPropertyChanged(nameof(ShowRunControls));
+        OnPropertyChanged(nameof(ShowStartChoices));
+        ConfirmingRemove = false;
+        ConfirmingEmptyData = false;
+        CancelTakeOver();
+        DeleteBranch = false;
+        ShowDetails(value?.Record);
+    }
+
+    void ShowDetails(WorkspaceRecord? record)
+    {
+        var plan = record is null ? null : _services.Workspaces.LastPlan(record.Orchestration, record.Name);
+        ShowPlan(record, plan, preview: false);
+        if (record is { IsFree: false } && plan is null) _ = PreviewAsync(record);
+    }
+
+    /// <summary>Plan a workspace that has never come up, so its page shows what it would run rather than nothing. Loading
+    /// its definitions never asks for approval here: one that needs it says so, and bringing it up asks.</summary>
+    async Task PreviewAsync(WorkspaceRecord record)
+    {
+        string? why = null;
+        (Plan Plan, WorkspaceRecord Record)? preview = null;
+        try
+        {
+            preview = await AppServices.RunAsync(() =>
+            {
+                var loaded = _services.Loader.Load(record.OrchestrationPath, _services.Workspaces.Worktrees(record.OrchestrationPath, record.Name));
+                if (loaded.Untrusted.Count > 0) { why = "Its definitions need approving before sprig can say what it runs. Bringing it up asks."; return null; }
+                if (loaded.Orchestration is null || loaded.Problems.Count > 0)
+                {
+                    why = "It can't be planned: " + string.Join("; ", loaded.Problems.Take(2).Select(p => p.Message));
+                    return null;
+                }
+                return ((Plan, WorkspaceRecord)?)_services.Workspaces.Preview(loaded, record);
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or WorkspaceException)
+        {
+            why = $"Its definitions couldn't be read: {e.Message}";
+        }
+        // Another workspace picked meanwhile, or this one came up and has a plan of its own now.
+        if (Selected?.Record.Key != record.Key || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not null) return;
+        if (preview is { } shown) ShowPlan(shown.Record, shown.Plan, preview: true);
+        else if (why is not null) SayApps(why, bad: true);
+    }
+
+    /// <param name="preview">Planned for showing only (<see cref="WorkspaceService.Preview"/>), since it has never come up.</param>
+    void ShowPlan(WorkspaceRecord? record, Plan? plan, bool preview)
+    {
+        _plan = plan;
+        _planRecord = plan is null ? null : record;
+        FillStartChoices(record, plan);
+        WorkspaceLinks = plan?.Links ?? [];
+        AppsMessage = "";
+        if (preview) SayApps("Not up yet: these are the apps its definitions name. The ports in their values are only examples until it comes up and is given its own.", bad: false);
+        if (record is null || plan is null)
+        {
+            Apps = [];
+            Infra = [];
+            Warnings = [];
+            LoadWorkspace(null, null);
+            return;
+        }
+
+        // A plan newer than the record (a repo added since the workspace last came up) names repos the record hasn't got;
+        // those apps wait for the next bring-up rather than breaking the page.
+        Apps = plan.Apps.Where(app => record.Repos.Any(r => r.RepoPath == app.RepoPath)).Select(app =>
+        {
+            var repo = record.Repos.First(r => r.RepoPath == app.RepoPath);
+            var dir = Path.GetFullPath(Path.Combine(repo.Dir, app.Path));
+            var port = plan.Ports.FirstOrDefault(p => p.Owner == app.Owner && p.Resource == app.Name)?.Port;
+            var files = app.ValueFiles();
+            return new WorkspaceAppRow(app.Key, $"{repo.Name} / {app.Name}", dir.Replace('\\', '/'), port is null ? "" : $"http://localhost:{port}",
+                files.Count > 0 ? string.Join(", ", files) : "none", app.Job,
+                repo.Name, app.Name, port?.ToString() ?? "");
+        }).ToArray();
+        ApplyRunners(_lastRunners);
+        LoadWorkspace(record, plan);
+
+        Infra = plan.Containers.Select(c => new WorkspaceInfraRow($"{c.Owner} / {c.Name}", string.Join(", ", c.Ports)))
+            .Concat(plan.Compose.SelectMany(c => c.Services.Select(s => new WorkspaceInfraRow($"{c.Owner} / {s.Name}", string.Join(", ", s.Mappings)))))
+            .ToArray();
+
+        Warnings = PlanView.Rows(plan.Problems.Where(p => p.Severity == ProblemSeverity.Warning), Path.GetDirectoryName(record.OrchestrationPath)!).ToArray();
+    }
+
+    // ---- running the selected workspace's apps ----
+
+    IReadOnlyList<RunnerStatus>? _lastRunners;
+    Plan? _plan;
+
+    /// <summary>The record <see cref="_plan"/> was shown for: a preview's carries the repos a main gets once it comes up.</summary>
+    WorkspaceRecord? _planRecord;
+    bool _polling;
+
+    /// <summary>The selected workspace's logs: every app interleaved, or one app's.</summary>
+    public WorkspaceLogPane Logs { get; } = new();
+
+    /// <summary>The orchestration's quick links, at this workspace's ports.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWorkspaceLinks))]
+    private IReadOnlyList<PlannedLink> _workspaceLinks = [];
+
+    public bool HasWorkspaceLinks => WorkspaceLinks.Count > 0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAppsMessage))]
+    private string _appsMessage = "";
+
+    [ObservableProperty] private bool _appsMessageIsBad;
+
+    public bool HasAppsMessage => AppsMessage.Length > 0;
+
+    /// <summary>Show what the host says about each app of the selected workspace; null when no host is running.</summary>
+    public void ApplyRunners(IReadOnlyList<RunnerStatus>? runners)
+    {
+        _lastRunners = runners;
+        var key = Selected?.Record.Key;
+        foreach (var row in Apps)
+            row.Apply(runners?.FirstOrDefault(r => r.Workspace == key && r.Name == row.Key));
+        StatesChanged();
+        RefreshGraph();
+        if (Selected is null) CountOverviewApps();
+    }
+
+    /// <summary>Read the logs, and every few seconds the containers' states while the graph or a container's log shows.
+    /// The view calls this every second while the page shows; the app-wide <see cref="HostStatus"/> poll brings the
+    /// apps' states.</summary>
+    public async Task PollAsync()
+    {
+        if (_polling || Selected is null) return;
+        _polling = true;
+        try
+        {
+            await Logs.PollAsync();
+            await PollInfraAsync();
+        }
+        finally
+        {
+            _polling = false;
+        }
+    }
+
+    /// <summary>Ask the host now rather than at the next tick, after something here changed what's running.</summary>
+    async Task RefreshRunnersAsync()
+    {
+        await _services.HostStatus.PollAsync();
+        await PollAsync();
+    }
+
+    /// <summary>What Start can start: every app, then each group the definitions name. Empty until the workspace has a
+    /// plan.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowStartChoices))]
+    private IReadOnlyList<StartChoice> _startChoices = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StartLabel), nameof(StartTip))]
+    private StartChoice? _startChoice;
+
+    bool _fillingStartChoices;
+
+    public bool ShowStartChoices => ShowRunControls && StartChoices.Count > 1;
+    public string StartLabel => StartChoice?.Group is { } group ? $"Start {group}" : "Start all";
+    public string StartTip => StartChoice?.Group is null
+        ? "Every app, after what each depends on; a workspace that's down is brought up first"
+        : $"{StartChoice.Apps}, after what each depends on; a workspace that's down is brought up first";
+
+    /// <summary>The choices for <paramref name="plan"/>'s groups, with the one last picked for the orchestration (or repo)
+    /// chosen, so every workspace of it starts the same slice.</summary>
+    void FillStartChoices(WorkspaceRecord? record, Plan? plan)
+    {
+        _fillingStartChoices = true;
+        try
+        {
+            StartChoices = plan is null || record is null ? []
+                : [new StartChoice(null, "Every app", $"All {plan.Apps.Count} apps"),
+                   .. plan.Groups.Select(g => new StartChoice(g.Name, g.Name, string.Join(", ", g.Apps.Select(a => a[(a.IndexOf('/') + 1)..]))))];
+            var remembered = record is null ? null : _services.Ui.StartGroup(record.Orchestration);
+            StartChoice = StartChoices.FirstOrDefault(c => c.Group == remembered) ?? StartChoices.FirstOrDefault();
+        }
+        finally
+        {
+            _fillingStartChoices = false;
+        }
+    }
+
+    partial void OnStartChoiceChanged(StartChoice? value)
+    {
+        if (!_fillingStartChoices && value is not null && Selected?.Record is { } record) _services.Ui.SetStartGroup(record.Orchestration, value.Group);
     }
 
     [RelayCommand]
-    private void CancelCreate() => IsCreating = false;
+    private void PickStartChoice(StartChoice choice) => StartChoice = choice;
+
+    /// <summary>Picks <paramref name="choice"/> and starts it in one go, from the ▶ beside it in the choices.</summary>
+    [RelayCommand]
+    private async Task StartChoiceNow(StartChoice choice)
+    {
+        StartChoice = choice;
+        await StartAsync(null);
+    }
+
+    [RelayCommand]
+    private async Task StartApps() => await StartAsync(null);
+
+    [RelayCommand]
+    private async Task StartApp(WorkspaceAppRow row) => await StartAsync([row.Key], open: true);
+
+    /// <summary>What Start's choice picks (every app, or a group), leaving alone what's already going; or the apps
+    /// <paramref name="keys"/> names, started afresh, after what they depend on. Starting means everything they need too:
+    /// a workspace that isn't up is brought up first.</summary>
+    /// <param name="open">Show the one app's log once it's starting.</param>
+    async Task StartAsync(IReadOnlyList<string>? keys, bool open = false)
+    {
+        if (Selected?.Record is not { } record || keys is { Count: 0 }) return;
+        // Taken now: bringing the workspace up reads it afresh, choices and all.
+        var group = keys is null ? StartChoice?.Group : null;
+        var starting = new Starting(group, keys);
+        // Brought up here, its apps build while the infra comes up, and starting them releases those builds.
+        var prebuilt = record.State != WorkspaceState.Up;
+        if (prebuilt)
+        {
+            if (!await UpAsync(retry: () => StartAsync(keys, open), starting, build: starting)) return;
+            if (Selected?.Record is not { State: WorkspaceState.Up } up) return;
+            record = up;
+        }
+        if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
+        try
+        {
+            var names = starting.AppsIn(plan);
+            // Up for one group, only its infra is running; what this adds starts first, so its apps find it there.
+            var missing = await AppServices.RunAsync(() => _services.Workspaces.MissingInfra(record, plan, names));
+            if (missing.Count > 0)
+            {
+                var title = WorkspaceItem.Display(record);
+                if (!await RunAsync($"Starting what {(group is not null ? $"the {group} group" : keys is [var only] ? only : "the apps")} uses in {title}",
+                        (progress, cancellation) => _services.Workspaces.StartInfra(missing, progress, cancellation),
+                        $"{string.Join(", ", missing.Select(t => t.Key))} {(missing.Count == 1 ? "is" : "are")} running.")) return;
+            }
+            await AppServices.RunAsync(() =>
+            {
+                var specs = RunnerSpecs.For(record, plan, names);
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: prebuilt ? [] : keys ?? []));
+                if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
+            });
+            // Looked up after, since bringing the workspace up reads it afresh and its rows are new ones.
+            var one = keys is [var key] ? Apps.FirstOrDefault(a => a.Key == key) : null;
+            SayApps(one is not null ? $"Starting {one.Name}."
+                : keys is not null ? $"Starting {keys.Count} apps, each after what it depends on."
+                : group is not null ? $"Starting the {group} group, each app after what it depends on."
+                : "Starting the apps, each after what it depends on.", bad: false);
+            if (open && one is not null) OpenApp(one);
+            await RefreshRunnersAsync();
+        }
+        catch (Exception e)
+        {
+            SayApps(e.Message, bad: true);
+        }
+    }
+
+    [RelayCommand]
+    private Task RestartRunning() => RestartRunningAsync(jobs: false);
+
+    [RelayCommand]
+    private Task RestartRunningWithJobs() => RestartRunningAsync(jobs: true);
+
+    /// <summary>Every app that's going, built again and after what it depends on, so a change in the worktree takes
+    /// effect; with <paramref name="jobs"/>, the jobs they depend on run again first. Stopped apps stay stopped.</summary>
+    async Task RestartRunningAsync(bool jobs)
+    {
+        if (Selected?.Record is not { } record || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
+        try
+        {
+            var count = await AppServices.RunAsync(() =>
+            {
+                var runners = _services.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+                var (specs, restart) = RunnerSpecs.RestartRunning(record, plan, runners, jobs: jobs);
+                if (specs.Count == 0) return 0;
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: restart));
+                if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't restart the apps");
+                return restart.Count(name => specs.Any(s => s.Name == name && !s.Job));
+            });
+            SayApps(count == 0 ? "Nothing is running to restart."
+                : $"Restarting {(count == 1 ? "1 app" : $"{count} apps")}{(jobs ? " after their jobs run again" : "")}, each built again and after what it depends on.",
+                bad: false);
+            await RefreshRunnersAsync();
+        }
+        catch (Exception e)
+        {
+            SayApps(e.Message, bad: true);
+        }
+    }
+
+    [RelayCommand]
+    private async Task StopApps() => await StopAsync(null);
+
+    [RelayCommand]
+    private async Task StopApp(WorkspaceAppRow row) => await StopAsync([row]);
+
+    /// <param name="rows">Null for every app in the workspace.</param>
+    async Task StopAsync(IReadOnlyList<WorkspaceAppRow>? rows)
+    {
+        if (Selected?.Record is not { } record || rows is { Count: 0 }) return;
+        var one = rows is [var only] ? only : null;
+        SayApps(rows is null ? "Stopping the apps…" : one is not null ? $"Stopping {one.Name}…" : $"Stopping {rows.Count} apps…", bad: false);
+        // Shown at once; the stop itself can take up to the grace period.
+        foreach (var r in Apps.Where(a => (rows is null || rows.Contains(a)) && a.IsAlive)) r.MarkStopping();
+        var keys = rows?.Select(r => r.Key).ToArray();
+        var stopped = await AppServices.RunAsync(() => keys is null
+            ? _services.Host.StopAndWait(record.Key)
+            : keys.AsParallel().SelectMany(key => _services.Host.StopAndWait(record.Key, key)).ToArray());
+        var forced = stopped.Where(s => s.Error is not null).Select(s => $"{s.Name}: {s.Error}").ToArray();
+        SayApps(forced.Length > 0 ? string.Join("; ", forced)
+            : stopped.Count == 0 ? "Nothing was running."
+            : rows is null ? "The apps have stopped. The infra is still up."
+            : one is not null ? $"{one.Name} has stopped." : $"{stopped.Count} apps have stopped.",
+            bad: forced.Length > 0);
+        await RefreshRunnersAsync();
+    }
+
+    void SayApps(string message, bool bad)
+    {
+        AppsMessage = message;
+        AppsMessageIsBad = bad;
+    }
+
+    // ---- making and changing workspaces ----
+
+    [RelayCommand]
+    private void OpenAdd()
+    {
+        _newSlot = null;
+        OpenForm();
+    }
+
+    /// <summary>The new-workspace form for the selected free slot, so its branch goes there rather than in the lowest
+    /// free one.</summary>
+    [RelayCommand]
+    private void CheckOutHere()
+    {
+        if (Selected?.Record is not { IsFree: true } record) return;
+        _newSlot = int.Parse(record.Name, System.Globalization.CultureInfo.InvariantCulture);
+        NewBranch = "";
+        if (NewOrchestration != record.Orchestration) NewOrchestration = record.Orchestration;
+        OpenForm();
+    }
+
+    void OpenForm()
+    {
+        FormMessage = "";
+        FormFailed = false;
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        NewEmptyData = false;
+        NewBroken = null;
+        NewFixSlot = false;
+        _newLoaded = null;
+        _newLoadedFor = null;
+        NewBranchChoices = [];
+        FillSlotChoices(NewOrchestration);
+        IsAddOpen = true;
+        CheckSlotSoon(immediately: true);
+        _ = LoadNewSettingsAsync(NewOrchestration);
+    }
+
+    [RelayCommand]
+    private void CancelAdd()
+    {
+        _slotCheck?.Cancel();
+        IsAddOpen = false;
+        FormMessage = "";
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        _afterApproval = null;
+    }
 
     [RelayCommand]
     private async Task Create()
     {
-        var mapName = NewMap;
-        var name = NewName.Trim();
-        if (string.IsNullOrEmpty(mapName)) { CreateError = "pick a map (define one in the Maps tab first)"; return; }
-        if (string.IsNullOrEmpty(name)) { CreateError = "enter a workspace name"; return; }
-
-        // Null --without = the whole map, which keeps a full create on the default path. Every repo unticked
-        // is a nonsense selection — asked for before we hand anything to the resolver.
-        var included = NewRepos.Where(r => r.Included).Select(r => r.Name).ToList();
-        if (NewRepos.Count > 0 && included.Count == 0) { CreateError = "pick at least one repo"; return; }
-        var without = IsPartialSelection
-            ? NewRepos.Where(r => !r.Included).Select(r => r.Name).ToList()
-            : null;
-
-        // Resolve + plan up front so pre-flight problems (bad name, duplicate, bad map) stay in the
-        // inline create form; only once we have a real plan do we hand off to the progress window.
-        MapDefinition? map;
-        IReadOnlyList<ResolvedRepo> repos;
-        IReadOnlyList<WorkspaceStep> plan;
-        try
+        FormMessage = "";
+        FormFailed = false;
+        if (NewOrchestration is not { } name || _services.Orchestrations.Resolve(name) is not { } path)
         {
-            (map, repos) = await AppServices.RunAsync(() => Services.MapResolver.Resolve(mapName, without));
-            plan = Services.Workspaces.PlanCreateFromMap(repos, name);
-        }
-        catch (Exception ex) { CreateError = ex.Message; return; }
-
-        var startInfra = StartInfraOnCreate;
-        var modal = new OperationProgressViewModel($"Creating workspace '{name}'");
-        modal.Load(plan);
-        // "Start infrastructure" is driven here (not by the service) — append it as the final row.
-        var infraStep = startInfra ? modal.AddStep("infra", "Start infrastructure") : null;
-        IsCreating = false;
-        OperationStarted?.Invoke(modal);
-
-        Busy = true;
-        CreateError = null;
-        try
-        {
-            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            var record = await AppServices.RunAsync(() => Services.Workspaces.CreateFromMap(name, map, repos, progress: progress));
-
-            // Optionally bring the infra up straight away. A failure here (e.g. Docker not running)
-            // is a soft warning — the workspace itself was created successfully.
-            var hasInfra = record.Repos.Any(r => r.ComposePaths.Count > 0);
-            var started = false;
-            string? infraWarning = null;
-            if (infraStep is not null)
-            {
-                if (!hasInfra)
-                {
-                    infraStep.Detail = "no Docker infrastructure in this map";
-                    infraStep.State = WorkspaceStepState.Done;
-                }
-                else if (!await AppServices.RunAsync(() => Services.Docker.IsEngineRunning()))
-                {
-                    // Docker Desktop is stopped — skip the start cleanly with a plain, actionable note
-                    // instead of letting `docker up` throw a raw daemon-connection error.
-                    infraWarning = WorkspaceService.DockerNotRunningNote;
-                    infraStep.Detail = WorkspaceService.DockerNotRunningNote;
-                    infraStep.State = WorkspaceStepState.Warning;
-                }
-                else
-                {
-                    infraStep.State = WorkspaceStepState.Running;
-                    try
-                    {
-                        await AppServices.RunAsync(() => Services.Workspaces.Up(name));
-                        started = true;
-                        infraStep.State = WorkspaceStepState.Done;
-                    }
-                    catch (Exception ex)
-                    {
-                        infraWarning = ex.Message;
-                        infraStep.Detail = ex.Message;
-                        infraStep.State = WorkspaceStepState.Warning;
-                    }
-                }
-            }
-
-            await RefreshCore();
-            Selected = Workspaces.FirstOrDefault(w => w.Name == name) ?? Selected;
-            var partialNote = record.IsPartial ? $" (partial — without {string.Join(", ", record.ExcludedRepos)})" : "";
-            StatusMessage = (started ? $"created '{name}' and started its infra" : $"created '{name}'") + partialNote;
-            // Both a setup failure and an infra-start failure are soft warnings — the workspace itself
-            // was created. Surface whichever happened (setup first, since it ran first).
-            var setupWarning = SetupWarning.Summarize(record);
-            Error = setupWarning is not null ? $"created '{name}', but {setupWarning} — finish setup manually in the worktree"
-                : infraWarning is not null ? $"created '{name}', but couldn't start its infra: {infraWarning}"
-                : null;
-            Services.NotifyStoreChanged();
-
-            var warned = setupWarning is not null || infraWarning is not null;
-            modal.Finish(
-                warned ? Error! : started ? $"Created '{name}' and started its infra." : $"Created '{name}'.",
-                warned ? WorkspaceStepState.Warning : WorkspaceStepState.Done);
-        }
-        catch (Exception ex)
-        {
-            // The create form is already closed — surface the failure in the progress window instead.
-            // Create rolls itself back, but refresh anyway so the list always matches the store on exit.
-            await TryRefreshCore();
-            modal.Finish($"Couldn't create '{name}': {ex.Message}", WorkspaceStepState.Error);
-        }
-        finally
-        {
-            Busy = false;
-        }
-    }
-
-    // -- pool checkout / release ------------------------------------------------
-
-    /// <summary>True while the checkout overlay is open.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHandling))]
-    private bool _isCheckingOut;
-
-    /// <summary>The map whose pool is being checked out of (fixed for the life of the overlay).</summary>
-    [ObservableProperty] private string? _checkoutMap;
-    [ObservableProperty] private string? _checkoutError;
-
-    /// <summary>The required branch name — the workspace's identity, cut across every repo in the map.</summary>
-    [ObservableProperty] private string _checkoutBranch = "";
-
-    /// <summary>The optional checkout label — a note to recognise this workspace by.</summary>
-    [ObservableProperty] private string _checkoutLabel = "";
-
-    /// <summary>The free (unclaimed) workspaces available to reuse for this checkout.</summary>
-    public ObservableCollection<WorkspaceItemViewModel> CheckoutFreeWorkspaces { get; } = [];
-
-    /// <summary>True = build a brand-new workspace; false = reuse the selected free one. Paired with
-    /// <see cref="CheckoutReuse"/> as the two options of the target radio group (kept mutually exclusive
-    /// by the group + their initial values in <c>Checkout</c>).</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHandling))]
-    private bool _checkoutNew;
-
-    /// <summary>The inverse of <see cref="CheckoutNew"/> — bound to the "reuse a free workspace" radio.</summary>
-    [ObservableProperty] private bool _checkoutReuse;
-
-    /// <summary>The free workspace to reuse (when not building new). Drives the handling choices below.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowHandling))]
-    private WorkspaceItemViewModel? _checkoutTarget;
-
-    /// <summary>True when the pool has room to build a new workspace (enables the "New workspace" choice).</summary>
-    [ObservableProperty] private bool _canCheckoutNew;
-
-    /// <summary>True when the pool has at least one free workspace to reuse (enables the "Reuse" choice).</summary>
-    [ObservableProperty] private bool _canReuseWorkspace;
-
-    // Handling mode (only when reusing a free workspace). Two radio bools sharing a group in XAML; exactly
-    // one is true. Both cut a clean branch from base; keep leaves deps + volumes, fresh reinstalls and wipes.
-    [ObservableProperty] private bool _modeKeep = true;
-    [ObservableProperty] private bool _modeFresh;
-
-    /// <summary>The handling choices only make sense when reusing an existing workspace.</summary>
-    public bool ShowHandling => IsCheckingOut && !CheckoutNew && CheckoutTarget is not null;
-
-    // -- "start from" picker: searchable, chipped, recent-by-default -------------
-
-    /// <summary>The rows currently shown in the picker dropdown (recent when the search box is empty, matches
-    /// otherwise). Rebuilt from <see cref="_allStartPoints"/> whenever the search text changes.</summary>
-    public ObservableCollection<StartPointItemViewModel> StartPointResults { get; } = [];
-
-    IReadOnlyList<StartPointChoice> _allStartPoints = [];
-    const int StartPointRecentLimit = 8;
-    string _defaultBaseLabel = "base";
-
-    /// <summary>The chosen start point; <c>null</c> means "Default" (let each repo resolve its base).</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StartPointDisplay))]
-    private StartPointItemViewModel? _selectedStartPointItem;
-
-    /// <summary>True while the branch list is being fetched (branches come from a network fetch) — the
-    /// dropdown shows a spinner meanwhile.</summary>
-    [ObservableProperty] private bool _startPointsLoading;
-
-    /// <summary>Whether the picker dropdown is open.</summary>
-    [ObservableProperty] private bool _isStartPointOpen;
-
-    /// <summary>The search text; empty shows the recent leaders, any text filters every candidate.</summary>
-    [ObservableProperty] private string _startPointSearch = "";
-
-    /// <summary>The dropdown's list selection (transient) — picking one funnels through
-    /// <see cref="PickStartPoint"/>. Distinct from <see cref="SelectedStartPointItem"/>, the confirmed choice.</summary>
-    [ObservableProperty] private StartPointItemViewModel? _pendingStartPointItem;
-
-    /// <summary>Label on the collapsed picker: the chosen ref, or the default base.</summary>
-    public string StartPointDisplay => SelectedStartPointItem?.Ref ?? DefaultStartPointLabel;
-
-    /// <summary>Text for the always-present "Default" row / collapsed label — the resolved base.</summary>
-    public string DefaultStartPointLabel => $"Default — {_defaultBaseLabel}";
-
-    partial void OnStartPointSearchChanged(string value) => RebuildStartPointResults();
-
-    partial void OnPendingStartPointItemChanged(StartPointItemViewModel? value)
-    {
-        if (value is not null) PickStartPoint(value);
-    }
-
-    void RebuildStartPointResults()
-    {
-        StartPointResults.Clear();
-        foreach (var c in StartPointFilter.Apply(_allStartPoints, StartPointSearch, StartPointRecentLimit))
-            StartPointResults.Add(new StartPointItemViewModel(c));
-    }
-
-    [RelayCommand]
-    private void ToggleStartPoint()
-    {
-        IsStartPointOpen = !IsStartPointOpen;
-        if (IsStartPointOpen) { StartPointSearch = ""; PendingStartPointItem = null; RebuildStartPointResults(); }
-    }
-
-    /// <summary>Pick a start point (or the "Default" row, which passes <c>null</c>) and close the dropdown.</summary>
-    [RelayCommand]
-    private void PickStartPoint(StartPointItemViewModel? item)
-    {
-        SelectedStartPointItem = item;
-        IsStartPointOpen = false;
-        PendingStartPointItem = null; // ready for the next open (so re-picking the same row still fires)
-    }
-
-    // Short-lived cache of fetched picker options per stack, so reopening skips the network refresh.
-    readonly Dictionary<string, (DateTimeOffset When, StartPointOptions Opts)> _startPointCache = new(StringComparer.Ordinal);
-    static readonly TimeSpan StartPointCacheTtl = TimeSpan.FromSeconds(30);
-
-    void ApplyStartPoints(StartPointOptions options)
-    {
-        _defaultBaseLabel = options.Default ?? "base";
-        _allStartPoints = options.Candidates;
-        OnPropertyChanged(nameof(DefaultStartPointLabel));
-        OnPropertyChanged(nameof(StartPointDisplay));
-        RebuildStartPointResults();
-    }
-
-    /// <summary>Fill the picker fast: show cached-or-local refs immediately (no network), then refresh from a
-    /// background fetch unless the cache is still warm. The actual checkout re-fetches before branching, so
-    /// the instantly-shown list can lag slightly without affecting what you end up on.</summary>
-    async Task LoadStartPointsAsync(string map)
-    {
-        // 1) Instant: cached options if we have them, else a local (no-fetch) read — the list shows at once.
-        if (_startPointCache.TryGetValue(map, out var cached))
-            ApplyStartPoints(cached.Opts);
-        else
-        {
-            try { ApplyStartPoints(await AppServices.RunAsync(() => Services.MapPool.StartPointsFor(map, null, fetch: false))); }
-            catch { ApplyStartPoints(new StartPointOptions(null, [])); }
-        }
-
-        // Skip the network refresh while the cache is warm.
-        if (_startPointCache.TryGetValue(map, out var c) && DateTimeOffset.Now - c.When < StartPointCacheTtl)
+            Fail("Choose an orchestration or a repo. Add one on the Orchestrations or Repos page first.");
             return;
+        }
 
-        // 2) Background: fetch remotes, refresh the list, and cache the result. The spinner shows meanwhile.
-        StartPointsLoading = true;
+        if (NewMode == NewCheckout.NoBranch)
+        {
+            await CreateFreeSlotAsync(name, path);
+            return;
+        }
+        // The app checks branches out in slots of worktrees, which keep their ports; running in place is left to sprig up.
+        var (branch, track) = NewTarget();
+        if (branch.Length == 0)
+        {
+            Fail(NewMode == NewCheckout.NewBranch ? "Give the new branch a name." : "Pick the branch to check out.");
+            return;
+        }
+        var loaded = await LoadAsync(path, Create);
+        if (loaded is null) return;
+        _newLoaded = loaded;
+        _newLoadedFor = name;
+        // Checked again, since the folders may have changed since the line under the branch last looked. Said there, with
+        // the form still open, rather than partway through in the progress window.
+        var newSlot = _newSlot;
+        _slotCheck?.Cancel();
+        BrokenSlot? broken;
+        try { broken = await AppServices.RunAsync(() => _services.Workspaces.BrokenSlotFor(loaded, branch, newSlot)); }
+        catch (WorkspaceException e)
+        {
+            Fail(e.Message);
+            return;
+        }
+        if (broken is not null && broken.SlotName != NewBroken?.SlotName)
+        {
+            // Newly broken since the form last looked: ask before doing either.
+            ShowSlot($"{broken.Why}.", bad: true, _newSlotRecord, broken);
+            return;
+        }
+        var fixSlot = broken is not null && NewFixSlot;
+        if (broken is not null && !fixSlot) newSlot = int.Parse(broken.Next, System.Globalization.CultureInfo.InvariantCulture);
+        if (await AppServices.RunAsync(() => _services.Workspaces.CheckOutBlocker(loaded, branch, newSlot, fixSlot)) is { } blocked)
+        {
+            ShowSlot(blocked, bad: true, _newSlotRecord, broken);
+            return;
+        }
+        string slot;
+        try { slot = _services.Workspaces.SlotFor(name, branch, newSlot).Slot; }
+        catch (WorkspaceException e)
+        {
+            Fail(e.Message);
+            return;
+        }
+        if (NewValues(loaded) is not { } values) return;
+        // A box emptied of a value the slot kept clears it, so the default applies again.
+        var unset = NewSettings.Where(s => s.Value.Length == 0 && s.Kept is not null).Select(s => s.Name).ToArray();
+
+        var from = NewFrom.Trim() is { Length: > 0 } f ? f : null;
+        _services.Ui.SetWorkspaceChoices(name, new WorkspaceOptions(From: from));
+        var makes = NewMode == NewCheckout.NewBranch;
+        // An existing branch that some of an orchestration's repos don't have is made in those from their default branch.
+        var options = new CheckOutOptions(newSlot, makes ? from : null, NewEmptyData, fixSlot, NewBranch: makes, Track: track);
+        var slotName = $"{loaded.Id}--{slot}";
+
+        // The progress window takes over from here, and reports any failure.
+        IsAddOpen = false;
+        var ok = await RunAsync($"Checking out {branch} in {slotName}",
+            (progress, cancellation) => _services.Workspaces.CheckOut(loaded, branch, options, progress, cancellation, values: values, unset: unset),
+            $"{branch} is up in {slotName}.", retry: Create);
+        if (ok)
+        {
+            NewBranch = "";
+            NewExisting = "";
+            _newSlot = null;
+            foreach (var input in NewSettings) input.Value = "";
+        }
+        Refresh();
+        Selected = Workspaces.FirstOrDefault(s => s.Record.Orchestration == loaded.Id && s.Record.Branch == branch) ?? Selected;
+    }
+
+    [RelayCommand]
+    private Task Up() => UpAsync(retry: Up);
+
+    /// <summary>Bring the selected workspace up, asking for approval first when a definition needs it, and before taking
+    /// over a checkout another definition is up in. True once it's up.</summary>
+    /// <param name="retry">What to carry on with once the user approves, or agrees to take over.</param>
+    /// <param name="starting">The apps about to be started, so only their infra comes up; null for all of it.</param>
+    /// <param name="build">The apps to build while the infra comes up, held until a start without a hold releases them,
+    /// which mustn't name them to restart; null to build nothing ahead.</param>
+    /// <param name="jobsAgain">Those apps' jobs run again even if they've finished.</param>
+    async Task<bool> UpAsync(Func<Task> retry, Starting? starting = null, Starting? build = null, bool jobsAgain = false)
+    {
+        if (Selected?.Record is not { } record) return false;
+        var takeOver = _takeOverAgreed;
+        _takeOverAgreed = false;
+        var loaded = await LoadAsync(record.OrchestrationPath, retry, record.Name);
+        if (loaded is null) return false;
+        if (record.InPlace && !takeOver && await AppServices.RunAsync(() => _services.Workspaces.HolderOf(loaded, record.Name)) is { } holder)
+        {
+            AskTakeOver(holder, record, retry);
+            return false;
+        }
+        var title = WorkspaceItem.Display(record);
+        string? held = null;
+        Action<WorkspaceRecord, Plan>? beforeInfra = build is null ? null
+            : (r, plan) => held = _services.Host.Prebuild(r, plan, build.AppsIn(plan), jobsAgain);
+        // No branch given: a slot stays on whatever its worktrees have checked out, even if that was switched with git.
+        var ok = await RunAsync($"Bringing {title} up",
+            (progress, cancellation) => _services.Workspaces.Up(loaded, record.Name, null, progress: progress, cancellation: cancellation, takeOver: takeOver,
+                beforeInfra: beforeInfra, starting: starting),
+            $"{title} is up.",
+            retry: retry);
+        if (!ok && held is not null) _ = AppServices.RunAsync(() => _services.Host.TrySend(new HostRequest("stop", Workspace: held)));
+        Refresh();
+        return ok;
+    }
+
+    // ---- taking over a checkout ----
+
+    /// <summary>Another definition is up in the checkout the selected main runs in, so starting it asks first.</summary>
+    [ObservableProperty] private bool _confirmingTakeOver;
+    [ObservableProperty] private string _takeOverTitle = "";
+    [ObservableProperty] private string _takeOverLine = "";
+
+    Func<Task>? _afterTakeOver;
+    bool _takeOverAgreed;
+
+    void AskTakeOver(WorkspaceRecord holder, WorkspaceRecord record, Func<Task> then)
+    {
+        var where = holder.Repos.Where(r => !r.Worktree).Select(r => r.Dir.Replace('\\', '/')).FirstOrDefault() ?? "the same checkout";
+        TakeOverTitle = $"Take over from {holder.SlotName}?";
+        TakeOverLine = $"{WorkspaceItem.Display(holder)} is up in {where}, and one definition runs in a checkout at a time. "
+                       + $"Taking over stops its apps and takes its infra down, keeping its data, then starts {record.Orchestration} there.";
+        _afterTakeOver = then;
+        ConfirmingTakeOver = true;
+    }
+
+    [RelayCommand]
+    private void CancelTakeOver()
+    {
+        ConfirmingTakeOver = false;
+        _afterTakeOver = null;
+    }
+
+    [RelayCommand]
+    private async Task TakeOver()
+    {
+        ConfirmingTakeOver = false;
+        if (_afterTakeOver is not { } next) return;
+        _afterTakeOver = null;
+        _takeOverAgreed = true;
+        await next();
+    }
+
+    [RelayCommand]
+    private async Task Down()
+    {
+        if (Selected?.Record is not { } record) return;
+        var title = WorkspaceItem.Display(record);
+        await RunAsync($"Stopping {title}",
+            (progress, cancellation) => _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation),
+            $"{title} is down. Its data, worktrees and ports are kept.");
+        Refresh();
+    }
+
+    /// <summary>Free the selected slot for the next branch, keeping its branch, data, ports and values.</summary>
+    [RelayCommand]
+    private async Task Free()
+    {
+        if (Selected?.Record is not { } record || record.InPlace || record.IsFree) return;
+        await RunAsync($"Freeing {record.SlotName}",
+            (progress, cancellation) => _services.Workspaces.Free(record.Orchestration, record.Name, progress, cancellation),
+            $"{record.SlotName} is free. '{record.Branch}' is kept with its commits, and the slot keeps its data, ports and values for the next branch.");
+        Refresh();
+    }
+
+    [RelayCommand]
+    private void AskEmptyData() => ConfirmingEmptyData = true;
+
+    [RelayCommand]
+    private void CancelEmptyData() => ConfirmingEmptyData = false;
+
+    /// <summary>Delete the selected workspace's infra data, then bring it back as it was: up again if it was up, with the
+    /// apps that were running started again after the jobs they depend on, which run again against the empty data.</summary>
+    [RelayCommand]
+    private async Task EmptyData()
+    {
+        if (Selected is not { CanEmptyData: true, Record: var record }) return;
+        ConfirmingEmptyData = false;
+        // Taken before, since emptying stops them.
+        var running = await AppServices.RunAsync(() => (_services.Host.TrySend(new HostRequest("list"))?.Runners ?? [])
+            .Where(r => r.Workspace == record.Key && r.State.IsAlive()).Select(r => r.Name).ToArray());
+        var wasUp = record.State == WorkspaceState.Up;
+        var title = WorkspaceItem.Display(record);
+        var emptied = await RunAsync($"Emptying {title}'s data",
+            (progress, cancellation) => _services.Workspaces.EmptyData(record.Orchestration, record.Name, progress, cancellation),
+            wasUp ? $"{title}'s data is empty. It comes back up next, with the apps that were running."
+                : $"{title}'s data is empty. It starts that way next time it comes up.");
+        Refresh();
+        if (emptied && wasUp) await BringBackAsync(running);
+    }
+
+    /// <param name="running">The apps that were running, by key; jobs among them are left to the apps that need them.</param>
+    async Task BringBackAsync(IReadOnlyList<string> running)
+    {
+        // Built while the infra comes up. A migration that finished did so against the data that's gone, so jobs run again.
+        var build = new Starting(Apps: running);
+        if (!await UpAsync(retry: () => BringBackAsync(running), build: build, jobsAgain: true)) return;
+        if (Selected?.Record is not { State: WorkspaceState.Up } record
+            || _services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
+        var apps = running.Where(n => plan.Apps.Any(a => a.Key == n && !a.Job)).ToArray();
+        if (apps.Length == 0) return;
         try
         {
-            var fresh = await AppServices.RunAsync(() => Services.MapPool.StartPointsFor(map, null, fetch: true));
-            _startPointCache[map] = (DateTimeOffset.Now, fresh);
-            ApplyStartPoints(fresh);
-        }
-        catch { /* offline / no remotes — keep the instant list */ }
-        finally { StartPointsLoading = false; }
-    }
-
-    // -- branch graph (GitKraken-style visual picker) ---------------------------
-
-    const int BranchGraphLimit = 150;
-
-    /// <summary>True while the branch-graph overlay is open.</summary>
-    [ObservableProperty] private bool _isBranchGraphOpen;
-    [ObservableProperty] private bool _branchGraphLoading;
-    [ObservableProperty] private string? _branchGraphError;
-
-    /// <summary>The laid-out graph the drawn lanes bind to, and the current commit's sha (ringed).</summary>
-    [ObservableProperty] private CommitGraph? _branchGraph;
-    [ObservableProperty] private string? _branchGraphCurrentSha;
-
-    /// <summary>The ref a click picked (branch name or short sha) and the commit it highlights. Selecting
-    /// highlights (rings) the commit rather than applying immediately — a "Use this" confirm applies it.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasGraphSelection))]
-    private string? _graphSelectedRef;
-    [ObservableProperty] private string? _graphSelectedSha;
-
-    /// <summary>The overlay search's selection — picking a branch here highlights + scrolls the graph to it.</summary>
-    [ObservableProperty] private StartPointItemViewModel? _graphSearchSelection;
-
-    /// <summary>Raised (with a row index) to ask the window to bring that commit row into view.</summary>
-    public event Action<int>? ScrollToRowRequested;
-
-    public bool HasGraphSelection => !string.IsNullOrWhiteSpace(GraphSelectedRef);
-
-    /// <summary>The list rows drawn beside the lanes — one per commit; each carries its own graph slice.</summary>
-    public ObservableCollection<GraphRowViewModel> GraphRows { get; } = [];
-
-    /// <summary>Raised when the branch-graph window should open (payload is this VM, used as its DataContext).
-    /// The view's code-behind opens the resizable window, mirroring the progress-window pattern.</summary>
-    public event Action<WorkspacesViewModel>? BranchGraphRequested;
-
-    /// <summary>Open the visual branch graph for the checkout's map (first repo), highlighting the current
-    /// branch. Selecting a branch/commit there sets the same start point the dropdown does.</summary>
-    [RelayCommand]
-    private async Task OpenBranchGraph()
-    {
-        var map = CheckoutMap;
-        if (map is null || IsBranchGraphOpen) return; // already open — don't stack windows
-
-        BranchGraphError = null;
-        GraphRows.Clear();
-        BranchGraph = null;
-        GraphSelectedRef = null;
-        GraphSelectedSha = null;
-        GraphSearchSelection = null;
-        IsBranchGraphOpen = true;
-        BranchGraphLoading = true;
-        BranchGraphRequested?.Invoke(this); // open the window now; it shows the spinner while we load
-        try
-        {
-            var existing = CheckoutNew ? null : CheckoutTarget?.Name;
-            var (commits, current) = await AppServices.RunAsync(() => Services.MapPool.CommitGraphFor(map, existing, BranchGraphLimit));
-            var graph = CommitGraphLayout.Build(commits);
-            var currentSha = current is null
-                ? null
-                : graph.Nodes.FirstOrDefault(n => n.Commit.Refs.Contains(current))?.Commit.Sha;
-
-            BranchGraph = graph;
-            BranchGraphCurrentSha = currentSha;
-            for (var i = 0; i < graph.Nodes.Count; i++)
-                GraphRows.Add(new GraphRowViewModel(graph.Nodes[i], graph.Cells[i], current));
-        }
-        catch (Exception ex) { BranchGraphError = ex.Message; }
-        finally { BranchGraphLoading = false; }
-    }
-
-    [RelayCommand]
-    private void CloseBranchGraph() => IsBranchGraphOpen = false;
-
-    /// <summary>Select (highlight) a ref in the graph — a branch name (pill) or short sha (commit row). Rings
-    /// the commit and remembers the pick, but does <b>not</b> apply/close; that's <see cref="ConfirmGraphSelection"/>.</summary>
-    [RelayCommand]
-    private void SelectGraphRef(string? reference)
-    {
-        if (string.IsNullOrWhiteSpace(reference)) return;
-        GraphSelectedRef = reference;
-        var row = GraphRows.FirstOrDefault(r => r.Refs.Any(x => x.Name == reference))
-                  ?? GraphRows.FirstOrDefault(r => r.ShortSha == reference);
-        GraphSelectedSha = row?.Sha;
-    }
-
-    /// <summary>Apply the highlighted selection as the start point (routing through the dropdown's selection)
-    /// and close the graph.</summary>
-    [RelayCommand]
-    private void ConfirmGraphSelection()
-    {
-        if (string.IsNullOrWhiteSpace(GraphSelectedRef)) return;
-        SelectedStartPointItem = new StartPointItemViewModel(new StartPointChoice(GraphSelectedRef, null, false, false));
-        IsBranchGraphOpen = false;
-    }
-
-    // Picking a branch in the overlay's search highlights it in the graph and scrolls down to its row.
-    partial void OnGraphSearchSelectionChanged(StartPointItemViewModel? value)
-    {
-        if (value is null) return;
-        SelectGraphRef(value.Ref);
-        var idx = GraphRows.ToList().FindIndex(r => r.Sha == GraphSelectedSha);
-        if (idx >= 0) ScrollToRowRequested?.Invoke(idx);
-    }
-
-    /// <summary>Open the checkout overlay for a map's pool. Defaults to reusing the least-recently-used
-    /// free workspace (keep), or building a new one when the pool has none free — mirroring the CLI.</summary>
-    [RelayCommand]
-    private void Checkout(PoolGroupViewModel? group)
-    {
-        if (group is null || !group.IsPool || group.IsExhausted) return;
-
-        CheckoutMap = group.Map;
-        CheckoutError = null;
-        CheckoutBranch = "";
-        CheckoutLabel = "";
-
-        CheckoutFreeWorkspaces.Clear();
-        foreach (var w in group.Workspaces.Where(w => w.Free)) CheckoutFreeWorkspaces.Add(w);
-        CanReuseWorkspace = CheckoutFreeWorkspaces.Count > 0;
-        CanCheckoutNew = group.Headroom > 0;
-
-        // Prefer reusing the workspace freed longest ago (its leftover state is the least likely to matter);
-        // fall back to a new one when nothing's free.
-        if (CanReuseWorkspace)
-        {
-            CheckoutNew = false;
-            CheckoutTarget = CheckoutFreeWorkspaces
-                .OrderBy(w => w.Record.LastUsedAt ?? DateTimeOffset.MinValue).First();
-        }
-        else
-        {
-            CheckoutNew = true;
-            CheckoutTarget = null;
-        }
-        CheckoutReuse = !CheckoutNew;
-
-        ModeKeep = true;
-        ModeFresh = false;
-
-        // Reset the start-from picker to "Default", then fetch the real remote branches in the background.
-        _defaultBaseLabel = "base";
-        _allStartPoints = [];
-        StartPointResults.Clear();
-        StartPointSearch = "";
-        SelectedStartPointItem = null;
-        IsStartPointOpen = false;
-        OnPropertyChanged(nameof(StartPointDisplay));
-
-        IsCheckingOut = true;
-        _ = LoadStartPointsAsync(group.Map);
-    }
-
-    [RelayCommand]
-    private void CancelCheckout() => IsCheckingOut = false;
-
-    static string ModeLabel(CheckoutMode mode) => mode == CheckoutMode.Fresh ? "fresh" : "keep";
-
-    [RelayCommand]
-    private async Task ConfirmCheckout()
-    {
-        var map = CheckoutMap;
-        if (map is null) return;
-
-        var branch = CheckoutBranch.Trim();
-        if (branch.Length == 0) { CheckoutError = "give this workspace a branch name"; return; }
-        var label = CheckoutLabel.Trim();
-
-        string? existing = CheckoutNew ? null : CheckoutTarget?.Name;
-        if (!CheckoutNew && existing is null) { CheckoutError = "pick a workspace to reuse, or choose a new one"; return; }
-
-        var mode = !CheckoutNew && ModeFresh ? CheckoutMode.Fresh : CheckoutMode.Keep;
-
-        // Surface (do not resolve) a branch conflict up front, keeping the message in the overlay: a local
-        // branch of this name is a hard block; one only on a remote is a soft heads-up.
-        if (existing is not null)
-        {
-            try
+            await AppServices.RunAsync(() =>
             {
-                var conflicts = await AppServices.RunAsync(() => Services.MapPool.CheckCheckout(existing, branch));
-                if (conflicts.IsBlocked)
-                {
-                    CheckoutError = $"branch '{branch}' already exists in {string.Join(", ", conflicts.Blocked)} — " +
-                        "delete/rename it there or pick another name.";
-                    return;
-                }
-            }
-            catch (Exception ex) { CheckoutError = ex.Message; return; }
+                var specs = RunnerSpecs.For(record, plan, apps);
+                // Releases the held builds; naming them to restart would build them again.
+                var answer = _services.Host.Send(new HostRequest("start", specs, Restart: []));
+                if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
+            });
+            SayApps($"Starting {(apps.Length == 1 ? "the app that was running" : $"the {apps.Length} apps that were running")} again, after their jobs.", bad: false);
+            await RefreshRunnersAsync();
         }
-
-        // Plan up front so pre-flight problems stay in the overlay; only a real plan opens the progress window.
-        IReadOnlyList<WorkspaceStep> plan;
-        try { plan = await AppServices.RunAsync(() => Services.MapPool.PlanCheckout(map, existing, mode)); }
-        catch (Exception ex) { CheckoutError = ex.Message; return; }
-
-        var heading = existing is null
-            ? $"Checking out a new workspace from '{map}'"
-            : $"Checking out '{existing}' ({ModeLabel(mode)})";
-        var modal = new OperationProgressViewModel(heading);
-        modal.Load(plan);
-        IsCheckingOut = false;
-        OperationStarted?.Invoke(modal);
-
-        Busy = true;
-        Error = null;
-        StatusMessage = null;
-        try
+        catch (Exception e)
         {
-            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            var labelArg = label.Length == 0 ? null : label;
-            var startPoint = SelectedStartPointItem?.Ref; // null = Default (each repo resolves its base)
-            var record = await AppServices.RunAsync(() =>
-                Services.MapPool.Checkout(map, existing, branch, labelArg, mode, force: false, progress, startPoint));
-
-            await RefreshCore();
-            Selected = Workspaces.FirstOrDefault(w => w.Name == record.Workspace) ?? Selected;
-            Services.NotifyStoreChanged();
-
-            // A setup failure is soft: the workspace is claimed but degraded, so surface it rather than
-            // reporting a clean checkout.
-            if (record.SetupFailed)
-            {
-                Error = $"checked out '{record.Workspace}', but setup failed — this workspace is degraded; "
-                      + "finish setup in the worktree, then it's ready.";
-                modal.Finish(Error, WorkspaceStepState.Warning);
-            }
-            else
-            {
-                StatusMessage = $"checked out '{record.Workspace}' on branch “{branch}”";
-                modal.Finish($"Checked out '{record.Workspace}' on '{branch}'.", WorkspaceStepState.Done);
-            }
-        }
-        catch (Exception ex)
-        {
-            // The overlay is already closed — report in the progress window (this is where an un-pushed-commit
-            // guard on fresh/refresh lands, for instance). A failed checkout can still have mutated the store
-            // (a new workspace materialised before infra failed), so rebuild the list before surfacing it.
-            await TryRefreshCore();
-            Error = ex.Message;
-            modal.Finish($"Checkout failed: {ex.Message}", WorkspaceStepState.Error);
-        }
-        finally
-        {
-            Busy = false;
+            SayApps(e.Message, bad: true);
         }
     }
 
-    bool CanClaim => Selected is { Free: true } && Selected.Record.Map is not null && !Busy;
-
-    /// <summary>Claim the selected free workspace straight from the detail pane: open the checkout overlay
-    /// pre-targeted at this workspace (reuse, keep), so a click gives it a label and handling without
-    /// hunting for it in the pool's Checkout list.</summary>
-    [RelayCommand(CanExecute = nameof(CanClaim))]
-    private void Claim()
-    {
-        var item = Selected;
-        if (item is null || !item.Free || item.Record.Map is not { } map) return;
-        var group = Pools.FirstOrDefault(p => p.IsPool && p.Map == map);
-        if (group is null) return;
-
-        // Reuse the pool's checkout setup, then point the reuse target at exactly this workspace.
-        Checkout(group);
-        CheckoutNew = false;
-        CheckoutReuse = true;
-        CheckoutTarget = CheckoutFreeWorkspaces.FirstOrDefault(w => w.Name == item.Name) ?? CheckoutTarget;
-    }
-
-    bool CanRelease => Selected is { Claimed: true } && !Busy;
-
-    /// <summary>Release the selected workspace back to its pool: stop its infra (keeping all disk state) and
-    /// mark it free. Cheap and safe — nothing is removed, so a mistaken release is recovered by a keep
-    /// re-checkout.</summary>
-    [RelayCommand(CanExecute = nameof(CanRelease))]
-    private async Task Release()
-    {
-        var item = Selected;
-        if (item is null || !item.Claimed) return;
-        await Guard(async () =>
-        {
-            var (_, pending) = await AppServices.RunAsync(() => Services.MapPool.Release(item.Name));
-            await RefreshCore();
-            Services.NotifyStoreChanged();
-            // Surface (never act on) any pending work so it isn't silently forgotten before a later fresh checkout.
-            StatusMessage = pending.HasPending
-                ? $"released '{item.Name}' — infra stopped, disk kept. Pending: {pending.Summary()}"
-                : $"released '{item.Name}' — its infra is stopped; disk state kept";
-        }, status: null);
-    }
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private Task Up() => Lifecycle(ws => Services.Workspaces.Up(ws), "infra up");
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private Task Down() => Lifecycle(ws => Services.Workspaces.Down(ws), "infra down");
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private Task Restart() => Lifecycle(ws => Services.Workspaces.RestartInfra(ws), "infra restarted");
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private async Task Reconcile()
-    {
-        var item = Selected;
-        if (item is null) return;
-        await Guard(async () =>
-        {
-            var report = await AppServices.RunAsync(() => Services.Reconciler.Inspect(item.Name));
-            ApplyDrift(item, report);
-        }, status: "reconciled");
-    }
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private async Task Repair()
-    {
-        var item = Selected;
-        if (item is null) return;
-        await Guard(async () =>
-        {
-            await AppServices.RunAsync(() => Services.Reconciler.Repair(item.Name));
-            var report = await AppServices.RunAsync(() => Services.Reconciler.Inspect(item.Name));
-            ApplyDrift(item, report);
-            // Repair rebuilds worktrees — reality changed, so announce it (state-driven surfaces refresh,
-            // and a coach step waiting on a healthy workspace advances).
-            Services.NotifyStoreChanged();
-        }, status: "repaired");
-    }
-
-    /// <summary>Open the selected workspace as one titled, coloured VS Code window (the same file <c>sprig code</c> writes).</summary>
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private void OpenWorkspaceInVsCode()
-    {
-        if (Selected is not { } item) return;
-        try
-        {
-            var file = Services.Workspaces.WriteCodeWorkspace(Services.Workspaces.Get(item.Name) ?? item.Record);
-            Process.Start(new ProcessStartInfo { FileName = "code", Arguments = $"\"{file}\"", UseShellExecute = true });
-        }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    /// <summary>Open a workspace entry point in the default browser.</summary>
     [RelayCommand]
-    private void OpenUrl(WorkspaceUrl? url)
-    {
-        if (url is null) return;
-        try { Process.Start(new ProcessStartInfo { FileName = url.Url, UseShellExecute = true }); }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    /// <summary>Open one repo's worktree folder in the OS file manager.</summary>
-    [RelayCommand]
-    private void OpenRepoInExplorer(RepoLineViewModel? repo)
-        => LaunchRepo(repo, p => new ProcessStartInfo { FileName = p, UseShellExecute = true });
-
-    /// <summary>Open one repo's worktree in VS Code (<c>code &lt;path&gt;</c> on the PATH).</summary>
-    [RelayCommand]
-    private void OpenRepoInVsCode(RepoLineViewModel? repo)
-        => LaunchRepo(repo, p => new ProcessStartInfo { FileName = "code", Arguments = $"\"{p}\"", UseShellExecute = true });
-
-    /// <summary>Open a terminal at one repo's worktree (Windows Terminal, else a shell).</summary>
-    [RelayCommand]
-    private void OpenRepoInTerminal(RepoLineViewModel? repo)
-    {
-        var path = repo?.WorktreePath;
-        if (string.IsNullOrEmpty(path)) return;
-        try
-        {
-            if (OperatingSystem.IsWindows())
-                // Prefer Windows Terminal; fall back to PowerShell if wt isn't installed.
-                try { Process.Start(new ProcessStartInfo { FileName = "wt.exe", Arguments = $"-d \"{path}\"", UseShellExecute = true }); }
-                catch { Process.Start(new ProcessStartInfo { FileName = "powershell.exe", WorkingDirectory = path, UseShellExecute = true }); }
-            else if (OperatingSystem.IsMacOS())
-                Process.Start(new ProcessStartInfo { FileName = "open", Arguments = $"-a Terminal \"{path}\"" });
-            else
-                Process.Start(new ProcessStartInfo { FileName = "x-terminal-emulator", WorkingDirectory = path });
-        }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    /// <summary>Launch a process for a repo's worktree path; surfaces any failure in <see cref="Error"/>.</summary>
-    void LaunchRepo(RepoLineViewModel? repo, Func<string, ProcessStartInfo> build)
-    {
-        var path = repo?.WorktreePath;
-        if (string.IsNullOrEmpty(path)) return;
-        try { Process.Start(build(path)); }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private async Task RefreshStatus()
-    {
-        var item = Selected;
-        if (item is not null) await LoadStatusAsync(item);
-    }
-
-    /// <summary>Launch Docker Desktop so the user can inspect this workspace's <c>sprig-&lt;name&gt;</c> project.</summary>
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private void OpenDocker()
-    {
-        try
-        {
-            var exe = DockerDesktopPath();
-            if (exe is null)
-            {
-                Error = "Docker Desktop wasn't found in its default location. Open it manually to see the "
-                      + $"'sprig-{Selected?.Name}' project.";
-                return;
-            }
-            Process.Start(new ProcessStartInfo { FileName = exe, UseShellExecute = true });
-        }
-        catch (Exception ex) { Error = $"couldn't open Docker Desktop: {ex.Message}"; }
-    }
-
-    /// <summary>Docker Desktop's exe in either Program Files location, or null if not installed there.</summary>
-    static string? DockerDesktopPath()
-    {
-        foreach (var folder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
-        {
-            var root = Environment.GetFolderPath(folder);
-            if (string.IsNullOrEmpty(root)) continue;
-            var exe = Path.Combine(root, "Docker", "Docker", "Docker Desktop.exe");
-            if (File.Exists(exe)) return exe;
-        }
-        return null;
-    }
-
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private void Remove() => ConfirmingRemove = true;
+    private void AskRemove() => ConfirmingRemove = true;
 
     [RelayCommand]
     private void CancelRemove() => ConfirmingRemove = false;
 
     [RelayCommand]
-    private async Task ConfirmRemove()
+    private async Task Remove()
     {
-        var item = Selected;
-        var force = RemoveForce;
-        if (item is null) return;
+        if (Selected is not { CanRemove: true, Record: var record }) return;
         ConfirmingRemove = false;
-
-        var record = await AppServices.RunAsync(() => Services.Workspaces.Get(item.Name));
-        if (record is null)
-        {
-            // No record to build a checklist from — fall back to the plain guarded sweep.
-            await Guard(async () =>
+        var options = new RemoveOptions(DeleteBranch && !record.InPlace);
+        var title = WorkspaceItem.Display(record);
+        await RunAsync($"Removing {title}",
+            (progress, cancellation) =>
             {
-                await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force));
-                await RefreshCore();
-                Services.NotifyStoreChanged();
-            }, status: $"removed '{item.Name}'");
-            return;
+                if (record.IsMain) _services.Workspaces.RemoveMain(record.Orchestration, progress, cancellation);
+                else _services.Workspaces.Remove(record.Orchestration, record.Name, options, progress, cancellation);
+            },
+            $"{title} is gone.");
+        Refresh();
+    }
+
+    [RelayCommand]
+    private async Task ApproveAll()
+    {
+        foreach (var item in PendingTrust) _services.Trust.Approve(item.TrustPath, item.Sha256);
+        PendingTrust.Clear();
+        HasPendingTrust = false;
+        Review.Clear();
+        if (_afterApproval is { } next)
+        {
+            _afterApproval = null;
+            await next();
         }
+    }
 
-        var modal = new OperationProgressViewModel($"Removing workspace '{item.Name}'");
-        modal.Load(Services.Workspaces.PlanRemove(record, force));
-        OperationStarted?.Invoke(modal);
-
-        Busy = true;
-        Error = null;
-        StatusMessage = null;
+    /// <summary>Load an orchestration, asking for approval first when a definition needs it. Null when it can't be used yet;
+    /// the form says why.</summary>
+    /// <param name="workspace">When it names a workspace with worktrees, the repos' definitions are read from those.</param>
+    async Task<LoadedOrchestration?> LoadAsync(string path, Func<Task> retry, string? workspace = null)
+    {
+        IsWorking = true;
         try
         {
-            var progress = new Progress<WorkspaceStepProgress>(modal.Apply);
-            await AppServices.RunAsync(() => Services.Workspaces.Remove(item.Name, force, progress));
-            await RefreshCore();
-            Services.NotifyStoreChanged();
-
-            // Teardown never hard-fails; when a layer couldn't be dismantled the record is kept and
-            // flagged, so it's still in the list after the refresh. Distinguish that (retry needed)
-            // from a clean sweep (record gone), rather than a bare "some steps needed attention".
-            if (await AppServices.RunAsync(() => Services.Workspaces.Get(item.Name)) is { TeardownFailed: true })
+            var loaded = await AppServices.RunAsync(() =>
+                _services.Loader.Load(path, workspace is null ? null : _services.Workspaces.Worktrees(path, workspace)));
+            if (loaded.Untrusted.Count > 0)
             {
-                StatusMessage = $"'{item.Name}' teardown incomplete — record kept; retry once fixed";
-                modal.Finish(
-                    $"Teardown of '{item.Name}' couldn't finish — record kept so you can retry once the flagged steps are fixed.",
-                    WorkspaceStepState.Warning);
+                AskForTrust(loaded.Untrusted, retry);
+                return null;
             }
-            else
+            if (loaded.Orchestration is null || loaded.Problems.Count > 0)
             {
-                StatusMessage = $"removed '{item.Name}'";
-                modal.Finish($"Removed '{item.Name}'.", WorkspaceStepState.Done);
+                var page = loaded.Alone ? "Repos" : "Orchestrations";
+                Fail("It can't be planned: " + string.Join("; ", loaded.Problems.Take(3).Select(p => p.Message)) +
+                     $". The {page} page shows the details.");
+                return null;
             }
+            return loaded;
         }
-        catch (Exception ex)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // A teardown that threw may have removed some layers before failing — refresh so the list
-            // reflects whatever actually happened, not the pre-teardown state.
-            await TryRefreshCore();
-            Error = ex.Message;
-            modal.Finish($"Couldn't remove '{item.Name}': {ex.Message}", WorkspaceStepState.Error);
+            Fail($"It couldn't be read: {e.Message}");
+            return null;
         }
         finally
         {
-            Busy = false;
+            IsWorking = false;
         }
     }
 
-    async Task Lifecycle(Action<string> action, string ok)
+    void AskForTrust(IEnumerable<NeedsTrust> pending, Func<Task> then)
     {
-        var name = Selected?.Name;
-        if (name is null) return;
-        await Guard(async () =>
-        {
-            await AppServices.RunAsync(() => action(name));
-            await RefreshCore();
-        }, status: ok);
+        PendingTrust.Clear();
+        foreach (var p in pending) PendingTrust.Add(PendingTrustItem.From(p));
+        HasPendingTrust = PendingTrust.Count > 0;
+        _afterApproval = then;
+        Review.Load(PendingTrust);
+        // Asked for because the user just started something, so the review opens straight away.
+        Review.OpenCommand.Execute(null);
     }
 
-    static void ApplyDrift(WorkspaceItemViewModel item, WorkspaceReconcile? report)
+    /// <summary>An error's first paragraph: what went wrong. The rest (a service's log, say) is already on the failed
+    /// step, so the summary under the steps stays short.</summary>
+    internal static string Headline(string message)
     {
-        if (report is null) { item.Drift = "not checked"; return; }
-        foreach (var line in item.Repos)
-            line.DriftState = report.Repos.FirstOrDefault(r => r.WorktreePath == line.WorktreePath)?.State;
-        item.Drift = report.IsHealthy ? "in sync"
-            : report.HasDrift ? "drift detected — run Repair"
-            : "worktrees gone";
+        var end = message.IndexOf("\n\n", StringComparison.Ordinal);
+        return (end < 0 ? message : message[..end]).Trim();
     }
 
-    Task RefreshCore() => LoadAsync();
-
-    /// <summary>Refresh the list, swallowing any failure. Used on error paths: an operation that failed
-    /// part-way (e.g. a checkout that created the workspace but couldn't start its infra) still changed the
-    /// store, so the list must be rebuilt to reflect reality — but a failed refresh must not mask the
-    /// original error already being surfaced.</summary>
-    async Task TryRefreshCore()
+    /// <summary>Run one operation off the UI thread, reporting into a progress window.</summary>
+    /// <param name="retry">Run again once the user approves definitions the operation found unapproved.</param>
+    async Task<bool> RunAsync(string heading, Action<IProgress<WorkspaceEvent>, CancellationToken> work, string success, Func<Task>? retry = null)
     {
-        try { await RefreshCore(); } catch { /* keep the original error visible */ }
-    }
-
-    async Task Guard(Func<Task> action, string? status)
-    {
-        Busy = true;
-        Error = null;
-        StatusMessage = null;
+        var window = new OperationProgressViewModel(heading);
+        var progress = new Progress<WorkspaceEvent>(window.Apply);
+        ProgressStarted?.Invoke(window);
+        IsWorking = true;
+        var running = AppServices.RunAsync(() => work(progress, window.Cancellation));
         try
         {
-            await action();
-            if (status is not null) StatusMessage = status;
+            await FinishedOrAbandoned(running, window.Cancellation);
+            // Progress<T> posts its reports, so let the last ones land before the summary.
+            await Task.Yield();
+            window.Finish(success, ProgressState.Done);
+            return true;
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
         {
-            Error = ex.Message;
+            await Task.Yield();
+            window.Finish(running.IsCompleted
+                ? "Cancelled part-way. What had finished stays done; run it again to finish the rest."
+                : "Cancelled, but the step it was on hasn't let go and is still going in the background. Docker has probably stopped answering: restarting Docker Desktop frees it.",
+                ProgressState.Warning);
+            return false;
+        }
+        catch (WorkspaceException e) when (e.Untrusted.Count > 0 && retry is not null)
+        {
+            AskForTrust(e.Untrusted, retry);
+            window.Finish("The workspace's branch changes these definitions, so they need approving first:\n"
+                + string.Join("\n", e.Untrusted.Select(u => u.Path.Replace('\\', '/')))
+                + "\nReview them in the main window and it carries on.", ProgressState.Error);
+            return false;
+        }
+        catch (WorkspaceException e) when (e.Asks.Count > 0)
+        {
+            window.Finish($"{Headline(e.Message)}.\nGive {(e.Asks.Count == 1 ? "it" : "them")} a value with the workspace's Inputs, then bring it up again.",
+                ProgressState.Error);
+            return false;
+        }
+        catch (Exception e)
+        {
+            var problems = e is WorkspaceException se ? se.Problems.Where(p => p.Severity == ProblemSeverity.Error).Take(4).Select(p => p.Message) : [];
+            window.Finish(string.Join("\n", new[] { Headline(e.Message) }.Concat(problems)), ProgressState.Error);
+            return false;
         }
         finally
         {
-            Busy = false;
+            // Abandoned work keeps the page's up and down buttons off until it really ends, so two never overlap.
+            if (running.IsCompleted) IsWorking = false;
+            else _ = running.ContinueWith(_ => Dispatcher.UIThread.Post(() => IsWorking = false), TaskScheduler.Default);
         }
+    }
+
+    /// <summary>
+    /// The work's own outcome; or, once it has been cancelled and still hasn't stopped a few seconds later, an
+    /// <see cref="OperationCanceledException"/> without it. Whatever it was blocked on (a docker that has stopped
+    /// answering, say) may never notice the cancel, and the window must not be held open by it.
+    /// </summary>
+    public static async Task FinishedOrAbandoned(Task running, CancellationToken cancellation, TimeSpan? patience = null)
+    {
+        var asked = Task.Delay(Timeout.Infinite, cancellation);
+        if (await Task.WhenAny(running, asked) != running
+            && await Task.WhenAny(running, Task.Delay(patience ?? TimeSpan.FromSeconds(5))) != running)
+            throw new OperationCanceledException(cancellation);
+        await running;
+    }
+
+    void Fail(string message)
+    {
+        FormFailed = true;
+        FormMessage = message;
     }
 }

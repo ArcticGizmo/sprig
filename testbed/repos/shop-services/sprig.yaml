@@ -1,0 +1,95 @@
+schema: 1
+repo: shop-services
+
+# Infra comes from the repo's own compose file; sprig gives each service its own host ports per workspace.
+compose:
+  docker-compose.yml:
+    services:
+      postgres:
+        ports: { tcp: { container: 5432 } }
+        health: pg_isready -h 127.0.0.1 -U shop
+      redis:
+        ports: { tcp: { container: 6379 } }
+        health: redis-cli ping
+      # Health checks run as root: pinging before the server writes its Erlang cookie leaves a root-owned one the
+      # server can't read, and it exits. Waiting for the server's cookie first avoids that.
+      rabbitmq:
+        ports:
+          amqp: { container: 5672 }
+          ui: { container: 15672, scheme: http }
+        health: test -f /var/lib/rabbitmq/.erlang.cookie && rabbitmq-diagnostics -q ping
+
+containers:
+  mail: { preset: mailpit }
+
+inputs:
+  # Run on its own, the repo brings a mail server. One given by an orchestration (or the workspace) replaces it, and
+  # then this one isn't started.
+  mail-smtp:
+    type: url
+    default: ${mail.smtp-url}
+
+apps:
+  # Runs to completion each time the apps start; the APIs wait for it to succeed. Retried, since Postgres can still be
+  # settling in the first second after it reports healthy.
+  migrate:
+    run: dotnet
+    path: tools/Migrate
+    once: true
+    retry: 3
+    wait-for: [postgres]
+
+  # Ready once /health answers, rather than as soon as Kestrel opens the port.
+  catalog-api:
+    run: dotnet
+    path: src/Catalog.Api
+    ports: { http: any }
+    health: /health
+    restart: on-failure
+    wait-for: [postgres, redis, rabbitmq, migrate]
+
+  orders-api:
+    run: dotnet
+    path: src/Orders.Api
+    ports: { http: any }
+    health: /health
+    restart: on-failure
+    wait-for: [postgres, rabbitmq, migrate, catalog-api]
+
+files:
+  # The job reads the env, so its value goes in a launch profile, which dotnet run and IDEs read; .gitignore covers it.
+  tools/Migrate/Properties/launchSettings.json:
+    read-by: [migrate]
+    values:
+      ConnectionStrings__Db: Host=localhost;Port=${postgres.port};Database=catalog;Username=shop;Password=shop
+
+  src/Catalog.Api/Properties/launchSettings.json:
+    read-by: [catalog-api]
+    values:
+      # Urls rather than ASPNETCORE_URLS: appsettings.json sets "urls", and only the unprefixed name outranks it.
+      Urls: ${catalog-api.url}
+      ConnectionStrings__Db: Host=localhost;Port=${postgres.port};Database=catalog;Username=shop;Password=shop
+      Redis__Url: localhost:${redis.port}
+      Bus__Url: amqp://shop:shop@localhost:${rabbitmq.port}
+
+  # Program.cs loads appsettings.Local.json last; .gitignore covers it.
+  src/Orders.Api/appsettings.Local.json:
+    read-by: [orders-api]
+    values:
+      Urls: ${orders-api.url}
+      ConnectionStrings:
+        Db: Host=localhost;Port=${postgres.port};Database=orders;Username=shop;Password=shop
+      Bus:
+        Url: amqp://shop:shop@localhost:${rabbitmq.port}
+      Smtp:
+        Url: ${inputs.mail-smtp}
+      Catalog:
+        Url: ${catalog-api.url}
+
+outputs:
+  catalog-url:
+    type: url
+    value: ${catalog-api.url}
+  orders-url:
+    type: url
+    value: ${orders-api.url}

@@ -11,21 +11,57 @@
 
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 
-        <!-- Card-style flyouts (env/compose value overrides) supply their own bordered content with
-             14px padding and a 380–480px width. The default FlyoutPresenter caps width at 456 and adds
-             its own 12px padding, so a long value grew the inner card past 456 and the presenter clipped
-             its right padding. Neutralise the presenter's own width/padding chrome and let the card govern. -->
-        <Style Selector="FlyoutPresenter.cardflyout">
+        <!-- Anything that does something when clicked shows the hand, so it reads as clickable before you try it.
+             :is(Button) also covers ToggleButton, RepeatButton, CheckBox and RadioButton. Log lines select text, so
+             they keep the arrow. -->
+        <Style Selector=":is(Button), ComboBox, MenuItem, ListBox:not(.log) ListBoxItem">
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector=":is(Button):disabled, ComboBox:disabled, MenuItem:disabled, ListBoxItem:disabled">
+            <Setter Property="Cursor" Value="Arrow" />
+        </Style>
+
+        <!-- The cards an + Add opens on, one per way to add something: chromeless buttons whose inner card carries hover. -->
+        <Style Selector="Button.choice">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="MinWidth" Value="0" />
-            <Setter Property="MaxWidth" Value="520" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.choice /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.choice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.choice:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource ButtonBgBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="18,16" />
+        </Style>
+        <Style Selector="Button.choice:pointerover Border.card">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.choice:focus-visible Border.card">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
         </Style>
     </Application.Styles>
 
     <Application.Resources>
         <!-- Max width of the list pane on every page; past this only the detail pane grows. -->
         <sys:Double x:Key="ListPaneMaxWidth">600</sys:Double>
+        <!-- The list column on Repos and Orchestrations, the same on both so switching pages doesn't shift the content. -->
+        <GridLength x:Key="SideListWidth">290</GridLength>
 
         <!-- Dark palette (shared with perch's look). -->
         <SolidColorBrush x:Key="FormBgBrush" Color="#181820" />
@@ -38,8 +74,8 @@
         <SolidColorBrush x:Key="ButtonBgBrush" Color="#2D2D3C" />
         <SolidColorBrush x:Key="OkBrush" Color="#4ADE80" />
         <SolidColorBrush x:Key="WarnBrush" Color="#FBBF24" />
+        <SolidColorBrush x:Key="WaitBrush" Color="#A78BFA" />
         <SolidColorBrush x:Key="DangerBrush" Color="#F87171" />
-        <!-- A constant value: one a map sets for a need, or a module provides with no port. -->
         <SolidColorBrush x:Key="ConstantBrush" Color="#A78BFA" />
         <SolidColorBrush x:Key="DevBrush" Color="#FF5FB0" />
     </Application.Resources>

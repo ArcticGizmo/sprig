@@ -1,100 +1,159 @@
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Sprig.Core.Workspaces;
+using CommunityToolkit.Mvvm.Input;
+using Sprig.Engine.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
-/// <summary>
-/// Drives the non-blocking operation-progress window: a heading plus a live checklist of
-/// <see cref="OperationStepViewModel"/> rows. The owning page seeds it from a plan
-/// (<see cref="Load"/>), feeds it per-step reports off the background thread via <see cref="Apply"/>
-/// (safe: the report is marshalled to the UI thread by <c>Progress&lt;T&gt;</c>), and calls
-/// <see cref="Finish"/> when the operation has gone as far as it can — which enables the Close button.
-/// </summary>
-public partial class OperationProgressViewModel : ViewModelBase
-{
-    public OperationProgressViewModel(string heading)
-    {
-        Heading = heading;
-    }
+public enum ProgressState { Pending, Running, Done, Warning, Error }
 
-    public string Heading { get; }
+/// <summary>
+/// The progress window: a heading and a checklist that grows as the engine reports steps. Reports arrive through a
+/// <c>Progress&lt;T&gt;</c> made on the UI thread, so <see cref="Apply"/> always runs there. <see cref="Finish"/> shows
+/// the outcome and lets the window close.
+/// </summary>
+public partial class OperationProgressViewModel(string heading) : ViewModelBase
+{
+    public string Heading { get; } = heading;
 
     public ObservableCollection<OperationStepViewModel> Steps { get; } = [];
 
-    /// <summary>Enables the Close button — the operation has finished (success, warning, or error).</summary>
-    [ObservableProperty] private bool _canClose;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRunning))]
+    private bool _canClose;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+    private bool _isCancelling;
+
+    readonly CancellationTokenSource _cancellation = new();
+
+    /// <summary>Handed to the work, which stops (killing what it started) once the user cancels.</summary>
+    public CancellationToken Cancellation => _cancellation.Token;
+
+    public bool IsRunning => !CanClose;
+
+    /// <summary>A docker that has stopped answering can hold a step forever, so a running operation can always be
+    /// abandoned rather than leaving the window stuck open.</summary>
+    [RelayCommand(CanExecute = nameof(CanCancel))]
+    public void Cancel()
+    {
+        if (!CanCancel()) return;
+        IsCancelling = true;
+        Summary = "Cancelling…";
+        SummaryBrush = Brush("MutedBrush");
+        _cancellation.Cancel();
+    }
+
+    bool CanCancel() => !CanClose && !IsCancelling;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSummary))]
     private string? _summary;
 
-    /// <summary>Colour of the final summary line: green / yellow / red for the overall outcome.</summary>
     [ObservableProperty] private IBrush _summaryBrush = Brush("MutedBrush");
 
     public bool HasSummary => !string.IsNullOrWhiteSpace(Summary);
 
-    /// <summary>Populate the checklist from a service-computed plan (every row starts Pending).</summary>
-    public void Load(IEnumerable<WorkspaceStep> plan)
+    public void Apply(WorkspaceEvent e)
     {
-        foreach (var step in plan)
-            Steps.Add(new OperationStepViewModel(step.Id, step.Label, step.SubStep));
-    }
-
-    /// <summary>Append an extra row the page drives itself (e.g. "Start infrastructure"), returning it
-    /// so the caller can transition its state.</summary>
-    public OperationStepViewModel AddStep(string id, string label)
-    {
-        var vm = new OperationStepViewModel(id, label);
-        Steps.Add(vm);
-        return vm;
-    }
-
-    /// <summary>Apply one progress report to its row (the <see cref="IProgress{T}"/> sink). A report
-    /// carrying <see cref="WorkspaceStepProgress.Output"/> is a streamed line — append it; otherwise it's
-    /// a state transition.</summary>
-    public void Apply(WorkspaceStepProgress report)
-    {
-        if (Steps.FirstOrDefault(s => s.Id == report.StepId) is not { } step) return;
-
-        if (report.Output is { } line)
+        if (e.State == StepState.Output)
         {
-            step.AppendOutput(line);
+            var target = Steps.LastOrDefault(s => s.Label == e.Step) ?? Steps.LastOrDefault(s => s.State == ProgressState.Running);
+            if (e.Detail is { Length: > 0 } line) target?.AppendOutput(line);
             return;
         }
 
-        step.State = report.State;
-        if (report.Detail is { Length: > 0 }) step.Detail = report.Detail;
+        var step = Steps.LastOrDefault(s => s.Label == e.Step && s.State is ProgressState.Running or ProgressState.Pending);
+        if (step is null)
+        {
+            step = new OperationStepViewModel(e.Step);
+            Steps.Add(step);
+        }
+        step.State = e.State switch
+        {
+            StepState.Running => ProgressState.Running,
+            StepState.Done => ProgressState.Done,
+            StepState.Skipped => ProgressState.Done,
+            _ => ProgressState.Error,
+        };
+        if (e.Detail is { Length: > 0 } detail) step.Detail = detail;
     }
 
-    /// <summary>Mark the operation complete: any rows still Pending/Running are settled, the summary is
-    /// shown, and Close becomes available.</summary>
-    public void Finish(string summary, WorkspaceStepState outcome)
+    /// <summary>Settle any step still running, show <paramref name="summary"/>, and allow closing.</summary>
+    public void Finish(string summary, ProgressState outcome)
     {
-        // A hard failure leaves later rows unreached; a success/warning means every row ran.
-        foreach (var step in Steps)
-        {
-            if (step.State == WorkspaceStepState.Running)
-                step.State = outcome == WorkspaceStepState.Error ? WorkspaceStepState.Error : WorkspaceStepState.Done;
-            else if (step.State == WorkspaceStepState.Pending && outcome == WorkspaceStepState.Error)
-                step.State = WorkspaceStepState.Pending; // unreached — leave hollow
-        }
+        foreach (var step in Steps.Where(s => s.State == ProgressState.Running))
+            step.State = outcome == ProgressState.Error ? ProgressState.Error : ProgressState.Done;
         Summary = summary;
         SummaryBrush = outcome switch
         {
-            WorkspaceStepState.Warning => Brush("WarnBrush"),
-            WorkspaceStepState.Error => Brush("DangerBrush"),
+            ProgressState.Warning => Brush("WarnBrush"),
+            ProgressState.Error => Brush("DangerBrush"),
             _ => Brush("OkBrush"),
         };
         CanClose = true;
+        CancelCommand.NotifyCanExecuteChanged();
     }
 
-    static IBrush Brush(string key)
-        => Application.Current is { } app && app.TryFindResource(key, out var v) && v is IBrush b
-            ? b : Brushes.Gray;
+    internal static IBrush Brush(string key)
+        => Application.Current is { } app && app.TryFindResource(key, out var v) && v is IBrush b ? b : Brushes.Gray;
+}
+
+/// <summary>One row of the checklist. Colour and glyph follow <see cref="State"/>, so the view binds one value.</summary>
+public partial class OperationStepViewModel(string label) : ViewModelBase
+{
+    // The tail is where the action is, and a fixed number of lines keeps the newest on screen without scrolling.
+    const int MaxOutputLines = 6;
+
+    public string Label { get; } = label;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasDetail))]
+    private string? _detail;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(ShowStaticIndicator), nameof(IndicatorBrush), nameof(Glyph),
+        nameof(LabelBrush), nameof(ShowOutput))]
+    private ProgressState _state = ProgressState.Pending;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowOutput))]
+    private string? _liveOutput;
+
+    /// <summary>While the step runs, and afterwards when it failed, so the failure stays readable.</summary>
+    public bool ShowOutput => !string.IsNullOrEmpty(LiveOutput) && State is ProgressState.Running or ProgressState.Error;
+
+    public void AppendOutput(string line)
+    {
+        var lines = (LiveOutput ?? "").Split('\n', System.StringSplitOptions.RemoveEmptyEntries).Append(line.TrimEnd());
+        LiveOutput = string.Join('\n', lines.TakeLast(MaxOutputLines));
+    }
+
+    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
+    public bool IsRunning => State == ProgressState.Running;
+    public bool ShowStaticIndicator => State != ProgressState.Running;
+
+    public IBrush IndicatorBrush => State switch
+    {
+        ProgressState.Done => OperationProgressViewModel.Brush("OkBrush"),
+        ProgressState.Warning => OperationProgressViewModel.Brush("WarnBrush"),
+        ProgressState.Error => OperationProgressViewModel.Brush("DangerBrush"),
+        _ => OperationProgressViewModel.Brush("MutedBrush"),
+    };
+
+    public string Glyph => State switch
+    {
+        ProgressState.Done => "✓",
+        ProgressState.Warning => "!",
+        ProgressState.Error => "✕",
+        _ => "",
+    };
+
+    public IBrush LabelBrush => State == ProgressState.Pending ? OperationProgressViewModel.Brush("MutedBrush") : OperationProgressViewModel.Brush("FgBrush");
 }

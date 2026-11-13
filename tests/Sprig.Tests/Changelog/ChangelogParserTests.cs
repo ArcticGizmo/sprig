@@ -1,4 +1,4 @@
-using Sprig.Core.Changelog;
+using Sprig.Engine.Changelog;
 
 namespace Sprig.Tests.Changelog;
 

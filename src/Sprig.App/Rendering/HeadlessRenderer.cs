@@ -1,58 +1,63 @@
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Threading;
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Headless;
-using Avalonia.Media;
 using Avalonia.Threading;
-using Sprig.App.Controls;
+using AvaloniaEdit;
 using Sprig.App.ViewModels;
 using Sprig.App.Views;
-using Sprig.Core.Store;
-using Sprig.Core.Workspaces;
 
 namespace Sprig.App.Rendering;
 
 /// <summary>
-/// Renders the app's views to PNG on a headless Skia platform, so the UI can be eyeballed without a
-/// display. Invoked via <c>sprig-gui render &lt;dir&gt;</c>. Best-effort — capture problems are logged,
-/// never fatal.
+/// Renders app views to PNG on a headless Skia platform, so the UI can be checked without a display or any
+/// screen capture. Invoked via <c>sprig-gui render-code-editor &lt;file.png&gt;</c> and the other render-* switches in
+/// Program.cs.
 /// </summary>
-internal static class HeadlessRenderer
+internal static partial class HeadlessRenderer
 {
-    static void SetUpHeadless() => AppBuilder.Configure<App>()
-        .UseSkia()
-        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
-        .WithInterFont()
-        .SetupWithoutStarting();
-
-    /// <summary>Render the Maps wiring view over <see cref="WiringExample"/>: the canvas alone, at rest and
-    /// with the shared service selected.</summary>
-    public static int RenderWiring(string outDir)
+    /// <summary>The definition editor with a mistyped key and a reference to nothing, so the squiggles and the problems
+    /// strip show.</summary>
+    public static int RenderCodeEditor(string outFile)
     {
-        Directory.CreateDirectory(outDir);
         try
         {
-            SetUpHeadless();
-            var layout = Maps.MapGraphLayout.Compute(WiringExample.Inspect());
-            void Shot(string name, string? selected)
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
+
+            var text = Sprig.App.Authoring.SampleDefinition.Text
+                .Replace("    wait-for: [pg]\n", "    wiat-for: [pg]\n")
+                .Replace("Url: ${inputs.mail-smtp}", "Url: ${inputs.mail-smpt}")
+                // An http url, which has to keep the string colour rather than be drawn as a link.
+                .Replace("inputs:\n", "inputs:\n  search-url:\n    type: url\n    default: http://localhost:7700\n");
+            var editor = new Sprig.App.Controls.CodeEditor
             {
-                var canvas = new MapWiringCanvas { Graph = layout, SelectedId = selected };
-                var window = new Window
-                {
-                    Width = layout.Size.Width, Height = layout.Size.Height,
-                    Background = new SolidColorBrush(Color.Parse("#181820")), Content = canvas,
-                };
-                window.Show();
-                Dispatcher.UIThread.RunJobs();
-                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name));
-                window.Close();
-            }
-            Shot("wiring_canvas.png", null);
-            Shot("wiring_canvas_hub_selected.png", Maps.MapGraphLayout.ModuleId("auth", "app"));
-            RenderMapsPage(outDir);
-            Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
+                Language = new Sprig.Engine.Authoring.DefinitionLanguage(new Sprig.Engine.Authoring.DefinitionContext(null)),
+                Text = text,
+            };
+            var window = new Avalonia.Controls.Window
+            {
+                Width = 1000, Height = 640, Content = editor,
+                Background = Avalonia.Media.Brush.Parse("#1F1F2A"),
+            };
+            window.Show();
+            Pump(TimeSpan.FromMilliseconds(200));
+
+            var pending = editor.DiagnoseAsync();
+            var clock = Stopwatch.StartNew();
+            while (!pending.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(30)) Pump(TimeSpan.FromMilliseconds(50));
+            Pump(TimeSpan.FromMilliseconds(300));
+
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
+            window.CaptureRenderedFrame()?.Save(outFile);
+            window.Close();
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)}");
             return 0;
         }
         catch (Exception ex)
@@ -62,747 +67,348 @@ internal static class HeadlessRenderer
         }
     }
 
-    /// <summary>The Maps page over <see cref="WiringExample"/> in a throwaway store: at rest, with the shared
-    /// service selected, as a ledger, and after setting a constant and converting a fixed value.</summary>
-    static void RenderMapsPage(string outDir)
+    /// <summary>The code editor's colouring in the orders a page can give it a file: opened while hidden (as the Repos
+    /// page does), a second file into a showing editor, and a file after closing and opening again. Each should be
+    /// coloured.</summary>
+    public static int RenderCodeEditorCases(string outFile)
     {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-wiring-render-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var services = new AppServices(root);
-            foreach (var repo in WiringExample.Repos)
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
+
+            var editor = new Sprig.App.Controls.CodeEditor();
+            var holder = new Avalonia.Controls.ContentControl { Content = editor, IsVisible = false };
+            var window = new Avalonia.Controls.Window
             {
-                var dir = Path.Combine(root, "repos", repo.Name);
-                Sprig.Core.Config.SprigConfigWriter.Write(repo.Config, Path.Combine(dir, ".sprig.json"));
-                services.Repos.Add(dir);
-            }
-            // The template the help-site hint is read from.
-            Directory.CreateDirectory(Path.Combine(root, "repos", "shop", "apps", "web"));
-            File.WriteAllText(Path.Combine(root, "repos", "shop", "apps", "web", ".env.template"), "VITE_HELP_URL=http://localhost:4000/\n");
-            services.Maps.Save(WiringExample.Map);
+                Width = 900, Height = 420, Content = holder,
+                Background = Avalonia.Media.Brush.Parse("#1F1F2A"),
+            };
+            window.Show();
+            Pump(TimeSpan.FromMilliseconds(200));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outFile))!);
 
-            var vm = new MainWindowViewModel(services);
-            var maps = vm.Pages.OfType<MapsViewModel>().Single();
-            vm.CurrentPage = maps;
-            maps.Selected = maps.Maps.Single(m => m.Name == WiringExample.Map.Name);
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text;
+            holder.IsVisible = true;
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "opened-hidden"));
 
-            void Shot(string name)
-            {
-                var window = new MainWindow { DataContext = vm, Width = 1500, Height = 1500 };
-                window.Show();
-                Dispatcher.UIThread.RunJobs();
-                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name));
-                window.Close();
-            }
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace("shop-services", "shop-web");
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "second-file"));
 
-            Shot("maps_wiring.png");
-            maps.Wiring.SelectedNodeId = null;
-            maps.Wiring.Variables.OfType<FixedValueRow>().Single().IsExpanded = true;
-            Shot("maps_wiring_all_variables.png");
-            maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.ModuleId("shop", "api");
-            maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "cache").IsExpanded = true;
-            Shot("maps_wiring_module_selected.png");
-            maps.Wiring.ShowLedger = true;
-            Shot("maps_wiring_ledger.png");
-            maps.Wiring.ShowLedger = false;
+            holder.IsVisible = false;
+            Pump(TimeSpan.FromMilliseconds(200));
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace("shop-services", "shop-mobile");
+            holder.IsVisible = true;
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "reopened"));
 
-            maps.Wiring.SelectedNodeId = Maps.MapGraphLayout.ModuleId("billing", "app");
-            maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "auth-api").IsExpanded = true;
-            Shot("maps_wiring_variable_source.png");
+            // Leaving a page and coming back takes the editor out of the window and puts it back.
+            window.Content = null;
+            Pump(TimeSpan.FromMilliseconds(200));
+            editor.Text = Sprig.App.Authoring.SampleDefinition.Text.Replace("shop-services", "shop-docs");
+            window.Content = holder;
+            Pump(TimeSpan.FromMilliseconds(800));
+            window.CaptureRenderedFrame()?.Save(Sibling(outFile, "reattached"));
 
-            maps.Wiring.SelectedNodeId = null;
-            maps.Wiring.Variables.OfType<WiringNeedRow>().Single(r => r.Name == "help-site").SetConstantCommand.Execute(null);
-            maps.Wiring.Variables.OfType<FixedValueRow>().Single().ConvertCommand.Execute(null);
-            Shot("maps_wiring_after_fixes.png");
-
-            maps.NewMapCommand.Execute(null);
-            maps.NewMapName = "draft";
-            maps.CreateMapCommand.Execute(null);
-            Shot("maps_new_map_empty.png");
-            if (maps.Wiring.Error is { } error) Console.Error.WriteLine($"wiring fix failed: {error}");
-        }
-        finally
-        {
-            try { Directory.Delete(root, recursive: true); } catch { /* best-effort temp cleanup */ }
-        }
-    }
-
-    public static int RenderAll(string outDir)
-    {
-        Directory.CreateDirectory(outDir);
-        try
-        {
-            SetUpHeadless();
-
-            var services = new AppServices();
-            var vm = new MainWindowViewModel(services);
-
-            foreach (var page in vm.Pages)
-            {
-                vm.CurrentPage = page;
-                // Select the first repo so the config panel renders populated.
-                if (page is ReposViewModel repos)
-                    repos.Selected = repos.Repos.FirstOrDefault();
-                // Select the first map so its detail panel renders populated.
-                if (page is MapsViewModel maps)
-                    maps.Selected = maps.Maps.FirstOrDefault();
-                // Populate the Settings port-checker so the snapshot shows a status result.
-                if (page is SettingsViewModel settings)
-                    settings.CheckText = "8080";
-                Capture(vm, Path.Combine(outDir, $"main_{page.Title.ToLowerInvariant()}.png"));
-
-                // Also capture the repos edit form when a repo is available.
-                if (page is ReposViewModel { Selected: not null } editable && editable.BeginEditCommand.CanExecute(null))
-                {
-                    editable.BeginEditCommand.Execute(null);
-                    Capture(vm, Path.Combine(outDir, "main_repos_edit.png"));
-                    editable.CancelEditCommand.Execute(null);
-                }
-
-                // Capture the add-repo modal in both git states (a real repo path vs a non-repo folder).
-                if (page is ReposViewModel { Repos.Count: > 0 } adder)
-                {
-                    adder.OpenAddCommand.Execute(null);
-                    adder.NewPath = adder.Repos[0].Path;      // a real git repo → green highlight
-                    Capture(vm, Path.Combine(outDir, "main_repos_add_git.png"));
-                    adder.NewPath = outDir;                    // not a git repo → red warning
-                    Capture(vm, Path.Combine(outDir, "main_repos_add_nogit.png"));
-                    adder.CancelAddCommand.Execute(null);
-                }
-            }
-
-            // Home's journey rail + next-best-action depend on store state, so render the two
-            // states the live store can't show at once: first-run (empty) and running.
-            RenderHomeStates(outDir);
-
-            // The guided setup strip, active over Home.
-            var guideVm = new MainWindowViewModel(services);
-            guideVm.CurrentPage = guideVm.Pages[0];
-            guideVm.Guide.Start();
-            Capture(guideVm, Path.Combine(outDir, "main_guide.png"));
-
-            // The guided tour, now coachmarks: each step spotlights its target over the real sample. An
-            // unresolved anchor here is a failure, same as the spike and guides.
-            var unresolved = RenderGuidedTour(outDir);
-
-            // The coachmark spike: one frame per anchor case. Unlike every other capture here, an
-            // unresolved anchor is treated as a failure rather than logged — a coachmark pointing at
-            // nothing is exactly the bug this harness exists to catch, so it must break the build.
-            unresolved += RenderCoachSpike(outDir);
-
-            // Guide 1, driven the way a user would: register the sample repo via "Show me", then read what
-            // it declares. Also renders the Learn list before and after, to show the completion tick.
-            unresolved += RenderRegisterRepoGuide(outDir);
-
-            // Guide 2 (modules): open the repo editor, read the module tabs and provides/needs, add a module.
-            unresolved += RenderSplitModulesGuide(outDir);
-
-            // Guide 3: create a workspace from the map, then see what sprig made.
-            unresolved += RenderRunWorkspaceGuide(outDir);
-
-            // Guide 5 (drift): break a worktree, then Repair it.
-            unresolved += RenderRepairDriftGuide(outDir);
-
-            // Row-level spotlight: one repo in the list highlighted, everything else dimmed.
-            unresolved += RenderRowHighlight(outDir);
-
-            // Partial workspaces: the create form with a repo unticked, and the workspace it makes.
-            unresolved += RenderPartialWorkspace(outDir);
-
-            // The "what's new" changelog window (the post-update popup / About viewer).
-            var markdown = Changelog.ChangelogMarkdown.LoadEmbedded();
-            var sections = markdown is null
-                ? new List<Sprig.Core.Changelog.ChangelogSection>()
-                : Sprig.Core.Changelog.ChangelogParser.Parse(markdown).ToList();
-            var changelog = new ChangelogWindow("What's new in sprig", "Recent releases", sections);
-            changelog.Show();
-            Dispatcher.UIThread.RunJobs();
-            changelog.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "changelog.png"));
-            changelog.Close();
-
-            // The create/teardown progress window, with a representative mix of step states so every
-            // indicator (pending, running spinner, warning, done) is visible in one frame.
-            RenderProgressModal(outDir);
-
-            Console.WriteLine($"rendered to {Path.GetFullPath(outDir)}");
-
-            if (unresolved > 0)
-            {
-                Console.Error.WriteLine(
-                    $"{unresolved} coachmark anchor(s) did not resolve — see the messages above");
-                return 1;
-            }
-
+            window.Close();
+            Console.WriteLine($"rendered {Sibling(outFile, "opened-hidden")}, -second-file and -reopened");
             return 0;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"headless render failed: {ex.Message}");
+            Console.Error.WriteLine($"headless render failed: {ex}");
             return 1;
         }
     }
 
-    /// <summary>
-    /// Render the guided tour, now that it's coachmarks: each step over the real sample, dimming the page and
-    /// ringing its target. Docker is pinned so the run is deterministic — the base script (no daemon) is
-    /// walked in full, then the infra step is posed from a Docker-up run. Any step whose anchor doesn't
-    /// resolve is a failure, like the guide render.
-    /// </summary>
-    static int RenderGuidedTour(string outDir)
+    /// <summary>The Orchestrations page planning <paramref name="orchestrationFile"/>, in a throwaway store where the orchestration and
+    /// its repos' definitions are approved up front (this is a dev tool, not a user path).</summary>
+    public static int RenderOrchestrations(string outFile, string orchestrationFile)
     {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-tour-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
+        var store = Path.Combine(Path.GetTempPath(), "sprig-render-" + Guid.NewGuid().ToString("N"));
         try
         {
-            demo.Sample.Build();
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
 
-            // Base script, Docker off: walk every step, capturing the coach frame (callout + spotlight).
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            Pump(vm.StartTour());
-            for (var step = 1; vm.Coach.IsActive; step++)
+            var services = new AppServices(store);
+            var root = Path.GetDirectoryName(Path.GetFullPath(orchestrationFile))!;
+            foreach (var file in Directory.EnumerateFiles(root, "*.orchestration.yaml")
+                         .Concat(Directory.EnumerateDirectories(root).Select(d => Path.Combine(d, "sprig.yaml")).Where(File.Exists)))
+                services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
+            services.Orchestrations.Add("storefront", orchestrationFile);
+            // One repo of each kind in the Repos list: its file in the repo, and a copy of one kept in sprig.
+            if (Path.Combine(root, "shop-web") is var web && File.Exists(Path.Combine(web, "sprig.yaml")))
+                services.Authoring.AddRepo(web, "shop-web");
+            if (Path.Combine(root, "shop-services") is var services_ && File.Exists(Path.Combine(services_, "sprig.yaml")))
             {
-                unresolved += CaptureCoachStep(window, vm, outDir, $"tour_stop{step}");
-                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+                services.Authoring.AddRepo(services_, "shop-services");
+                services.Authoring.CopyIntoSprig("shop-services", "shop-services-local");
             }
+
+            var vm = new MainWindowViewModel(services, checkForUpdates: false);
+            vm.NavigateCommand.Execute(vm.Orchestrations);
+            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1000 };
+            window.Show();
+
+            var clock = Stopwatch.StartNew();
+            Pump(TimeSpan.FromMilliseconds(300));
+            while ((vm.Orchestrations.IsBusy || vm.Orchestrations.Plan is null) && !vm.Orchestrations.HasLoadProblems && clock.Elapsed < TimeSpan.FromSeconds(60))
+                Pump(TimeSpan.FromMilliseconds(100));
+            Pump(TimeSpan.FromMilliseconds(500));
+
+            Save(window, outFile);
+            var planned = vm.Orchestrations.Plan is not null;
+            // A definition's problems are the only clue to why the render didn't plan.
+            if (vm.Orchestrations.HasLoadProblems && services.Definitions.Evaluate(orchestrationFile) is Sprig.Engine.Definitions.Invalid invalid)
+                Console.Error.WriteLine("the orchestration:\n" + string.Join("\n", invalid.Problems.Select(p => $"  line {p.Location?.Line}: {p.Message}")));
+
+            // One app picked, with one group shown: its wires stand out, and what the group doesn't start dims.
+            if (vm.Orchestrations.Graph?.Boxes.SelectMany(b => b.Items).FirstOrDefault(i => i.Name == "web") is { } picked)
+            {
+                vm.Orchestrations.SelectAppCommand.Execute(picked);
+                if (vm.Orchestrations.GroupChips.FirstOrDefault(c => c.Name == "web") is { } group) vm.Orchestrations.ShowGroupCommand.Execute(group);
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "picked"));
+                vm.Orchestrations.ShowGroupCommand.Execute(vm.Orchestrations.GroupChips.FirstOrDefault());
+            }
+
+            foreach (var tab in new[] { OrchestrationTab.Values, OrchestrationTab.Ports })
+            {
+                vm.Orchestrations.Tab = tab;
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, tab.ToString().ToLowerInvariant()));
+            }
+            vm.Orchestrations.Tab = OrchestrationTab.Overview;
+
+            // The Repos page, on the repo kept in sprig.
+            vm.NavigateCommand.Execute(vm.Repos);
+            vm.Repos.Show("shop-services-local");
+            clock.Restart();
+            Pump(TimeSpan.FromMilliseconds(200));
+            while (vm.Repos.Check.EndsWith('…') && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo"));
+            // Its Write to the repo dialog, which says why it can't: the folder has its own sprig.yaml already.
+            vm.Repos.OpenDeriveCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo-write"));
+            vm.Repos.CancelDeriveCommand.Execute(null);
+            // + Add's two cards, then the in-sprig form over a folder that has its own sprig.yaml.
+            vm.Repos.OpenChooseCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo-add"));
+            vm.Repos.OpenAddInSprigCommand.Execute(null);
+            vm.Repos.AddFolder = Sprig.App.Controls.PathCompletion.ToPosix(Path.Combine(root, "shop-web"));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "repo-add-sprig"));
+            vm.Repos.CancelAddCommand.Execute(null);
+            // Start a workspace from a repo: the new-workspace form, with the repo chosen and the workspace's own choices.
+            vm.Repos.Show("shop-services");
+            clock.Restart();
+            while (!vm.Repos.HasModel && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+            Save(window, Sibling(outFile, "repo-ready"));
+            vm.Repos.StartCommand.Execute(null);
+            clock.Restart();
+            while (!vm.Workspaces.HasNewSettings && clock.Elapsed < TimeSpan.FromSeconds(30)) Pump(TimeSpan.FromMilliseconds(100));
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "new-workspace"));
+            vm.Workspaces.CancelAddCommand.Execute(null);
+
+            // shop-web run in place with one value of its own, so its page lists a workspace and the workspace's Settings
+            // dialog has something to show. It has no infra, so this needs no docker.
+            if (services.Orchestrations.Resolve("shop-web") is { } webEntry)
+            {
+                var loaded = services.Loader.Load(webEntry);
+                services.Workspaces.Up(loaded, "local", null, new Sprig.Engine.Workspaces.WorkspaceOptions(InPlace: true),
+                    values: new Dictionary<string, string> { ["catalog-url"] = "https://catalog.example.com" });
+                vm.NavigateCommand.Execute(vm.Repos);
+                vm.Repos.Show("shop-web");
+                clock.Restart();
+                while (!vm.Repos.HasModel && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "repo-workspaces"));
+                vm.Repos.OpenWorkspaceRowCommand.Execute(vm.Repos.WorkspacesOfIt.First());
+                Pump(TimeSpan.FromMilliseconds(300));
+                Wait(vm.Workspaces.OpenSettingsCommand.ExecuteAsync(null));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "workspace-settings"));
+                vm.Workspaces.CancelSettingsCommand.Execute(null);
+                services.Workspaces.Remove("shop-web", "local", new Sprig.Engine.Workspaces.RemoveOptions());
+            }
+
+            // An orchestration whose repos have settings none of them offers: they're asked for, so it can still start.
+            if (Path.Combine(root, "shop-mobile") is var mobile && Directory.Exists(mobile))
+            {
+                var trial = services.Authoring.CreateOrchestration("trial", [Path.Combine(root, "shop-web"), mobile]);
+                vm.NavigateCommand.Execute(vm.Orchestrations);
+                vm.Orchestrations.Show(trial.Id);
+                clock.Restart();
+                Pump(TimeSpan.FromMilliseconds(300));
+                while ((vm.Orchestrations.IsBusy || vm.Orchestrations.Plan is null) && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "settings"));
+                services.Authoring.RemoveOrchestration(trial.Id);
+            }
+            vm.NavigateCommand.Execute(vm.Orchestrations);
+            vm.Orchestrations.Show("storefront");
+            Pump(TimeSpan.FromMilliseconds(300));
+
+            vm.Orchestrations.OpenAddCommand.Execute(null);
+            vm.Orchestrations.NewPath = Sprig.App.Controls.PathCompletion.ToPosix(Path.GetFullPath(orchestrationFile));
+            Pump(TimeSpan.FromMilliseconds(400));
+            var addFile = Sibling(outFile, "add");
+            Save(window, addFile);
+
+            // The same file, added again once its approval is revoked, shows what a not-yet-approved orchestration looks like.
+            services.Trust.Revoke(orchestrationFile);
+            Wait(vm.Orchestrations.AddCommand.ExecuteAsync(null));
+            Pump(TimeSpan.FromMilliseconds(400));
+            var unapprovedFile = Sibling(outFile, "unapproved");
+            Save(window, unapprovedFile);
             window.Close();
 
-            // The optional Docker step, posed rather than executed (running it would pull an image): start a
-            // Docker-up tour and step to the infra mark (second from last).
-            var dwindow = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => true) };
-            dwindow.Show();
-            Dispatcher.UIThread.RunJobs();
-            var dvm = (MainWindowViewModel)dwindow.DataContext!;
-            Pump(dvm.StartTour());
-            // Step (which re-navigates each time) up to the infra mark, second from last. Stop there — Next on
-            // it would Perform the container start, which we don't want in a render.
-            while (dvm.Coach.Index < dvm.Coach.Count - 2)
-                Pump(dvm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(dwindow, dvm, outDir, "tour_stop_infra");
-            dwindow.Close();
-
-            // The build checklist the user watches on the way in.
-            var progress = new OperationProgressViewModel("Building your sample setup");
-            progress.Load(Sprig.Core.Demo.SampleSetup.PlanBuild());
-            progress.Steps[0].State = WorkspaceStepState.Done;
-            progress.Steps[1].State = WorkspaceStepState.Done;
-            progress.Steps[2].State = WorkspaceStepState.Running;
-            var pwindow = new OperationProgressWindow { DataContext = progress };
-            pwindow.Show();
-            Dispatcher.UIThread.RunJobs();
-            pwindow.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "tour_building.png"));
-            pwindow.Close();
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (plan: {planned}, problems: {vm.Orchestrations.LoadProblems.Count}, took {clock.Elapsed.TotalSeconds:0.0}s), {Path.GetFullPath(addFile)} and {Path.GetFullPath(unapprovedFile)}");
+            return 0;
         }
         catch (Exception ex)
         {
-            unresolved++;
-            Console.Error.WriteLine($"guided-tour render failed: {ex.Message}");
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
         }
         finally
         {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
+            try { Directory.Delete(store, recursive: true); } catch { /* temp store */ }
         }
-        return unresolved;
     }
 
     /// <summary>
-    /// Render the coachmark spike: one frame per anchor case, over the tour's sample so the canvas has real
-    /// repos to draw. Reports on stderr when a mark's anchor failed to resolve — which is the whole question
-    /// the spike exists to answer, so it must be loud rather than a silently mispositioned callout.
+    /// The Workspaces page over the current store (<c>SPRIG_STORE</c>), read only, with its first workspace selected, its apps'
+    /// states from the host and the first app's log open; and the progress window part way through a sample up, failing
+    /// on a compose step, so both states of a row show.
     /// </summary>
-    /// <returns>How many of the spike's anchors failed to resolve — non-zero fails the render.</returns>
-    static int RenderCoachSpike(string outDir)
+    public static int RenderWorkspaces(string pageFile, string progressFile)
     {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-coach-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
         try
         {
-            demo.Sample.Build();
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
 
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
+            var services = new AppServices();
+            var vm = new MainWindowViewModel(services, checkForUpdates: false);
+            vm.NavigateCommand.Execute(vm.Workspaces);
+            // One that's up with infra, when there is one, so its graph has containers for docker to report on.
+            vm.Workspaces.Show((vm.Workspaces.Workspaces.FirstOrDefault(w => w.IsUp && w.Record.Compose.Count > 0) ?? vm.Workspaces.Workspaces.FirstOrDefault())?.Record.Key);
+            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1400 };
             window.Show();
-            Dispatcher.UIThread.RunJobs();
+            Pump(TimeSpan.FromMilliseconds(500));
 
-            var vm = (MainWindowViewModel)window.DataContext!;
-            var marks = vm.CoachSpikeMarks;
-            Pump(vm.Coach.StartAsync(marks));
-
-            for (var i = 0; i < marks.Count; i++)
+            // Timers don't tick here, so poll as the window's and the page's timers would, then open a log that has something in it.
+            Wait(services.HostStatus.PollAsync());
+            Wait(vm.Workspaces.PollAsync());
+            if ((vm.Workspaces.Apps.FirstOrDefault(a => a.IsAlive && !a.IsJob) ?? vm.Workspaces.Apps.FirstOrDefault()) is { } app)
             {
-                // Two layout passes: the first realises whatever the precondition opened, the second lets the
-                // overlay's deferred reposition run against it.
-                Dispatcher.UIThread.RunJobs();
-                Dispatcher.UIThread.RunJobs();
+                vm.Workspaces.OpenApp(app);
+                Wait(vm.Workspaces.Logs.PollAsync());
+            }
+            Pump(TimeSpan.FromMilliseconds(600));
+            Save(window, pageFile);
 
-                if (vm.Coach.AnchorMissing)
+            // The graph, with the containers' states from docker, then the first container's log followed through it.
+            Wait(vm.Workspaces.ShowGraphTabCommand.ExecuteAsync(null));
+            Pump(TimeSpan.FromMilliseconds(600));
+            Save(window, Sibling(pageFile, "graph"));
+            if (vm.Workspaces.Graph?.Nodes.FirstOrDefault(n => n.IsInfra && n.IsAlive) is { } container)
+            {
+                vm.Workspaces.OpenNodeLog(container);
+                var clock = Stopwatch.StartNew();
+                while (vm.Workspaces.Logs.Lines.Count == 0 && clock.Elapsed < TimeSpan.FromSeconds(15))
                 {
-                    unresolved++;
-                    Console.Error.WriteLine($"coach spike: anchor '{marks[i].Anchor}' did not resolve");
+                    Wait(vm.Workspaces.PollAsync());
+                    Pump(TimeSpan.FromMilliseconds(250));
                 }
-
-                window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, $"coach_case{i + 1}.png"));
-                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
+                Pump(TimeSpan.FromMilliseconds(400));
+                Save(window, Sibling(pageFile, "container-log"));
+                Console.WriteLine($"graph: {string.Join(", ", vm.Workspaces.Graph.Nodes.Where(n => n.IsInfra).Select(n => $"{n.Name} {n.StateLine}"))}; "
+                    + $"{container.Name}'s log: {vm.Workspaces.Logs.Lines.Count} lines, title '{vm.Workspaces.LogTitle}', sub '{vm.Workspaces.LogSub}'");
             }
-
             window.Close();
+
+            var progress = new OperationProgressViewModel("Starting storefront / feat-x");
+            Sprig.Engine.Workspaces.WorkspaceEvent[] sample =
+            [
+                new("Plan", Sprig.Engine.Workspaces.StepState.Running),
+                new("Plan", Sprig.Engine.Workspaces.StepState.Done, "4 apps, 1 containers, 1 compose files"),
+                new("Worktree shop-services", Sprig.Engine.Workspaces.StepState.Running),
+                new("Worktree shop-services", Sprig.Engine.Workspaces.StepState.Done, "../storefront--feat-x/shop-services on feat-x (new, from main)"),
+                new("Ports", Sprig.Engine.Workspaces.StepState.Running),
+                new("Ports", Sprig.Engine.Workspaces.StepState.Done, "catalog-api.http 8000, postgres.tcp 8002"),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Workspaces.StepState.Running),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Workspaces.StepState.Output, "Container sprig-storefront-feat-x-storefront-mail-1 Waiting"),
+                new("Start sprig-storefront-feat-x", Sprig.Engine.Workspaces.StepState.Done, "running; healthy: mail"),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Workspaces.StepState.Running),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Workspaces.StepState.Output, "Container sprig-storefront-feat-x-shop-services-postgres-1 Starting"),
+                new("Start sprig-storefront-feat-x-shop-services", Sprig.Engine.Workspaces.StepState.Output, "Error response from daemon: port is already allocated"),
+            ];
+            foreach (var e in sample) progress.Apply(e);
+            progress.Finish("command failed (exit 1): docker compose up (a sample failure, rendered for review)", ProgressState.Error);
+            progress.Steps[^1].State = ProgressState.Error;
+            var dialog = new OperationProgressWindow { DataContext = progress };
+            dialog.Show();
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(dialog, progressFile);
+            dialog.Close();
+
+            Console.WriteLine($"rendered {Path.GetFullPath(pageFile)} ({vm.Workspaces.Workspaces.Count} workspaces) and {Path.GetFullPath(progressFile)}");
+            return 0;
         }
         catch (Exception ex)
         {
-            // A spike that can't run at all is also a failure — otherwise the gate silently passes.
-            unresolved++;
-            Console.Error.WriteLine($"coach spike render failed: {ex.Message}");
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
         }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-
-        return unresolved;
     }
 
-    /// <summary>
-    /// Render guide 1 ("Register your first repo") the way a user experiences it: the Learn list, then each
-    /// coachmark, driving the middle (waiting) step via "Show me" so the auto-advance path is exercised, then
-    /// the Learn list again with its completion tick. Any step whose anchor doesn't resolve is a failure.
-    /// </summary>
-    static int RenderRegisterRepoGuide(string outDir)
+    static void Wait(System.Threading.Tasks.Task task)
     {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
-        try
-        {
-            var guide = Sprig.App.Coach.Guides.All[0];
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.RepoOnDisk);
+        var clock = Stopwatch.StartNew();
+        while (!task.IsCompleted && clock.Elapsed < TimeSpan.FromSeconds(20)) Pump(TimeSpan.FromMilliseconds(50));
+    }
 
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
+    static string Sibling(string file, string suffix)
+        => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(file))!, $"{Path.GetFileNameWithoutExtension(file)}-{suffix}{Path.GetExtension(file)}");
+
+    static void Save(Avalonia.Controls.TopLevel window, string file)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!);
+        window.CaptureRenderedFrame()?.Save(file);
+    }
+
+    static void Pump(TimeSpan duration)
+    {
+        var until = DateTime.UtcNow + duration;
+        do
+        {
             Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            // The Learn list, before starting.
-            vm.CurrentPage = vm.Learn;
-            SettleFrame(window, outDir, "guide1_learn");
-
-            // Start the guide; the first (waiting) step highlights Add repo.
-            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step1");
-
-            // The user is stuck → "Show me" registers the repo, which fires StoreChanged and auto-advances.
-            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step2");
-
-            // Read the declared inputs, then finish.
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide1_step3");
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done → onFinished
-
-            // The Learn list again, now ticked.
-            vm.Learn.Refresh();
-            vm.CurrentPage = vm.Learn;
-            SettleFrame(window, outDir, "guide1_learn_done");
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            unresolved++;
-            Console.Error.WriteLine($"guide 1 render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return unresolved;
+            Thread.Sleep(15);
+        } while (DateTime.UtcNow < until);
     }
 
-    /// <summary>
-    /// Render guide 2 ("Split a repo into modules"): open sample-api's editor, orient on its module tabs and
-    /// shared inputs, then add a second module — the coach putting the editor into each state from a step's
-    /// Prepare (adding a module is editor state, not a store change). Any anchored step that doesn't resolve
-    /// is a failure, so this is what runtime-verifies the new repo.modules / repo.addModule anchors.
-    /// </summary>
-    static int RenderSplitModulesGuide(string outDir)
+    static T? Find<T>(Avalonia.Visual root, string? name = null) where T : Avalonia.Controls.Control
     {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
-        try
-        {
-            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.SplitModulesId);
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
-
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            // Walk every step; each Prepare drives the editor forward (open → inputs → add-button → added).
-            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
-            for (var step = 1; vm.Coach.IsActive; step++)
-            {
-                unresolved += CaptureCoachStep(window, vm, outDir, $"guide_modules_step{step}");
-                Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            }
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            unresolved++;
-            Console.Error.WriteLine($"split-modules guide render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return unresolved;
-    }
-
-    /// <summary>
-    /// Render guide 4 ("Recover from drift"): the opening step breaks a worktree and reconciles so drift
-    /// shows; the repair step (via "Show me") prunes it, which fires a store change and auto-advances.
-    /// </summary>
-    static int RenderRepairDriftGuide(string outDir)
-    {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide4-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
-        try
-        {
-            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RepairDriftId);
-            demo.Sample.Build();  // full Running sample
-
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step1");     // drift shown
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step2");     // repair (waiting)
-
-            // "Show me" repairs (prunes the stale registration), which fires a store change and advances.
-            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide4_step3");     // recovered
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            unresolved++;
-            Console.Error.WriteLine($"guide 4 render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return unresolved;
-    }
-
-    /// <summary>
-    /// Render guide 3 ("Create and run a workspace"): why → create (via "Show me", which does the real
-    /// worktree work behind a progress checklist and auto-advances) → what got made → the handoff.
-    /// </summary>
-    static int RenderRunWorkspaceGuide(string outDir)
-    {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-guide3-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
-        try
-        {
-            var guide = Sprig.App.Coach.Guides.All.Single(g => g.Id == Sprig.App.Coach.Guides.RunWorkspaceId);
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.MapReady);
-
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            Pump(vm.StartGuide(guide, () => MarkDemoGuideDone(demo, guide.Id)));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step1");     // why a workspace
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step2");     // create (waiting)
-
-            // "Show me" creates the workspace — real worktrees, behind a progress window — then the store
-            // change auto-advances to the "what got made" step.
-            Pump(vm.Coach.ShowMeCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step3");     // what sprig made
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null));
-            unresolved += CaptureCoachStep(window, vm, outDir, "guide3_step4");     // handoff
-            Pump(vm.Coach.NextCommand.ExecuteAsync(null)); // Done
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            unresolved++;
-            Console.Error.WriteLine($"guide 3 render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return unresolved;
-    }
-
-    /// <summary>
-    /// Prove the row-level spotlight: point a coachmark at one specific repo row (anchored from its data)
-    /// with two repos registered, so the cut-out lands on exactly that row and everything else dims.
-    /// </summary>
-    static int RenderRowHighlight(string outDir)
-    {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-row-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var unresolved = 0;
-        try
-        {
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.ReposRegistered);
-
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            // Show the repo list and let its rows realise, then spotlight just sample-api.
-            vm.CurrentPage = vm.Pages.OfType<ReposViewModel>().First();
-            Dispatcher.UIThread.RunJobs();
-            Dispatcher.UIThread.RunJobs();
-
-            var mark = new CoachMark(
-                Sprig.App.Coach.Anchors.RepoRow(Sprig.Core.Demo.SampleFixtures.ApiRepo),
-                "This is a repo",
-                "Each row is a repo sprig knows about. Everything else is dimmed so your eye goes straight to this one.")
-            { Side = CoachSide.Right };
-
-            Pump(vm.Coach.StartAsync([mark]));
-            unresolved += CaptureCoachStep(window, vm, outDir, "row_highlight");
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            unresolved++;
-            Console.Error.WriteLine($"row-highlight render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return unresolved;
-    }
-
-    /// <summary>
-    /// Render the partial-workspace flow against the sample map: the create form with a repo unticked
-    /// (so the checklist and the gap/"needs left unmet" warning are both visible), then the workspace it
-    /// produces, badged partial. Uses the demo sample rather than the live store so the repo names, ports
-    /// and the resulting slice are the same every run.
-    /// </summary>
-    static int RenderPartialWorkspace(string outDir)
-    {
-        var root = Path.Combine(Path.GetTempPath(), "sprig-render-partial-" + Guid.NewGuid().ToString("N"));
-        var demo = new AppServices(root, isDemoStore: true);
-        var failures = 0;
-        try
-        {
-            demo.Sample.BuildTo(Sprig.Core.Demo.SampleStage.MapReady);
-
-            var window = new MainWindow { DataContext = new MainWindowViewModel(demo, dockerIsRunning: () => false) };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var vm = (MainWindowViewModel)window.DataContext!;
-
-            var workspaces = vm.Pages.OfType<WorkspacesViewModel>().First();
-            vm.CurrentPage = workspaces;
-            Dispatcher.UIThread.RunJobs();
-
-            // Open the create form and drop the web app: web_port is only ever consumed by it, so that
-            // port goes unprovisioned, while api_port survives (the API still uses it).
-            Pump(workspaces.NewWorkspaceCommand.ExecuteAsync(null));
-            workspaces.NewName = "api-only";
-            workspaces.StartInfraOnCreate = false;      // no docker in a render run
-            workspaces.NewRepos.First(r => r.Name == Sprig.Core.Demo.SampleFixtures.WebRepo).Included = false;
-            SettleFrame(window, outDir, "workspace_partial_create");
-
-            Pump(workspaces.CreateCommand.ExecuteAsync(null));
-            Dispatcher.UIThread.RunJobs();
-            SettleFrame(window, outDir, "workspace_partial_detail");
-
-            if (workspaces.Selected is not { IsPartial: true })
-            {
-                Console.Error.WriteLine("partial-workspace render: the created workspace isn't marked partial");
-                failures++;
-            }
-
-            window.Close();
-        }
-        catch (Exception ex)
-        {
-            failures++;
-            Console.Error.WriteLine($"partial-workspace render failed: {ex.Message}");
-        }
-        finally
-        {
-            try { demo.Sample.Destroy(); } catch { /* best-effort */ }
-            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); } catch { /* best-effort */ }
-        }
-        return failures;
-    }
-
-    /// <summary>Let two layout passes run, capture the current coach frame, and report an unresolved anchor.</summary>
-    static int CaptureCoachStep(MainWindow window, MainWindowViewModel vm, string outDir, string name)
-    {
-        Dispatcher.UIThread.RunJobs();
-        Dispatcher.UIThread.RunJobs();
-        Avalonia.Controls.Window target = window;
-        target.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
-        if (!vm.Coach.AnchorMissing) return 0;
-        Console.Error.WriteLine($"{name}: anchor '{vm.Coach.Mark?.Anchor}' did not resolve");
-        return 1;
-    }
-
-    static void SettleFrame(MainWindow window, string outDir, string name)
-    {
-        Dispatcher.UIThread.RunJobs();
-        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, name + ".png"));
-    }
-
-    /// <summary>Tick a guide complete in the demo store's own settings, so the render can show the tick.</summary>
-    static void MarkDemoGuideDone(AppServices demo, string guideId)
-    {
-        var settings = demo.Settings.Get();
-        if (!settings.CompletedGuides.Contains(guideId)) settings.CompletedGuides.Add(guideId);
-        demo.Settings.Save(settings);
-    }
-
-    /// <summary>
-    /// Drive an async view-model call to completion on the render thread. The awaited continuations are
-    /// posted to the dispatcher, so blocking on the task would deadlock — the jobs have to be pumped.
-    /// </summary>
-    static void Pump(Task task)
-    {
-        while (!task.IsCompleted)
-            Dispatcher.UIThread.RunJobs();
-        task.GetAwaiter().GetResult();
-    }
-
-    /// <summary>Render the operation-progress checklist mid-run: ports/env/compose done, a soft setup
-    /// warning, one step spinning, and later steps still pending.</summary>
-    static void RenderProgressModal(string outDir)
-    {
-        var progress = new OperationProgressViewModel("Creating workspace 'feature-auth'");
-        progress.Load(
-        [
-            new WorkspaceStep("ports", "Allocate ports"),
-            new WorkspaceStep("vue:worktree", "Create worktree — vue"),
-            new WorkspaceStep("vue:env", "Apply environment — vue"),
-            new WorkspaceStep("vue:compose", "Generate compose — vue"),
-            new WorkspaceStep("vue:setup", "Install dependencies — vue"),
-            new WorkspaceStep("vue:setup:0", "npm ci") { SubStep = true },
-            new WorkspaceStep("vue:setup:1", "npm run build") { SubStep = true },
-            new WorkspaceStep("record", "Save workspace record"),
-        ]);
-        progress.AddStep("infra", "Start infrastructure");
-        progress.Apply(new("ports", WorkspaceStepState.Done));
-        progress.Apply(new("vue:worktree", WorkspaceStepState.Done));
-        progress.Apply(new("vue:env", WorkspaceStepState.Done));
-        progress.Apply(new("vue:compose", WorkspaceStepState.Done));
-        progress.Apply(new("vue:setup", WorkspaceStepState.Running));
-        progress.Apply(new("vue:setup:0", WorkspaceStepState.Done));
-        progress.Apply(new("vue:setup:1", WorkspaceStepState.Running));
-        // A few streamed output lines for the currently-running command.
-        foreach (var line in new[]
-                 {
-                     "> vite build",
-                     "vite v5.4.2 building for production...",
-                     "transforming (247) src/components/App.vue",
-                     "✓ 312 modules transformed.",
-                     "rendering chunks...",
-                 })
-            progress.Apply(new("vue:setup:1", WorkspaceStepState.Running) { Output = line });
-
-        var window = new OperationProgressWindow { DataContext = progress };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-        window.CaptureRenderedFrame()?.Save(Path.Combine(outDir, "operation_progress.png"));
-        window.Close();
-    }
-
-    static void Capture(MainWindowViewModel vm, string path)
-    {
-        var window = new MainWindow { DataContext = vm };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-        var frame = window.CaptureRenderedFrame();
-        frame?.Save(path);
-        window.Close();
-    }
-
-    /// <summary>
-    /// Renders Home in the states the live store can't show at once. Builds the view-model with a
-    /// synthetic <see cref="SetupState"/> and never activates it, so <c>OnActivated</c> can't
-    /// overwrite the state with real-store data.
-    /// </summary>
-    static void RenderHomeStates(string outDir)
-    {
-        var services = new AppServices();
-
-        HomeViewModel Home(SetupState state, IReadOnlyList<InstanceRecord> recent)
-        {
-            var vm = new HomeViewModel(services, new Navigator()) { State = state };
-            foreach (var r in recent) vm.Recent.Add(new WorkspaceItemViewModel(r));
-            return vm;
-        }
-
-        CaptureControl(new HomeView { DataContext = Home(new SetupState(0, 0, 0), []) },
-            Path.Combine(outDir, "home_empty.png"));
-
-        IReadOnlyList<InstanceRecord> running =
-        [
-            Rec("feature-auth", "web+api", "infra up", ("frontend_port", 5173), ("api_port", 5080)),
-            Rec("hotfix-invoices", "web+api", "created", ("frontend_port", 5174), ("api_port", 5081)),
-        ];
-        CaptureControl(new HomeView { DataContext = Home(new SetupState(2, 1, 2), running) },
-            Path.Combine(outDir, "home_running.png"));
-    }
-
-    static InstanceRecord Rec(string workspace, string map, string status, params (string Name, int Port)[] ports)
-        => new()
-        {
-            Workspace = workspace,
-            Map = map,
-            LastStatus = status,
-            CreatedAt = DateTimeOffset.UtcNow,
-            Ports = ports.ToDictionary(p => p.Name, p => p.Port),
-        };
-
-    static void CaptureControl(Control content, string path)
-    {
-        var window = new Avalonia.Controls.Window
-        {
-            Width = 1100,
-            Height = 760,
-            Background = new SolidColorBrush(Color.Parse("#181820")),
-            Content = content,
-        };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-        var frame = window.CaptureRenderedFrame();
-        frame?.Save(path);
-        window.Close();
+        foreach (var visual in Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(root))
+            if (visual is T match && (name is null || match.Name == name)) return match;
+        return null;
     }
 }

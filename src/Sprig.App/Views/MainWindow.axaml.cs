@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Sprig.App.Icons;
 using Sprig.App.ViewModels;
 
@@ -7,30 +8,38 @@ namespace Sprig.App.Views;
 
 public partial class MainWindow : Window
 {
-    MainWindowViewModel? _hooked;
+    static readonly TimeSpan Visible = TimeSpan.FromSeconds(1);
+    static readonly TimeSpan Minimised = TimeSpan.FromSeconds(5);
+
+    readonly DispatcherTimer _hostPoll = new() { Interval = Visible };
 
     public MainWindow()
     {
         InitializeComponent();
-        // The nav logo is a native Avalonia vector (Avalonia rasterises it through Skia), so it stays
-        // crisp at any size/DPI. Built from data generated out of sprig.svg — see SprigLogo.
+        // A native Avalonia vector built from sprig.svg, so it stays crisp at any size and DPI.
         LogoImage.Source = SprigLogo.Create();
         UpdateLogoImage.Source = SprigLogo.Create();
-        DataContextChanged += OnDataContextChanged;
-        // Anchors are resolved against the window's own content, so a coachmark can point at anything in it.
-        Coachmarks.AnchorRoot = this;
-    }
 
-    // The DataContext is swapped when entering/leaving the guided tour, so the hook is re-attached
-    // rather than wired once (same pattern as ReposView/WorkspacesView).
-    void OnDataContextChanged(object? sender, EventArgs e)
-    {
-        if (_hooked is not null) _hooked.OperationStarted -= ShowProgress;
-        _hooked = DataContext as MainWindowViewModel;
-        if (_hooked is not null) _hooked.OperationStarted += ShowProgress;
+        _hostPoll.Tick += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm) _ = vm.HostStatus.PollAsync();
+        };
+        Opened += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm) _ = vm.HostStatus.PollAsync();
+            _hostPoll.Start();
+        };
+        Closed += (_, _) => _hostPoll.Stop();
+        // Coming back from a terminal is when the CLI has most likely changed what the page shows.
+        Activated += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm) vm.WindowFocused();
+        };
+        // Hidden in the tray it still polls, so the tray's count of running apps stays true, just less often.
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)
+                _hostPoll.Interval = WindowState == WindowState.Minimized || !IsVisible ? Minimised : Visible;
+        };
     }
-
-    /// <summary>Open a progress checklist in its own non-blocking window, owned by this one.</summary>
-    void ShowProgress(OperationProgressViewModel vm)
-        => new OperationProgressWindow { DataContext = vm }.Show(this);
 }

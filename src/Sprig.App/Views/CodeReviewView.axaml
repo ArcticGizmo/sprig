@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:controls="clr-namespace:Sprig.App.Controls"
+             x:Class="Sprig.App.Views.CodeReviewView"
+             x:DataType="vm:CodeReviewViewModel">
+
+    <UserControl.Styles>
+        <!-- A file in the list: chromeless, its inner border carries hover and which one is open. -->
+        <Style Selector="Button.file">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.file /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.file:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.file:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.file">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="10,7" />
+        </Style>
+        <Style Selector="Button.file:pointerover Border.file">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="Border.file.current">
+            <Setter Property="Background" Value="#2660A5FA" />
+        </Style>
+        <Style Selector="TextBlock.marker">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.marker.approved">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.state">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.state.approved">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <!-- A dialog over the whole page: the code gets the window's height. -->
+    <Border Background="#B3060A12">
+        <Border.KeyBindings>
+            <KeyBinding Gesture="Escape" Command="{Binding CloseCommand}" />
+        </Border.KeyBindings>
+    <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="24,20" Margin="32" MaxWidth="1240" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,16">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <TextBlock Text="Review the code" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Summary}" FontSize="12.5" Foreground="{StaticResource WarnBrush}"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="CloseButton" Grid.Column="2" Content="Close" Command="{Binding CloseCommand}" VerticalAlignment="Center"
+                            ToolTip.Tip="Come back to it later; nothing runs until it's approved (Esc)"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,6" />
+                </Grid>
+                <TextBlock FontSize="12.5" TextWrapping="Wrap" Foreground="{StaticResource FgBrush}"
+                           Text="These files name commands sprig runs with your permissions. Read each one and approve it. Approval covers exactly what you see. Your own edits after that don't ask again; a change that comes from someone else does." />
+            </StackPanel>
+
+            <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,16,0,0">
+                <TextBlock Text="{Binding Note}" IsVisible="{Binding HasNote}" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="{Binding ApproveAllLabel}" Command="{Binding ApproveAllCommand}"
+                        IsVisible="{Binding ShowApproveAll}" VerticalAlignment="Center"
+                        ToolTip.Tip="Approve every file listed, read or not"
+                        Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                <Button Grid.Column="2" Content="{Binding ApproveLabel}" Command="{Binding ApproveCurrentCommand}"
+                        IsEnabled="{Binding CanApproveCurrent}" VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="review:approve"
+                        Background="{StaticResource WarnBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+            </Grid>
+
+            <Grid ColumnDefinitions="230,*" ColumnSpacing="14">
+                <!-- Which files, and which are done -->
+                <ItemsControl ItemsSource="{Binding Files}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ReviewFile">
+                            <Button Classes="file" Margin="0,0,0,2" ToolTip.Tip="{Binding Path}"
+                                    AutomationProperties.AutomationId="{Binding Name, StringFormat='review:{0}'}"
+                                    Command="{Binding $parent[UserControl].((vm:CodeReviewViewModel)DataContext).ShowCommand}"
+                                    CommandParameter="{Binding}">
+                                <Border Classes="file" Classes.current="{Binding IsCurrent}">
+                                    <Grid ColumnDefinitions="16,*">
+                                        <TextBlock Classes="marker" Classes.approved="{Binding IsApproved}" Text="{Binding Marker}"
+                                                   FontSize="12" FontWeight="Bold" VerticalAlignment="Top" Margin="0,1,0,0" />
+                                        <StackPanel Grid.Column="1" Spacing="1">
+                                            <TextBlock Text="{Binding Name}" FontSize="13" Foreground="{StaticResource TitleBrush}"
+                                                       FontFamily="Cascadia Mono,Consolas,monospace" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Classes="state" Classes.approved="{Binding IsApproved}" Text="{Binding State}"
+                                                       FontSize="11.5" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- The one being read -->
+                <Border Grid.Column="1" Background="{StaticResource FormBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="10,6">
+                            <SelectableTextBlock Text="{Binding Current.Path, FallbackValue=''}" FontSize="11.5"
+                                                 FontFamily="Cascadia Mono,Consolas,monospace" Foreground="{StaticResource MutedBrush}"
+                                                 TextWrapping="Wrap" />
+                        </Border>
+                        <TextBlock DockPanel.Dock="Top" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" FontSize="12.5"
+                                   TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}" Margin="10,8" />
+                        <controls:CodeViewer Text="{Binding Text}" />
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </DockPanel>
+    </Border>
+    </Border>
+</UserControl>

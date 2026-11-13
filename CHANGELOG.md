@@ -9,6 +9,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.0] - 2026-11-13
+
+A rebuild. Maps, pools and stacks are out; repos describe themselves, and sprig runs them. Nothing from 0.8 is migrated, so delete the old app's folders under `%LOCALAPPDATA%\sprig` when you're ready.
+
+### Added
+- **Definitions in YAML** — each repo describes itself in a `sprig.yaml`. Nothing compiles to read it.
+- **A JSON Schema for the format** — IDEs complete and check `sprig.yaml`. Drafts point at it.
+- **A docs site** — [arcticgizmo.github.io/sprig](https://arcticgizmo.github.io/sprig/). Install, guides, the whole format.
+- **`sprig init`, then `sprig up`** — from a repo folder to running apps in two commands.
+- **Sprig runs your apps** — in dependency order, each ready by health path or log line.
+- **Jobs** — `once: true` for migrations. What waits for one waits for success.
+- **Restart policies** — `restart: on-failure`, with a limit, and a count of restarts.
+- **`main`, the checkout you already have** — runs in place. Nothing to set up.
+- **Branches in numbered slots** — `sprig up -b feat-x`. Release a slot and keep its installs.
+- **Groups** — start a slice of the apps, and only the infra it uses.
+- **Start ▾ and Restart** — pick a group like a launch profile. Stopped apps stay stopped.
+- **Inputs with defaults** — every repo runs on its own; set values per workspace.
+- **Every value in a file the app reads** — plain `dotnet run` gets what sprig's run gets.
+- **Settings files edited in place** — comments survive, and taken-over values come back.
+- **Empty data** — fresh databases, migrations run again, everything else kept.
+- **`copy-into-worktrees`** — the `.env` git doesn't have follows each slot.
+- **Secrets stay hidden** — in all output, until `--unmask-secrets`.
+- **pnpm** — pnpm workspaces install once and run `pnpm run dev`.
+- **The workspace graph** — apps and infra, with live state, logs and start/stop.
+- **Quick links** — `links: { Swagger: /swagger }`, at each workspace's own ports.
+- **Logs you can work with** — select, copy, and see every app at that moment.
+- **A Repos page** — each repo once, its definition in the repo or kept in sprig.
+- **Definitions kept in sprig** — try sprig on a repo without committing a thing.
+- **An editor that knows the format** — completion, hover docs and squiggles.
+- **`sprig info`** — one workspace: apps, infra, ports and inputs.
+- **Lives in the tray** — closing the window orphans nothing. Quitting stops every app.
+- **Cancel up, down and remove** — Docker may take a moment to agree.
+- **Port honesty** — says when an app ignores its port, and who holds one.
+- **Fixed ports change hands** — a pinned port goes to whichever workspace is up.
+
+### Changed
+- **Approval asks about other people's code** — your own edits approve themselves.
+- **Home shows what's running** — with first steps until there's a repo.
+- **Orchestrations are greyed out** — several repos at once, back after a redesign.
+
+### Removed
+- **Maps, pools, stacks and `sprig map`** — repos and workspaces do their jobs now. They had a good run.
+
+---
+
 ## [v0.8.2] - 2026-11-02
 
 ### Changed

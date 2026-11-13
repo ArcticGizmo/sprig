@@ -1,0 +1,18 @@
+/* The app's AccentBrush (#60A5FA) on dark; a deeper blue on light so links keep their contrast. Starlight's
+   accent scale: low = tinted backgrounds, base = links/buttons, high = text on low. */
+:root {
+  --sl-color-accent-low: #172554;
+  --sl-color-accent: #60a5fa;
+  --sl-color-accent-high: #bfdbfe;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dbeafe;
+  --sl-color-accent: #1d4ed8;
+  --sl-color-accent-high: #1e3a8a;
+}
+
+.hero img {
+  max-height: 16rem;
+  width: auto;
+}

@@ -1,0 +1,505 @@
+<title>Writing a Sprig Repo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a sticky progress strip; sections of check rows with pass/fail/skip on the left. */
+:root {
+  --bg: #f6f7f3;
+  --surface: #ffffff;
+  --fg: #1d2420;
+  --muted: #5d6a62;
+  --line: #dde3dc;
+  --accent: #2f6b45;
+  --accent-soft: #e3efe6;
+  --pass: #2f7d4a;
+  --pass-soft: #dff1e5;
+  --fail: #b3362c;
+  --fail-soft: #f8e1de;
+  --skip: #8a6d1f;
+  --skip-soft: #f4ecd2;
+  --code-bg: #eef1ec;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+    --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+    --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+  --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+  --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); max-width: 64ch; margin: 8px 0 0; }
+code, pre { font-family: var(--font-mono); font-size: 12.5px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.setup { display: grid; gap: 10px; margin-top: 20px; }
+.cmd { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--code-bg); min-width: 0; margin-top: 6px; }
+.cmd pre { margin: 0; padding: 8px 10px; overflow-x: auto; flex: 1; min-width: 0; white-space: pre; }
+.cmd button { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: 600 12px var(--font-body); padding: 0 12px; cursor: pointer; border-radius: 0 6px 6px 0; }
+.cmd button:hover { color: var(--accent); }
+.cmd-label { font-size: 13px; color: var(--muted); margin: 0; }
+
+.strip { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 12px; margin-top: 24px; border-bottom: 1px solid var(--line); }
+.strip-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between; }
+.counts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.counts b { font-weight: 700; }
+.c-pass { color: var(--pass); } .c-fail { color: var(--fail); } .c-skip { color: var(--skip); } .c-todo { color: var(--muted); }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin-top: 10px; }
+.bar span { display: block; height: 100%; transition: width .25s ease; }
+.bar .b-pass { background: var(--pass); } .bar .b-fail { background: var(--fail); } .bar .b-skip { background: var(--skip); }
+.toggle { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.saved { font-size: 12px; color: var(--muted); }
+.saved.warn { color: var(--fail); }
+
+section { margin-top: 36px; }
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--fg); }
+.sec-head .tally { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-intro { color: var(--muted); font-size: 14px; margin: 8px 0 0; max-width: 70ch; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.states { display: flex; flex-direction: column; gap: 4px; }
+.states button { width: 52px; font: 600 11.5px var(--font-body); letter-spacing: .02em; padding: 5px 0; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.states button:hover { border-color: var(--muted); color: var(--fg); }
+.states button[aria-pressed="true"][data-s="pass"] { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+.states button[aria-pressed="true"][data-s="fail"] { background: var(--fail-soft); border-color: var(--fail); color: var(--fail); }
+.states button[aria-pressed="true"][data-s="skip"] { background: var(--skip-soft); border-color: var(--skip); color: var(--skip); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.body { min-width: 0; }
+.title { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.title .id { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.title .new { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--skip); border: 1px solid var(--skip); border-radius: 4px; padding: 0 5px; }
+.item.is-pass .title .label, .item.is-skip .title .label { color: var(--muted); }
+.how, .expect { margin: 6px 0 0; font-size: 14px; }
+.how ol { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.how li { min-width: 0; }
+.expect { padding-left: 10px; border-left: 3px solid var(--accent-soft); color: var(--fg); }
+.expect::before { content: "Expect  "; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.note-wrap { margin-top: 10px; }
+.note-wrap textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px/1.45 var(--font-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.item.is-fail .note-wrap textarea { border-color: var(--fail); }
+.note-link { background: none; border: 0; padding: 0; color: var(--accent); font: 500 13px var(--font-body); cursor: pointer; margin-top: 8px; }
+.item.done-hidden { display: none; }
+.foot { margin-top: 40px; color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) {
+  h1 { font-size: 24px; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .states { flex-direction: row; }
+}
+@media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">experimental branch · hand pass · writing a repo</div>
+  <h1>Writing a sprig repo</h1>
+  <p class="lede">Describe two testbed repos from nothing: shop-web with a draft kept in sprig and edited in the app, then shop-services with a <code>sprig.cs</code> written into the repo and edited in your own editor. Mark each row Pass, Fail or Skip, and add a note whenever something is off. Rows marked <b>new</b> have not been tried before, so the note matters more than the mark.</p>
+
+  <div class="setup">
+    <div>
+      <p class="cmd-label">First, close any sprig window that's open. Launching sprig again brings back the window that's already running, and that one uses a different store.</p>
+    </div>
+    <div>
+      <p class="cmd-label">A fresh testbed of its own, so the usual one is left alone:</p>
+      <div class="cmd"><pre id="cmd-testbed">cd C:\Users\JonHowell\Documents\git\personal\sprig; pwsh -File scripts/testbed.ps1 -Path C:\Users\JonHowell\Documents\git\personal\sprig-testbed-writing -Force</pre><button type="button" data-copy="cmd-testbed">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">This build as <code>sprig</code> in this terminal, with an empty store. Run every command on this page in this terminal.</p>
+      <div class="cmd"><pre id="cmd-dev">.\scripts\dev-sprig.ps1 -Store C:\Users\JonHowell\Documents\git\personal\sprig-store-writing</pre><button type="button" data-copy="cmd-dev">Copy</button></div>
+    </div>
+  </div>
+
+  <div class="strip" aria-live="polite">
+    <div class="strip-row">
+      <div class="counts" id="counts"></div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <label class="toggle"><input type="checkbox" id="hide-done"> Hide passed and skipped</label>
+        <span class="saved" id="saved">Connecting…</span>
+      </div>
+    </div>
+    <div class="bar" id="bar"><span class="b-pass"></span><span class="b-fail"></span><span class="b-skip"></span></div>
+  </div>
+
+  <div id="sections"></div>
+
+  <p class="foot">When you're done, tell Claude in the terminal. It reads these results directly and turns every fail note into a fix.</p>
+</div>
+
+<script>
+const T = "C:/Users/JonHowell/Documents/git/personal/sprig-testbed-writing";
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const block = (id, text) => `<div class="cmd"><pre id="cmd-${id}">${esc(text)}</pre><button type="button" data-copy="cmd-${id}">Copy</button></div>`;
+
+const SECTIONS = [
+  {
+    id: "start", title: "A repo with no definition",
+    intro: "shop-web and shop-services lose their sprig.cs, so everything below is written from scratch.",
+    items: [
+      { id: "S1", title: "Take the definitions out",
+        how: [`Commit the removal in both repos, then list the Repos:${block("strip", `cd ${T}/shop-services
+git rm -q sprig.cs; git commit -qm "Write sprig.cs from scratch"
+cd ../shop-web
+git rm -q sprig.cs; git commit -qm "Write sprig.cs from scratch"
+sprig repo ls`)}`],
+        expect: `Both commits go in. <code>repo ls</code> says there are no repos on the list yet and to add one with <code>sprig repo add &lt;folder&gt;</code>.` },
+      { id: "S2", title: "Up before init", isNew: true,
+        how: [`In shop-web, run <code>sprig up</code>.`],
+        expect: `A short message, not a stack trace: the folder isn't on the Repos list, and <code>sprig init</code> makes it runnable. Note the exact wording.` },
+      { id: "S3", title: "sprig init",
+        how: [`<code>sprig init</code>, then <code>git status</code>.`],
+        expect: `"added 'shop-web' (in sprig), using …" with a path inside <code>sprig-store-writing</code>, then a dim line: "Run it where it is with: sprig up. Check a branch out in a slot of its own with: sprig up -b &lt;branch&gt;". <code>git status</code> is clean, because nothing was written to the repo.` },
+      { id: "S4", title: "Read the draft",
+        how: [`Open the file at the path init printed.`],
+        expect: `An SDK reference line, <code>using Sprig;</code>, <code>var repo = Repo.Describe("shop-web");</code>, then <code>var shopWeb = repo.Node("shop-web", ".").Http();</code>. Because it's a Vite app, two comment lines say Vite doesn't read PORT by itself and show the vite.config line that does, then <code>shopWeb.EnvFile(".env.local", e => e.Set("PORT", shopWeb.Port));</code>. There's no <code>Run</code> line. It ends with <code>return repo.Emit(args);</code>. The app takes its name from package.json, so it's called shop-web, the same as the repo. Note whether that reads well.` },
+      { id: "S5", title: "First up",
+        how: [`<code>sprig up</code>. Open the url it gives, then the storefront's <b>Config</b> tab.`],
+        expect: `It runs in place as <code>local</code>. The first run does <code>npm ci --ignore-scripts</code>, then waits until shop-web is ready and gives its url. It asks nothing, because there are no settings yet. The Config tab shows the API urls coming from shop-web's own files, not sprig. The APIs are unreachable, since shop-services isn't running.` },
+      { id: "S6", title: "sprig info",
+        how: [`<code>sprig info</code>`],
+        expect: `shop-web / local: up, with the repo's own folder, shop-web's state and url, no infra, and a line saying it has no settings.` },
+    ]
+  },
+  {
+    id: "editor", title: "Writing it in the app",
+    intro: "The definition kept in sprig, edited in the app's editor.",
+    items: [
+      { id: "E1", title: "Open the app on this store",
+        how: [`<code>sprig open</code>, then <b>Repos</b>.`],
+        expect: `shop-web is listed "in sprig". With it selected, WORKSPACES shows local, up, with <b>Open</b>. RUNS lists shop-web, INFRA says None, and SETTINGS says None. There's no text under the page heading.` },
+      { id: "E2", title: "Completion and docs",
+        how: [`Click <b>Open definition</b>.`, `On a new line above <code>return</code>, type <code>repo.</code>, then on another line <code>shopWeb.</code>. Hover over a method name.`, `Delete what you typed.`],
+        expect: `Above the code: "In sprig, so no branch can change it. Saving approves what you saved." <code>repo.</code> offers DotNet, Node, App, DotNetJob, Job, ComposeFile, Setting, Export and the infra helpers such as Mailpit. <code>shopWeb.</code> offers Http, EnvFile, AppSettings, LaunchSettings, Run, WaitFor, ReadyOnLog, Restart and Link, and no Env. Hovering shows each one's summary.` },
+      { id: "E3", title: "Two settings, and a shorter app name",
+        how: [`Replace everything between <code>Repo.Describe</code> and <code>return</code> with this, then press <b>Ctrl+S</b>:${block("settings", `var catalog = repo.Setting<Url>("catalog-url", "http://localhost:5100");
+var orders  = repo.Setting<Url>("orders-url", "http://localhost:5200");
+
+var web = repo.Node("web", ".").Http();
+web.Run("npm run dev");
+web.EnvFile(".env.local", e => e
+    .Set("PORT", web.Port)
+    .Set("VITE_CATALOG_URL", catalog)
+    .Set("VITE_ORDERS_URL", orders));`)}`],
+        expect: `"Saved. Checking…", then "Saved, and it runs.", which fades after a few seconds. SETTINGS lists catalog-url and orders-url with their defaults, and RUNS lists web. The old shop-web app is still running under its old name: note what the WORKSPACES row says about it, if anything.` },
+      { id: "E4", title: "Mistakes the editor catches",
+        how: [`Add <code>repo.Import&lt;Url&gt;("x");</code> and save.`, `Delete it, then delete the <code>;</code> after the <code>web.Run(…)</code> line and save.`, `Put the <code>;</code> back. Add <code>var api = repo.App("api", "."); api.EnvFile(".env", e => e.Set("X", api.Port));</code> and save.`, `Delete that line. Change the Run line to <code>web.Run($"npm run dev -- --port {web.Port}");</code> and save.`, `Put the Run line back to <code>web.Run("npm run dev");</code> and save.`],
+        expect: `1: a compile error at that line saying Import is Setting now, with the default as a second argument. 2: a compile error naming the line. 3: "app 'api' has no endpoint yet; call .Http() before using its Port or Url". 4: "'web' has {web.http.port} in its Run command, which typing the command yourself wouldn't fill in", pointing at an EnvFile instead. Each problem shows in red on the status line and stays until a save fixes it. The last save says "Saved, and it runs." Also note whether the editor underlines the mistakes before you save.` },
+      { id: "E5", title: "Leaving with unsaved changes",
+        how: [`Type anything into the code, then click <b>Close</b>. Click <b>Keep editing</b>, then <b>Close</b> again and <b>Discard them</b>.`],
+        expect: `"It has changes you haven't saved." with <b>Keep editing</b> and <b>Discard them</b>. Keep editing leaves the change in place. Discard closes the editor, and the file is as you last saved it.` },
+      { id: "E6", title: "The values reach the app",
+        how: [`In the terminal: <code>sprig settings</code>, then <code>sprig up</code>, then <code>sprig ps</code>.`, `Open web's url and its <b>Config</b> tab.`],
+        expect: `The settings table shows catalog-url and orders-url, type url, set to http://localhost:5100 and http://localhost:5200, each from "its default". <code>up</code> writes a sprig block into <code>.env.local</code> and brings web up. The Config tab shows VITE_CATALOG_URL from <code>.env.local</code>. <code>ps</code> shows only web. If the old shop-web is still running, it's a fail.` },
+    ]
+  },
+  {
+    id: "values", title: "Values for one copy",
+    intro: "A workspace's own value wins over the default. A setting with no default is asked for, never an error.",
+    items: [
+      { id: "V1", title: "sprig set",
+        how: [`<code>sprig set catalog-url=http://localhost:5999</code>, then open <code>${T}/shop-web/.env.local</code>.`, `Run the restart command it suggests, then reload web's Config tab.`],
+        expect: `It says catalog-url was set and the files rewritten, then "Restart what uses them: sprig start web". <code>.env.local</code> has 5999, and after the restart so does the Config tab.` },
+      { id: "V2", title: "The app catches up",
+        how: [`Switch to the app window without clicking anything inside it.`, `Open <b>Workspaces</b>, open shop-web's local workspace and click <b>Settings</b>, to the left of <b>⋯</b>.`],
+        expect: `The page shows the new value without a manual refresh. The dialog lists catalog-url with its own value, 5999, and what applies when it's empty (its default, 5100). orders-url has no value of its own and shows its default.` },
+      { id: "V3", title: "sprig unset",
+        how: [`<code>sprig unset catalog-url</code>, then <code>sprig settings</code>.`],
+        expect: `catalog-url is back to "its default", <code>.env.local</code> says 5100 again, and it names web as the app to restart.` },
+      { id: "V4", title: "A setting with no default",
+        how: [`In the app's editor, add <code>var key = repo.Setting&lt;Secret&gt;("payments-key");</code> and a <code>.Set("VITE_PAYMENTS_KEY", key)</code> line to the env file chain. Save.`, `<code>sprig settings</code>, then <code>sprig up</code>.`],
+        expect: `Saving says "Saved, and it runs.": a missing value isn't an error. <code>settings</code> shows payments-key as "to ask", from "nothing yet". <code>up</code> asks for it with the typing masked, keeps the value and carries on. <code>settings</code> then shows ••••••, from "this workspace".` },
+      { id: "V5", title: "A branch in a slot, pointed elsewhere",
+        how: [`<code>sprig up -b feat-x --set catalog-url=http://localhost:5999</code>`, `<code>git worktree list</code>`],
+        expect: `A slot at <code>${T}/shop-web--1</code>, which is the worktree itself (no <code>shop-web</code> folder inside), on a new branch feat-x made from main. It asks for payments-key again, because each slot keeps its own values. It asks for no approval, because the definition is the one kept in sprig. web runs on a different port from local's. <code>git worktree list</code> shows <code>shop-web--1 [feat-x]</code>.` },
+      { id: "V6", title: "Inside the slot",
+        how: [`<code>cd ${T}/shop-web--1</code>, then <code>sprig settings</code> and <code>sprig info</code>.`],
+        expect: `It means feat-x without being told. catalog-url is 5999, from "this workspace". <code>info</code> shows <code>shop-web--1</code>, feat-x and its port.` },
+      { id: "V7", title: "Release the slot, then reuse it", isNew: true,
+        how: [`<code>sprig release feat-x</code>, then <code>git worktree list</code>.`, `<code>sprig up -b feat-w</code>, then <code>sprig settings</code>.`, `In the app, open <b>Workspaces</b>. Release it there too, then pick the free slot and click <b>Check out a branch</b>.`],
+        expect: `Release says <code>shop-web--1</code> is free and feat-x is kept with its commits. The worktree list shows it on a detached HEAD. <code>up -b feat-w</code> reuses slot 1 with the same port, <code>node_modules</code> already there, and catalog-url still 5999 from "this workspace". In the app, a free slot shows only <b>Check out a branch</b>, Settings and ⋯. The form says it reuses <code>shop-web--1</code>, offers to keep or empty its data, and fills the settings with the values the slot kept. Cancel the form.` },
+      { id: "V8", title: "Remove it by branch from anywhere",
+        how: [`<code>cd C:/Users/JonHowell</code>, then <code>sprig rm feat-w -y --delete-branch</code>.`],
+        expect: `The branch is enough, since only shop-web has feat-w checked out. The <code>shop-web--1</code> folder and the feat-w branch are gone. feat-x is still a branch in the repo.` },
+      { id: "V9", title: "A new branch in a slot starts with no logs", isNew: true,
+        how: [`<code>cd ${T}/shop-web</code>, then <code>sprig up -b feat-l</code> and <code>sprig logs feat-l web</code>.`, `<code>sprig release feat-l</code>, then <code>sprig up -b feat-m --no-apps</code>.`, `In the app, open <b>Workspaces</b>, then <code>shop-web--1</code>.`],
+        expect: `The first <code>logs</code> shows web's start-up. After the release, <code>C:/Users/JonHowell/Documents/git/personal/sprig-store-writing/logs/shop-web/1</code> is gone. feat-m reuses <code>shop-web--1</code>, and its log pane is empty, with none of feat-l's lines, until you click <b>Start all</b>.` },
+      { id: "V10", title: "A broken slot asks what to do", isNew: true,
+        how: [`<code>sprig rm feat-m -y</code>. Then make a folder where slot 1 goes, as a removal that went wrong would leave:${block("stray", `mkdir ${T}/shop-web--1; Set-Content ${T}/shop-web--1/left-over.txt "not a worktree"
+sprig up -b feat-n`)}`, `Pick <b>Use shop-web--2 instead</b>.`, `In the app, click <b>New workspace</b>, pick shop-web and type the branch <code>feat-o</code>. Pick <b>Fix shop-web--1</b> and click <b>Run it</b>.`],
+        expect: `The terminal says <code>shop-web--1</code> is broken, names the folder, and asks what now, with the two choices. Using the next one puts feat-n in <code>shop-web--2</code> and leaves <code>left-over.txt</code> where it was. The form shows the same line in red, with a BROKEN SLOT choice that starts on <b>Use shop-web--3 instead</b>. Fixing deletes the folder (the progress window shows "Clear …") and brings feat-o up in <code>shop-web--1</code>. With another stray folder at <code>${T}/shop-web--3</code>, <code>sprig up -b feat-p --json</code> has no terminal to ask in, so it refuses, naming <code>--fix-slot</code> and <code>--slot 4</code>. Afterwards remove feat-n and feat-o, and delete <code>shop-web--3</code>.` },
+    ]
+  },
+  {
+    id: "infra", title: "Infra, a job, and a default that's infra",
+    intro: "shop-services, with its sprig.cs written into the repo this time and edited in your own editor.",
+    items: [
+      { id: "I1", title: "init --in-repo",
+        how: [`<code>cd ${T}/shop-services</code>, then <code>sprig init --in-repo</code> and <code>git status</code>. Open <code>sprig.cs</code>.`],
+        expect: `"added 'shop-services' (in repo), using …/shop-services/sprig.cs". <code>git status</code> shows sprig.cs untracked. The draft has catalog-api and orders-api as <code>repo.DotNet(…).Http();</code>, each followed by a <code>.LaunchSettings(s => s.Set("Urls", ….Url))</code> line, a commented-out <code>repo.DotNetJob("migrate", "tools/Migrate")</code> saying it isn't a web app, and a commented-out ComposeFile line for <code>docker-compose.yml</code>. The diagnostics library isn't listed as an app.` },
+      { id: "I2", title: "Write infra, a job and the mail default",
+        how: [`In VS Code or Rider, keep the draft's first two lines (the SDK reference and <code>using Sprig;</code>) and replace the rest with:${block("services", `var repo = Repo.Describe("shop-services");
+
+var compose = repo.ComposeFile("docker-compose.yml");
+var pg = compose.Service("postgres").Endpoint("tcp", 5432).Health("pg_isready -h 127.0.0.1 -U shop");
+
+var smtp = repo.Setting<Url>("mail-smtp", repo.Mailpit("mail").SmtpUrl);
+
+var migrate = repo.DotNetJob("migrate", "tools/Migrate")
+    .LaunchSettings(s => s.Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop"))
+    .WaitFor(pg)
+    .Retry(max: 3);
+
+var catalog = repo.DotNet("catalog-api", "src/Catalog.Api")
+    .Http(health: "/health")
+    .WaitFor(pg, migrate);
+catalog.LaunchSettings(s => s
+    .Set("Urls", catalog.Url)
+    .Set("ConnectionStrings__Db", $"Host=localhost;Port={pg.Port};Database=catalog;Username=shop;Password=shop"));
+
+var orders = repo.DotNet("orders-api", "src/Orders.Api")
+    .Http(health: "/health")
+    .WaitFor(catalog);
+orders.AppSettings("appsettings.Local.json", s => s
+    .Set("Urls", orders.Url)
+    .Set("Smtp__Url", smtp)
+    .Set("Catalog__Url", catalog.Url));
+
+repo.Export<Url>("catalog-url", catalog.Url);
+
+return repo.Emit(args);`)}`],
+        expect: `Nothing runs yet. Note whether your editor gives completion in this file.` },
+      { id: "I3", title: "Up asks to approve your change",
+        how: [`<code>sprig up</code>. Answer <b>y</b>.`, `<code>docker ps</code>`],
+        expect: `"…/sprig.cs changed since you approved it." with a line saying to read it first, then "Approve and run it?", defaulting to no. After you answer y, postgres and mail come up healthy (<code>sprig-shop-services-local-*</code>), with no redis or rabbitmq, since they're not named. migrate runs and finishes, catalog-api is ready once <code>/health</code> answers, and orders-api starts after it.` },
+      { id: "I4", title: "Prove the wiring",
+        how: [`Open catalog-api's url plus <code>/config</code>, and the same for orders-api.`, `Place an order using orders-api's port, then open mail's UI port (from <code>sprig info</code>):${block("order", `Invoke-RestMethod -Method Post http://localhost:<orders-port>/orders -ContentType application/json -Body '{"productId":"tea","quantity":1,"email":"someone@example.com"}'`)}`],
+        expect: `catalog-api's Db is reachable. orders-api's Smtp url points at the mail container and its Catalog url at catalog-api. The order comes back with <code>mailSent: true</code> and shows up in Mailpit.` },
+      { id: "I4b", title: "Run it yourself, get the same", isNew: true,
+        how: [`<code>sprig stop catalog-api orders-api</code>.`, `In one terminal, <code>cd src/Catalog.Api; dotnet run</code>. In another, <code>cd src/Orders.Api; dotnet run</code>.`, `Open each one's url plus <code>/config</code>, at the ports <code>sprig info</code> gave.`],
+        expect: `Both come up on the same ports sprig gave them, with the same Db, Smtp and Catalog values, because they're in <code>Properties/launchSettings.json</code> (sprig's profile, first) and <code>appsettings.Local.json</code>, not set on a process. Ctrl+C both, then <code>sprig start</code>.` },
+      { id: "I5", title: "Saying no",
+        how: [`Add a comment line to sprig.cs, run <code>sprig up</code> and answer <b>n</b>.`, `<code>sprig up --trust</code>`],
+        expect: `Refused: "…/sprig.cs isn't approved to run. Read it, then: sprig trust add "…" (or pass --trust)". Nothing changes. <code>--trust</code> goes ahead without asking.` },
+      { id: "I6", title: "A value from outside drops the default's infra", isNew: true,
+        how: [`<code>sprig set mail-smtp=smtp://localhost:2525</code>, then <code>sprig info</code> and <code>docker ps</code>.`, `<code>sprig unset mail-smtp</code>, then <code>sprig info</code>.`],
+        expect: `It names orders-api to restart, and <code>info</code> no longer lists mail among the infra. Note whether mail's container is still running. That case hasn't been decided yet. After <code>unset</code>, mail is back.` },
+      { id: "I7", title: "A worktree needs the definition committed", isNew: true,
+        how: [`With sprig.cs still uncommitted, run <code>sprig up -b feat-y</code>.`, `Then <code>sprig workspaces</code>, and check whether <code>${T}/shop-services--1</code> exists.`],
+        expect: `feat-y's worktree comes from main, which has no sprig.cs. It should refuse clearly, naming the missing file and saying to commit it, and leave nothing behind. Note exactly what it says and what's left over.` },
+      { id: "I8", title: "Commit, then the worktree works",
+        how: [`<code>git add sprig.cs; git commit -m "Describe shop-services"</code>. If I7 left a slot behind, remove it with <code>sprig rm 1 -y</code> first.`, `<code>sprig up -b feat-y</code>`],
+        expect: `It comes up in <code>shop-services--1</code> with its own ports and its own <code>sprig-shop-services-1-*</code> containers. It asks for no approval, because that content is already approved.` },
+      { id: "I9", title: "A branch that changes its definition",
+        how: [`In <code>${T}/shop-services--1/sprig.cs</code>, add <code>.Link("Config", "/config")</code> to catalog's chain.`, `Run <code>sprig up</code> from that folder and approve.`, `In the app, open <b>Workspaces</b>, then <code>shop-services--1</code>, then catalog-api.`],
+        expect: `It asks first: the file differs from every version of shop-services' sprig.cs you've approved. Once you approve, <b>Config</b> leads catalog-api's details, and clicking it opens <code>/config</code> on feat-y's port. local is unaffected.` },
+      { id: "I10", title: "A group, started from the terminal", isNew: true,
+        how: [`<code>cd ${T}/shop-services</code>. In <code>sprig.cs</code>, add <code>repo.Group("catalog", catalog);</code> above the Export line.`, `<code>sprig stop</code>, then <code>sprig up --group catalog --trust</code> and <code>sprig ps</code>.`],
+        expect: `<code>up</code> starts migrate, then catalog-api, and stops there. <code>ps</code> shows migrate finished and catalog-api ready, with orders-api not running. <code>sprig start --group nope</code> says there's no group 'nope' and names catalog.` },
+      { id: "I11", title: "Start picks a group in the app", isNew: true,
+        how: [`In the app, open <b>Workspaces</b>, then shop-services' local workspace. Click <b>Stop apps</b>.`, `Click the <b>▾</b> beside <b>Start all</b>, pick <b>catalog</b>, then click <b>Start catalog</b>.`, `Open <code>shop-services--1</code>, then go back to local.`],
+        expect: `The ▾ lists <b>Every app</b>, ticked, and <b>catalog</b>, with what each starts on hover. Picking catalog turns the button into <b>Start catalog</b>, and it starts migrate and catalog-api only. Its tooltip names catalog-api. <code>shop-services--1</code> has no ▾ until its branch has the group too, and local still says <b>Start catalog</b> when you come back, as does the app after a restart. A workspace with no groups shows a plain <b>Start all</b>.` },
+      { id: "I12", title: "Grow, then restart what's running", isNew: true,
+        how: [`With local running only the catalog group, pick <b>Every app</b> in the ▾ and click <b>Start all</b>.`, `Change a line in <code>src/Orders.Api/Program.cs</code> (a log message will do), then <code>sprig stop catalog-api</code> and click <b>Restart</b>.`, `<code>sprig restart --jobs</code>, then <code>sprig restart --group catalog</code>.`],
+        expect: `Start all leaves migrate finished and catalog-api running, with its pid unchanged in <code>sprig ps</code>, and only orders-api starts. Restart rebuilds orders-api and brings it back with your change in its log, and catalog-api stays stopped: orders-api doesn't wait for it, and nothing starts on its port. <code>--jobs</code> runs migrate again before orders-api comes back. With catalog-api stopped, <code>--group catalog</code> says nothing is running to restart.` },
+    ]
+  },
+  {
+    id: "add", title: "Adding a repo from the app",
+    intro: "shop-mobile still has its own sprig.cs, so both of + Add's cards apply.",
+    items: [
+      { id: "A1", title: "It has a sprig.cs",
+        how: [`On <b>Repos</b>, click <b>+ Add</b>, then <b>It has a sprig.cs</b>. Type <code>${T}/shop-m</code>, press <b>Tab</b>, then click <b>Add to Repos</b>.`, `Click <b>Read it</b>, then <b>Approve</b>.`],
+        expect: `Two cards first, and no fields. Tab completes the folder. shop-mobile is added "in repo" with <b>Read it</b> and <b>Approve</b>, because its file isn't approved in this store. Read it opens the large review dialog. After you approve, RUNS and SETTINGS fill in, with catalog-url and its default.` },
+      { id: "A2", title: "Write one in sprig",
+        how: [`<b>+ Add</b>, <b>Write one in sprig</b>, then <code>${T}/shop-mobile</code> and <b>Add to Repos</b>.`],
+        expect: `The suggested ID is <code>shop-mobile-sprig</code>. It's added "in sprig", and the editor opens on a copy of shop-mobile's sprig.cs. Nothing asks for approval.` },
+      { id: "A3", title: "Change it and run it from Repos",
+        how: [`In the editor, change catalog-url's default to <code>http://localhost:5999</code> and save. Close the editor.`, `Click <b>New workspace</b>, leave it in place and click <b>Run it</b>.`, `Click <b>Open</b> on the new workspace's row.`],
+        expect: `The form starts in place. catalog-url is listed with what it gets when left empty, 5999. The progress window ends up, and Open goes to its apps on the Workspaces page.` },
+      { id: "A4", title: "Remove both",
+        how: [`Take down and remove shop-mobile-sprig's workspace. Then <b>Remove</b> shop-mobile-sprig and shop-mobile from Repos.`],
+        expect: `Remove asks in a dialog with <b>Keep it</b> and <b>Remove it</b>, not a banner. shop-mobile's own sprig.cs is untouched.` },
+    ]
+  },
+  {
+    id: "wrap", title: "Impressions and tidying up",
+    items: [
+      { id: "X1", title: "What was hard about writing a repo",
+        how: [`Anything that was hard to find, read badly, needed a doc you didn't have, or surprised you.`],
+        expect: `Use the note. Mark Pass if there's nothing to add.` },
+      { id: "X2", title: "Tidy up",
+        how: [`${block("tidy", `cd ${T}/shop-services; sprig rm feat-y -y --delete-branch --force; sprig rm -y
+cd ../shop-web; sprig rm -y
+sprig workspaces
+sprig host stop
+cd C:/Users/JonHowell/Documents/git/personal/sprig; ./scripts/dev-sprig.ps1 -Off`)}`],
+        expect: `<code>sprig workspaces</code> lists nothing and <code>docker ps</code> shows no <code>sprig-shop-*</code> containers. Each in-place removal puts the repo's files back as they were.` },
+    ]
+  },
+];
+
+const ALL = SECTIONS.flatMap(s => s.items.map(i => ({ ...i, section: s.id })));
+const results = new Map();
+let db = null;
+const writeChains = new Map();
+const els = {};
+
+function render() {
+  const host = document.getElementById("sections");
+  host.innerHTML = "";
+  for (const sec of SECTIONS) {
+    const s = document.createElement("section");
+    s.innerHTML = `<div class="sec-head"><h2>${sec.title}</h2><span class="tally" id="tally-${sec.id}"></span></div>` +
+      (sec.intro ? `<p class="sec-intro">${sec.intro}</p>` : "");
+    for (const item of sec.items) s.appendChild(renderItem(item));
+    host.appendChild(s);
+  }
+  refresh();
+}
+
+function renderItem(item) {
+  const row = document.createElement("div");
+  row.className = "item";
+  row.id = "item-" + item.id;
+  row.innerHTML = `
+    <div class="states" role="group" aria-label="Result for ${item.id}">
+      <button type="button" data-s="pass" aria-pressed="false">Pass</button>
+      <button type="button" data-s="fail" aria-pressed="false">Fail</button>
+      <button type="button" data-s="skip" aria-pressed="false">Skip</button>
+    </div>
+    <div class="body">
+      <div class="title"><span class="id">${item.id}</span><span class="label">${item.title}</span>${item.isNew ? '<span class="new">new</span>' : ""}</div>
+      <div class="how"><ol>${item.how.map(h => `<li>${h}</li>`).join("")}</ol></div>
+      <p class="expect">${item.expect}</p>
+      <button type="button" class="note-link">Add a note</button>
+      <div class="note-wrap" hidden><textarea id="note-${item.id}" aria-label="Note for ${item.id}" placeholder="What happened, and what you expected instead"></textarea></div>
+    </div>`;
+  const noteWrap = row.querySelector(".note-wrap");
+  const noteLink = row.querySelector(".note-link");
+  const textarea = row.querySelector("textarea");
+  row.querySelectorAll(".states button").forEach(b => b.addEventListener("click", () => {
+    const cur = results.get(item.id) || {};
+    const next = cur.status === b.dataset.s ? null : b.dataset.s;
+    results.set(item.id, { ...cur, status: next });
+    if (next === "fail") { noteWrap.hidden = false; noteLink.hidden = true; }
+    refresh();
+    save(item.id);
+  }));
+  noteLink.addEventListener("click", () => { noteWrap.hidden = false; noteLink.hidden = true; textarea.focus(); });
+  let timer = null;
+  textarea.addEventListener("input", () => {
+    const cur = results.get(item.id) || {};
+    results.set(item.id, { ...cur, note: textarea.value });
+    clearTimeout(timer);
+    timer = setTimeout(() => save(item.id), 800);
+  });
+  textarea.addEventListener("blur", () => { clearTimeout(timer); save(item.id); });
+  els[item.id] = { row, noteWrap, noteLink, textarea };
+  return row;
+}
+
+function refresh() {
+  const hide = document.getElementById("hide-done").checked;
+  const totals = { pass: 0, fail: 0, skip: 0, todo: 0 };
+  for (const item of ALL) {
+    const r = results.get(item.id) || {};
+    const st = r.status || null;
+    totals[st || "todo"]++;
+    const e = els[item.id];
+    if (!e) continue;
+    e.row.classList.toggle("is-pass", st === "pass");
+    e.row.classList.toggle("is-fail", st === "fail");
+    e.row.classList.toggle("is-skip", st === "skip");
+    e.row.classList.toggle("done-hidden", hide && (st === "pass" || st === "skip"));
+    e.row.querySelectorAll(".states button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === st)));
+    if (document.activeElement !== e.textarea && (r.note || "") !== e.textarea.value) e.textarea.value = r.note || "";
+    const hasNote = !!(r.note && r.note.trim()) || st === "fail";
+    if (hasNote) { e.noteWrap.hidden = false; e.noteLink.hidden = true; }
+  }
+  for (const sec of SECTIONS) {
+    const done = sec.items.filter(i => (results.get(i.id) || {}).status).length;
+    const fails = sec.items.filter(i => (results.get(i.id) || {}).status === "fail").length;
+    document.getElementById("tally-" + sec.id).textContent = `${done} of ${sec.items.length}` + (fails ? ` · ${fails} failed` : "");
+  }
+  const n = ALL.length;
+  document.getElementById("counts").innerHTML =
+    `<span class="c-pass"><b>${totals.pass}</b> passed</span><span class="c-fail"><b>${totals.fail}</b> failed</span>` +
+    `<span class="c-skip"><b>${totals.skip}</b> skipped</span><span class="c-todo"><b>${totals.todo}</b> to do, of ${n}</span>`;
+  const [bp, bf, bs] = document.querySelectorAll("#bar span");
+  bp.style.width = (totals.pass / n * 100) + "%";
+  bf.style.width = (totals.fail / n * 100) + "%";
+  bs.style.width = (totals.skip / n * 100) + "%";
+}
+
+function setSaved(text, warn) {
+  const el = document.getElementById("saved");
+  el.textContent = text;
+  el.classList.toggle("warn", !!warn);
+}
+
+function save(id) {
+  if (!db) return;
+  const r = results.get(id) || {};
+  const body = { status: r.status || null, note: r.note || "", item: id, at: new Date().toISOString() };
+  const prev = writeChains.get(id) || Promise.resolve();
+  const next = prev.then(() => db.collection("results").doc(id).set(body))
+    .then(() => setSaved("Saved"))
+    .catch(e => setSaved(e && e.code === "quota_exceeded" ? "Couldn't save: storage is full" : "Couldn't save the last change; it's kept on this page", true));
+  writeChains.set(id, next);
+}
+
+document.getElementById("hide-done").addEventListener("change", refresh);
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  const pre = document.getElementById(b.dataset.copy);
+  const text = pre.textContent;
+  const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1400); };
+  try {
+    navigator.clipboard.writeText(text).then(done, () => selectText(pre));
+  } catch { selectText(pre); }
+});
+function selectText(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const b = document.querySelector(`[data-copy="${node.id}"]`);
+  if (b) { b.textContent = "Press Ctrl+C"; setTimeout(() => (b.textContent = "Copy"), 2000); }
+}
+
+render();
+
+(async () => {
+  const claudeApi = window.claude;
+  db = claudeApi && claudeApi.use ? await claudeApi.use("db") : null;
+  if (!db) { setSaved("Not saving in this view: marks last until you close it", true); return; }
+  const slow = setTimeout(() => setSaved("Still loading saved marks…", true), 10000);
+  db.collection("results").onSnapshot(snap => {
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (!data) continue;
+      const local = results.get(d.id);
+      const editing = els[d.id] && document.activeElement === els[d.id].textarea;
+      results.set(d.id, { status: data.status || null, note: editing && local ? local.note : (data.note || "") });
+    }
+    if (!snap.metadata.fromCache) { clearTimeout(slow); setSaved(snap.empty ? "Saved as you go" : "Saved"); }
+    refresh();
+  }, err => {
+    clearTimeout(slow);
+    setSaved("Saved marks can't be reached; changes stay on this page", true);
+  });
+})();
+</script>

@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "name": "partial",
-  "repos": ["web"],
-  "defaults": {
-    "web": { "api": { "url": "https://staging.example.invalid" } }
-  },
-  "maxSlots": 2
-}

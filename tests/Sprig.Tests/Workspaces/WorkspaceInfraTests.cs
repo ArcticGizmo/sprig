@@ -1,224 +1,248 @@
-﻿using System.Collections.Generic;
-using Sprig.Core.Compose;
-using Sprig.Core.Config;
-using Sprig.Core.Env;
-using Sprig.Core.Git;
-using Sprig.Core.Ports;
-using Sprig.Core.Processes;
-using Sprig.Core.Store;
-using Sprig.Core.Workspaces;
-using YamlDotNet.RepresentationModel;
+using Sprig.App.ViewModels;
+using Sprig.Engine.Compose;
+using Sprig.Engine.Git;
+using Sprig.Engine.Hosting;
+using Sprig.Engine.Planning;
+using Sprig.Engine.Processes;
+using Sprig.Engine.Settings;
+using Sprig.Engine.Workspaces;
+using Sprig.Model;
 
 namespace Sprig.Tests.Workspaces;
 
-public class WorkspaceInfraTests
+/// <summary>The graph's view of a workspace's containers: where each runs, how it's doing, and starting and stopping
+/// one, against a docker that only answers from a script.</summary>
+public sealed class WorkspaceInfraTests : IDisposable
 {
-    const string ConfigJson = """
-        { "schema": 1, "name": "dotnet-api",
-          "modules": [ { "name": "app", "path": "",
-            "provides": [
-              { "capability": "api", "ports": { "port": true } },
-              { "capability": "postgres", "ports": { "port": true } } ],
-            "env": [ { "file": ".env", "set": {
-                "PORT": "${sprig.api.port}",
-                "ConnectionStrings__Default": "Host=localhost;Port=${sprig.postgres.port};Database=librarydb" } } ],
-            "compose": [ { "file": "docker-compose.yml", "overrides": [
-                { "path": ["services","postgres","container_name"], "template": "librarydb_postgres--${sprig.workspace}" },
-                { "path": ["services","postgres","ports","0"], "template": "${sprig.postgres.port}:5432" } ] } ] } ] }
-        """;
-
-    const string ComposeYml = """
-        services:
-          postgres:
-            image: postgres:17
-            container_name: librarydb_postgres
-            ports:
-              - "6050:5432"
-        """;
-
-    static (WorkspaceService svc, InstanceStore instances, FakeDockerService docker) Build(TempStore s)
+    /// <summary>Answers <c>ps</c> per project from <see cref="Ps"/>, and records every call.</summary>
+    sealed class FakeDocker : IProcessRunner
     {
-        var docker = new FakeDockerService { Available = true };
-        var svc = new WorkspaceService(
-            new GitService(new ProcessRunner()), new FilePortStore(s.Paths), new InstanceStore(s.Paths),
-            new EnvClobberService(), new ComposeGenerator(), docker, s.Paths);
-        return (svc, new InstanceStore(s.Paths), docker);
+        public Dictionary<string, string> Ps { get; } = [];
+        public List<IReadOnlyList<string>> Calls { get; } = [];
+        public bool Down { get; set; }
+
+        public ProcessResult Run(string executable, IReadOnlyList<string> arguments, string? workingDirectory = null,
+            CancellationToken cancellationToken = default, Action<string>? onOutput = null)
+        {
+            Calls.Add(arguments);
+            if (Down) return new ProcessResult(executable, arguments, 1, "", "error during connect: the docker engine isn't running");
+            var project = arguments[arguments.ToList().IndexOf("-p") + 1];
+            return new ProcessResult(executable, arguments, 0, arguments.Contains("ps") ? Ps.GetValueOrDefault(project, "") : "", "");
+        }
     }
 
-    static void SeedRepo(TempGitRepo repo)
+    readonly TempStore _store = new();
+    readonly FakeDocker _docker = new();
+    readonly WorkspaceService _workspaces;
+
+    public WorkspaceInfraTests()
     {
-        File.WriteAllText(Path.Combine(repo.Path, ".sprig.json"), ConfigJson);
-        File.WriteAllText(Path.Combine(repo.Path, "docker-compose.yml"), ComposeYml);
-        repo.Git("add", "-A");
-        repo.Git("-c", "user.email=t@sprig", "-c", "user.name=sprig", "commit", "-m", "add compose");
+        _workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths),
+            new GitClient(_docker), new DockerCompose(_docker), listening: () => new HashSet<int>());
     }
 
-    static string PortsZero(string composeFile)
+    public void Dispose() => _store.Dispose();
+
+    static OrchestrationModel Storefront => Yaml.Orchestration("""
+        schema: 1
+        orchestration: storefront
+        repos:
+          shop-services: { path: shop-services }
+        containers:
+          mail: { preset: mailpit }
+        """);
+
+    (WorkspaceRecord, Plan) Shop()
     {
-        var stream = new YamlStream();
-        using var r = new StringReader(File.ReadAllText(composeFile));
-        stream.Load(r);
-        var root = (YamlMappingNode)stream.Documents[0].RootNode;
-        var seq = (YamlSequenceNode)((YamlMappingNode)((YamlMappingNode)root["services"])["postgres"])["ports"];
-        return ((YamlScalarNode)seq.Children[0]).Value!;
-    }
-
-    [Fact]
-    public void Create_generates_central_compose_with_allocated_postgres_port()
-    {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, _, _) = Build(store);
-
-        var record = svc.Create(repo.Path, "feat-a");
-
-        var composePath = Assert.Single(record.Repos[0].ComposePaths);
-        Assert.StartsWith(store.Root, composePath);
-        var postgresPort = record.Ports["dotnet-api.postgres.port"];
-        Assert.Equal($"{postgresPort}:5432", PortsZero(composePath));
-        Assert.Equal(postgresPort.ToString(), record.Repos[0].Modules[0].Values["postgres.port"]);
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            compose:
+              docker-compose.yml:
+                services:
+                  search:
+                    ports: { http: { container: 7700 } }
+            """);
+        var plan = Planner.Build(new PlanInput(Storefront, new Dictionary<string, RepoModel> { ["shop-services"] = repo },
+            "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
+        var now = DateTimeOffset.Now;
+        var dir = Path.Combine(_store.Root, "storefront--1", "shop-services");
+        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.yaml"), "1", "feat-a", "stable",
+            [new WorkspaceRepo("shop-services", "shop-services", Path.Combine(_store.Root, "shop-services"), dir, true, true)], [], [], WorkspaceState.Up, now, now);
+        return (record, plan);
     }
 
     [Fact]
-    public void Up_down_reset_call_docker_with_project_name()
+    public void Each_container_is_found_under_the_project_and_service_names_up_gives_it()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, instances, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
+        var (record, plan) = Shop();
 
-        svc.Up("feat-a");
-        Assert.Contains("sprig-feat-a", docker.Ups);
-        Assert.Equal("running", instances.TryLoad("feat-a")!.LastStatus);
+        var targets = _workspaces.InfraTargets(record, plan).ToDictionary(t => t.Key);
 
-        svc.Down("feat-a");
-        Assert.Contains(("sprig-feat-a", false), docker.Downs);
-
-        docker.Ups.Clear();
-        svc.RestartInfra("feat-a");
-        Assert.Contains("sprig-feat-a", docker.Ups);
+        Assert.Equal(("sprig-storefront-1", "shop-services-pg"), (targets["shop-services/pg"].Project.Name, targets["shop-services/pg"].Service));
+        Assert.Equal(("sprig-storefront-1", "storefront-mail"), (targets["storefront/mail"].Project.Name, targets["storefront/mail"].Service));
+        Assert.Equal(("sprig-storefront-1-shop-services", "search"), (targets["shop-services/search"].Project.Name, targets["shop-services/search"].Service));
     }
 
     [Fact]
-    public void TryStopContainers_stops_without_tearing_down()
+    public void States_come_from_one_ps_per_project_and_a_container_docker_hasn_t_got_is_left_out()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, instances, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
+        var (record, plan) = Shop();
+        _docker.Ps["sprig-storefront-1"] = """
+            {"Service":"shop-services-pg","State":"running","Health":"healthy","ExitCode":0}
+            """;
+        _docker.Ps["sprig-storefront-1-shop-services"] = """
+            {"Service":"search","State":"exited","Health":"","ExitCode":1}
+            """;
 
-        var stopped = svc.TryStopContainers("feat-a");
+        var states = _workspaces.InfraStates(_workspaces.InfraTargets(record, plan))!;
 
-        Assert.True(stopped);
-        Assert.Contains("sprig-feat-a", docker.Stops);   // compose stop, not down
-        Assert.Empty(docker.Downs);                       // release is not a teardown
-        Assert.Equal("stopped", instances.TryLoad("feat-a")!.LastStatus);
+        Assert.Equal("healthy", states["shop-services/pg"].Health);
+        Assert.Equal("exited", states["shop-services/search"].State);
+        Assert.False(states.ContainsKey("storefront/mail"));
+        Assert.Equal(2, _docker.Calls.Count(c => c.Contains("ps")));
     }
 
     [Fact]
-    public void TryStopContainers_is_a_no_op_when_docker_is_unavailable()
+    public void A_docker_that_doesn_t_answer_gives_no_states_rather_than_all_stopped()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, _, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
-        docker.Available = false;
+        var (record, plan) = Shop();
+        _docker.Down = true;
 
-        Assert.False(svc.TryStopContainers("feat-a"));
-        Assert.Empty(docker.Stops);
+        Assert.Null(_workspaces.InfraStates(_workspaces.InfraTargets(record, plan)));
     }
 
     [Fact]
-    public void Teardown_brings_infra_down_with_volumes_first()
+    public void Starting_and_stopping_one_container_names_only_its_service()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, _, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
+        var (record, plan) = Shop();
+        var pg = _workspaces.InfraTargets(record, plan).Single(t => t.Key == "shop-services/pg");
 
-        svc.Remove("feat-a");
+        _workspaces.StopContainer(pg);
+        _workspaces.StartContainer(pg);
 
-        Assert.Contains(("sprig-feat-a", true), docker.Downs);
+        Assert.Equal(["compose", "-p", "sprig-storefront-1", "stop", "shop-services-pg"], _docker.Calls[^2]);
+        Assert.Equal(["compose", "-p", "sprig-storefront-1", "start", "shop-services-pg"], _docker.Calls[^1]);
+    }
+
+    /// <summary>The front end waits for search; the api waits for a migration job, which waits for the database. The
+    /// orchestration's mail is used by nothing.</summary>
+    (WorkspaceRecord, Plan) Grouped()
+    {
+        var repo = Yaml.Repo("""
+            schema: 1
+            repo: shop-services
+            containers:
+              pg: { preset: postgres }
+            compose:
+              docker-compose.yml:
+                services:
+                  search:
+                    ports: { http: { container: 7700 } }
+            apps:
+              migrate:
+                run: dotnet
+                path: src/Migrate
+                once: true
+                wait-for: [pg]
+              api:
+                run: dotnet
+                path: src/Api
+                ports: { http: any }
+                wait-for: [migrate]
+              web:
+                run: node
+                path: web
+                ports: { http: any }
+                wait-for: [search]
+            groups:
+              front: [web]
+              back: [api]
+            """);
+        var plan = Planner.Build(new PlanInput(Storefront, new Dictionary<string, RepoModel> { ["shop-services"] = repo },
+            "1", new SprigSettings { PortRangeStart = 9000, PortRangeEndExclusive = 9100 }, new HashSet<int>()));
+        var now = DateTimeOffset.Now;
+        var record = new WorkspaceRecord("storefront", Path.Combine(_store.Root, "storefront.orchestration.yaml"), "1", "feat-a", "stable",
+            [new WorkspaceRepo("shop-services", "shop-services", Path.Combine(_store.Root, "shop-services"), Path.Combine(_store.Root, "storefront--1", "shop-services"), true, true)],
+            [], [], WorkspaceState.Up, now, now);
+        return (record, plan);
     }
 
     [Fact]
-    public void Clean_teardown_deletes_the_record()
+    public void A_group_uses_the_infra_its_apps_and_what_they_depend_on_wait_for_and_nothing_else()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, instances, _) = Build(store);
-        svc.Create(repo.Path, "feat-a");
+        var (_, plan) = Grouped();
 
-        svc.Remove("feat-a");
-
-        Assert.Null(instances.TryLoad("feat-a"));
+        Assert.Equal(["shop-services/search"], WorkspaceService.InfraFor(plan, new Starting("front").AppsIn(plan))!);
+        Assert.Equal(["shop-services/pg"], WorkspaceService.InfraFor(plan, new Starting("back").AppsIn(plan))!);
+        Assert.Equal(["shop-services/pg"], WorkspaceService.InfraFor(plan, new Starting(Apps: ["api"]).AppsIn(plan))!);
+        Assert.Null(WorkspaceService.InfraFor(plan, new Starting().AppsIn(plan)));
     }
 
     [Fact]
-    public void Partial_teardown_keeps_a_flagged_record_but_still_sweeps_other_layers()
+    public void Starting_another_group_starts_only_the_infra_it_adds_that_is_not_running()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, instances, docker) = Build(store);
-        var record = svc.Create(repo.Path, "feat-a");
-        var worktree = record.Repos[0].WorktreePath;
+        var (record, plan) = Grouped();
+        _docker.Ps["sprig-storefront-1"] = """
+            {"Service":"shop-services-pg","State":"running","Health":"healthy","ExitCode":0}
+            """;
 
-        // Infra down blows up, but the rest of the sweep must still run to completion.
-        docker.DownFailure = new InvalidOperationException("compose down exploded");
-        svc.Remove("feat-a");
+        Assert.Empty(_workspaces.MissingInfra(record, plan, new Starting("back").AppsIn(plan)));
+        var missing = _workspaces.MissingInfra(record, plan, new Starting("front").AppsIn(plan));
+        Assert.Equal(["shop-services/search"], missing.Select(t => t.Key));
 
-        var kept = instances.TryLoad("feat-a");
-        Assert.NotNull(kept);
-        Assert.True(kept!.TeardownFailed);
-        Assert.Contains(kept.TeardownIssues, i => i.Contains("stop containers"));
-        // Later layers weren't skipped: the worktree folder is gone despite the infra failure.
-        Assert.False(Directory.Exists(worktree));
+        _workspaces.StartInfra(missing);
+
+        var up = _docker.Calls.Single(c => c.Contains("up"));
+        Assert.Equal(("sprig-storefront-1-shop-services", "search"), (up[up.ToList().IndexOf("-p") + 1], up[^1]));
+    }
+
+    [Theory]
+    [InlineData("running", "healthy", 0, "healthy", NodeHealth.Good, true)]
+    [InlineData("running", "", 0, "running", NodeHealth.Good, true)]
+    [InlineData("running", "starting", 0, "starting", NodeHealth.Busy, true)]
+    [InlineData("running", "unhealthy", 0, "unhealthy", NodeHealth.Bad, true)]
+    [InlineData("exited", "", 0, "stopped", NodeHealth.Off, false)]
+    [InlineData("exited", "", 143, "stopped", NodeHealth.Off, false)]
+    [InlineData("exited", "", 1, "exited", NodeHealth.Bad, false)]
+    [InlineData("restarting", "", 1, "restarting", NodeHealth.Bad, true)]
+    public void A_container_node_reads_docker_s_state_as_one_colour(string state, string health, int exit, string shown, NodeHealth colour, bool alive)
+    {
+        var node = new GraphNode(new TopologyNode("svc/pg", "svc", "pg", TopologyKind.Container, "postgres:17"), null, null);
+
+        node.Apply(new ComposeService("svc-pg", state, health, exit), known: true);
+
+        Assert.Equal((shown, colour, alive), (node.State, node.Health, node.IsAlive));
+    }
+
+    [Theory]
+    [InlineData(RunnerState.Building, NodeHealth.Busy)]
+    [InlineData(RunnerState.Starting, NodeHealth.Busy)]
+    [InlineData(RunnerState.Waiting, NodeHealth.Waiting)]
+    [InlineData(RunnerState.Ready, NodeHealth.Good)]
+    [InlineData(RunnerState.Failed, NodeHealth.Bad)]
+    public void An_app_node_takes_the_colour_its_row_in_the_apps_list_has(RunnerState state, NodeHealth colour)
+    {
+        var row = new WorkspaceAppRow("shop/api", "shop / api", "", "", "", job: false);
+        row.Apply(new RunnerStatus("storefront/1", "shop/api", state, null, null, null, "api.log", DateTimeOffset.UtcNow));
+        var node = new GraphNode(new TopologyNode("shop/api", "shop", "api", TopologyKind.App, ":8000"), row, null);
+
+        node.Refresh();
+
+        Assert.Equal(colour, node.Health);
     }
 
     [Fact]
-    public void Docker_unavailable_keeps_a_flagged_record_without_calling_down()
+    public void A_container_docker_hasn_t_got_or_can_t_say_about_isn_t_shown_as_failed()
     {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, instances, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
-        docker.Available = false;
+        var node = new GraphNode(new TopologyNode("svc/pg", "svc", "pg", TopologyKind.Container, "postgres:17"), null, null);
 
-        svc.Remove("feat-a");
+        node.Apply(null, known: true);
+        Assert.Equal(("not created", NodeHealth.Off), (node.State, node.Health));
 
-        var kept = instances.TryLoad("feat-a");
-        Assert.NotNull(kept);
-        Assert.True(kept!.TeardownFailed);
-        Assert.Contains(kept.TeardownIssues, i => i.Contains("Docker unavailable"));
-        Assert.Empty(docker.Downs);
-    }
-
-    [Fact]
-    public void Retrying_teardown_after_the_blocker_clears_finishes_and_deletes_the_record()
-    {
-        using var store = new TempStore();
-        using var repo = new TempGitRepo();
-        SeedRepo(repo);
-        var (svc, instances, docker) = Build(store);
-        svc.Create(repo.Path, "feat-a");
-
-        docker.DownFailure = new InvalidOperationException("compose down exploded");
-        svc.Remove("feat-a");
-        Assert.True(instances.TryLoad("feat-a")!.TeardownFailed);
-
-        // Fix the blocker and run rm again â€” teardown is idempotent, so the second sweep completes
-        // (already-gone worktree/ports are no-ops) and the record is finally deleted.
-        docker.DownFailure = null;
-        svc.Remove("feat-a");
-
-        Assert.Null(instances.TryLoad("feat-a"));
+        node.Apply(null, known: false);
+        Assert.Equal(("unknown", NodeHealth.Unknown), (node.State, node.Health));
     }
 }

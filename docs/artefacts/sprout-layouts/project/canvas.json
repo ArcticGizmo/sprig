@@ -1,0 +1,17 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-04T12:10:00+11:00" },
+  "title": "Sprig Sprout Layouts",
+  "launch": { "view": "focused", "file": "Main.dc.html" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Proposed: app list beside the log, nothing else scrolls", "expand": "fill", "is_interactive": true },
+    "Docked.dc.html": { "x": 1520, "y": 0, "w": 1440, "h": 900, "title": "Compared: log docked under a full-width table", "expand": "fill" },
+    "SproutsOverview.dc.html": { "x": 0, "y": 1020, "w": 1440, "h": 900, "title": "Sprouts overview: every sprout, for clearing out old ones", "expand": "fill", "is_interactive": true }
+  },
+  "order": ["Main.dc.html", "Docked.dc.html", "SproutsOverview.dc.html"],
+  "notes": {
+    "heading": { "x": 0, "y": -300, "text": "Sprouts page at 20 apps", "kind": "title1", "maxW": 2960 }
+  },
+  "designSystems": []
+}

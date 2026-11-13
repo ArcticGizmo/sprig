@@ -5,17 +5,24 @@ using Sprig.App.ViewModels;
 
 namespace Sprig.App.Views;
 
-/// <summary>
-/// Non-modal window that shows a live create/teardown checklist. Opened with <c>.Show(owner)</c> so it
-/// floats above the main window without blocking it. The Close button is gated on
-/// <see cref="OperationProgressViewModel.CanClose"/> (enabled once the operation has finished as far as
-/// it can); Escape closes only once closing is allowed.
-/// </summary>
+/// <summary>Shown with <c>Show(owner)</c>, so it floats over the main window without blocking it. It closes only once
+/// the operation has finished, so a half-done step is never hidden; closing it before then cancels the operation
+/// instead, and the window stays to say how far it got.</summary>
 public partial class OperationProgressWindow : Window
 {
     public OperationProgressWindow() => InitializeComponent();
 
     void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
+
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (DataContext is OperationProgressViewModel { CanClose: false } running && !e.IsProgrammatic)
+        {
+            e.Cancel = true;
+            running.Cancel();
+        }
+        base.OnClosing(e);
+    }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {

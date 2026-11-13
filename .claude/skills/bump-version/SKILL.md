@@ -116,7 +116,7 @@ Print, plainly:
 ## Notes
 
 - This skill does **not** commit, tag, or push — it only edits the two files and reports.
-- Releases are cut by **pushing a `v*` tag**, which triggers `.github/workflows/release.yml`
+- Releases are cut by **pushing a `v*` tag**, which triggers `.github/workflows/publish.yml`
   (Velopack build → GitHub Release). So the flow is: run this skill, commit the two files, then
   run `/release-next-version` to PR, merge, tag and watch the release.
 - Only the patch component is bumped. If the user wants a minor/major bump, they'll say so —

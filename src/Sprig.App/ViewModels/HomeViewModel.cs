@@ -1,102 +1,90 @@
-using System.Collections.ObjectModel;
+using System;
+using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Engine.Hosting;
+using Sprig.Engine.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
-/// <summary>
-/// The front-door page: what sprig is for, the model in one picture, a journey rail showing where
-/// you are, and a single next-best-action. Everything is a read-only projection of the three stores
-/// (recomputed each time Home becomes the current page).
-/// </summary>
-public partial class HomeViewModel : PageViewModel
+/// <summary>The front page: what's running now, each workspace a click from its apps, and the first steps until a repo
+/// is on the Repos list.</summary>
+public sealed partial class HomeViewModel : PageViewModel
 {
     readonly AppServices _services;
-    readonly Navigator _nav;
-
-    public HomeViewModel(AppServices services, Navigator nav)
-    {
-        _services = services;
-        _nav = nav;
-        _services.StoreChanged += () => _ = RefreshAsync();
-    }
 
     public override string Title => "Home";
 
-    /// <summary>Where the user is along repo → stack → workspace; drives the rail + next-best-action.</summary>
-    [ObservableProperty] private SetupState _state = new(0, 0, 0);
-
-    /// <summary>The most recent workspaces, for the configured-state panel.</summary>
-    public ObservableCollection<WorkspaceItemViewModel> Recent { get; } = [];
-
-    /// <summary>Toggles the model-picture card open when the user isn't in the first-run state.</summary>
-    [ObservableProperty] private bool _showModelCard;
-
-    /// <summary>First-run: nothing registered yet — show the teaching hero + model picture.</summary>
-    public bool IsEmptyStage => State.Stage == SetupStage.Empty;
-
-    /// <summary>Show the "your workspaces" + quick-actions panels once anything is running.</summary>
-    public bool HasAnyWorkspaces => State.Workspaces > 0;
-
-    /// <summary>The model picture shows automatically on first run, or on demand via "How it works".</summary>
-    public bool ShowModel => IsEmptyStage || ShowModelCard;
-
-    partial void OnStateChanged(SetupState value)
+    public HomeViewModel(AppServices services)
     {
-        OnPropertyChanged(nameof(IsEmptyStage));
-        OnPropertyChanged(nameof(HasAnyWorkspaces));
-        OnPropertyChanged(nameof(ShowModel));
-    }
-
-    partial void OnShowModelCardChanged(bool value) => OnPropertyChanged(nameof(ShowModel));
-
-    protected override void OnActivated() => _ = RefreshAsync();
-
-    async Task RefreshAsync()
-    {
-        var (repos, maps, records) = await AppServices.RunAsync(() =>
-            (_services.Repos.List().Count,
-             _services.Maps.List().Count,
-             _services.Workspaces.List()));
-
-        State = new SetupState(repos, maps, records.Count);
-        Recent.Clear();
-        foreach (var r in records.OrderByDescending(r => r.CreatedAt).Take(4))
-            Recent.Add(new WorkspaceItemViewModel(r));
-    }
-
-    /// <summary>The one recommended step — opens the right flow for the current stage.</summary>
-    [RelayCommand]
-    private void PrimaryAction()
-    {
-        switch (State.Stage)
+        _services = services;
+        // Dots follow the window's host poll; the list itself is read again when the page is shown.
+        services.HostStatus.Changed += runners =>
         {
-            case SetupStage.Empty: _nav.AddRepo(); break;
-            case SetupStage.ReposReady: _nav.NewMap(); break;
-            default: _nav.NewWorkspace(); break;
-        }
+            if (IsActive) Running = Build(_services.Workspaces.List(), runners);
+        };
     }
 
-    [RelayCommand] private void ToggleModelCard() => ShowModelCard = !ShowModelCard;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NothingRunning))]
+    private IReadOnlyList<RunningWorkspace> _running = [];
 
-    /// <summary>Launch the guided setup strip (first-run "walk me through setup").</summary>
-    [RelayCommand] private void StartGuide() => _nav.StartSetupGuide();
+    public bool NothingRunning => Running.Count == 0;
 
-    /// <summary>
-    /// Enter the guided tour — a complete working setup, built for the user to click around. Offered
-    /// alongside "walk me through setup" because the two answer different first-run questions: how do I
-    /// start, versus what am I aiming at.
-    /// </summary>
-    [RelayCommand] private void ShowWorkingSetup() => _nav.EnterTour();
+    /// <summary>The steps show until there's a repo, which is the first of them.</summary>
+    [ObservableProperty] private bool _showSteps = true;
 
-    // Quick actions / links.
-    [RelayCommand] private void NewWorkspace() => _nav.NewWorkspace();
-    [RelayCommand] private void AddRepo() => _nav.AddRepo();
+    /// <summary>The Repos page's + Add, wired by the window.</summary>
+    public Action? AddRepo { get; set; }
 
-    // Journey-rail tiles navigate to their page.
-    [RelayCommand] private void GoToRepos() => _nav.GoToRepos();
-    [RelayCommand] private void GoToMaps() => _nav.GoToMaps();
-    [RelayCommand] private void GoToWorkspaces() => _nav.GoToWorkspaces();
+    /// <summary>A workspace on the Workspaces page, by key, wired by the window.</summary>
+    public Action<string>? OpenWorkspace { get; set; }
+
+    [RelayCommand]
+    private void StartAddRepo() => AddRepo?.Invoke();
+
+    [RelayCommand]
+    private void Open(RunningWorkspace workspace) => OpenWorkspace?.Invoke(workspace.Key);
+
+    protected override void OnActivated() => Refresh();
+
+    protected override void OnWindowFocused() => Refresh();
+
+    public void Refresh()
+    {
+        Running = Build(_services.Workspaces.List(), _services.HostStatus.Runners);
+        ShowSteps = _services.Stored.Repos().Count == 0;
+    }
+
+    /// <summary>Workspaces that are up, or have an app going, with their apps (jobs left out) and each one's state.</summary>
+    IReadOnlyList<RunningWorkspace> Build(IReadOnlyList<WorkspaceRecord> records, IReadOnlyList<RunnerStatus>? runners)
+    {
+        var byWorkspace = (runners ?? []).GroupBy(r => r.Workspace).ToDictionary(g => g.Key, g => g.ToArray());
+        var running = new List<RunningWorkspace>();
+        foreach (var record in records.OrderBy(r => r.Orchestration, StringComparer.Ordinal).ThenBy(r => r.IsMain ? 0 : 1).ThenBy(r => r.SlotName, StringComparer.Ordinal))
+        {
+            var mine = byWorkspace.GetValueOrDefault(record.Key) ?? [];
+            if (record.State != WorkspaceState.Up && !mine.Any(r => r.State.IsAlive())) continue;
+            var jobs = _services.Workspaces.LastPlan(record.Orchestration, record.Name)?.Apps.Where(a => a.Job).Select(a => a.Key).ToHashSet() ?? [];
+            var apps = mine.Where(r => !jobs.Contains(r.Name)).OrderBy(r => r.Name, StringComparer.Ordinal)
+                .Select(r => new RunningApp(r.Name[(r.Name.IndexOf('/') + 1)..], r.State)).ToArray();
+            running.Add(new RunningWorkspace(record.Key, WorkspaceItem.Display(record), WorkspaceItem.BranchOf(record), apps));
+        }
+        return running;
+    }
+}
+
+public sealed record RunningWorkspace(string Key, string Title, string Branch, IReadOnlyList<RunningApp> Apps)
+{
+    public bool HasApps => Apps.Count > 0;
+}
+
+/// <summary>An app and what its dot says: going, on its way, or in trouble; anything else (stopped) is plain.</summary>
+public sealed record RunningApp(string Name, RunnerState State)
+{
+    public bool IsOk => State is RunnerState.Ready or RunnerState.Running or RunnerState.Completed;
+    public bool IsBusy => State is RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Restarting or RunnerState.Stopping;
+    public bool IsBad => State is RunnerState.Failed or RunnerState.Exited;
+    public string Tip => State.ToString().ToLowerInvariant();
 }

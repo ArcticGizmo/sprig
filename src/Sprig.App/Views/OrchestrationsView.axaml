@@ -1,0 +1,944 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:controls="clr-namespace:Sprig.App.Controls"
+             x:Class="Sprig.App.Views.OrchestrationsView"
+             x:DataType="vm:OrchestrationsViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16,14" />
+        </Style>
+        <Style Selector="TextBlock.phead">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.cell">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
+        </Style>
+        <Style Selector="TextBlock.via">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="11.5" />
+        </Style>
+        <!-- Colours that change with state live in styles: a local Foreground would beat them. -->
+        <Style Selector="TextBlock.msg">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.severity">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.bad">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="TextBlock.need">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.need.filled">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status.good">
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status.warn">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status.bad">
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="Ellipse.status">
+            <Setter Property="Fill" Value="#6E6E82" />
+        </Style>
+        <Style Selector="Ellipse.status.good">
+            <Setter Property="Fill" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="Ellipse.status.warn">
+            <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="Ellipse.status.bad">
+            <Setter Property="Fill" Value="{StaticResource DangerBrush}" />
+        </Style>
+        <Style Selector="TextBlock.caption">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.caption.good">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="Border.row">
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="0,6" />
+        </Style>
+        <!-- Where a definition is kept: the same badge everywhere -->
+        <Style Selector="Border.kept">
+            <Setter Property="BorderBrush" Value="#4A4A5E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="8,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.kept TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#D4D4E0" />
+        </Style>
+        <Style Selector="Border.kept.sprig">
+            <Setter Property="BorderBrush" Value="#5B4A92" />
+            <Setter Property="Background" Value="#2A2340" />
+        </Style>
+        <Style Selector="Border.kept.sprig TextBlock">
+            <Setter Property="Foreground" Value="#CFC2FF" />
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+        <!-- The picture -->
+        <Style Selector="Border.gbox">
+            <Setter Property="Background" Value="{StaticResource PanelBgBrush}" />
+            <Setter Property="BorderBrush" Value="#3A3A4C" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.gbox.orchestration">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#7C6BC4" />
+            <Setter Property="BorderThickness" Value="1.5" />
+        </Style>
+        <Style Selector="Button.boxhead">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.boxtitle">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.boxtitle.orchestration">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="LetterSpacing" Value="1.3" />
+            <Setter Property="Foreground" Value="#C4B5FD" />
+        </Style>
+        <Style Selector="Button.gitem">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.gitem.job">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#4A4A5E" />
+        </Style>
+        <Style Selector="Button.gitem.selected">
+            <Setter Property="Background" Value="#1E2638" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="Button.gitem.dimmed">
+            <Setter Property="Opacity" Value="0.3" />
+        </Style>
+        <Style Selector="Button.chip">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#CFCFE0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="Padding" Value="12,3" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+        <Style Selector="Button.chip.on">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+            <Setter Property="BorderBrush" Value="#4A4A5E" />
+        </Style>
+        <Style Selector="Border.step">
+            <Setter Property="BorderBrush" Value="#6E6E82" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border.step TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Border.step.done">
+            <Setter Property="BorderBrush" Value="{StaticResource OkBrush}" />
+            <Setter Property="Background" Value="#1A3A2A" />
+        </Style>
+        <Style Selector="Border.step.done TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource OkBrush}" />
+        </Style>
+        <Style Selector="Border.step.open">
+            <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
+            <Setter Property="Background" Value="#3A2F12" />
+        </Style>
+        <Style Selector="Border.step.open TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+        </Style>
+        <Style Selector="TextBlock.steptitle">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.steptitle.waiting">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontSize" Value="13.5" />
+        </Style>
+        <Style Selector="Button.tab.on">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{StaticResource SideListWidth}" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- One list: the orchestrations, each with where it's kept and its workspaces -->
+        <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="18,24,14,16">
+                <StackPanel DockPanel.Dock="Top" Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="Orchestrations" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="+ Add" Command="{Binding OpenChooseCommand}" VerticalAlignment="Center"
+                                IsEnabled="{Binding !Editor.IsDirty}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,5" />
+                    </Grid>
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
+                               Text="None yet. + Add makes one from a few repo folders, with nothing committed to them, or adds a .orchestration.yaml." />
+                </StackPanel>
+                <!-- Locked while the code has unsaved changes, so they can't be left behind by picking another. -->
+                <ListBox ItemsSource="{Binding Orchestrations}" SelectedItem="{Binding Selected}" Background="Transparent" Margin="0,10,0,0"
+                         IsEnabled="{Binding !Editor.IsDirty}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:OrchestrationItem">
+                            <StackPanel Spacing="3" Margin="0,3">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding InSprig}">
+                                        <TextBlock Text="{Binding Kept}" />
+                                    </Border>
+                                </Grid>
+                                <TextBlock Classes="caption" Classes.good="{Binding CaptionIsGood}" Text="{Binding Caption}" FontSize="11.5" />
+                                <TextBlock Text="File missing" FontSize="11.5" Foreground="{StaticResource DangerBrush}" IsVisible="{Binding Missing}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- The selected orchestration -->
+        <Grid Grid.Column="1">
+            <TextBlock IsVisible="{Binding NothingSelected}" Margin="0,60,0,0" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                       Text="Pick an orchestration to see what it runs and start a workspace of it." HorizontalAlignment="Center" />
+
+            <DockPanel IsVisible="{Binding HasSelection}" Margin="28,22,28,0">
+
+                <!-- What it is, and the one thing to do with it -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                    <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="{Binding Selected.Name, FallbackValue=''}" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                            <Border Classes="kept" Classes.sprig="{Binding Selected.InSprig, FallbackValue=False}">
+                                <TextBlock Text="{Binding Selected.Kept, FallbackValue=''}" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Description}" FontSize="13.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Edit code" Command="{Binding EditCodeCommand}" VerticalAlignment="Top"
+                            IsEnabled="{Binding !Selected.Missing, FallbackValue=False}"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,8" />
+                    <Button Grid.Column="3" Content="⋯" VerticalAlignment="Top" ToolTip.Tip="More"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,8">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                <MenuItem Header="Check again" Command="{Binding ReplanCommand}" />
+                                <MenuItem Header="Forget approvals" Command="{Binding ForgetApprovalsCommand}"
+                                          ToolTip.Tip="Ask again before running this orchestration's file and its repos' sprig.yaml files. Other orchestrations that use those repos ask again too." />
+                                <MenuItem Header="Remove…" Command="{Binding RemoveCommand}" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Grid.Column="2" Content="New workspace" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"
+                            VerticalAlignment="Top" ToolTip.Tip="Make a new workspace of this orchestration"
+                            Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="16,8" />
+                </Grid>
+
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                    <Ellipse Classes="status" Width="8" Height="8" VerticalAlignment="Center"
+                             Classes.good="{Binding StatusGood}" Classes.warn="{Binding StatusWarn}" Classes.bad="{Binding StatusBad}" />
+                    <TextBlock Classes="status" Text="{Binding Status}" FontSize="13" VerticalAlignment="Center"
+                               Classes.good="{Binding StatusGood}" Classes.warn="{Binding StatusWarn}" Classes.bad="{Binding StatusBad}" />
+                </StackPanel>
+
+                <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Margin="0,14,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <Button Classes="tab" Classes.on="{Binding IsOverview}" Content="Overview"
+                                Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:OrchestrationTab.Overview}" />
+                        <Button Classes="tab" Classes.on="{Binding IsValues}" Content="{Binding ValuesTabLabel}"
+                                Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:OrchestrationTab.Values}" />
+                        <Button Classes="tab" Classes.on="{Binding IsPorts}" Content="{Binding PortsTabLabel}"
+                                Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:OrchestrationTab.Ports}" />
+                        <Button Classes="tab" Classes.on="{Binding IsCode}" Content="Code"
+                                Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:OrchestrationTab.Code}" />
+                    </StackPanel>
+                </Border>
+
+                <Grid>
+                    <!-- Overview: what it runs, what it adds, how workspaces run -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding IsOverview}">
+                        <StackPanel Spacing="18" Margin="0,16,0,28" MaxWidth="1200" HorizontalAlignment="Stretch">
+
+                            <ProgressBar IsIndeterminate="True" Height="4" IsVisible="{Binding IsBusy}" />
+
+                            <!-- The steps to a first workspace, only while one is in the way -->
+                            <Border Classes="panel" IsVisible="{Binding ShowChecklist}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="phead" Text="BEFORE ITS FIRST WORKSPACE" Margin="0,0,0,8" />
+                                    <ItemsControl ItemsSource="{Binding Steps}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ChecklistStep">
+                                                <Grid ColumnDefinitions="40,*,Auto" Margin="0,0,0,12">
+                                                    <Border Classes="step" Classes.done="{Binding IsDone}" Classes.open="{Binding IsOpen}"
+                                                            Width="26" Height="26" CornerRadius="13" BorderThickness="1" VerticalAlignment="Top" HorizontalAlignment="Left">
+                                                        <TextBlock Text="{Binding Marker}" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                        <TextBlock Classes="steptitle" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                                                   Classes.waiting="{Binding IsWaiting}" />
+                                                        <TextBlock Classes="cell" Text="{Binding Detail}" Foreground="{StaticResource MutedBrush}" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2" Classes="small" Content="{Binding ActionLabel}" IsVisible="{Binding HasAction}"
+                                                            VerticalAlignment="Top" Margin="12,0,0,0" CommandParameter="{Binding}"
+                                                            Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).RunStepCommand}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+
+                            <!-- Problems that stopped the plan -->
+                            <Border Classes="panel" BorderBrush="{StaticResource DangerBrush}" IsVisible="{Binding HasLoadProblems}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Classes="phead" Text="COULDN'T PLAN" Foreground="{StaticResource DangerBrush}" />
+                                    <ItemsControl ItemsSource="{Binding LoadProblems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ProblemRow">
+                                                <StackPanel Margin="0,3" Spacing="1">
+                                                    <TextBlock Classes="cell via mono" Text="{Binding Where}" />
+                                                    <TextBlock Classes="cell mono" Text="{Binding Message}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- The picture: repos, what the orchestration adds, and a wire for each value that reaches an app from elsewhere -->
+                            <StackPanel Spacing="10" IsVisible="{Binding HasPicture}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="phead" Text="HOW IT FITS TOGETHER" VerticalAlignment="Center" />
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding GroupChips}" IsVisible="{Binding HasGroups}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:GroupChip">
+                                                <Button Classes="chip" Classes.on="{Binding IsOn}" Content="{Binding Label}" CommandParameter="{Binding}"
+                                                        Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).ShowGroupCommand}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                                <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
+                                    <Border Background="#1B1B24" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14"
+                                            VerticalAlignment="Top">
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                            <Grid Width="{Binding Graph.Width, FallbackValue=0}" Height="{Binding Graph.Height, FallbackValue=0}">
+                                                <controls:WireLayer Wires="{Binding GraphLines}" />
+                                                <ItemsControl ItemsSource="{Binding Graph.Boxes, FallbackValue={x:Null}}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.Styles>
+                                                        <Style Selector="ItemsControl > ContentPresenter" x:DataType="vm:GraphBox">
+                                                            <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                                            <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                                        </Style>
+                                                    </ItemsControl.Styles>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:GraphBox">
+                                                            <Border Classes="gbox" Classes.orchestration="{Binding IsOrchestration}" Width="{Binding Width}" Height="{Binding Height}"
+                                                                    CornerRadius="12" Padding="12">
+                                                                <StackPanel>
+                                                                    <Button Classes="boxhead" Height="44" CommandParameter="{Binding}"
+                                                                            Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).SelectBoxCommand}">
+                                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                                                            <TextBlock Classes="boxtitle" Classes.orchestration="{Binding IsOrchestration}" Text="{Binding Title}"
+                                                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                            <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding InSprig}" IsVisible="{Binding HasKept}">
+                                                                                <TextBlock Text="{Binding Kept}" />
+                                                                            </Border>
+                                                                        </Grid>
+                                                                    </Button>
+                                                                    <ItemsControl ItemsSource="{Binding Items}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="vm:GraphItem">
+                                                                                <Button Classes="gitem" Classes.job="{Binding IsJob}" Classes.selected="{Binding IsSelected}"
+                                                                                        Classes.dimmed="{Binding IsDimmed}" Height="30" Margin="0,0,0,6" CommandParameter="{Binding}"
+                                                                                        Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).SelectAppCommand}">
+                                                                                    <Grid ColumnDefinitions="*,Auto">
+                                                                                        <TextBlock Text="{Binding Name}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                                        <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="11.5" VerticalAlignment="Center"
+                                                                                                   FontFamily="Cascadia Mono,Consolas,monospace" Foreground="{StaticResource MutedBrush}" />
+                                                                                    </Grid>
+                                                                                </Button>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                    <TextBlock Text="{Binding Infra}" IsVisible="{Binding HasInfra}" Height="30" Padding="2,8,0,0"
+                                                                               FontSize="12" Foreground="#CFCFE0" TextTrimming="CharacterEllipsis" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </Viewbox>
+                                    </Border>
+
+                                    <!-- What's picked: an app's values, or a repo's card -->
+                                    <Border Grid.Row="1" Classes="panel" VerticalAlignment="Top">
+                                        <StackPanel Spacing="10">
+                                            <StackPanel Spacing="8" IsVisible="{Binding InspectingApp}">
+                                                <TextBlock Text="{Binding InspectedApp.Title, FallbackValue=''}" FontSize="15" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TitleBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding InspectedApp.Subtitle, FallbackValue=''}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Classes="phead" Text="ITS VALUES" Margin="0,4,0,0" />
+                                                <ItemsControl ItemsSource="{Binding InspectedApp.Rows, FallbackValue={x:Null}}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:SettingRow">
+                                                            <StackPanel Spacing="1" Margin="0,0,0,9">
+                                                                <TextBlock Classes="cell mono" Text="{Binding Key}" FontSize="12" />
+                                                                <TextBlock Classes="cell mono" Text="{Binding Value}" FontSize="12" Foreground="#CFCFE0" Classes.bad="{Binding Unresolved}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding Via}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                            <StackPanel Spacing="10" IsVisible="{Binding InspectingCard}">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                    <TextBlock Text="{Binding InspectedCard.Name, FallbackValue=''}" FontSize="15" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TitleBrush}" TextTrimming="CharacterEllipsis" />
+                                                    <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding InspectedCard.InSprig, FallbackValue=False}">
+                                                        <TextBlock Text="{Binding InspectedCard.Kept, FallbackValue=''}" />
+                                                    </Border>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="58,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6">
+                                                    <TextBlock Classes="label" Text="Runs" />
+                                                    <TextBlock Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Runs, FallbackValue=''}" />
+                                                    <TextBlock Grid.Row="1" Classes="label" Text="Infra" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Infra, FallbackValue=''}" />
+                                                    <TextBlock Grid.Row="2" Classes="label" Text="Offers" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Classes="cell" Text="{Binding InspectedCard.Offers, FallbackValue=''}" />
+                                                    <TextBlock Grid.Row="3" Classes="label" Text="Inputs" />
+                                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding InspectedCard.Settings, FallbackValue={x:Null}}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:RepoSettingRow">
+                                                                <WrapPanel Margin="0,0,0,2">
+                                                                    <TextBlock Classes="cell" Text="{Binding Name}" Margin="0,0,6,0" />
+                                                                    <TextBlock Classes="need" Classes.filled="{Binding HasValue}" Text="{Binding From, StringFormat='← {0}'}" />
+                                                                </WrapPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Grid>
+                                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                                    <Button Classes="link" Content="Open on Repos" IsVisible="{Binding InspectedCard.OnRepos, FallbackValue=False}"
+                                                            CommandParameter="{Binding InspectedCard.Use, FallbackValue={x:Null}}" Command="{Binding OpenRepoByIdCommand}" />
+                                                    <Button Classes="link" Content="Open its definition" IsVisible="{Binding !InspectedCard.OnRepos, FallbackValue=False}"
+                                                            CommandParameter="{Binding InspectedCard}" Command="{Binding EditRepoFileCommand}" />
+                                                    <Button Classes="link" Content="Add to Repos" IsVisible="{Binding InspectedCard.CanAddToRepos, FallbackValue=False}"
+                                                            CommandParameter="{Binding InspectedCard}" Command="{Binding AddToReposCommand}"
+                                                            ToolTip.Tip="Use it through the Repos list, so its definition can be kept in sprig instead" />
+                                                </StackPanel>
+                                                <TextBlock Text="Click an app to see the values it gets." FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Its repos, one card each, while there's no plan to draw -->
+                            <StackPanel Spacing="10" IsVisible="{Binding ShowCards}">
+                                <TextBlock Classes="phead" Text="REPOS" />
+                                <ItemsControl ItemsSource="{Binding Cards}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel ItemWidth="340" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RepoCard">
+                                            <Border Classes="panel" Margin="0,0,14,14">
+                                                <StackPanel Spacing="10">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <Border Grid.Column="1" Classes="kept" Classes.sprig="{Binding InSprig}">
+                                                            <TextBlock Text="{Binding Kept}" />
+                                                        </Border>
+                                                    </Grid>
+                                                    <TextBlock Classes="cell" Text="{Binding Problem}" Foreground="{StaticResource WarnBrush}" IsVisible="{Binding HasProblem}" />
+                                                    <Grid ColumnDefinitions="58,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" IsVisible="{Binding HasModel}">
+                                                        <TextBlock Classes="label" Text="Runs" />
+                                                        <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Runs}" />
+                                                        <TextBlock Grid.Row="1" Classes="label" Text="Infra" />
+                                                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="cell" Text="{Binding Infra}" />
+                                                        <TextBlock Grid.Row="2" Classes="label" Text="Offers" />
+                                                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="cell" Text="{Binding Offers}" />
+                                                        <TextBlock Grid.Row="3" Classes="label" Text="Inputs" />
+                                                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="cell" Text="none" Foreground="{StaticResource MutedBrush}"
+                                                                   IsVisible="{Binding !HasSettings}" />
+                                                        <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding Settings}" IsVisible="{Binding HasSettings}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:RepoSettingRow">
+                                                                    <WrapPanel Margin="0,0,0,2">
+                                                                        <TextBlock Classes="cell" Text="{Binding Name}" Margin="0,0,6,0" />
+                                                                        <TextBlock Classes="need" Classes.filled="{Binding HasValue}" Text="{Binding From, StringFormat='← {0}'}" />
+                                                                    </WrapPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </Grid>
+                                                    <StackPanel Orientation="Horizontal" Spacing="14">
+                                                        <Button Classes="link" Content="Open on Repos" IsVisible="{Binding OnRepos}" CommandParameter="{Binding Use}"
+                                                                Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).OpenRepoByIdCommand}" />
+                                                        <Button Classes="link" Content="Open its definition" IsVisible="{Binding !OnRepos}" CommandParameter="{Binding}"
+                                                                Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).EditRepoFileCommand}" />
+                                                        <Button Classes="link" Content="Add to Repos" IsVisible="{Binding CanAddToRepos}" CommandParameter="{Binding}"
+                                                                ToolTip.Tip="Use it through the Repos list, so its definition can be kept in sprig instead"
+                                                                Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).AddToReposCommand}" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="24" IsVisible="{Binding ShowsPlan}">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Classes="phead" Text="GROUPS" />
+                                    <ItemsControl ItemsSource="{Binding Policies}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PolicyRow">
+                                                <Grid ColumnDefinitions="82,*" Margin="0,0,0,8">
+                                                    <TextBlock Classes="label" Text="{Binding Name}" />
+                                                    <TextBlock Grid.Column="1" Classes="cell" Text="{Binding What}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="10">
+                                    <TextBlock Classes="phead" Text="ADDED BY THE ORCHESTRATION" />
+                                    <TextBlock Classes="cell" Text="Nothing: its repos bring all they need." Foreground="{StaticResource MutedBrush}"
+                                               IsVisible="{Binding !HasAdded}" />
+                                    <ItemsControl ItemsSource="{Binding Added}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:AddedRow">
+                                                <Grid ColumnDefinitions="82,*" Margin="0,0,0,8">
+                                                    <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                                    <TextBlock Grid.Column="1" Classes="cell" Text="{Binding What}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="10">
+                                    <TextBlock Classes="phead" Text="WORKSPACES OF IT" />
+                                    <TextBlock Classes="cell" Text="None yet." Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasWorkspaces}" />
+                                    <ItemsControl ItemsSource="{Binding WorkspacesOfIt}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:WorkspaceRow">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                                                    <Ellipse Classes="status" Classes.good="{Binding IsUp}" Classes.bad="{Binding IsFailed}"
+                                                             Width="7" Height="7" VerticalAlignment="Center" />
+                                                    <TextBlock Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                                    <TextBlock Classes="cell" Text="{Binding State}" Foreground="{StaticResource MutedBrush}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Values: what every app gets, and where each value came from -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding IsValues}">
+                        <StackPanel Spacing="18" Margin="0,16,0,28" MaxWidth="1200" HorizontalAlignment="Stretch">
+                            <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !ShowsPlan}"
+                                       Text="Nothing to show until it plans: see Overview." />
+                            <StackPanel Spacing="18" IsVisible="{Binding ShowsPlan}">
+                                <Border Classes="panel" IsVisible="{Binding Plan.HasProblems, FallbackValue=False}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Classes="phead" Text="PROBLEMS" />
+                                        <ItemsControl ItemsSource="{Binding Plan.Problems}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ProblemRow">
+                                                    <Grid ColumnDefinitions="70,*" Margin="0,3">
+                                                        <TextBlock Classes="cell severity" Text="{Binding Severity}" Classes.bad="{Binding IsError}" />
+                                                        <StackPanel Grid.Column="1" Spacing="1">
+                                                            <TextBlock Classes="cell" Text="{Binding Message}" />
+                                                            <TextBlock Classes="cell via mono" Text="{Binding Where}" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="panel" IsVisible="{Binding Plan.HasWiring, FallbackValue=False}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Classes="phead" Text="WHAT THE REPOS NEED, AND WHAT FILLS IT" />
+                                        <ItemsControl ItemsSource="{Binding Plan.Wiring}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:WiringRow">
+                                                    <Border Classes="row">
+                                                        <Grid ColumnDefinitions="220,190,30,*">
+                                                            <TextBlock Classes="cell" Text="{Binding Consumer}" FontWeight="SemiBold" />
+                                                            <TextBlock Grid.Column="1" Classes="cell mono" Text="{Binding Key}" />
+                                                            <TextBlock Grid.Column="2" Classes="cell" Text="←" Foreground="{StaticResource AccentBrush}" />
+                                                            <StackPanel Grid.Column="3" Spacing="1">
+                                                                <TextBlock Classes="cell" Text="{Binding Provider}" />
+                                                                <TextBlock Classes="cell via mono" Text="{Binding Value}" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <ItemsControl ItemsSource="{Binding Plan.Apps}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Spacing="18" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:AppSection">
+                                            <Border Classes="panel">
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                                    <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                                    <ItemsControl ItemsSource="{Binding Rows}" Margin="0,6,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:SettingRow">
+                                                                <Border Classes="row">
+                                                                    <Grid ColumnDefinitions="230,*">
+                                                                        <StackPanel Spacing="1">
+                                                                            <TextBlock Classes="cell mono" Text="{Binding Key}" />
+                                                                            <TextBlock Classes="cell via" Text="{Binding File}" IsVisible="{Binding HasFile}" />
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="1" Spacing="1">
+                                                                            <TextBlock Classes="cell mono" Text="{Binding Value}" Classes.bad="{Binding Unresolved}" />
+                                                                            <TextBlock Classes="cell via" Text="{Binding Via}" />
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Border Classes="panel" IsVisible="{Binding Plan.HasContainers, FallbackValue=False}">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock Classes="phead" Text="CONTAINERS SPRIG ADDS" />
+                                        <ItemsControl ItemsSource="{Binding Plan.Containers}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ContainerRow">
+                                                    <Border Classes="row">
+                                                        <Grid ColumnDefinitions="140,110,200,*">
+                                                            <TextBlock Classes="cell via" Text="{Binding Owner}" />
+                                                            <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Name}" FontWeight="SemiBold" />
+                                                            <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Image}" />
+                                                            <StackPanel Grid.Column="3" Spacing="1">
+                                                                <TextBlock Classes="cell mono" Text="{Binding Ports}" />
+                                                                <TextBlock Classes="cell via" Text="{Binding Volumes}" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+
+                                <ItemsControl ItemsSource="{Binding Plan.Compose}" IsVisible="{Binding Plan.HasCompose, FallbackValue=False}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:AppSection">
+                                            <Border Classes="panel" Margin="0,0,0,18">
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                                    <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                                                    <ItemsControl ItemsSource="{Binding Rows}" Margin="0,6,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:SettingRow">
+                                                                <Border Classes="row">
+                                                                    <Grid ColumnDefinitions="230,*">
+                                                                        <TextBlock Classes="cell mono" Text="{Binding Key}" />
+                                                                        <StackPanel Grid.Column="1" Spacing="1">
+                                                                            <TextBlock Classes="cell mono" Text="{Binding Value}" Classes.bad="{Binding Unresolved}" />
+                                                                            <TextBlock Classes="cell via" Text="{Binding Via}" />
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Ports: a preview; a workspace leases its own when it comes up -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" IsVisible="{Binding IsPorts}">
+                        <StackPanel Spacing="12" Margin="0,16,0,28" MaxWidth="1200" HorizontalAlignment="Stretch">
+                            <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !ShowsPlan}"
+                                       Text="Nothing to show until it plans: see Overview." />
+                            <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding ShowsPlan}"
+                                       Text="A preview: each workspace leases its own ports when it comes up." />
+                            <Border Classes="panel" IsVisible="{Binding ShowsPlan}">
+                                <ItemsControl ItemsSource="{Binding Plan.Ports}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:PortRow">
+                                            <Border Classes="row">
+                                                <Grid ColumnDefinitions="160,160,100,80,*">
+                                                    <TextBlock Classes="cell via" Text="{Binding Owner}" />
+                                                    <TextBlock Grid.Column="1" Classes="cell" Text="{Binding Resource}" />
+                                                    <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Endpoint}" />
+                                                    <TextBlock Grid.Column="3" Classes="cell mono" Text="{Binding Port}" FontWeight="SemiBold"
+                                                               Classes.bad="{Binding Failed}" />
+                                                    <TextBlock Grid.Column="4" Classes="cell via" Text="{Binding Pin, StringFormat='pin {0}'}"
+                                                               IsVisible="{Binding Pin, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Code: the orchestration, or a repo's definition opened from its card -->
+                    <ContentControl Content="{Binding Editor}" IsVisible="{Binding IsCode}" Margin="0,16,0,16" />
+                </Grid>
+            </DockPanel>
+        </Grid>
+
+        <!-- The files waiting for approval, read one at a time, opened from the checklist's first step -->
+        <ContentControl Grid.Column="0" Grid.ColumnSpan="2" ZIndex="60" Content="{Binding Review}" IsVisible="{Binding Review.IsOpen}" />
+
+        <!-- Remove -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding ConfirmingRemove}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelRemoveCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource DangerBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="560" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding Selected.Name, StringFormat='Remove {0}?', FallbackValue=''}" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource FgBrush}" TextWrapping="Wrap" Text="{Binding RemoveNote}" />
+                    <TextBlock Text="{Binding RemoveError}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource DangerBrush}"
+                               IsVisible="{Binding RemoveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                        <Button Content="Keep it" Command="{Binding CancelRemoveCommand}" Background="{StaticResource ButtonBgBrush}"
+                                Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Content="Remove it" Command="{Binding RemoveCommand}" Background="{StaticResource DangerBrush}"
+                                Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- + Add starts with a choice, so neither form's fields show until you've said which you want. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsChooseOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelChooseCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Add an orchestration" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                   Text="An orchestration is a few repos run together. Do you have one already, or are you starting from the repos?" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <Button x:Name="ChooseExisting" Classes="choice" Command="{Binding OpenAddCommand}"
+                                AutomationProperties.AutomationId="orchestration-add:existing">
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="I have a .orchestration.yaml" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Pick an orchestration file that's already written, in a repo or a folder of its own. Nothing in it runs until you approve it." />
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                        <Button Grid.Column="1" Classes="choice" Command="{Binding OpenNewCommand}"
+                                AutomationProperties.AutomationId="orchestration-add:from-repos">
+                            <Border Classes="card">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Build one from repos" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Text="Choose a few repo folders and name it. It's kept in sprig, so nothing is written to your repos." />
+                                </StackPanel>
+                            </Border>
+                        </Button>
+                    </Grid>
+                    <Button Content="Cancel" Command="{Binding CancelChooseCommand}" HorizontalAlignment="Right"
+                            Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- A new orchestration kept in sprig -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsNewOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelNewCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="New orchestration" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="Kept in sprig, so nothing is written to your repos. Each folder goes on the Repos list: one with its own sprig.yaml uses it, one without gets a definition kept in sprig, drafted from what's in it." />
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="phead" Text="NAME" />
+                        <TextBox Text="{Binding NewName}" PlaceholderText="e.g. storefront" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="phead" Text="REPO FOLDERS" />
+                        <ItemsControl ItemsSource="{Binding NewRepoDirs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                                        <TextBlock Classes="cell mono" Text="{Binding}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="✕" Padding="8,2" Background="Transparent" ToolTip.Tip="Leave it out"
+                                                Foreground="{StaticResource MutedBrush}" CommandParameter="{Binding}"
+                                                Command="{Binding $parent[UserControl].((vm:OrchestrationsViewModel)DataContext).RemoveNewRepoCommand}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <controls:PathBox Path="{Binding NewRepoPath}" PickFolder="True" PickerTitle="Choose a repo folder"
+                                              Placeholder="path/to/a/repo" />
+                            <Button Grid.Column="1" Content="Add" Command="{Binding AddNewRepoCommand}" VerticalAlignment="Center"
+                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="12,6" />
+                        </Grid>
+                    </StackPanel>
+                    <TextBlock Classes="msg" Text="{Binding NewMessage}" FontSize="12" TextWrapping="Wrap" Classes.bad="{Binding NewFailed}"
+                               IsVisible="{Binding NewMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                        <Button Content="← Back" Command="{Binding BackToChooseCommand}" HorizontalAlignment="Left"
+                                Background="Transparent" Foreground="{StaticResource MutedBrush}" Padding="6,7" />
+                        <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelNewCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Grid.Column="2" Content="Create orchestration" Command="{Binding CreateNewCommand}" IsEnabled="{Binding !IsBusy}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Add an orchestration file: a modal so the path has the room a narrow list column can't give it. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" ZIndex="50" Background="#B3060A12" IsVisible="{Binding IsAddOpen}">
+            <Border.KeyBindings>
+                <KeyBinding Gesture="Escape" Command="{Binding CancelAddCommand}" />
+                <KeyBinding Gesture="Enter" Command="{Binding AddCommand}" />
+            </Border.KeyBindings>
+            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,24" MaxWidth="680" Margin="32"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Add an orchestration file" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
+                    <TextBlock FontSize="12.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Text="Choose a .orchestration.yaml file. It's listed straight away; nothing in it runs until you approve it." />
+                    <controls:PathBox x:Name="AddPath" Path="{Binding NewPath}" FileSuffix=".orchestration.yaml"
+                                      PickerTitle="Choose an orchestration file" Placeholder="path/to/storefront.orchestration.yaml" />
+                    <TextBlock Classes="msg" Text="{Binding AddMessage}" FontSize="12" TextWrapping="Wrap"
+                               Classes.bad="{Binding AddFailed}"
+                               IsVisible="{Binding AddMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                        <Button Content="← Back" Command="{Binding BackToChooseCommand}" HorizontalAlignment="Left"
+                                Background="Transparent" Foreground="{StaticResource MutedBrush}" Padding="6,7" />
+                        <Button Grid.Column="1" Content="Cancel" Command="{Binding CancelAddCommand}"
+                                Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" Padding="14,7" />
+                        <Button Grid.Column="2" Content="Add orchestration" Command="{Binding AddCommand}"
+                                Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="14,7" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

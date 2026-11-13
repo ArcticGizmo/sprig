@@ -1,0 +1,505 @@
+<title>Sprig Hand Pass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a sticky progress strip; sections of check rows with pass/fail/skip on the left. */
+:root {
+  --bg: #f6f7f3;
+  --surface: #ffffff;
+  --fg: #1d2420;
+  --muted: #5d6a62;
+  --line: #dde3dc;
+  --accent: #2f6b45;
+  --accent-soft: #e3efe6;
+  --pass: #2f7d4a;
+  --pass-soft: #dff1e5;
+  --fail: #b3362c;
+  --fail-soft: #f8e1de;
+  --skip: #8a6d1f;
+  --skip-soft: #f4ecd2;
+  --code-bg: #eef1ec;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+    --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+    --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131815; --surface: #1a201c; --fg: #e3e9e4; --muted: #95a39a; --line: #2c352f;
+  --accent: #7cc497; --accent-soft: #203328; --pass: #6fcf8f; --pass-soft: #1d3324;
+  --fail: #f08a7f; --fail-soft: #3a211e; --skip: #e2c46b; --skip-soft: #352e1a; --code-bg: #212823;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); max-width: 64ch; margin: 8px 0 0; }
+code, pre { font-family: var(--font-mono); font-size: 12.5px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.setup { display: grid; gap: 10px; margin-top: 20px; }
+.cmd { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--code-bg); min-width: 0; }
+.cmd pre { margin: 0; padding: 8px 10px; overflow-x: auto; flex: 1; min-width: 0; white-space: pre; }
+.cmd button { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font: 600 12px var(--font-body); padding: 0 12px; cursor: pointer; border-radius: 0 6px 6px 0; }
+.cmd button:hover { color: var(--accent); }
+.cmd-label { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+
+.strip { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 12px; margin-top: 24px; border-bottom: 1px solid var(--line); }
+.strip-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between; }
+.counts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.counts b { font-weight: 700; }
+.c-pass { color: var(--pass); } .c-fail { color: var(--fail); } .c-skip { color: var(--skip); } .c-todo { color: var(--muted); }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin-top: 10px; }
+.bar span { display: block; height: 100%; transition: width .25s ease; }
+.bar .b-pass { background: var(--pass); } .bar .b-fail { background: var(--fail); } .bar .b-skip { background: var(--skip); }
+.toggle { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.saved { font-size: 12px; color: var(--muted); }
+.saved.warn { color: var(--fail); }
+
+section { margin-top: 36px; }
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--fg); }
+.sec-head .tally { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-intro { color: var(--muted); font-size: 14px; margin: 8px 0 0; max-width: 70ch; }
+.item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.item.is-pass { --mark: var(--pass); } .item.is-fail { --mark: var(--fail); } .item.is-skip { --mark: var(--skip); }
+.states { display: flex; flex-direction: column; gap: 4px; }
+.states button { width: 52px; font: 600 11.5px var(--font-body); letter-spacing: .02em; padding: 5px 0; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.states button:hover { border-color: var(--muted); color: var(--fg); }
+.states button[aria-pressed="true"][data-s="pass"] { background: var(--pass-soft); border-color: var(--pass); color: var(--pass); }
+.states button[aria-pressed="true"][data-s="fail"] { background: var(--fail-soft); border-color: var(--fail); color: var(--fail); }
+.states button[aria-pressed="true"][data-s="skip"] { background: var(--skip-soft); border-color: var(--skip); color: var(--skip); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.body { min-width: 0; }
+.title { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.title .id { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.item.is-pass .title .label, .item.is-skip .title .label { color: var(--muted); }
+.how, .expect { margin: 6px 0 0; font-size: 14px; }
+.how ol { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.expect { padding-left: 10px; border-left: 3px solid var(--accent-soft); color: var(--fg); }
+.expect::before { content: "Expect  "; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.note-wrap { margin-top: 10px; }
+.note-wrap textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px/1.45 var(--font-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.item.is-fail .note-wrap textarea { border-color: var(--fail); }
+.note-link { background: none; border: 0; padding: 0; color: var(--accent); font: 500 13px var(--font-body); cursor: pointer; margin-top: 8px; }
+.item.done-hidden { display: none; }
+.foot { margin-top: 40px; color: var(--muted); font-size: 13px; }
+@media (max-width: 520px) {
+  h1 { font-size: 24px; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .states { flex-direction: row; }
+}
+@media (prefers-reduced-motion: reduce) { .bar span { transition: none; } }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">experimental branch · hand pass before replacing main</div>
+  <h1>Sprig hand pass</h1>
+  <p class="lede">Work top to bottom. Each row says what to do and what you should see. Mark it Pass, Fail or Skip, and add a note whenever something is off, however small: a fail note is what gets fixed. Your marks and notes are saved, so you can stop and come back.</p>
+
+  <div class="setup">
+    <div>
+      <p class="cmd-label">Build both (from the sprig checkout). The Debug app and CLI share the <code>sprig-exp (Dev)</code> store, so they see the same sprouts.</p>
+      <div class="cmd"><pre id="cmd-build">cd C:\Users\JonHowell\Documents\git\personal\sprig; dotnet build sprig.slnx</pre><button type="button" data-copy="cmd-build">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">A <code>sprig</code> alias for this PowerShell session, then open the app.</p>
+      <div class="cmd"><pre id="cmd-alias">Set-Alias sprig "$PWD\src\Sprig.Cli\bin\Debug\net10.0\sprig.exe"; &amp; .\src\Sprig.App\bin\Debug\net10.0\sprig-gui.exe</pre><button type="button" data-copy="cmd-alias">Copy</button></div>
+    </div>
+    <div>
+      <p class="cmd-label">The test repos live in <code>C:/Users/JonHowell/Documents/git/personal/sprig-testbed</code>. To start over from clean templates at any point:</p>
+      <div class="cmd"><pre id="cmd-reset">pwsh -File scripts/testbed.ps1 -Force</pre><button type="button" data-copy="cmd-reset">Copy</button></div>
+    </div>
+  </div>
+
+  <div class="strip" aria-live="polite">
+    <div class="strip-row">
+      <div class="counts" id="counts"></div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <label class="toggle"><input type="checkbox" id="hide-done"> Hide passed and skipped</label>
+        <span class="saved" id="saved">Connecting…</span>
+      </div>
+    </div>
+    <div class="bar" id="bar"><span class="b-pass"></span><span class="b-fail"></span><span class="b-skip"></span></div>
+  </div>
+
+  <div id="sections"></div>
+
+  <p class="foot">When you're done, tell Claude in the terminal; it reads these results directly and turns every fail note into a fix.</p>
+</div>
+
+<script>
+const T = "C:/Users/JonHowell/Documents/git/personal/sprig-testbed";
+const SECTIONS = [
+  {
+    id: "trellis", title: "Trellises page",
+    intro: "Registering the testbed's trellises and approving their definitions. The store is empty, so everything asks for approval the first time. A trellis opens on its Overview: a summary, or while something's in the way, the steps to its first sprout.",
+    items: [
+      { id: "TP1", title: "The nav, and the hand cursor",
+        how: [`Look at the left nav.`, `Point at a nav item, a button, a ⋯ menu's items, and a row in the Trellises list. Then point at a greyed-out button.`],
+        expect: `Home, <b>Repos</b> ("what each repo runs"), <b>Trellises</b> ("repos run together") and <b>Sprouts</b> ("running copies", with how many are up), with no section headers and no Editor. Everything clickable shows the hand cursor; a greyed-out button keeps the arrow.` },
+      { id: "TP1b", title: "Forget approvals",
+        how: [`Pick a trellis that's approved and choose <b>⋯ › Forget approvals</b>. Point at the item first to read its tooltip.`],
+        expect: `The list says "not approved yet" and the Overview goes back to <b>Before its first sprout</b>, asking to approve the trellis file and then its repos' <code>sprig.cs</code> files. <code>sprig trust ls</code> no longer lists them.` },
+      { id: "TP2", title: "Add the storefront trellis",
+        how: [`If storefront is already listed from an earlier run, pick it and choose <b>⋯ › Forget approvals</b>, then <b>⋯ › Remove…</b>. Removing alone keeps the approval, so re-adding wouldn't ask (TP7 checks that).`, `Open <b>Trellises</b> and click <b>+ Add</b>.`, `Click the <b>I have a .trellis.cs</b> card. In the path box, type <code>${T}/st</code> and press <b>Tab</b> to complete it to <code>storefront.trellis.cs</code>.`, `Click <b>Add trellis</b> (or press <b>Enter</b>).`],
+        expect: `+ Add first shows two cards, <b>I have a .trellis.cs</b> and <b>Build one from repos</b>, and no fields. Each card's border lights on hover, and the file form has <b>← Back</b> to return to the cards. storefront is listed straight away, "in a folder", saying "not approved yet". Its Overview opens on <b>Before its first sprout</b>: <b>Review the code</b> is open, saying 1 file to read and approve, with a <b>Review 1 file</b> button. The steps below it wait, the status line says to review the code, and <b>Start a sprout</b> is greyed out. In the header, <b>⋯</b> is the rightmost button. Nothing about the review is shown inline on the page.` },
+      { id: "TP2b", title: "The review dialog, one file at a time",
+        how: [`Click <b>Review 1 file</b>.`, `Press <b>Esc</b>, then open it again. Click <b>Approve storefront.trellis.cs</b>.`, `When the three <code>sprig.cs</code> files appear, click each one in the list to read it. Then click <b>Approve shop-services/sprig.cs</b>.`],
+        expect: `A large dialog fills most of the window: the files on the left, the picked one's code on the right, read-only and coloured, with its full path above. Esc and <b>Close</b> close it without approving anything. Nothing says "run". After the trellis file is approved, the dialog stays open and lists the repos' files by repo (<code>shop-web/sprig.cs</code> and so on). Approving one ticks it green and opens the next unapproved file. <b>Approve all</b> shows only while more than one is left.` },
+      { id: "TP3", title: "Approve, and see the picture",
+        how: [`Approve the last two files, one at a time or with <b>Approve all 2</b>.`],
+        expect: `The checklist goes and the status says "Ready to start". <b>How it fits together</b> shows "added by the trellis" (mail) on the left, shop-services next, then shop-mobile and shop-web, with wires labelled mail-smtp, catalog-url and orders-url running left to right. Below: Groups (web and mobile, each with what it starts), Added by the trellis, and no sprouts yet. Nothing on the trellis says how sprouts run: that's chosen per sprout.` },
+      { id: "TP4", title: "Pick things in the picture",
+        how: [`Click <b>web</b> in shop-web's box. Click <b>group web</b>, then <b>Everything</b>. Click the <b>shop-services</b> title.`],
+        expect: `web's two wires light up and its values appear below the picture, each with where it came from. group web dims mobile and its wire; Everything brings it back. shop-services' title shows its card: runs, infra, offers, and mail-smtp ← mail, added by the trellis.` },
+      { id: "TP5", title: "The tabs",
+        how: [`Open <b>Values</b>, <b>Ports</b>, then <b>Code</b>. In the code, add a blank line and press <b>Ctrl+S</b>.`],
+        expect: `Values has every app's values and "What the repos need, and what fills it"; Ports is a preview with web inside 9170–9179 and every other port in the 9000s. Saving says "Saved, and it plans", then the message fades. <b>Close</b> goes back to Overview.` },
+      { id: "TP6", title: "Start a sprout from the trellis",
+        how: [`Click <b>Start a sprout</b> in the header, then cancel the form.`],
+        expect: `The Sprouts page opens with its new-sprout form, storefront already chosen.` },
+      { id: "TP7", title: "Remove and re-add a trellis",
+        how: [`Remove storefront from the <b>⋯</b> menu, then add <code>${T}/storefront.trellis.cs</code> again.`],
+        expect: `Removing leaves the file alone. Re-adding asks nothing, since its content is already approved, and it plans straight away.` },
+    ]
+  },
+  {
+    id: "repos", title: "Repos page",
+    intro: "A repo's definition lives in the repo or in sprig, fixed for its ID. These steps make an in-sprig copy of shop-web and check storefront keeps using the original.",
+    items: [
+      { id: "RP1", title: "Add a repo to the Repos list from a trellis",
+        how: [`On storefront's Overview, click the <b>shop-web</b> title in the picture, then <b>Add to Repos</b>.`],
+        expect: `storefront still plans. Its file now says <code>trellis.UseRepo("shop-web")</code> in place of <code>trellis.Repo("shop-web")</code>, and the card offers <b>Open on Repos</b>.` },
+      { id: "RP2", title: "Read a repo",
+        how: [`Click <b>Open on Repos</b>.`],
+        expect: `The Repos page shows shop-web, "in repo", with "1 app". Its folder is the only path on the page. "Used by storefront" links back to the trellis. Runs, Infra, Offers and Needs list web, nothing, nothing, and catalog-url and orders-url.` },
+      { id: "RP3", title: "Copy it into sprig",
+        how: [`Click <b>Copy into sprig…</b>, keep the suggested ID <code>shop-web-sprig</code> and confirm. Then <b>Open definition</b>, add a comment line and press <b>Ctrl+S</b>.`],
+        expect: `There's no In the repo / In sprig switch, only the badge and the one button. The list now has shop-web ("in repo") and shop-web-sprig ("in sprig", "No trellis uses it yet"), with the new one selected. Nothing asks for approval, since the repo's own file was approved. Saving says "Saved, and it runs." shop-web's own <code>sprig.cs</code> is unchanged, and storefront still uses shop-web.` },
+      { id: "RP4", title: "Writing back to the repo is refused",
+        how: [`On shop-web-sprig, click <b>Write to the repo…</b>.`],
+        expect: `The dialog says the folder already has its own sprig.cs, on the list as 'shop-web', and that sprig won't write over it. The confirm button is disabled; Cancel or Escape closes it and nothing changes.` },
+      { id: "RP5", title: "A new trellis from folders",
+        how: [`On Trellises, click <b>+ Add</b>, then the <b>Build one from repos</b> card. Name it <code>trial</code>, add the <code>${T}/shop-web</code> and <code>${T}/shop-services</code> folders and click <b>Create trellis</b>.`],
+        expect: `The form asks only for a name and folders: nothing about worktrees or ports. trial is listed "in sprig" and plans with nothing in the way: shop-services' card says mail-smtp ← its own mail, since nothing in trial offers one and shop-services brings its own. The Repos list reuses shop-web and adds shop-services, "in repo", rather than making copies.` },
+      { id: "RP5b", title: "Fill a need with the line written for you",
+        how: [`Build another trellis from repos, named <code>trial2</code>, from <code>${T}/shop-web</code> and <code>${T}/shop-mobile</code>.`, `On its checklist, click the button on <b>What the repos need</b>.`, `Click each option on the left, then pick <b>Set it to a value</b> and click <b>Add to the code</b>. In the code, put <code>http://localhost:5100</code> between the quotes and press <b>Ctrl+S</b>.`, `Remove trial2 afterwards.`],
+        expect: `The step lists catalog-url for shop-web and shop-mobile and orders-url for shop-web, each "nothing fills it", with <b>Fill 2…</b>. A large dialog opens on "Fill catalog-url", with the options on the left and the change on the right as a diff: the new <code>trellis.Bind("catalog-url", "")</code> line in green, placed after the <code>UseRepo</code> lines, with the lines around it. Nothing is written until you click Add to the code; then the Code tab opens on the file with that line in it. Once saved, the step lists only orders-url.` },
+      { id: "RP6", title: "Repos by ID from the CLI, and a trellis that uses them",
+        how: [`Run these, using the <code>sprig</code> alias from the top of the page. If <code>${T}/catalog.trellis.cs</code> is missing, the testbed is older than it: rebuild it with the reset command at the top.<div class="cmd" style="margin-top:6px"><pre id="cmd-repos">sprig repo add "${T}/shop-services"
+sprig repo add "${T}/shop-mobile"
+sprig repo copy shop-mobile --id shop-mobile-sprig
+sprig repo ls
+sprig trellis add "${T}/catalog.trellis.cs"
+sprig plan catalog</pre><button type="button" data-copy="cmd-repos">Copy</button></div>`, `Run the first three lines again, then <code>sprig repo rm shop-mobile-sprig</code>.`, `In the app, open <b>Trellises</b> and pick catalog, then open <b>Repos</b> and pick shop-mobile-sprig.`],
+        expect: `shop-services says it's already on the list (RP5 added it); shop-mobile is added "in repo" and copied as shop-mobile-sprig, "in sprig". <code>repo ls</code> shows all of them with their kind. <code>trellis add</code> asks only for <code>catalog.trellis.cs</code>, and the plan asks nothing (the copy keeps shop-mobile's approval) and ends "No problems", with VITE_CATALOG_URL coming from catalog-api. Running the lines again changes nothing. <code>repo rm</code> is refused: used by catalog. In the app, catalog's picture shows shop-services and shop-mobile with the catalog-url wire, and shop-mobile-sprig says "Used by catalog".` },
+      { id: "RP7", title: "+ Add a repo, both ways",
+        how: [`On Repos, click <b>+ Add</b>. Pick <b>It has a sprig.cs</b>, enter <code>${T}/aspire</code> and click <b>Add to Repos</b>.`, `Click <b>← Back</b>, pick <b>Write one in sprig</b>, enter <code>${T}/shop-web</code> and click <b>Add to Repos</b>.`, `Close the editor, then <b>Remove</b> the new entry.`],
+        expect: `+ Add shows two cards first, like Trellises. The first is refused: the folder has no sprig.cs, and nothing is added. The second suggests the ID <code>shop-web-sprig-2</code> (RP3 took <code>shop-web-sprig</code>), adds it "in sprig" and opens its definition: a copy of shop-web's <code>sprig.cs</code>, with nothing asking for approval. Neither page has a line of text under its heading, and the Repos and Trellises list columns are the same width, so switching pages doesn't move the content.` },
+    ]
+  },
+  {
+    id: "sprout", title: "Making a sprout",
+    intro: "One running copy of storefront, on its own branch and worktrees.",
+    items: [
+      { id: "S1", title: "Sprout feat-a",
+        how: [`Click <b>Sprouts</b> in the nav, then <b>+ New sprout</b>. Pick storefront, name it <code>feat-a</code>. Leave <b>In worktrees of its own</b>, the branch and Starting from as they are, and <b>Keep the ports it's given</b>. Click <b>Sprout it</b>.`],
+        expect: `The nav's Sprouts row is a plain row like Repos and Trellises: no list of sprouts under it and no +. The form asks where it runs and about ports; picking In place hides Branch and Starting from. A progress window walks through Plan, a worktree per repo (each "new, from main"), Definitions ("read from the worktrees"), Ports, Files and the two container projects, then says it's up. No approval is asked: the new branches have main's definitions.` },
+      { id: "S2", title: "Read the sprout's details",
+        how: [`On the Sprouts list, double-click anywhere on feat-a's row. Pick an app in the list, then open the <b>Infra, worktrees and files</b> tab.`],
+        expect: `The row lights on hover with its <b>Open ›</b>, and the tooltip says to double-click. feat-a opens with <b>← All sprouts</b> above its name. The apps are listed by repo with their ports; the page itself never scrolls. <b>Details</b> shows the picked app's url, its folder under <code>${T}/storefront--feat-a</code> (forward slashes) and its values with where each came from. The tab shows the infra's host and container ports, each worktree, the files sprig wrote, and no warnings.` },
+      { id: "S3", title: "Check the files it wrote",
+        how: [`Open <code>storefront--feat-a/shop-web/.env.local</code>.`, `Run <code>git status</code> inside each of the three worktrees: <code>storefront--feat-a/shop-web</code>, <code>shop-services</code> and <code>shop-mobile</code>. The <code>storefront--feat-a</code> folder that holds them isn't a repo, so git there reports whichever repo encloses it, if any.`],
+        expect: `A marked sprig block with PORT and the two API urls. Every worktree is clean: everything sprig wrote is ignored by the repo. The Infra tab agrees: its worktrees say clean and its files say ignored by the repo.` },
+      { id: "S4", title: "The list with several sprouts",
+        how: [`Sprout storefront again as <code>feat-z</code>, then take it down (<b>Take down</b>) and click <b>← All sprouts</b>.`, `Type <code>z</code> in the search box, then <code>storefront up</code>, then press <b>Esc</b>. Pick the <b>down</b> chip.`, `Double-click feat-z's tick box.`],
+        expect: `The list has both, feat-z down. The search keeps only feat-z, then only feat-a (every word has to match the name, trellis or branch), and Esc clears it. The down chip and the search work together. A double-click on a tick box only ticks it; it doesn't open the sprout.` },
+    ]
+  },
+  {
+    id: "apps", title: "Running the apps",
+    intro: "The runner rows and the log pane on the Sprouts page.",
+    items: [
+      { id: "R1", title: "Start all",
+        how: [`With feat-a open, click <b>Start all</b> in its header.`],
+        expect: `Rows move through building, waiting and starting to ready, and the state chips above the list count them. migrate shows "job" for its port and finishes first; catalog-api is ready before orders-api; web starts after both APIs. All ready in well under a minute, and on the Sprouts list feat-a says "4 of 4 running".` },
+      { id: "R2", title: "Each app's config page",
+        how: [`Open catalog-api's url plus <code>/config</code>, the same for orders-api, and the Config tab in web and in mobile.`],
+        expect: `Every value is listed with where it came from, and every target says it's reachable.` },
+      { id: "R3", title: "Place an order end to end",
+        how: [`Run this with orders-api's port from the details, then open the mail container's UI port in a browser:<div class="cmd" style="margin-top:6px"><pre id="cmd-order">Invoke-RestMethod -Method Post http://localhost:&lt;orders-port&gt;/orders -ContentType application/json -Body '{"productId":"tea","quantity":1,"email":"someone@example.com"}'</pre><button type="button" data-copy="cmd-order">Copy</button></div>`],
+        expect: `The response has <code>mailSent: true</code>, and Mailpit shows "Order … confirmed".` },
+      { id: "R4", title: "The log pane",
+        how: [`Click catalog-api in the list. Type <code>health</code> in the search box, then clear it. Click <b>Warnings and errors</b> twice.`, `Scroll the log up a little, wait for a line or two, then click <b>Jump to latest</b>.`, `Click <b>All apps</b> at the top of the list, then click a name at the start of a line.`],
+        expect: `The app's colours show and sprig's own lines are dimmed. The search shows only matching lines and the summary says how many match. Scrolling up pauses the log with a count of new lines, and the page never scrolls. All apps interleaves every app's lines in time order, each led by its name in its colour; clicking a name opens that app's own log.` },
+      { id: "R5", title: "Restart one app",
+        how: [`Pick web in the list and click its <b>Restart</b>.`],
+        expect: `Only web restarts; its log starts afresh; the other rows don't change.` },
+      { id: "R9", title: "Pins",
+        how: [`Hover catalog-api and click its pin, then web's. Pick <b>All apps</b> and switch the log header to <b>Pinned</b>.`, `Close the app, open it again and open feat-a from the Sprouts list.`],
+        expect: `Both appear under PINNED at the top of the list. The stream shows only their lines. The pins are still there after reopening.` },
+      { id: "R10", title: "Each log keeps its place",
+        how: [`Search <code>health</code> in catalog-api's log and scroll it up so it pauses. Pick web, then catalog-api again. Press <b>Up</b> and <b>Down</b> with the list focused, and <b>Ctrl+F</b>.`],
+        expect: `catalog-api still has its search and is still paused where you left it; web's log had neither. Up and Down move through the apps, and Ctrl+F jumps to the log's search box.` },
+      { id: "R6", title: "Recovery after a crash",
+        how: [`End catalog-api's process: <code>Stop-Process -Name Catalog.Api</code> (only one sprout is running at this point).`],
+        expect: `Its row shows restarting with why and when, then ready again within a few seconds. <code>sprig ps</code> shows "(restarted 1×)".` },
+      { id: "R7", title: "Take one app over in your IDE",
+        how: [`<b>Stop</b> catalog-api in the app.`, `Open <code>storefront--feat-a/shop-services</code> in Rider or VS Code and run Catalog.Api with the <code>sprig</code> launch profile (or <code>dotnet run --launch-profile sprig</code> in <code>src/Catalog.Api</code>).`, `Place an order again (R3).`, `Stop it in the IDE, then <b>Start</b> it in the app.`],
+        expect: `The IDE copy comes up on the same port with the sprout's values, the order still goes through, and the app's Start brings sprig's copy back.` },
+      { id: "R8", title: "Apps outlive the window",
+        how: [`Close the app window. Run <code>sprig ps</code>. Open the app again and select feat-a.`],
+        expect: `ps lists every app as ready. The reopened app shows the same states within a second.` },
+    ]
+  },
+  {
+    id: "cli", title: "The CLI alongside the app",
+    intro: "Both drive the same background host, so either sees what the other does.",
+    items: [
+      { id: "C1", title: "ps and logs",
+        how: [`<code>sprig ps</code>, then <code>sprig logs storefront feat-a catalog-api -n 20</code>.`],
+        expect: `ps lists feat-a's apps with ports and states; logs prints the last 20 lines.` },
+      { id: "C2", title: "Stop from the CLI, watch the app",
+        how: [`With the app open on feat-a, run <code>sprig stop storefront feat-a</code>.`],
+        expect: `The CLI reports each app stopped gracefully ("stopped in 0.2s" and the like), and the app's rows turn stopped within a second.` },
+      { id: "C3", title: "Follow with up --run",
+        how: [`<code>sprig up storefront --sprout feat-a --run</code>, watch for a bit, then press <b>Ctrl+C</b> once.`],
+        expect: `One interleaved stream with an aligned, coloured <code>name |</code> prefix per app. Ctrl+C stops the apps gracefully and leaves the containers running.` },
+      { id: "C4", title: "Detached up",
+        how: [`<code>sprig up storefront --sprout feat-a -d</code>`],
+        expect: `It returns once every app is ready, in about 15 seconds when nothing needs rebuilding.` },
+    ]
+  },
+  {
+    id: "branch", title: "A branch that changes its definition",
+    intro: "A sprout runs its own branch's sprig.cs, and asks before running a version you haven't approved.",
+    items: [
+      { id: "B1", title: "Edit sprig.cs in a worktree, bring it up in the app",
+        how: [`In <code>storefront--feat-a/shop-web/sprig.cs</code>, add <code>.Set("VITE_BRANCH_FLAG", "on")</code> to the EnvFile chain and save.`, `In the app, select feat-a and click <b>Bring up</b>.`],
+        expect: `The progress window stops and says the branch changes this definition. The review dialog opens by itself with <code>shop-web/sprig.cs</code>, saying "the sprout's branch changes it", and the code shown includes your <code>VITE_BRANCH_FLAG</code> line. Close it once: the Sprouts page shows a <b>Review the code</b> notice with a <b>Review 1 file</b> button that opens it again. After <b>Approve shop-web/sprig.cs</b> it carries on by itself, and shop-web's <code>.env.local</code> has <code>VITE_BRANCH_FLAG=on</code>.` },
+      { id: "B2", title: "Both versions stay approved",
+        how: [`<code>sprig trust ls</code>, then <code>sprig plan storefront</code> (plain, not for the sprout).`],
+        expect: `shop-web's <code>sprig.cs</code> shows 2 versions. The plain plan asks nothing and has no VITE_BRANCH_FLAG.` },
+    ]
+  },
+  {
+    id: "two", title: "Two sprouts at once",
+    items: [
+      { id: "M1", title: "A second sprout beside the first",
+        how: [`Sprout <code>feat-b</code> from the app and start its apps.`, `<code>docker ps</code>`],
+        expect: `Different ports from feat-a (web still inside 9170–9179), its own <code>sprig-storefront-feat-b-*</code> containers, and both sprouts' apps work at the same time.` },
+      { id: "M2", title: "Start just a group",
+        how: [`<code>sprig stop storefront feat-b</code>, then <code>sprig start storefront feat-b --group mobile</code>.`],
+        expect: `Only mobile and what it needs (catalog-api and migrate) start; web and orders-api stay stopped.` },
+    ]
+  },
+  {
+    id: "down", title: "Taking down and removing",
+    intro: "Each refusal should say what's wrong and what to do about it.",
+    items: [
+      { id: "D1", title: "Take down, bring up again",
+        how: [`Open feat-b from the Sprouts list, click <b>Take down</b>, then <b>⋯ › Bring up</b>.`],
+        expect: `Take down stops the apps, then the containers. Bring up gives back the same ports, and the database data is still there.` },
+      { id: "D2", title: "Remove refuses uncommitted changes",
+        how: [`Edit any file in <code>storefront--feat-b/shop-web</code> without committing. Click <b>⋯ › Remove…</b>, tick "Also delete its branch", then <b>Remove it</b>.`],
+        expect: `Refused, naming the worktree with uncommitted changes. Nothing is removed.` },
+      { id: "D3", title: "Remove refuses commits only this branch has",
+        how: [`Commit that change in the worktree, then try the same removal again.`],
+        expect: `Refused: feat-b has commits no other branch or remote has, in shop-web.` },
+      { id: "D4", title: "Remove after pushing",
+        how: [`<code>git push -u origin feat-b</code> in that worktree (origin is a bare repo under <code>sprig-testbed/remotes</code>), then remove with the branch ticked.`],
+        expect: `The containers, volumes, worktrees and local branches go, and the folder is gone. The branch is still on the remote.` },
+      { id: "D5", title: "A repo on its own, run in place",
+        how: [`On <b>Repos</b>, pick shop-services. Read its Needs, then click <b>Start a sprout</b>.`, `Pick <b>In place</b>, leave the name empty and click <b>Sprout it</b>. Open it and its <b>Infra, worktrees and files</b> tab.`, `Try a second in-place sprout of shop-services, named <code>other</code>. Then remove <code>local</code>.`],
+        expect: `Needs says mail-smtp: "a trellis can fill it, else it uses its own mail". The form opens with shop-services chosen (the picker lists trellises and repos). The sprout is named <code>local</code>, listed as "of" shop-services, writes into <code>${T}/shop-services</code> itself, and its infra has its own <code>mail</code> beside postgres, redis and rabbitmq; storefront's sprouts have no such second mail. The second in-place sprout is refused. Opening + New sprout again with shop-services picked starts with In place chosen. Removing puts the repo's files back as they were.` },
+      { id: "D6", title: "Several at once from the overview",
+        how: [`Click <b>Sprouts</b> in the nav (from inside a sprout too: it always lands on the list). Edit a file in one down sprout's worktree without committing.`, `Tick every sprout that's down, then <b>Remove…</b> and <b>Remove them</b>.`],
+        expect: `The table lists every sprout with its trellis, state, apps, ports, worktrees and when it was last up. The bar warns about the one with changes before you confirm. One progress window shows each sprout's steps under its name; the summary lists that one as not done, with why, and the rest are gone.` },
+    ]
+  },
+  {
+    id: "misc", title: "Settings, host and impressions",
+    items: [
+      { id: "X1", title: "Port range and restricted ports",
+        how: [`In <b>Settings</b>, change the port range and add a restricted port inside it, then save. Sprout a new one and check its ports, then remove it.`, `Click <b>Reset to defaults</b> and save.`],
+        expect: `The new sprout's ports come from the new range and skip the restricted one; existing sprouts keep theirs. On this Dev build, reset fills in 9000–9999.` },
+      { id: "X2", title: "The host exits when idle",
+        how: [`Stop every app (<code>sprig stop storefront feat-a</code>), close the app, wait 11 minutes, then <code>sprig host status</code>.`],
+        expect: `It says no host is running. This path has never been tested.` },
+      { id: "X3", title: "About page",
+        how: [`Open <b>About</b>.`],
+        expect: `It shows the installed version. Note anything that reads wrong for an experimental build.` },
+      { id: "X4", title: "Overall look and feel",
+        how: [`Anything that looked off, read badly, took too many clicks, or surprised you anywhere above.`],
+        expect: `Use the note. Mark Pass if there's nothing to add.` },
+      { id: "X5", title: "Tidy up",
+        how: [`Remove every sprout, then <code>sprig host stop</code>.`],
+        expect: `<code>sprig sprouts</code> lists nothing and <code>docker ps</code> shows no <code>sprig-storefront-*</code> containers.` },
+    ]
+  },
+];
+
+const ALL = SECTIONS.flatMap(s => s.items.map(i => ({ ...i, section: s.id })));
+const results = new Map();
+let db = null;
+const writeChains = new Map();
+const els = {};
+
+function render() {
+  const host = document.getElementById("sections");
+  host.innerHTML = "";
+  for (const sec of SECTIONS) {
+    const s = document.createElement("section");
+    s.innerHTML = `<div class="sec-head"><h2>${sec.title}</h2><span class="tally" id="tally-${sec.id}"></span></div>` +
+      (sec.intro ? `<p class="sec-intro">${sec.intro}</p>` : "");
+    for (const item of sec.items) s.appendChild(renderItem(item));
+    host.appendChild(s);
+  }
+  refresh();
+}
+
+function renderItem(item) {
+  const row = document.createElement("div");
+  row.className = "item";
+  row.id = "item-" + item.id;
+  row.innerHTML = `
+    <div class="states" role="group" aria-label="Result for ${item.id}">
+      <button type="button" data-s="pass" aria-pressed="false">Pass</button>
+      <button type="button" data-s="fail" aria-pressed="false">Fail</button>
+      <button type="button" data-s="skip" aria-pressed="false">Skip</button>
+    </div>
+    <div class="body">
+      <div class="title"><span class="id">${item.id}</span><span class="label">${item.title}</span></div>
+      <div class="how"><ol>${item.how.map(h => `<li>${h}</li>`).join("")}</ol></div>
+      <p class="expect">${item.expect}</p>
+      <button type="button" class="note-link">Add a note</button>
+      <div class="note-wrap" hidden><textarea id="note-${item.id}" aria-label="Note for ${item.id}" placeholder="What happened, and what you expected instead"></textarea></div>
+    </div>`;
+  const noteWrap = row.querySelector(".note-wrap");
+  const noteLink = row.querySelector(".note-link");
+  const textarea = row.querySelector("textarea");
+  row.querySelectorAll(".states button").forEach(b => b.addEventListener("click", () => {
+    const cur = results.get(item.id) || {};
+    const next = cur.status === b.dataset.s ? null : b.dataset.s;
+    results.set(item.id, { ...cur, status: next });
+    if (next === "fail") { noteWrap.hidden = false; noteLink.hidden = true; }
+    refresh();
+    save(item.id);
+  }));
+  noteLink.addEventListener("click", () => { noteWrap.hidden = false; noteLink.hidden = true; textarea.focus(); });
+  let timer = null;
+  textarea.addEventListener("input", () => {
+    const cur = results.get(item.id) || {};
+    results.set(item.id, { ...cur, note: textarea.value });
+    clearTimeout(timer);
+    timer = setTimeout(() => save(item.id), 800);
+  });
+  textarea.addEventListener("blur", () => { clearTimeout(timer); save(item.id); });
+  els[item.id] = { row, noteWrap, noteLink, textarea };
+  return row;
+}
+
+function refresh() {
+  const hide = document.getElementById("hide-done").checked;
+  const totals = { pass: 0, fail: 0, skip: 0, todo: 0 };
+  for (const item of ALL) {
+    const r = results.get(item.id) || {};
+    const st = r.status || null;
+    totals[st || "todo"]++;
+    const e = els[item.id];
+    if (!e) continue;
+    e.row.classList.toggle("is-pass", st === "pass");
+    e.row.classList.toggle("is-fail", st === "fail");
+    e.row.classList.toggle("is-skip", st === "skip");
+    e.row.classList.toggle("done-hidden", hide && (st === "pass" || st === "skip"));
+    e.row.querySelectorAll(".states button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.s === st)));
+    if (document.activeElement !== e.textarea && (r.note || "") !== e.textarea.value) e.textarea.value = r.note || "";
+    const hasNote = !!(r.note && r.note.trim()) || st === "fail";
+    if (hasNote) { e.noteWrap.hidden = false; e.noteLink.hidden = true; }
+  }
+  for (const sec of SECTIONS) {
+    const done = sec.items.filter(i => (results.get(i.id) || {}).status).length;
+    const fails = sec.items.filter(i => (results.get(i.id) || {}).status === "fail").length;
+    document.getElementById("tally-" + sec.id).textContent = `${done} of ${sec.items.length}` + (fails ? ` · ${fails} failed` : "");
+  }
+  const n = ALL.length;
+  document.getElementById("counts").innerHTML =
+    `<span class="c-pass"><b>${totals.pass}</b> passed</span><span class="c-fail"><b>${totals.fail}</b> failed</span>` +
+    `<span class="c-skip"><b>${totals.skip}</b> skipped</span><span class="c-todo"><b>${totals.todo}</b> to do, of ${n}</span>`;
+  const [bp, bf, bs] = document.querySelectorAll("#bar span");
+  bp.style.width = (totals.pass / n * 100) + "%";
+  bf.style.width = (totals.fail / n * 100) + "%";
+  bs.style.width = (totals.skip / n * 100) + "%";
+}
+
+function setSaved(text, warn) {
+  const el = document.getElementById("saved");
+  el.textContent = text;
+  el.classList.toggle("warn", !!warn);
+}
+
+function save(id) {
+  if (!db) return;
+  const r = results.get(id) || {};
+  const body = { status: r.status || null, note: r.note || "", item: id, at: new Date().toISOString() };
+  const prev = writeChains.get(id) || Promise.resolve();
+  const next = prev.then(() => db.collection("results").doc(id).set(body))
+    .then(() => setSaved("Saved"))
+    .catch(e => setSaved(e && e.code === "quota_exceeded" ? "Couldn't save: storage is full" : "Couldn't save the last change; it's kept on this page", true));
+  writeChains.set(id, next);
+}
+
+document.getElementById("hide-done").addEventListener("change", refresh);
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  const pre = document.getElementById(b.dataset.copy);
+  const text = pre.textContent;
+  const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1400); };
+  try {
+    navigator.clipboard.writeText(text).then(done, () => selectText(pre));
+  } catch { selectText(pre); }
+});
+function selectText(node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const b = document.querySelector(`[data-copy="${node.id}"]`);
+  if (b) { b.textContent = "Press Ctrl+C"; setTimeout(() => (b.textContent = "Copy"), 2000); }
+}
+
+render();
+
+(async () => {
+  const claudeApi = window.claude;
+  db = claudeApi && claudeApi.use ? await claudeApi.use("db") : null;
+  if (!db) { setSaved("Not saving in this view: marks last until you close it", true); return; }
+  const slow = setTimeout(() => setSaved("Still loading saved marks…", true), 10000);
+  db.collection("results").onSnapshot(snap => {
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (!data) continue;
+      const local = results.get(d.id);
+      const editing = els[d.id] && document.activeElement === els[d.id].textarea;
+      results.set(d.id, { status: data.status || null, note: editing && local ? local.note : (data.note || "") });
+    }
+    if (!snap.metadata.fromCache) { clearTimeout(slow); setSaved(snap.empty ? "Saved as you go" : "Saved"); }
+    refresh();
+  }, err => {
+    clearTimeout(slow);
+    setSaved("Saved marks can't be reached; changes stay on this page", true);
+  });
+})();
+</script>

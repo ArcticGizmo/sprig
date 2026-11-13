@@ -1,0 +1,278 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://arcticgizmo.github.io/sprig/schema/v1/orchestration.json",
+  "title": "An orchestration file.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "Which version of the format the file is written in. Sprig reads every version it has shipped."
+    },
+    "orchestration": {
+      "type": "string",
+      "description": "The orchestration's name, as the app shows it."
+    },
+    "repos": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The repo's folder, from this file."
+          },
+          "use": {
+            "type": "string",
+            "description": "The repo's ID on the Repos list: its folder and definition come from there."
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "path"
+            ]
+          },
+          {
+            "required": [
+              "use"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      },
+      "description": "The repos it runs together, by a name of your choosing: each with path: (its folder from this file) or use: (its ID on the Repos list)."
+    },
+    "containers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "enum": [
+              "postgres",
+              "redis",
+              "rabbitmq",
+              "mailpit"
+            ],
+            "description": "postgres, redis, rabbitmq or mailpit: fills in the image, ports, health and role. What's written beside it is added or wins."
+          },
+          "image": {
+            "type": "string",
+            "description": "The image to run, such as redis:7."
+          },
+          "ports": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "const": "any"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "container": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "The port inside the container."
+                    },
+                    "host": {
+                      "anyOf": [
+                        {
+                          "const": "any"
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 65535
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{1,5}(-\\d{1,5})?$"
+                              }
+                            ]
+                          }
+                        }
+                      ],
+                      "description": "Where on this machine it may be: any, a port, or a list such as [8000, 8110-8115]."
+                    },
+                    "scheme": {
+                      "type": "string",
+                      "description": "How its url starts, such as http. A port with no scheme has no url."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "Ports, each with the port inside the container: tcp: { container: 6379 }."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Environment variables set inside the container."
+          },
+          "volumes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Volumes, by name, to the path inside the container. Each workspace has its own."
+          },
+          "health": {
+            "type": "string",
+            "description": "A command run inside the container that exits 0 once it's ready."
+          },
+          "role": {
+            "enum": [
+              "database",
+              "cache",
+              "queue",
+              "search",
+              "mail",
+              "storage",
+              "identity",
+              "proxy"
+            ],
+            "description": "What it is (database, cache, queue…), for how sprig draws it."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "description": "Values of its own, referenced as ${container.name}."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Containers the orchestration runs for all its repos, from an image or a preset."
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "A value for every repo's input of that name: literal, or a reference to one of its containers or a repo's output."
+    },
+    "groups": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Slices to start on their own: repos, or repo/app for one app of a repo."
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean",
+          "null"
+        ]
+      },
+      "description": "Pages for the whole workspace, by label: a url, or a reference to one."
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "orchestration",
+    "repos"
+  ],
+  "definitions": {
+    "fileValues": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          {
+            "$ref": "#/definitions/fileValues"
+          }
+        ]
+      }
+    }
+  }
+}

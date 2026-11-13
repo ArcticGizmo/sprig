@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Model and names</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#181820}
+a{color:#60A5FA}a:hover{color:#93C5FD}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; padding: 44px 48px; background: #181820; color: #E1E1EB; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column; gap: 26px; overflow: hidden">
+
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">THE MODEL</div>
+    <h1 style="margin: 0; font-size: 28px; font-weight: 600; color: #F5F5FA">Three things, and one question about every file</h1>
+    <p style="margin: 0; font-size: 14px; color: #A5A5B8; max-width: 1040px">"Virtual repo" mixes two separate questions: what a thing is, and where its file is kept. Answer them separately and the page needs three nouns and one badge.</p>
+  </div>
+
+  <!-- What each thing is -->
+  <div style="display: flex; align-items: stretch; gap: 14px">
+    <div style="flex: 1 1 0; background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">REPO</div>
+      <div style="font-size: 17px; font-weight: 600; color: #F5F5FA">What one repo runs</div>
+      <div style="color: #B9B9CC; line-height: 1.45">Its apps, jobs and infra; the values it offers; the values it needs from somewhere else.</div>
+      <div style="margin-top: 4px; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #A5A5B8; line-height: 1.6">shop-services<br>runs catalog-api, orders-api, migrate<br>offers catalog-url, orders-url<br>needs mail-smtp</div>
+    </div>
+    <div style="flex: none; align-self: center; color: #60A5FA; font-size: 22px" aria-hidden="true">→</div>
+    <div style="flex: 1 1 0; background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">TRELLIS</div>
+      <div style="font-size: 17px; font-weight: 600; color: #F5F5FA">Which repos run together, and how</div>
+      <div style="color: #B9B9CC; line-height: 1.45">Picks repos, adds shared infra, fills any need no repo offers, and sets worktrees, ports and groups.</div>
+      <div style="margin-top: 4px; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #A5A5B8; line-height: 1.6">storefront<br>shop-services + shop-web + shop-mobile<br>adds mail, which fills mail-smtp<br>worktrees from main · stable ports</div>
+    </div>
+    <div style="flex: none; align-self: center; color: #60A5FA; font-size: 22px" aria-hidden="true">→</div>
+    <div style="flex: 1 1 0; background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">SPROUT</div>
+      <div style="font-size: 17px; font-weight: 600; color: #F5F5FA">One running copy, for one task</div>
+      <div style="color: #B9B9CC; line-height: 1.45">Its own worktrees (or the checkout), ports, data and logs. Made from a trellis; many per trellis.</div>
+      <div style="margin-top: 4px; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11.5px; color: #A5A5B8; line-height: 1.6">storefront · feat-a<br>branch feat-a, ports 8000–8010<br>4 of 4 apps running</div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 36px; flex-grow: 1; min-height: 0">
+
+    <!-- Where a file is kept: the same two answers for repos and trellises -->
+    <div style="flex: 0 0 560px; display: flex; flex-direction: column; gap: 12px">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">WHERE ITS FILE IS KEPT · SAME FOR REPOS AND TRELLISES</div>
+      <div style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+        <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #4A4A5E; color: #D4D4E0; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"></path></svg>in repo</span>
+        <div style="color: #B9B9CC; line-height: 1.5">Committed beside the code, so the team shares it. Follows branches: a sprout runs its branch's version. Sprig asks before running a version you haven't approved.</div>
+      </div>
+      <div style="background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px">
+        <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #5B4A92; background: #2A2340; color: #CFC2FF; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 19c0-8 6-14 14-14 0 8-6 14-14 14z"></path><path d="M5 19l7-7"></path></svg>in sprig</span>
+        <div style="color: #B9B9CC; line-height: 1.5">Kept on this machine; nothing is written to your repos. The same for every sprout, since no branch can change it. Saving it approves it.</div>
+      </div>
+      <div style="color: #A5A5B8; line-height: 1.5">One action each way, on the thing itself: <b style="color: #E1E1EB">Keep in sprig</b> or <b style="color: #E1E1EB">Put in the repo</b>. "Virtual", "written in sprig", "referenced" and "copy into sprig" all become this one badge.</div>
+    </div>
+
+    <!-- Names -->
+    <div style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; min-width: 0">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0">NAMES</div>
+      <table style="border-collapse: collapse; width: 100%; font-size: 12.5px">
+        <thead>
+          <tr style="text-align: left; color: #8C8CA0">
+            <th style="padding: 6px 10px 6px 0; font-weight: 600; border-bottom: 1px solid #2D2D3C">The idea</th>
+            <th style="padding: 6px 10px; font-weight: 600; border-bottom: 1px solid #2D2D3C">Today</th>
+            <th style="padding: 6px 10px; font-weight: 600; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #93C5FD">Recommended</th>
+            <th style="padding: 6px 10px; font-weight: 600; border-bottom: 1px solid #2D2D3C">Plainer</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">Repos run together</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">trellis</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">Trellis</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">Stack</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">A running copy</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">sprout</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">Sprout</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">Workspace</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">One repo, described</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">repo definition, Repos entry</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">Repo</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">Repo</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">Kept on this machine</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">virtual, kept in sprig, written in sprig</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">in sprig</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">local</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">Committed with the code</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">its own sprig.cs, referenced</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">in repo</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">shared</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">A value a repo asks for</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">import, binding, wiring</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">needs</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">needs</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">A value a repo gives</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">export</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">offers</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">provides</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; border-bottom: 1px solid #2D2D3C; color: #A5A5B8">What a sprout would get</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">plan</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C; background: #1E2638; color: #F5F5FA">Values (a tab)</td><td style="padding: 6px 10px; border-bottom: 1px solid #2D2D3C">Preview</td></tr>
+          <tr><td style="padding: 6px 10px 6px 0; color: #A5A5B8">Adding</td><td style="padding: 6px 10px">+ New, + Write, + Reference, add a .trellis.cs</td><td style="padding: 6px 10px; background: #1E2638; color: #F5F5FA">+ Add: pick a folder or file; sprig uses what's there or drafts one</td><td style="padding: 6px 10px">+ Add</td></tr>
+        </tbody>
+      </table>
+      <div style="color: #A5A5B8; line-height: 1.5; font-size: 12.5px">Keep the code words (<span style="font-family: 'Cascadia Mono', Consolas, monospace">Import</span>, <span style="font-family: 'Cascadia Mono', Consolas, monospace">Export</span>, <span style="font-family: 'Cascadia Mono', Consolas, monospace">Bind</span>) in the SDK; the app speaks needs and offers. An all-garden set would call a repo's description a <i>seed</i>, but that adds a word rather than taking one away.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

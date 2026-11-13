@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Option B: picture first</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#181820}
+a{color:#60A5FA}a:hover{color:#93C5FD}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 900px; display: flex; flex-wrap: wrap; background: #181820; color: #E1E1EB; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 13px">
+
+  <nav aria-label="Main" style="flex: 1 0 216px; max-width: 216px; box-sizing: border-box; background: #1F1F2A; border-right: 1px solid #2D2D3C; display: flex; flex-direction: column; gap: 2px; padding: 18px 10px 12px">
+    <div style="display: flex; align-items: baseline; gap: 8px; padding: 0 8px 10px"><span style="font-size: 22px; font-weight: 600; color: #F5F5FA">sprig</span><span style="font-size: 11px; color: #FBBF24">experimental</span></div>
+    <button style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Home</button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0; padding: 14px 10px 4px">DEFINE</div>
+    <button style="display: flex; justify-content: space-between; text-align: left; background: #2D2D3C; border: 0; color: #F5F5FA; font-size: 14px; padding: 8px 10px; border-radius: 8px"><span>Trellises</span><span style="font-size: 11px; color: #A5A5B8">2</span></button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.5px; color: #8C8CA0; padding: 14px 10px 4px">RUN</div>
+    <button style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Sprouts</button>
+    <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.2px; color: #8C8CA0; padding: 6px 12px 2px">STOREFRONT <span style="color: #4ADE80">1 up</span></div>
+    <button style="display: flex; align-items: center; gap: 8px; text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 13px; padding: 4px 14px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ADE80"></span>feat-a</button>
+    <div style="flex-grow: 1"></div>
+    <button style="text-align: left; background: transparent; border: 0; color: #E1E1EB; font-size: 14px; padding: 8px 10px; border-radius: 8px">Settings</button>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 24px 32px; display: flex; flex-direction: column; gap: 14px">
+
+    <!-- The picture needs the width, so the trellis list becomes a switcher -->
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+      <button aria-label="Switch trellis" style="display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 0; padding: 0; color: #F5F5FA; font-size: 24px; font-weight: 600">storefront<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A5A5B8" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+      <span style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; border: 1px solid #5B4A92; background: #2A2340; color: #CFC2FF; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 19c0-8 6-14 14-14 0 8-6 14-14 14z"></path><path d="M5 19l7-7"></path></svg>in sprig</span>
+      <span style="display: inline-flex; align-items: center; gap: 6px; color: #A5A5B8"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span>Ready to start</span>
+      <div style="flex-grow: 1"></div>
+      <span style="color: #A5A5B8; font-size: 12.5px">Worktrees from main · stable ports</span>
+      <button style="background: #2D2D3C; color: #E1E1EB; border: 0; border-radius: 8px; padding: 9px 14px; font-size: 13px">Edit code</button>
+      <button style="background: #60A5FA; color: #0B1220; border: 0; border-radius: 8px; padding: 9px 16px; font-size: 13.5px; font-weight: 600">Start a sprout</button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px" role="group" aria-label="Show a group">
+      <span style="color: #8C8CA0; font-size: 12px; margin-right: 4px">Show</span>
+      <button aria-pressed="true" style="background: #2D2D3C; color: #F5F5FA; border: 1px solid #4A4A5E; border-radius: 999px; padding: 4px 12px; font-size: 12.5px">Everything</button>
+      <button aria-pressed="false" style="background: transparent; color: #CFCFE0; border: 1px solid #2D2D3C; border-radius: 999px; padding: 4px 12px; font-size: 12.5px">group web</button>
+      <button aria-pressed="false" style="background: transparent; color: #CFCFE0; border: 1px solid #2D2D3C; border-radius: 999px; padding: 4px 12px; font-size: 12.5px">group mobile</button>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+
+      <!-- The trellis as a picture: repos, what the trellis adds, and each need as a wire -->
+      <div style="flex: 1 1 760px; min-width: 0; overflow-x: auto; background: #1B1B24; border: 1px solid #2D2D3C; border-radius: 12px">
+        <div style="position: relative; width: 760px; height: 540px">
+          <svg width="760" height="540" viewBox="0 0 760 540" aria-hidden="true" style="position: absolute; left: 0; top: 0">
+            <defs>
+              <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#60A5FA"></path></marker>
+              <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#A78BFA"></path></marker>
+            </defs>
+            <path d="M292 214 C390 214 390 96 486 96" fill="none" stroke="#60A5FA" stroke-width="1.6" marker-end="url(#arr)"></path>
+            <path d="M292 250 C400 250 400 118 486 118" fill="none" stroke="#60A5FA" stroke-width="1.6" marker-end="url(#arr)"></path>
+            <path d="M292 216 C390 216 390 300 486 300" fill="none" stroke="#60A5FA" stroke-width="1.6" marker-end="url(#arr)"></path>
+            <path d="M486 470 C380 470 390 252 296 252" fill="none" stroke="#A78BFA" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrg)"></path>
+          </svg>
+
+          <div style="position: absolute; left: 24px; top: 140px; width: 268px; box-sizing: border-box; background: #1F1F2A; border: 1px solid #3A3A4C; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-size: 14px; font-weight: 600; color: #F5F5FA">shop-services</span>
+              <span style="display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid #4A4A5E; color: #D4D4E0; font-size: 11px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"></path></svg>in repo</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; background: #262633; border-radius: 7px; padding: 6px 9px"><span>catalog-api</span><span style="font-family: 'Cascadia Mono', Consolas, monospace; color: #A5A5B8">:8000</span></div>
+            <div style="display: flex; justify-content: space-between; background: #1E2638; border: 1px solid #60A5FA; border-radius: 7px; padding: 5px 8px"><span style="color: #F5F5FA">orders-api</span><span style="font-family: 'Cascadia Mono', Consolas, monospace; color: #BFDBFE">:8001</span></div>
+            <div style="display: flex; justify-content: space-between; border: 1px dashed #4A4A5E; border-radius: 7px; padding: 5px 8px; color: #A5A5B8"><span>migrate</span><span>job, runs first</span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px; padding-top: 2px">
+              <span style="background: #262633; border-radius: 999px; padding: 2px 8px; font-size: 11.5px; color: #CFCFE0">postgres</span>
+              <span style="background: #262633; border-radius: 999px; padding: 2px 8px; font-size: 11.5px; color: #CFCFE0">redis</span>
+              <span style="background: #262633; border-radius: 999px; padding: 2px 8px; font-size: 11.5px; color: #CFCFE0">rabbitmq</span>
+            </div>
+          </div>
+
+          <div style="position: absolute; left: 490px; top: 56px; width: 240px; box-sizing: border-box; background: #1F1F2A; border: 1px solid #3A3A4C; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-size: 14px; font-weight: 600; color: #F5F5FA">shop-web</span>
+              <span style="display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid #5B4A92; background: #2A2340; color: #CFC2FF; font-size: 11px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 19c0-8 6-14 14-14 0 8-6 14-14 14z"></path><path d="M5 19l7-7"></path></svg>in sprig</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; background: #262633; border-radius: 7px; padding: 6px 9px"><span>web</span><span style="font-family: 'Cascadia Mono', Consolas, monospace; color: #A5A5B8">:5170</span></div>
+          </div>
+
+          <div style="position: absolute; left: 490px; top: 256px; width: 240px; box-sizing: border-box; background: #1F1F2A; border: 1px solid #3A3A4C; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-size: 14px; font-weight: 600; color: #F5F5FA">shop-mobile</span>
+              <span style="display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid #4A4A5E; color: #D4D4E0; font-size: 11px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"></path></svg>in repo</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; background: #262633; border-radius: 7px; padding: 6px 9px"><span>mobile</span><span style="font-family: 'Cascadia Mono', Consolas, monospace; color: #A5A5B8">:8100</span></div>
+          </div>
+
+          <div style="position: absolute; left: 490px; top: 428px; width: 240px; box-sizing: border-box; border: 1.5px dashed #7C6BC4; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px">
+            <div style="font-size: 10px; font-weight: 600; letter-spacing: 1.3px; color: #C4B5FD">ADDED BY THE TRELLIS</div>
+            <div style="display: flex; justify-content: space-between"><span style="font-weight: 600; color: #F5F5FA">mail</span><span style="color: #A5A5B8">Mailpit · :8009</span></div>
+          </div>
+
+          <span style="position: absolute; left: 396px; top: 66px; background: #181820; border: 1px solid #2D2D3C; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-family: 'Cascadia Mono', Consolas, monospace; color: #BFDBFE">catalog-url</span>
+          <span style="position: absolute; left: 400px; top: 128px; background: #181820; border: 1px solid #2D2D3C; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-family: 'Cascadia Mono', Consolas, monospace; color: #BFDBFE">orders-url</span>
+          <span style="position: absolute; left: 396px; top: 304px; background: #181820; border: 1px solid #2D2D3C; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-family: 'Cascadia Mono', Consolas, monospace; color: #BFDBFE">catalog-url</span>
+          <span style="position: absolute; left: 352px; top: 372px; background: #181820; border: 1px solid #4C3F7A; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-family: 'Cascadia Mono', Consolas, monospace; color: #CFC2FF">mail-smtp</span>
+
+          <div style="position: absolute; left: 24px; bottom: 16px; display: flex; gap: 16px; font-size: 11.5px; color: #A5A5B8">
+            <span>Box: a repo</span>
+            <span>Dashed: added by the trellis</span>
+            <span>Arrow: a value one offers and another needs</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Click anything: its values, and where each came from -->
+      <aside aria-label="orders-api" style="flex: 1 1 320px; max-width: 380px; box-sizing: border-box; background: #1F1F2A; border: 1px solid #2D2D3C; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 3px">
+          <span style="font-size: 11px; color: #8C8CA0">shop-services</span>
+          <span style="font-size: 16px; font-weight: 600; color: #F5F5FA">orders-api</span>
+          <span style="color: #A5A5B8; font-size: 12px">.NET · src/Orders.Api · port 8001 in the preview</span>
+        </div>
+        <div style="font-size: 12px; color: #CFCFE0; line-height: 1.45">Starts after <b style="color: #F5F5FA">postgres, rabbitmq, migrate</b> and <b style="color: #F5F5FA">catalog-api</b>.</div>
+        <div style="font-size: 10.5px; font-weight: 600; letter-spacing: 1.4px; color: #8C8CA0">VALUES · TO APPSETTINGS.LOCAL.JSON</div>
+        <div style="display: flex; flex-direction: column; gap: 9px; font-size: 12px">
+          <div><div style="font-family: 'Cascadia Mono', Consolas, monospace">Urls</div><div style="font-family: 'Cascadia Mono', Consolas, monospace; color: #CFCFE0">http://localhost:8001</div><div style="color: #8C8CA0; font-size: 11px">its own port</div></div>
+          <div><div style="font-family: 'Cascadia Mono', Consolas, monospace">ConnectionStrings__Db</div><div style="font-family: 'Cascadia Mono', Consolas, monospace; color: #CFCFE0">Host=localhost;Port=8002;…</div><div style="color: #8C8CA0; font-size: 11px">postgres</div></div>
+          <div><div style="font-family: 'Cascadia Mono', Consolas, monospace">Bus__Url</div><div style="font-family: 'Cascadia Mono', Consolas, monospace; color: #CFCFE0">amqp://shop:***@localhost:8007</div><div style="color: #8C8CA0; font-size: 11px">rabbitmq</div></div>
+          <div><div style="font-family: 'Cascadia Mono', Consolas, monospace">Smtp__Url</div><div style="font-family: 'Cascadia Mono', Consolas, monospace; color: #CFCFE0">smtp://localhost:8009</div><div style="color: #C4B5FD; font-size: 11px">mail-smtp, from mail (the trellis)</div></div>
+          <div><div style="font-family: 'Cascadia Mono', Consolas, monospace">Catalog__Url</div><div style="font-family: 'Cascadia Mono', Consolas, monospace; color: #CFCFE0">http://localhost:8000</div><div style="color: #8C8CA0; font-size: 11px">catalog-api, same repo</div></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

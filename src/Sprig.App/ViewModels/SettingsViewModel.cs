@@ -1,21 +1,15 @@
-using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Sprig.Core.Ports;
-using Sprig.Core.Settings;
-using Sprig.Core.Store;
+using Sprig.Engine.Settings;
 
 namespace Sprig.App.ViewModels;
 
 /// <summary>
-/// The Settings page (pinned to the bottom nav): configure the port-allocation range and restricted
-/// ports, see which ports are currently leased, and check the status of any single port.
+/// The Settings page (pinned to the bottom of the nav): the port-allocation range, restricted ports and the
+/// changelog toggle.
 /// </summary>
 public partial class SettingsViewModel : PageViewModel
 {
@@ -23,7 +17,7 @@ public partial class SettingsViewModel : PageViewModel
 
     public override string Title => "Settings";
 
-    // --- Editable fields (strings so partial/invalid input is handled gracefully on save) ---
+    // Strings, so partial or invalid input is reported on save instead of rejected while typing.
     [ObservableProperty] private string _startText = "";
     [ObservableProperty] private string _endText = "";       // inclusive, for humans
     [ObservableProperty] private string _restrictedText = "";
@@ -31,29 +25,8 @@ public partial class SettingsViewModel : PageViewModel
     [ObservableProperty] private string _saveMessage = "";
     [ObservableProperty] private bool _saveFailed;
 
-    // --- Changelog ---
     [ObservableProperty] private bool _showChangelogOnUpdate;
     bool _loadingSettings;
-
-    // --- Worktree layout ---
-    [ObservableProperty] private bool _useClaudeWorktrees;
-
-    // --- "Ports in use" list ---
-    public ObservableCollection<PortUsageItem> Leases { get; } = new();
-    [ObservableProperty] private bool _hasLeases;
-
-    // --- Single-port checker ---
-    [ObservableProperty] private string _checkText = "";
-    [ObservableProperty] private string _checkResult = "";
-    [ObservableProperty] private bool _hasCheckResult;
-    [ObservableProperty] private bool _checkIsAvailable;
-    [ObservableProperty] private bool _checkIsRestricted;
-    [ObservableProperty] private bool _checkIsInUse;
-    [ObservableProperty] private bool _checkIsOutOfRange;
-
-    // --- Guided-tour sample ---
-    [ObservableProperty] private bool _hasSample;
-    [ObservableProperty] private string _sampleMessage = "";
 
     public SettingsViewModel(AppServices services)
     {
@@ -61,44 +34,7 @@ public partial class SettingsViewModel : PageViewModel
         LoadFromStore();
     }
 
-    protected override void OnActivated()
-    {
-        // Re-sync on entry: leases change as workspaces come and go, and settings may have changed.
-        LoadFromStore();
-        RunCheck();
-        RefreshSample();
-    }
-
-    /// <summary>
-    /// Whether the guided tour left a sample store on disk. Someone who abandoned the tour should be able
-    /// to reclaim that space without re-entering it, so this reports on the demo store from here — the
-    /// third and last place teardown is reachable from (banner, exit, and this).
-    /// </summary>
-    void RefreshSample()
-    {
-        HasSample = Directory.Exists(SprigPaths.DemoRoot);
-        SampleMessage = "";
-    }
-
-    /// <summary>
-    /// Delete the guided tour's sample: its containers, worktrees, branches, store and sample repos. Acts
-    /// on a graph rooted at the demo store, never this page's own (real) one.
-    /// </summary>
-    [RelayCommand]
-    private async Task DeleteSample()
-    {
-        var demo = new AppServices(SprigPaths.DemoRoot, isDemoStore: true);
-        try
-        {
-            await AppServices.RunAsync(demo.Sample.Destroy);
-            SampleMessage = "Sample deleted.";
-        }
-        catch (Exception ex)
-        {
-            SampleMessage = $"Couldn't delete it: {ex.Message}";
-        }
-        HasSample = Directory.Exists(SprigPaths.DemoRoot);
-    }
+    protected override void OnActivated() => LoadFromStore();
 
     void LoadFromStore()
     {
@@ -109,36 +45,16 @@ public partial class SettingsViewModel : PageViewModel
 
         _loadingSettings = true;
         ShowChangelogOnUpdate = s.ShowChangelogOnUpdate;
-        UseClaudeWorktrees = s.WorktreeLayout == WorktreeLayout.Claude;
         _loadingSettings = false;
-
-        RefreshLeases();
     }
 
-    // The changelog toggle persists immediately (it's independent of the port-policy Save button).
+    // Persists immediately; it's independent of the port-policy Save button.
     partial void OnShowChangelogOnUpdateChanged(bool value)
     {
         if (_loadingSettings) return;
         var s = _services.Settings.Get();
         s.ShowChangelogOnUpdate = value;
         _services.Settings.Save(s);
-    }
-
-    // Persists immediately, like the changelog toggle; it only affects workspaces created from now on.
-    partial void OnUseClaudeWorktreesChanged(bool value)
-    {
-        if (_loadingSettings) return;
-        var s = _services.Settings.Get();
-        s.WorktreeLayout = value ? WorktreeLayout.Claude : WorktreeLayout.Sibling;
-        _services.Settings.Save(s);
-    }
-
-    void RefreshLeases()
-    {
-        Leases.Clear();
-        foreach (var lease in _services.Ports.ListLeases())
-            Leases.Add(new PortUsageItem(lease.Port, lease.Workspace, lease.Name));
-        HasLeases = Leases.Count > 0;
     }
 
     [RelayCommand]
@@ -160,7 +76,7 @@ public partial class SettingsViewModel : PageViewModel
             return;
         }
 
-        // Start from what's stored so the settings this form doesn't edit are kept.
+        // Start from what's stored so settings this form doesn't edit are kept.
         var settings = _services.Settings.Get();
         settings.PortRangeStart = start;
         settings.PortRangeEndExclusive = endInclusive + 1;
@@ -176,69 +92,22 @@ public partial class SettingsViewModel : PageViewModel
             return;
         }
 
-        // Re-read so the fields show the normalised (deduped/sorted) values.
+        // Re-read so the fields show the normalised (deduped, sorted) values.
         LoadFromStore();
-        RunCheck();
         SaveFailed = false;
         SaveMessage = $"Saved. New workspaces will use ports {start}–{endInclusive}" +
             (restricted.Count > 0 ? $", skipping {restricted.Count} restricted." : ".");
-        _services.NotifyStoreChanged();
     }
 
     [RelayCommand]
     private void ResetDefaults()
     {
-        StartText = SprigSettings.DefaultRangeStart.ToString(CultureInfo.InvariantCulture);
-        EndText = (SprigSettings.DefaultRangeEndExclusive - 1).ToString(CultureInfo.InvariantCulture);
+        var defaults = _services.Settings.Defaults();
+        StartText = defaults.PortRangeStart.ToString(CultureInfo.InvariantCulture);
+        EndText = (defaults.PortRangeEndExclusive - 1).ToString(CultureInfo.InvariantCulture);
         RestrictedText = "";
-        SaveMessage = "Defaults filled in — click Save to apply.";
+        SaveMessage = "Defaults filled in. Click Save to apply.";
         SaveFailed = false;
-    }
-
-    partial void OnCheckTextChanged(string value) => RunCheck();
-
-    void RunCheck()
-    {
-        ClearCheck();
-        if (string.IsNullOrWhiteSpace(CheckText))
-            return;
-
-        if (!TryParsePort(CheckText, out var port))
-        {
-            HasCheckResult = true;
-            CheckResult = $"“{CheckText}” isn’t a valid port number.";
-            CheckIsOutOfRange = true; // reuse the muted style for “not applicable”
-            return;
-        }
-
-        var report = _services.Ports.Describe(port);
-        HasCheckResult = true;
-        switch (report.Status)
-        {
-            case PortStatus.Available:
-                CheckIsAvailable = true;
-                CheckResult = $"{port} — Available";
-                break;
-            case PortStatus.Restricted:
-                CheckIsRestricted = true;
-                CheckResult = $"{port} — Restricted (sprig will never allocate it)";
-                break;
-            case PortStatus.InUse:
-                CheckIsInUse = true;
-                CheckResult = $"{port} — In use by {report.HeldBy}";
-                break;
-            case PortStatus.OutOfRange:
-                CheckIsOutOfRange = true;
-                CheckResult = $"{port} — Outside sprig’s range";
-                break;
-        }
-    }
-
-    void ClearCheck()
-    {
-        HasCheckResult = false;
-        CheckResult = "";
-        CheckIsAvailable = CheckIsRestricted = CheckIsInUse = CheckIsOutOfRange = false;
     }
 
     void Fail(string message)
@@ -276,11 +145,4 @@ public partial class SettingsViewModel : PageViewModel
         ports = ports.Distinct().OrderBy(p => p).ToList();
         return true;
     }
-}
-
-/// <summary>A row in the "ports in use" list.</summary>
-public sealed record PortUsageItem(int Port, string Workspace, string Name)
-{
-    public string PortText => Port.ToString(CultureInfo.InvariantCulture);
-    public string HeldBy => $"{Workspace} / {Name}";
 }

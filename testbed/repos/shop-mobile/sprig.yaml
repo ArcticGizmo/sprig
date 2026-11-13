@@ -1,0 +1,23 @@
+schema: 1
+repo: shop-mobile
+
+inputs:
+  # shop-services' catalog-api when it runs in place; a workspace or an orchestration can point it elsewhere.
+  catalog-url:
+    type: url
+    default: http://localhost:5100
+
+apps:
+  mobile:
+    run: node
+    command: npm run dev
+    ports: { http: any }
+    # Ready when Vite says so, rather than when its port first opens.
+    ready-log: ready in \d+
+
+files:
+  .env.local:
+    read-by: [mobile]
+    values:
+      PORT: ${mobile.port}
+      VITE_CATALOG_URL: ${inputs.catalog-url}

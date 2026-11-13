@@ -1,0 +1,18 @@
+schema: 1
+orchestration: storefront
+
+repos:
+  shop-services: { path: shop-services }
+  shop-web: { path: shop-web }
+  shop-mobile: { path: shop-mobile }
+
+# One mail catcher per workspace, shared by every repo that sends mail.
+containers:
+  mail: { preset: mailpit }
+
+inputs:
+  mail-smtp: ${mail.smtp-url}
+
+groups:
+  web: [shop-web, shop-services]
+  mobile: [shop-mobile, shop-services/catalog-api]

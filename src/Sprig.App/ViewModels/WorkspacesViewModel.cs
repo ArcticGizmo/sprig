@@ -138,7 +138,7 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
         (State, Detail) = status?.State switch
         {
             null => ("not running", ""),
-            RunnerState.Building => ("building", ""),
+            RunnerState.Building => ("building", status.Doing ?? ""),
             RunnerState.Waiting => ("waiting", "for what it depends on"),
             RunnerState.Starting => ("starting", status.Error ?? ""),
             RunnerState.Ready => ("ready", restarts ?? ""),

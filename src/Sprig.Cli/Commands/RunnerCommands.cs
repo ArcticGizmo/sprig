@@ -108,9 +108,9 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     {
         var (colour, text) = r.State switch
         {
-            RunnerState.Building => ("blue", "building"),
+            RunnerState.Building => ("blue", r.Doing is { } doing ? $"building · {doing}" : "building"),
             RunnerState.Waiting => ("blue", "waiting for what it depends on"),
-            RunnerState.Starting => ("blue", "starting"),
+            RunnerState.Starting => ("blue", r.Error is { } why ? $"starting · {why}" : "starting"),
             RunnerState.Running => ("blue", "running"),
             RunnerState.Completed => ("green", "finished"),
             RunnerState.Ready => ("green", r.Port is { } p ? $"ready on http://localhost:{p}" : "running"),
@@ -219,6 +219,8 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
     {
         RunnerState.Ready => "[green]ready[/]",
         RunnerState.Completed => "[green]finished[/]",
+        RunnerState.Building when r.Doing is { } doing => $"building [dim]{Markup.Escape(doing)}[/]",
+        RunnerState.Starting when r.Error is { } why => $"starting [yellow]{Markup.Escape(why)}[/]",
         RunnerState.Stopped when r.Error is { } note => $"stopped [yellow]{Markup.Escape(note)}[/]",
         RunnerState.Restarting => $"[yellow]restarting[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
         RunnerState.Exited or RunnerState.Failed => $"[red]{r.State.ToString().ToLowerInvariant()}[/] [dim]{Markup.Escape(r.Error ?? $"code {r.Exit}")}[/]",

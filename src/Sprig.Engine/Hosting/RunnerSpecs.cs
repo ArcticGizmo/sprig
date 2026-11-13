@@ -132,7 +132,8 @@ public static class RunnerSpecs
         var restart = app.Restart is { } r ? new RestartSpec(r.Policy == "always", r.Max) : null;
 
         return new RunnerSpec(record.Key, app.Key, command, dir, build, build is null ? null : buildKey, port,
-            app.DependsOn ?? [], app.Job, health.Length > 0 ? health : null, app.ReadyLog, restart);
+            app.DependsOn ?? [], app.Job, health.Length > 0 ? health : null, app.ReadyLog, restart,
+            BuildDoing: node is not null && build is not null ? "installing packages" : null);
     }
 
     /// <summary>A command line as the user would type it, through the platform's shell (npm and friends are scripts).</summary>

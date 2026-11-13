@@ -20,6 +20,8 @@ namespace Sprig.Engine.Hosting;
 /// <param name="HealthUrls">Each must answer with a success status before the app is ready.</param>
 /// <param name="ReadyLog">A regular expression a line of the app's output must match before it's ready.</param>
 /// <param name="Restart">Null to leave it exited when it exits on its own.</param>
+/// <param name="BuildDoing">What <see cref="Build"/> does, in words, when it isn't plain building (see
+/// <see cref="RunnerStatus.Doing"/>).</param>
 public sealed record RunnerSpec(
     string Workspace,
     string Name,
@@ -32,7 +34,8 @@ public sealed record RunnerSpec(
     bool Job = false,
     IReadOnlyList<string>? HealthUrls = null,
     string? ReadyLog = null,
-    RestartSpec? Restart = null);
+    RestartSpec? Restart = null,
+    string? BuildDoing = null);
 
 /// <param name="Always">Restart after any exit, not only a non-zero one. Ignored for a job, which is done once it
 /// succeeds.</param>
@@ -74,8 +77,9 @@ public static class RunnerStates
 
 /// <param name="Exit">The exit code once it has ended.</param>
 /// <param name="Restarts">How many times it has been started again since it was asked to start.</param>
+/// <param name="Doing">What it's busy with while it builds, when that isn't plain building (<c>installing packages</c>).</param>
 public sealed record RunnerStatus(string Workspace, string Name, RunnerState State, int? Pid, int? Port, int? Exit, string LogFile,
-    DateTimeOffset Since, string? Error = null, int Restarts = 0);
+    DateTimeOffset Since, string? Error = null, int Restarts = 0, string? Doing = null);
 
 /// <summary>One request to the host, one JSON line each way.</summary>
 /// <param name="Specs">For <c>start</c>: the runners to have going.</param>

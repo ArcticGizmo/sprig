@@ -188,10 +188,12 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 if (spec.Build is { } build)
                 {
                     Write($"sprig: building with {build}");
+                    if (spec.BuildDoing is { } doing) lock (_gate) Status = Status with { Doing = doing };
                     if (buildLock is not null) await buildLock.WaitAsync();
                     int code;
                     try { code = await RunToEndAsync(build); }
                     finally { buildLock?.Release(); }
+                    lock (_gate) Status = Status with { Doing = null };
                     if (Stopping) return;
                     if (code != 0)
                     {
@@ -597,6 +599,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 Status = Status with
                 {
                     State = state, Pid = pid ?? Status.Pid, Exit = exit, Error = error, Since = DateTimeOffset.UtcNow, Restarts = _restarts,
+                    Doing = state == RunnerState.Building ? Status.Doing : null,
                 };
             }
         }

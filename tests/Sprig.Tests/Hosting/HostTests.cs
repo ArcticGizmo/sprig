@@ -482,6 +482,7 @@ public class RunnerSpecsTests
         var frontend = Path.GetFullPath(Path.Combine(dir, "frontend"));
         Assert.EndsWith("pnpm run dev", Spec("web").Command.ToString());
         Assert.EndsWith("pnpm install --frozen-lockfile --ignore-scripts", Spec("web").Build!.ToString());
+        Assert.Equal("installing packages", Spec("web").BuildDoing);
         Assert.Equal(frontend, Spec("web").BuildKey);
         Assert.Equal(frontend, Spec("admin").BuildKey);
         // An app with an npm lockfile of its own keeps npm, and one that only names pnpm installs without a lockfile.
@@ -494,6 +495,7 @@ public class RunnerSpecsTests
         File.SetLastWriteTimeUtc(Path.Combine(dir, "frontend/pnpm-lock.yaml"), DateTime.UtcNow.AddMinutes(-5));
         Assert.Null(Spec("web").Build);
         Assert.Null(Spec("web").BuildKey);
+        Assert.Null(Spec("web").BuildDoing);
 
         File.SetLastWriteTimeUtc(Path.Combine(dir, "frontend/pnpm-lock.yaml"), DateTime.UtcNow.AddMinutes(5));
         Assert.NotNull(Spec("admin").Build);

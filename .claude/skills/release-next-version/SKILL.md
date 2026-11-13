@@ -1,6 +1,6 @@
 ---
 name: release-next-version
-description: Ship the current branch as the next Sprig release. Runs the test suite locally (sprig has no PR CI), opens (or reuses) a PR for the current branch, stops and reports a FAIL if the tests fail, otherwise squash-merges it, deletes the remote branch, then tags the new main head with the csproj version (vX.Y.Z) and pushes the tag, which kicks off the Release workflow — and watches that workflow until the GitHub Release is published or the build fails. Use when the user says "release next version", "release this", "/release-next-version", or wants to merge the current branch and cut the tagged release.
+description: Ship the current branch as the next Sprig release. Runs the test suite locally, opens (or reuses) a PR for the current branch and waits for its checks (the Tests workflow), stops and reports a FAIL if either fails, otherwise squash-merges it, deletes the remote branch, then tags the new main head with the csproj version (vX.Y.Z) and pushes the tag, which kicks off the Release workflow — and watches that workflow until the GitHub Release is published or the build fails. Use when the user says "release next version", "release this", "/release-next-version", or wants to merge the current branch and cut the tagged release.
 ---
 
 # Release Next Version
@@ -13,7 +13,7 @@ Invoking this skill is the user's go-ahead for the outward-facing steps (pushing
 
 - Repo is `ArcticGizmo/sprig`; **squash-merge only** (merge commits and rebase are disabled). `main` is not branch-protected, and the repo does **not** auto-delete head branches on merge — so step 4 deletes the remote branch explicitly.
 - Tags are **lightweight**, `vMAJOR.MINOR.PATCH`, and must match `<Version>` in `src/Sprig.App/Sprig.App.csproj` (the release build takes its version from the tag).
-- There is **no PR CI** — `publish.yml` is the only workflow, so PRs report no checks. The gate is therefore the local `dotnet test` run in step 2. If a `pull_request` workflow is ever added, wait for its checks too (see step 3).
+- PRs run **`tests.yml`** (the whole `dotnet test` suite on `windows-latest`, roughly 10 minutes) and, when they touch the site, the changelog, the format doc or the schema, **`pages.yml`** (builds the docs site). Both are gates: wait for them in step 3. The local `dotnet test` run in step 2 still comes first, so a broken branch is caught before anything is pushed.
 - The Release workflow (`publish.yml`) is a **single** `release` job on `windows-latest`: publish both exes → `vpk pack` → generate and verify `SHA256SUMS.txt` → create the GitHub Release. A failure at any step means no Release is published at all. A tag-triggered run's `headBranch` is the tag name (e.g. `v0.7.1`). A healthy run takes roughly 2–5 minutes.
 - PR titles carry the version in parentheses, e.g. `Install the sprig cd shell shims (v0.7.1)`.
 - Use the Bash tool (Git Bash) for the snippets below.
@@ -45,7 +45,7 @@ Stop and report (don't try to fix it yourself) if any of these hold:
 
 ### 2. Run the tests locally
 
-With no PR CI, this is the only automated gate before merge. Run it with the Bash tool's `run_in_background: true` and a timeout of about 15 minutes (`900000` ms), then wait for the completion notification — don't poll:
+This catches a broken branch before anything is pushed; the PR's Tests check then runs the same suite on a clean runner. Run it with the Bash tool's `run_in_background: true` and a timeout of about 15 minutes (`900000` ms), then wait for the completion notification — don't poll:
 
 ```bash
 dotnet test sprig.slnx 2>&1 | tail -40
@@ -76,13 +76,13 @@ gh pr create --base main --head "$BRANCH" --title "<title>" --body-file <file>
 
 Record the PR number and URL.
 
-Then make sure no checks have appeared since the repo facts were written (a newly added workflow, a GitHub App):
+Then wait for the PR's checks. They can take a few seconds to register:
 
 ```bash
 sleep 10; gh pr checks "$PR" 2>&1
 ```
 
-If it says `no checks reported`, carry on — that's the expected case. If checks are listed, wait for them as perch does: `gh pr checks "$PR" --watch --fail-fast --interval 30` in the background (45-minute timeout), and on a non-zero exit stop with **`RELEASE FAILED — checks did not pass`**, the failing check, and `gh run view <id> --log-failed | tail -80`. Leave the PR open.
+Expect `Tests` (and `build` from Pages when the branch touches the site, changelog, format doc or schema). If it says `no checks reported`, the workflows didn't trigger — stop and say so rather than merging unchecked. Otherwise wait for them: `gh pr checks "$PR" --watch --fail-fast --interval 30` in the background (45-minute timeout), and on a non-zero exit stop with **`RELEASE FAILED — checks did not pass`**, the failing check, and `gh run view <id> --log-failed | tail -80`. Leave the PR open.
 
 ### 4. Squash-merge and delete the remote branch
 

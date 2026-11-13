@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [v1.0.0] - 2026-11-13
+## [v0.9.0] - 2026-11-13
 
 A rebuild. Maps, pools and stacks are out; repos describe themselves, and sprig runs them. Nothing from 0.8 is migrated, so delete the old app's folders under `%LOCALAPPDATA%\sprig` when you're ready.
 

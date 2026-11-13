@@ -28,9 +28,19 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     readonly ConcurrentDictionary<string, TaskCompletionSource> _holds = new();
     readonly Lock _startGate = new();
 
+    /// <summary>Often enough to follow a build or a spike, seldom enough that measuring costs next to nothing.</summary>
+    public static readonly TimeSpan SampleEvery = TimeSpan.FromSeconds(2);
+
     public bool AnyAlive => _runners.Values.Any(r => r.Status.State.IsAlive() || r.Status.State == RunnerState.Stopping);
 
     public IReadOnlyList<RunnerStatus> List() => _runners.Values.Select(r => r.Status).OrderBy(s => s.Workspace).ThenBy(s => s.Name).ToArray();
+
+    /// <summary>Measure what each runner's processes use, into its status. CPU is measured between one call and the
+    /// next, so this is called on a steady beat (<see cref="SampleEvery"/>) rather than when someone asks.</summary>
+    public void Sample()
+    {
+        foreach (var runner in _runners.Values) runner.Sample();
+    }
 
     /// <summary>
     /// Have <paramref name="specs"/> going. A runner named in <paramref name="restart"/> starts afresh; any other starts
@@ -171,6 +181,43 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         public RunnerStatus Status { get; private set; } = new(spec.Workspace, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
 
         bool Stopping => _stopping is not null;
+
+        // The CPU time at the last sample and when it was taken, for measuring the next one against.
+        (TimeSpan Cpu, long At)? _lastSample;
+
+        public void Sample()
+        {
+            ResourceUsage? usage = null;
+            try
+            {
+                if (Status.State.IsAlive() || Status.State == RunnerState.Stopping) usage = Measure();
+            }
+            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or ObjectDisposedException)
+            {
+                // Gone between looking and measuring; the next sample starts afresh.
+            }
+            if (usage is null) _lastSample = null;
+            lock (_gate) Status = Status with { Usage = usage };
+        }
+
+        ResourceUsage? Measure()
+        {
+            var now = Stopwatch.GetTimestamp();
+            if ((_job.Usage() ?? RootUsage()) is not { Processes: > 0 } taken) return null;
+            double? cpu = null;
+            if (_lastSample is { } last && Stopwatch.GetElapsedTime(last.At, now) is { Ticks: > 0 } wall)
+                cpu = Math.Clamp((taken.Cpu - last.Cpu) / wall / Environment.ProcessorCount * 100, 0, 100);
+            _lastSample = (taken.Cpu, now);
+            return new ResourceUsage(cpu, taken.Memory, taken.Processes);
+        }
+
+        /// <summary>Where there's no job to ask, the process sprig started, without the children it may have.</summary>
+        (TimeSpan Cpu, long Memory, int Processes)? RootUsage()
+        {
+            if (_process is not { HasExited: false } process) return null;
+            process.Refresh();
+            return (process.TotalProcessorTime, process.WorkingSet64, 1);
+        }
 
         public async Task RunAsync()
         {
@@ -607,6 +654,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                 {
                     State = state, Pid = pid ?? Status.Pid, Exit = exit, Error = error, Since = DateTimeOffset.UtcNow, Restarts = _restarts,
                     Doing = state == RunnerState.Building ? Status.Doing : null,
+                    Usage = state.IsAlive() || state == RunnerState.Stopping ? Status.Usage : null,
                 };
             }
         }

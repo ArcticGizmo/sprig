@@ -31,7 +31,7 @@ public partial class WorkspacesView : UserControl
         InitializeComponent();
         _poll.Tick += (_, _) =>
         {
-            if (_vm is { IsActive: true }) _ = _vm.PollAsync();
+            if (_vm is { IsActive: true }) _ = _vm.PollAsync(usage: TopLevel.GetTopLevel(this) is Window { IsVisible: true, WindowState: not WindowState.Minimized });
         };
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
         LogList.TemplateApplied += (_, _) => HookLogScroller();

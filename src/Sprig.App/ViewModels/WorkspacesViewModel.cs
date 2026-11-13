@@ -120,6 +120,15 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
 
     [ObservableProperty] private int _restarts;
 
+    /// <summary>What its processes use now, from the host; null when nothing of it is running.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUsage), nameof(UsageText), nameof(UsageLine))]
+    private ResourceUsage? _usage;
+
+    public bool HasUsage => Usage is not null;
+    public string UsageText => Usage?.Text ?? "";
+    public string UsageLine => Usage?.Line ?? "—";
+
     /// <summary>Its log is the one showing.</summary>
     [ObservableProperty] private bool _isSelected;
 
@@ -174,11 +183,25 @@ public sealed partial class WorkspaceAppRow(string key, string name, string fold
         IsWaiting = status?.State == RunnerState.Waiting;
         IsAlive = status is not null && (status.State.IsAlive() || status.State == RunnerState.Stopping);
         Restarts = status?.Restarts ?? 0;
+        Usage = status?.Usage;
         if (port.Length == 0 && !job && status?.Port is { } said) HeardPort = said;
     }
 }
 
-public sealed record WorkspaceInfraRow(string Name, string Ports);
+/// <summary>One container or compose service of the selected workspace, with what it uses while it runs.</summary>
+/// <param name="key"><c>owner/name</c>, as the plan names it.</param>
+public sealed partial class WorkspaceInfraRow(string key, string name, string ports) : ObservableObject
+{
+    public string Key => key;
+    public string Name => name;
+    public string Ports => ports;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UsageText))]
+    private ResourceUsage? _usage;
+
+    public string UsageText => Usage?.Text ?? "";
+}
 
 /// <summary>What Start starts, like a launch profile: every app (<see cref="Group"/> null) or one group.</summary>
 /// <param name="Apps">What it starts, in words.</param>
@@ -399,6 +422,7 @@ public partial class WorkspacesViewModel : PageViewModel
         _services = services;
         Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
         _services.HostStatus.Changed += ApplyRunners;
+        _services.InfraUsage.Changed += OnInfraUsage;
         OrchestrationNames.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOrchestrations));
         _lastRunners = _services.HostStatus.Runners;
         Logs.ShowTimes = _services.Ui.LogTimes;
@@ -565,10 +589,12 @@ public partial class WorkspacesViewModel : PageViewModel
         // Main's infra is the user's own, so what matters is where sprig expects it, not what sprig maps.
         string Own(string owner, string name) => plan.Ports.Where(p => p.Owner == owner && p.Resource == name).Select(p => p.Port).OfType<int>().ToArray() is { Length: > 0 } ports
             ? $"yours, on {string.Join(", ", ports)}" : "yours";
-        Infra = plan.Containers.Select(c => new WorkspaceInfraRow($"{c.Owner} / {c.Name}", record.IsMain ? Own(c.Owner, c.Name) : string.Join(", ", c.Ports)))
-            .Concat(plan.Compose.SelectMany(c => c.Services.Select(s => new WorkspaceInfraRow($"{c.Owner} / {s.Name}",
+        Infra = plan.Containers.Select(c => new WorkspaceInfraRow($"{c.Owner}/{c.Name}", $"{c.Owner} / {c.Name}",
+                record.IsMain ? Own(c.Owner, c.Name) : string.Join(", ", c.Ports)))
+            .Concat(plan.Compose.SelectMany(c => c.Services.Select(s => new WorkspaceInfraRow($"{c.Owner}/{s.Name}", $"{c.Owner} / {s.Name}",
                 record.IsMain ? Own(c.Owner, s.Name) : string.Join(", ", s.Mappings)))))
             .ToArray();
+        ApplyInfraUsage();
 
         Warnings = PlanView.Rows(plan.Problems.Where(p => p.Severity == ProblemSeverity.Warning), Path.GetDirectoryName(record.OrchestrationPath)!).ToArray();
     }
@@ -621,9 +647,12 @@ public partial class WorkspacesViewModel : PageViewModel
 
     /// <summary>Read the logs, and every few seconds the containers' states while the graph or a container's log shows.
     /// The view calls this every second while the page shows; the app-wide <see cref="HostStatus"/> poll brings the
-    /// apps' states.</summary>
-    public async Task PollAsync()
+    /// apps' states and what they use.</summary>
+    /// <param name="usage">Ask docker what the containers use, on its own slower beat; not while the window is hidden.</param>
+    public async Task PollAsync(bool usage = true)
     {
+        // Not awaited: docker takes a second or two to measure, and the logs shouldn't wait for it.
+        if (usage) _ = _services.InfraUsage.PollAsync(Workspaces.Select(w => w.Record));
         if (_polling || Selected is null) return;
         _polling = true;
         try

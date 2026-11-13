@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Sprig.App.ViewModels;
+using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 
 namespace Sprig.App.Controls;
@@ -255,6 +256,7 @@ public sealed class WorkspaceGraphCanvas : Control
     // Tags shrink with the picture, unlike names: a row of them is as wide as the layout made room for, and a floor on
     // their size would push them into their neighbours' when zoomed out.
     double TagSize => 10 * _scale;
+    double GroupTitleSize => Math.Max(8.5, 11 * _scale);
 
     /// <summary>How far below a node's centre its label ends: its circle, name, state line and tags.</summary>
     double LabelBottom(GraphNode node)
@@ -267,7 +269,7 @@ public sealed class WorkspaceGraphCanvas : Control
             var box = new Rect(ToScreen(b.Left, b.Top), ToScreen(b.Right, b.Bottom));
             context.DrawRectangle(GroupFill, new Pen(GroupLine, 1), box, 14, 14);
             // Scaled with the picture, so it stays in the room above the box's top row of nodes, but never too small to read.
-            var title = new FormattedText(group, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, SansBold, Math.Max(8.5, 11 * _scale), Dim)
+            var title = new FormattedText(group, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, SansBold, GroupTitleSize, Dim)
             {
                 MaxTextWidth = Math.Max(10, box.Width - 20 * _scale),
                 MaxLineCount = 1,
@@ -406,6 +408,7 @@ public sealed class WorkspaceGraphCanvas : Control
             context.DrawEllipse(hovered ? NodeFillHover : NodeFill, ring, at, r, r);
         }
         DrawIcon(context, node, at, r);
+        DrawUsage(context, node, at, r);
 
         var size = NameSize;
         var name = new FormattedText(node.Name, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, SansBold, size, Text);
@@ -415,6 +418,28 @@ public sealed class WorkspaceGraphCanvas : Control
             node.Health is NodeHealth.Off or NodeHealth.Unknown ? Dim : state);
         context.DrawText(sub, new Point(at.X - sub.Width / 2, at.Y + r + 6 + name.Height));
         if (node.Tags.Count > 0) DrawTags(context, node, new Point(at.X, at.Y + r + 10 + name.Height + sub.Height));
+    }
+
+    /// <summary>
+    /// CPU over memory just above the node, clear of its selection ring, in the room the layout keeps under a box's title
+    /// (<see cref="LayoutBox.Above"/>). Stacked, since on one line it's wider than the gap between nodes in a row. Like
+    /// the names it never gets too small to read, so zoomed out, where two lines would reach the title, only memory
+    /// shows: with many workspaces up, that's what runs out first.
+    /// </summary>
+    void DrawUsage(DrawingContext context, GraphNode node, Point at, double r)
+    {
+        if (node.Usage is not { } usage) return;
+        var size = Math.Max(7, 10 * _scale);
+        var memory = new FormattedText(ResourceUsage.MemoryText(usage.Memory), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Mono, size, Dim);
+        var gap = Math.Max(3, 6 * _scale);
+        var bottom = at.Y - r - gap;
+        context.DrawText(memory, new Point(at.X - memory.Width / 2, bottom - memory.Height));
+
+        var cpu = new FormattedText(ResourceUsage.CpuText(usage.Cpu), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Mono, size, Text);
+        var lead = size * 0.15;
+        var titleBand = 6 * _scale + GroupTitleSize * 1.3;
+        if (r + gap + memory.Height + cpu.Height - lead > LayoutBox.Above * _scale - titleBand) return;
+        context.DrawText(cpu, new Point(at.X - cpu.Width / 2, bottom - memory.Height - cpu.Height + lead));
     }
 
     /// <summary>The infra and outside values a node uses, as a row of tags centred under it, each with its state's dot;

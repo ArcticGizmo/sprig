@@ -61,6 +61,32 @@ public class WorkspacesOverviewTests
     }
 
     [Fact]
+    public void A_workspace_s_usage_adds_its_apps_to_its_containers_and_the_summary_adds_up_every_workspace()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out var services);
+        const long mb = 1024 * 1024;
+        var featA = vm.OverviewRows.Single(r => r.Record.Name == "feat-a");
+        Assert.Equal("", featA.Usage);
+        Assert.Null(featA.UsageTip);
+
+        services.HostStatus.Apply([
+            new RunnerStatus("storefront/feat-a", "shop/api", RunnerState.Ready, 1, 8000, null, "a.log", Now, Usage: new ResourceUsage(2.5, 300 * mb, 1)),
+            new RunnerStatus("storefront/feat-a", "shop/web", RunnerState.Ready, 2, 5170, null, "w.log", Now, Usage: new ResourceUsage(1.5, 200 * mb, 3)),
+            new RunnerStatus("services/local", "core/api", RunnerState.Ready, 3, 9000, null, "c.log", Now, Usage: new ResourceUsage(10, 1024 * mb, 1)),
+        ]);
+        services.InfraUsage.Hold(new Dictionary<(string, string), ResourceUsage>
+        {
+            [(WorkspaceService.InfraProjects(featA.Record)[0], "postgres")] = new(1, 500 * mb, 9),
+            [("someone-elses-project", "db")] = new(50, 4096 * mb, 9),
+        });
+
+        Assert.Equal("5.0% · 1000 MB", featA.Usage);
+        Assert.Equal("Apps: 4.0% CPU · 500 MB · 4 processes\nInfra: 1.0% CPU · 500 MB · 9 processes", featA.UsageTip);
+        Assert.Equal("6 workspaces of 3 orchestrations · 2 up · 1 failed · 3 down · using 15% CPU, 2.0 GB", vm.OverviewSummary);
+    }
+
+    [Fact]
     public void A_ticked_main_is_never_counted_for_removing_or_freeing_and_the_dialog_says_it_stays()
     {
         using var temp = new TempStore();

@@ -205,13 +205,19 @@ public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
             cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start [[id]] [[workspace]][/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "Since");
+        var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "CPU", "Memory", "Since");
+        table.Columns[5].RightAligned();
+        table.Columns[6].RightAligned();
         // Runners are keyed "storefront/2"; people know the slot by its folder and branch.
         var records = cli.Workspaces.List().ToDictionary(w => w.Key);
         foreach (var r in runners)
             table.AddRow(Markup.Escape(records.TryGetValue(r.Workspace, out var w) ? $"{w.SlotName} ({w.Label})" : r.Workspace), Markup.Escape(r.Name), State(r),
-                r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "", r.Since.LocalDateTime.ToString("T"));
+                r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "",
+                r.Usage is { } u ? ResourceUsage.CpuText(u.Cpu) : "", r.Usage is { } m ? ResourceUsage.MemoryText(m.Memory) : "",
+                r.Since.LocalDateTime.ToString("T"));
         cli.Ansi.Write(table);
+        if (ResourceUsage.Sum(runners.Select(r => r.Usage)) is { } total)
+            cli.Ansi.MarkupLine($"[dim]All apps: {Markup.Escape(total.Text)} (CPU as a share of the whole machine; docker stats has the infra's)[/]");
         return 0;
     }
 

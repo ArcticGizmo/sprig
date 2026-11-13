@@ -12,6 +12,8 @@ namespace Sprig.Engine.Hosting;
 public sealed class JobObject : IDisposable
 {
     readonly IntPtr _handle;
+    readonly Lock _gate = new();
+    bool _disposed;
 
     public JobObject()
     {
@@ -53,6 +55,41 @@ public sealed class JobObject : IDisposable
         }
     }
 
+    /// <summary>
+    /// CPU time used by every process that has ever been in the job (so a child that exits doesn't make the total drop),
+    /// and the working set of those in it now. Null when it can't tell (not Windows).
+    /// </summary>
+    public (TimeSpan Cpu, long Memory, int Processes)? Usage()
+    {
+        // Measured from another thread than the one that disposes, and a closed handle's number can be handed out again.
+        lock (_gate)
+        {
+            if (_handle == IntPtr.Zero || _disposed) return null;
+            if (!QueryInformationJobObject(_handle, BasicAccountingInformationClass, out var accounting, (uint)Marshal.SizeOf<BasicAccountingInformation>(), IntPtr.Zero))
+                return null;
+            var ids = ProcessIds();
+            long memory = 0;
+            foreach (var id in ids) memory += WorkingSetOf(id);
+            return (TimeSpan.FromTicks(accounting.TotalUserTime + accounting.TotalKernelTime), memory, ids.Count);
+        }
+    }
+
+    /// <summary>Zero for one that has gone, or that can't be looked at.</summary>
+    static long WorkingSetOf(int id)
+    {
+        var process = OpenProcess(QueryLimitedInformation, false, (uint)id);
+        if (process == IntPtr.Zero) return 0;
+        try
+        {
+            var counters = new MemoryCounters { Size = (uint)Marshal.SizeOf<MemoryCounters>() };
+            return GetProcessMemoryInfo(process, ref counters, counters.Size) ? (long)counters.WorkingSetSize : 0;
+        }
+        finally
+        {
+            CloseHandle(process);
+        }
+    }
+
     /// <summary>End every process in the job.</summary>
     public void Terminate(Process? fallback)
     {
@@ -62,12 +99,48 @@ public sealed class JobObject : IDisposable
 
     public void Dispose()
     {
-        if (_handle != IntPtr.Zero) CloseHandle(_handle);
+        lock (_gate)
+        {
+            if (_handle == IntPtr.Zero || _disposed) return;
+            _disposed = true;
+            CloseHandle(_handle);
+        }
     }
 
     const int ExtendedLimitInformationClass = 9;
+    const int BasicAccountingInformationClass = 1;
     const int BasicProcessIdListClass = 3;
     const uint KillOnJobClose = 0x2000;
+    const uint QueryLimitedInformation = 0x1000;
+
+    /// <summary>Times are in 100 ns ticks, the same unit as <see cref="TimeSpan"/>'s.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    struct BasicAccountingInformation
+    {
+        public long TotalUserTime;
+        public long TotalKernelTime;
+        public long ThisPeriodTotalUserTime;
+        public long ThisPeriodTotalKernelTime;
+        public uint TotalPageFaultCount;
+        public uint TotalProcesses;
+        public uint ActiveProcesses;
+        public uint TotalTerminatedProcesses;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct MemoryCounters
+    {
+        public uint Size;
+        public uint PageFaultCount;
+        public UIntPtr PeakWorkingSetSize;
+        public UIntPtr WorkingSetSize;
+        public UIntPtr QuotaPeakPagedPoolUsage;
+        public UIntPtr QuotaPagedPoolUsage;
+        public UIntPtr QuotaPeakNonPagedPoolUsage;
+        public UIntPtr QuotaNonPagedPoolUsage;
+        public UIntPtr PagefileUsage;
+        public UIntPtr PeakPagefileUsage;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     struct BasicLimitInformation
@@ -111,6 +184,15 @@ public sealed class JobObject : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool QueryInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length, IntPtr returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool QueryInformationJobObject(IntPtr job, int infoClass, out BasicAccountingInformation info, uint length, IntPtr returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
+
+    [DllImport("kernel32.dll", EntryPoint = "K32GetProcessMemoryInfo", SetLastError = true)]
+    static extern bool GetProcessMemoryInfo(IntPtr process, ref MemoryCounters counters, uint size);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool TerminateJobObject(IntPtr job, uint exitCode);

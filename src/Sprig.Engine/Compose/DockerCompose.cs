@@ -101,6 +101,10 @@ public sealed class DockerCompose(IProcessRunner runner)
     /// <summary>Stop one service's container, keeping it (and its data) for <see cref="Start"/>.</summary>
     public void Stop(ComposeProject project, string service) => Compose(project, ["stop", service], null, default).EnsureSuccess();
 
+    /// <summary>What each running container of <paramref name="projects"/> uses (see <see cref="ContainerUsage"/>).</summary>
+    public IReadOnlyDictionary<(string Project, string Service), Hosting.ResourceUsage> Usage(IReadOnlySet<string>? projects = null)
+        => ContainerUsage.Read(runner, projects);
+
     /// <summary>How many of the project's containers are running.</summary>
     public int Running(string projectName)
     {

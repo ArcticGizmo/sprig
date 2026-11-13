@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **CPU and memory for every app and container** — under each app's port, in its details, on the Infra tab and over every node in the graph. An app counts every process it starts, its build included.
+- **A CPU · MEMORY column on the Workspaces overview** — each workspace's apps and containers together, so the worktree hogging the machine owns up. The summary adds up the lot.
+- **CPU and Memory in `sprig ps`** — with a total for all apps underneath.
+
 ---
 
 ## [v0.9.1] - 2026-11-13

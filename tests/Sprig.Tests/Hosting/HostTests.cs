@@ -179,6 +179,22 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
+    public void A_running_app_says_what_its_processes_use_and_a_stopped_one_says_nothing()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/api", Wait(30))]));
+
+        // CPU needs two samples to measure between, so memory comes first.
+        var measured = Await("shop/api", r => r.Usage is { Cpu: not null });
+
+        Assert.True(measured.Usage!.Memory > 0);
+        Assert.InRange(measured.Usage.Cpu!.Value, 0, 100);
+        // cmd and the ping it waits on: the job counts children, not just what sprig started.
+        if (OperatingSystem.IsWindows()) Assert.True(measured.Usage.Processes >= 2, $"{measured.Usage.Processes} processes");
+        var stopped = Assert.Single(_client.StopAndWait("storefront/feat-x", "shop/api"));
+        Assert.Null(stopped.Usage);
+    }
+
+    [Fact]
     public void An_idle_host_is_ended_on_request_but_one_running_apps_is_left_alone()
     {
         _client.Send(new HostRequest("start", [Spec("shop/api", Wait(30))]));

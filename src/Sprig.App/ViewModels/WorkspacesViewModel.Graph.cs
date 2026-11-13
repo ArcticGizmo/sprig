@@ -102,6 +102,7 @@ public partial class WorkspacesViewModel
             _lastInfraPoll = DateTime.MinValue;
         }
         else if (_lastInfra is { } states) ApplyInfraStates(states);
+        ApplyInfraUsage();
         GraphPicked = null;
         if (graph.Find(picked) is { } again) graph.Select(again.Key);
     }
@@ -186,6 +187,26 @@ public partial class WorkspacesViewModel
         }
         if (InfraLogOpen && states?.GetValueOrDefault(Logs.Key) is { State: "running" or "restarting" }) _followers[Logs.Key].EnsureRunning();
         OnPropertyChanged(nameof(LogSub));
+    }
+
+    void OnInfraUsage()
+    {
+        ApplyInfraUsage();
+        if (Selected is null) CountOverviewApps();
+    }
+
+    /// <summary>Show what docker last said each of the selected workspace's containers uses, on the Infra tab and in the
+    /// graph's details.</summary>
+    void ApplyInfraUsage()
+    {
+        var usage = _services.InfraUsage.Usage;
+        ResourceUsage? Of(string key) => _targets.FirstOrDefault(t => t.Key == key) is { } t && usage.TryGetValue((t.Project.Name, t.Service), out var u) ? u : null;
+        foreach (var row in Infra) row.Usage = Of(row.Key);
+        if (Graph is { } graph)
+        {
+            foreach (var node in graph.Nodes.Where(n => n.IsInfra)) node.InfraUsage = Of(node.Key);
+            graph.Invalidate();
+        }
     }
 
     internal void ApplyOwnInfra(IReadOnlyList<OwnInfra> infra)
@@ -380,6 +401,7 @@ public partial class WorkspacesViewModel
         {
             SayApps($"{node.Name} didn't {(restart ? "restart" : "start")}: {WorkspacesViewModel.Headline(e.Message)}", bad: true);
         }
+        _services.InfraUsage.Soon();
         await PollInfraAsync(now: true);
     }
 
@@ -404,6 +426,7 @@ public partial class WorkspacesViewModel
         {
             SayApps($"{node.Name} didn't stop: {WorkspacesViewModel.Headline(e.Message)}", bad: true);
         }
+        _services.InfraUsage.Soon();
         await PollInfraAsync(now: true);
     }
 }

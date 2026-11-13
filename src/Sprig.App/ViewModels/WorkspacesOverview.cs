@@ -27,6 +27,17 @@ public sealed partial class OverviewRow(WorkspaceRecord record, Action checkedCh
     public bool IsDown => record.State == WorkspaceState.Down;
 
     [ObservableProperty] private string _apps = "";
+
+    /// <summary>Its apps' and containers' CPU and memory added up, for finding the workspace that's weighing the machine
+    /// down; empty when nothing of it runs.</summary>
+    [ObservableProperty] private string _usage = "";
+
+    /// <summary>The same, apps and infra apart; null for no tooltip at all.</summary>
+    [ObservableProperty] private string? _usageTip;
+
+    /// <summary>Its total, for the summary of them all.</summary>
+    public ResourceUsage? Total { get; set; }
+
     [ObservableProperty] private string _ports = "";
     [ObservableProperty] private string _worktrees = "…";
     [ObservableProperty] private bool _worktreesWarn;
@@ -160,8 +171,9 @@ public partial class WorkspacesViewModel
             chip.IsOn = chip.Filter == OverviewFilter;
         }
         var orchestrations = _overview.Select(r => r.Orchestration).Distinct().Count();
-        OverviewSummary = $"{_overview.Count} workspace{(_overview.Count == 1 ? "" : "s")} of {orchestrations} orchestration{(orchestrations == 1 ? "" : "s")}"
+        _overviewCounts = $"{_overview.Count} workspace{(_overview.Count == 1 ? "" : "s")} of {orchestrations} orchestration{(orchestrations == 1 ? "" : "s")}"
             + $" · {count(r => r.IsUp)} up · {count(r => r.IsFailed)} failed · {count(r => r.IsDown)} down";
+        SummariseOverview();
         var stale = _overview.Count(Stale);
         HasStale = stale > 0;
         StaleLabel = stale == 1 ? "Select the 1 down for over a week" : $"Select the {stale} down for over a week";
@@ -172,21 +184,38 @@ public partial class WorkspacesViewModel
     /// <summary>Down long enough to be worth removing; main is always there, so it never is.</summary>
     static bool Stale(OverviewRow row) => row.IsDown && !row.Record.IsMain && row.DownFor > TimeSpan.FromDays(7);
 
+    string _overviewCounts = "";
+
     void CountOverviewApps()
     {
         var runners = _lastRunners ?? [];
         foreach (var row in _overview)
         {
+            // Apps can run in a workspace that isn't up (main's, started on their own), so usage is counted either way.
+            var apps = ResourceUsage.Sum(runners.Where(r => r.Workspace == row.Key).Select(r => r.Usage));
+            var infra = _services.InfraUsage.Of(row.Record);
+            row.Total = ResourceUsage.Sum([apps, infra]);
+            row.Usage = row.Total?.Text ?? "";
+            row.UsageTip = row.Total is null ? null
+                : $"Apps: {apps?.Line ?? "none running"}\nInfra: {(row.Record.IsMain ? "yours, not measured" : infra?.Line ?? "none running")}";
+
             if (!row.IsUp)
             {
                 row.Apps = "—";
                 continue;
             }
-            var apps = _services.Workspaces.LastPlan(row.Orchestration, row.Record.Name)?.Apps.Count(a => !a.Job) ?? 0;
+            var count = _services.Workspaces.LastPlan(row.Orchestration, row.Record.Name)?.Apps.Count(a => !a.Job) ?? 0;
             var running = runners.Count(r => r.Workspace == row.Key && r.State.IsAlive());
-            row.Apps = running == 0 ? "apps stopped" : $"{running} of {apps} running";
+            row.Apps = running == 0 ? "apps stopped" : $"{running} of {count} running";
         }
+        SummariseOverview();
     }
+
+    /// <summary>The counts, and what everything sprig runs is using between them.</summary>
+    void SummariseOverview()
+        => OverviewSummary = ResourceUsage.Sum(_overview.Select(r => r.Total)) is { } total
+            ? $"{_overviewCounts} · using {ResourceUsage.CpuText(total.Cpu)} CPU, {ResourceUsage.MemoryText(total.Memory)}"
+            : _overviewCounts;
 
     void FilterOverview()
     {

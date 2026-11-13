@@ -32,6 +32,7 @@ public sealed class AppServices
     public WorkspaceService Workspaces { get; }
     public HostClient Host { get; }
     public HostStatus HostStatus { get; }
+    public InfraUsage InfraUsage { get; }
     public UiState Ui { get; }
 
     /// <param name="root">Store root; null means this profile's store.</param>
@@ -53,6 +54,7 @@ public sealed class AppServices
         Ui = new UiState(Paths);
         Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
             git, new DockerCompose(processes), host: Host, loader: Loader);
+        InfraUsage = new InfraUsage(Workspaces);
     }
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);

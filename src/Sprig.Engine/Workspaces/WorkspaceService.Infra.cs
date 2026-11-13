@@ -44,6 +44,21 @@ public sealed partial class WorkspaceService
         return targets;
     }
 
+    /// <summary>The compose projects a workspace's containers run under. None for a main checkout, whose infra is the
+    /// user's and runs under names sprig doesn't know.</summary>
+    public static IReadOnlyList<string> InfraProjects(WorkspaceRecord record)
+        => record.IsMain ? []
+            : record.Compose.Select(p => p.Name).Append(ContainersProject(record)).Concat(record.Repos.Select(r => RepoProject(record, r.Name)))
+                .Distinct(StringComparer.Ordinal).ToArray();
+
+    /// <summary>What each running container of <paramref name="projects"/> uses, by project and service. Null when docker
+    /// doesn't answer.</summary>
+    public IReadOnlyDictionary<(string Project, string Service), Hosting.ResourceUsage>? InfraUsage(IReadOnlySet<string> projects)
+    {
+        try { return docker.Usage(projects); }
+        catch (ProcessException) { return null; }
+    }
+
     /// <summary>How each container is doing, by <see cref="InfraTarget.Key"/>; a container docker doesn't have (the
     /// workspace is down) is left out. Null when docker doesn't answer.</summary>
     public IReadOnlyDictionary<string, ComposeService>? InfraStates(IReadOnlyList<InfraTarget> targets)

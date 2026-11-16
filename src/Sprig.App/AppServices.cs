@@ -57,12 +57,16 @@ public sealed class AppServices
         Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
             git, new DockerCompose(processes), host: Host, loader: Loader);
         InfraUsage = new InfraUsage(Workspaces);
+        History = new UsageHistory(HostStatus, InfraUsage);
     }
+
+    /// <summary>The last ten minutes of what everything used, recorded from the host's and docker's answers.</summary>
+    public UsageHistory History { get; }
 
     /// <summary>How a workspace is doing, in a word, from what the host and docker last said (see
     /// <see cref="WorkspaceService.RunState"/>).</summary>
     public string RunState(WorkspaceRecord record)
-        => WorkspaceService.RunState(record, HostStatus.Runners ?? [], InfraUsage.Usage.Keys.Select(k => k.Project).ToHashSet(StringComparer.Ordinal));
+        => WorkspaceService.RunState(record, HostStatus.Runners ?? [], InfraUsage.Running);
 
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);
 

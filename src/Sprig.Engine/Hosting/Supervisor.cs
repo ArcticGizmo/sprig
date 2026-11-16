@@ -39,7 +39,9 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     /// next, so this is called on a steady beat (<see cref="SampleEvery"/>) rather than when someone asks.</summary>
     public void Sample()
     {
-        foreach (var runner in _runners.Values) runner.Sample();
+        // Read once for every runner, and only when something could be measured from it.
+        var table = !OperatingSystem.IsWindows() && _runners.Values.Any(r => r.Status.State.IsAlive()) ? ProcessTable.Take() : null;
+        foreach (var runner in _runners.Values) runner.Sample(table);
     }
 
     /// <summary>
@@ -185,12 +187,13 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         // The CPU time at the last sample and when it was taken, for measuring the next one against.
         (TimeSpan Cpu, long At)? _lastSample;
 
-        public void Sample()
+        /// <param name="table">The machine's processes, where there's no job to ask (see <see cref="ProcessTable"/>).</param>
+        public void Sample(IReadOnlyList<ProcessEntry>? table)
         {
             ResourceUsage? usage = null;
             try
             {
-                if (Status.State.IsAlive() || Status.State == RunnerState.Stopping) usage = Measure();
+                if (Status.State.IsAlive() || Status.State == RunnerState.Stopping) usage = Measure(table);
             }
             catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or ObjectDisposedException)
             {
@@ -200,10 +203,10 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             lock (_gate) Status = Status with { Usage = usage };
         }
 
-        ResourceUsage? Measure()
+        ResourceUsage? Measure(IReadOnlyList<ProcessEntry>? table)
         {
             var now = Stopwatch.GetTimestamp();
-            if ((_job.Usage() ?? RootUsage()) is not { Processes: > 0 } taken) return null;
+            if ((_job.Usage() ?? TreeUsage(table) ?? RootUsage()) is not { Processes: > 0 } taken) return null;
             double? cpu = null;
             if (_lastSample is { } last && Stopwatch.GetElapsedTime(last.At, now) is { Ticks: > 0 } wall)
                 cpu = Math.Clamp((taken.Cpu - last.Cpu) / wall / Environment.ProcessorCount * 100, 0, 100);
@@ -211,7 +214,11 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             return new ResourceUsage(cpu, taken.Memory, taken.Processes);
         }
 
-        /// <summary>Where there's no job to ask, the process sprig started, without the children it may have.</summary>
+        /// <summary>Where there's no job to ask, the process sprig started and everything under it.</summary>
+        (TimeSpan Cpu, long Memory, int Processes)? TreeUsage(IReadOnlyList<ProcessEntry>? table)
+            => table is not null && _process is { HasExited: false } process ? ProcessTable.Tree(table, process.Id) : null;
+
+        /// <summary>When the process table can't be read, the process sprig started, without the children it may have.</summary>
         (TimeSpan Cpu, long Memory, int Processes)? RootUsage()
         {
             if (_process is not { HasExited: false } process) return null;

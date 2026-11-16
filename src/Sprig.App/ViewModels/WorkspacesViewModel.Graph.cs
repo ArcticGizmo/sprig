@@ -417,7 +417,8 @@ public partial class WorkspacesViewModel
         await PollInfraAsync(now: true);
     }
 
-    /// <summary>Stop it. A container keeps its data; what uses it will notice it's gone.</summary>
+    /// <summary>Stop it. A container keeps its data; what uses it will notice it's gone, so when running apps use it,
+    /// that's asked first, naming them.</summary>
     [RelayCommand]
     private async Task GraphStop(GraphNode node)
     {
@@ -426,7 +427,62 @@ public partial class WorkspacesViewModel
             await StopAsync([row]);
             return;
         }
-        if (node.Target is not { } target) return;
+        if (node.Target is null) return;
+        if (RunningUsersOf(node.Key) is { Count: > 0 } users)
+        {
+            _stopAsked = node;
+            StopInfraTitle = $"Stop {node.Name}?";
+            StopInfraLine = $"{Listed(users)} {(users.Count == 1 ? "uses" : "use")} it and {(users.Count == 1 ? "is" : "are")} running. "
+                            + "Only the container stops, keeping its data; they stay running and will notice it's gone. Start brings it back.";
+            ConfirmingStopInfra = true;
+            return;
+        }
+        await StopContainerAsync(node);
+    }
+
+    /// <summary>The container a stop is waiting on the dialog for.</summary>
+    GraphNode? _stopAsked;
+
+    [ObservableProperty] private bool _confirmingStopInfra;
+    [ObservableProperty] private string _stopInfraTitle = "";
+    [ObservableProperty] private string _stopInfraLine = "";
+
+    [RelayCommand]
+    private async Task ConfirmStopInfra()
+    {
+        ConfirmingStopInfra = false;
+        if (_stopAsked is not { } node) return;
+        _stopAsked = null;
+        // Drawn again meanwhile, the graph has nodes of its own.
+        if (Graph?.Find(node.Key) is { Target: not null } fresh) await StopContainerAsync(fresh);
+    }
+
+    [RelayCommand]
+    private void CancelStopInfra()
+    {
+        ConfirmingStopInfra = false;
+        _stopAsked = null;
+    }
+
+    /// <summary>The selected workspace's apps that need <paramref name="infraKey"/> and are running now, by name.</summary>
+    IReadOnlyList<string> RunningUsersOf(string infraKey)
+    {
+        if (_plan is not { } plan || Selected?.Record.Key is not { } key) return [];
+        var alive = (_lastRunners ?? []).Where(r => r.Workspace == key && r.State.IsAlive()).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        return WorkspaceService.UsersOf(plan, infraKey).Where(alive.Contains)
+            .Select(k => Apps.FirstOrDefault(a => a.Key == k)?.Name ?? k).ToArray();
+    }
+
+    static string Listed(IReadOnlyList<string> names) => names.Count switch
+    {
+        1 => names[0],
+        <= 4 => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}",
+        _ => $"{string.Join(", ", names.Take(3))} and {names.Count - 3} more",
+    };
+
+    async Task StopContainerAsync(GraphNode node)
+    {
+        var target = node.Target!;
         node.Pending("stopping");
         Graph?.Invalidate();
         try

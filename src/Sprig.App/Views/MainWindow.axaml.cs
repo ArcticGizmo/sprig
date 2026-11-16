@@ -38,8 +38,10 @@ public partial class MainWindow : Window
         // Hidden in the tray it still polls, so the tray's count of running apps stays true, just less often.
         PropertyChanged += (_, e) =>
         {
-            if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)
-                _hostPoll.Interval = WindowState == WindowState.Minimized || !IsVisible ? Minimised : Visible;
+            if (e.Property != WindowStateProperty && e.Property != IsVisibleProperty) return;
+            var shown = WindowState != WindowState.Minimized && IsVisible;
+            _hostPoll.Interval = shown ? Visible : Minimised;
+            if (DataContext is MainWindowViewModel vm) vm.InfraUsage.WindowShown = shown;
         };
     }
 }

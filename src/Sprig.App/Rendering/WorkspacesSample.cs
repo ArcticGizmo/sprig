@@ -371,6 +371,7 @@ internal static partial class HeadlessRenderer
                     Usage: new ResourceUsage(1.1, 310 * mb, 1)),
             ]);
             vm.Usage.HoldMachine(new MachineSnapshot(63.5, 24_300 * mb, 32_600 * mb));
+            FillHistory(services);
             vm.NavigateCommand.Execute(vm.Usage);
             Wait(vm.Usage.PollAsync(usage: false));
             Pump(TimeSpan.FromMilliseconds(400));
@@ -542,6 +543,32 @@ internal static partial class HeadlessRenderer
     };
 
     /// <summary>The sample's containers' usage, as docker would give it, by the projects they run under.</summary>
+    /// <summary>Ten minutes of made-up history ending at each held figure, so the Usage page's sparklines have shapes to
+    /// show: CPU that wanders with a spike or two, memory that creeps up, and a container measured only now and then.</summary>
+    static void FillHistory(AppServices services)
+    {
+        var n = 0;
+        foreach (var runner in services.HostStatus.Runners ?? [])
+        {
+            if (runner.Usage is not { } now) continue;
+            var seed = ++n;
+            services.History.Fill(UsageHistory.AppId(runner.Workspace, runner.Name), ago =>
+            {
+                var wave = 0.5 + 0.5 * Math.Sin((ago + seed * 17) / (6.0 + seed));
+                var spike = (ago + seed * 31) % 97 < 3 ? 4 : 1;
+                var cpu = (now.Cpu ?? 0) * (0.3 + wave) * spike;
+                var memory = (long)(now.Memory * (1 - ago / (double)UsageHistory.Length * (0.15 + seed % 3 * 0.1)));
+                return ago == 0 ? now : new ResourceUsage(cpu, memory, now.Processes);
+            });
+        }
+        foreach (var ((project, service), now) in services.InfraUsage.Usage)
+        {
+            var seed = ++n;
+            services.History.Fill(UsageHistory.InfraId(project, service), ago => ago % 3 != 0 ? null
+                : new ResourceUsage((now.Cpu ?? 0) * (0.6 + 0.4 * Math.Cos((ago + seed) / 9.0)), now.Memory - ago * 1024L * 64, now.Processes));
+        }
+    }
+
     static void HoldInfraUsage(AppServices services)
     {
         var record = services.Workspaces.Get("storefront", "feat-a")!;

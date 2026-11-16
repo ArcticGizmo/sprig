@@ -9,6 +9,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.3] - 2026-11-16
+
+Now with ten minutes of hindsight.
+
+### Added
+- **Sparklines on the Usage page** — ten minutes of CPU and memory.
+- **Containers in `sprig ps`** — with one grand total.
+- **A warning before stopping infra in use** — it names who'll notice.
+- **`sprig stop <container>` says what's still running on it.**
+
+### Changed
+- **Definitions change when their content does** — not when merely saved.
+- **One last make-ready per workspace** — on its first Start all after updating.
+- **Repos and Orchestrations show live states.**
+- **`sprig ps --json` gives `{ apps, infra }`** — it was the apps alone.
+
+### Fixed
+- **Linux and macOS count an app's child processes.**
+
+---
+
 ## [v0.9.2] - 2026-11-13
 
 Start means start, stop means stop, and you can finally see who's eating the RAM.

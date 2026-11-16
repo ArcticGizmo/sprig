@@ -249,10 +249,18 @@ public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
         var (apps, infra) = AppsSettings.Split(record, plan, s.Apps);
         if (record.IsMain && infra.Count > 0)
             throw new InvalidOperationException($"the main checkout runs with your own infra, so sprig doesn't stop {string.Join(", ", infra)}");
-        foreach (var target in cli.Workspaces.InfraTargets(record, plan).Where(t => infra.Contains(t.Key)))
+        var stopping = cli.Workspaces.InfraTargets(record, plan).Where(t => infra.Contains(t.Key)).ToArray();
+        // Asked before, so the note can say what was left running on it; apps named here are stopping anyway.
+        var running = stopping.Length == 0 ? []
+            : (cli.Host.TrySend(new HostRequest("list"))?.Runners ?? []).Where(r => r.Workspace == key && r.State.IsAlive()).Select(r => r.Name)
+                .Where(n => !apps.Any(a => n == a || n.EndsWith("/" + a, StringComparison.Ordinal))).ToHashSet(StringComparer.Ordinal);
+        foreach (var target in stopping)
         {
             cli.Workspaces.StopContainer(target);
-            if (!s.Json) CliOutput.Success($"{target.Key} stopped; its data is kept");
+            if (s.Json) continue;
+            CliOutput.Success($"{target.Key} stopped; its data is kept");
+            if (WorkspaceService.UsersOf(plan, target.Key).Where(running.Contains).ToArray() is { Length: > 0 } users)
+                cli.Ansi.MarkupLine($"[yellow]still running on it:[/] {Markup.Escape(string.Join(", ", users))}");
         }
         if (apps.Count == 0)
         {
@@ -279,32 +287,81 @@ public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
     }
 }
 
-[Description("List the apps the sprig host is running")]
+/// <summary>A container of a workspace that's running, as <c>sprig ps</c> lists it.</summary>
+/// <param name="Key"><c>owner/name</c>, as the plan names it.</param>
+public sealed record RunningContainer(string Workspace, string Key, ResourceUsage Usage);
+
+[Description("List what the sprig host is running, and the workspaces' containers")]
 public sealed class PsCommand(CliContext cli) : Command<GlobalSettings>
 {
     protected override int Execute(CommandContext context, GlobalSettings s, CancellationToken cancellation)
     {
         var runners = cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
-        if (s.Json) { CliOutput.Json(runners); return 0; }
-        if (runners.Count == 0)
+        var records = cli.Workspaces.List();
+        var infra = Containers(records, out var dockerSilent);
+        if (s.Json) { CliOutput.Json(new { apps = runners, infra }); return 0; }
+        if (runners.Count == 0 && infra.Count == 0)
         {
             cli.Ansi.MarkupLine("[dim]Nothing is running. Start a workspace's apps with: sprig start [[id]] [[workspace]][/]");
+            if (dockerSilent) cli.Ansi.MarkupLine("[dim]Docker didn't answer, so its containers couldn't be listed.[/]");
             return 0;
         }
-        var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "CPU", "Memory", "Since");
-        table.Columns[5].RightAligned();
-        table.Columns[6].RightAligned();
         // Runners are keyed "storefront/2"; people know the slot by its folder and branch.
-        var records = cli.Workspaces.List().ToDictionary(w => w.Key);
-        foreach (var r in runners)
-            table.AddRow(Markup.Escape(records.TryGetValue(r.Workspace, out var w) ? $"{w.SlotName} ({w.Label})" : r.Workspace), Markup.Escape(r.Name), State(r),
-                r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "",
-                r.Usage is { } u ? ResourceUsage.CpuText(u.Cpu) : "", r.Usage is { } m ? ResourceUsage.MemoryText(m.Memory) : "",
-                r.Since.LocalDateTime.ToString("T"));
-        cli.Ansi.Write(table);
-        if (ResourceUsage.Sum(runners.Select(r => r.Usage)) is { } total)
-            cli.Ansi.MarkupLine($"[dim]All apps: {Markup.Escape(total.Text)} (CPU as a share of the whole machine; docker stats has the infra's)[/]");
+        var byKey = records.ToDictionary(w => w.Key);
+        string Name(string workspace) => Markup.Escape(byKey.TryGetValue(workspace, out var w) ? $"{w.SlotName} ({w.Label})" : workspace);
+
+        if (runners.Count > 0)
+        {
+            var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "App", "State", "Port", "Pid", "CPU", "Memory", "Since");
+            table.Columns[5].RightAligned();
+            table.Columns[6].RightAligned();
+            foreach (var r in runners)
+                table.AddRow(Name(r.Workspace), Markup.Escape(r.Name), State(r),
+                    r.Port?.ToString() ?? "", r.Pid?.ToString() ?? "",
+                    r.Usage is { } u ? ResourceUsage.CpuText(u.Cpu) : "", r.Usage is { } m ? ResourceUsage.MemoryText(m.Memory) : "",
+                    r.Since.LocalDateTime.ToString("T"));
+            cli.Ansi.Write(table);
+        }
+        if (infra.Count > 0)
+        {
+            var table = new Table().Border(TableBorder.Rounded).AddColumns("Workspace", "Container", "CPU", "Memory");
+            table.Columns[2].RightAligned();
+            table.Columns[3].RightAligned();
+            foreach (var c in infra)
+                table.AddRow(Name(c.Workspace), Markup.Escape(c.Key), ResourceUsage.CpuText(c.Usage.Cpu), ResourceUsage.MemoryText(c.Usage.Memory));
+            cli.Ansi.Write(table);
+        }
+        else if (dockerSilent) cli.Ansi.MarkupLine("[dim]Docker didn't answer, so the workspaces' containers aren't listed.[/]");
+
+        var apps = ResourceUsage.Sum(runners.Select(r => r.Usage));
+        var containers = ResourceUsage.Sum(infra.Select(c => (ResourceUsage?)c.Usage));
+        if (ResourceUsage.Sum([apps, containers]) is { } total)
+            cli.Ansi.MarkupLine($"[dim]Altogether: {Markup.Escape(total.Text)}" +
+                                $"{(apps is not null && containers is not null ? $" (apps {Markup.Escape(apps.Text)}, containers {Markup.Escape(containers.Text)})" : "")}" +
+                                "; CPU is a share of the whole machine[/]");
         return 0;
+    }
+
+    /// <summary>The running containers of every workspace that's ready, by the names its plan gives them. A main
+    /// checkout's are the user's, under names sprig doesn't know, so they aren't listed.</summary>
+    /// <param name="dockerSilent">Some workspace has containers, but docker didn't answer.</param>
+    IReadOnlyList<RunningContainer> Containers(IReadOnlyList<WorkspaceRecord> records, out bool dockerSilent)
+    {
+        dockerSilent = false;
+        var targets = records.Where(r => r.State == WorkspaceState.Up && !r.IsMain)
+            .SelectMany(r => cli.Workspaces.LastPlan(r.Orchestration, r.Name) is { } plan
+                ? cli.Workspaces.InfraTargets(r, plan).Select(t => (Record: r, Target: t)) : [])
+            .ToArray();
+        if (targets.Length == 0) return [];
+        var usage = cli.Workspaces.InfraUsage(targets.Select(t => t.Target.Project.Name).ToHashSet(StringComparer.Ordinal));
+        if (usage is null)
+        {
+            dockerSilent = true;
+            return [];
+        }
+        return targets.Where(t => usage.ContainsKey((t.Target.Project.Name, t.Target.Service)))
+            .Select(t => new RunningContainer(t.Record.Key, t.Target.Key, usage[(t.Target.Project.Name, t.Target.Service)]))
+            .ToArray();
     }
 
     internal static string State(RunnerStatus r) => r.State switch

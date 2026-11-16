@@ -1130,6 +1130,37 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void Definitions_count_as_changed_when_their_content_does_not_when_they_are_only_written_again()
+    {
+        var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));
+        Git(source, "branch", "feat-y");
+        var orchestrationFile = Path.Combine(_root, "storefront.orchestration.yaml");
+        File.WriteAllText(orchestrationFile, Storefront);
+        var trust = new FileTrustStore(_store.Paths);
+        var loader = new OrchestrationLoader(new DefinitionRunner(trust, _store.Paths));
+        var workspaces = new WorkspaceService(new WorkspaceStore(_store.Paths), new PortLeases(_store.Paths), new FileSettingsStore(_store.Paths), _git,
+            new DockerCompose(_processes), listening: () => new HashSet<int>(), loader: loader);
+        trust.Approve(orchestrationFile, DefinitionHash.Of(Storefront));
+        trust.Approve(Path.Combine(source, "sprig.yaml"), DefinitionHash.Of(WebWith("v1")));
+
+        var record = workspaces.Up(loader.Load(orchestrationFile), "feat-y", null);
+        var definition = Path.Combine(record.Repos.Single().Dir, "sprig.yaml");
+        Assert.Contains(definition, record.ReadyFrom!.Keys);
+        Assert.False(WorkspaceService.DefinitionsChanged(record));
+
+        // Saved again as it was, or with Windows line endings, it reads the same.
+        File.WriteAllText(definition, WebWith("v1"));
+        File.WriteAllText(orchestrationFile, Storefront.ReplaceLineEndings("\r\n"));
+        File.SetLastWriteTimeUtc(definition, DateTime.UtcNow.AddMinutes(5));
+        Assert.False(WorkspaceService.DefinitionsChanged(record));
+
+        File.WriteAllText(definition, WebWith("v2"));
+        Assert.True(WorkspaceService.DefinitionsChanged(record));
+        // A record from before the files were kept can't tell, so it's made ready again to be sure.
+        Assert.True(WorkspaceService.DefinitionsChanged(record with { ReadyFrom = null }));
+    }
+
+    [Fact]
     public void Orchestrations_and_repo_copies_kept_in_sprig_sit_beside_a_repos_own_without_clashing()
     {
         var source = Repo("shop-web", ("index.html", "hi"), ("sprig.yaml", WebWith("v1")));

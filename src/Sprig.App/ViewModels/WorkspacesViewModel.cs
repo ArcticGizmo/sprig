@@ -434,7 +434,7 @@ public partial class WorkspacesViewModel : PageViewModel
     // Rebuilding the list reloads the selected workspace's apps and log, so it's left alone unless something changed.
     protected override void OnWindowFocused()
     {
-        if (IsAddOpen || IsSettingsOpen || ConfirmingRemove || ConfirmingBulkRemove || ConfirmingTakeOver || IsWorking || HasPendingTrust) return;
+        if (IsAddOpen || IsSettingsOpen || ConfirmingRemove || ConfirmingBulkRemove || ConfirmingTakeOver || ConfirmingStopInfra || IsWorking || HasPendingTrust) return;
         var records = _services.Workspaces.List().Select(r => (r.Key, r.State, r.UpdatedAt));
         var names = _services.Orchestrations.List().Select(e => e.Id).Concat(_services.Stored.Repos().Select(r => r.Id));
         if (!records.SequenceEqual(Workspaces.Where(w => !IsUnmade(w.Record)).Select(w => (w.Record.Key, w.Record.State, w.Record.UpdatedAt)))
@@ -498,11 +498,11 @@ public partial class WorkspacesViewModel : PageViewModel
     public bool IsRunning => RunState == "running";
     public bool RunStateFailed => RunState == "failed";
 
-    /// <summary>The compose projects with a container running, as far as the page knows: what docker last measured, and
-    /// the selected workspace's containers from the graph's last look.</summary>
+    /// <summary>The compose projects with a container running, as far as the page knows: what docker last said, and the
+    /// selected workspace's containers from the graph's last look.</summary>
     IReadOnlySet<string> RunningProjects()
     {
-        var projects = _services.InfraUsage.Usage.Keys.Select(k => k.Project).ToHashSet(StringComparer.Ordinal);
+        var projects = _services.InfraUsage.Running.ToHashSet(StringComparer.Ordinal);
         if (_lastInfra is { } states)
             foreach (var target in _targets.Where(t => states.GetValueOrDefault(t.Key) is { State: "running" or "restarting" })) projects.Add(target.Project.Name);
         return projects;
@@ -526,6 +526,7 @@ public partial class WorkspacesViewModel : PageViewModel
         ConfirmingRemove = false;
         ConfirmingEmptyData = false;
         CancelTakeOver();
+        CancelStopInfra();
         DeleteBranch = false;
         // Read afresh, the same workspace keeps the details as they were left.
         if (value?.Record.Key is { } key && key != _detailsFor) ResetDetails();
@@ -769,7 +770,7 @@ public partial class WorkspacesViewModel : PageViewModel
         var starting = new Starting(group, keys);
         // Made ready here, its apps build while the infra starts, and starting them releases those builds.
         var prebuilt = record.State != WorkspaceState.Up
-                       || (keys is null && await AppServices.RunAsync(() => _services.Workspaces.DefinitionsChanged(record, KeptDefinitions(record))));
+                       || (keys is null && await AppServices.RunAsync(() => WorkspaceService.DefinitionsChanged(record)));
         if (prebuilt)
         {
             if (_plan is { } before) ShowStarting(WorkspaceService.InfraFor(before, starting.AppsIn(before)));
@@ -819,14 +820,6 @@ public partial class WorkspacesViewModel : PageViewModel
         foreach (var node in graph.Nodes.Where(n => n.IsInfra && n.Target is not null && !n.IsAlive && (keys?.Contains(n.Key) ?? true)))
             node.Pending("starting");
         graph.Invalidate();
-    }
-
-    /// <summary>The definitions kept in sprig for <paramref name="record"/>'s repos, which live outside their folders.</summary>
-    IReadOnlyList<string> KeptDefinitions(WorkspaceRecord record)
-    {
-        static string Norm(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var sources = record.Repos.Select(r => Norm(r.Source)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return _services.Stored.Repos().Where(e => !e.InRepo && sources.Contains(Norm(e.Folder))).Select(e => e.DefinitionFile).ToArray();
     }
 
     [RelayCommand]

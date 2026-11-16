@@ -1,6 +1,6 @@
 # Resource usage: plan
 
-Branch: `resource-usage`. Written and built 2026-11-13. Not yet tried by hand. Asked for by the user: "add resource usage indicators to each of the apps/infra … for debugging pressure on a machine with lots of worktrees".
+Branch: `resource-usage`. Written and built 2026-11-13; tried by hand and released in v0.9.2. Asked for by the user: "add resource usage indicators to each of the apps/infra … for debugging pressure on a machine with lots of worktrees".
 
 ## Decisions
 
@@ -32,8 +32,14 @@ Asked for the same day: "some kind of resource usage panel where you can order a
 - **Polling**: the page asks for nothing new: the host poll brings apps, `InfraUsage` (now also polled from this page) brings containers, and the machine is sampled each second while the page shows.
 - **Tests**: order and totals, sorting both ways, an open row surviving a refresh, the machine's bars, and the machine sampler itself. The sample renders `-usage` and `-usage-open`.
 
+## Gaps closed (2026-11-16)
+
+Branch `start-stop-usage-gaps`, after the user had tried it by hand.
+
+- **Sparklines on the Usage page, ten minutes** (user chose the Usage page only, not the Workspaces page or graph). `UsageHistory` (in the app, beside `InfraUsage`) keeps a ring of 300 two-second slots per app (`AppId`, recorded on each host answer, which comes every 5 s even hidden) and per container (`InfraId`, on each docker measure). A series silent for the whole span is dropped. `OfWorkspace` adds up a workspace's apps and its projects' containers, stopped ones included; each part's gaps of up to 4 slots are bridged first, or a container measured every 5 s makes the total saw up and down. The `Sparkline` control draws points already scaled 0..1, bridging the same short gaps and breaking on longer ones, with a dot on the latest figure. CPU scales from 0 to its peak (at least 1%), so an idle app lies flat; memory from its low to its peak, the span at least a tenth of the peak, so growth shows without magnifying wobble. Each sparkline's tooltip gives the peak (CPU) or range (memory). Parts are now kept objects (`UsagePart` by series ID) moved in place like rows, and only an open row's parts work out their trends. The sample fills made-up history.
+- **`sprig ps` lists containers**: a second table (workspace, container, CPU, memory) for every ready workspace but main, from one `docker stats`; a line when docker doesn't answer; one total for apps and containers. `--json` is `{ apps, infra }`.
+- **Linux and macOS count an app's children.** `ProcessTable.Take()` reads every process with its parent (`/proc/*/stat` on Linux, USER_HZ fixed at 100; one `ps -axo pid=,ppid=,rss=,time=` elsewhere), once per sample beat and only while something is alive; `Tree` adds up the process sprig started and its descendants. Unlike a job, a child that exits takes its CPU time with it, so a sample just after can read low (clamped at 0). The root process alone stays as the fallback when the table can't be read.
+
 ## Not done
 
-- No history or sparkline: only the latest figure.
-- `sprig ps` doesn't show containers; `docker stats` does.
-- On other platforms an app counts only the process sprig started, not its children.
+- History is only kept while the app runs, and containers' only while a page measures them.

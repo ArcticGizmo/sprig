@@ -1,5 +1,7 @@
 using Sprig.Engine.Compose;
+using Sprig.Engine.Definitions;
 using Sprig.Engine.Hosting;
+using Sprig.Engine.Orchestrations;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Processes;
 
@@ -53,20 +55,34 @@ public sealed partial class WorkspaceService
                 .Distinct(StringComparer.Ordinal).ToArray();
 
     /// <summary>
-    /// Whether what the workspace was last made ready from has been written since: its orchestration file, a repo's
-    /// sprig.yaml in the folder it runs from, a compose file it runs, or one of <paramref name="kept"/>. Starting
-    /// everything makes it ready again first when it has, so what starts is what's defined now. One never made ready has.
+    /// Whether what the workspace was last made ready from reads differently now (see <see cref="WorkspaceRecord.ReadyFrom"/>).
+    /// Starting everything makes it ready again first when it does, so what starts is what's defined now. Content is
+    /// compared, not file times, so saving a file unchanged, or a checkout touching it, doesn't count. One never made
+    /// ready, or made ready before the files were kept, has changed.
     /// </summary>
-    /// <param name="kept">Definitions kept in sprig for its repos, which live outside their folders.</param>
-    public bool DefinitionsChanged(WorkspaceRecord record, IEnumerable<string>? kept = null)
+    public static bool DefinitionsChanged(WorkspaceRecord record)
+        => record.ReadyFrom is not { Count: > 0 } files || files.Any(f => ContentHash(f.Key) != f.Value);
+
+    /// <summary>Every file <paramref name="loaded"/> was read from, with its content's hash: each definition it ran,
+    /// wherever it's kept (a repo's folder, a worktree, sprig's own store), and the compose files they name.</summary>
+    internal static IReadOnlyDictionary<string, string> ReadyFromFiles(LoadedOrchestration loaded)
     {
-        if (record.LastUpAt is not { } since || store.GetPlan(record.Orchestration, record.Name) is not { } plan) return true;
-        var files = new List<string> { record.OrchestrationPath };
-        files.AddRange(record.Repos.Select(r => Path.Combine(r.Dir, Orchestrations.OrchestrationLoader.RepoDefinitionFile)));
-        files.AddRange(plan.Compose.Select(c => record.Repos.FirstOrDefault(r => r.RepoPath == c.RepoPath) is { } repo ? Path.Combine(repo.Dir, c.File) : null)
-            .OfType<string>());
-        files.AddRange(kept ?? []);
-        return files.Any(f => File.Exists(f) && File.GetLastWriteTimeUtc(f) > since.UtcDateTime);
+        var files = new Dictionary<string, string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (var result in loaded.Results) files[result.Path] = result.Sha256;
+        if (!files.ContainsKey(loaded.OrchestrationPath) && ContentHash(loaded.OrchestrationPath) is { } own) files[loaded.OrchestrationPath] = own;
+        foreach (var (repoPath, repo) in loaded.Repos)
+            foreach (var compose in repo.ComposeFiles)
+                if (loaded.ReadFrom.GetValueOrDefault(repoPath) is { } dir && Path.Combine(dir, compose.File) is var path && ContentHash(path) is { } hash)
+                    files[path] = hash;
+        return files;
+    }
+
+    /// <summary>As definitions are hashed for approval, so a CRLF checkout of the same text is the same; null for a file
+    /// that's gone or can't be read.</summary>
+    static string? ContentHash(string file)
+    {
+        try { return DefinitionHash.Of(File.ReadAllText(file)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
     /// <summary>Every compose project with a container running; null when docker doesn't answer.</summary>
@@ -141,6 +157,11 @@ public sealed partial class WorkspaceService
                 if (infra.Contains(to) && needed.Add(to)) pending.Push(to);
         return needed;
     }
+
+    /// <summary>The apps that need the container or compose service <paramref name="infraKey"/> (by
+    /// <see cref="InfraTarget.Key"/>): those whose start would start it (see <see cref="InfraFor"/>), by key.</summary>
+    public static IReadOnlyList<string> UsersOf(Plan plan, string infraKey)
+        => plan.Apps.Where(a => InfraFor(plan, [a.Key])!.Contains(infraKey)).Select(a => a.Key).ToArray();
 
     /// <summary>
     /// A main checkout's containers and compose services (of <paramref name="needed"/>, by key; null for all), and whether

@@ -167,6 +167,8 @@ public partial class OrchestrationsViewModel : PageViewModel
         Editor.Closed += () => Tab = OrchestrationTab.Overview;
         Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
         Review.Approved += SetStatus;
+        services.HostStatus.Changed += _ => FollowStates();
+        services.InfraUsage.Changed += FollowStates;
         // Only listed here, for the nav's count; planning runs definitions, so it waits until the page is shown.
         Refresh(null, replan: false);
     }
@@ -204,13 +206,8 @@ public partial class OrchestrationsViewModel : PageViewModel
             foreach (var e in _services.Orchestrations.List())
             {
                 var needsApproval = NeedsApproval(e.Path);
-                var mine = workspaces.Where(s => s.Orchestration == e.Id).ToArray();
-                var running = mine.Count(s => _services.RunState(s) == "running");
-                var caption = needsApproval ? "not approved yet"
-                    : mine.Length == 0 ? "no workspaces"
-                    : running > 0 ? $"{Count(running, "workspace")} running"
-                    : $"{Count(mine.Length, "workspace")}, none running";
-                Orchestrations.Add(new OrchestrationItem(e.Id, e.Path, needsApproval, _services.Stored.IsKept(e.Path), caption, running > 0));
+                var (caption, good) = CaptionOf(e.Id, needsApproval, workspaces);
+                Orchestrations.Add(new OrchestrationItem(e.Id, e.Path, needsApproval, _services.Stored.IsKept(e.Path), caption, good));
             }
             NavCount = Orchestrations.Count;
             OnPropertyChanged(nameof(IsEmpty));
@@ -218,6 +215,29 @@ public partial class OrchestrationsViewModel : PageViewModel
         }
         finally { _quietSelection = false; }
         if (replan && Selected is not null) _ = PlanSelectedAsync();
+    }
+
+    (string Caption, bool Good) CaptionOf(string id, bool needsApproval, IReadOnlyList<WorkspaceRecord> workspaces)
+    {
+        var mine = workspaces.Where(s => s.Orchestration == id).ToArray();
+        var running = mine.Count(s => _services.RunState(s) == "running");
+        var caption = needsApproval ? "not approved yet"
+            : mine.Length == 0 ? "no workspaces"
+            : running > 0 ? $"{Count(running, "workspace")} running"
+            : $"{Count(mine.Length, "workspace")}, none running";
+        return (caption, running > 0);
+    }
+
+    /// <summary>While the page shows, the list's captions and the selected one's workspaces follow what runs, as the
+    /// Repos page's do; the list is read again only when a caption changed, and never while something is open on it.</summary>
+    void FollowStates()
+    {
+        if (!IsActive) return;
+        _ = _services.InfraUsage.PollRunningAsync();
+        if (Editor.IsEditing || IsChooseOpen || IsAddOpen || IsNewOpen || ConfirmingRemove || IsBusy || HasPendingTrust) return;
+        var workspaces = _services.Workspaces.List();
+        if (Orchestrations.Any(o => CaptionOf(o.Name, o.NeedsApproval, workspaces) != (o.Caption, o.CaptionIsGood))) Refresh(Selected?.Name, replan: false);
+        ListWorkspaces();
     }
 
     bool NeedsApproval(string path)
@@ -351,14 +371,18 @@ public partial class OrchestrationsViewModel : PageViewModel
 
     void ListWorkspaces()
     {
-        WorkspacesOfIt.Clear();
-        if (Selected is { } orchestration)
-            foreach (var s in _services.Workspaces.List().Where(s => s.Orchestration == orchestration.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+        var rows = Selected is not { } orchestration ? []
+            : _services.Workspaces.List().Where(s => s.Orchestration == orchestration.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).Select(s =>
             {
                 var state = _services.RunState(s);
-                WorkspacesOfIt.Add(new WorkspaceRow(s.InPlace ? s.Name : $"{s.SlotName} · {s.Label}",
-                    state == "failed" && s.Error is { } e ? $"failed: {e.Split('\n')[0]}" : state, state == "running", state == "failed"));
-            }
+                return new WorkspaceRow(s.InPlace ? s.Name : $"{s.SlotName} · {s.Label}",
+                    state == "failed" && s.Error is { } e ? $"failed: {e.Split('\n')[0]}" : state, state == "running", state == "failed");
+            }).ToArray();
+        if (!rows.SequenceEqual(WorkspacesOfIt))
+        {
+            WorkspacesOfIt.Clear();
+            foreach (var row in rows) WorkspacesOfIt.Add(row);
+        }
         HasWorkspaces = WorkspacesOfIt.Count > 0;
     }
 

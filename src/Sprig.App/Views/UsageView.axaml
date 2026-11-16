@@ -1,8 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Sprig.App.ViewModels"
+             xmlns:c="clr-namespace:Sprig.App.Controls"
              x:Class="Sprig.App.Views.UsageView"
              x:DataType="vm:UsageViewModel">
+
+    <UserControl.Resources>
+        <!-- A part's line, quieter than its workspace's accent one -->
+        <SolidColorBrush x:Key="SparkPartBrush" Color="#8B90A8" />
+    </UserControl.Resources>
 
     <UserControl.Styles>
         <Style Selector="Border.panel">
@@ -76,7 +82,7 @@
         </Border>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-            <StackPanel Margin="24,18" Spacing="16" MaxWidth="1200" MinWidth="820" HorizontalAlignment="Stretch">
+            <StackPanel Margin="24,18" Spacing="16" MaxWidth="1200" MinWidth="920" HorizontalAlignment="Stretch">
 
                 <!-- The machine: what's in use, with what sprig runs drawn first inside it -->
                 <Border Classes="panel">
@@ -116,7 +122,7 @@
                 <!-- Every workspace using anything, sorted by the heading clicked -->
                 <Border Classes="panel" Padding="0,10,0,6">
                     <StackPanel>
-                        <Grid ColumnDefinitions="40,*,90,210,110,110,80" Margin="0,0,16,8">
+                        <Grid ColumnDefinitions="40,*,140,270,100,100,80" Margin="0,0,16,8">
                             <Button Grid.Column="1" Classes="flat" Command="{Binding SortCommand}" CommandParameter="{x:Static vm:UsageSort.Workspace}">
                                 <TextBlock Classes="phead" Text="{Binding WorkspaceHeading}" />
                             </Button>
@@ -146,7 +152,7 @@
                                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='usage:{0}'}">
                                             <Grid ColumnDefinitions="*,80" Margin="0,0,16,0">
                                                 <Button Classes="flat" Command="{Binding ToggleCommand}" ToolTip.Tip="Show or hide its apps and containers">
-                                                    <Grid ColumnDefinitions="40,*,90,210,110,110" Margin="0,8">
+                                                    <Grid ColumnDefinitions="40,*,140,270,100,100" Margin="0,8">
                                                         <TextBlock Text="{Binding Chevron}" FontSize="11" Foreground="{StaticResource MutedBrush}"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -155,12 +161,18 @@
                                                             <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
                                                                        TextTrimming="CharacterEllipsis" />
                                                         </StackPanel>
-                                                        <TextBlock Grid.Column="2" Classes="cell mono" Text="{Binding Cpu}" />
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                            <TextBlock Classes="cell mono" Text="{Binding Cpu}" Width="44" />
+                                                            <c:Sparkline Width="{x:Static vm:UsageViewModel.SparkWidth}" Height="18" Points="{Binding CpuTrend}"
+                                                                         Stroke="{StaticResource AccentBrush}" ToolTip.Tip="{Binding CpuTrendTip}" />
+                                                        </StackPanel>
                                                         <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                             <Border Classes="track" Width="{x:Static vm:UsageViewModel.RowBarWidth}" Height="8">
                                                                 <Border Classes="sprig" Width="{Binding Bar}" HorizontalAlignment="Left" />
                                                             </Border>
-                                                            <TextBlock Classes="cell mono" Text="{Binding Memory}" />
+                                                            <TextBlock Classes="cell mono" Text="{Binding Memory}" Width="56" />
+                                                            <c:Sparkline Width="{x:Static vm:UsageViewModel.SparkWidth}" Height="18" Points="{Binding MemoryTrend}"
+                                                                         Stroke="{StaticResource AccentBrush}" ToolTip.Tip="{Binding MemoryTrendTip}" />
                                                         </StackPanel>
                                                         <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" />
                                                         <TextBlock Grid.Column="5" Classes="cell" Text="{Binding Infra}" />
@@ -180,17 +192,23 @@
                                                 <DataTemplate x:DataType="vm:UsagePart">
                                                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,5"
                                                             ToolTip.Tip="{Binding Tip}">
-                                                        <Grid ColumnDefinitions="40,*,90,210,110,110,96">
+                                                        <Grid ColumnDefinitions="40,*,140,270,100,100,96">
                                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="14,0,0,0">
                                                                 <TextBlock Classes="cell" Text="{Binding Name}" />
                                                                 <TextBlock Classes="cell via" Text="{Binding Kind}" />
                                                             </StackPanel>
-                                                            <TextBlock Grid.Column="2" Classes="cell mono" FontSize="12" Text="{Binding Cpu}" />
+                                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                                <TextBlock Classes="cell mono" FontSize="12" Text="{Binding Cpu}" Width="44" />
+                                                                <c:Sparkline Width="{x:Static vm:UsageViewModel.SparkWidth}" Height="14" Points="{Binding CpuTrend}"
+                                                                             Stroke="{StaticResource SparkPartBrush}" ToolTip.Tip="{Binding CpuTrendTip}" />
+                                                            </StackPanel>
                                                             <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                                 <Border Width="{x:Static vm:UsageViewModel.RowBarWidth}" Height="6">
                                                                     <Border Classes="other" CornerRadius="3" Width="{Binding Bar}" HorizontalAlignment="Left" />
                                                                 </Border>
-                                                                <TextBlock Classes="cell mono" FontSize="12" Text="{Binding Memory}" />
+                                                                <TextBlock Classes="cell mono" FontSize="12" Text="{Binding Memory}" Width="56" />
+                                                                <c:Sparkline Width="{x:Static vm:UsageViewModel.SparkWidth}" Height="14" Points="{Binding MemoryTrend}"
+                                                                             Stroke="{StaticResource SparkPartBrush}" ToolTip.Tip="{Binding MemoryTrendTip}" />
                                                             </StackPanel>
                                                         </Grid>
                                                     </Border>

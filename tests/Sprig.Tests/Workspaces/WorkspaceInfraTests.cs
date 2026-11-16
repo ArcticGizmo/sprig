@@ -199,6 +199,17 @@ public sealed class WorkspaceInfraTests : IDisposable
         Assert.Equal(("sprig-storefront-1-shop-services", "search"), (up[up.ToList().IndexOf("-p") + 1], up[^1]));
     }
 
+    [Fact]
+    public void A_container_s_users_are_the_apps_whose_start_would_start_it()
+    {
+        var (_, plan) = Grouped();
+
+        // The api needs the database through its migration job, which needs it too.
+        Assert.Equal(["shop-services/migrate", "shop-services/api"], WorkspaceService.UsersOf(plan, "shop-services/pg"));
+        Assert.Equal(["shop-services/web"], WorkspaceService.UsersOf(plan, "shop-services/search"));
+        Assert.Empty(WorkspaceService.UsersOf(plan, "storefront/mail"));
+    }
+
     [Theory]
     [InlineData("running", "healthy", 0, "healthy", NodeHealth.Good, true)]
     [InlineData("running", "", 0, "running", NodeHealth.Good, true)]

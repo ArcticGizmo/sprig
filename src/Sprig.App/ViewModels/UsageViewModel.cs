@@ -12,12 +12,46 @@ namespace Sprig.App.ViewModels;
 
 public enum UsageSort { Workspace, Cpu, Memory, Apps, Infra }
 
-/// <summary>One app or container of a workspace on the Usage page.</summary>
-/// <param name="Bar">Its memory as a width, against the workspace's heaviest part.</param>
-public sealed record UsagePart(string Name, string Kind, string Cpu, string Memory, double Bar, string Tip);
+/// <summary>A figure's last ten minutes, as a sparkline draws it and its tooltip says it.</summary>
+public abstract partial class UsageTrendView : ObservableObject
+{
+    /// <summary>Scaled to 0..1 for the sparkline (see <see cref="UsageViewModel.ScaleCpu"/>).</summary>
+    [ObservableProperty] private IReadOnlyList<double?>? _cpuTrend;
+    [ObservableProperty] private IReadOnlyList<double?>? _memoryTrend;
+    [ObservableProperty] private string _cpuTrendTip = "";
+    [ObservableProperty] private string _memoryTrendTip = "";
+
+    internal void ShowTrend(UsageTrend trend)
+    {
+        CpuTrend = UsageViewModel.ScaleCpu(trend.Cpu);
+        MemoryTrend = UsageViewModel.ScaleMemory(trend.Memory);
+        CpuTrendTip = trend.PeakCpu is { } peak ? $"Last 10 minutes: CPU peaked at {ResourceUsage.CpuText(peak)}" : "Last 10 minutes: no CPU figure yet";
+        MemoryTrendTip = trend.PeakMemory is { } most && trend.Memory.Min() is { } least
+            ? $"Last 10 minutes: memory between {ResourceUsage.MemoryText((long)least)} and {ResourceUsage.MemoryText((long)most)}"
+            : "Last 10 minutes: no memory figure yet";
+    }
+}
+
+/// <summary>One app or container of a workspace on the Usage page, kept from one refresh to the next.</summary>
+/// <param name="key">Its series in <see cref="UsageHistory"/>.</param>
+public sealed partial class UsagePart(string key) : UsageTrendView
+{
+    public string Key => key;
+
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _kind = "";
+    [ObservableProperty] private string _cpu = "";
+    [ObservableProperty] private string _memory = "";
+    [ObservableProperty] private string _tip = "";
+
+    /// <summary>Its memory as a width, against the workspace's heaviest part.</summary>
+    [ObservableProperty] private double _bar;
+
+    internal ResourceUsage Usage { get; set; } = new(null, 0);
+}
 
 /// <summary>One workspace on the Usage page, kept from one refresh to the next so it stays open and doesn't flicker.</summary>
-public sealed partial class UsageRow(string key, Action<UsageRow> toggled) : ObservableObject
+public sealed partial class UsageRow(string key, Action<UsageRow> toggled) : UsageTrendView
 {
     public string Key => key;
 
@@ -31,7 +65,9 @@ public sealed partial class UsageRow(string key, Action<UsageRow> toggled) : Obs
     /// <summary>Its memory as a width, against the heaviest workspace's.</summary>
     [ObservableProperty] private double _bar;
 
-    [ObservableProperty] private IReadOnlyList<UsagePart> _parts = [];
+    public ObservableCollection<UsagePart> Parts { get; } = [];
+
+    internal Dictionary<string, UsagePart> PartsByKey { get; } = new(StringComparer.Ordinal);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Chevron))]
@@ -61,6 +97,9 @@ public partial class UsageViewModel : PageViewModel
 {
     /// <summary>Widths, in pixels, of the bars: the machine's, a workspace's and a part's.</summary>
     public const double MachineBarWidth = 420, RowBarWidth = 90, PartBarWidth = 60;
+
+    /// <summary>Width of a sparkline: ten minutes in 300 slots, so about four to a pixel.</summary>
+    public const double SparkWidth = 72;
 
     readonly AppServices _services;
     readonly MachineUsage _machine = new();
@@ -169,6 +208,9 @@ public partial class UsageViewModel : PageViewModel
     {
         if (row.IsExpanded) _expanded.Add(row.Key);
         else _expanded.Remove(row.Key);
+        // Closed, its parts' sparklines weren't kept up, so they're drawn now rather than at the next refresh.
+        if (row.IsExpanded)
+            foreach (var part in row.Parts) part.ShowTrend(_services.History.Of(part.Key));
     }
 
     /// <summary>Gather every workspace's figures, sort them, and bring the table and the machine's bars up to date.</summary>
@@ -176,6 +218,7 @@ public partial class UsageViewModel : PageViewModel
     {
         var runners = _services.HostStatus.Runners ?? [];
         var infra = _services.InfraUsage.Usage;
+        var history = _services.History;
         var records = _records.ToDictionary(r => r.Key, StringComparer.Ordinal);
         // A runner of a workspace the list hasn't heard of (made from a terminal since) gets its row all the same.
         var keys = records.Keys.Concat(runners.Where(r => r.Usage is not null).Select(r => r.Workspace)).Distinct(StringComparer.Ordinal);
@@ -206,20 +249,36 @@ public partial class UsageViewModel : PageViewModel
             row.Apps = apps.Length == 0 ? "—" : $"{apps.Length} running";
             row.Infra = record?.IsMain == true ? "yours" : containers.Length == 0 ? "—" : $"{containers.Length} running";
 
-            var parts = apps.Select(a => (Name: a.Name[(a.Name.IndexOf('/') + 1)..], Kind: $"app · {a.Name[..Math.Max(0, a.Name.IndexOf('/'))]}", Usage: a.Usage!))
-                .Concat(containers.Select(c => (Name: c.Key.Service, Kind: "container", Usage: c.Value)))
+            row.ShowTrend(history.OfWorkspace(key, projects));
+
+            var parts = apps.Select(a => (Key: UsageHistory.AppId(key, a.Name), Name: a.Name[(a.Name.IndexOf('/') + 1)..],
+                    Kind: $"app · {a.Name[..Math.Max(0, a.Name.IndexOf('/'))]}", Usage: a.Usage!))
+                .Concat(containers.Select(c => (Key: UsageHistory.InfraId(c.Key.Project, c.Key.Service), Name: c.Key.Service, Kind: "container", Usage: c.Value)))
                 .ToArray();
             var heaviest = Math.Max(1, parts.Max(p => p.Usage.Memory));
-            var ordered = SortBy == UsageSort.Cpu ? Order(parts, p => p.Usage.Cpu ?? 0, p => p.Name) : Order(parts, p => p.Usage.Memory, p => p.Name);
-            var built = ordered.Select(p => new UsagePart(p.Name, p.Kind, ResourceUsage.CpuText(p.Usage.Cpu), ResourceUsage.MemoryText(p.Usage.Memory),
-                Math.Max(2, PartBarWidth * p.Usage.Memory / heaviest), p.Usage.Line)).ToArray();
-            if (!built.SequenceEqual(row.Parts)) row.Parts = built;
+            var built = new List<UsagePart>();
+            foreach (var p in parts)
+            {
+                if (!row.PartsByKey.TryGetValue(p.Key, out var part)) row.PartsByKey[p.Key] = part = new UsagePart(p.Key);
+                part.Name = p.Name;
+                part.Kind = p.Kind;
+                part.Usage = p.Usage;
+                part.Cpu = ResourceUsage.CpuText(p.Usage.Cpu);
+                part.Memory = ResourceUsage.MemoryText(p.Usage.Memory);
+                part.Bar = Math.Max(2, PartBarWidth * p.Usage.Memory / heaviest);
+                part.Tip = p.Usage.Line;
+                // Only an open row's sparklines are seen, so only theirs are worked out.
+                if (row.IsExpanded) part.ShowTrend(history.Of(p.Key));
+                built.Add(part);
+            }
+            foreach (var gone in row.PartsByKey.Keys.Except(built.Select(p => p.Key)).ToArray()) row.PartsByKey.Remove(gone);
+            Sync(row.Parts, SortBy == UsageSort.Cpu ? Order(built, p => p.Usage.Cpu ?? 0, p => p.Name) : Order(built, p => p.Usage.Memory, p => p.Name));
             shown.Add(row);
         }
 
         var heaviestRow = Math.Max(1, shown.Count == 0 ? 1 : shown.Max(r => r.Total.Memory));
         foreach (var row in shown) row.Bar = Math.Max(2, RowBarWidth * row.Total.Memory / heaviestRow);
-        Sync(SortBy switch
+        Sync(Rows, SortBy switch
         {
             UsageSort.Workspace => SortDescending ? shown.OrderByDescending(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList()
                 : shown.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList(),
@@ -237,20 +296,38 @@ public partial class UsageViewModel : PageViewModel
     List<T> Order<T>(IEnumerable<T> items, Func<T, double> key, Func<T, string> name)
         => (SortDescending ? items.OrderByDescending(key) : items.OrderBy(key)).ThenBy(name, StringComparer.OrdinalIgnoreCase).ToList();
 
-    /// <summary>Move the rows into <paramref name="order"/> rather than rebuilding the list, so an open row and the
-    /// pointer's hover survive each second's refresh.</summary>
-    void Sync(IReadOnlyList<UsageRow> order)
+    /// <summary>Move the items into <paramref name="order"/> rather than rebuilding the list, so an open row, the
+    /// pointer's hover and a tooltip survive each second's refresh.</summary>
+    void Sync<T>(ObservableCollection<T> list, IReadOnlyList<T> order) where T : class
     {
-        for (var i = Rows.Count - 1; i >= 0; i--)
-            if (!order.Contains(Rows[i])) Rows.RemoveAt(i);
+        for (var i = list.Count - 1; i >= 0; i--)
+            if (!order.Contains(list[i])) list.RemoveAt(i);
         for (var i = 0; i < order.Count; i++)
         {
-            var at = Rows.IndexOf(order[i]);
-            if (at < 0) Rows.Insert(i, order[i]);
-            else if (at != i) Rows.Move(at, i);
+            var at = list.IndexOf(order[i]);
+            if (at < 0) list.Insert(i, order[i]);
+            else if (at != i) list.Move(at, i);
         }
         OnPropertyChanged(nameof(HasRows));
         OnPropertyChanged(nameof(NoRows));
+    }
+
+    /// <summary>CPU from nothing up to its peak, at least 1%, so an idle app lies flat along the bottom rather than
+    /// showing its noise at full height.</summary>
+    public static double?[] ScaleCpu(double?[] cpu)
+    {
+        var top = Math.Max(1, cpu.Max() ?? 0);
+        return cpu.Select(v => v / top).ToArray();
+    }
+
+    /// <summary>Memory between its low and its peak, so growth shows; the span is at least a tenth of the peak, so
+    /// memory that holds steady doesn't blow its small wobbles up to full height.</summary>
+    public static double?[] ScaleMemory(double?[] memory)
+    {
+        if (memory.Max() is not { } peak || peak <= 0) return memory.Select(v => v is null ? null : (double?)0).ToArray();
+        var span = Math.Max(peak - (memory.Min() ?? 0), peak * 0.1);
+        var floor = peak - span;
+        return memory.Select(v => (v - floor) / span).ToArray();
     }
 
     /// <summary>The machine's memory and CPU, with sprig's share of each drawn inside what's in use.</summary>

@@ -85,18 +85,30 @@ public partial class ReposViewModel : PageViewModel
         if (row is not null) OpenWorkspace?.Invoke(row.Key);
     }
 
+    /// <summary>Rows are replaced only when one differs, so following what runs doesn't redraw a list that's the same.</summary>
     void ListWorkspaces(RepoItem? repo)
     {
-        WorkspacesOfIt.Clear();
-        if (repo is not null)
-            foreach (var w in _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase))
+        var rows = repo is null ? [] : _services.Workspaces.List().Where(w => w.Orchestration == repo.Id).OrderBy(w => w.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(w =>
             {
                 var state = _services.RunState(w);
-                WorkspacesOfIt.Add(new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
+                return new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
                     w.IsMain ? "main checkout" : w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out",
-                    state, state == "running", state == "failed"));
-            }
+                    state, state == "running", state == "failed");
+            }).ToArray();
+        if (rows.SequenceEqual(WorkspacesOfIt)) return;
+        WorkspacesOfIt.Clear();
+        foreach (var row in rows) WorkspacesOfIt.Add(row);
         OnPropertyChanged(nameof(HasWorkspaces));
+    }
+
+    /// <summary>While the page shows, its workspaces' states follow what runs: the host's answers bring the apps, and
+    /// each one is a nudge to ask docker (on its own beat) which containers are up.</summary>
+    void FollowStates()
+    {
+        if (!IsActive) return;
+        _ = _services.InfraUsage.PollRunningAsync();
+        ListWorkspaces(Selected);
     }
 
     [ObservableProperty]
@@ -186,6 +198,8 @@ public partial class ReposViewModel : PageViewModel
     {
         _services = services;
         Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
+        services.HostStatus.Changed += _ => FollowStates();
+        services.InfraUsage.Changed += FollowStates;
         // Only counted here, for the nav; reading the repos runs their definitions, so it waits until the page is shown.
         NavCount = services.Stored.Repos().Count;
     }

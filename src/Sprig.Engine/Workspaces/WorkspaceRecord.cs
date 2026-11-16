@@ -26,6 +26,8 @@ public sealed record WorkspaceRepo(string RepoPath, string Name, string Source, 
 /// defaults.</param>
 /// <param name="CheckoutBranch">For one that runs in place, the branch the checkout was on when it last came up; the
 /// checkout is the user's own, so sprig never switches it.</param>
+/// <param name="ReadyFrom">Every file it was last made ready from (definitions and compose files), with a hash of each
+/// one's content then; null for a record from before this was kept.</param>
 public sealed record WorkspaceRecord(
     string Orchestration,
     string OrchestrationPath,
@@ -42,7 +44,8 @@ public sealed record WorkspaceRecord(
     string? Error = null,
     DateTimeOffset? LastUpAt = null,
     IReadOnlyDictionary<string, string>? Values = null,
-    string? CheckoutBranch = null)
+    string? CheckoutBranch = null,
+    IReadOnlyDictionary<string, string>? ReadyFrom = null)
 {
     /// <summary>The workspace every repo and orchestration has that runs its repos where they're checked out.</summary>
     public const string MainName = "main";

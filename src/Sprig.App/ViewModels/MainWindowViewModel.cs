@@ -50,6 +50,9 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <summary>The app-wide host poll; the window's timer drives it.</summary>
     public HostStatus HostStatus { get; }
 
+    /// <summary>Told by the window whether it shows, so docker isn't asked on behalf of a hidden window.</summary>
+    public InfraUsage InfraUsage { get; }
+
     public bool ShowUpdateNotice => !string.IsNullOrEmpty(UpdateNotice);
 
     public bool IsDevInstance => AppProfile.IsDev;
@@ -60,6 +63,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
     {
         HostStatus = services.HostStatus;
+        InfraUsage = services.InfraUsage;
         _ui = services.Ui;
         _navCollapsed = _ui.NavCollapsed;
         Home = new HomeViewModel(services);

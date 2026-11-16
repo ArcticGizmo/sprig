@@ -363,7 +363,7 @@ public sealed partial class WorkspaceService(
                     : StartInfra(plan, record, step, cancellation, needed),
             };
             var upAt = DateTimeOffset.UtcNow;
-            record = record with { State = WorkspaceState.Up, UpdatedAt = upAt, LastUpAt = upAt };
+            record = record with { State = WorkspaceState.Up, UpdatedAt = upAt, LastUpAt = upAt, ReadyFrom = ReadyFromFiles(loaded) };
             store.Save(record);
             return record;
         }

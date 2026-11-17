@@ -13,6 +13,7 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 | `untrusted` | A definition isn't approved to run; `untrusted` lists the files | Approve one you wrote with `sprig trust add <file>`. Ask the user before approving one you didn't |
 | `held` | Another definition's main is running in this checkout | Ask the user, then pass `--take-over` |
 | `slot-broken` | Folders that aren't worktrees are in the slot's way | Say so; `--fix-slot` deletes them, `--slot <n>` uses another slot |
+| `slot-busy` | Another sprig (another agent, say) is checking out that slot or branch right now | Wait for it, or leave `--slot` out to use another slot |
 | `problems` | The definitions don't plan; `problems` lists each with file and line | Fix them (see below) |
 | `error` | Anything else; `error` says what | Read it |
 

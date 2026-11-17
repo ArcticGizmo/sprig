@@ -579,32 +579,44 @@ public sealed partial class WorkspaceService(
 
     /// <summary>
     /// The slot of <paramref name="id"/> a check-out of <paramref name="branch"/> would use: the one it's already in, the
-    /// one asked for, the lowest free one, or else the next number. Its record, when the slot exists already.
+    /// one asked for, the lowest free one, or else the next number. Its record, when the slot exists already. A slot
+    /// another check-out is making is never chosen.
     /// </summary>
-    public (string Slot, WorkspaceRecord? Record) SlotFor(string id, string branch, int? slot = null)
+    /// <param name="claimed">The slots other check-outs hold, with their branches; null to read them.</param>
+    public (string Slot, WorkspaceRecord? Record) SlotFor(string id, string branch, int? slot = null, IReadOnlyDictionary<string, string>? claimed = null)
     {
+        claimed ??= store.ClaimedSlots(id);
         var mine = store.List().Where(r => r.Orchestration == id && IsSlot(r.Name)).ToArray();
+        if (claimed.FirstOrDefault(c => c.Value == branch) is { Key: { } making })
+            throw Busy($"'{branch}' is being checked out in {id}--{making} by another sprig right now; try again once it's done");
         if (mine.FirstOrDefault(r => r.Branch == branch) is { } current)
         {
             if (slot is { } other && current.Name != Number(other))
                 throw new WorkspaceException($"'{branch}' is already checked out in {current.SlotName}");
+            if (claimed.ContainsKey(current.Name)) throw Busy($"another sprig is working on {current.SlotName} right now; try again once it's done");
             return (current.Name, current);
         }
         if (slot is { } asked)
         {
             if (asked < 1) throw new WorkspaceException("slots are numbered from 1");
+            if (claimed.ContainsKey(Number(asked))) throw Busy($"another sprig is checking a branch out in {id}--{asked} right now; leave the slot out to use another");
             var at = mine.FirstOrDefault(r => r.Name == Number(asked));
             if (at is { IsFree: false })
                 throw new WorkspaceException($"{at.SlotName} has '{at.Branch}' checked out; free it first, or leave the slot out to use a free one");
             return (Number(asked), at);
         }
-        if (mine.Where(r => r.IsFree).OrderBy(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)).FirstOrDefault() is { } free)
+        if (mine.Where(r => r.IsFree && !claimed.ContainsKey(r.Name)).OrderBy(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)).FirstOrDefault() is { } free)
             return (free.Name, free);
-        var used = mine.Select(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)).ToHashSet();
+        var used = mine.Select(r => r.Name).Concat(claimed.Keys).ToHashSet(StringComparer.Ordinal);
         var next = 1;
-        while (used.Contains(next)) next++;
+        while (used.Contains(Number(next))) next++;
         return (Number(next), null);
     }
+
+    /// <summary>What <see cref="WorkspaceException.Code"/> calls a slot or branch another check-out holds right now.</summary>
+    public const string BusyCode = "slot-busy";
+
+    static WorkspaceException Busy(string message) => new(message) { Code = BusyCode };
 
     static string Number(int slot) => slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -622,9 +634,19 @@ public sealed partial class WorkspaceService(
         options ??= new CheckOutOptions();
         if (!git.IsValidBranchName(branch)) throw new WorkspaceException($"'{branch}' isn't a valid branch name");
         if (options.NewBranch && BranchTaken(loaded, branch) is { } taken) throw new WorkspaceException(taken);
-        var (slot, record) = SlotFor(loaded.Id, branch, options.Slot);
+        var ((slot, record), claim) = store.ClaimSlot(loaded.Id, branch, claimed =>
+        {
+            var chosen = SlotFor(loaded.Id, branch, options.Slot, claimed);
+            return (chosen.Slot, chosen);
+        });
+        using (claim) return CheckOutInto(loaded, branch, slot, record, options, progress, cancellation, beforeInfra, values, unset, starting);
+    }
 
-        if (BrokenSlotFor(loaded, branch, options.Slot) is { } broken)
+    WorkspaceRecord CheckOutInto(LoadedOrchestration loaded, string branch, string slot, WorkspaceRecord? record, CheckOutOptions options,
+        IProgress<WorkspaceEvent>? progress, CancellationToken cancellation, Action<WorkspaceRecord, Plan>? beforeInfra,
+        IReadOnlyDictionary<string, string>? values, IReadOnlyCollection<string>? unset, Starting? starting)
+    {
+        if (Broken(loaded, slot, record) is { } broken)
         {
             if (!options.FixSlot)
                 throw new WorkspaceException($"{broken.Why}. Fix it (deleting what's in the way), or use {broken.NextName} instead");
@@ -687,7 +709,17 @@ public sealed partial class WorkspaceService(
         IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
     {
         if (loaded.Orchestration is null) throw new WorkspaceException($"{Path.GetFileName(loaded.OrchestrationPath)} isn't ready to run", loaded.Problems);
-        var name = FreeSlotName(loaded.Id, slot);
+        var (name, claim) = store.ClaimSlot(loaded.Id, null, claimed =>
+        {
+            var chosen = FreeSlotName(loaded.Id, slot, claimed);
+            return (chosen, chosen);
+        });
+        using (claim) return MakeFreeSlotIn(loaded, name, at, fixSlot, progress, cancellation);
+    }
+
+    WorkspaceRecord MakeFreeSlotIn(LoadedOrchestration loaded, string name, string? at, bool fixSlot,
+        IProgress<WorkspaceEvent>? progress, CancellationToken cancellation)
+    {
         var settingsNow = settings.Get();
         var folder = WorkspaceFolder(loaded, loaded.Id, name, settingsNow);
         var step = new Steps(progress);
@@ -735,12 +767,15 @@ public sealed partial class WorkspaceService(
 
     /// <summary>The slot <see cref="MakeFreeSlot"/> makes: the one asked for, which mustn't exist, else the lowest number
     /// not in use.</summary>
-    public string FreeSlotName(string id, int? slot = null)
+    public string FreeSlotName(string id, int? slot = null, IReadOnlyDictionary<string, string>? claimed = null)
     {
-        var used = store.List().Where(r => r.Orchestration == id && IsSlot(r.Name)).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        claimed ??= store.ClaimedSlots(id);
+        var used = store.List().Where(r => r.Orchestration == id && IsSlot(r.Name)).Select(r => r.Name)
+            .Concat(claimed.Keys).ToHashSet(StringComparer.Ordinal);
         if (slot is { } asked)
         {
             if (asked < 1) throw new WorkspaceException("slots are numbered from 1");
+            if (claimed.ContainsKey(Number(asked))) throw Busy($"another sprig is making {id}--{asked} right now");
             if (used.Contains(Number(asked))) throw new WorkspaceException($"{id}--{asked} exists already");
             return Number(asked);
         }
@@ -757,7 +792,13 @@ public sealed partial class WorkspaceService(
     {
         if (loaded.Orchestration is null) return null;
         var (name, record) = SlotFor(loaded.Id, branch, slot);
-        if (record is { IsFree: false }) return null;
+        return Broken(loaded, name, record);
+    }
+
+    /// <summary>The slot <paramref name="name"/> when it's broken, with the slot to use instead.</summary>
+    BrokenSlot? Broken(LoadedOrchestration loaded, string name, WorkspaceRecord? record)
+    {
+        if (loaded.Orchestration is null || record is { IsFree: false }) return null;
         var settingsNow = settings.Get();
         var inTheWay = InTheWay(loaded, record?.Folder ?? WorkspaceFolder(loaded, loaded.Id, name, settingsNow));
         if (inTheWay.Count == 0) return null;
@@ -778,9 +819,10 @@ public sealed partial class WorkspaceService(
     string NextUsableSlot(LoadedOrchestration loaded, string skip, SprigSettings settingsNow)
     {
         var mine = store.List().Where(r => r.Orchestration == loaded.Id && IsSlot(r.Name)).ToArray();
-        foreach (var free in mine.Where(r => r.IsFree && r.Name != skip).OrderBy(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)))
+        var claimed = store.ClaimedSlots(loaded.Id);
+        foreach (var free in mine.Where(r => r.IsFree && r.Name != skip && !claimed.ContainsKey(r.Name)).OrderBy(r => int.Parse(r.Name, System.Globalization.CultureInfo.InvariantCulture)))
             if (InTheWay(loaded, free.Folder ?? WorkspaceFolder(loaded, loaded.Id, free.Name, settingsNow)).Count == 0) return free.Name;
-        var used = mine.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        var used = mine.Select(r => r.Name).Concat(claimed.Keys).ToHashSet(StringComparer.Ordinal);
         for (var n = 1; ; n++)
         {
             var name = Number(n);

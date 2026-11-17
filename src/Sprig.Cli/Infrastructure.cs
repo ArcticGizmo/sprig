@@ -107,6 +107,7 @@ static class CliErrors
     public const string Untrusted = "untrusted";
     public const string Held = "held";
     public const string SlotBroken = "slot-broken";
+    public const string SlotBusy = WorkspaceService.BusyCode;
     public const string Problems = "problems";
     public const string Error = "error";
 

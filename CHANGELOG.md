@@ -15,8 +15,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Two check-outs at once never pick the same slot** — agents in parallel stop treading on each other.
 - **Claude Code plugins** — four of them, take what you like: skills to onboard repos and run workspaces, worktree hooks that make an agent's worktree a slot, and session context.
 
+- **`start --json` and `up --json` say why apps didn't start** — the reason, the check they had to pass, and the end of each log.
+
 ### Changed
-- **Problems in `--json` say `"Error"` or `"Warning"`** — not `0` or `1`.
+- **Problems and app states in `--json` are named** — `"Error"`, `"Ready"`, not `0` or `3`.
 
 ---
 

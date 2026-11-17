@@ -116,9 +116,9 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
             return CliOutput.Ok(s.Json, $"starting {specs.Count} apps", new { ok = true, apps = specs.Select(x => x.Name) });
 
         var mine = WaitUntilReady(cli, record.Key, specs, s.Json, cancellation);
-        var failed = mine.Where(r => !r.State.Satisfies()).ToArray();
-        if (s.Json) CliOutput.Json(new { ok = failed.Length == 0, runners = mine });
-        return failed.Length == 0 ? 0 : 1;
+        var failure = StartFailure.Of(plan, mine);
+        if (s.Json) CliOutput.Json(new { ok = failure is null, code = failure?.Code, error = failure?.Error, runners = mine, failed = failure?.Apps });
+        return failure is null ? 0 : 1;
     }
 
     /// <summary>Make the workspace ready (worktrees, ports, files, its infra's definitions), starting nothing. Null,
@@ -134,7 +134,8 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         }
         catch (WorkspaceException e)
         {
-            Console.Error.WriteLine($"error: {e.Message}" + (e.HeldBy is not null ? $"; take the checkout over with: sprig up {s.Orchestration} --take-over" : ""));
+            if (s.Json) CliOutput.Json(CliErrors.Payload(e));
+            else Console.Error.WriteLine($"error: {e.Message}" + (e.HeldBy is not null ? $"; take the checkout over with: sprig up {s.Orchestration} --take-over" : ""));
             return null;
         }
     }
@@ -189,6 +190,57 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
             _ => ("dim", r.State.ToString().ToLowerInvariant()),
         };
         cli.Ansi.MarkupLine($"[{colour}]{Markup.Escape(r.Name)}[/]  {Markup.Escape(text)}");
+    }
+}
+
+/// <summary>
+/// Why apps didn't become ready, as <c>--json</c> gives it, so an agent learns what went wrong without a second command:
+/// each app's state, the reason the host gave, what it had to do to count as ready, and the end of its log.
+/// </summary>
+/// <param name="Code"><c>start-failed</c> when each app settled and some failed; <c>start-timed-out</c> when some were
+/// still starting when sprig stopped waiting.</param>
+sealed record StartFailure(string Code, string Error, IReadOnlyList<StartFailure.App> Apps)
+{
+    public const string Failed = "start-failed";
+    public const string TimedOut = "start-timed-out";
+
+    /// <param name="ReadyWhen">What would have made it ready (a health check, a log line), for one that never got there.</param>
+    public sealed record App(string Name, RunnerState State, string Why, string? ReadyWhen, string LogFile, IReadOnlyList<string> LastLines);
+
+    const int LastLineCount = 30;
+
+    /// <summary>Null when every one of <paramref name="runners"/> is ready, or finished as a job should.</summary>
+    public static StartFailure? Of(Plan plan, IReadOnlyList<RunnerStatus> runners)
+    {
+        var bad = runners.Where(r => !r.State.Satisfies()).ToArray();
+        if (bad.Length == 0) return null;
+        var apps = bad.Select(r => new App(r.Name, r.State, Why(r), ReadyWhen(plan, r), r.LogFile, LastLines(r.LogFile))).ToArray();
+        var code = bad.Any(r => !r.State.IsSettled()) ? TimedOut : Failed;
+        return new StartFailure(code, string.Join("; ", apps.Select(a => $"{a.Name}: {a.Why}")), apps);
+    }
+
+    static string Why(RunnerStatus r) => r.State switch
+    {
+        _ when r.Error is { } error => error,
+        RunnerState.Exited => $"exited with code {r.Exit}",
+        RunnerState.Stopped => "stopped",
+        _ when !r.State.IsSettled() => $"still {r.State.ToString().ToLowerInvariant()} when sprig stopped waiting",
+        _ => r.State.ToString().ToLowerInvariant(),
+    };
+
+    static string? ReadyWhen(Plan plan, RunnerStatus r)
+    {
+        if (plan.Apps.FirstOrDefault(a => a.Key == r.Name) is not { } app) return null;
+        if (app.Job) return "it finishes with exit code 0";
+        var checks = (app.Health ?? []).Select(h => $"{h.Endpoint} answers {h.Path} with success")
+            .Concat(app.ReadyLog is { } log ? [$"a line of its output matches {log}"] : []).ToArray();
+        return checks.Length > 0 ? string.Join(" and ", checks) : "it keeps running";
+    }
+
+    static IReadOnlyList<string> LastLines(string file)
+    {
+        try { return File.Exists(file) ? LogsCommand.Tail(file, LastLineCount).Select(e => e.Text).ToArray() : []; }
+        catch (IOException) { return []; }
     }
 }
 
@@ -412,15 +464,20 @@ public sealed class LogsCommand(CliContext cli) : Command<LogsCommand.Settings>
             file = HostProtocol.LogFile(cli.Paths, key, $"{app.Owner}/{app.Name}");
         }
         if (!File.Exists(file)) throw new InvalidOperationException($"{s.App} has no log yet");
-        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        foreach (var entry in Tail(file, s.Lines))
+            Console.WriteLine(s.Timestamps && entry.Time is { } time ? $"{time.LocalDateTime:HH:mm:ss.fff} {entry.Text}" : entry.Text);
+        return 0;
+    }
+
+    /// <summary>The last <paramref name="lines"/> lines of an app's log, read while the host may still be writing it.</summary>
+    internal static IReadOnlyList<LogEntry> Tail(string file, int lines)
+    {
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream);
         var parser = new LogLineParser();
         var text = reader.ReadToEnd();
-        var entries = text.Split('\n').Select(l => l.TrimEnd('\r')).SkipLast(text.EndsWith('\n') ? 1 : 0)
-            .Select(parser.Parse).OfType<LogEntry>().TakeLast(s.Lines);
-        foreach (var entry in entries)
-            Console.WriteLine(s.Timestamps && entry.Time is { } time ? $"{time.LocalDateTime:HH:mm:ss.fff} {entry.Text}" : entry.Text);
-        return 0;
+        return text.Split('\n').Select(l => l.TrimEnd('\r')).SkipLast(text.EndsWith('\n') ? 1 : 0)
+            .Select(parser.Parse).OfType<LogEntry>().TakeLast(lines).ToArray();
     }
 }
 

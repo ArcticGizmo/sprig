@@ -57,6 +57,8 @@ public sealed record CommandSpec(string File, IReadOnlyList<string> Args)
 /// <summary><c>Waiting</c>: built, waiting for what it depends on. <c>Running</c> and <c>Completed</c> are a job's
 /// equivalents of <c>Ready</c>: running, then finished with code 0. <c>Restarting</c>: exited on its own and about to
 /// start again. <c>Stopping</c>: asked to stop, not yet gone.</summary>
+// By name in the CLI's JSON; the host protocol's own options name it in camelCase, as before.
+[JsonConverter(typeof(JsonStringEnumConverter<RunnerState>))]
 public enum RunnerState { Building, Waiting, Starting, Ready, Running, Completed, Exited, Restarting, Stopping, Stopped, Failed }
 
 public static class RunnerStates

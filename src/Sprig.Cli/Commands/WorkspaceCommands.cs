@@ -254,8 +254,14 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         cli.Ansi.WriteLine();
         StartCommand.Send(cli, specs, []);
         var runners = StartCommand.WaitUntilReady(cli, record.Key, specs, json, cancellation);
-        var ok = runners.All(r => r.State.Satisfies());
-        if (json) CliOutput.Json(new { ok, workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), runners, secretsUnmasked = s.UnmaskSecrets });
+        var failure = StartFailure.Of(plan, runners);
+        var ok = failure is null;
+        if (json)
+            CliOutput.Json(new
+            {
+                ok, code = failure?.Code, error = failure?.Error,
+                workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), runners, failed = failure?.Apps, secretsUnmasked = s.UnmaskSecrets,
+            });
         else
         {
             var names = Markup.Escape(Words(record));

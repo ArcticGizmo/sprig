@@ -14,6 +14,8 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 | `held` | Another definition's main is running in this checkout | Ask the user, then pass `--take-over` |
 | `slot-broken` | Folders that aren't worktrees are in the slot's way | Say so; `--fix-slot` deletes them, `--slot <n>` uses another slot |
 | `slot-busy` | Another sprig (another agent, say) is checking out that slot or branch right now | Wait for it, or leave `--slot` out to use another slot |
+| `start-failed` | Apps didn't become ready; `failed` lists each with `Why`, `ReadyWhen` (the check it had to pass) and `LastLines` of its log | Read those, fix the definition or the app, and start again |
+| `start-timed-out` | Apps were still starting when sprig stopped waiting (five minutes); `failed` as above | Look at `LastLines`: a slow first build, or a health check that never answers |
 | `problems` | The definitions don't plan; `problems` lists each with file and line | Fix them (see below) |
 | `error` | Anything else; `error` says what | Read it |
 
@@ -27,7 +29,7 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 3. `sprig check --json` reads and plans the file without running anything or needing approval. Fix every problem it gives, by file and line, and run it again until `ok` is true.
 4. `sprig plan --json` shows what a workspace would get: every port, every value written into every file, and where each came from. Check that each app gets the port and addresses it needs.
 5. Try it in a slot, not the user's checkout: `sprig up -b <branch> --json --trust`, then `sprig info --json`. `--trust` approves definitions without asking, so pass it only for a definition you wrote.
-6. An app that doesn't become ready: `sprig logs <app> -n 100`. Fix the definition (or the app's config), then `sprig start --json` again; a changed definition makes the workspace ready again first.
+6. An app that doesn't become ready: the `failed` list in the JSON says why, what it had to do to be ready, and how its log ends; `sprig logs <app> -n 200` for more. Fix the definition (or the app's config), then `sprig start --json` again; a changed definition makes the workspace ready again first.
 7. When it runs, `sprig free` gives the slot back. Leave committing the `sprig.yaml` to the user.
 
 Keep the definition plain: every key in it is checked, unknown keys are errors, values are read exactly as written, and `${…}` goes only in values, never in commands.

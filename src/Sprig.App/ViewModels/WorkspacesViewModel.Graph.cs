@@ -12,14 +12,14 @@ using Sprig.Engine.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
+/// <summary>Links under one heading in the graph's details: the workspace's own, or one app's.</summary>
+public sealed record QuickLinkGroup(string Title, IReadOnlyList<PlannedLink> Links);
+
 /// <summary>
 /// The selected workspace as a graph: every app, job and container, linked by the values one takes from another, each
 /// showing its state, with its log and start/stop a click away. Apps' states come from the host's poll; containers'
 /// from docker, asked every few seconds while the graph (or a container's log) is showing.
 /// </summary>
-/// <summary>Links under one heading in the graph's details: the workspace's own, or one app's.</summary>
-public sealed record QuickLinkGroup(string Title, IReadOnlyList<PlannedLink> Links);
-
 public partial class WorkspacesViewModel
 {
     static readonly TimeSpan InfraPollEvery = TimeSpan.FromSeconds(3);
@@ -185,6 +185,15 @@ public partial class WorkspacesViewModel
     public bool GraphFocusEmpty => GraphFocus && _plan is not null && Graph is { Nodes.Count: 0 };
 
     static ContainerLogFollower Follower(InfraTarget target) => new(target.Project.Name, target.Service);
+
+    /// <summary>A start or stop already under way is left to finish: stopping it halfway would leave the workspace
+    /// neither one thing nor the other, and the host carries it on regardless of the window.</summary>
+    public override void Dispose()
+    {
+        base.Dispose();
+        _slotCheck?.Cancel();
+        CloseFollowers();
+    }
 
     void CloseFollowers()
     {

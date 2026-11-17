@@ -1,6 +1,5 @@
 using System;
 using Avalonia.Controls;
-using Avalonia.Threading;
 using Sprig.App.Icons;
 using Sprig.App.ViewModels;
 
@@ -8,11 +7,6 @@ namespace Sprig.App.Views;
 
 public partial class MainWindow : Window
 {
-    static readonly TimeSpan Visible = TimeSpan.FromSeconds(1);
-    static readonly TimeSpan Minimised = TimeSpan.FromSeconds(5);
-
-    readonly DispatcherTimer _hostPoll = new() { Interval = Visible };
-
     public MainWindow()
     {
         InitializeComponent();
@@ -20,28 +14,24 @@ public partial class MainWindow : Window
         LogoImage.Source = SprigLogo.Create();
         UpdateLogoImage.Source = SprigLogo.Create();
 
-        _hostPoll.Tick += (_, _) =>
-        {
-            if (DataContext is MainWindowViewModel vm) _ = vm.HostStatus.PollAsync();
-        };
-        Opened += (_, _) =>
-        {
-            if (DataContext is MainWindowViewModel vm) _ = vm.HostStatus.PollAsync();
-            _hostPoll.Start();
-        };
-        Closed += (_, _) => _hostPoll.Stop();
         // Coming back from a terminal is when the CLI has most likely changed what the page shows.
         Activated += (_, _) =>
         {
+            LastActivated = DateTime.UtcNow;
             if (DataContext is MainWindowViewModel vm) vm.WindowFocused();
         };
-        // Hidden in the tray it still polls, so the tray's count of running apps stays true, just less often.
         PropertyChanged += (_, e) =>
         {
-            if (e.Property != WindowStateProperty && e.Property != IsVisibleProperty) return;
-            var shown = WindowState != WindowState.Minimized && IsVisible;
-            _hostPoll.Interval = shown ? Visible : Minimised;
-            if (DataContext is MainWindowViewModel vm) vm.InfraUsage.WindowShown = shown;
+            if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty) ShownChanged?.Invoke();
         };
     }
+
+    /// <summary>Open and not minimised: someone could be looking at it, so the app polls quickly on its behalf.</summary>
+    public bool IsShown => IsVisible && WindowState != WindowState.Minimized;
+
+    public event Action? ShownChanged;
+
+    /// <summary>When it last came to the front, so the one used last can be brought back where there's no telling
+    /// which desktop a window is on.</summary>
+    public DateTime LastActivated { get; private set; } = DateTime.UtcNow;
 }

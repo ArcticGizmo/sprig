@@ -9,6 +9,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.5] - 2026-11-17
+
+One sprig, as many windows as you have desktops.
+
+### Added
+- **More than one window** — one per virtual desktop, if that's your filing system.
+- **Open in a new window** — in a workspace's ⋯ menu; "New window" in the tray.
+- **Launching sprig opens it on this desktop** — no more being whisked off to another.
+- **`sprig open <id> <workspace>`** — straight to that workspace's page.
+- **`sprig cd` and `sprig path`** — to a workspace's root, a repo, or a `cd:` folder.
+- **`cd:` in `sprig.yaml`** — name the folders worth going straight to.
+- **Open root in VS Code, a terminal or the file browser** — under ⋯.
+- **Start at once** — a setting to build and start fewer apps together.
+- **Graph focus** — just what's running and the infra it uses.
+- **Quick links on the graph** — every page worth opening, when nothing's picked.
+- **`~` in path fields** — means home, as your shell intended.
+
+### Changed
+- **Window titles name the workspace** — so Alt-Tab can tell them apart.
+- **Reopening from the tray goes back to your workspace.**
+
+---
+
 ## [v0.9.4] - 2026-11-17
 
 The installer now includes the part that actually runs things.

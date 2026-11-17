@@ -49,7 +49,7 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 
 | Command | What it does |
 | --- | --- |
-| `sprig open` | Launch the desktop app. |
+| `sprig open [id] [workspace]` | Launch the desktop app, or bring a window of it to the virtual desktop you're on. Name a workspace to open its page in a window of its own. |
 | `sprig update` | Install a newer release in place. `--check` only reports. |
 | `sprig host status \| stop` | The background process that runs workspaces' apps. |
 | `sprig shell install \| shims` | Shell integration: PATH entries and shims. |

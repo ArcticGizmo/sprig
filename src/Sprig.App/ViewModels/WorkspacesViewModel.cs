@@ -423,8 +423,7 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         _services = services;
         Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
-        _services.HostStatus.Changed += ApplyRunners;
-        _services.InfraUsage.Changed += OnInfraUsage;
+        FollowPolls(services, ApplyRunners, OnInfraUsage);
         OrchestrationNames.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOrchestrations));
         _lastRunners = _services.HostStatus.Runners;
         Logs.ShowTimes = _services.Ui.LogTimes;

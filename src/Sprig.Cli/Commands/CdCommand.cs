@@ -68,7 +68,7 @@ static class PlaceTarget
     }
 
     /// <summary>The workspace's stored record; for main, which exists before it has ever come up, one made for it.</summary>
-    static WorkspaceRecord? Record(CliContext cli, string id, string workspace)
+    public static WorkspaceRecord? Record(CliContext cli, string id, string workspace)
         => cli.Workspaces.Get(id, workspace)
            ?? (workspace == WorkspaceRecord.MainName ? cli.Workspaces.MainOf(id, cli.Orchestrations.Resolve(id) ?? "") : null);
 

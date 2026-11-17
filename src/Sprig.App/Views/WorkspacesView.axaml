@@ -692,6 +692,9 @@
                                                   IsVisible="{Binding ShowRunControls}" AutomationProperties.AutomationId="workspace:stop-all"
                                                   ToolTip.Tip="{Binding Selected.StopAllTip, FallbackValue=''}" />
                                         <Separator IsVisible="{Binding ShowRunControls}" />
+                                        <MenuItem Header="Open in a new window" Command="{Binding OpenSelectedInNewWindowCommand}"
+                                                  AutomationProperties.AutomationId="workspace:new-window"
+                                                  ToolTip.Tip="This workspace in a Sprig window of its own, to keep on another desktop" />
                                         <MenuItem Header="Open root in VS Code" Command="{Binding OpenRootInCodeCommand}"
                                                   AutomationProperties.AutomationId="workspace:open-code"
                                                   ToolTip.Tip="The workspace's own folder, which sprig cd calls root" />

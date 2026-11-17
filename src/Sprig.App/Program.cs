@@ -48,10 +48,18 @@ internal static class Program
             return 0;
         }
 
-        using var instance = SingleInstance.Claim(new Sprig.Engine.Store.SprigPaths(null));
+        App.StartWorkspace = WorkspaceArg(args);
+        using var instance = SingleInstance.Claim(new Sprig.Engine.Store.SprigPaths(null), App.StartWorkspace);
         if (instance is null) return 0;
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
+    }
+
+    /// <summary>The key after <c>--workspace</c>, which <c>sprig open</c> passes to open a workspace's window.</summary>
+    internal static string? WorkspaceArg(string[] args)
+    {
+        var at = Array.IndexOf(args, "--workspace");
+        return at >= 0 && at + 1 < args.Length && !string.IsNullOrWhiteSpace(args[at + 1]) ? args[at + 1] : null;
     }
 
     public static AppBuilder BuildAvaloniaApp()

@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Sprig.Engine.Hosting;
 
 namespace Sprig.App.ViewModels;
 
@@ -6,8 +9,33 @@ namespace Sprig.App.ViewModels;
 public abstract class ViewModelBase : ObservableObject;
 
 /// <summary>A top-level navigable page.</summary>
-public abstract partial class PageViewModel : ViewModelBase
+public abstract partial class PageViewModel : ViewModelBase, IDisposable
 {
+    readonly List<Action> _unfollow = [];
+
+    /// <summary>Hear each of the app-wide polls' answers until this page's window closes. The polls outlive every
+    /// window, so a page that didn't let go would keep working for a window nobody can see.</summary>
+    protected void FollowPolls(AppServices services, Action<IReadOnlyList<RunnerStatus>?>? runners, Action? infra = null)
+    {
+        if (runners is not null)
+        {
+            services.HostStatus.Changed += runners;
+            _unfollow.Add(() => services.HostStatus.Changed -= runners);
+        }
+        if (infra is not null)
+        {
+            services.InfraUsage.Changed += infra;
+            _unfollow.Add(() => services.InfraUsage.Changed -= infra);
+        }
+    }
+
+    /// <summary>Its window has closed.</summary>
+    public virtual void Dispose()
+    {
+        foreach (var unfollow in _unfollow) unfollow();
+        _unfollow.Clear();
+    }
+
     /// <summary>Nav label / header for the page.</summary>
     public abstract string Title { get; }
 

@@ -22,6 +22,15 @@ public partial class WorkspacesViewModel
         return WorkspacePlaces.Root(record, fallback) is { } root && Directory.Exists(root) ? root : null;
     }
 
+    /// <summary>Opens a workspace in a window of its own, by its key; wired by the window.</summary>
+    public Action<string>? OpenInNewWindow { get; set; }
+
+    [RelayCommand]
+    private void OpenSelectedInNewWindow()
+    {
+        if (Selected?.Record.Key is { } key) OpenInNewWindow?.Invoke(key);
+    }
+
     [RelayCommand]
     private void OpenRootInCode() => OpenRoot("VS Code", root =>
     {

@@ -8,7 +8,7 @@
         MinWidth="720" MinHeight="480"
         Background="{StaticResource FormBgBrush}"
         Icon="/Assets/sprig.ico"
-        Title="Sprig">
+        Title="{Binding Title}">
 
     <Window.Styles>
         <!-- Left-nav items: chromeless buttons whose inner Border carries hover + active state. -->

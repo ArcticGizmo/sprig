@@ -22,7 +22,7 @@ public class PlaceSettings : WorkspaceSettings
 }
 
 /// <summary>Which workspace and which of its places a <c>sprig cd</c> or <c>sprig path</c> means: as named, with any gap
-/// asked about at a terminal, else the workspace this folder is in and its root.</summary>
+/// asked about at a terminal, else the workspace this folder is in and its root. Null when the person picks none.</summary>
 static class PlaceTarget
 {
     public static (WorkspaceRecord Record, WorkspacePlace Place)? Resolve(CliContext cli, PlaceSettings s, bool interactive)
@@ -30,13 +30,15 @@ static class PlaceTarget
         var named = !string.IsNullOrEmpty(s.Orchestration) || !string.IsNullOrEmpty(s.Workspace) || s.Place is not null;
         WorkspaceRecord record;
         var words = new List<string>();
+        // A gap is always asked about, even with one answer, so the same keys do the same thing every time.
         if (!named && interactive)
         {
             var here = Here.TryFind(cli);
             var choices = Choices(cli, here?.Id);
             if (choices.Count == 0) throw new InvalidOperationException("there are no workspaces yet; start one with: sprig up");
             var current = here is { } h ? Record(cli, h.Id, h.Workspace ?? WorkspaceRecord.MainName) : null;
-            record = choices.Count == 1 ? choices[0] : PickWorkspace(cli, choices, current, showId: here is null);
+            if (PickWorkspace(cli, choices, current, showId: here is null) is not { } picked) return null;
+            record = picked;
         }
         else
         {
@@ -45,9 +47,13 @@ static class PlaceTarget
             // Just an ID, at a terminal: which of its workspaces is asked, rather than taken to be main.
             var onlyId = interactive && string.IsNullOrEmpty(second) && words.Count == 0 && s.Place is null
                          && string.Equals(first, s.Orchestration, StringComparison.OrdinalIgnoreCase);
-            if (onlyId && Choices(cli, s.Orchestration) is { Count: > 1 } ofId)
-                record = PickWorkspace(cli, ofId, Here.TryFind(cli) is { } h && h.Id == s.Orchestration
-                    ? Record(cli, h.Id, h.Workspace ?? WorkspaceRecord.MainName) : null, showId: false);
+            if (onlyId && Choices(cli, s.Orchestration) is { Count: > 0 } ofId)
+            {
+                if (PickWorkspace(cli, ofId, Here.TryFind(cli) is { } h && h.Id == s.Orchestration
+                        ? Record(cli, h.Id, h.Workspace ?? WorkspaceRecord.MainName) : null, showId: false) is not { } picked)
+                    return null;
+                record = picked;
+            }
             else
                 record = Record(cli, s.Orchestration, s.Workspace)
                          ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}'; see them with: sprig workspaces {s.Orchestration}");
@@ -60,8 +66,9 @@ static class PlaceTarget
         var chosen = words.Count == 1
             ? WorkspacePlaces.Find(places, words[0])
               ?? throw new InvalidOperationException($"{record.SlotName} has no place '{words[0]}'; it has {string.Join(", ", places.Select(p => p.Name))}")
-            : interactive && places.Count > 1 ? PickPlace(cli, record, places)
+            : interactive ? PickPlace(cli, record, places)
             : places[0];
+        if (chosen is null) return null;
         if (!Directory.Exists(chosen.Dir))
             throw new DirectoryNotFoundException($"{chosen.Dir} isn't there; {record.SlotName} may need making ready again: sprig up {record.Orchestration} {record.Name}");
         return (record, chosen);
@@ -108,23 +115,33 @@ static class PlaceTarget
         return $"{Markup.Escape(record.SlotName)}  {shown}";
     }
 
-    static WorkspaceRecord PickWorkspace(CliContext cli, IReadOnlyList<WorkspaceRecord> choices, WorkspaceRecord? current, bool showId)
+    static WorkspaceRecord? PickWorkspace(CliContext cli, IReadOnlyList<WorkspaceRecord> choices, WorkspaceRecord? current, bool showId)
     {
         // The one this folder is in leads, so Enter stays put and arrows go elsewhere.
         var ordered = current is null ? choices : [.. choices.Where(c => c.Key == current.Key), .. choices.Where(c => c.Key != current.Key)];
-        return cli.Ansi.Prompt(new SelectionPrompt<WorkspaceRecord>()
-            .Title(showId ? "Which workspace?" : $"Which workspace of [bold]{Markup.Escape(choices[0].Orchestration)}[/]?")
-            .PageSize(15)
-            .UseConverter(r => Describe(r) + (current is not null && r.Key == current.Key ? "  [dim](here)[/]" : ""))
-            .AddChoices(ordered));
+        return PickOrNone(cli, showId ? "Which workspace?" : $"Which workspace of [bold]{Markup.Escape(choices[0].Orchestration)}[/]?",
+            ordered, r => Describe(r) + (current is not null && r.Key == current.Key ? "  [dim](here)[/]" : ""));
     }
 
-    static WorkspacePlace PickPlace(CliContext cli, WorkspaceRecord record, IReadOnlyList<WorkspacePlace> places)
-        => cli.Ansi.Prompt(new SelectionPrompt<WorkspacePlace>()
-            .Title($"Where in {Describe(record)}?")
+    static WorkspacePlace? PickPlace(CliContext cli, WorkspaceRecord record, IReadOnlyList<WorkspacePlace> places)
+        => PickOrNone(cli, $"Where in {Describe(record)}?", places, p => $"{Markup.Escape(p.Name)}  [dim]{Markup.Escape(p.What)}[/]");
+
+    /// <summary>A list that ends in "none", which Escape also picks, so backing out never needs Ctrl+C.</summary>
+    static T? PickOrNone<T>(CliContext cli, string title, IEnumerable<T> choices, Func<T, string> describe) where T : class
+    {
+        var none = new Choice<T>(null);
+        return cli.Ansi.Prompt(new SelectionPrompt<Choice<T>>()
+            .Title(title)
             .PageSize(15)
-            .UseConverter(p => $"{Markup.Escape(p.Name)}  [dim]{Markup.Escape(p.What)}[/]")
-            .AddChoices(places));
+            .UseConverter(c => c.Value is { } v ? describe(v) : "[dim]none[/]")
+            .AddChoices(choices.Select(c => new Choice<T>(c)).Append(none))
+            .AddCancelResult(none)).Value;
+    }
+
+    sealed class Choice<T>(T? value) where T : class
+    {
+        public T? Value => value;
+    }
 }
 
 [Description("Print the folder of a workspace, or of a place in it (for scripts): root, a repo, or a folder its repos name under cd:")]
@@ -161,7 +178,8 @@ public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
 
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
-        var (record, place) = PlaceTarget.Resolve(cli, s, cli.Interactive(s.Json))!.Value;
+        if (PlaceTarget.Resolve(cli, s, cli.Interactive(s.Json)) is not { } target) return 0;
+        var (record, place) = target;
         if (s.Json)
         {
             CliOutput.Json(new { ok = true, path = place.Dir, place = place.Name, id = record.Orchestration, workspace = record.Name, branch = record.Branch, free = record.IsFree });

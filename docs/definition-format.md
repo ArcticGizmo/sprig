@@ -115,6 +115,10 @@ outputs:
 
 groups:
   api: [catalog-api]
+
+cd:
+  api: src/Catalog.Api
+  migrations: tools/Migrate/Migrations
 ```
 
 ### `apps`
@@ -179,6 +183,10 @@ A file several apps read can hold each one's own values, such as `Orders_Port: $
 ### `groups` and `copy-into-worktrees`
 
 A group is a slice of the apps to start on its own; starting it starts what they wait for too. `copy-into-worktrees` lists files git doesn't have (a `.env` of secrets) to copy from the repo's own checkout into each worktree.
+
+### `cd`
+
+Folders to go straight to with `sprig cd`, by a name of your choosing, each a path from the repo's root. `sprig cd` always offers `root` (the workspace's own folder) first, so `root` can't be one of these names. In an orchestration's workspace, each repo is a place too, and its `cd` folders are named `repo/name`: `sprig cd storefront 2 shop-services/api`.
 
 ## Orchestration file
 

@@ -118,12 +118,42 @@ internal static partial class HeadlessRenderer
             Pump(TimeSpan.FromMilliseconds(400));
             Save(window, Sibling(outFile, "start-choices"));
             // Pointed at, the first ▶ lights up the whole area that takes its click.
-            var play = window.GetVisualDescendants().OfType<Button>().First(b => b.Classes.Contains("startnow"));
+            var plays = window.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("startnow")).ToArray();
+            var play = plays[0];
             window.MouseMove(play.TranslatePoint(new Point(play.Bounds.Width / 2, 2), window)!.Value);
             Pump(TimeSpan.FromMilliseconds(300));
             Save(window, Sibling(outFile, "start-choices-hover"));
             Console.WriteLine($"▶ click area: {play.Bounds.Width:0}×{play.Bounds.Height:0}, its row {((Control)play.FindAncestorOfType<MenuItem>()!).Bounds.Height:0} high");
+            // Clicked as a pointer would: client's ▶ starts client, where a click on its name only picks it.
+            var clientPlay = plays[1];
+            var playAt = clientPlay.TranslatePoint(new Point(clientPlay.Bounds.Width / 2, clientPlay.Bounds.Height / 2), window)!.Value;
+            window.MouseMove(playAt);
+            Pump(TimeSpan.FromMilliseconds(100));
+            window.MouseDown(playAt, MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(50));
+            window.MouseUp(playAt, MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(600));
+            Console.WriteLine($"▶ on client: choice now {vm.Workspaces.StartChoice?.Label}, started: {vm.Workspaces.StartChoiceNowCommand.ExecutionTask is not null}, menu open: {clientPlay.IsAttachedToVisualTree()}");
+            vm.Workspaces.PickStartChoiceCommand.Execute(vm.Workspaces.StartChoices.First());
             CloseMenus(window);
+
+            // Everything but Start, in the ⋯ menu.
+            var more = window.GetVisualDescendants().OfType<Button>().First(b => b.Name == "MoreButton");
+            more.Flyout!.ShowAt(more);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "more-menu"));
+            more.Flyout.Hide();
+            Pump(TimeSpan.FromMilliseconds(200));
+
+            // A message has a line of its own that's always there, so the tabs stay where they are.
+            var graphTab = window.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetAutomationId(b) == "workspace:graph-tab");
+            var tabsBefore = graphTab.TranslatePoint(new Point(0, 0), window)!.Value.Y;
+            vm.Workspaces.FormFailed = false;
+            vm.Workspaces.FormMessage = "storefront--feat-a has stopped, its apps and its infra. Its containers, data, worktrees and ports are kept, and so is everything else it had, which makes this a long line.";
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "message"));
+            Console.WriteLine($"tabs moved by a message: {graphTab.TranslatePoint(new Point(0, 0), window)!.Value.Y - tabsBefore:0}px");
+            vm.Workspaces.FormMessage = "";
 
             // Three apps marked with Ctrl+click, then one of them right-clicked: one menu for them all.
             vm.Workspaces.OpenApp(vm.Workspaces.Apps.First(a => a.App == "catalog-api"));
@@ -185,6 +215,16 @@ internal static partial class HeadlessRenderer
             existingBox.IsDropDownOpen = true;
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "new-mode-existing"));
+            // Picking a branch from the list, as a pointer would, closes it.
+            var branch = existingBox.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>().First().Child!
+                .GetVisualDescendants().OfType<ListBoxItem>().First(i => i.DataContext is BranchChoice { Ref: "feat/payments" });
+            var branchAt = branch.TranslatePoint(new Point(40, branch.Bounds.Height / 2), window)!.Value;
+            window.MouseMove(branchAt);
+            Pump(TimeSpan.FromMilliseconds(100));
+            window.MouseDown(branchAt, MouseButton.Left);
+            window.MouseUp(branchAt, MouseButton.Left);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Console.WriteLine($"picked a branch: '{existingBox.Text}', list open: {existingBox.IsDropDownOpen}");
             existingBox.IsDropDownOpen = false;
             vm.Workspaces.NewModeNone = true;
             Pump(TimeSpan.FromMilliseconds(500));
@@ -249,6 +289,17 @@ internal static partial class HeadlessRenderer
             Wait(vm.Workspaces.ShowGraphTabCommand.ExecuteAsync(null));
             Pump(TimeSpan.FromMilliseconds(600));
             Save(window, Sibling(outFile, "graph"));
+            Console.WriteLine($"quick links with nothing picked: {string.Join(" | ", vm.Workspaces.GraphQuickLinks.Select(g => $"{g.Title}: {g.Links.Count}"))}");
+
+            // Running only: what's going, and the infra it uses.
+            vm.Workspaces.GraphFocus = true;
+            vm.Workspaces.FitGraphCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "graph-focus"));
+            Console.WriteLine($"focus: {vm.Workspaces.Graph!.Nodes.Count} nodes ({string.Join(", ", vm.Workspaces.Graph.Nodes.Where(n => n.IsRunner).Select(n => n.Name))})");
+            vm.Workspaces.GraphFocus = false;
+            vm.Workspaces.FitGraphCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(400));
             var boxes = vm.Workspaces.Graph!.Layout.Boxes().ToArray();
             var overlaps = boxes.SelectMany((a, i) => boxes.Skip(i + 1).Where(b => a.Box.Overlaps(b.Box, 0)).Select(b => $"{a.Group} and {b.Group}")).ToArray();
             Console.WriteLine($"repo boxes overlapping: {overlaps.Length} ({string.Join(", ", overlaps)})");
@@ -404,6 +455,13 @@ internal static partial class HeadlessRenderer
             window.MouseUp(NodeAt("shop-analytics/kafka"), MouseButton.Left);
             Pump(TimeSpan.FromMilliseconds(400));
             Save(window, Sibling(outFile, "main-graph-picked"));
+
+            // Settings, with apps started one at a time.
+            vm.NavigateCommand.Execute(vm.Settings);
+            vm.Settings.StartAtOnce = vm.Settings.StartAtOnceChoices.First(c => c.Limit == 1);
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(window, Sibling(outFile, "settings"));
+            Console.WriteLine($"start at once saved: {services.Settings.Get().StartAtOnce}");
 
             // Home: what the sample has running, and the first steps, since nothing is on the Repos list.
             vm.NavigateCommand.Execute(vm.Home);

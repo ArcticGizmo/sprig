@@ -31,6 +31,12 @@ public sealed class SprigSettings
     /// </summary>
     public string? WorkspacesFolder { get; set; }
 
+    /// <summary>
+    /// How many apps may build and start at the same time, across every workspace; the rest wait their turn, each
+    /// until the one before is ready. Null starts everything together, held back only by what each app depends on.
+    /// </summary>
+    public int? StartAtOnce { get; set; }
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -54,5 +60,6 @@ public sealed class SprigSettings
         ShowChangelogOnUpdate = ShowChangelogOnUpdate,
         LastSeenVersion = LastSeenVersion,
         WorkspacesFolder = WorkspacesFolder,
+        StartAtOnce = StartAtOnce,
     };
 }

@@ -103,9 +103,11 @@ public partial class WorkspacesView : UserControl
             box.ItemFilter = (search, item) => string.IsNullOrEmpty(search) || item is not Sprig.Engine.Workspaces.BranchChoice choice
                 || _vm?.NewBranchChoices.Any(c => c.Ref == search) == true
                 || choice.Ref.Contains(search, StringComparison.OrdinalIgnoreCase);
-            // A click in the box lists what can be picked, so it reads as a choice rather than a blank to fill.
-            box.AddHandler(PointerReleasedEvent, (_, _) =>
+            // A click in the box lists what can be picked, so it reads as a choice rather than a blank to fill. Only a click
+            // in the box itself: one on the list, which bubbles up here once picking has closed it, would open it again.
+            box.AddHandler(PointerReleasedEvent, (_, e) =>
             {
+                if (e.Source is not Visual source || !box.IsVisualAncestorOf(source)) return;
                 if (!box.IsDropDownOpen && box.ItemsSource is System.Collections.ICollection { Count: > 0 }) box.IsDropDownOpen = true;
             }, RoutingStrategies.Bubble, handledEventsToo: true);
         }
@@ -182,33 +184,24 @@ public partial class WorkspacesView : UserControl
             var current = choice == _vm.StartChoice;
             // The ▶ starts it there and then, so a group is started in two clicks rather than picked and then started. Set
             // here rather than styled: the menu is a popup, outside the view's styles.
-            // The button is the row's full height, so a pointer moving up or down the ▶s stays on them rather than slipping
-            // onto a row and picking it; only its hover shows where it is.
-            var now = new Button
+            // It's part of the item rather than a button in it: the menu takes a press in its own popup window before a
+            // button inside could, so the item's one click decides which it was by where the pointer is.
+            // It's the row's full height, so a pointer moving up or down the ▶s stays on them rather than slipping onto a
+            // row and picking it; only its hover shows where it is.
+            var now = new Border
             {
                 Classes = { "startnow" },
-                Content = new Border
-                {
-                    Child = new PathIcon { Width = 9, Height = 9, Data = PlayGlyph, Foreground = this.FindResource("AccentBrush") as Avalonia.Media.IBrush },
-                    Padding = new Thickness(11, 4),
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                },
+                Child = new PathIcon { Width = 9, Height = 9, Data = PlayGlyph, Foreground = this.FindResource("AccentBrush") as Avalonia.Media.IBrush },
+                Padding = new Thickness(11, 4),
                 Background = Avalonia.Media.Brushes.Transparent,
-                Padding = new Thickness(0),
-                CornerRadius = new CornerRadius(0),
                 // Out over the item's padding above and below, and right over the room it keeps for a submenu's arrow,
                 // which these never have.
                 Margin = new Thickness(16, -6, -18, -6),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
-                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
             };
+            now.PointerEntered += (_, _) => now.Background = PlayHoverBrush;
+            now.PointerExited += (_, _) => now.Background = Avalonia.Media.Brushes.Transparent;
             ToolTip.SetTip(now, $"Start {(choice.Group is null ? "every app" : choice.Label)} now");
-            now.Click += (_, e) =>
-            {
-                e.Handled = true;
-                menu.Close();
-                _vm?.StartChoiceNowCommand.Execute(choice);
-            };
             var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             header.Children.Add(new TextBlock
             {
@@ -221,7 +214,11 @@ public partial class WorkspacesView : UserControl
             var item = new MenuItem { Header = header, Padding = new Thickness(20, 6, 6, 6) };
             if (current) item.Background = CurrentChoiceBrush;
             ToolTip.SetTip(item, choice.Apps);
-            item.Click += (_, _) => _vm?.PickStartChoiceCommand.Execute(choice);
+            item.Click += (_, _) =>
+            {
+                if (now.IsPointerOver) _vm?.StartChoiceNowCommand.Execute(choice);
+                else _vm?.PickStartChoiceCommand.Execute(choice);
+            };
             menu.Items.Add(item);
         }
         menu.Open(StartChoiceButton);
@@ -231,6 +228,8 @@ public partial class WorkspacesView : UserControl
 
     /// <summary>The nav's tint for the page that's showing, so "the one picked" looks the same everywhere.</summary>
     static readonly Avalonia.Media.IBrush CurrentChoiceBrush = Avalonia.Media.Brush.Parse("#2660A5FA");
+
+    static readonly Avalonia.Media.IBrush PlayHoverBrush = Avalonia.Media.Brush.Parse("#4060A5FA");
 
     static AppListEntry? EntryAt(object? source)
         => (source as Visual)?.GetSelfAndVisualAncestors().OfType<Control>().Select(c => c.DataContext)

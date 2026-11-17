@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -7,7 +9,7 @@ using Sprig.Engine.Store;
 
 namespace Sprig.App.ViewModels;
 
-public partial class MainWindowViewModel : ViewModelBase
+public partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     /// <summary>Every navigable page, including the two pinned to the bottom of the nav.</summary>
     public IReadOnlyList<PageViewModel> Pages { get; }
@@ -59,7 +61,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public static string WindowTitle => "Sprig" + AppProfile.DisplaySuffix;
 
-    /// <param name="checkForUpdates">Tests pass false so constructing the window never touches the network.</param>
+    /// <summary>Names the workspace shown, so windows on different desktops can be told apart in Task View and
+    /// Alt-Tab.</summary>
+    public string Title => ShownWorkspace is not null && Workspaces.Selected is { } shown
+        ? $"{shown.Title} · {shown.Branch} — {WindowTitle}"
+        : WindowTitle;
+
+    /// <summary>The key of the workspace this window shows; null when it shows something else.</summary>
+    public string? ShownWorkspace => ReferenceEquals(CurrentPage, Workspaces) ? Workspaces.Selected?.Record.Key : null;
+
+    /// <summary>Open another window, on a workspace by its key or on Home; wired by whoever keeps the windows.</summary>
+    public Action<string?>? NewWindow { get; set; }
+
+    /// <param name="checkForUpdates">Tests pass false so constructing the window never touches the network. Later
+    /// windows pass false too and are handed the first one's answer with <see cref="ApplyUpdate"/>.</param>
     public MainWindowViewModel(AppServices services, bool checkForUpdates = true)
     {
         HostStatus = services.HostStatus;
@@ -94,14 +109,14 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         Orchestrations.StartWorkspace = StartWorkspace;
         Repos.StartWorkspace = StartWorkspace;
-        void OpenWorkspace(string key)
+        Repos.OpenWorkspace = ShowWorkspace;
+        Home.OpenWorkspace = ShowWorkspace;
+        Usage.OpenWorkspace = ShowWorkspace;
+        Workspaces.OpenInNewWindow = key => NewWindow?.Invoke(key);
+        Workspaces.PropertyChanged += (_, e) =>
         {
-            CurrentPage = Workspaces;
-            Workspaces.Show(key);
-        }
-        Repos.OpenWorkspace = OpenWorkspace;
-        Home.OpenWorkspace = OpenWorkspace;
-        Usage.OpenWorkspace = OpenWorkspace;
+            if (e.PropertyName == nameof(WorkspacesViewModel.Selected)) NotifyShown();
+        };
         Home.AddRepo = () =>
         {
             CurrentPage = Repos;
@@ -115,6 +130,27 @@ public partial class MainWindowViewModel : ViewModelBase
         Home.IsActive = true;
 
         if (checkForUpdates) _ = CheckForUpdatesAsync();
+    }
+
+    /// <summary>One workspace's page, by its key.</summary>
+    public void ShowWorkspace(string key)
+    {
+        CurrentPage = Workspaces;
+        Workspaces.Show(key);
+    }
+
+    [RelayCommand]
+    private void OpenNewWindow() => NewWindow?.Invoke(null);
+
+    void NotifyShown()
+    {
+        OnPropertyChanged(nameof(ShownWorkspace));
+        OnPropertyChanged(nameof(Title));
+    }
+
+    public void Dispose()
+    {
+        foreach (var page in Pages) page.Dispose();
     }
 
     /// <summary>Workspaces in the nav always lands on the list of them, the one place a workspace is picked from. A page
@@ -144,16 +180,25 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         foreach (var page in Pages)
             page.IsActive = ReferenceEquals(page, value);
+        NotifyShown();
     }
+
+    /// <summary>What the first window's launch check found, raised once it has an answer.</summary>
+    public event Action<UpdateCheckResult>? UpdateChecked;
+
+    public UpdateCheckResult? UpdateResult => _updateResult;
 
     async Task CheckForUpdatesAsync()
     {
         var result = await UpdateChecker.CheckDetailedAsync();
+        ApplyUpdate(result);
+        UpdateChecked?.Invoke(result);
+    }
+
+    public void ApplyUpdate(UpdateCheckResult result)
+    {
         _updateResult = result;
-
-        if (result.Availability != UpdateAvailability.Available)
-            return;
-
-        UpdateNotice = $"Update available: v{result.AvailableVersion} (you have v{result.CurrentVersion})";
+        if (result.Availability == UpdateAvailability.Available)
+            UpdateNotice = $"Update available: v{result.AvailableVersion} (you have v{result.CurrentVersion})";
     }
 }

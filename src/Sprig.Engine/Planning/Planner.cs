@@ -97,11 +97,14 @@ public static class Planner
             var secrets = _scopes.Where(s => s.Repo is not null).SelectMany(s => s.Repo!.Settings)
                 .Where(s => s.Type == "secret").Select(s => s.Name).Distinct(StringComparer.Ordinal).ToArray();
             CheckUndeclaredSecrets(apps, secrets);
+            var cd = _scopes.Where(s => s.Repo is not null && s.RepoPath is not null)
+                .SelectMany(s => (s.Repo!.CdTargets ?? []).Select(t => new PlannedCdTarget(s.Owner, s.RepoPath!, t.Name, t.Path)))
+                .ToArray();
 
             return new Plan(
                 input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
                 _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links),
-                _asks.Count > 0 ? _asks : null, SettingRoles(), secrets.Length > 0 ? secrets : null);
+                _asks.Count > 0 ? _asks : null, SettingRoles(), secrets.Length > 0 ? secrets : null, cd.Length > 0 ? cd : null);
         }
 
         /// <summary>A value under a name that says it's secret, which no input of <c>type: secret</c> gives: sprig masks

@@ -64,7 +64,8 @@ public partial class PathBox : UserControl
         if (change.Property == PlaceholderProperty) Box.PlaceholderText = Placeholder;
     }
 
-    // Backslashes become forward slashes as they're typed or pasted, keeping the caret where it was.
+    // Backslashes become forward slashes as they're typed or pasted, keeping the caret where it was. A ~ stays in the box
+    // as typed, but what's bound is the full path, so nothing that reads it has to know the shorthand.
     void OnTyped()
     {
         var text = Box.Text ?? "";
@@ -74,7 +75,7 @@ public partial class PathBox : UserControl
             return;
         }
         _syncing = true;
-        Path = text;
+        Path = PathCompletion.ExpandHome(text);
         _syncing = false;
     }
 

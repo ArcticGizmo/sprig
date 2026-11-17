@@ -198,8 +198,7 @@ public partial class ReposViewModel : PageViewModel
     {
         _services = services;
         Editor = new DefinitionEditorViewModel(services) { AfterSave = AfterSaveAsync };
-        services.HostStatus.Changed += _ => FollowStates();
-        services.InfraUsage.Changed += FollowStates;
+        FollowPolls(services, _ => FollowStates(), FollowStates);
         // Only counted here, for the nav; reading the repos runs their definitions, so it waits until the page is shown.
         NavCount = services.Stored.Repos().Count;
     }

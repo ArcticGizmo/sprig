@@ -10,15 +10,15 @@ using Sprig.Engine.Hosting;
 namespace Sprig.App;
 
 /// <summary>
-/// Apps run in the sprig host, not in this window, so closing the window while they run would leave them going with
-/// nothing on screen to stop them. Instead the window hides and sprig stays in the notification area, where it can be
-/// opened again or quit. Quitting always stops the apps first: apps left running with no sprig to show them are
-/// orphans nobody asked for.
+/// Apps run in the sprig host, not in a window, so closing the last window while they run would leave them going with
+/// nothing on screen to stop them. Instead sprig stays in the notification area, where a window can be opened again or
+/// sprig quit. Quitting always stops the apps first: apps left running with no sprig to show them are orphans nobody
+/// asked for.
 /// </summary>
 public sealed class Tray
 {
     readonly IClassicDesktopStyleApplicationLifetime _desktop;
-    readonly Window _main;
+    readonly AppWindows _windows;
     readonly AppServices _services;
     readonly TrayIcon _icon;
     readonly NativeMenuItem _status = new() { IsEnabled = false };
@@ -26,34 +26,35 @@ public sealed class Tray
     bool _quitting;
     int _alive;
 
-    public Tray(Application app, IClassicDesktopStyleApplicationLifetime desktop, Window main, AppServices services)
+    public Tray(Application app, IClassicDesktopStyleApplicationLifetime desktop, AppWindows windows, AppServices services, WindowIcon? icon)
     {
         _desktop = desktop;
-        _main = main;
+        _windows = windows;
         _services = services;
 
         var open = new NativeMenuItem("Open sprig");
-        open.Click += (_, _) => Show();
+        open.Click += (_, _) => _windows.ShowHere();
+        var another = new NativeMenuItem("New window");
+        another.Click += (_, _) => _windows.Open();
         _quit.Click += (_, _) => Quit();
         _icon = new TrayIcon
         {
-            Icon = main.Icon,
+            Icon = icon,
             ToolTipText = "sprig",
-            Menu = new NativeMenu { Items = { open, _status, new NativeMenuItemSeparator(), _quit } },
+            Menu = new NativeMenu { Items = { open, another, _status, new NativeMenuItemSeparator(), _quit } },
         };
-        _icon.Clicked += (_, _) => Show();
+        _icon.Clicked += (_, _) => _windows.ShowHere();
         TrayIcon.SetIcons(app, [_icon]);
 
         services.HostStatus.Changed += Apply;
         Apply(services.HostStatus.Runners);
-        main.Closing += OnClosing;
         desktop.Exit += (_, _) =>
         {
             _icon.IsVisible = false;
             _icon.Dispose();
             services.Host.ShutdownIfIdle();
         };
-        SingleInstance.ShowRequested += () => Dispatcher.UIThread.Post(Show);
+        SingleInstance.OpenRequested += workspace => Dispatcher.UIThread.Post(() => _windows.ShowHere(workspace));
     }
 
     void Apply(IReadOnlyList<RunnerStatus>? runners)
@@ -69,26 +70,13 @@ public sealed class Tray
         _quit.Header = _alive > 0 ? "Stop all apps and quit" : "Quit";
     }
 
-    void OnClosing(object? sender, WindowClosingEventArgs e)
-    {
-        if (_quitting || e.CloseReason is WindowCloseReason.ApplicationShutdown or WindowCloseReason.OSShutdown || _alive == 0) return;
-        e.Cancel = true;
-        _main.Hide();
-    }
-
-    public void Show()
-    {
-        _main.Show();
-        if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
-        _main.Activate();
-    }
-
     /// <summary>Stop every app, then the host, then quit. The app count can lag the host by a poll, so the host is
     /// always asked rather than trusting it.</summary>
     public async void Quit()
     {
         if (_quitting) return;
         _quitting = true;
+        _windows.Quitting();
         _quit.IsEnabled = false;
         if (_alive > 0)
         {

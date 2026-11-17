@@ -167,8 +167,7 @@ public partial class OrchestrationsViewModel : PageViewModel
         Editor.Closed += () => Tab = OrchestrationTab.Overview;
         Review = new CodeReviewViewModel(services.Trust) { AllApproved = ApproveAll };
         Review.Approved += SetStatus;
-        services.HostStatus.Changed += _ => FollowStates();
-        services.InfraUsage.Changed += FollowStates;
+        FollowPolls(services, _ => FollowStates(), FollowStates);
         // Only listed here, for the nav's count; planning runs definitions, so it waits until the page is shown.
         Refresh(null, replan: false);
     }

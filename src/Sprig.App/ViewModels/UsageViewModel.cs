@@ -145,8 +145,7 @@ public partial class UsageViewModel : PageViewModel
     public UsageViewModel(AppServices services)
     {
         _services = services;
-        _services.HostStatus.Changed += _ => RefreshIfShown();
-        _services.InfraUsage.Changed += RefreshIfShown;
+        FollowPolls(services, _ => RefreshIfShown(), RefreshIfShown);
         _records = _services.Workspaces.List();
     }
 

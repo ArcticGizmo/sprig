@@ -49,6 +49,8 @@ public sealed class FileSettingsStore(ISprigPaths paths, bool dev = false) : ISe
         foreach (var p in s.RestrictedPorts)
             if (p < SprigSettings.MinPort || p > SprigSettings.MaxPort)
                 throw new ArgumentException($"restricted port {p} is not a valid port number");
+        if (s.StartAtOnce is < 1)
+            throw new ArgumentException("at least one app has to be able to start at a time");
     }
 
     static List<int> Normalise(IEnumerable<int>? ports)

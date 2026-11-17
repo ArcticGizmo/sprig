@@ -690,6 +690,13 @@
         }
       },
       "description": "Slices of the apps to start on their own; starting one starts what its apps wait for too."
+    },
+    "cd": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Folders to go straight to with sprig cd, by a name of your choosing: each a path from the repo's root."
     }
   },
   "additionalProperties": false,

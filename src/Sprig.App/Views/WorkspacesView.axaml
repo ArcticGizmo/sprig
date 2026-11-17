@@ -675,33 +675,45 @@
                                         AutomationProperties.AutomationId="workspace:start-choice"
                                         Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" />
                             </StackPanel>
-                            <Button Content="Restart" Command="{Binding RestartRunningCommand}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowRunControls}"
-                                    ToolTip.Tip="Every app that's going, built again and after what it depends on. Stopped apps stay stopped."
-                                    AutomationProperties.AutomationId="workspace:restart-running"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Stop all" Command="{Binding StopAllCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding ShowRunControls}" ToolTip.Tip="{Binding Selected.StopAllTip, FallbackValue=''}"
-                                    AutomationProperties.AutomationId="workspace:stop-all"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Free" Command="{Binding FreeCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
-                                    ToolTip.Tip="Free this slot for the next branch: its worktrees go to a detached HEAD. Its branch and commits stay, and so do its data, ports, values and build output."
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="Inputs" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}" Padding="12,6" FontSize="12.5"
-                                    IsVisible="{Binding Selected.HasSettings, FallbackValue=False}"
-                                    ToolTip.Tip="The values its repos take, and where each comes from"
-                                    AutomationProperties.AutomationId="workspace:settings"
-                                    Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}" />
-                            <Button Content="⋯" Padding="10,6" FontSize="12.5" ToolTip.Tip="More"
+                            <!-- Everything but starting, in groups: what's running, where it lives, how it's set up, and
+                                 what gives the slot up or loses something. -->
+                            <Button x:Name="MoreButton" Content="⋯" Padding="10,6" FontSize="12.5" ToolTip.Tip="More"
+                                    AutomationProperties.AutomationId="workspace:more"
                                     Background="{StaticResource ButtonBgBrush}" Foreground="{StaticResource FgBrush}">
                                 <Button.Flyout>
                                     <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuItem Header="Restart running" Command="{Binding RestartRunningCommand}" IsVisible="{Binding ShowRunControls}"
+                                                  AutomationProperties.AutomationId="workspace:restart-running"
+                                                  ToolTip.Tip="Every app that's going, built again and after what it depends on. Stopped apps stay stopped." />
                                         <MenuItem Header="Restart running, jobs first" Command="{Binding RestartRunningWithJobsCommand}"
                                                   IsVisible="{Binding ShowRunControls}"
                                                   ToolTip.Tip="Run the jobs the running apps depend on (migrations, say) again, then restart the apps" />
+                                        <MenuItem Header="Stop all" Command="{Binding StopAllCommand}" IsEnabled="{Binding !IsWorking}"
+                                                  IsVisible="{Binding ShowRunControls}" AutomationProperties.AutomationId="workspace:stop-all"
+                                                  ToolTip.Tip="{Binding Selected.StopAllTip, FallbackValue=''}" />
+                                        <Separator IsVisible="{Binding ShowRunControls}" />
+                                        <MenuItem Header="Open in a new window" Command="{Binding OpenSelectedInNewWindowCommand}"
+                                                  AutomationProperties.AutomationId="workspace:new-window"
+                                                  ToolTip.Tip="This workspace in a Sprig window of its own, to keep on another desktop" />
+                                        <MenuItem Header="Open root in VS Code" Command="{Binding OpenRootInCodeCommand}"
+                                                  AutomationProperties.AutomationId="workspace:open-code"
+                                                  ToolTip.Tip="The workspace's own folder, which sprig cd calls root" />
+                                        <MenuItem Header="Open root in a terminal" Command="{Binding OpenRootInTerminalCommand}"
+                                                  AutomationProperties.AutomationId="workspace:open-terminal"
+                                                  ToolTip.Tip="A new terminal window in the workspace's own folder" />
+                                        <MenuItem Header="Open root folder" Command="{Binding OpenRootFolderCommand}"
+                                                  ToolTip.Tip="The workspace's own folder, in the file browser" />
+                                        <Separator IsVisible="{Binding HasSetupItems}" />
+                                        <MenuItem Header="Inputs…" Command="{Binding OpenSettingsCommand}" IsEnabled="{Binding !IsWorking}"
+                                                  IsVisible="{Binding Selected.HasSettings, FallbackValue=False}"
+                                                  AutomationProperties.AutomationId="workspace:settings"
+                                                  ToolTip.Tip="The values its repos take, and where each comes from" />
                                         <MenuItem Header="Make ready again" Command="{Binding MakeReadyCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding ShowRunControls}" ToolTip.Tip="{Binding Selected.MakeReadyTip, FallbackValue=''}" />
+                                        <Separator IsVisible="{Binding Selected.HasLetGoItems, FallbackValue=False}" />
+                                        <MenuItem Header="Free" Command="{Binding FreeCommand}" IsEnabled="{Binding !IsWorking}"
+                                                  IsVisible="{Binding Selected.CanFree, FallbackValue=False}"
+                                                  ToolTip.Tip="Free this slot for the next branch: its worktrees go to a detached HEAD. Its branch and commits stay, and so do its data, ports, values and build output." />
                                         <MenuItem Header="Empty data…" Command="{Binding AskEmptyDataCommand}" IsEnabled="{Binding !IsWorking}"
                                                   IsVisible="{Binding Selected.CanEmptyData, FallbackValue=False}"
                                                   AutomationProperties.AutomationId="workspace:empty-data"
@@ -722,16 +734,17 @@
                                                  TextWrapping="Wrap" />
                         </ScrollViewer>
                     </Border>
-                    <TextBlock Classes="msg" Text="{Binding FormMessage}" FontSize="12.5" TextWrapping="Wrap"
-                               Classes.bad="{Binding FormFailed}" IsVisible="{Binding MessageOnPage}" />
-                    <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasAppsMessage}">
-                        <TextBlock Classes="msg" Text="{Binding AppsMessage}" FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center"
-                                   Classes.bad="{Binding AppsMessageIsBad}" />
-                        <Button Classes="flat" Command="{Binding CancelQuietCommand}" IsVisible="{Binding IsQuietWorking}" HorizontalAlignment="Left"
-                                VerticalAlignment="Center" ToolTip.Tip="Stop waiting; what has finished stays done">
+                    <!-- One line, always there, so a message never pushes the tabs down; a long one is cut short and
+                         read in full by pointing at it. -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Height="18" Margin="0,-4,0,-4">
+                        <TextBlock Classes="msg" Text="{Binding PageMessage}" FontSize="12.5" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" Classes.bad="{Binding PageMessageBad}"
+                                   ToolTip.Tip="{Binding PageMessageTip}" AutomationProperties.AutomationId="workspace:message" />
+                        <Button Grid.Column="1" Classes="flat" Command="{Binding CancelQuietCommand}" IsVisible="{Binding IsQuietWorking}"
+                                VerticalAlignment="Center" Padding="0" ToolTip.Tip="Stop waiting; what has finished stays done">
                             <TextBlock Text="Cancel" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
                         </Button>
-                    </StackPanel>
+                    </Grid>
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TrustPanel}" IsVisible="{Binding TrustOnPage}" />
 
                     <StackPanel Orientation="Horizontal" Spacing="18">
@@ -802,28 +815,39 @@
                             <TextBlock Classes="cell via" Text="stopped" VerticalAlignment="Center" />
                         </StackPanel>
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                        <Border Classes="segmented" VerticalAlignment="Center">
+                            <Button Classes="segment" Classes.on="{Binding GraphFocus}" Content="Focus"
+                                    Command="{Binding ToggleGraphFocusCommand}" AutomationProperties.AutomationId="workspace:graph-focus"
+                                    ToolTip.Tip="Focus on what's going: only the apps and infra that are running, starting or failing" />
+                        </Border>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Classes="cell via" Text="Group by" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <Button Classes="chip" Classes.on="{Binding GraphByRepo}" Content="Repo" Margin="0,0,4,0"
-                                    Command="{Binding GroupGraphByRepoCommand}" AutomationProperties.AutomationId="workspace:graph-by-repo"
-                                    ToolTip.Tip="A box for each repo's apps and infra" />
-                            <Button Classes="chip" Classes.on="{Binding GraphByStartGroup}" Content="Start group" Margin="0,0,4,0"
-                                    Command="{Binding GroupGraphByStartGroupCommand}" IsVisible="{Binding CanGroupByStartGroup}"
-                                    AutomationProperties.AutomationId="workspace:graph-by-start-group"
-                                    ToolTip.Tip="A box for each group Start can start; infra goes with its group when only one uses it" />
-                            <Button Classes="chip" Classes.on="{Binding GraphByRole}" Content="Role"
-                                    Command="{Binding GroupGraphByRoleCommand}" AutomationProperties.AutomationId="workspace:graph-by-role"
-                                    ToolTip.Tip="A box for each kind of thing: web, APIs, workers, databases, queues…" />
+                            <Border Classes="segmented">
+                                <StackPanel Orientation="Horizontal" Spacing="2">
+                                    <Button Classes="segment" Classes.on="{Binding GraphByRepo}" Content="Repo"
+                                            Command="{Binding GroupGraphByRepoCommand}" AutomationProperties.AutomationId="workspace:graph-by-repo"
+                                            ToolTip.Tip="A box for each repo's apps and infra" />
+                                    <Button Classes="segment" Classes.on="{Binding GraphByStartGroup}" Content="Start group"
+                                            Command="{Binding GroupGraphByStartGroupCommand}" IsVisible="{Binding CanGroupByStartGroup}"
+                                            AutomationProperties.AutomationId="workspace:graph-by-start-group"
+                                            ToolTip.Tip="A box for each group Start can start; infra goes with its group when only one uses it" />
+                                    <Button Classes="segment" Classes.on="{Binding GraphByRole}" Content="Role"
+                                            Command="{Binding GroupGraphByRoleCommand}" AutomationProperties.AutomationId="workspace:graph-by-role"
+                                            ToolTip.Tip="A box for each kind of thing: web, APIs, workers, databases, queues…" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal">
-                            <Button Classes="chip" Classes.on="{Binding GraphLayered}" Content="Layered" Margin="0,0,4,0"
-                                    Command="{Binding ShowLayeredGraphCommand}"
-                                    ToolTip.Tip="In rows: what uses something sits above it, with infra along the bottom" />
-                            <Button Classes="chip" Classes.on="{Binding GraphForce}" Content="Force"
-                                    Command="{Binding ShowForceGraphCommand}"
-                                    ToolTip.Tip="Pushed and pulled into clusters; drag a node to keep it somewhere" />
-                        </StackPanel>
+                        <Border Classes="segmented" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <Button Classes="segment" Classes.on="{Binding GraphLayered}" Content="Layered"
+                                        Command="{Binding ShowLayeredGraphCommand}"
+                                        ToolTip.Tip="In rows: what uses something sits above it, with infra along the bottom" />
+                                <Button Classes="segment" Classes.on="{Binding GraphForce}" Content="Force"
+                                        Command="{Binding ShowForceGraphCommand}"
+                                        ToolTip.Tip="Pushed and pulled into clusters; drag a node to keep it somewhere" />
+                            </StackPanel>
+                        </Border>
                         <Button Classes="small" Content="Fit" Command="{Binding FitGraphCommand}" ToolTip.Tip="Fit the whole graph in view" />
                         <Button Classes="small" Content="Reset layout" Command="{Binding ResetGraphLayoutCommand}" IsVisible="{Binding GraphForce}"
                                 ToolTip.Tip="Forget where nodes were dragged, for every workspace of this orchestration" />
@@ -835,6 +859,8 @@
                                                    AutomationProperties.AutomationId="workspace:graph" />
                     <TextBlock IsVisible="{Binding GraphEmpty}" Classes="cell via" HorizontalAlignment="Center" VerticalAlignment="Center"
                                Text="Nothing to draw until the workspace has been planned. Start it, or make it ready, first." />
+                    <TextBlock IsVisible="{Binding GraphFocusEmpty}" Classes="cell via" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Text="Nothing is running. Start something, or turn off Focus to see everything." />
                 </Panel>
 
                 <!-- Folded: a strip on the right edge that opens the details again, as on the Apps tab -->
@@ -867,6 +893,27 @@
                         </Button>
                         <TextBlock Classes="cell via" Text="Pick a node in the graph to see its details." TextWrapping="Wrap"
                                    IsVisible="{Binding !HasGraphPicked}" />
+                        <!-- Nothing picked: every page worth opening, so a link is one click from the graph. -->
+                        <StackPanel Spacing="10" IsVisible="{Binding !HasGraphPicked}">
+                            <TextBlock Classes="phead" Text="QUICK LINKS" IsVisible="{Binding HasGraphQuickLinks}" />
+                            <ItemsControl ItemsSource="{Binding GraphQuickLinks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:QuickLinkGroup">
+                                        <StackPanel Spacing="3" Margin="0,0,0,10">
+                                            <TextBlock Classes="cell via" FontSize="11" Text="{Binding Title}" />
+                                            <ItemsControl ItemsSource="{Binding Links}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="planning:PlannedLink">
+                                                        <TextBlock Classes="link" Text="{Binding Label, StringFormat='{}{0} ↗'}" Tag="{Binding Url}"
+                                                                   FontSize="12.5" Margin="0,1" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Url}" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                         <StackPanel Spacing="10" DataContext="{Binding GraphPicked}" x:DataType="vm:GraphNode"
                                     IsVisible="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).HasGraphPicked, FallbackValue=False}">
                             <StackPanel Spacing="2">

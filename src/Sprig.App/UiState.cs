@@ -17,6 +17,7 @@ namespace Sprig.App;
 /// by node key, so every workspace of it is laid out alike.</param>
 /// <param name="GraphForce">The workspace graph is laid out by forces rather than in rows.</param>
 /// <param name="GraphGroupBy">What the workspace graph's boxes gather; absent for each repo's nodes.</param>
+/// <param name="GraphFocus">The workspace graph shows only what's running, and the infra it uses.</param>
 public sealed record UiStateData(
     Dictionary<string, List<string>>? Pins = null,
     bool LogTimesHidden = false,
@@ -26,7 +27,8 @@ public sealed record UiStateData(
     bool NavCollapsed = false,
     Dictionary<string, Dictionary<string, double[]>>? GraphPlaces = null,
     bool GraphForce = false,
-    Sprig.App.ViewModels.GraphGrouping GraphGroupBy = Sprig.App.ViewModels.GraphGrouping.Repo);
+    Sprig.App.ViewModels.GraphGrouping GraphGroupBy = Sprig.App.ViewModels.GraphGrouping.Repo,
+    bool GraphFocus = false);
 
 /// <summary>Kept in the store beside the settings, read once and written on each change.</summary>
 public sealed class UiState(ISprigPaths paths)
@@ -86,6 +88,12 @@ public sealed class UiState(ISprigPaths paths)
     {
         get => Data.GraphForce;
         set => Save(Data with { GraphForce = value });
+    }
+
+    public bool GraphFocus
+    {
+        get => Data.GraphFocus;
+        set => Save(Data with { GraphFocus = value });
     }
 
     public Sprig.App.ViewModels.GraphGrouping GraphGroupBy

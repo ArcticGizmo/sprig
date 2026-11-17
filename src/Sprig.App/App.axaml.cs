@@ -13,21 +13,17 @@ public partial class App : Application
 {
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// <summary>The workspace the first window opens on, by its key (<c>sprig open storefront 2</c>); null for Home.</summary>
+    public static string? StartWorkspace { get; set; }
+
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var services = new AppServices();
-            var vm = new MainWindowViewModel(services);
-            var main = new MainWindow
-            {
-                DataContext = vm,
-                Title = MainWindowViewModel.WindowTitle,
-            };
-
-            desktop.MainWindow = main;
-            // The language host is a child process; don't leave it running after the app closes.
-            var tray = new Tray(this, desktop, main, services);
+            var windows = new AppWindows(desktop, services);
+            var main = windows.Open(StartWorkspace);
+            var tray = new Tray(this, desktop, windows, services, main.Icon);
             TerminalStop.Listen(() => Avalonia.Threading.Dispatcher.UIThread.Post(tray.Quit));
             MaybeShowChangelog(services, main);
         }
@@ -56,7 +52,8 @@ public partial class App : Application
                         services.Settings.Save(s);
                     });
                 // Wait for the main window so the popup can centre on it.
-                owner.Opened += (_, _) => window.Show(owner);
+                if (owner.IsVisible) window.Show(owner);
+                else owner.Opened += (_, _) => window.Show(owner);
             }
         }
 

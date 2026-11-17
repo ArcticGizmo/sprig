@@ -12,6 +12,9 @@ using Sprig.Engine.Workspaces;
 
 namespace Sprig.App.ViewModels;
 
+/// <summary>Links under one heading in the graph's details: the workspace's own, or one app's.</summary>
+public sealed record QuickLinkGroup(string Title, IReadOnlyList<PlannedLink> Links);
+
 /// <summary>
 /// The selected workspace as a graph: every app, job and container, linked by the values one takes from another, each
 /// showing its state, with its log and start/stop a click away. Apps' states come from the host's poll; containers'
@@ -30,7 +33,7 @@ public partial class WorkspacesViewModel
     private GraphNode? _graphPicked;
 
     public bool HasGraph => Graph is { Nodes.Count: > 0 };
-    public bool GraphEmpty => !HasGraph;
+    public bool GraphEmpty => !HasGraph && !GraphFocusEmpty;
     public bool HasGraphPicked => GraphPicked is not null;
 
     /// <summary>The picked node is an app, so the graph's details panel goes on with what the Apps tab's shows for it.</summary>
@@ -67,6 +70,7 @@ public partial class WorkspacesViewModel
             CloseFollowers();
             Graph = null;
             GraphPicked = null;
+            FillGraphQuickLinks();
             return;
         }
 
@@ -80,11 +84,14 @@ public partial class WorkspacesViewModel
         foreach (var target in _targets.Where(t => !_followers.ContainsKey(t.Key))) _followers[target.Key] = Follower(target);
 
         var topology = WorkspaceTopology.Of(plan);
-        var nodes = topology.Nodes.Select(n => new GraphNode(n, Apps.FirstOrDefault(a => a.Key == n.Key), _targets.FirstOrDefault(t => t.Key == n.Key))).ToArray();
+        var shown = GraphFocus ? Running(topology) : null;
+        var nodes = topology.Nodes.Where(n => shown?.Contains(n.Key) ?? true)
+            .Select(n => new GraphNode(n, Apps.FirstOrDefault(a => a.Key == n.Key), _targets.FirstOrDefault(t => t.Key == n.Key))).ToArray();
+        var links = shown is null ? topology.Links : topology.Links.Where(l => shown.Contains(l.From) && shown.Contains(l.To)).ToArray();
         _startGroups = plan.Groups;
         OnPropertyChanged(nameof(CanGroupByStartGroup));
         NotifyGraphGrouping();
-        var graph = new WorkspaceGraph(nodes, topology.Links, _services.Ui.GraphPlaces(record.Orchestration), layered: !GraphForce,
+        var graph = new WorkspaceGraph(nodes, links, _services.Ui.GraphPlaces(record.Orchestration), layered: !GraphForce,
             grouping: GraphGroupBy, startGroups: plan.Groups);
         graph.Picked += OnGraphPicked;
         graph.LogRequested += OnGraphLog;
@@ -105,9 +112,88 @@ public partial class WorkspacesViewModel
         ApplyInfraUsage();
         GraphPicked = null;
         if (graph.Find(picked) is { } again) graph.Select(again.Key);
+        OnPropertyChanged(nameof(GraphFocusEmpty));
+        OnPropertyChanged(nameof(GraphEmpty));
+        FillGraphQuickLinks();
     }
 
+    /// <summary>
+    /// What focus mode shows: the apps and jobs that are going, or that failed, since a failure among what's running is
+    /// what's worth seeing; the infra docker says is running; and the infra and outside values the shown apps use. An
+    /// app that's stopped stays out even when a running one uses it.
+    /// </summary>
+    HashSet<string> Running(WorkspaceTopology topology)
+    {
+        var keep = topology.Nodes
+            .Where(n => n.IsRunner && Apps.FirstOrDefault(a => a.Key == n.Key) is { } row && (row.IsAlive || row.IsBad))
+            .Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var node in topology.Nodes.Where(n => n.IsInfra && _lastInfra?.GetValueOrDefault(n.Key) is { State: "running" or "restarting" }))
+            keep.Add(node.Key);
+        var runners = topology.Nodes.Where(n => n.IsRunner).Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var link in topology.Links.Where(l => keep.Contains(l.From) && !runners.Contains(l.To)).ToArray()) keep.Add(link.To);
+        return keep;
+    }
+
+    /// <summary>Focus mode only shows what's running, so once that changes the graph is drawn again with what now is.</summary>
+    void Refocus()
+    {
+        if (!GraphFocus || Graph is not { } graph || _planRecord is not { } record || _plan is not { } plan) return;
+        var now = Running(WorkspaceTopology.Of(plan));
+        if (!now.SetEquals(graph.Nodes.Select(n => n.Key))) BuildGraph(record, plan, same: true);
+    }
+
+    /// <summary>Only what's running, and the infra it uses, rather than everything the workspace could run.</summary>
+    public bool GraphFocus
+    {
+        get => _services.Ui.GraphFocus;
+        set
+        {
+            if (value == _services.Ui.GraphFocus) return;
+            _services.Ui.GraphFocus = value;
+            OnPropertyChanged();
+            if (_planRecord is { } record && _plan is not null) BuildGraph(record, _plan, same: true);
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleGraphFocus() => GraphFocus = !GraphFocus;
+
+    /// <summary>
+    /// With no node picked, the details list every page worth opening: the workspace's own links, then each app's url and
+    /// quick links, for the apps the graph shows. Read again after each poll (a main's app can say its port late), but
+    /// only handed to the view when it changes, so a link being pointed at isn't redrawn under the pointer.
+    /// </summary>
+    public IReadOnlyList<QuickLinkGroup> GraphQuickLinks { get; private set; } = [];
+
+    public bool HasGraphQuickLinks => GraphQuickLinks.Count > 0;
+
+    void FillGraphQuickLinks()
+    {
+        var groups = new List<QuickLinkGroup>();
+        if (WorkspaceLinks.Count > 0) groups.Add(new QuickLinkGroup("This workspace", WorkspaceLinks));
+        var rows = Graph is { } graph ? graph.Nodes.Select(n => n.App).OfType<WorkspaceAppRow>() : Apps;
+        foreach (var row in rows)
+            if (LinksOf(row) is { Count: > 0 } links) groups.Add(new QuickLinkGroup(row.App, links));
+        if (groups.SelectMany(g => g.Links.Select(l => $"{g.Title}|{l.Label}|{l.Url}"))
+            .SequenceEqual(GraphQuickLinks.SelectMany(g => g.Links.Select(l => $"{g.Title}|{l.Label}|{l.Url}")))) return;
+        GraphQuickLinks = groups;
+        OnPropertyChanged(nameof(GraphQuickLinks));
+        OnPropertyChanged(nameof(HasGraphQuickLinks));
+    }
+
+    /// <summary>There is a plan to draw, but focus mode has nothing running to show.</summary>
+    public bool GraphFocusEmpty => GraphFocus && _plan is not null && Graph is { Nodes.Count: 0 };
+
     static ContainerLogFollower Follower(InfraTarget target) => new(target.Project.Name, target.Service);
+
+    /// <summary>A start or stop already under way is left to finish: stopping it halfway would leave the workspace
+    /// neither one thing nor the other, and the host carries it on regardless of the window.</summary>
+    public override void Dispose()
+    {
+        base.Dispose();
+        _slotCheck?.Cancel();
+        CloseFollowers();
+    }
 
     void CloseFollowers()
     {
@@ -141,6 +227,8 @@ public partial class WorkspacesViewModel
         if (Graph is not { } graph) return;
         foreach (var node in graph.Nodes.Where(n => n.IsRunner)) node.Refresh();
         graph.Invalidate();
+        Refocus();
+        FillGraphQuickLinks();
     }
 
     IReadOnlyDictionary<string, ComposeService>? _lastInfra;
@@ -190,6 +278,7 @@ public partial class WorkspacesViewModel
                 node.Apply(service, states is not null);
             }
             graph.Invalidate();
+            Refocus();
         }
         if (InfraLogOpen && states?.GetValueOrDefault(Logs.Key) is { State: "running" or "restarting" }) _followers[Logs.Key].EnsureRunning();
         OnPropertyChanged(nameof(LogSub));

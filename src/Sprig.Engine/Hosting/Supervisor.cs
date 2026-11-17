@@ -13,11 +13,19 @@ namespace Sprig.Engine.Hosting;
 /// file in the store, and call an app ready once its checks pass (a log line, a health url, or else its port). An app
 /// with a restart policy starts again, with backoff, when it exits on its own. Stopping asks politely (Ctrl+C) and
 /// kills only what's still running after <see cref="Grace"/>. Everything it starts dies with it, because each runner's
-/// job closes when the host does.
+/// job closes when the host does. When the settings limit how many start at once, each app takes a turn in one queue
+/// for every workspace (see <see cref="StartQueue"/>).
 /// </summary>
 public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
 {
     public static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long an app keeps its turn to start without becoming ready, before the next is let go anyway: one
+    /// that never says it's ready mustn't hold up every app behind it.</summary>
+    public static readonly TimeSpan TurnLimit = TimeSpan.FromMinutes(3);
+
+    readonly StartQueue _queue = new();
+    long _asked;
 
     /// <summary>How long a held runner waits for its release: long enough for a first pull of every image, short
     /// enough that a CLI that died mid-up doesn't leave runners waiting for good.</summary>
@@ -54,6 +62,9 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     {
         lock (_startGate)
         {
+            // Read as each start is asked for, so a change in the settings applies from the next start on.
+            _queue.Limit = StartAtOnce();
+            var queued = _queue.Limit is not null;
             foreach (var workspace in specs.Select(s => s.Workspace).Distinct())
             {
                 if (hold) _holds.GetOrAdd(workspace, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
@@ -76,7 +87,8 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     spec.BuildKey is { } k ? _buildLocks.GetOrAdd(k, _ => new SemaphoreSlim(1, 1)) : null,
                     name => _runners.TryGetValue((spec.Workspace, name), out var r) ? r.Status : null,
                     previous,
-                    () => _holds.TryGetValue(spec.Workspace, out var held) ? held.Task : Task.CompletedTask);
+                    () => _holds.TryGetValue(spec.Workspace, out var held) ? held.Task : Task.CompletedTask,
+                    queued ? (_queue, ++_asked) : null);
                 _runners[key] = runner;
                 started.Add(runner);
             }
@@ -111,13 +123,28 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         if (_holds.TryRemove(workspace, out var held)) held.TrySetResult();
     }
 
+    /// <summary>The settings' limit; null (no limit) when they can't be read, since starting is what was asked for.</summary>
+    int? StartAtOnce()
+    {
+        try
+        {
+            return new Settings.FileSettingsStore(paths).Get().StartAtOnce;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <param name="peer">Another runner of the same workspace, by name, for waiting on.</param>
     /// <param name="previous">The runner this one replaces; it has to be gone before this one builds, since a running
     /// app locks the files its build would overwrite.</param>
     /// <param name="held">Completes once the workspace's hold (if any) is released.</param>
+    /// <param name="queue">Where it takes its turn to build and start, and its place in it; null to go straight away.</param>
     sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer, Runner? previous,
-        Func<Task> held)
+        Func<Task> held, (StartQueue Queue, long Order)? queue)
     {
+        StartQueue.Turn? _turn;
         // The shells sprig starts apps through, and the console host Windows gives each one; neither is the app.
         static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase) { "cmd", "conhost", "sh" };
 
@@ -239,22 +266,10 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     _logDate = null;
                 }
 
-                if (spec.Build is { } build)
-                {
-                    Write($"sprig: building with {build}");
-                    if (spec.BuildDoing is { } doing) lock (_gate) Status = Status with { Doing = doing };
-                    if (buildLock is not null) await buildLock.WaitAsync();
-                    int code;
-                    try { code = await RunToEndAsync(build); }
-                    finally { buildLock?.Release(); }
-                    lock (_gate) Status = Status with { Doing = null };
-                    if (Stopping) return;
-                    if (code != 0)
-                    {
-                        Set(RunnerState.Failed, exit: code, error: $"the build exited with code {code}");
-                        return;
-                    }
-                }
+                // Without a queue it builds while the infra and what it waits for come up. Queued, it builds in its turn,
+                // which it takes only once what it waits for is ready: holding a turn while waiting on an app that needs
+                // one would stop both.
+                if (queue is null && !await BuildAsync()) return;
 
                 var hold = held();
                 if (!hold.IsCompleted)
@@ -277,6 +292,12 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     if (!Stopping) Set(RunnerState.Failed, error: blocked);
                     Write($"sprig: {blocked}");
                     return;
+                }
+
+                if (queue is { } q)
+                {
+                    if (!await TakeTurnAsync(q.Queue, q.Order) || !await BuildAsync()) return;
+                    _ = LetGoOfTurnLaterAsync();
                 }
 
                 var inARow = 0;
@@ -333,6 +354,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
             }
             finally
             {
+                EndTurn();
                 // Whatever it left behind (a child that outlived its parent) goes now, unless a stop is handling that.
                 if (!Stopping)
                 {
@@ -345,6 +367,66 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     _ended.TrySetResult();
                 }
             }
+        }
+
+        /// <summary>False when it shouldn't go on: the build failed, or a stop came while it ran.</summary>
+        async Task<bool> BuildAsync()
+        {
+            if (spec.Build is not { } build) return true;
+            if (Status.State != RunnerState.Building) Set(RunnerState.Building);
+            Write($"sprig: building with {build}");
+            if (spec.BuildDoing is { } doing) lock (_gate) Status = Status with { Doing = doing };
+            if (buildLock is not null) await buildLock.WaitAsync();
+            int code;
+            try { code = await RunToEndAsync(build); }
+            finally { buildLock?.Release(); }
+            lock (_gate) Status = Status with { Doing = null };
+            if (Stopping) return false;
+            if (code == 0) return true;
+            Set(RunnerState.Failed, exit: code, error: $"the build exited with code {code}");
+            return false;
+        }
+
+        /// <summary>False when a stop came first.</summary>
+        async Task<bool> TakeTurnAsync(StartQueue startQueue, long order)
+        {
+            var turn = startQueue.Join(order);
+            lock (_gate) _turn = turn;
+            if (!turn.Ready.IsCompleted)
+            {
+                Set(RunnerState.Waiting);
+                var limit = startQueue.Limit ?? 1;
+                Write($"sprig: waiting for its turn to start ({(limit == 1 ? "one app starts" : $"{limit} apps start")} at a time)");
+                await Task.WhenAny(turn.Ready, _stopAsked.Task);
+            }
+            if (!Stopping) return true;
+            // A stop that came before the turn was kept here has nothing to hand back, so it's handed back now.
+            EndTurn();
+            return false;
+        }
+
+        /// <summary>The next app's turn, once this one is ready, has settled or is restarting. Safe to call more than once.</summary>
+        void EndTurn()
+        {
+            StartQueue.Turn? turn;
+            lock (_gate)
+            {
+                turn = _turn;
+                _turn = null;
+            }
+            if (turn is not null) queue!.Value.Queue.Leave(turn);
+        }
+
+        async Task LetGoOfTurnLaterAsync()
+        {
+            StartQueue.Turn? turn;
+            lock (_gate) turn = _turn;
+            if (turn is null) return;
+            await Task.WhenAny(Task.Delay(TurnLimit), _ended.Task);
+            lock (_gate)
+                if (!ReferenceEquals(_turn, turn)) return;
+            Write($"sprig: not ready after {TurnLimit.TotalMinutes:0} minutes, so the next app's turn starts");
+            EndTurn();
         }
 
         /// <summary>Stop it, politely first. Safe to call more than once; every caller gets the same stop.</summary>
@@ -664,6 +746,7 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     Usage = state.IsAlive() || state == RunnerState.Stopping ? Status.Usage : null,
                 };
             }
+            if (state.IsSettled() || state == RunnerState.Restarting) EndTurn();
         }
 
         void Write(string line)

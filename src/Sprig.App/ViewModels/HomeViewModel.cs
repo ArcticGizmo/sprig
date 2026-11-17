@@ -20,10 +20,10 @@ public sealed partial class HomeViewModel : PageViewModel
     {
         _services = services;
         // Dots follow the window's host poll; the list itself is read again when the page is shown.
-        services.HostStatus.Changed += runners =>
+        FollowPolls(services, runners =>
         {
             if (IsActive) Running = Build(_services.Workspaces.List(), runners);
-        };
+        });
     }
 
     [ObservableProperty]

@@ -38,7 +38,8 @@ public sealed class InitCommand(CliContext cli) : Command<InitCommand.Settings>
         var here = string.Equals(Path.GetFullPath(folder).TrimEnd('\\', '/'), Path.GetFullPath(Environment.CurrentDirectory).TrimEnd('\\', '/'),
             StringComparison.OrdinalIgnoreCase);
         cli.Ansi.MarkupLine($"[dim]Run it where it is with: {Markup.Escape(here ? "sprig up" : $"sprig up {entry.Id}")}. " +
-                            $"Check a branch out in a slot of its own with: {Markup.Escape(here ? "sprig up -b <branch>" : $"sprig up {entry.Id} -b <branch>")}[/]");
+                            $"Check a branch out in a slot of its own with: {Markup.Escape(here ? "sprig checkout -b <branch>" : $"sprig checkout {entry.Id} -b <branch>")}, " +
+                            $"then run it with: {Markup.Escape(here ? "sprig up <branch>" : $"sprig up {entry.Id} <branch>")}[/]");
         return 0;
     }
 }
@@ -70,10 +71,10 @@ static class ValuesChange
     {
         var (id, workspace) = s.Target(cli);
         if (workspace == WorkspaceRecord.MainName)
-            throw new InvalidOperationException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values: sprig up -b <branch> --set name=value");
+            throw new InvalidOperationException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values: sprig checkout -b <branch> --set name=value");
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
         if (cli.Workspaces.Get(loaded.Id, workspace) is not { } record)
-            throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; give it values as it's made: sprig up {(s.Id is null ? "" : $"{loaded.Id} ")}--set name=value");
+            throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; give it values as it's checked out: sprig checkout {(s.Id is null ? "" : $"{loaded.Id} ")}-b <branch> --set name=value");
 
         var before = cli.Workspaces.LastPlan(record.Orchestration, record.Name);
         record = cli.Workspaces.SetValues(record.Orchestration, record.Name, set, unset);

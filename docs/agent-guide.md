@@ -20,6 +20,7 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 | `error` | Anything else; `error` says what | Read it |
 
 - **Values reach apps only through files** (`.env`, `launchSettings.json`, `appsettings.json`), never environment variables. So you can stop one app and run it yourself (`dotnet run`, `pnpm dev`) in its folder, and it gets exactly what sprig's run gets.
+- **Start only what you need running.** `sprig checkout` is cheap: worktrees, ports and files. Starting builds every app and brings its infra up, so do it when the work needs the apps running, and prefer `sprig start <app>` to `sprig up` when one app will do.
 - **Don't remove what you didn't make.** `sprig rm` deletes a workspace's data and worktrees. Use `sprig free` to give a slot back.
 
 ## Making a repo ready
@@ -28,7 +29,7 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 2. Fill in what the draft couldn't know: which apps wait for which infra (`wait-for`), how each app learns its port and connection strings (`files:`), health checks, jobs such as migrations (`once: true`). Read the repo's own config to find where each app reads its port and connection strings; that file is the one to list under `files:`.
 3. `sprig check --json` reads and plans the file without running anything or needing approval. Fix every problem it gives, by file and line, and run it again until `ok` is true.
 4. `sprig plan --json` shows what a workspace would get: every port, every value written into every file, and where each came from. Check that each app gets the port and addresses it needs.
-5. Try it in a slot, not the user's checkout: `sprig up -b <branch> --json --trust`, then `sprig info --json`. `--trust` approves definitions without asking, so pass it only for a definition you wrote.
+5. Try it in a slot, not the user's checkout: `sprig checkout -b <branch> --json --trust`, then `sprig up <branch> --json`, then `sprig info <branch> --json`. `--trust` approves definitions without asking, so pass it only for a definition you wrote.
 6. An app that doesn't become ready: the `failed` list in the JSON says why, what it had to do to be ready, and how its log ends; `sprig logs <app> -n 200` for more. Fix the definition (or the app's config), then `sprig start --json` again; a changed definition makes the workspace ready again first.
 7. When it runs, `sprig free` gives the slot back. Leave committing the `sprig.yaml` to the user.
 
@@ -40,7 +41,8 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 |---|---|
 | See what this folder is to sprig | `sprig info --json` |
 | List workspaces | `sprig workspaces --json` |
-| Check a branch out in a slot and start it | `sprig up -b <branch> --json` (`--no-start` to only make it ready, `--group <name>` for a slice) |
+| Check a branch out in a slot, ready to run, starting nothing | `sprig checkout -b <branch> --json` |
+| Run a workspace that's checked out | `sprig up <branch> --json` (`--group <name>` for a slice); in its folder, `sprig up --json` |
 | Start, and wait until ready | `sprig start [app…] --json` |
 | Restart after a code change | `sprig restart --json` (`--jobs` to run migrations again) |
 | Stop | `sprig stop [app…]` (nothing named: everything; data is kept) |

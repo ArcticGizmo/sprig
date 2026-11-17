@@ -35,7 +35,7 @@ static class PlaceTarget
         {
             var here = Here.TryFind(cli);
             var choices = Choices(cli, here?.Id);
-            if (choices.Count == 0) throw new InvalidOperationException("there are no workspaces yet; start one with: sprig up");
+            if (choices.Count == 0) throw new InvalidOperationException("there are no workspaces yet; check a branch out with: sprig checkout -b <branch>, or run the checkout where it is with: sprig up");
             var current = here is { } h ? Record(cli, h.Id, h.Workspace ?? WorkspaceRecord.MainName) : null;
             if (PickWorkspace(cli, choices, current, showId: here is null) is not { } picked) return null;
             record = picked;

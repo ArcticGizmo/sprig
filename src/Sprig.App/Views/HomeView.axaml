@@ -135,15 +135,17 @@
                 <TextBlock Classes="label" Text="FROM A TERMINAL" />
                 <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}"
                         BorderThickness="1" CornerRadius="12" Padding="16,14">
-                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="8">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="8">
                         <SelectableTextBlock Grid.Row="0" Text="sprig init" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
                         <TextBlock Grid.Row="0" Grid.Column="1" Text="make the repo in this folder runnable" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                         <SelectableTextBlock Grid.Row="1" Text="sprig up" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="run it where it's checked out" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                        <SelectableTextBlock Grid.Row="2" Text="sprig up -b feat-x" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="run a branch in a slot of its own" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-                        <SelectableTextBlock Grid.Row="3" Text="sprig ps" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" Text="see what's running" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <SelectableTextBlock Grid.Row="2" Text="sprig checkout -b feat-x" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="give a branch a slot of its own, ready to run" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <SelectableTextBlock Grid.Row="3" Text="sprig up feat-x" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="run it" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                        <SelectableTextBlock Grid.Row="4" Text="sprig ps" FontFamily="Consolas,monospace" FontSize="13" Foreground="{StaticResource TitleBrush}" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="see what's running" FontSize="12.5" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
             </StackPanel>

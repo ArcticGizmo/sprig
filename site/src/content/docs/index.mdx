@@ -48,10 +48,11 @@ Each repo describes itself in a `sprig.yaml` file: its apps, its infra and the i
 ## From a terminal
 
 ```sh
-sprig init            # make the repo in this folder runnable
-sprig up              # run it where it's checked out
-sprig up -b feat-x    # run a branch in a slot of its own
-sprig ps              # see what's running
+sprig init                 # make the repo in this folder runnable
+sprig up                   # run it where it's checked out
+sprig checkout -b feat-x   # give a branch a slot of its own, ready to run
+sprig up feat-x            # run it
+sprig ps                   # see what's running
 ```
 
 Sprig runs on Windows. Data lives in `%LOCALAPPDATA%\sprig`.

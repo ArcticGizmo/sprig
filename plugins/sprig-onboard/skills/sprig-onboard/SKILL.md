@@ -18,8 +18,8 @@ Sprig runs a repo's apps and infra from a `sprig.yaml` at its root. Your job is 
 2. **Find what the draft can't know.** For each app, read the repo's own config to see where it reads its port, urls and connection strings (`launchSettings.json`, `appsettings*.json`, `.env`, `vite.config.*`). That file goes under `files:` with the values sprig should write into it. Find what each app needs running first (`wait-for`), and jobs such as migrations (`once: true`).
 3. **Check.** `sprig check --json`. Fix every problem by its file and line, and run it again until `ok` is true. It reads and plans the file; nothing runs and nothing needs approving.
 4. **Plan.** `sprig plan --json` shows every port and every value each file gets. Check each app gets what its config expects.
-5. **Try it in a slot**, never the user's checkout: `sprig up -b sprig-onboard-try --json --trust`. Pass `--trust` only for a definition you wrote. On failure, branch on `code` in the JSON as `sprig docs agent` describes.
-6. **Fix what doesn't start.** `sprig info --json` shows each app's state; `sprig logs <app> -n 100` shows why. Fix the definition or the app's config, then `sprig start --json` again.
+5. **Try it in a slot**, never the user's checkout: `sprig checkout -b sprig-onboard-try --json --trust`, then `sprig up sprig-onboard-try --json`. Pass `--trust` only for a definition you wrote. On failure, branch on `code` in the JSON as `sprig docs agent` describes.
+6. **Fix what doesn't start.** `sprig info sprig-onboard-try --json` shows each app's state; `sprig logs <app> -n 100` shows why. Fix the definition or the app's config, then `sprig start sprig-onboard-try --json` again.
 7. **Clean up.** `sprig free` gives the slot back. Tell the user what you set up and what you couldn't, and leave committing `sprig.yaml` to them.
 
 ## Don't

@@ -258,7 +258,7 @@ static class PlanPrinter
                 asks.AddRow(Markup.Escape(a.Name), Markup.Escape(a.Type), Markup.Escape(a.Owner),
                     Markup.Escape($"{Relative(a.Location.File, root)}{(a.Location.Line > 0 ? $":{a.Location.Line}" : "")}"));
             console.Write(asks);
-            console.MarkupLine("[dim]Nothing gives these a value. Give them one when the workspace comes up: sprig up <id> --set name=value[/]");
+            console.MarkupLine("[dim]Nothing gives these a value. Give them one when a branch is checked out: sprig checkout <id> -b <branch> --set name=value[/]");
             console.WriteLine();
         }
 

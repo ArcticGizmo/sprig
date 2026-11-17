@@ -42,7 +42,7 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
             cli.Ansi.MarkupLine($"[bold]{Markup.Escape(id)}[/] / [bold]{Markup.Escape(s.Workspace)}[/]  [dim]not made yet[/]");
             cli.Ansi.MarkupLine(s.Workspace == WorkspaceRecord.MainName
                 ? $"[dim]Start it with: sprig start {Markup.Escape(id)}[/]"
-                : $"[dim]Check a branch out with: sprig up {Markup.Escape(id)} -b <branch>[/]");
+                : $"[dim]Check a branch out with: sprig checkout {Markup.Escape(id)} -b <branch>[/]");
         }
         else Header(record, runners);
         cli.Ansi.WriteLine();

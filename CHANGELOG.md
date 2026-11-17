@@ -9,6 +9,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.6] - 2026-11-17
+
+`sprig cd`, now with a way out.
+
+### Changed
+- **`sprig cd` always asks** — even when there's only one answer.
+
+### Added
+- **`sprig cd` can back out** — pick "none" or press Escape; you stay put.
+
+---
+
 ## [v0.9.5] - 2026-11-17
 
 One sprig, as many windows as you have desktops.

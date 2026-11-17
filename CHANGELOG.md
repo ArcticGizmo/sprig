@@ -9,6 +9,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.4] - 2026-11-17
+
+The installer now includes the part that actually runs things.
+
+### Fixed
+- **Installed sprig starts workspaces** — `sprig-host` finally ships in the package.
+
+---
+
 ## [v0.9.3] - 2026-11-16
 
 Now with ten minutes of hindsight.

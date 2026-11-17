@@ -142,12 +142,21 @@ public sealed class HostClient(ISprigPaths paths)
         Process.Start(psi)?.Dispose();
     }
 
-    // Installed, sprig-host sits beside the CLI and the app. In a dev build it's in its own project's bin folder. A
-    // referencing project gets a bare exe stub without its dll, so a candidate only counts with its dll beside it.
+    // Installed, sprig-host is a single file beside the CLI and the app. In a dev build it's in its own project's bin
+    // folder, and a referencing project's bin gets a bare exe stub without its dll, so there a candidate only counts
+    // with its dll beside it.
     static string Locate()
     {
         var exe = OperatingSystem.IsWindows() ? "sprig-host.exe" : "sprig-host";
-        foreach (var dir in Candidates())
+        var baseDir = AppContext.BaseDirectory;
+        var repo = RepoAbove(baseDir);
+        if (repo is null)
+        {
+            var installed = Path.Combine(baseDir, exe);
+            if (File.Exists(installed)) return installed;
+            throw new FileNotFoundException($"couldn't find sprig-host beside sprig in {baseDir}; reinstall sprig");
+        }
+        foreach (var dir in DevCandidates(baseDir, repo))
         {
             var candidate = Path.Combine(dir, exe);
             if (File.Exists(candidate) && File.Exists(Path.Combine(dir, "sprig-host.dll"))) return candidate;
@@ -155,13 +164,16 @@ public sealed class HostClient(ISprigPaths paths)
         throw new FileNotFoundException("couldn't find sprig-host; build Sprig.Host");
     }
 
-    static IEnumerable<string> Candidates()
+    static DirectoryInfo? RepoAbove(string baseDir)
     {
-        var baseDir = AppContext.BaseDirectory;
-        yield return baseDir;
         var repo = new DirectoryInfo(baseDir);
         while (repo is not null && !File.Exists(Path.Combine(repo.FullName, "sprig.slnx"))) repo = repo.Parent;
-        if (repo is null) yield break;
+        return repo;
+    }
+
+    static IEnumerable<string> DevCandidates(string baseDir, DirectoryInfo repo)
+    {
+        yield return baseDir;
         var tfm = new DirectoryInfo(baseDir).Name;
         var config = new DirectoryInfo(baseDir).Parent?.Name ?? "Debug";
         foreach (var c in new[] { config, "Debug", "Release" })

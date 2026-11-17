@@ -10,6 +10,18 @@
     <AssemblyName>sprig-host</AssemblyName>
   </PropertyGroup>
 
+  <!-- Publish-only: sprig-host.exe ships in the same folder as the GUI, whose runtime is trimmed to what the GUI
+       uses, so like sprig.exe it's a single file carrying its own runtime. No ReadyToRun: it starts once and runs
+       for the session, so startup JIT isn't worth the size. Partial trim and STJ reflection as Sprig.App. -->
+  <PropertyGroup>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Sprig.Engine\Sprig.Engine.csproj" />
   </ItemGroup>

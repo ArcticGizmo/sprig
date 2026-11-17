@@ -1,0 +1,27 @@
+{
+  "name": "sprig",
+  "owner": { "name": "arcticgizmo", "url": "https://github.com/arcticgizmo/sprig" },
+  "description": "Sprig for Claude Code: skills to make repos ready for sprig and run their workspaces, and hooks that make an agent's worktree a sprig slot. Each is its own plugin; take the ones you want.",
+  "plugins": [
+    {
+      "name": "sprig-onboard",
+      "source": "./plugins/sprig-onboard",
+      "description": "Skill: make a repo ready for sprig, from a draft sprig.yaml to apps that start"
+    },
+    {
+      "name": "sprig-workspaces",
+      "source": "./plugins/sprig-workspaces",
+      "description": "Skill: run sprig workspaces: check branches out in slots, start, stop, read logs, free"
+    },
+    {
+      "name": "sprig-worktrees",
+      "source": "./plugins/sprig-worktrees",
+      "description": "Hooks: an agent's worktree becomes a sprig slot with its own ports, files and infra"
+    },
+    {
+      "name": "sprig-context",
+      "source": "./plugins/sprig-context",
+      "description": "Hook: each session starts knowing what its folder is to sprig and where its apps listen"
+    }
+  ]
+}

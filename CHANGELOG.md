@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`sprig check`** — checks a definition by line, approving nothing.
+- **`sprig schema` and `sprig docs`** — the schema and docs for the sprig you have.
+- **Error codes under `--json`** — `inputs-needed`, `untrusted`, `held` and friends, so scripts stop parsing English.
+- **Claude Code plugins** — four of them, take what you like: skills to onboard repos and run workspaces, worktree hooks that make an agent's worktree a slot, and session context.
+
+### Changed
+- **Problems in `--json` say `"Error"` or `"Warning"`** — not `0` or `1`.
+
 ---
 
 ## [v0.9.6] - 2026-11-17

@@ -25,6 +25,20 @@ Each repo describes itself in a `sprig.yaml` file: its apps, infra and the input
 
 The app and the `sprig` command do the same things. Data lives in `%LOCALAPPDATA%\sprig`. Orchestrations, running several repos together, are in the app but greyed out until their redesign. The plan and the decisions behind it are in [docs/experimental-roadmap.md](docs/experimental-roadmap.md).
 
+## With Claude Code
+
+Sprig ships Claude Code plugins from this repo. Each is its own plugin, so take the ones you want:
+
+```
+/plugin marketplace add arcticgizmo/sprig
+/plugin install sprig-onboard@sprig      # skill: make a repo ready for sprig
+/plugin install sprig-workspaces@sprig   # skill: run workspaces
+/plugin install sprig-worktrees@sprig    # hooks: an agent's worktree is a sprig slot
+/plugin install sprig-context@sprig      # hook: sessions start knowing what the folder is to sprig
+```
+
+The hooks run `sprig hook …`, so they need `sprig` on `PATH`. `sprig-worktrees` takes over every worktree Claude Code makes while it's on (outside repos sprig knows it makes a plain one), so it's best turned on per project. Agents read `sprig docs agent`; the design is in [docs/agent-support-plan.md](docs/agent-support-plan.md).
+
 ## Build from source
 
 ```sh

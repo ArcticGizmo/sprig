@@ -32,7 +32,7 @@ Skills don't copy the docs: they tell the agent to run `sprig docs format` and `
 
 ### The CLI
 
-- **`sprig check [file]`**: reads a definition without registering or approving it (reading runs nothing) and plans it, so references, ports and files are checked too. Every problem has its file and line; `--json` gives `{ ok, problems: [{ severity, message, location: { file, line } }] }`. A repo file is planned on its own, as a workspace that isn't main; an orchestration file with the repos it names.
+- **`sprig check [file]`**: reads a definition without registering or approving it (reading runs nothing) and plans it, so references, ports and files are checked too. Every problem has its file and line; `--json` gives `{ ok, code, file, kind, problems, asks }`, with each problem as `plan --json` gives it (`Severity`, `Message`, `Location: { File, Line }`). A repo file is planned on its own, as a workspace that isn't main; an orchestration file with the repos it names.
 - **`sprig schema [repo|orchestration]`**: prints the JSON Schema, the same one the site publishes.
 - **`sprig docs [format|agent]`**: prints the definition format, or a short guide for agents, embedded in the binary.
 - **Error codes under `--json`.** A failure is `{ ok: false, code, error, … }`, with `code` one of `inputs-needed` (with `asks: [{ name, type, owner }]`), `untrusted` (with `untrusted: [path]`), `held` (another definition's main is running in the checkout), `slot-broken`, `problems` (with `problems`) or `error`. An agent branches on `code`, not the English.
@@ -48,6 +48,14 @@ Skills don't copy the docs: they tell the agent to run `sprig docs format` and `
 - Subagent and workflow worktrees never fire `WorktreeRemove`, so slots made for them stay taken. Slots made by the hook are marked, so a later `sprig free --agent-made` can sweep them.
 - Claude Code's own `.worktreeinclude` isn't processed when a hook makes the worktree; sprig's `copy-into-worktrees` does that job.
 - The plugin hook doesn't run for `claude --worktree --tmux` (the worktree is made before plugins load); that needs the hook in a settings file.
+
+## As built (2026-11-17)
+
+- **CLI**: `CheckCommand`, `SchemaCommand`, `DocsCommand` and `HookCommand` (`AgentCommands.cs`, `HookCommand.cs`). `check` reads with a trust store that approves everything and records nothing, since reading runs nothing; a repo file is planned as a repo on its own, keyed by its name. `docs` prints `docs/definition-format.md` and `docs/agent-guide.md`, embedded in `sprig.exe`. `CliErrors` gives every `--json` failure its `code`; `WorkspaceException` gained `Code` (for `slot-broken`) and the non-interactive take-over refusal keeps `HeldBy`. `ProblemSeverity` serialises by name.
+- **Hooks**: `worktree-create` names the branch `worktree-<name>`, as Claude Code does, checks it out with `CheckOut` and no `Starting`, records `MadeForAgent` (the session id) on the slot, and prints the worktree of the repo the session was in. Definitions the user hasn't approved fail the hook with the `sprig trust add` line rather than fall back, so an agent never gets a worktree without the ports it expected. The plain fallback puts the worktree under the main checkout's `.claude/worktrees/`; removing it deletes its branch only when no other branch or remote has its commits. `session-start` prints nothing outside a repo sprig knows, and never fails.
+- **Plugins**: `plugins/sprig-onboard`, `sprig-workspaces` (one skill each), `sprig-worktrees`, `sprig-context` (hooks in exec form, `"command": "sprig", "args": [...]`); `.claude-plugin/marketplace.json` lists them by relative path. All pass `claude plugin validate --strict`; the only advice is that none has an icon, which matters only for Anthropic's plugin directory.
+- **Alignment**: `PluginsTests` checks every plugin's version equals the csproj's, every hook runs `sprig hook` with a contract `HookCommand.Contracts` serves, and the marketplace lists each plugin folder once. `bump-version` bumps the plugin manifests with the csproj.
+- **Tests**: check (good file, reference typo by line, unknown key, missing file), docs, schema, error codes, the contract refusal, both worktree paths (plain and slot, create and remove, approval required) and session context.
 
 ## Order
 

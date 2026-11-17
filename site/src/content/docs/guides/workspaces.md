@@ -9,13 +9,14 @@ A workspace is one running copy of a repo (or of an orchestration's repos): its 
 
 Every repo has a `main` workspace, listed first. It's the repo where it's already checked out, on whatever branch it's on, run with the definition's own values. There's nothing to create, free or remove.
 
-`sprig up` with no `-b` runs it.
+`sprig up` in the repo's folder runs it.
 
 ## Slots
 
-`sprig up -b feat-x` checks `feat-x` out in a numbered slot of worktrees, such as `shop-web--1`. The branch is the slot's only name, so git, your IDE and sprig all call it the same thing. Commands name a workspace by its branch, its slot number or its folder:
+`sprig checkout -b feat-x` checks `feat-x` out in a numbered slot of worktrees, such as `shop-web--1`, and makes it ready to run: its ports are reserved and its values written into the files its apps read. Nothing starts. The branch is the slot's only name, so git, your IDE and sprig all call it the same thing. Commands name a workspace by its branch, its slot number or its folder:
 
 ```sh
+sprig up feat-x
 sprig logs feat-x web
 sprig info feat-x
 ```
@@ -55,9 +56,9 @@ groups:
 An input is a value a repo takes from outside, with a default for when nothing gives one. A value set on the workspace wins over the default:
 
 ```sh
-sprig up --set catalog-url=http://localhost:5100
+sprig checkout -b feat-x --set catalog-url=http://localhost:5100
 sprig set catalog-url=http://localhost:5100
 sprig inputs           # each input, its value, and where it came from
 ```
 
-An input with no default is asked for when the workspace is made.
+An input with no default is asked for when the branch is checked out.

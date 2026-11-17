@@ -77,6 +77,7 @@ public static class CliApp
         config.AddCommand<OpenCommand>("open");
         config.AddCommand<UpdateCommand>("update");
         config.AddCommand<InitCommand>("init");
+        config.AddCommand<CheckoutCommand>("checkout");
         config.AddCommand<UpCommand>("up");
         config.AddCommand<PlanCommand>("plan");
         config.AddCommand<CheckCommand>("check");

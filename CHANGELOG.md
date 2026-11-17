@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.8] - 2026-11-17
+
+Asked for a worktree, an agent started the whole stack. Thorough, but no.
+
+### Added
+- **`sprig checkout -b <branch>`** — a branch in a slot, ready to run. Nothing starts.
+
+### Changed
+- **`sprig up` only runs what's checked out** — `sprig up feat-x`, or the slot you're in.
+- **`up -b` and `up --no-start` point you at `checkout`** — habits die hard.
+- **The skills check out first** — agents start only what the work needs.
+
+---
+
 ## [v0.9.7] - 2026-11-17
 
 Sprig, for agents. They were going to use it anyway.

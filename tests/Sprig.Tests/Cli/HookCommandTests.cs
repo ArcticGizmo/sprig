@@ -152,7 +152,7 @@ public sealed class HookCommandTests : IDisposable
         Assert.Equal(0, Run(null, "repo", "add", repo).code);
         Assert.Equal(0, Run(null, "trust", "add", Path.Combine(repo, "sprig.yaml")).code);
         Assert.Equal(0, Run(Json(("cwd", repo), ("name", "calm-fox"), ("session_id", "s-1")), "hook", "worktree-create", "--contract", "1").code);
-        var (code, _, stderr) = Run(null, "up", "shop-services", "-b", "mine", "--no-start", "--json");
+        var (code, _, stderr) = Run(null, "checkout", "shop-services", "-b", "mine", "--json");
         Assert.True(code == 0, stderr);
 
         (code, var stdout, stderr) = Run(null, "free", "--agent-made", "--json");

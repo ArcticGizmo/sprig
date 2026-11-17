@@ -35,10 +35,11 @@ sprig stop catalog-api # stop one app, say to run it from your IDE
 ## 3. Run a branch beside it
 
 ```sh
-sprig up -b feat-x
+sprig checkout -b feat-x
+sprig up feat-x
 ```
 
-`feat-x` is checked out in a slot of worktrees of its own, with its own ports, data and env files, so it runs alongside `main` without touching it. See [Workspaces](/sprig/guides/workspaces/) for how slots are reused.
+`checkout` puts `feat-x` in a slot of worktrees of its own, with its own ports, data and env files, ready to run. Nothing starts until `up`, so you can check a branch out just to work on its code. It runs alongside `main` without touching it. See [Workspaces](/sprig/guides/workspaces/) for how slots are reused.
 
 ## 4. Edit the definition
 

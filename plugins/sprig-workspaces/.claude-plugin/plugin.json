@@ -1,6 +1,6 @@
 {
   "name": "sprig-workspaces",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Run sprig workspaces: check a branch out in a slot, start and stop its apps, read their logs, give the slot back",
   "author": { "name": "arcticgizmo" },
   "homepage": "https://arcticgizmo.github.io/sprig/",

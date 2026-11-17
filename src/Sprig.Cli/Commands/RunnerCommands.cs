@@ -70,9 +70,9 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         s.ResolveApps(cli);
         var record = cli.Workspaces.Get(s.Orchestration, s.Workspace);
         if (record is null && s.Workspace != WorkspaceRecord.MainName)
-            throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'; check a branch out with: sprig up {s.Orchestration} -b <branch>");
+            throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'; check a branch out with: sprig checkout {s.Orchestration} -b <branch>");
         if (record is { IsFree: true })
-            throw new InvalidOperationException($"{record.SlotName} is free; check a branch out in it first: sprig up {record.Orchestration} -b <branch>");
+            throw new InvalidOperationException($"{record.SlotName} is free; check a branch out in it first: sprig checkout {record.Orchestration} -b <branch> --slot {record.Name}");
         // Stopped, failed or never made ready: made ready now, starting nothing yet, so what's named can be looked up.
         if (record is not { State: WorkspaceState.Up } || cli.Workspaces.LastPlan(s.Orchestration, s.Workspace) is null)
         {

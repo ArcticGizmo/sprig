@@ -17,5 +17,6 @@ Run `sprig docs agent` and follow it: it's the guide for the sprig installed her
 - **Start from what's here:** `sprig info --json` in the folder says which repo and workspace it is, each app's state, and its ports.
 - **Starting waits until apps are ready.** `sprig start [app…] --json` returns once each is healthy, or says which wasn't. Then `sprig logs <app> -n 200` says why.
 - **To run one app yourself** (to debug it, or with your own changes), `sprig stop <app>` and run it from its folder (`dotnet run`, `pnpm dev`). Sprig writes its values into files the app reads, so it gets the same port and addresses, and the rest keeps running.
-- **A branch of your own:** `sprig up -b <branch> --json` checks it out in a free slot and starts it; `--no-start` only makes it ready. `sprig path` prints the slot's folder.
+- **A branch of your own:** `sprig checkout -b <branch> --json` checks it out in a free slot and makes it ready (worktrees, ports, files) without starting anything. `sprig path <branch>` prints the slot's folder.
+- **Start only what you need running.** Checking out is cheap; starting builds every app and brings its infra up. When the work needs it running, `sprig start <app> --json` starts that app and what it depends on, and `sprig up <branch> --json` starts everything.
 - **Give back what you took:** `sprig free` stops a slot and frees it for the next branch, keeping its data. Don't `sprig rm` (it deletes data and worktrees) or stop the user's main checkout unless they ask.

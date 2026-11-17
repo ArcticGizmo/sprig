@@ -11,6 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`sprig check`** — checks a definition by line, approving nothing.
 - **`sprig schema` and `sprig docs`** — the schema and docs for the sprig you have.
 - **Error codes under `--json`** — `inputs-needed`, `untrusted`, `held` and friends, so scripts stop parsing English.
+- **`sprig free --agent-made`** — frees the slots agents took and never gave back; running ones are left alone.
+- **Two check-outs at once never pick the same slot** — agents in parallel stop treading on each other.
 - **Claude Code plugins** — four of them, take what you like: skills to onboard repos and run workspaces, worktree hooks that make an agent's worktree a slot, and session context.
 
 ### Changed

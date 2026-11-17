@@ -345,16 +345,70 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
 }
 
 [Description("Free a slot for another branch: stop its apps and infra and detach its worktrees, keeping its branch, data, ports and values")]
-public sealed class FreeCommand(CliContext cli) : Command<WorkspaceSettings>
+public sealed class FreeCommand(CliContext cli) : Command<FreeCommand.Settings>
 {
-    protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
+    public sealed class Settings : WorkspaceSettings
     {
+        [CommandOption("--agent-made")]
+        [Description("Free every slot an agent's worktree hook made that's still taken (only the ID's, when one is named), rather than one workspace. Slots with something running are left, unless --running")]
+        public bool AgentMade { get; set; }
+
+        [CommandOption("--running")]
+        [Description("With --agent-made, free slots with apps or infra running too, stopping them")]
+        public bool Running { get; set; }
+    }
+
+    protected override ValidationResult Validate(CommandContext context, Settings s)
+    {
+        if (s.AgentMade && !string.IsNullOrEmpty(s.Workspace)) return ValidationResult.Error("--agent-made frees every slot an agent made; name an ID at most, not a workspace");
+        if (s.Running && !s.AgentMade) return ValidationResult.Error("--running goes with --agent-made");
+        return ValidationResult.Success();
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        if (s.AgentMade) return FreeAgentMade(s, cancellation);
         s.Resolve(cli);
         var before = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}'");
         var record = cli.Workspaces.Free(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
         if (s.Json) { CliOutput.Json(new { ok = true, workspace = Shown.Record(record, cli.Workspaces.LastPlan(record.Orchestration, record.Name), s), secretsUnmasked = s.UnmaskSecrets }); return 0; }
         CliOutput.Success(before.IsFree ? $"{record.SlotName} was already free" : $"{record.SlotName} is free; '{before.Branch}' is kept, with its commits");
         cli.Ansi.MarkupLine($"[dim]Check the next branch out in it with: sprig up {Markup.Escape(record.Orchestration)} -b <branch>[/]");
+        return 0;
+    }
+
+    /// <summary>
+    /// Agents' subagent and workflow worktrees never fire Claude Code's remove hook, so the slots made for them stay taken
+    /// until something frees them. Whether an agent is done with one can't be told from here, so one with something
+    /// running is taken to be in use.
+    /// </summary>
+    int FreeAgentMade(Settings s, CancellationToken cancellation)
+    {
+        var id = string.IsNullOrEmpty(s.Orchestration) ? null
+            : cli.Orchestrations.Resolve(s.Orchestration) is not null ? s.Orchestration
+            : throw new InvalidOperationException($"no repo or orchestration named '{s.Orchestration}'");
+        var made = cli.Workspaces.List().Where(r => r.MadeForAgent is not null && !r.IsFree && !r.IsMain && (id is null || r.Orchestration == id)).ToArray();
+        var runners = made.Length == 0 ? [] : cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+        var projects = made.Length == 0 ? null : cli.Workspaces.RunningProjects();
+
+        var freed = new List<string>();
+        var left = new List<string>();
+        foreach (var record in made)
+        {
+            if (!s.Running && WorkspaceService.RunState(record, runners, projects) is "running" or "starting")
+            {
+                left.Add(record.SlotName);
+                continue;
+            }
+            cli.Workspaces.Free(record.Orchestration, record.Name, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+            freed.Add(record.SlotName);
+        }
+
+        if (s.Json) { CliOutput.Json(new { ok = true, freed, running = left }); return 0; }
+        if (made.Length == 0) cli.Ansi.MarkupLine("[dim]No slot an agent made is taken.[/]");
+        foreach (var slot in freed) CliOutput.Success($"{slot} is free");
+        if (left.Count > 0)
+            cli.Ansi.MarkupLine($"[yellow]Left running:[/] {Markup.Escape(string.Join(", ", left))} [dim](add --running to free them too)[/]");
         return 0;
     }
 }

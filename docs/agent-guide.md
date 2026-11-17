@@ -46,6 +46,7 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 | Find a folder | `sprig path [place]`, e.g. `sprig path api` for a folder the repo names under `cd:` |
 | Give an input a value | `sprig set name=value` |
 | Give the slot back | `sprig free` |
+| Give back the slots agents' worktrees left taken | `sprig free --agent-made` (`--running` to stop and free busy ones too) |
 
 Commands run inside a slot's folder act on that slot; elsewhere, name the repo and workspace: `sprig start shop-services feat-x`.
 

@@ -146,6 +146,27 @@ public sealed class HookCommandTests : IDisposable
     }
 
     [Fact]
+    public void Free_agent_made_frees_the_slots_hooks_made_and_leaves_the_ones_people_made()
+    {
+        var repo = Repo("shop-services", ShopServices);
+        Assert.Equal(0, Run(null, "repo", "add", repo).code);
+        Assert.Equal(0, Run(null, "trust", "add", Path.Combine(repo, "sprig.yaml")).code);
+        Assert.Equal(0, Run(Json(("cwd", repo), ("name", "calm-fox"), ("session_id", "s-1")), "hook", "worktree-create", "--contract", "1").code);
+        var (code, _, stderr) = Run(null, "up", "shop-services", "-b", "mine", "--no-start", "--json");
+        Assert.True(code == 0, stderr);
+
+        (code, var stdout, stderr) = Run(null, "free", "--agent-made", "--json");
+
+        Assert.True(code == 0, stderr);
+        Assert.Contains("shop-services--1", stdout);
+        var records = new WorkspaceStore(_store.Paths).List().Where(r => !r.IsMain).ToDictionary(r => r.Name);
+        Assert.True(records["1"].IsFree);
+        Assert.Equal("mine", records["2"].Branch);
+        Assert.False(records["2"].IsFree);
+        Assert.Contains("\"freed\": []", Run(null, "free", "--agent-made", "--json").stdout);
+    }
+
+    [Fact]
     public void A_session_learns_what_its_folder_is_to_sprig_and_hears_nothing_elsewhere()
     {
         var repo = Repo("shop-services", ShopServices);

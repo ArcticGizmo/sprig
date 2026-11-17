@@ -9,6 +9,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.7] - 2026-11-17
+
+Sprig, for agents. They were going to use it anyway.
+
+### Added
+- **Claude Code plugins** — four, à la carte: onboarding, workspaces, worktree hooks, session context.
+- **An agent's worktree is a sprig slot** — own ports, files and infra.
+- **`sprig check`** — checks a definition by line, approving nothing.
+- **`sprig schema` and `sprig docs`** — the schema and docs for the sprig you have.
+- **Error codes under `--json`** — scripts can stop parsing English.
+- **Failed starts say why** — the reason, the check, the log's last lines.
+- **`sprig free --agent-made`** — reclaims slots agents forgot to give back.
+
+### Fixed
+- **Two check-outs at once never pick the same slot.**
+
+### Changed
+- **Problems and app states in `--json` are named** — `"Error"`, not `0`.
+
+---
+
 ## [v0.9.6] - 2026-11-17
 
 `sprig cd`, now with a way out.

@@ -215,6 +215,13 @@ public sealed class GitClient(IProcessRunner runner)
     /// <summary>Forget worktrees whose folders are gone.</summary>
     public void PruneWorktrees(string repo) => Run(repo, "worktree", "prune").EnsureSuccess();
 
+    /// <summary>The checkout <paramref name="worktree"/> is a worktree of (itself, for a repo's own checkout); null when
+    /// it isn't in a git repo.</summary>
+    public string? MainCheckout(string worktree)
+        => Run(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir") is { Success: true } r && r.StdOut.Trim() is { Length: > 0 } common
+            ? Normalise(Path.GetDirectoryName(Path.GetFullPath(common.TrimEnd('/', '\\')))!)
+            : null;
+
     public void RemoveWorktree(string repo, string path, bool force)
     {
         string[] args = force ? ["worktree", "remove", "--force", path] : ["worktree", "remove", path];

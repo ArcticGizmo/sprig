@@ -50,6 +50,10 @@ public sealed record WorkspaceRecord(
     /// <summary>The workspace every repo and orchestration has that runs its repos where they're checked out.</summary>
     public const string MainName = "main";
 
+    /// <summary>The agent session a worktree hook made this slot for, so slots an agent never gave back can be found and
+    /// freed; null for one a person made.</summary>
+    public string? MadeForAgent { get; init; }
+
     public bool InPlace => Branch is null && Folder is null;
 
     /// <summary>The repos' own checkouts, run as they are: on their own ports, with nothing written into them. It's always there, so it can't be removed,

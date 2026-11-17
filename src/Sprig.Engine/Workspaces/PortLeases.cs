@@ -60,30 +60,4 @@ public sealed class PortLeases(ISprigPaths paths)
     }
 
     IDisposable Lock() => new FileLock(File + ".lock");
-
-    /// <summary>A cross-process lock: a file opened with no sharing.</summary>
-    sealed class FileLock : IDisposable
-    {
-        readonly FileStream _stream;
-
-        public FileLock(string path)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var deadline = Environment.TickCount64 + 10_000;
-            while (true)
-            {
-                try
-                {
-                    _stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-                    return;
-                }
-                catch (IOException) when (Environment.TickCount64 < deadline)
-                {
-                    Thread.Sleep(15);
-                }
-            }
-        }
-
-        public void Dispose() => _stream.Dispose();
-    }
 }

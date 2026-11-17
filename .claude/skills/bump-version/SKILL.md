@@ -48,6 +48,10 @@ would never notice. Collapse related commits into the single *net* change they a
 Edit the `<Version>` element in `src/Sprig.App/Sprig.App.csproj` to `$NEXT` (no `v` prefix).
 Leave everything else untouched — set it to `$NEXT` regardless of its current value.
 
+Then set `"version"` to `$NEXT` in every `plugins/*/.claude-plugin/plugin.json` (the Claude Code
+plugins). Claude Code only offers users a plugin update when this changes, and `PluginsTests`
+fails if any plugin's version differs from the csproj's.
+
 ### 3. Backfill any missing tagged versions
 
 A version can be tagged without ever getting a changelog section. From the tag list in step 1,
@@ -115,7 +119,8 @@ Print, plainly:
 
 ## Notes
 
-- This skill does **not** commit, tag, or push — it only edits the two files and reports.
+- This skill does **not** commit, tag, or push — it only edits the csproj, the plugin manifests
+  and the changelog, and reports.
 - Releases are cut by **pushing a `v*` tag**, which triggers `.github/workflows/publish.yml`
   (Velopack build → GitHub Release). So the flow is: run this skill, commit the two files, then
   run `/release-next-version` to PR, merge, tag and watch the release.

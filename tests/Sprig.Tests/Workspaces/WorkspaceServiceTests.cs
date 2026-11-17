@@ -249,6 +249,40 @@ public sealed class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_slot_another_check_out_is_making_is_never_chosen_and_comes_back_when_it_finishes()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var loaded = Load(("shop-web", Web));
+        var store = new WorkspaceStore(_store.Paths);
+
+        // Another agent has chosen slot 1 for feat-a and is still making it.
+        var (_, other) = store.ClaimSlot("storefront", "feat-a", claimed => ("1", 0));
+
+        var b = _workspaces.CheckOut(loaded, "feat-b");
+        Assert.Equal("2", b.Name);
+        var busy = Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-a"));
+        Assert.Equal(WorkspaceService.BusyCode, busy.Code);
+        Assert.Equal(WorkspaceService.BusyCode, Assert.Throws<WorkspaceException>(() => _workspaces.CheckOut(loaded, "feat-c", new CheckOutOptions(Slot: 1))).Code);
+        // Its own check-out released its claim.
+        Assert.Equal(["1"], store.ClaimedSlots("storefront").Keys);
+
+        other.Dispose();
+        Assert.Empty(store.ClaimedSlots("storefront"));
+        Assert.Equal("1", _workspaces.CheckOut(loaded, "feat-c").Name);
+    }
+
+    [Fact]
+    public void A_claim_left_by_a_check_out_that_died_holds_nothing()
+    {
+        Directory.CreateDirectory(_store.Root);
+        File.WriteAllText(Path.Combine(_store.Root, "slot-claims.json"),
+            """{ "storefront/1": { "branch": "feat-a", "pid": 2147483000, "processStarted": "2020-01-01T00:00:00Z", "token": "t" } }""");
+
+        Assert.Empty(new WorkspaceStore(_store.Paths).ClaimedSlots("storefront"));
+        Assert.Equal("1", _workspaces.SlotFor("storefront", "feat-b").Slot);
+    }
+
+    [Fact]
     public void A_folder_in_the_way_of_a_slot_is_found_before_anything_is_made()
     {
         Repo("shop-web", ("index.html", "hi"));

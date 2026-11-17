@@ -31,3 +31,24 @@ jobs:
 
       - name: Test
         run: dotnet test sprig.slnx --logger "console;verbosity=normal"
+
+  # The Claude Code plugins under plugins/ and the marketplace that lists them, checked by Claude Code's own validator.
+  # PluginsTests keeps their versions and hook contracts in step with sprig; this checks they're plugins at all. Pinned,
+  # so a new validator can't fail a PR that changed nothing here.
+  plugins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code@2.1.326
+
+      - name: Validate the marketplace and each plugin
+        run: |
+          claude plugin validate . --strict
+          for plugin in plugins/*/; do claude plugin validate "$plugin" --strict; done

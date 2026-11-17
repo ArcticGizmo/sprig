@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sprig", "args": ["hook", "worktree-create", "--contract", "1"] }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sprig", "args": ["hook", "worktree-remove", "--contract", "1"] }
+        ]
+      }
+    ]
+  }
+}

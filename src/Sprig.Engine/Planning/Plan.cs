@@ -2,6 +2,8 @@ using Sprig.Model;
 
 namespace Sprig.Engine.Planning;
 
+// By name in the CLI's JSON, so a reader needn't know the enum's order.
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ProblemSeverity>))]
 public enum ProblemSeverity { Error, Warning }
 
 public sealed record PlanProblem(ProblemSeverity Severity, string Message, SourceLocation? Location);

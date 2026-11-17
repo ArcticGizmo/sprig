@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sprig", "args": ["hook", "session-start", "--contract", "1"] }
+        ]
+      }
+    ]
+  }
+}

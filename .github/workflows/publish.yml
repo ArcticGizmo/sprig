@@ -28,10 +28,12 @@ jobs:
         id: version
         run: echo "VERSION=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
 
-      # Both exes publish into the same folder so vpk packs them together: sprig-gui.exe (the app,
-      # and Velopack's --mainExe) and sprig.exe (the CLI). The GUI's runtime is trimmed to what the GUI
-      # uses, so the CLI publishes as a single file carrying its own runtime rather than sharing it (see
-      # docs/packaging.md). sprig.exe rides along in the package; the install hook puts it on PATH.
+      # All three exes publish into the same folder so vpk packs them together: sprig-gui.exe (the app,
+      # and Velopack's --mainExe), sprig.exe (the CLI) and sprig-host.exe (runs apps in the background
+      # for both). The GUI's runtime is trimmed to what the GUI uses, so the CLI and the host publish as
+      # single files carrying their own runtimes rather than sharing it. The host goes last: the app and
+      # the CLI each drop a bare sprig-host.exe stub from their project reference, and the real one has
+      # to overwrite it. sprig.exe rides along in the package; the install hook puts it on PATH.
       - name: Publish
         run: |
           dotnet publish src/Sprig.App/Sprig.App.csproj -c Release -r win-x64 --self-contained true `
@@ -40,6 +42,13 @@ jobs:
           dotnet publish src/Sprig.Cli/Sprig.Cli.csproj -c Release -r win-x64 --self-contained true `
             -p:Version=${{ steps.version.outputs.VERSION }} `
             -o publish/
+          dotnet publish src/Sprig.Host/Sprig.Host.csproj -c Release -r win-x64 --self-contained true `
+            -p:Version=${{ steps.version.outputs.VERSION }} `
+            -o publish/
+          if (-not (Test-Path publish/sprig-host.exe) -or (Get-Item publish/sprig-host.exe).Length -lt 1MB) {
+            Write-Host '::error::publish/sprig-host.exe is missing or only the project-reference stub.'
+            exit 1
+          }
 
       - name: Pack with Velopack
         run: >

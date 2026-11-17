@@ -12,6 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- `sprig docs` prints these, so an agent reads the docs that match the sprig it's driving. -->
+    <EmbeddedResource Include="..\..\docs\definition-format.md" LogicalName="docs.format.md" />
+    <EmbeddedResource Include="..\..\docs\agent-guide.md" LogicalName="docs.agent.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- `sprig update` drives Velopack directly (check/download/apply). Keep the version in step
          with Sprig.App's reference — both must resolve the same feed/package format. -->
     <PackageReference Include="Velopack" Version="1.2.0" />

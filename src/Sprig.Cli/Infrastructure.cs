@@ -97,6 +97,43 @@ sealed class TypeResolver(IDictionary<Type, object> instances) : ITypeResolver, 
     public void Dispose() { }
 }
 
+/// <summary>
+/// A failure as <c>--json</c> gives it: <c>{ ok: false, code, error, … }</c>. <c>code</c> is part of the contract, so a
+/// script or an agent branches on it rather than on the English, and the lists that say what to do next come with it.
+/// </summary>
+static class CliErrors
+{
+    public const string InputsNeeded = "inputs-needed";
+    public const string Untrusted = "untrusted";
+    public const string Held = "held";
+    public const string SlotBroken = "slot-broken";
+    public const string Problems = "problems";
+    public const string Error = "error";
+
+    public static string Code(Exception e) => e switch
+    {
+        WorkspaceException { Code: { } code } => code,
+        WorkspaceException { Asks.Count: > 0 } => InputsNeeded,
+        WorkspaceException { Untrusted.Count: > 0 } => Untrusted,
+        WorkspaceException { HeldBy: not null } => Held,
+        WorkspaceException { Problems.Count: > 0 } => Problems,
+        _ => Error,
+    };
+
+    public static object Payload(Exception e) => e is WorkspaceException w
+        ? new
+        {
+            ok = false,
+            code = Code(e),
+            error = e.Message,
+            problems = w.Problems,
+            asks = w.Asks.Select(a => new { name = a.Name, type = a.Type, owner = a.Owner }),
+            untrusted = w.Untrusted.Select(u => u.Path),
+            heldBy = w.HeldBy?.SlotName,
+        }
+        : new { ok = false, code = Code(e), error = e.Message };
+}
+
 /// <summary>Output primitives shared by the commands. <see cref="Json"/> writes straight to stdout so a payload
 /// full of <c>[</c>/<c>]</c> is never mangled by the markup parser.</summary>
 static class CliOutput

@@ -160,7 +160,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         }
         catch (WorkspaceException e)
         {
-            if (s.Json) CliOutput.Json(new { ok = false, error = e.Message, problems = e.Problems, asks = e.Asks });
+            if (s.Json) CliOutput.Json(CliErrors.Payload(e));
             else
             {
                 Console.Error.WriteLine($"error: {e.Message}");
@@ -203,7 +203,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
             catch (WorkspaceException e) when (e.HeldBy is { } holder && !takeOver)
             {
                 if (!cli.Interactive(s.Json))
-                    throw new WorkspaceException($"{e.Message}, with --take-over");
+                    throw new WorkspaceException($"{e.Message}, with --take-over") { HeldBy = holder };
                 cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(holder.SlotName)} is running in the same checkout.[/]");
                 if (!cli.Ansi.Prompt(new ConfirmationPrompt($"Stop {Markup.Escape(holder.SlotName)} (keeping its data) and start {Markup.Escape(loaded.Id)} there?") { DefaultValue = false }))
                     return null;
@@ -235,7 +235,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (s.FixSlot || cli.Workspaces.BrokenSlotFor(loaded, branch, s.Slot) is not { } broken) return (s.Slot, s.FixSlot);
         if (!cli.Interactive(s.Json))
-            throw new WorkspaceException($"{broken.Why}. Fix it with --fix-slot (deleting what's in the way), or use --slot {broken.Next} for {broken.NextName}");
+            throw new WorkspaceException($"{broken.Why}. Fix it with --fix-slot (deleting what's in the way), or use --slot {broken.Next} for {broken.NextName}") { Code = CliErrors.SlotBroken };
         cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(broken.Why)}.[/]");
         var next = $"Use {broken.NextName} instead";
         var fix = $"Fix {broken.SlotName}: delete what's in the way and make it again";

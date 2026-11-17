@@ -46,7 +46,7 @@ static class TrustFlow
             if (!approve)
             {
                 var message = $"{item.Path} isn't approved to run. Read it, then: sprig trust add \"{item.Path}\" (or pass --trust)";
-                if (s.Json) CliOutput.Json(new { ok = false, error = message, untrusted = pending.Select(p => p.Path) });
+                if (s.Json) CliOutput.Json(new { ok = false, code = CliErrors.Untrusted, error = message, untrusted = pending.Select(p => p.Path) });
                 else Console.Error.WriteLine(message);
                 return false;
             }
@@ -237,7 +237,7 @@ static class OrchestrationLoad
         }
 
         if (loaded.Orchestration is not null && loaded.Problems.Count == 0) return loaded;
-        if (s.Json) CliOutput.Json(new { ok = false, problems = loaded.Problems });
+        if (s.Json) CliOutput.Json(new { ok = false, code = CliErrors.Problems, error = "the definitions have problems", problems = loaded.Problems });
         else PlanPrinter.Problems(cli.Ansi, loaded.Problems, Path.GetDirectoryName(path)!);
         return null;
     }

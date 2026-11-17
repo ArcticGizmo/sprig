@@ -59,7 +59,7 @@ public static class CliApp
         catch (Exception ex)
         {
             // Exit code 1 either way; machine callers get { ok: false, error }, humans a line on stderr.
-            if (json) CliOutput.Json(new { ok = false, error = ex.Message });
+            if (json) CliOutput.Json(CliErrors.Payload(ex));
             else Console.Error.WriteLine($"error: {ex.Message}");
             return 1;
         }
@@ -79,6 +79,9 @@ public static class CliApp
         config.AddCommand<InitCommand>("init");
         config.AddCommand<UpCommand>("up");
         config.AddCommand<PlanCommand>("plan");
+        config.AddCommand<CheckCommand>("check");
+        config.AddCommand<SchemaCommand>("schema");
+        config.AddCommand<DocsCommand>("docs");
         config.AddCommand<SetCommand>("set");
         config.AddCommand<UnsetCommand>("unset");
         config.AddCommand<SettingsCommand>("inputs").WithAlias("settings");

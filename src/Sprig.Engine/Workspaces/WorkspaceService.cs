@@ -27,6 +27,10 @@ public sealed class WorkspaceException(string message, IReadOnlyList<PlanProblem
     /// <summary>The workspace that's up in the same checkout, when that's why: taking it over takes it down first.</summary>
     public WorkspaceRecord? HeldBy { get; init; }
 
+    /// <summary>A reason none of the lists above says, for a caller to act on without reading the message, such as
+    /// <c>slot-broken</c>.</summary>
+    public string? Code { get; init; }
+
     public static WorkspaceException NeedsValues(IReadOnlyList<PlannedAsk> asks)
         => new($"{(asks.Count == 1 ? "an input needs" : "inputs need")} a value first: " +
                string.Join(", ", asks.Select(a => $"{a.Name} ({a.Type}, for {a.Owner})")), asks: asks);

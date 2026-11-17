@@ -82,6 +82,7 @@ public static class CliApp
         config.AddCommand<CheckCommand>("check");
         config.AddCommand<SchemaCommand>("schema");
         config.AddCommand<DocsCommand>("docs");
+        config.AddCommand<HookCommand>("hook");
         config.AddCommand<SetCommand>("set");
         config.AddCommand<UnsetCommand>("unset");
         config.AddCommand<SettingsCommand>("inputs").WithAlias("settings");

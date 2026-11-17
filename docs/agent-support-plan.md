@@ -57,10 +57,22 @@ Skills don't copy the docs: they tell the agent to run `sprig docs format` and `
 - **Alignment**: `PluginsTests` checks every plugin's version equals the csproj's, every hook runs `sprig hook` with a contract `HookCommand.Contracts` serves, and the marketplace lists each plugin folder once. `bump-version` bumps the plugin manifests with the csproj.
 - **Tests**: check (good file, reference typo by line, unknown key, missing file), docs, schema, error codes, the contract refusal, both worktree paths (plain and slot, create and remove, approval required) and session context.
 
+## Follow-ups built (2026-11-17)
+
+The user: "Continue with the not done section."
+
+- **Slot claims.** Choosing a slot and claiming it happen together under a lock (`WorkspaceStore.ClaimSlot`, `slot-claims.json`), held until `CheckOut` or `MakeFreeSlot` finishes. `SlotFor`, `FreeSlotName` and `NextUsableSlot` skip claimed slots; a branch or slot another check-out holds is refused with `slot-busy`. A claim records its process id and start time, so one left by a crash holds nothing. `FileLock` moved to `Store/` and is shared with `PortLeases`, which already locked its leases.
+- **`sprig free --agent-made`** frees every slot with `MadeForAgent` that's still taken (one ID's, when named), leaving those with something running unless `--running`.
+- **Why a start failed.** `start --json` and `up --json` add `code` (`start-failed`, or `start-timed-out` when some were still starting after five minutes), `error`, and `failed`: per app its `State`, `Why`, `ReadyWhen` (the health check or log line it needed, or "it finishes with exit code 0" for a job) and the last 30 `LastLines` of its log. `start --json` prints the JSON error when making the workspace ready fails, where it printed only to stderr. `RunnerState` serialises by name in the CLI's JSON (the host protocol's own options still use camelCase).
+- **CI**: a `plugins` job in the Tests workflow installs a pinned Claude Code and runs `claude plugin validate --strict` on the marketplace and each plugin.
+- **Icons**: each plugin carries `landing-icon.png` (512×512) as `.claude-plugin/icon.png`, which clears the validator's only advice.
+- **`sprig` on PATH**: every route Claude Code might take to `sprig` ends at `sprig.exe` (a direct spawn finds `current\sprig.exe`; the cmd, PowerShell and Git Bash shims all run it with stdin and stdout passed through). Not yet tried in a real Claude Code session.
+
 ## Order
 
 1. `sprig schema`, `sprig docs`, `sprig check`.
 2. Error codes under `--json`.
 3. `sprig hook` (contract 1).
 4. The four plugins, the marketplace, and the version test; `bump-version` bumps the plugins.
-5. Later: `sprig free --agent-made`; why a start failed in `start --json` (each app's state, the check that timed out, its last log lines); making sure two agents can't take the same slot or port at once.
+5. `sprig free --agent-made`; why a start failed in `start --json`; two agents can't take the same slot or port at once; plugins validated in CI. (Built; see Follow-ups.)
+6. Left: try the plugins in a real Claude Code session.

@@ -31,11 +31,16 @@ public sealed record RepoModel(
     IReadOnlyList<SettingModel> Settings,
     IReadOnlyList<ExportModel> Exports,
     IReadOnlyList<RepoGroupModel>? Groups = null,
-    IReadOnlyList<WorktreeCopyModel>? WorktreeCopies = null)
+    IReadOnlyList<WorktreeCopyModel>? WorktreeCopies = null,
+    IReadOnlyList<CdTargetModel>? CdTargets = null)
     : DefinitionModel(Schema, Name, Location, Containers);
 
 /// <param name="Path">Relative to the repo's folder, with forward slashes.</param>
 public sealed record WorktreeCopyModel(string Path, SourceLocation Location);
+
+/// <summary>A folder worth going straight to with <c>sprig cd</c>, by a name of the repo's choosing.</summary>
+/// <param name="Path">Relative to the repo's folder, with forward slashes; "" for the folder itself.</param>
+public sealed record CdTargetModel(string Name, string Path, SourceLocation Location);
 
 /// <param name="Apps">The repo's apps and jobs, by name.</param>
 public sealed record RepoGroupModel(string Name, IReadOnlyList<string> Apps, SourceLocation Location);

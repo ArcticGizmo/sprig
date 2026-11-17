@@ -7,6 +7,12 @@ using Sprig.Engine.Settings;
 
 namespace Sprig.App.ViewModels;
 
+/// <param name="Limit">Null for no limit.</param>
+public sealed record StartAtOnceChoice(int? Limit, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>
 /// The Settings page (pinned to the bottom of the nav): the port-allocation range, restricted ports and the
 /// changelog toggle.
@@ -28,6 +34,18 @@ public partial class SettingsViewModel : PageViewModel
     [ObservableProperty] private bool _showChangelogOnUpdate;
     bool _loadingSettings;
 
+    static readonly StartAtOnceChoice[] OfferedStartAtOnce =
+    [
+        new(null, "All at once"),
+        new(1, "One at a time"),
+        new(2, "Two at a time"),
+        new(3, "Three at a time"),
+        new(4, "Four at a time"),
+    ];
+
+    [ObservableProperty] private IReadOnlyList<StartAtOnceChoice> _startAtOnceChoices = OfferedStartAtOnce;
+    [ObservableProperty] private StartAtOnceChoice? _startAtOnce;
+
     public SettingsViewModel(AppServices services)
     {
         _services = services;
@@ -45,7 +63,20 @@ public partial class SettingsViewModel : PageViewModel
 
         _loadingSettings = true;
         ShowChangelogOnUpdate = s.ShowChangelogOnUpdate;
+        // A number saved by hand that isn't on the list still shows, as itself.
+        StartAtOnceChoices = OfferedStartAtOnce.Any(c => c.Limit == s.StartAtOnce) ? OfferedStartAtOnce
+            : [.. OfferedStartAtOnce, new StartAtOnceChoice(s.StartAtOnce, $"{s.StartAtOnce} at a time")];
+        StartAtOnce = StartAtOnceChoices.First(c => c.Limit == s.StartAtOnce);
         _loadingSettings = false;
+    }
+
+    // Persists immediately, like the changelog toggle; the host reads it at the next start.
+    partial void OnStartAtOnceChanged(StartAtOnceChoice? value)
+    {
+        if (_loadingSettings || value is null) return;
+        var s = _services.Settings.Get();
+        s.StartAtOnce = value.Limit;
+        _services.Settings.Save(s);
     }
 
     // Persists immediately; it's independent of the port-policy Save button.

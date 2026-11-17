@@ -219,4 +219,27 @@ public class PathCompletionTests
     [Fact]
     public void A_folder_that_does_not_exist_suggests_nothing()
         => Assert.Empty(PathCompletion.Suggest("Z:/definitely/not/here/x"));
+
+    [Fact]
+    public void A_tilde_completes_from_the_home_folder_and_keeps_the_tilde()
+    {
+        using var store = new TempStore();
+        Directory.CreateDirectory(Path.Combine(store.Root, "git"));
+        Directory.CreateDirectory(Path.Combine(store.Root, "games"));
+        Directory.CreateDirectory(Path.Combine(store.Root, "music"));
+
+        Assert.Equal(["~/"], PathCompletion.Suggest("~", home: store.Root));
+        Assert.Equal(["~/games/", "~/git/"], PathCompletion.Suggest("~/g", home: store.Root));
+    }
+
+    [Fact]
+    public void Only_a_leading_tilde_stands_for_home()
+    {
+        var home = PathCompletion.ToPosix(Path.Combine(Path.GetTempPath(), "home")).TrimEnd('/');
+
+        Assert.Equal(home, PathCompletion.ExpandHome("~", home));
+        Assert.Equal(home + "/git/shop", PathCompletion.ExpandHome("~/git/shop", home));
+        Assert.Equal("~other/git", PathCompletion.ExpandHome("~other/git", home));
+        Assert.Equal("C:/git/~/x", PathCompletion.ExpandHome("C:/git/~/x", home));
+    }
 }

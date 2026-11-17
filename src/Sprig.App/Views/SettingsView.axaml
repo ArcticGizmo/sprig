@@ -81,6 +81,15 @@
 
             <Border Classes="panel">
                 <StackPanel Spacing="10">
+                    <TextBlock Classes="phead" Text="STARTING APPS" />
+                    <TextBlock Classes="help"
+                               Text="How many apps build and start together, across every workspace. Fewer is gentler on a busy machine: the rest wait their turn, each until the one before is ready. What an app depends on always starts before it." />
+                    <ComboBox ItemsSource="{Binding StartAtOnceChoices}" SelectedItem="{Binding StartAtOnce}" MinWidth="200" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+                <StackPanel Spacing="10">
                     <TextBlock Classes="phead" Text="CHANGELOG" />
                     <CheckBox IsChecked="{Binding ShowChangelogOnUpdate}"
                               Content="Show what's new after an update" Foreground="{StaticResource FgBrush}" />

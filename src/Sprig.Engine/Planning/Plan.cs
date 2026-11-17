@@ -22,7 +22,8 @@ public sealed record Plan(
     IReadOnlyList<PlannedLink>? Links = null,
     IReadOnlyList<PlannedAsk>? Asks = null,
     IReadOnlyDictionary<string, string>? SettingRoles = null,
-    IReadOnlyList<string>? SecretSettings = null)
+    IReadOnlyList<string>? SecretSettings = null,
+    IReadOnlyList<PlannedCdTarget>? CdTargets = null)
 {
     /// <summary>The role a repo gave a setting (<c>role: queue</c>), by the setting's name.</summary>
     public string? RoleOfSetting(string name) => SettingRoles?.GetValueOrDefault(name);
@@ -146,6 +147,13 @@ public sealed record PlannedApp(
 /// <param name="Url">On a main checkout, can hold <see cref="HeardPort"/> tokens for apps whose port only their own
 /// config knows.</param>
 public sealed record PlannedLink(string Label, string Url);
+
+/// <summary>A repo's <c>cd:</c> target, for <c>sprig cd</c> to find in whichever folder the workspace has the repo.</summary>
+/// <param name="Owner">The repo's name.</param>
+/// <param name="RepoPath">The repo as the orchestration names it, as <see cref="Sprig.Engine.Workspaces.WorkspaceRepo.RepoPath"/>
+/// does.</param>
+/// <param name="Path">From the repo's folder, with forward slashes; "" for the folder itself.</param>
+public sealed record PlannedCdTarget(string Owner, string RepoPath, string Name, string Path);
 
 /// <summary>
 /// A main checkout's app port that sprig only learns once the app says where it listens, standing in a link's url

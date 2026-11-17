@@ -20,6 +20,7 @@ public static class DefinitionKeys
         new("files", "Every file sprig writes values into, by path from the repo's root."),
         new("outputs", "Values the repo gives to other repos in an orchestration."),
         new("groups", "Slices of the apps to start on their own; starting one starts what its apps wait for too."),
+        new("cd", "Folders to go straight to with sprig cd, by a name of your choosing: each a path from the repo's root."),
     ];
 
     public static readonly Key[] Orchestration =

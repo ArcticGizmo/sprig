@@ -88,6 +88,8 @@ public static class CliApp
         config.AddCommand<EmptyDataCommand>("empty-data");
         config.AddCommand<RmCommand>("rm");
         config.AddCommand<WorkspacesCommand>("workspaces");
+        config.AddCommand<CdCommand>("cd");
+        config.AddCommand<PathCommand>("path");
         config.AddCommand<StartCommand>("start");
         config.AddCommand<RestartCommand>("restart");
         config.AddCommand<StopCommand>("stop");

@@ -14,6 +14,7 @@ public static class DefinitionSchema
     {
         ["repo"] = Text(),
         ["copy-into-worktrees"] = Strings(),
+        ["cd"] = Named(Text()),
         ["compose"] = Named(Object(DefinitionKeys.ComposeFile, new()
         {
             ["services"] = Named(Object(DefinitionKeys.ComposeService, new()

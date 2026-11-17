@@ -67,6 +67,26 @@ public class DefinitionReaderTests
     }
 
     [Fact]
+    public void Cd_targets_are_paths_from_the_repo_root_and_root_is_not_a_name_they_can_take()
+    {
+        var repo = Repo("""
+            schema: 1
+            repo: shop
+            cd:
+              api: ./src/Catalog.Api/
+              docs: docs
+              top: .
+            """);
+
+        Assert.Equal([("api", "src/Catalog.Api"), ("docs", "docs"), ("top", "")], repo.CdTargets!.Select(t => (t.Name, t.Path)));
+
+        var taken = Read("schema: 1\nrepo: shop\ncd:\n  root: src\n  out: ../elsewhere\n");
+        Assert.False(taken.Ok);
+        Assert.Contains(taken.Problems, p => p.Message.Contains("'root' is the workspace's own folder"));
+        Assert.Contains(taken.Problems, p => p.Message.Contains("stays inside it"));
+    }
+
+    [Fact]
     public void Ports_take_any_a_number_or_a_list_of_numbers_and_ranges()
     {
         var app = Repo("""

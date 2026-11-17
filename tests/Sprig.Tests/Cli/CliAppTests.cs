@@ -142,6 +142,35 @@ public class CliAppTests
     }
 
     [Fact]
+    public void Path_finds_a_workspaces_root_its_repos_and_the_folders_they_name_under_cd()
+    {
+        using var store = new TempStore();
+        var root = Path.Combine(store.Root, "src", "shop--2");
+        var (api, web) = (Path.Combine(root, "api"), Path.Combine(root, "web"));
+        Directory.CreateDirectory(Path.Combine(api, "docs"));
+        Directory.CreateDirectory(web);
+        var orchestration = Path.Combine(store.Root, "src", "shop.orchestration.yaml");
+        File.WriteAllText(orchestration, "schema: 1\norchestration: shop\nrepos:\n  api: { path: api }\n  web: { path: web }\n");
+        new Sprig.Engine.Orchestrations.OrchestrationRegistry(store.Paths).Add("shop", orchestration);
+        var now = DateTimeOffset.UtcNow;
+        var workspaces = new Sprig.Engine.Workspaces.WorkspaceStore(store.Paths);
+        workspaces.Save(new Sprig.Engine.Workspaces.WorkspaceRecord("shop", Path.Combine(store.Root, "src", "shop.orchestration.yaml"), "2", "feat/x", "stable",
+            [new("../api", "api", Path.Combine(store.Root, "src", "api"), api, true, true), new("../web", "web", Path.Combine(store.Root, "src", "web"), web, true, true)],
+            [], [], Sprig.Engine.Workspaces.WorkspaceState.Up, now, now, root));
+        workspaces.SavePlan(new Sprig.Engine.Planning.Plan("shop", "2", "stable", "main", [], [], [], [], [], [],
+            CdTargets: [new("api", "../api", "docs", "docs")]));
+
+        Assert.Equal(root, Run(store, "path", "shop", "2").stdout.Trim());
+        Assert.Equal(web, Run(store, "path", "shop", "feat/x", "web").stdout.Trim());
+        Assert.Equal(Path.Combine(api, "docs"), Run(store, "path", "shop", "2", "api/docs").stdout.Trim());
+        Assert.Contains("\"branch\": \"feat/x\"", Run(store, "path", "shop", "2", "root", "--json").stdout);
+
+        var (code, _, stderr) = Run(store, "path", "shop", "2", "nope");
+        Assert.Equal(1, code);
+        Assert.Contains("it has root, api, web, api/docs", stderr);
+    }
+
+    [Fact]
     public void A_bad_value_for_set_is_refused_before_anything_runs()
     {
         var (code, _, stderr) = Run("up", "shop-web", "--set", "no-equals-sign");

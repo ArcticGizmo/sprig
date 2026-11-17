@@ -50,6 +50,9 @@ public sealed record WorkspaceItem(WorkspaceRecord Record, WorkspaceRecord? Held
     /// <summary>It has infra of sprig's whose data can go. A main's infra is the user's own, so it has none.</summary>
     public bool CanEmptyData => Record.Compose.Count > 0 && !Record.IsMain;
 
+    /// <summary>Something in the ⋯ menu gives the slot up or loses something, so that group shows.</summary>
+    public bool HasLetGoItems => CanFree || CanEmptyData || CanRemove;
+
     public bool IsHeld => HeldBy is not null;
     public string HeldLine => HeldBy is { } other ? $"{other.SlotName} is using this checkout" : "";
 
@@ -489,6 +492,9 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>A free slot has nothing to run until a branch is checked out in it.</summary>
     public bool ShowRunControls => Selected?.IsFree != true;
 
+    /// <summary>The ⋯ menu's Inputs or Make ready again shows, so their group does.</summary>
+    public bool HasSetupItems => Selected is { } s && (ShowRunControls || s.HasSettings);
+
     /// <summary>How the selected workspace is doing, in a word, from what's running (see
     /// <see cref="WorkspaceService.RunState"/>).</summary>
     [ObservableProperty]
@@ -522,6 +528,7 @@ public partial class WorkspacesViewModel : PageViewModel
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(CanDeleteBranch));
         OnPropertyChanged(nameof(ShowRunControls));
+        OnPropertyChanged(nameof(HasSetupItems));
         OnPropertyChanged(nameof(ShowStartChoices));
         ConfirmingRemove = false;
         ConfirmingEmptyData = false;
@@ -649,6 +656,40 @@ public partial class WorkspacesViewModel : PageViewModel
     [ObservableProperty] private bool _appsMessageIsBad;
 
     public bool HasAppsMessage => AppsMessage.Length > 0;
+
+    // The page has one line for what was last said, the workspace's or its apps', of a fixed height whether or not
+    // there's anything on it, so a message coming and going never moves the tabs and what's under them.
+    bool _appsSaidLast;
+
+    partial void OnFormMessageChanged(string value)
+    {
+        if (value.Length > 0) _appsSaidLast = false;
+        NotifyPageMessage();
+    }
+
+    partial void OnAppsMessageChanged(string value)
+    {
+        if (value.Length > 0) _appsSaidLast = true;
+        NotifyPageMessage();
+    }
+
+    partial void OnFormFailedChanged(bool value) => NotifyPageMessage();
+    partial void OnAppsMessageIsBadChanged(bool value) => NotifyPageMessage();
+    partial void OnIsAddOpenChanged(bool value) => NotifyPageMessage();
+
+    bool PageShowsApps => HasAppsMessage && (_appsSaidLast || !MessageOnPage);
+    public string PageMessage => PageShowsApps ? AppsMessage : MessageOnPage ? FormMessage : "";
+    public bool PageMessageBad => PageShowsApps ? AppsMessageIsBad : FormFailed;
+
+    /// <summary>Null with nothing said, so pointing at the empty line shows no empty tip.</summary>
+    public string? PageMessageTip => PageMessage.Length > 0 ? PageMessage : null;
+
+    void NotifyPageMessage()
+    {
+        OnPropertyChanged(nameof(PageMessage));
+        OnPropertyChanged(nameof(PageMessageBad));
+        OnPropertyChanged(nameof(PageMessageTip));
+    }
 
     /// <summary>Show what the host says about each app of the selected workspace; null when no host is running.</summary>
     public void ApplyRunners(IReadOnlyList<RunnerStatus>? runners)

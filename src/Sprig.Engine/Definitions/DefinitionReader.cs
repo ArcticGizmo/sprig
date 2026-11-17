@@ -22,6 +22,9 @@ public static partial class DefinitionReader
     /// <summary>The schema this sprig writes and reads natively.</summary>
     public const int CurrentSchema = 1;
 
+    /// <summary>What <c>sprig cd</c> calls a workspace's own folder.</summary>
+    public const string CdRoot = "root";
+
     /// <summary>Step <c>i</c> turns a file of schema <c>i + 1</c> into schema <c>i + 2</c>, on the YAML tree, so the
     /// reader below only ever sees the current shape. A step is added whenever a change would misread an older file;
     /// a new field with a default needs none.</summary>

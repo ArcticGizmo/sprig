@@ -54,9 +54,28 @@ public static partial class DefinitionReader
             var copies = file.List(top["copy-into-worktrees"], "copy-into-worktrees")
                 .Select(c => file.RelativePath(c.Node, "a file to copy into worktrees") is { Length: > 0 } path ? new WorktreeCopyModel(path, file.At(c.Node)) : null)
                 .OfType<WorktreeCopyModel>().ToArray();
+            var cd = ReadCdTargets(top["cd"]);
 
             return new RepoModel(CurrentSchema, name, file.At(root), containers, appModels, composeFiles, settings, exports,
-                groups.Length > 0 ? groups : null, copies.Length > 0 ? copies : null);
+                groups.Length > 0 ? groups : null, copies.Length > 0 ? copies : null, cd.Length > 0 ? cd : null);
+        }
+
+        /// <summary>The name <c>root</c> is the workspace's own folder, which <c>sprig cd</c> always offers, so it can't
+        /// be taken.</summary>
+        CdTargetModel[] ReadCdTargets(YamlNode? node)
+        {
+            var targets = new List<CdTargetModel>();
+            foreach (var (name, key, value) in file.Entries(node, "cd"))
+            {
+                if (!file.CheckName(name, key, "a cd target")) continue;
+                if (string.Equals(name, CdRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    file.Error(key, $"'{name}' is the workspace's own folder, which sprig cd always offers; give this one another name");
+                    continue;
+                }
+                if (file.RelativePath(value, $"cd target '{name}'") is { } path) targets.Add(new CdTargetModel(name, path, file.At(key)));
+            }
+            return [.. targets];
         }
 
         // ---- compose ----

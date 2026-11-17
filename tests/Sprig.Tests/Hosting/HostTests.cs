@@ -278,6 +278,41 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
+    public void Starting_one_at_a_time_holds_the_next_app_until_the_one_before_is_ready_and_lets_what_it_depends_on_go_first()
+    {
+        var settings = new Sprig.Engine.Settings.FileSettingsStore(_store.Paths);
+        var limited = settings.Get();
+        limited.StartAtOnce = 1;
+        settings.Save(limited);
+        var specs = new[]
+        {
+            Spec("shop/migrate", Exit(0), job: true),
+            Spec("shop/api", PrintLater("api up", after: 2), waitFor: "shop/migrate") with { ReadyLog = "api up" },
+            Spec("shop/web", PrintLater("web up", after: 2)) with { ReadyLog = "web up" },
+        };
+
+        _client.Send(new HostRequest("start", specs));
+
+        // Watched until both are ready: never two starting at once, and one of them waited its turn.
+        var clock = Stopwatch.StartNew();
+        var most = 0;
+        IReadOnlyList<RunnerStatus> runners = [];
+        while (clock.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            runners = _client.Send(new HostRequest("list")).Runners!;
+            most = Math.Max(most, runners.Count(r => r.State is RunnerState.Starting or RunnerState.Running));
+            if (runners.Count(r => r.State == RunnerState.Ready) == 2) break;
+            Thread.Sleep(100);
+        }
+
+        Assert.Equal(2, runners.Count(r => r.State == RunnerState.Ready));
+        Assert.Equal(1, most);
+        Assert.Equal(RunnerState.Completed, runners.Single(r => r.Name == "shop/migrate").State);
+        Assert.Contains(runners, r => ReadShared(r.LogFile).Contains("waiting for its turn to start (one app starts at a time)"));
+        Assert.Contains("waiting for shop/migrate", ReadShared(runners.Single(r => r.Name == "shop/api").LogFile));
+    }
+
+    [Fact]
     public void An_app_with_a_health_url_is_ready_only_once_it_answers_with_success()
     {
         using var health = new HealthServer(503);

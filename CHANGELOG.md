@@ -7,18 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [v0.9.7] - 2026-11-17
+
+Sprig, for agents. They were going to use it anyway.
+
 ### Added
+- **Claude Code plugins** — four, à la carte: onboarding, workspaces, worktree hooks, session context.
+- **An agent's worktree is a sprig slot** — own ports, files and infra.
 - **`sprig check`** — checks a definition by line, approving nothing.
 - **`sprig schema` and `sprig docs`** — the schema and docs for the sprig you have.
-- **Error codes under `--json`** — `inputs-needed`, `untrusted`, `held` and friends, so scripts stop parsing English.
-- **`sprig free --agent-made`** — frees the slots agents took and never gave back; running ones are left alone.
-- **Two check-outs at once never pick the same slot** — agents in parallel stop treading on each other.
-- **Claude Code plugins** — four of them, take what you like: skills to onboard repos and run workspaces, worktree hooks that make an agent's worktree a slot, and session context.
+- **Error codes under `--json`** — scripts can stop parsing English.
+- **Failed starts say why** — the reason, the check, the log's last lines.
+- **`sprig free --agent-made`** — reclaims slots agents forgot to give back.
 
-- **`start --json` and `up --json` say why apps didn't start** — the reason, the check they had to pass, and the end of each log.
+### Fixed
+- **Two check-outs at once never pick the same slot.**
 
 ### Changed
-- **Problems and app states in `--json` are named** — `"Error"`, `"Ready"`, not `0` or `3`.
+- **Problems and app states in `--json` are named** — `"Error"`, not `0`.
 
 ---
 

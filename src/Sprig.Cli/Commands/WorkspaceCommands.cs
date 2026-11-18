@@ -173,6 +173,10 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         [Description("Follow the apps' logs together here, rather than leaving them in the background. Ctrl+C stops everything it started, keeping the infra's data")]
         public bool Run { get; set; }
 
+        [CommandOption("--no-wait")]
+        [Description("Return once the infra is up and the apps are starting, without waiting for them to be ready (sprig wait does that later)")]
+        public bool NoWait { get; set; }
+
         // Kept out of help so that an agent or a habit reaching for them is told where checking out went.
         [CommandOption("-b|--branch <branch>", IsHidden = true)]
         public string? Branch { get; set; }
@@ -194,6 +198,7 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
     {
         if (s.Json && s.Run)
             throw new InvalidOperationException("--run follows the apps' logs, which isn't JSON; leave it off with --json and the apps run in the background");
+        if (s.Run && s.NoWait) throw new InvalidOperationException("--run follows the apps until Ctrl+C, so there's nothing for --no-wait to skip; use one or the other");
         var (id, workspace) = Target(s);
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
 
@@ -278,6 +283,12 @@ public sealed class UpCommand(CliContext cli) : Command<UpCommand.Settings>
         var json = s.Json;
         cli.Ansi.WriteLine();
         StartCommand.Send(cli, specs, []);
+        if (s.NoWait)
+        {
+            var words = Words(record);
+            return CliOutput.Ok(json, $"starting {specs.Count} apps in the background; wait until they're ready with: sprig wait {words}",
+                new { ok = true, workspace = Shown.Record(record, plan, s), plan = Shown.Plan(plan, s), apps = specs.Select(x => x.Name), secretsUnmasked = s.UnmaskSecrets });
+        }
         var runners = StartCommand.WaitUntilReady(cli, record.Key, specs, json, cancellation);
         var failure = StartFailure.Of(plan, runners);
         var ok = failure is null;

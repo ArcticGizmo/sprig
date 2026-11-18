@@ -12,6 +12,24 @@ public sealed class DockerCompose(IProcessRunner runner)
 {
     public static readonly TimeSpan WaitTimeout = TimeSpan.FromMinutes(3);
 
+    /// <summary>The <c>--json</c> code for a failure because docker isn't installed or its engine isn't running, so a
+    /// tool can say so plainly rather than match the message.</summary>
+    public const string UnavailableCode = "docker-unavailable";
+
+    // What the docker CLI says when its engine doesn't answer, on Windows (Docker Desktop's pipe) and elsewhere.
+    static readonly string[] EngineSilent =
+    [
+        "cannot connect to the docker daemon", "is the docker daemon running", "error during connect", "docker daemon is not running",
+        "dockerdesktoplinuxengine", "docker_engine: the system cannot find the file specified",
+    ];
+
+    /// <summary>Whether <paramref name="result"/> failed because docker couldn't be run or its engine didn't answer,
+    /// rather than because of what it was asked to do.</summary>
+    public static bool Unreachable(ProcessResult result)
+        => Path.GetFileNameWithoutExtension(result.Executable).Equals("docker", StringComparison.OrdinalIgnoreCase)
+           && (result.ExitCode == -1 && result.StdErr.StartsWith("could not start", StringComparison.Ordinal)
+               || EngineSilent.Any(s => (result.StdErr + result.StdOut).Contains(s, StringComparison.OrdinalIgnoreCase)));
+
     /// <summary>Null when docker compose answers, else why it can't be used.</summary>
     public string? Unavailable()
     {

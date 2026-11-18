@@ -17,6 +17,7 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 | `start-failed` | Apps didn't become ready; `failed` lists each with `Why`, `ReadyWhen` (the check it had to pass) and `LastLines` of its log | Read those, fix the definition or the app, and start again |
 | `start-timed-out` | Apps were still starting when sprig stopped waiting (five minutes); `failed` as above | Look at `LastLines`: a slow first build, or a health check that never answers |
 | `not-running` | `sprig wait` was asked about apps that aren't running; `notRunning` lists them | Start them, then wait again |
+| `docker-unavailable` | Docker isn't installed, or its engine isn't running or didn't answer | Tell the user to start Docker (Docker Desktop, or their engine), then try again |
 | `problems` | The definitions don't plan; `problems` lists each with file and line | Fix them (see below) |
 | `error` | Anything else; `error` says what | Read it |
 
@@ -43,7 +44,7 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 | See what this folder is to sprig | `sprig info --json` |
 | List workspaces | `sprig workspaces --json` |
 | Check a branch out in a slot, ready to run, starting nothing | `sprig checkout -b <branch> --json` |
-| Run a workspace that's checked out | `sprig up <branch> --json` (`--group <name>` for a slice); in its folder, `sprig up --json` |
+| Run a workspace that's checked out | `sprig up <branch> --json` (`--group <name>` for a slice, `--no-wait` to return once the apps are starting); in its folder, `sprig up --json` |
 | Start, and wait until ready | `sprig start [app…] --json` |
 | Start now, and wait later when the apps are needed | `sprig start [app…] --json --no-wait`, later `sprig wait [app…] --json` (`--timeout <seconds>`) |
 | Restart after a code change | `sprig restart --json` (`--jobs` to run migrations again) |
@@ -72,4 +73,4 @@ A tool that shows sprig's state all day, such as an overlay, an editor extension
   - `workspace-removed` (`key`) and `app-removed` (`workspace`, `name`).
   - `host` with `running: false`: the host has stopped, so nothing runs. Its apps follow as `off`. When a host starts again, a snapshot follows.
 
-To act on what you see, run the commands above with `--json`. Use `--no-wait` where a command has it, and follow the progress in the `watch` stream.
+To act on what you see, run the commands above with `--json`. Use `--no-wait` where a command has it (`up`, `start`, `resume`), and follow the progress in the `watch` stream. `sprig open [id] [workspace] --json` brings the desktop app to a workspace's page. It says `"app": "focused"` when the app was already running and `"launched"` when it wasn't. Where a command needs a person (`untrusted`, `inputs-needed`, `held`), send them there with `sprig open` rather than doing it for them.

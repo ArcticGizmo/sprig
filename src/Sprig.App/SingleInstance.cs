@@ -3,7 +3,6 @@ using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
-using Sprig.Engine.Hosting;
 using Sprig.Engine.Store;
 
 namespace Sprig.App;
@@ -38,12 +37,12 @@ public sealed class SingleInstance : IDisposable
     /// <param name="workspace">The workspace this launch was asked to open, by its key; null for none.</param>
     public static SingleInstance? Claim(ISprigPaths paths, string? workspace = null)
     {
-        var id = HostProtocol.StoreId(paths);
-        var mutex = new Mutex(initiallyOwned: true, @"Local\sprig-gui-" + id, out var mine);
-        if (mine) return new SingleInstance(mutex, "sprig-gui-" + id);
+        var pipe = AppInstance.PipeName(paths);
+        var mutex = new Mutex(initiallyOwned: true, AppInstance.MutexName(paths), out var mine);
+        if (mine) return new SingleInstance(mutex, pipe);
         mutex.Dispose();
         // One that holds the claim but won't answer is stuck; better a second window than none.
-        return Signal("sprig-gui-" + id, Message(workspace)) ? null : new SingleInstance(new Mutex(), "sprig-gui-" + id + "-" + Environment.ProcessId);
+        return Signal(pipe, Message(workspace)) ? null : new SingleInstance(new Mutex(), pipe + "-" + Environment.ProcessId);
     }
 
     /// <summary>What a launch says to the sprig already running: one line, with any workspace key after it.</summary>

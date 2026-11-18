@@ -294,7 +294,7 @@ public sealed partial class WorkspaceService(
         if (dryPlan.ToAsk.Count > 0) throw step.Fail(WorkspaceException.NeedsValues(dryPlan.ToAsk));
         // Main's infra is the user's, so sprig only needs docker to stop what it started for main before.
         var needsDocker = main ? existing?.Compose.Count > 0 : dryPlan.Containers.Count > 0 || dryPlan.Compose.Count > 0;
-        if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new WorkspaceException(why));
+        if (needsDocker && docker.Unavailable() is { } why) throw step.Fail(new WorkspaceException(why) { Code = DockerCompose.UnavailableCode });
         // Before anything is made, so a folder in the way doesn't leave half a slot behind.
         if (!inPlace && SlotBlocker(loaded, existing?.Folder ?? WorkspaceFolder(loaded, id, workspace, settingsNow), branch!) is { } blocked)
             throw step.Fail(new WorkspaceException(blocked));

@@ -61,10 +61,13 @@ An app line can also carry `pid`, `exit`, `error` and, with `--usage`, `usage` (
 
 ## Pieces
 
-Pieces 1–4 are built.
+Pieces 1–7 are built.
 
 - **Client side:** `HostClient.SubscribeAsync`, with `SubscribeAnswersAsync` for the host's pid and version and `Follow` for callers that block. It connects with a 500 ms timeout. It falls back to polling `list` when a host from before `subscribe` answers "unknown request".
 - **`sprig watch`:** `Sprig.Engine.Live` holds the line types and `WatchDiff`, and `LiveStatus` merges the feed with the store watcher. Stdin only counts as closed when it's redirected, because a parent that gives no stdin would otherwise end `watch` at once. Without `--json`, `watch` prints the same changes for a person to read.
+- **`sprig wait`:** follows the feed through `WaitUntilReady`, which now takes app names and a time limit.
+- **`docker-unavailable`:** `DockerCompose.Unreachable` recognises docker failing to start, or its engine not answering (Docker Desktop's pipe, the Unix socket). That gives the code to the up-front check, to a failed compose up, and to any `ProcessException` that reaches the CLI.
+- **`open --json`:** `AppInstance`, shared by the app and the CLI, tells whether the app holds its claim on the store.
 
 1. **Engine, host:**
    - A `Changed` signal on `Supervisor`, pulsed from `Runner.Status`'s setter and from every add to or removal from `_runners`.

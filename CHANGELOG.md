@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.11] - 2026-11-18
+
+Green used to mean "something's alive". It now means "it actually works".
+
+### Changed
+- **Workspaces read "starting" while their apps build** — blue, with how many are ready.
+- **A running workspace with an app down goes red** — and says which.
+- **Apps column counts ready apps** — "12 of 18 ready, 2 down".
+- **`sprig workspaces` and `sprig info` agree.**
+
+### Added
+- **`readiness` on `sprig watch` workspaces** — health, counts, and what's down.
+
+---
+
 ## [v0.9.10] - 2026-11-18
 
 Sprig stops asking its host "anything yet?" every second. The host now says so itself.

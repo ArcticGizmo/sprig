@@ -37,6 +37,12 @@ public sealed class SprigSettings
     /// </summary>
     public int? StartAtOnce { get; set; }
 
+    /// <summary>
+    /// Quitting the app records each workspace's running apps as a pause before it stops them, so the next launch can
+    /// resume each workspace as it was left.
+    /// </summary>
+    public bool PauseOnQuit { get; set; } = true;
+
     public const int DefaultRangeStart = 8000;
     public const int DefaultRangeEndExclusive = 9000;
 
@@ -61,5 +67,6 @@ public sealed class SprigSettings
         LastSeenVersion = LastSeenVersion,
         WorkspacesFolder = WorkspacesFolder,
         StartAtOnce = StartAtOnce,
+        PauseOnQuit = PauseOnQuit,
     };
 }

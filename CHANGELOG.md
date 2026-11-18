@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.9] - 2026-11-18
+
+Stopping everything was easy. Remembering what was running was your problem. Not any more.
+
+### Added
+- **Pause and Resume** — stop everything, then bring back just what was running.
+- **Paused nodes go amber** — and stay put in Focus.
+- **`sprig pause` and `sprig resume`** — the same, from the terminal.
+- **Pause on quit** — reopen sprig, press Resume. On by default, in Settings.
+
+### Changed
+- **Start ▾ stays open after a ▶** — start several groups in a row.
+
+---
+
 ## [v0.9.8] - 2026-11-17
 
 Asked for a worktree, an agent started the whole stack. Thorough, but no.

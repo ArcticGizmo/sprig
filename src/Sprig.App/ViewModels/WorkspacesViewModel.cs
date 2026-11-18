@@ -497,11 +497,12 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>How the selected workspace is doing, in a word, from what's running (see
     /// <see cref="WorkspaceService.RunState"/>).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(RunStateFailed))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(RunStateFailed), nameof(RunStatePaused), nameof(ShowPauseResume))]
     private string _runState = "";
 
     public bool IsRunning => RunState == "running";
     public bool RunStateFailed => RunState == "failed";
+    public bool RunStatePaused => RunState == "paused";
 
     /// <summary>The compose projects with a container running, as far as the page knows: what docker last said, and the
     /// selected workspace's containers from the graph's last look.</summary>
@@ -539,6 +540,7 @@ public partial class WorkspacesViewModel : PageViewModel
         _detailsFor = value?.Record.Key;
         ShowDetails(value?.Record);
         RunState = value?.Record is { } record ? RunStateOf(record) : "";
+        NotifyPause();
     }
 
     string? _detailsFor;
@@ -802,9 +804,10 @@ public partial class WorkspacesViewModel : PageViewModel
     /// infra included: a workspace that isn't ready is made ready first, and so is one whose definitions changed since,
     /// when everything (or a group) is starting.</summary>
     /// <param name="open">Show the one app's log once it's starting.</param>
-    async Task StartAsync(IReadOnlyList<string>? keys, bool open = false)
+    /// <returns>Whether the apps were handed to the host.</returns>
+    async Task<bool> StartAsync(IReadOnlyList<string>? keys, bool open = false)
     {
-        if (Selected?.Record is not { } record || keys is { Count: 0 }) return;
+        if (Selected?.Record is not { } record || keys is { Count: 0 }) return false;
         // Taken now: making the workspace ready reads it afresh, choices and all.
         var group = keys is null ? StartChoice?.Group : null;
         var starting = new Starting(group, keys);
@@ -814,11 +817,11 @@ public partial class WorkspacesViewModel : PageViewModel
         if (prebuilt)
         {
             if (_plan is { } before) ShowStarting(WorkspaceService.InfraFor(before, starting.AppsIn(before)));
-            if (!await UpAsync(retry: () => StartAsync(keys, open), starting, build: starting)) return;
-            if (Selected?.Record is not { State: WorkspaceState.Up } up) return;
+            if (!await UpAsync(retry: () => StartAsync(keys, open), starting, build: starting)) return false;
+            if (Selected?.Record is not { State: WorkspaceState.Up } up) return false;
             record = up;
         }
-        if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return;
+        if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is not { } plan) return false;
         try
         {
             var names = starting.AppsIn(plan);
@@ -829,7 +832,7 @@ public partial class WorkspacesViewModel : PageViewModel
                 ShowStarting(missing.Select(t => t.Key).ToHashSet(StringComparer.Ordinal));
                 if (!await RunQuietlyAsync($"Starting what {(group is not null ? $"the {group} group" : keys is [var only] ? only : "the apps")} uses",
                         (progress, cancellation) => _services.Workspaces.StartInfra(missing, progress, cancellation),
-                        $"{string.Join(", ", missing.Select(t => t.Key))} {(missing.Count == 1 ? "is" : "are")} running.")) return;
+                        $"{string.Join(", ", missing.Select(t => t.Key))} {(missing.Count == 1 ? "is" : "are")} running.")) return false;
             }
             await AppServices.RunAsync(() =>
             {
@@ -845,10 +848,12 @@ public partial class WorkspacesViewModel : PageViewModel
                 : "Starting the apps, each after what it depends on.", bad: false);
             if (open && one is not null) OpenApp(one);
             await RefreshRunnersAsync();
+            return true;
         }
         catch (Exception e)
         {
             SayApps(e.Message, bad: true);
+            return false;
         }
     }
 
@@ -913,6 +918,86 @@ public partial class WorkspacesViewModel : PageViewModel
             (progress, cancellation) => _services.Workspaces.Down(record.Orchestration, record.Name, progress, cancellation),
             record.IsMain ? $"{title} has stopped. Your infra is left running."
                 : $"{title} has stopped, its apps and its infra. Its containers, data, worktrees and ports are kept.");
+        _services.InfraUsage.Soon();
+        RefreshKeepingMessage();
+        await RefreshRunnersAsync();
+    }
+
+    /// <summary>The selected workspace has a pause to resume.</summary>
+    public bool IsPaused => Selected?.Record.Paused is not null;
+
+    /// <summary>Pause while something runs, Resume while paused; neither when there's nothing to do.</summary>
+    public bool ShowPauseResume => ShowRunControls && (IsPaused || RunState == "running");
+
+    public string PauseResumeLabel => IsPaused ? "Resume" : "Pause";
+
+    public string PauseResumeTip => Selected?.Record.Paused is { } paused
+        ? $"Start again what was running when it was paused: {Describe(paused)}"
+        : "Stop everything to save CPU and memory, remembering what was running so Resume brings back just that";
+
+    static string Describe(PausedRun paused)
+    {
+        string Count(int n, string one) => n == 1 ? $"1 {one}" : $"{n} {one}s";
+        return string.Join(" and ", new[]
+        {
+            paused.Apps.Count > 0 ? Count(paused.Apps.Count, "app") : null,
+            paused.Infra.Count > 0 ? Count(paused.Infra.Count, "container") : null,
+        }.OfType<string>().DefaultIfEmpty("nothing"));
+    }
+
+    void NotifyPause()
+    {
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(ShowPauseResume));
+        OnPropertyChanged(nameof(PauseResumeLabel));
+        OnPropertyChanged(nameof(PauseResumeTip));
+    }
+
+    [RelayCommand]
+    private Task PauseOrResume() => IsPaused ? ResumeAsync() : PauseAsync();
+
+    /// <summary>Stop everything, as Stop all does, remembering what was up for <see cref="ResumeAsync"/>.</summary>
+    async Task PauseAsync()
+    {
+        if (Selected?.Record is not { } record || IsUnmade(record)) return;
+        foreach (var row in Apps.Where(a => a.IsAlive)) row.MarkStopping();
+        var title = WorkspaceItem.Display(record);
+        PausedRun? paused = null;
+        await RunQuietlyAsync($"Pausing {title}",
+            (progress, cancellation) => paused = _services.Workspaces.Pause(record.Orchestration, record.Name, progress, cancellation).Paused,
+            $"{title} is paused.");
+        if (paused is not null)
+            SayApps($"{title} is paused: {Describe(paused)} stopped, data kept.{(record.IsMain ? " Your infra is left running." : "")} Resume starts them again.", bad: false);
+        _services.InfraUsage.Soon();
+        RefreshKeepingMessage();
+        await RefreshRunnersAsync();
+    }
+
+    /// <summary>Start what the pause remembered that isn't going, the apps first (with the infra they use) and then any
+    /// other container that was running, then forget the pause. A start that doesn't get going keeps it, so Resume can
+    /// be tried again.</summary>
+    async Task ResumeAsync()
+    {
+        if (Selected?.Record is not { Paused: { } paused } record) return;
+        var title = WorkspaceItem.Display(record);
+        if (_services.Workspaces.LastPlan(record.Orchestration, record.Name) is { } before)
+        {
+            var apps = WorkspaceService.ResumeApps(record, before, _lastRunners ?? []);
+            if (apps.Count > 0 && !await StartAsync(apps)) return;
+        }
+        if (Selected?.Record is { } now && now.Key == record.Key && _services.Workspaces.LastPlan(now.Orchestration, now.Name) is { } plan)
+        {
+            var infra = await AppServices.RunAsync(() => _services.Workspaces.ResumeInfra(now, plan));
+            if (infra.Count > 0)
+            {
+                ShowStarting(infra.Select(t => t.Key).ToHashSet(StringComparer.Ordinal));
+                if (!await RunQuietlyAsync($"Starting {title}'s other infra",
+                        (progress, cancellation) => _services.Workspaces.StartInfra(infra, progress, cancellation),
+                        $"{string.Join(", ", infra.Select(t => t.Key))} {(infra.Count == 1 ? "is" : "are")} running.")) return;
+            }
+        }
+        await AppServices.RunAsync(() => _services.Workspaces.EndPause(record.Orchestration, record.Name));
+        SayApps($"Resuming {title}: {Describe(paused)}, each after what it depends on.", bad: false);
         _services.InfraUsage.Soon();
         RefreshKeepingMessage();
         await RefreshRunnersAsync();

@@ -56,6 +56,7 @@ public sealed class WorkspaceGraphCanvas : Control
         NodeHealth.Waiting => Waiting,
         NodeHealth.Bad => Bad,
         NodeHealth.Off => Off,
+        NodeHealth.Paused => PausedBrush,
         _ => Unknown,
     };
 
@@ -64,6 +65,7 @@ public sealed class WorkspaceGraphCanvas : Control
     static readonly IBrush Busy = Themed("AccentBrush", "#60A5FA");
     static readonly IBrush Waiting = Themed("WaitBrush", "#A78BFA");
     static readonly IBrush Bad = Themed("DangerBrush", "#F87171");
+    static readonly IBrush PausedBrush = Themed("WarnBrush", "#FBBF24");
     static readonly IBrush Off = new SolidColorBrush(Color.Parse("#6E6E82"));
     static readonly IBrush Unknown = new SolidColorBrush(Color.Parse("#9CA3AF"));
 

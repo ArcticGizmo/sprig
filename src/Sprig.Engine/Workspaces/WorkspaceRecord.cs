@@ -11,6 +11,11 @@ public enum WorkspaceState { Starting, Up, Down, Failed, Released }
 /// <param name="Dir">Where this workspace runs it: a worktree, or <see cref="Source"/> when it runs in place.</param>
 /// <param name="BranchCreated">Sprig made the branch for this workspace, rather than checking out one that existed.</param>
 /// <param name="From">The branch sprig started the workspace's branch from, when it made it.</param>
+/// <summary>What a paused workspace had going, so it can be put back as it was.</summary>
+/// <param name="Apps">By key (<c>repo/app</c>); jobs aren't kept, since the apps run them again as they start.</param>
+/// <param name="Infra">By <see cref="InfraTarget.Key"/>, every container that was running, used by an app or not.</param>
+public sealed record PausedRun(IReadOnlyList<string> Apps, IReadOnlyList<string> Infra, DateTimeOffset At);
+
 public sealed record WorkspaceRepo(string RepoPath, string Name, string Source, string Dir, bool Worktree, bool BranchCreated, string? From = null);
 
 /// <summary>What sprig knows about one workspace: where its repos are, what it wrote, and the compose projects it
@@ -53,6 +58,9 @@ public sealed record WorkspaceRecord(
     /// <summary>The agent session a worktree hook made this slot for, so slots an agent never gave back can be found and
     /// freed; null for one a person made.</summary>
     public string? MadeForAgent { get; init; }
+
+    /// <summary>What was up when it was paused, for Resume to start again; null when it isn't paused.</summary>
+    public PausedRun? Paused { get; init; }
 
     public bool InPlace => Branch is null && Folder is null;
 

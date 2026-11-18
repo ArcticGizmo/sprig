@@ -94,16 +94,18 @@ public sealed partial class WorkspaceService
 
     /// <summary>
     /// How a workspace is doing, in a word: <c>running</c> while any of its apps or containers is, else <c>stopped</c>;
-    /// or <c>starting</c>, <c>failed</c> or <c>free</c> from its record. Whether it's been made ready isn't shown: Start
-    /// does that when it has to.
+    /// or <c>starting</c>, <c>failed</c> or <c>free</c> from its record. <c>paused</c> while it has a pause and none of
+    /// its apps is going, even with its containers up, as they are after quitting sprig. Whether it's been made ready
+    /// isn't shown: Start does that when it has to.
     /// </summary>
     /// <param name="runningProjects">From <see cref="RunningProjects"/>; null when docker can't say, so only apps count.</param>
     public static string RunState(WorkspaceRecord record, IEnumerable<Hosting.RunnerStatus> runners, IReadOnlySet<string>? runningProjects)
     {
         if (record.IsFree) return "free";
         if (record.State == WorkspaceState.Starting) return "starting";
-        var running = runners.Any(r => r.Workspace == record.Key && r.State.IsAlive())
-                      || (runningProjects is not null && InfraProjects(record).Any(runningProjects.Contains));
+        var appsGoing = runners.Any(r => r.Workspace == record.Key && r.State.IsAlive());
+        if (record.Paused is not null && !appsGoing) return "paused";
+        var running = appsGoing || (runningProjects is not null && InfraProjects(record).Any(runningProjects.Contains));
         if (running) return "running";
         return record.State == WorkspaceState.Failed ? "failed" : "stopped";
     }

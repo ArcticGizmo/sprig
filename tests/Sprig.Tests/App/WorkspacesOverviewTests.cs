@@ -53,7 +53,8 @@ public class WorkspacesOverviewTests
         var featA = vm.OverviewRows.Single(r => r.Record.Name == "feat-a");
         // A workspace of worktrees reads as its folder, as git and the file system show it.
         Assert.Equal(("storefront--feat-a", "services / local"), (featA.Name, vm.OverviewRows.Single(r => r.Record.Name == "local").Name));
-        Assert.Equal("1 of 2 running", featA.Apps);
+        Assert.Equal("1 of 2 ready", featA.Apps);
+        Assert.True(featA.IsUp);
         Assert.Equal("5170–8000", featA.Ports);
         Assert.Equal("now", featA.LastUp);
         Assert.Equal("3 days ago", vm.OverviewRows.Single(r => r.Record.Name == "feat-c").LastUp);
@@ -61,6 +62,32 @@ public class WorkspacesOverviewTests
 
         vm.PickOverviewChipCommand.Execute(vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Stopped));
         Assert.Equal(["q4", "local", "feat-c", "spike"], vm.OverviewRows.Select(r => r.Record.Name));
+    }
+
+    [Fact]
+    public void A_running_workspace_reads_starting_while_an_app_builds_and_shows_red_when_one_is_down_counted_as_running_throughout()
+    {
+        using var temp = new TempStore();
+        var vm = Make(temp, out var services);
+        var featA = vm.OverviewRows.Single(r => r.Record.Name == "feat-a");
+        RunnerStatus Api(RunnerState state) => new("storefront/feat-a", "shop/api", state, 1, 8000, null, "a.log", Now);
+        RunnerStatus Web(RunnerState state) => new("storefront/feat-a", "shop/web", state, 2, 5170, null, "w.log", Now);
+
+        services.HostStatus.Apply([Api(RunnerState.Ready), Web(RunnerState.Building)]);
+        Assert.Equal(("running", "starting"), (featA.State, featA.Shown));
+        Assert.Equal((false, true, false), (featA.IsUp, featA.IsComingUp, featA.IsInTrouble));
+        Assert.Equal("1 of 2 ready", featA.Apps);
+        Assert.Equal(1, vm.NavCount);
+        Assert.Equal("1 running", vm.OverviewChips.Single(c => c.Filter == OverviewFilter.Running).Label);
+
+        services.HostStatus.Apply([Api(RunnerState.Ready), Web(RunnerState.Exited)]);
+        Assert.Equal("running", featA.Shown);
+        Assert.Equal((false, false, true), (featA.IsUp, featA.IsComingUp, featA.IsInTrouble));
+        Assert.Equal("1 of 2 ready, 1 down", featA.Apps);
+
+        // Stopped on purpose isn't trouble: what's left is up.
+        services.HostStatus.Apply([Api(RunnerState.Ready), Web(RunnerState.Stopped)]);
+        Assert.True(featA.IsUp);
     }
 
     [Fact]

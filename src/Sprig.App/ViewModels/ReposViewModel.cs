@@ -92,9 +92,10 @@ public partial class ReposViewModel : PageViewModel
             .Select(w =>
             {
                 var state = _services.RunState(w);
+                var ready = _services.Readiness(w);
                 return new RepoWorkspaceRow(w.Key, w.InPlace ? w.Name : w.SlotName,
                     w.IsMain ? "main checkout" : w.InPlace ? "in place" : w.Branch is { } branch ? $"on {branch}" : "no branch checked out",
-                    state, state == "running", state == "failed");
+                    ready.Shown(state), ready.Up(state), ready.InTrouble(state));
             }).ToArray();
         if (rows.SequenceEqual(WorkspacesOfIt)) return;
         WorkspacesOfIt.Clear();

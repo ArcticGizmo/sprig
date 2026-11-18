@@ -33,6 +33,9 @@ public class WatchLinesTests
         Assert.Equal(["shop/api", "shop/web", "shop/worker", "shop/gone"], w.Apps!.Select(a => a.Name));
         Assert.Equal(["ready", "building", "off", "exited"], w.Apps!.Select(a => a.State));
         Assert.Equal(5123, w.Apps![0].Port);
+        // Running, but shop/gone has exited, which outweighs shop/web still building.
+        Assert.Equal(("trouble", 1, 3, 3), (w.Readiness.Health, w.Readiness.Ready, w.Readiness.Started, w.Readiness.Total));
+        Assert.Equal(["shop/gone"], w.Readiness.Down);
         Assert.All(w.Apps!, a => Assert.Null(a.Usage));
         Assert.Equal([@"C:\src\storefront--2\shop"], w.Dirs);
         Assert.Equal("session-1", w.MadeForAgent);
@@ -54,6 +57,8 @@ public class WatchLinesTests
         var app = json.RootElement.GetProperty("workspaces")[0].GetProperty("apps")[0];
         Assert.Equal("""{"name":"shop/api","state":"off"}""", app.GetRawText());
         Assert.Equal("stopped", json.RootElement.GetProperty("workspaces")[0].GetProperty("state").GetString());
+        Assert.Equal("""{"health":"none","ready":0,"started":0,"total":1,"down":[]}""",
+            json.RootElement.GetProperty("workspaces")[0].GetProperty("readiness").GetRawText());
     }
 
     [Fact]

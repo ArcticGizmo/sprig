@@ -1,6 +1,6 @@
 {
   "name": "sprig-worktrees",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "description": "An agent's worktree becomes a sprig slot, with ports, files and infra of its own; outside repos sprig knows, a plain worktree as usual",
   "author": { "name": "arcticgizmo" },
   "homepage": "https://arcticgizmo.github.io/sprig/",

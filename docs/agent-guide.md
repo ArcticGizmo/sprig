@@ -46,6 +46,7 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 | Start, and wait until ready | `sprig start [app…] --json` |
 | Restart after a code change | `sprig restart --json` (`--jobs` to run migrations again) |
 | Stop | `sprig stop [app…]` (nothing named: everything; data is kept) |
+| Free up the machine for a while, then put it back as it was | `sprig pause`, later `sprig resume --json` |
 | Read an app's log | `sprig logs <app> -n 200` |
 | Find a folder | `sprig path [place]`, e.g. `sprig path api` for a folder the repo names under `cd:` |
 | Give an input a value | `sprig set name=value` |

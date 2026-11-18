@@ -24,12 +24,15 @@ public sealed partial class OverviewRow(WorkspaceRecord record, Action checkedCh
 
     /// <summary>From what's running (see <see cref="WorkspaceService.RunState"/>).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsFailed), nameof(IsStopped))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsFailed), nameof(IsStopped), nameof(IsPaused))]
     private string _state = WorkspaceService.RunState(record, [], null);
 
     public bool IsRunning => State == "running";
     public bool IsFailed => State == "failed";
-    public bool IsStopped => State == "stopped";
+    public bool IsPaused => State == "paused";
+
+    /// <summary>Paused counts as stopped: none of its apps is going.</summary>
+    public bool IsStopped => State is "stopped" or "paused";
 
     [ObservableProperty] private string _apps = "";
 
@@ -196,7 +199,9 @@ public partial class WorkspacesViewModel
 
             var count = _services.Workspaces.LastPlan(row.Orchestration, row.Record.Name)?.Apps.Count(a => !a.Job) ?? 0;
             var running = runners.Count(r => r.Workspace == row.Key && r.State.IsAlive());
-            row.Apps = running > 0 ? $"{running} of {count} running" : row.IsRunning ? "apps stopped" : "—";
+            row.Apps = running > 0 ? $"{running} of {count} running"
+                : row.Record.Paused is { } paused ? $"{paused.Apps.Count} of {count} paused"
+                : row.IsRunning ? "apps stopped" : "—";
         }
 
         int Count(Func<OverviewRow, bool> f) => _overview.Count(f);

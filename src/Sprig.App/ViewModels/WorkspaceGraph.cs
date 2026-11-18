@@ -9,8 +9,9 @@ using Sprig.Engine.Workspaces;
 namespace Sprig.App.ViewModels;
 
 /// <summary>How a node is doing, as one colour: <see cref="Unknown"/> for what sprig doesn't run. <see cref="Waiting"/>
-/// is held back by what it depends on, apart from <see cref="Busy"/> building or starting, as the apps list shows them.</summary>
-public enum NodeHealth { Good, Busy, Waiting, Bad, Off, Unknown }
+/// is held back by what it depends on, apart from <see cref="Busy"/> building or starting, as the apps list shows them.
+/// <see cref="Paused"/> is stopped by a pause, so Resume starts it again.</summary>
+public enum NodeHealth { Good, Busy, Waiting, Bad, Off, Unknown, Paused }
 
 /// <summary>One app, job, container or outside value in the workspace graph, with its live state.</summary>
 /// <param name="app">The app's row, whose state the host keeps current; null for anything else, or an app the
@@ -92,6 +93,9 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     /// uses the database, so those lines would say little and hide the rest.</summary>
     public IReadOnlyList<GraphNode> Tags { get; set; } = [];
 
+    /// <summary>Its workspace's pause remembers it, so while it's stopped it reads as paused rather than stopped.</summary>
+    public bool Paused { get; init; }
+
     /// <summary>Taken with others as a tag: drawn without its links unless it, or what uses it, is in focus.</summary>
     public bool IsTag => IsInfra || IsOutside;
 
@@ -119,6 +123,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
             : app.IsWaiting ? NodeHealth.Waiting
             : app.IsBusy ? NodeHealth.Busy
             : NodeHealth.Off;
+        if (Paused && Health == NodeHealth.Off) (State, StateDetail, Health) = ("paused", "", NodeHealth.Paused);
     }
 
     static string ValueOrNothing(string value) => value.Length > 60 ? value[..57] + "…" : value;
@@ -134,7 +139,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
         }
         if (service is null)
         {
-            (State, StateDetail, Health, IsAlive) = ("not started", "", NodeHealth.Off, false);
+            (State, StateDetail, Health, IsAlive) = Paused ? ("paused", "", NodeHealth.Paused, false) : ("not started", "", NodeHealth.Off, false);
             return;
         }
         IsAlive = service.State is "running" or "restarting";
@@ -149,6 +154,7 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
             ("exited", _) => ("stopped", "", NodeHealth.Off),
             _ => (service.State, "", NodeHealth.Off),
         };
+        if (Paused && Health == NodeHealth.Off) (State, StateDetail, Health) = ("paused", "", NodeHealth.Paused);
     }
 
     /// <summary>Show a main checkout's infra, which the user runs, by whether it's listening; null when the plan doesn't

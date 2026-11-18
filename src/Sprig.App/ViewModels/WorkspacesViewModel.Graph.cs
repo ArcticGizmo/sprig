@@ -85,8 +85,12 @@ public partial class WorkspacesViewModel
 
         var topology = WorkspaceTopology.Of(plan);
         var shown = GraphFocus ? Running(topology) : null;
+        var paused = PausedKeys(record);
         var nodes = topology.Nodes.Where(n => shown?.Contains(n.Key) ?? true)
-            .Select(n => new GraphNode(n, Apps.FirstOrDefault(a => a.Key == n.Key), _targets.FirstOrDefault(t => t.Key == n.Key))).ToArray();
+            .Select(n => new GraphNode(n, Apps.FirstOrDefault(a => a.Key == n.Key), _targets.FirstOrDefault(t => t.Key == n.Key))
+            {
+                Paused = paused.Contains(n.Key),
+            }).ToArray();
         var links = shown is null ? topology.Links : topology.Links.Where(l => shown.Contains(l.From) && shown.Contains(l.To)).ToArray();
         _startGroups = plan.Groups;
         OnPropertyChanged(nameof(CanGroupByStartGroup));
@@ -119,20 +123,25 @@ public partial class WorkspacesViewModel
 
     /// <summary>
     /// What focus mode shows: the apps and jobs that are going, or that failed, since a failure among what's running is
-    /// what's worth seeing; the infra docker says is running; and the infra and outside values the shown apps use. An
-    /// app that's stopped stays out even when a running one uses it.
+    /// what's worth seeing; the infra docker says is running; what a pause remembers, so a paused workspace keeps its
+    /// shape; and the infra and outside values the shown apps use. An app that's stopped stays out even when a running
+    /// one uses it.
     /// </summary>
     HashSet<string> Running(WorkspaceTopology topology)
     {
         var keep = topology.Nodes
             .Where(n => n.IsRunner && Apps.FirstOrDefault(a => a.Key == n.Key) is { } row && (row.IsAlive || row.IsBad))
             .Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
+        keep.UnionWith(PausedKeys(_planRecord).Where(k => topology.Nodes.Any(n => n.Key == k)));
         foreach (var node in topology.Nodes.Where(n => n.IsInfra && _lastInfra?.GetValueOrDefault(n.Key) is { State: "running" or "restarting" }))
             keep.Add(node.Key);
         var runners = topology.Nodes.Where(n => n.IsRunner).Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var link in topology.Links.Where(l => keep.Contains(l.From) && !runners.Contains(l.To)).ToArray()) keep.Add(link.To);
         return keep;
     }
+
+    static IReadOnlySet<string> PausedKeys(WorkspaceRecord? record)
+        => record?.Paused is { } paused ? paused.Apps.Concat(paused.Infra).ToHashSet(StringComparer.Ordinal) : new HashSet<string>();
 
     /// <summary>Focus mode only shows what's running, so once that changes the graph is drawn again with what now is.</summary>
     void Refocus()

@@ -945,6 +945,51 @@ public sealed class WorkspaceServiceTests : IDisposable
         Assert.DoesNotContain(docker.Calls, c => c.Contains("down"));
     }
 
+    static Sprig.Engine.Hosting.RunnerStatus Runner(string workspace, string name, Sprig.Engine.Hosting.RunnerState state)
+        => new(workspace, name, state, null, null, null, "", DateTimeOffset.UtcNow);
+
+    [Fact]
+    public void Quitting_remembers_the_going_apps_as_a_pause_until_resumed_or_stopped()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        var record = _workspaces.Up(Load(("shop-web", Web)), "feat-x", null);
+        var plan = _workspaces.LastPlan("storefront", "feat-x")!;
+        var web = plan.Apps.Single().Key;
+        var going = new[]
+        {
+            Runner(record.Key, web, Sprig.Engine.Hosting.RunnerState.Ready),
+            Runner(record.Key, "shop-web/gone", Sprig.Engine.Hosting.RunnerState.Stopped),
+            Runner("storefront/never-made", web, Sprig.Engine.Hosting.RunnerState.Ready),
+        };
+
+        _workspaces.RememberRunning(going);
+
+        var paused = _workspaces.Get("storefront", "feat-x")!;
+        Assert.Equal([web], paused.Paused!.Apps);
+        Assert.Empty(paused.Paused.Infra);
+        Assert.Equal("paused", WorkspaceService.RunState(paused, [], null));
+        // Started again by hand, it's running, and the pause waits for Resume to fill in the rest.
+        Assert.Equal("running", WorkspaceService.RunState(paused, going, null));
+        Assert.Equal([web], WorkspaceService.ResumeApps(paused, plan, []));
+        Assert.Empty(WorkspaceService.ResumeApps(paused, plan, going));
+        Assert.Contains("already paused", Assert.Throws<WorkspaceException>(() => _workspaces.Pause("storefront", "feat-x")).Message);
+
+        Assert.Null(_workspaces.EndPause("storefront", "feat-x")!.Paused);
+        _workspaces.RememberRunning(going);
+        Assert.Null(_workspaces.Down("storefront", "feat-x").Paused);
+        Assert.Equal("stopped", WorkspaceService.RunState(_workspaces.Get("storefront", "feat-x")!, [], null));
+    }
+
+    [Fact]
+    public void Pausing_with_nothing_running_says_so_and_remembers_nothing()
+    {
+        Repo("shop-web", ("index.html", "hi"));
+        _workspaces.Up(Load(("shop-web", Web)), "feat-x", null);
+
+        Assert.Contains("nothing of", Assert.Throws<WorkspaceException>(() => _workspaces.Pause("storefront", "feat-x")).Message);
+        Assert.Null(_workspaces.Get("storefront", "feat-x")!.Paused);
+    }
+
     [Fact]
     public void One_definition_runs_in_a_checkout_at_a_time_and_taking_over_takes_the_other_down()
     {

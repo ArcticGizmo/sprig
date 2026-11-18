@@ -90,6 +90,16 @@
 
             <Border Classes="panel">
                 <StackPanel Spacing="10">
+                    <TextBlock Classes="phead" Text="QUITTING" />
+                    <TextBlock Classes="help"
+                               Text="Quitting sprig always stops every app. With this on, each workspace remembers what was running as a pause, so next time it's one click on Resume to have it back." />
+                    <CheckBox IsChecked="{Binding PauseOnQuit}"
+                              Content="Pause workspaces when sprig quits" Foreground="{StaticResource FgBrush}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+                <StackPanel Spacing="10">
                     <TextBlock Classes="phead" Text="CHANGELOG" />
                     <CheckBox IsChecked="{Binding ShowChangelogOnUpdate}"
                               Content="Show what's new after an update" Foreground="{StaticResource FgBrush}" />

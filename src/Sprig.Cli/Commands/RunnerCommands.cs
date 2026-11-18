@@ -68,6 +68,12 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
     {
         s.ResolveApps(cli);
+        return Run(s, cancellation);
+    }
+
+    /// <summary>Start what <paramref name="s"/> names, its workspace already resolved.</summary>
+    internal int Run(Settings s, CancellationToken cancellation)
+    {
         var record = cli.Workspaces.Get(s.Orchestration, s.Workspace);
         if (record is null && s.Workspace != WorkspaceRecord.MainName)
             throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'; check a branch out with: sprig checkout {s.Orchestration} -b <branch>");
@@ -335,6 +341,63 @@ public sealed class StopCommand(CliContext cli) : Command<AppsSettings>
             if (r.Error is { } why) cli.Ansi.MarkupLine($"[yellow]{Markup.Escape(r.Name)}[/]  {Markup.Escape(why)}");
             else CliOutput.Success($"{r.Name} stopped");
         }
+        return 0;
+    }
+}
+
+[Description("Pause a workspace: stop everything it runs, keeping its data, and remember what was running so sprig resume starts just that again")]
+public sealed class PauseCommand(CliContext cli) : Command<WorkspaceSettings>
+{
+    protected override int Execute(CommandContext context, WorkspaceSettings s, CancellationToken cancellation)
+    {
+        s.Resolve(cli);
+        var record = cli.Workspaces.Pause(s.Orchestration, s.Workspace, new SyncProgress<WorkspaceEvent>(e => DownCommand.Echo(cli, e, s.Json)), cancellation);
+        var paused = record.Paused!;
+        static string Count(int n, string one) => n == 1 ? $"1 {one}" : $"{n} {one}s";
+        return CliOutput.Ok(s.Json,
+            $"{record.SlotName} ({record.Label}) is paused: {Count(paused.Apps.Count, "app")} and {Count(paused.Infra.Count, "container")} stopped, data kept. Start them again with: sprig resume",
+            new { ok = true, paused = new { apps = paused.Apps, infra = paused.Infra } });
+    }
+}
+
+[Description("Resume a paused workspace: start again what was running when it was paused, each after what it depends on, and wait until each is ready")]
+public sealed class ResumeCommand(CliContext cli) : Command<ResumeCommand.Settings>
+{
+    public sealed class Settings : WorkspaceSettings
+    {
+        [CommandOption("--no-wait")]
+        [Description("Return once the apps are starting, without waiting for them to be ready")]
+        public bool NoWait { get; set; }
+
+        [CommandOption("--trust")]
+        [Description("When the workspace has to be made ready first, approve any definition that isn't approved yet, without asking")]
+        public bool Trust { get; set; }
+    }
+
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation)
+    {
+        s.Resolve(cli);
+        var record = cli.Workspaces.Get(s.Orchestration, s.Workspace) ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace named '{s.Workspace}'");
+        if (record.Paused is not { } paused)
+            throw new InvalidOperationException($"{record.SlotName} isn't paused; start it with: sprig start");
+        var plan = cli.Workspaces.LastPlan(record.Orchestration, record.Name);
+        var runners = cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
+        // Only what isn't going: with nothing named, start would start everything.
+        var apps = plan is null ? paused.Apps : WorkspaceService.ResumeApps(record, plan, runners);
+        var infra = plan is null ? [] : cli.Workspaces.ResumeInfra(record, plan).Select(t => t.Key).ToArray();
+        if (apps.Count + infra.Length > 0)
+        {
+            var start = new StartCommand.Settings
+            {
+                Orchestration = record.Orchestration, Workspace = record.Name, Apps = [.. apps, .. infra],
+                NoWait = s.NoWait, Trust = s.Trust, Json = s.Json, UnmaskSecrets = s.UnmaskSecrets,
+            };
+            // A pause kept after a start that didn't get going lets resume be run again.
+            if (new StartCommand(cli).Run(start, cancellation) is var code and not 0) return code;
+        }
+        cli.Workspaces.EndPause(record.Orchestration, record.Name);
+        if (s.Json) return apps.Count + infra.Length > 0 ? 0 : CliOutput.Ok(true, "", new { ok = true, resumed = Array.Empty<string>() });
+        CliOutput.Success(apps.Count + infra.Length > 0 ? $"{record.SlotName} ({record.Label}) is resumed" : $"everything {record.SlotName} had going is running; its pause is forgotten");
         return 0;
     }
 }

@@ -67,11 +67,12 @@ public sealed class Tray
             : $"{_alive} app{(_alive == 1 ? "" : "s")} running in {workspaces} workspace{(workspaces == 1 ? "" : "s")}";
         _status.Header = summary;
         _icon.ToolTipText = $"sprig · {summary.ToLowerInvariant()}";
-        _quit.Header = _alive > 0 ? "Stop all apps and quit" : "Quit";
+        _quit.Header = _alive == 0 ? "Quit" : _services.Settings.Get().PauseOnQuit ? "Pause everything and quit" : "Stop all apps and quit";
     }
 
     /// <summary>Stop every app, then the host, then quit. The app count can lag the host by a poll, so the host is
-    /// always asked rather than trusting it.</summary>
+    /// always asked rather than trusting it. With <see cref="Sprig.Engine.Settings.SprigSettings.PauseOnQuit"/>, what's
+    /// going is first recorded as each workspace's pause.</summary>
     public async void Quit()
     {
         if (_quitting) return;
@@ -83,7 +84,16 @@ public sealed class Tray
             _status.Header = "Stopping every app…";
             _icon.ToolTipText = "sprig · stopping every app…";
         }
-        await AppServices.RunAsync(() => _services.Host.StopAllAndShutdown());
+        await AppServices.RunAsync(() =>
+        {
+            if (_services.Settings.Get().PauseOnQuit && _services.Host.TrySend(new HostRequest("list"))?.Runners is { Count: > 0 } runners)
+            {
+                // A pause not saved shouldn't keep sprig from quitting; the apps stop either way.
+                try { _services.Workspaces.RememberRunning(runners); }
+                catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { }
+            }
+            _services.Host.StopAllAndShutdown();
+        });
         _desktop.Shutdown();
     }
 }

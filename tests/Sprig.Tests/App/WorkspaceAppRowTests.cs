@@ -67,6 +67,36 @@ public class WorkspaceAppRowTests
     }
 
     [Fact]
+    public void A_paused_workspace_offers_Resume_and_its_graph_keeps_what_was_running_in_focus_as_paused()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        var workspaces = new WorkspaceStore(services.Paths);
+        var now = DateTimeOffset.UtcNow;
+        var repo = new WorkspaceRepo("../shop", "shop", @"C:\tb\shop", @"C:\tb\shop", false, false);
+        workspaces.Save(new WorkspaceRecord("storefront", @"C:\tb\storefront.orchestration.yaml", "feat-x", null, "stable", [repo], [], [],
+            WorkspaceState.Down, now, now) { Paused = new PausedRun(["shop/api"], [], now) });
+        workspaces.SavePlan(new Plan("storefront", "feat-x", "stable", null, [],
+            [
+                new PlannedApp("shop", "../shop", "api", "dotnet", ".", [], null, []),
+                new PlannedApp("shop", "../shop", "admin", "dotnet", ".", [], null, []),
+            ], [], [], [], []));
+        var vm = new WorkspacesViewModel(services);
+        vm.Show("storefront/feat-x");
+        vm.ApplyRunners([]);
+
+        Assert.Equal("paused", vm.RunState);
+        Assert.True(vm.ShowPauseResume);
+        Assert.Equal("Resume", vm.PauseResumeLabel);
+        var api = vm.Graph!.Nodes.Single(n => n.Key == "shop/api");
+        Assert.Equal((NodeHealth.Paused, "paused"), (api.Health, api.State));
+        Assert.Equal(NodeHealth.Off, vm.Graph.Nodes.Single(n => n.Key == "shop/admin").Health);
+
+        vm.GraphFocus = true;
+        Assert.Equal(["shop/api"], vm.Graph.Nodes.Select(n => n.Key));
+    }
+
+    [Fact]
     public void A_state_line_doesnt_repeat_the_state_when_the_detail_already_says_it()
     {
         var row = new WorkspaceAppRow("shop/api", "shop / api", "", "", "", false);

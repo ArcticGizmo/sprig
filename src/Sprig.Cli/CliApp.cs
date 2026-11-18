@@ -98,6 +98,8 @@ public static class CliApp
         config.AddCommand<StartCommand>("start");
         config.AddCommand<RestartCommand>("restart");
         config.AddCommand<StopCommand>("stop");
+        config.AddCommand<PauseCommand>("pause");
+        config.AddCommand<ResumeCommand>("resume");
         config.AddCommand<PsCommand>("ps");
         config.AddCommand<LogsCommand>("logs");
 

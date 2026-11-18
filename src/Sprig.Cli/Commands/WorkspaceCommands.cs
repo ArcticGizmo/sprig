@@ -650,6 +650,7 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
             "running" => "[green]running[/]",
             "failed" => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
             "starting" => "[yellow]starting[/]",
+            "paused" => "[yellow]paused[/] [dim](sprig resume)[/]",
             var other => $"[dim]{other}[/]",
         };
 

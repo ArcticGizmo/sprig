@@ -179,6 +179,18 @@ public partial class WorkspacesView : UserControl
     {
         if (_vm is null) return;
         var menu = new ContextMenu { Placement = PlacementMode.BottomEdgeAlignedRight };
+        var rows = new List<(StartChoice Choice, MenuItem Item, TextBlock Label)>();
+        // The menu stays open after a ▶, so several groups can be started one after another; the highlight moves to
+        // the one just started, which is what Start now starts.
+        void Highlight()
+        {
+            foreach (var (choice, item, label) in rows)
+            {
+                var current = choice == _vm?.StartChoice;
+                item.Background = current ? CurrentChoiceBrush : null;
+                label.FontWeight = current ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal;
+            }
+        }
         foreach (var choice in _vm.StartChoices)
         {
             var current = choice == _vm.StartChoice;
@@ -199,26 +211,41 @@ public partial class WorkspacesView : UserControl
                 Margin = new Thickness(16, -6, -18, -6),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
             };
-            now.PointerEntered += (_, _) => now.Background = PlayHoverBrush;
-            now.PointerExited += (_, _) => now.Background = Avalonia.Media.Brushes.Transparent;
             ToolTip.SetTip(now, $"Start {(choice.Group is null ? "every app" : choice.Label)} now");
-            var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            header.Children.Add(new TextBlock
+            var label = new TextBlock
             {
                 Text = choice.Label,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 FontWeight = current ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
-            });
+            };
+            var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            header.Children.Add(label);
             Grid.SetColumn(now, 1);
             header.Children.Add(now);
             var item = new MenuItem { Header = header, Padding = new Thickness(20, 6, 6, 6) };
             if (current) item.Background = CurrentChoiceBrush;
+            // Decided by where the pointer is, like the click itself: picking a row closes the menu, a ▶ doesn't.
+            now.PointerEntered += (_, _) =>
+            {
+                now.Background = PlayHoverBrush;
+                item.StaysOpenOnClick = true;
+            };
+            now.PointerExited += (_, _) =>
+            {
+                now.Background = Avalonia.Media.Brushes.Transparent;
+                item.StaysOpenOnClick = false;
+            };
             ToolTip.SetTip(item, choice.Apps);
             item.Click += (_, _) =>
             {
-                if (now.IsPointerOver) _vm?.StartChoiceNowCommand.Execute(choice);
+                if (now.IsPointerOver)
+                {
+                    _vm?.StartChoiceNowCommand.Execute(choice);
+                    Highlight();
+                }
                 else _vm?.PickStartChoiceCommand.Execute(choice);
             };
+            rows.Add((choice, item, label));
             menu.Items.Add(item);
         }
         menu.Open(StartChoiceButton);

@@ -380,7 +380,8 @@ public sealed partial class WorkspaceService(
     }
 
     /// <summary>Stop everything the workspace runs: its apps, then its containers, which are kept, data and all, for the
-    /// next start, as are its ports, whatever its port policy. A main's infra is the user's, so it's left running.</summary>
+    /// next start, as are its ports, whatever its port policy. A main's infra is the user's, so it's left running. A
+    /// pause is forgotten: stopping everything is a deliberate full stop.</summary>
     public WorkspaceRecord Down(string orchestration, string workspace, IProgress<WorkspaceEvent>? progress = null, CancellationToken cancellation = default)
     {
         var record = store.Get(orchestration, workspace) ?? throw new WorkspaceException($"{orchestration} has no workspace named '{workspace}'");
@@ -393,7 +394,7 @@ public sealed partial class WorkspaceService(
             docker.StopAll(project, line => step.Output(line), cancellation);
             step.Done("its containers and data are kept");
         }
-        record = record with { State = WorkspaceState.Down, UpdatedAt = DateTimeOffset.UtcNow };
+        record = record with { State = WorkspaceState.Down, UpdatedAt = DateTimeOffset.UtcNow, Paused = null };
         store.Save(record);
         return record;
     }
@@ -910,6 +911,7 @@ public sealed partial class WorkspaceService(
             Error = null,
             UpdatedAt = DateTimeOffset.UtcNow,
             Repos = record.Repos.Select(r => r with { BranchCreated = false, From = null }).ToList(),
+            Paused = null,
         };
         store.Save(record);
         return record;

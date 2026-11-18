@@ -32,6 +32,7 @@ public partial class SettingsViewModel : PageViewModel
     [ObservableProperty] private bool _saveFailed;
 
     [ObservableProperty] private bool _showChangelogOnUpdate;
+    [ObservableProperty] private bool _pauseOnQuit;
     bool _loadingSettings;
 
     static readonly StartAtOnceChoice[] OfferedStartAtOnce =
@@ -63,6 +64,7 @@ public partial class SettingsViewModel : PageViewModel
 
         _loadingSettings = true;
         ShowChangelogOnUpdate = s.ShowChangelogOnUpdate;
+        PauseOnQuit = s.PauseOnQuit;
         // A number saved by hand that isn't on the list still shows, as itself.
         StartAtOnceChoices = OfferedStartAtOnce.Any(c => c.Limit == s.StartAtOnce) ? OfferedStartAtOnce
             : [.. OfferedStartAtOnce, new StartAtOnceChoice(s.StartAtOnce, $"{s.StartAtOnce} at a time")];
@@ -85,6 +87,14 @@ public partial class SettingsViewModel : PageViewModel
         if (_loadingSettings) return;
         var s = _services.Settings.Get();
         s.ShowChangelogOnUpdate = value;
+        _services.Settings.Save(s);
+    }
+
+    partial void OnPauseOnQuitChanged(bool value)
+    {
+        if (_loadingSettings) return;
+        var s = _services.Settings.Get();
+        s.PauseOnQuit = value;
         _services.Settings.Save(s);
     }
 

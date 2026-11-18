@@ -9,6 +9,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.10] - 2026-11-18
+
+Sprig stops asking its host "anything yet?" every second. The host now says so itself.
+
+### Added
+- **`sprig watch`** — workspaces and apps as they change. `--json` for other tools.
+- **`sprig wait`** — until the apps are ready, after `--no-wait`.
+- **`sprig up --no-wait`** — return while the apps start.
+- **`docker-unavailable`** — a `--json` code for when Docker isn't answering.
+- **`sprig open --json`** — says whether the app was already running.
+
+### Changed
+- **States update the moment they change** — in the app and while the CLI waits.
+
+---
+
 ## [v0.9.9] - 2026-11-18
 
 Stopping everything was easy. Remembering what was running was your problem. Not any more.

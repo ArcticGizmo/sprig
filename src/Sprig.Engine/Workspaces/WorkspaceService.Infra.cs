@@ -222,7 +222,7 @@ public sealed partial class WorkspaceService
             }
             catch (ComposeUpException e)
             {
-                throw step.Fail(new WorkspaceException(e.Message));
+                throw step.Fail(new WorkspaceException(e.Message) { Code = DockerCompose.Unreachable(e.Result) ? DockerCompose.UnavailableCode : null });
             }
             step.Done(string.Join(", ", project.Select(t => t.Key)));
         }

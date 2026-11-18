@@ -713,8 +713,8 @@ public partial class WorkspacesViewModel : PageViewModel
     }
 
     /// <summary>Read the logs, and every few seconds the containers' states while the graph or a container's log shows.
-    /// The view calls this every second while the page shows; the app-wide <see cref="HostStatus"/> poll brings the
-    /// apps' states and what they use.</summary>
+    /// The view calls this every second while the page shows; the app-wide <see cref="HostStatus"/> brings the apps'
+    /// states and what they use as they change.</summary>
     /// <param name="usage">Ask docker what the containers use, on its own slower beat; not while the window is hidden.</param>
     public async Task PollAsync(bool usage = true)
     {
@@ -733,7 +733,8 @@ public partial class WorkspacesViewModel : PageViewModel
         }
     }
 
-    /// <summary>Ask the host now rather than at the next tick, after something here changed what's running.</summary>
+    /// <summary>After something here changed what's running: the host's answer, when nothing follows it already, and
+    /// the logs and containers now rather than at the next tick.</summary>
     async Task RefreshRunnersAsync()
     {
         await _services.HostStatus.PollAsync();

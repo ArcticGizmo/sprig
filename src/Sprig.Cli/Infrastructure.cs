@@ -109,6 +109,7 @@ static class CliErrors
     public const string SlotBroken = "slot-broken";
     public const string SlotBusy = WorkspaceService.BusyCode;
     public const string Problems = "problems";
+    public const string DockerUnavailable = Sprig.Engine.Compose.DockerCompose.UnavailableCode;
     public const string Error = "error";
 
     public static string Code(Exception e) => e switch
@@ -118,8 +119,19 @@ static class CliErrors
         WorkspaceException { Untrusted.Count: > 0 } => Untrusted,
         WorkspaceException { HeldBy: not null } => Held,
         WorkspaceException { Problems.Count: > 0 } => Problems,
+        _ when DockerSilent(e) => DockerUnavailable,
         _ => Error,
     };
+
+    /// <summary>Docker's own failure to answer, wherever it surfaced: thrown as it was, or inside what it caused.</summary>
+    static bool DockerSilent(Exception? e)
+    {
+        for (; e is not null; e = e.InnerException)
+            if (e is Sprig.Engine.Processes.ProcessException { Result: var r } && Sprig.Engine.Compose.DockerCompose.Unreachable(r)
+                || e is Sprig.Engine.Compose.ComposeUpException { Result: var up } && Sprig.Engine.Compose.DockerCompose.Unreachable(up))
+                return true;
+        return false;
+    }
 
     public static object Payload(Exception e) => e is WorkspaceException w
         ? new

@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Workspaces;
@@ -152,28 +151,35 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
     }
 
+    /// <summary>How long a start waits for its apps before saying they timed out.</summary>
+    internal static readonly TimeSpan WaitLimit = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Until each of <paramref name="specs"/> is ready (or, for a job, finished) or has settled some other way, printing
     /// each change of state, and where to read the log of each that didn't make it. Gives up after five minutes.
     /// </summary>
     internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string workspace, IReadOnlyList<RunnerSpec> specs, bool json,
         CancellationToken cancellation)
+        => WaitUntilReady(cli, workspace, specs.Select(x => x.Name).ToHashSet(), json, WaitLimit, cancellation);
+
+    /// <summary>As above, for apps by name; one the host isn't running is left out of what's returned.</summary>
+    internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string workspace, IReadOnlySet<string> watched, bool json,
+        TimeSpan within, CancellationToken cancellation)
     {
-        var watched = specs.Select(x => x.Name).ToHashSet();
         var seen = new Dictionary<string, RunnerState>();
-        var clock = Stopwatch.StartNew();
         IReadOnlyList<RunnerStatus> mine = [];
-        while (!cancellation.IsCancellationRequested)
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        limit.CancelAfter(within);
+        // With no host, nothing is running: the empty list settles it, as it should.
+        foreach (var runners in cli.Host.Follow(limit.Token))
         {
-            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Workspace == workspace && watched.Contains(r.Name)).ToArray();
+            mine = (runners ?? []).Where(r => r.Workspace == workspace && watched.Contains(r.Name)).ToArray();
             foreach (var r in mine.Where(r => !seen.TryGetValue(r.Name, out var was) || was != r.State))
             {
                 seen[r.Name] = r.State;
                 if (!json) Report(cli, r);
             }
             if (mine.All(r => r.State.Satisfies() || r.State.IsSettled())) break;
-            if (clock.Elapsed > TimeSpan.FromMinutes(5)) break;
-            Thread.Sleep(300);
         }
         if (!json)
             foreach (var r in mine.Where(r => !r.State.Satisfies())) cli.Ansi.MarkupLine($"[dim]  log: {Markup.Escape(r.LogFile)}[/]");

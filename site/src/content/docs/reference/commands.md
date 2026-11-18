@@ -11,7 +11,7 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 | --- | --- |
 | `sprig init` | Make the repo in this folder ready to run: its own `sprig.yaml`, or a draft from its projects. |
 | `sprig checkout -b <branch>` | Check a branch out in a slot of worktrees and make it ready to run: its ports, files and infra's definitions. Nothing starts. |
-| `sprig up` | Run a workspace that's checked out: its apps in the background, after the infra they use. Names the workspace by its branch or slot number, or with none named, the slot you're in, else `main`. |
+| `sprig up` | Run a workspace that's checked out: its apps in the background, after the infra they use. Names the workspace by its branch or slot number, or with none named, the slot you're in, else `main`. `--no-wait` returns once the apps are starting. |
 | `sprig plan` | Show everything a workspace would get, and where each value comes from. |
 | `sprig info` | Show a workspace whole: where it is, its apps and infra and their state, and its inputs. |
 | `sprig workspaces` | List workspaces. |
@@ -29,8 +29,10 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 | `sprig stop` | Stop what a workspace runs: the apps or infra you name, or with none named, everything. Containers keep their data. |
 | `sprig pause` | Stop everything a workspace runs, keeping its data, and remember what was running. |
 | `sprig resume` | Start again what was running when the workspace was paused, and wait until each is ready. |
+| `sprig wait` | Wait until a workspace's apps are ready, as after `sprig start --no-wait`. With none named, every app it has going. |
 | `sprig ps` | List the apps that are running and the workspaces' containers, with their CPU and memory. |
 | `sprig logs` | Print the end of an app's log. |
+| `sprig watch` | Follow what workspaces and their apps are doing as it changes. With `--json`, one line per change for other tools; `--usage` adds CPU and memory. |
 
 ## Inputs
 

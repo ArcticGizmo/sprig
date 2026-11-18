@@ -252,6 +252,47 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
+    public async Task A_subscriber_hears_a_start_a_port_said_in_the_log_a_stop_and_a_workspace_forgetting_its_apps()
+    {
+        var serving = OperatingSystem.IsWindows()
+            ? new CommandSpec("cmd.exe", ["/d", "/c", "echo   Local:   http://localhost:8520/ & ping -n 30 127.0.0.1 > nul"])
+            : new CommandSpec("/bin/sh", ["-c", "echo '  Local:   http://localhost:8520/'; sleep 30"]);
+        await using var heard = new Heard(_client, usage: false);
+
+        Assert.Empty(await heard.Until(_ => true));
+        _client.Send(new HostRequest("start", [Spec("shop/mobile", serving) with { Port = FreePort() }]));
+
+        // Set by what the app printed, not by a change of state.
+        await heard.Until(rs => rs.Any(r => r.State == RunnerState.Starting && r.Error?.Contains("8520") == true));
+        _client.Send(new HostRequest("stop", Workspace: "storefront/feat-x"));
+        await heard.Until(rs => rs.Any(r => r.State == RunnerState.Stopping));
+        // A whole-workspace stop removes its runners without changing their status again.
+        await heard.Until(rs => rs.Count == 0);
+        Assert.All(heard.All, rs => Assert.All(rs, r => Assert.Null(r.Usage)));
+    }
+
+    [Fact]
+    public async Task A_subscriber_hears_samples_only_when_it_asks_for_usage()
+    {
+        _client.Send(new HostRequest("start", [Spec("shop/api", Wait(30))]));
+        Await("shop/api", r => r.State == RunnerState.Ready);
+        await using var plain = new Heard(_client, usage: false);
+        await using var measured = new Heard(_client, usage: true);
+
+        await measured.Until(rs => rs.Any(r => r.Usage is { Cpu: not null }));
+        await measured.Until(_ => measured.All.Count >= 3);
+
+        Assert.Single(plain.All);
+    }
+
+    static int FreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    [Fact]
     public async Task A_second_host_for_the_same_store_steps_aside()
         => Assert.Equal(2, await new HostServer(_store.Paths, TimeSpan.FromMinutes(1)).RunAsync());
 
@@ -461,6 +502,126 @@ public sealed class HostTests : IDisposable
             _stop.Cancel();
             _listener.Stop();
         }
+    }
+}
+
+/// <summary>Everything a subscription to the host hears, for a test to wait on.</summary>
+sealed class Heard : IAsyncDisposable
+{
+    readonly List<IReadOnlyList<RunnerStatus>?> _all = [];
+    readonly CancellationTokenSource _stop = new();
+    readonly Task _reading;
+    TaskCompletionSource _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Heard(HostClient client, bool usage, TimeSpan? retry = null)
+        => _reading = Task.Run(async () =>
+        {
+            await foreach (var runners in client.SubscribeAsync(usage, retry, _stop.Token))
+                lock (_all)
+                {
+                    _all.Add(runners);
+                    _next.TrySetResult();
+                    _next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
+        });
+
+    /// <summary>Every list heard (null for no host), oldest first.</summary>
+    public IReadOnlyList<IReadOnlyList<RunnerStatus>?> Everything
+    {
+        get { lock (_all) return _all.ToArray(); }
+    }
+
+    /// <summary>Every list heard while a host answered.</summary>
+    public IReadOnlyList<IReadOnlyList<RunnerStatus>> All => Everything.OfType<IReadOnlyList<RunnerStatus>>().ToArray();
+
+    /// <summary>The first list heard, from the start, that <paramref name="match"/> passes.</summary>
+    public async Task<IReadOnlyList<RunnerStatus>> Until(Func<IReadOnlyList<RunnerStatus>, bool> match, TimeSpan? within = null)
+        => (await UntilAny(rs => rs is not null && match(rs), within))!;
+
+    /// <summary>As <see cref="Until"/>, null (no host) included.</summary>
+    public async Task<IReadOnlyList<RunnerStatus>?> UntilAny(Func<IReadOnlyList<RunnerStatus>?, bool> match, TimeSpan? within = null)
+    {
+        var clock = Stopwatch.StartNew();
+        var limit = within ?? TimeSpan.FromSeconds(20);
+        while (true)
+        {
+            Task next;
+            lock (_all)
+            {
+                foreach (var runners in _all)
+                    if (match(runners)) return runners;
+                next = _next.Task;
+            }
+            var left = limit - clock.Elapsed;
+            if (left <= TimeSpan.Zero || await Task.WhenAny(next, Task.Delay(left)) != next)
+                throw new TimeoutException($"heard nothing that matched in {limit.TotalSeconds:0}s; heard: "
+                    + string.Join(" | ", Everything.Select(rs => rs is null ? "no host" : string.Join(", ", rs.Select(r => $"{r.Name} {r.State}")))));
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _stop.Cancel();
+        await _reading.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+}
+
+/// <summary>A host in this process, with no apps: stopping one would take the test runner's console.</summary>
+public sealed class HostFollowingTests : IDisposable
+{
+    readonly TempStore _store = new();
+
+    public void Dispose() => _store.Dispose();
+
+    [Fact]
+    public async Task Following_hears_no_host_then_one_that_starts_and_never_keeps_it_from_ending_when_idle()
+    {
+        var client = new HostClient(_store.Paths);
+        await using var heard = new Heard(client, usage: false, retry: TimeSpan.FromMilliseconds(200));
+
+        Assert.Null(await heard.UntilAny(_ => true));
+        var clock = Stopwatch.StartNew();
+        var run = new HostServer(_store.Paths, TimeSpan.FromSeconds(1)).RunAsync();
+        Assert.Empty(await heard.Until(_ => true));
+
+        // Its idle check runs every 5 s; the subscription held open all along mustn't count as activity.
+        Assert.Equal(0, await run.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(15), $"ended after {clock.Elapsed.TotalSeconds:0}s");
+        await heard.UntilAny(_ => heard.Everything is { Count: >= 3 } e && e[^1] is null);
+        Assert.Null(client.TrySend(new HostRequest("ping"), TimeSpan.FromMilliseconds(100)));
+    }
+
+    [Fact]
+    public async Task A_host_from_before_subscribing_is_polled_instead()
+    {
+        using var stop = new CancellationTokenSource();
+        var state = RunnerState.Starting;
+        var oldHost = Task.Run(async () =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                await using var pipe = new System.IO.Pipes.NamedPipeServerStream(HostProtocol.PipeName(_store.Paths), System.IO.Pipes.PipeDirection.InOut,
+                    System.IO.Pipes.NamedPipeServerStream.MaxAllowedServerInstances, System.IO.Pipes.PipeTransmissionMode.Byte,
+                    System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+                try { await pipe.WaitForConnectionAsync(stop.Token); }
+                catch (OperationCanceledException) { return; }
+                using var reader = new StreamReader(pipe, leaveOpen: true);
+                await using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
+                var request = System.Text.Json.JsonSerializer.Deserialize<HostRequest>((await reader.ReadLineAsync())!, HostProtocol.Json)!;
+                var answer = request.Op == "list"
+                    ? new HostResponse(true, Runners: [new RunnerStatus("storefront/feat-x", "shop/api", state, 1, null, null, "api.log", DateTimeOffset.UnixEpoch)])
+                    : new HostResponse(false, $"unknown request '{request.Op}'");
+                await writer.WriteLineAsync(System.Text.Json.JsonSerializer.Serialize(answer, HostProtocol.Json));
+            }
+        });
+        await using var heard = new Heard(new HostClient(_store.Paths), usage: false, retry: TimeSpan.FromMilliseconds(200));
+
+        await heard.Until(rs => rs.Any(r => r.State == RunnerState.Starting));
+        state = RunnerState.Ready;
+        await heard.Until(rs => rs.Any(r => r.State == RunnerState.Ready));
+
+        stop.Cancel();
+        await oldHost;
     }
 }
 

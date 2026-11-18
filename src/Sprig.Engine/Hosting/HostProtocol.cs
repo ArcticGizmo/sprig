@@ -90,8 +90,12 @@ public sealed record RunnerStatus(string Workspace, string Name, RunnerState Sta
 /// start only if they aren't already going (or, for a job, already finished).</param>
 /// <param name="Hold">For <c>start</c>: build now, but run nothing until a <c>start</c> for the same workspace without it.
 /// <c>up</c> sends it before the infra starts, so builds and containers come up together.</param>
+/// <param name="Usage">For <c>subscribe</c>: include what each runner uses, and send every sample; without it, usage is
+/// left out and a sample alone sends nothing.</param>
+/// <remarks><c>subscribe</c> answers like <c>list</c>, then again on the same connection each time the list changes,
+/// until either end closes it.</remarks>
 public sealed record HostRequest(string Op, IReadOnlyList<RunnerSpec>? Specs = null, string? Workspace = null, string? Name = null,
-    IReadOnlyList<string>? Restart = null, bool? Hold = null);
+    IReadOnlyList<string>? Restart = null, bool? Hold = null, bool? Usage = null);
 
 public sealed record HostResponse(bool Ok, string? Error = null, int? Pid = null, string? Version = null,
     IReadOnlyList<RunnerStatus>? Runners = null);

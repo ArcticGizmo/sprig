@@ -18,6 +18,8 @@ public sealed class CheckoutCommandTests : IDisposable
 
     public void Dispose()
     {
+        // Only up starts the host; with none running this returns at once.
+        new Sprig.Engine.Hosting.HostClient(_store.Paths).StopAllAndShutdown();
         _store.Dispose();
         foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
             File.SetAttributes(file, FileAttributes.Normal); // git marks its objects read-only
@@ -125,6 +127,24 @@ public sealed class CheckoutCommandTests : IDisposable
         Assert.Equal(1, code);
         Assert.Contains("sprig checkout shop-services -b feat-y", stderr);
         Assert.Empty(Slots());
+    }
+
+    [Fact]
+    public void Up_with_no_wait_returns_once_the_apps_are_asked_for_naming_them()
+    {
+        ShopServicesRepo();
+        Assert.Equal(0, Run("checkout", "shop-services", "-b", "feat-x").code);
+
+        var (code, _, stderr) = Run("up", "shop-services", "feat-x", "--run", "--no-wait");
+        Assert.Equal(1, code);
+        Assert.Contains("one or the other", stderr);
+
+        (code, var stdout, stderr) = Run("up", "shop-services", "feat-x", "--no-wait", "--json");
+
+        Assert.True(code == 0, stderr + stdout);
+        using var json = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(["shop-services/api"], json.RootElement.GetProperty("apps").EnumerateArray().Select(a => a.GetString()));
+        Assert.False(json.RootElement.TryGetProperty("runners", out _));
     }
 
     [Fact]

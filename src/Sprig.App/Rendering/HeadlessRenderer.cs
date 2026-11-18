@@ -314,7 +314,7 @@ internal static partial class HeadlessRenderer
             window.Show();
             Pump(TimeSpan.FromMilliseconds(500));
 
-            // Timers don't tick here, so poll as the window's and the page's timers would, then open a log that has something in it.
+            // Nothing follows the host and timers don't tick here, so ask once as they would, then open a log that has something in it.
             Wait(services.HostStatus.PollAsync());
             Wait(vm.Workspaces.PollAsync());
             if ((vm.Workspaces.Apps.FirstOrDefault(a => a.IsAlive && !a.IsJob) ?? vm.Workspaces.Apps.FirstOrDefault()) is { } app)

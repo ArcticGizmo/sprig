@@ -16,6 +16,8 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 | `slot-busy` | Another sprig (another agent, say) is checking out that slot or branch right now | Wait for it, or leave `--slot` out to use another slot |
 | `start-failed` | Apps didn't become ready; `failed` lists each with `Why`, `ReadyWhen` (the check it had to pass) and `LastLines` of its log | Read those, fix the definition or the app, and start again |
 | `start-timed-out` | Apps were still starting when sprig stopped waiting (five minutes); `failed` as above | Look at `LastLines`: a slow first build, or a health check that never answers |
+| `not-running` | `sprig wait` was asked about apps that aren't running; `notRunning` lists them | Start them, then wait again |
+| `docker-unavailable` | Docker isn't installed, or its engine isn't running or didn't answer | Tell the user to start Docker (Docker Desktop, or their engine), then try again |
 | `problems` | The definitions don't plan; `problems` lists each with file and line | Fix them (see below) |
 | `error` | Anything else; `error` says what | Read it |
 
@@ -42,8 +44,9 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 | See what this folder is to sprig | `sprig info --json` |
 | List workspaces | `sprig workspaces --json` |
 | Check a branch out in a slot, ready to run, starting nothing | `sprig checkout -b <branch> --json` |
-| Run a workspace that's checked out | `sprig up <branch> --json` (`--group <name>` for a slice); in its folder, `sprig up --json` |
+| Run a workspace that's checked out | `sprig up <branch> --json` (`--group <name>` for a slice, `--no-wait` to return once the apps are starting); in its folder, `sprig up --json` |
 | Start, and wait until ready | `sprig start [app…] --json` |
+| Start now, and wait later when the apps are needed | `sprig start [app…] --json --no-wait`, later `sprig wait [app…] --json` (`--timeout <seconds>`) |
 | Restart after a code change | `sprig restart --json` (`--jobs` to run migrations again) |
 | Stop | `sprig stop [app…]` (nothing named: everything; data is kept) |
 | Free up the machine for a while, then put it back as it was | `sprig pause`, later `sprig resume --json` |
@@ -56,3 +59,18 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 Commands run inside a slot's folder act on that slot; elsewhere, name the repo and workspace: `sprig start shop-services feat-x`.
 
 To work on one app yourself, stop just it (`sprig stop catalog-api`), run it from its folder, and leave the rest running; it gets the same port.
+
+## Following what sprig does
+
+A tool that shows sprig's state all day, such as an overlay, an editor extension or a dashboard, should run `sprig watch --json` once and read its lines, not run `sprig info` or `sprig ps` over and over. `sprig watch` never starts sprig's host and never keeps it running. It writes nothing until something changes.
+
+- **Scope:** every workspace, or `sprig watch <id> [workspace] --json` for fewer. Workspaces made later that match are included. `--usage` adds each app's CPU and memory every 2 s while it runs.
+- **Ending it:** keep its stdin open, and close it (or kill the process) to end `watch`. If it exits unexpectedly, start it again; it begins with a fresh snapshot.
+- **Lines:** one JSON object per line, camelCase, with `type` first. Ignore any `type` or field you don't know. A field that's left out is null.
+  - `snapshot`: the first line, and again after the host restarts or changes were missed. Use it to replace everything you hold. It has `schema` (1), `infra` (`"not-counted"`: containers don't count towards a workspace's state), `host` (`running`, `pid`, `version`) and `workspaces`.
+  - `workspace`: one workspace changed. It has `key`, `orchestration`, `name`, `label`, `branch`, `state` (`free`, `starting`, `paused`, `running`, `stopped` or `failed`), `paused`, `error`, `folder`, `dirs` (where each repo is checked out) and `madeForAgent`. In a snapshot, each workspace also has `apps`.
+  - `app`: one app changed, with every field, not only what changed. It has `workspace`, `name` (`repo/app`), `state` (`building`, `waiting`, `starting`, `ready`, `running`, `completed`, `exited`, `restarting`, `stopping`, `stopped`, `failed`, or `off` when it isn't running at all), `port`, `pid`, `exit`, `error`, `restarts`, `doing`, `since`, `logFile` and `usage`.
+  - `workspace-removed` (`key`) and `app-removed` (`workspace`, `name`).
+  - `host` with `running: false`: the host has stopped, so nothing runs. Its apps follow as `off`. When a host starts again, a snapshot follows.
+
+To act on what you see, run the commands above with `--json`. Use `--no-wait` where a command has it (`up`, `start`, `resume`), and follow the progress in the `watch` stream. `sprig open [id] [workspace] --json` brings the desktop app to a workspace's page. It says `"app": "focused"` when the app was already running and `"launched"` when it wasn't. Where a command needs a person (`untrusted`, `inputs-needed`, `held`), send them there with `sprig open` rather than doing it for them.

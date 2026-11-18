@@ -26,6 +26,8 @@ public sealed class OpenCommand(CliContext cli) : Command<WorkspaceSettings>
                      ?? throw new InvalidOperationException($"{s.Orchestration} has no workspace '{s.Workspace}'; see them with: sprig workspaces {s.Orchestration}");
         }
 
+        // Asked before launching: a launch with the app running hands over to it and exits.
+        var running = Sprig.Engine.Store.AppInstance.IsRunning(cli.Paths);
         var start = new ProcessStartInfo(exe) { UseShellExecute = true };
         if (record is not null)
         {
@@ -33,7 +35,8 @@ public sealed class OpenCommand(CliContext cli) : Command<WorkspaceSettings>
             start.ArgumentList.Add(record.Key);
         }
         Process.Start(start);
-        AnsiConsole.MarkupLine(record is null ? "opening [bold]sprig[/]…" : $"opening [bold]sprig[/] on {PlaceTarget.Describe(record)}…");
+        if (s.Json) CliOutput.Json(new { ok = true, app = running ? "focused" : "launched", workspace = record?.Key });
+        else AnsiConsole.MarkupLine(record is null ? "opening [bold]sprig[/]…" : $"opening [bold]sprig[/] on {PlaceTarget.Describe(record)}…");
         return 0;
     }
 

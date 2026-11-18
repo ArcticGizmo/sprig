@@ -43,6 +43,46 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
 
     public IReadOnlyList<RunnerStatus> List() => _runners.Values.Select(r => r.Status).OrderBy(s => s.Workspace).ThenBy(s => s.Name).ToArray();
 
+    // One signal for any change, rather than an event per kind: a status changes in many places, and a subscriber reads
+    // the list afresh anyway, so it can't miss a kind of change nobody remembered to raise.
+    readonly Lock _changeGate = new();
+    long _version;
+    TaskCompletionSource _nextChange = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    long _samples;
+
+    /// <summary>How many times <see cref="Sample"/> has measured, so a subscriber that wants usage sends each sample
+    /// even when its figures came out the same.</summary>
+    public long Samples => Interlocked.Read(ref _samples);
+
+    /// <summary>
+    /// Once what <see cref="List"/> says may have changed since <paramref name="seen"/> (at once when it already has),
+    /// the count of changes so far, to pass next time. Changes made while nobody waited count too, so none is missed.
+    /// </summary>
+    public async Task<long> ChangedSinceAsync(long seen, CancellationToken cancellation)
+    {
+        Task next;
+        lock (_changeGate)
+        {
+            if (_version != seen) return _version;
+            next = _nextChange.Task;
+        }
+        await next.WaitAsync(cancellation);
+        lock (_changeGate) return _version;
+    }
+
+    /// <summary>Called under a runner's own lock, so it only counts and wakes; whoever waits does the work.</summary>
+    void Changed()
+    {
+        TaskCompletionSource fired;
+        lock (_changeGate)
+        {
+            _version++;
+            fired = _nextChange;
+            _nextChange = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        fired.TrySetResult();
+    }
+
     /// <summary>Measure what each runner's processes use, into its status. CPU is measured between one call and the
     /// next, so this is called on a steady beat (<see cref="SampleEvery"/>) rather than when someone asks.</summary>
     public void Sample()
@@ -50,6 +90,8 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         // Read once for every runner, and only when something could be measured from it.
         var table = !OperatingSystem.IsWindows() && _runners.Values.Any(r => r.Status.State.IsAlive()) ? ProcessTable.Take() : null;
         foreach (var runner in _runners.Values) runner.Sample(table);
+        Interlocked.Increment(ref _samples);
+        Changed();
     }
 
     /// <summary>
@@ -88,8 +130,10 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
                     name => _runners.TryGetValue((spec.Workspace, name), out var r) ? r.Status : null,
                     previous,
                     () => _holds.TryGetValue(spec.Workspace, out var held) ? held.Task : Task.CompletedTask,
-                    queued ? (_queue, ++_asked) : null);
+                    queued ? (_queue, ++_asked) : null,
+                    Changed);
                 _runners[key] = runner;
+                Changed();
                 started.Add(runner);
             }
             foreach (var runner in started) _ = Task.Run(runner.RunAsync);
@@ -108,7 +152,11 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         foreach (var (key, runner) in targets)
         {
             var stopping = runner.StopAsync(Grace);
-            if (name is null) _ = stopping.ContinueWith(_ => _runners.TryRemove(new KeyValuePair<(string, string), Runner>(key, runner)));
+            if (name is null)
+                _ = stopping.ContinueWith(_ =>
+                {
+                    if (_runners.TryRemove(new KeyValuePair<(string, string), Runner>(key, runner))) Changed();
+                });
         }
         // Only once they're all marked as stopping, or a held runner could wake and start.
         if (name is null) Release(workspace);
@@ -141,8 +189,9 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
     /// app locks the files its build would overwrite.</param>
     /// <param name="held">Completes once the workspace's hold (if any) is released.</param>
     /// <param name="queue">Where it takes its turn to build and start, and its place in it; null to go straight away.</param>
+    /// <param name="changed">Told each time <see cref="Status"/> is set, under the runner's lock.</param>
     sealed class Runner(RunnerSpec spec, string logFile, SemaphoreSlim? buildLock, Func<string, RunnerStatus?> peer, Runner? previous,
-        Func<Task> held, (StartQueue Queue, long Order)? queue)
+        Func<Task> held, (StartQueue Queue, long Order)? queue, Action changed)
     {
         StartQueue.Turn? _turn;
         // The shells sprig starts apps through, and the console host Windows gives each one; neither is the app.
@@ -207,7 +256,18 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         Task? _stopping;
         int _restarts;
 
-        public RunnerStatus Status { get; private set; } = new(spec.Workspace, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
+        RunnerStatus _status = new(spec.Workspace, spec.Name, RunnerState.Building, null, spec.Port, null, logFile, DateTimeOffset.UtcNow);
+
+        // Every change goes through here, so subscribers hear of each one wherever it's made.
+        public RunnerStatus Status
+        {
+            get => _status;
+            private set
+            {
+                _status = value;
+                changed();
+            }
+        }
 
         bool Stopping => _stopping is not null;
 

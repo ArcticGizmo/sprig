@@ -497,12 +497,24 @@ public partial class WorkspacesViewModel : PageViewModel
     /// <summary>How the selected workspace is doing, in a word, from what's running (see
     /// <see cref="WorkspaceService.RunState"/>).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(RunStateFailed), nameof(RunStatePaused), nameof(ShowPauseResume))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(RunStateFailed), nameof(RunStatePaused), nameof(ShowPauseResume),
+        nameof(RunStateShown), nameof(RunStateUp), nameof(RunStateComingUp), nameof(RunStateInTrouble))]
     private string _runState = "";
+
+    /// <summary>How far the selected workspace's apps have got, which colours <see cref="RunState"/> while it runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RunStateShown), nameof(RunStateUp), nameof(RunStateComingUp), nameof(RunStateInTrouble))]
+    private AppsReadiness _readiness = AppsReadiness.Nothing;
 
     public bool IsRunning => RunState == "running";
     public bool RunStateFailed => RunState == "failed";
     public bool RunStatePaused => RunState == "paused";
+
+    /// <summary>The state as the header shows it: starting while apps come up, and what's down while one is.</summary>
+    public string RunStateShown => Readiness.Shown(RunState);
+    public bool RunStateUp => Readiness.Up(RunState);
+    public bool RunStateComingUp => Readiness.ComingUp(RunState);
+    public bool RunStateInTrouble => Readiness.InTrouble(RunState);
 
     /// <summary>The compose projects with a container running, as far as the page knows: what docker last said, and the
     /// selected workspace's containers from the graph's last look.</summary>
@@ -521,6 +533,7 @@ public partial class WorkspacesViewModel : PageViewModel
     {
         NavCount = Workspaces.Count(w => RunStateOf(w.Record) == "running");
         RunState = Selected?.Record is { } record ? RunStateOf(record) : "";
+        Readiness = Selected?.Record is { } selected ? AppsReadiness.Of(selected, _plan, _lastRunners ?? []) : AppsReadiness.Nothing;
     }
 
     partial void OnSelectedChanged(WorkspaceItem? value)

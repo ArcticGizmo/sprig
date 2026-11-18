@@ -24,12 +24,25 @@ public sealed partial class OverviewRow(WorkspaceRecord record, Action checkedCh
 
     /// <summary>From what's running (see <see cref="WorkspaceService.RunState"/>).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsFailed), nameof(IsStopped), nameof(IsPaused))]
+    [NotifyPropertyChangedFor(nameof(IsRunning), nameof(IsFailed), nameof(IsStopped), nameof(IsPaused), nameof(Shown), nameof(IsUp),
+        nameof(IsComingUp), nameof(IsInTrouble))]
     private string _state = WorkspaceService.RunState(record, [], null);
+
+    /// <summary>How far its apps have got while it runs, which colours it apart from <see cref="State"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Shown), nameof(IsUp), nameof(IsComingUp), nameof(IsInTrouble))]
+    private AppsReadiness _readiness = AppsReadiness.Nothing;
 
     public bool IsRunning => State == "running";
     public bool IsFailed => State == "failed";
     public bool IsPaused => State == "paused";
+
+    /// <summary>The word shown: <see cref="State"/>, or starting while its apps are on their way up.</summary>
+    public string Shown => Readiness.Word(State);
+
+    public bool IsUp => Readiness.Up(State);
+    public bool IsComingUp => Readiness.ComingUp(State);
+    public bool IsInTrouble => Readiness.InTrouble(State);
 
     /// <summary>Paused counts as stopped: none of its apps is going.</summary>
     public bool IsStopped => State is "stopped" or "paused";
@@ -185,6 +198,8 @@ public partial class WorkspacesViewModel
         foreach (var row in _overview)
         {
             row.State = WorkspaceService.RunState(row.Record, runners, projects);
+            var plan = _services.Workspaces.LastPlan(row.Orchestration, row.Record.Name);
+            row.Readiness = AppsReadiness.Of(row.Record, plan, runners);
             row.LastUp = row.IsRunning ? "now"
                 : row.LastUsed is not { } used ? "never"
                 : row.IsFailed ? $"failed {Ago.Text(used, _overviewNow)}"
@@ -197,9 +212,9 @@ public partial class WorkspacesViewModel
             row.UsageTip = row.Total is null ? null
                 : $"Apps: {apps?.Line ?? "none running"}\nInfra: {(row.Record.IsMain ? "yours, not measured" : infra?.Line ?? "none running")}";
 
-            var count = _services.Workspaces.LastPlan(row.Orchestration, row.Record.Name)?.Apps.Count(a => !a.Job) ?? 0;
-            var running = runners.Count(r => r.Workspace == row.Key && r.State.IsAlive());
-            row.Apps = running > 0 ? $"{running} of {count} running"
+            var count = plan?.Apps.Count(a => !a.Job) ?? 0;
+            var ready = row.Readiness;
+            row.Apps = ready.Started > 0 ? $"{ready.Ready} of {ready.Total} ready" + (ready.Down.Count > 0 ? $", {ready.Down.Count} down" : "")
                 : row.Record.Paused is { } paused ? $"{paused.Apps.Count} of {count} paused"
                 : row.IsRunning ? "apps stopped" : "—";
         }

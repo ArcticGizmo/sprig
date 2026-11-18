@@ -44,7 +44,7 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
                 ? $"[dim]Start it with: sprig start {Markup.Escape(id)}[/]"
                 : $"[dim]Check a branch out with: sprig checkout {Markup.Escape(id)} -b <branch>[/]");
         }
-        else Header(record, runners);
+        else Header(record, plan, runners);
         cli.Ansi.WriteLine();
 
         if (record is not null && plan is not null)
@@ -56,9 +56,9 @@ public sealed class InfoCommand(CliContext cli) : Command<InfoCommand.Settings>
         return 0;
     }
 
-    void Header(WorkspaceRecord record, IReadOnlyList<RunnerStatus> runners)
+    void Header(WorkspaceRecord record, Sprig.Engine.Planning.Plan? plan, IReadOnlyList<RunnerStatus> runners)
     {
-        var state = WorkspacesCommand.RunState(record, runners, cli.Workspaces.RunningProjects());
+        var state = WorkspacesCommand.RunState(record, plan, runners, cli.Workspaces.RunningProjects());
         cli.Ansi.MarkupLine(record.IsMain
             ? $"[bold]{Markup.Escape(record.Orchestration)}[/]  {Markup.Escape(record.CheckoutBranch ?? "")}  {state}  [dim](main checkout)[/]"
             : record.InPlace

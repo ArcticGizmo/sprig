@@ -68,6 +68,13 @@ public static class RunnerStates
         => state is RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Ready or RunnerState.Running
             or RunnerState.Restarting;
 
+    /// <summary>On its way up and not there yet: building, waiting for what it needs, booting, or a job still running.</summary>
+    public static bool IsComingUp(this RunnerState state)
+        => state is RunnerState.Building or RunnerState.Waiting or RunnerState.Starting or RunnerState.Running;
+
+    /// <summary>Down when it should be up: it exited or failed, or is restarting after doing so.</summary>
+    public static bool IsDown(this RunnerState state) => state is RunnerState.Exited or RunnerState.Failed or RunnerState.Restarting;
+
     /// <summary>What a dependent can start after.</summary>
     public static bool Satisfies(this RunnerState state) => state is RunnerState.Ready or RunnerState.Completed;
 

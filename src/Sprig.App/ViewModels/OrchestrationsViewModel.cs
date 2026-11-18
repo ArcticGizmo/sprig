@@ -374,8 +374,9 @@ public partial class OrchestrationsViewModel : PageViewModel
             : _services.Workspaces.List().Where(s => s.Orchestration == orchestration.Name).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).Select(s =>
             {
                 var state = _services.RunState(s);
+                var ready = _services.Readiness(s);
                 return new WorkspaceRow(s.InPlace ? s.Name : $"{s.SlotName} · {s.Label}",
-                    state == "failed" && s.Error is { } e ? $"failed: {e.Split('\n')[0]}" : state, state == "running", state == "failed");
+                    state == "failed" && s.Error is { } e ? $"failed: {e.Split('\n')[0]}" : ready.Shown(state), ready.Up(state), ready.InTrouble(state));
             }).ToArray();
         if (!rows.SequenceEqual(WorkspacesOfIt))
         {

@@ -68,6 +68,10 @@ public sealed class AppServices
     public string RunState(WorkspaceRecord record)
         => WorkspaceService.RunState(record, HostStatus.Runners ?? [], InfraUsage.Running);
 
+    /// <summary>How far a workspace's apps have got, from what the host last said (see <see cref="AppsReadiness"/>).</summary>
+    public AppsReadiness Readiness(WorkspaceRecord record)
+        => AppsReadiness.Of(record, Workspaces.LastPlan(record.Orchestration, record.Name), HostStatus.Runners ?? []);
+
     public static Task<T> RunAsync<T>(Func<T> work) => Task.Run(work);
 
     public static Task RunAsync(Action work) => Task.Run(work);

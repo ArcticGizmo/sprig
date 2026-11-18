@@ -654,16 +654,27 @@ public sealed class RmCommand(CliContext cli) : Command<RmCommand.Settings>
 [Description("List workspaces")]
 public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesCommand.Settings>
 {
-    /// <summary>Whether it's running, in colour (see <see cref="WorkspaceService.RunState"/>).</summary>
-    internal static string RunState(WorkspaceRecord r, IReadOnlyList<RunnerStatus> runners, IReadOnlySet<string>? projects)
-        => WorkspaceService.RunState(r, runners, projects) switch
+    /// <summary>Whether it's running, and while it is, whether its apps are up, in colour (see
+    /// <see cref="WorkspaceService.RunState"/> and <see cref="AppsReadiness"/>).</summary>
+    internal static string RunState(WorkspaceRecord r, Plan? plan, IReadOnlyList<RunnerStatus> runners, IReadOnlySet<string>? projects)
+    {
+        var state = WorkspaceService.RunState(r, runners, projects);
+        var readiness = AppsReadiness.Of(r, plan, runners);
+        var detail = readiness.Detail(state) is { Length: > 0 } d ? $" [dim]({Markup.Escape(d)})[/]" : "";
+        return state switch
         {
-            "running" => "[green]running[/]",
+            "running" => readiness.Health switch
+            {
+                AppsHealth.Starting => "[blue]starting[/]",
+                AppsHealth.Trouble => "[red]running[/]",
+                _ => "[green]running[/]",
+            } + detail,
             "failed" => $"[red]failed[/] [dim]{Markup.Escape(r.Error ?? "")}[/]",
             "starting" => "[yellow]starting[/]",
             "paused" => "[yellow]paused[/] [dim](sprig resume)[/]",
             var other => $"[dim]{other}[/]",
         };
+    }
 
     public sealed class Settings : GlobalSettings
     {
@@ -683,7 +694,7 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
         }
         var runners = cli.Host.TrySend(new HostRequest("list"))?.Runners ?? [];
         var projects = cli.Workspaces.RunningProjects();
-        string State(WorkspaceRecord r) => RunState(r, runners, projects);
+        string State(WorkspaceRecord r) => RunState(r, cli.Workspaces.LastPlan(r.Orchestration, r.Name), runners, projects);
         // Main checkouts run as they are, with nothing written into them, so they're listed apart from the slots.
         var mains = workspaces.Where(r => r.IsMain).ToArray();
         if (mains.Length > 0)

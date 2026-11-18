@@ -45,9 +45,13 @@ public static class WatchLines
         var mine = runners.Where(r => r.Workspace == record.Key).ToDictionary(r => r.Name, StringComparer.Ordinal);
         var names = (plan?.Apps.Select(a => a.Key) ?? []).Concat(mine.Keys.Order(StringComparer.Ordinal)).Distinct(StringComparer.Ordinal);
         var apps = names.Select(n => mine.TryGetValue(n, out var r) ? App(r, usage) : new WatchApp(n, Off)).ToArray();
+        var readiness = AppsReadiness.Of(record, plan, runners);
         return new WatchWorkspace(record.Key, record.Orchestration, record.Name, record.Label, record.Branch,
             WorkspaceService.RunState(record, runners, null), record.Paused is not null, record.Error, record.Folder,
-            record.Repos.Select(r => r.Dir).ToArray(), record.MadeForAgent, apps);
+            record.Repos.Select(r => r.Dir).ToArray(), record.MadeForAgent,
+            new WatchReadiness(JsonNamingPolicy.CamelCase.ConvertName(readiness.Health.ToString()), readiness.Ready, readiness.Started,
+                readiness.Total, readiness.Down),
+            apps);
     }
 
     static WatchApp App(RunnerStatus r, bool usage)
@@ -72,15 +76,26 @@ public sealed record WatchHost(bool Running, int? Pid = null, string? Version = 
     [JsonPropertyOrder(-1)] public string? Type { get; init; }
 }
 
-/// <param name="State">Free, starting, paused, running, stopped or failed, as sprig shows it.</param>
+/// <param name="State">Whether anything of it is going: free, starting (being made ready), paused, running, stopped or
+/// failed. Whether what's going is up is <paramref name="Readiness"/>.</param>
 /// <param name="Dirs">Where each of its repos is checked out, to match a session's folder to its workspace.</param>
 /// <param name="MadeForAgent">The agent session it was made for, when a hook made it.</param>
 /// <param name="Apps">In a snapshot; left out of a <c>workspace</c> line, whose apps come as <c>app</c> lines.</param>
 public sealed record WatchWorkspace(string Key, string Orchestration, string Name, string Label, string? Branch, string State,
-    bool Paused, string? Error, string? Folder, IReadOnlyList<string> Dirs, string? MadeForAgent, IReadOnlyList<WatchApp>? Apps)
+    bool Paused, string? Error, string? Folder, IReadOnlyList<string> Dirs, string? MadeForAgent, WatchReadiness Readiness,
+    IReadOnlyList<WatchApp>? Apps)
 {
     [JsonPropertyOrder(-1)] public string? Type { get; init; }
 }
+
+/// <summary>How far its apps have got (see <see cref="AppsReadiness"/>), so a consumer needn't work it out from them.</summary>
+/// <param name="Health"><c>none</c> (no app asked for), <c>starting</c> (one still on its way up), <c>up</c> or
+/// <c>trouble</c> (one exited, failed or restarting, which outweighs starting).</param>
+/// <param name="Ready">Apps, not jobs, that are ready.</param>
+/// <param name="Started">Apps, not jobs, asked for and not stopped.</param>
+/// <param name="Total">Every app its plan has, jobs aside.</param>
+/// <param name="Down">What's in trouble, by name.</param>
+public sealed record WatchReadiness(string Health, int Ready, int Started, int Total, IReadOnlyList<string> Down);
 
 /// <summary>An app as a snapshot lists it, or as an <c>app</c> line sends it: every field, not only what changed.</summary>
 /// <param name="Name"><c>repo/app</c>.</param>

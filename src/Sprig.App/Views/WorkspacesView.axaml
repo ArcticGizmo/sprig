@@ -485,10 +485,10 @@
                     </StackPanel>
                     <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Orchestration}" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                        <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center"
-                                 Classes.up="{Binding IsRunning}" Classes.bad="{Binding IsFailed}" Classes.paused="{Binding IsPaused}" />
-                        <TextBlock Classes="state" Text="{Binding State}" FontSize="12.5"
-                                   Classes.up="{Binding IsRunning}" Classes.bad="{Binding IsFailed}" Classes.paused="{Binding IsPaused}" />
+                        <Ellipse Classes="dot" Width="7" Height="7" VerticalAlignment="Center" Classes.up="{Binding IsUp}"
+                                 Classes.busy="{Binding IsComingUp}" Classes.bad="{Binding IsInTrouble}" Classes.paused="{Binding IsPaused}" />
+                        <TextBlock Classes="state" Text="{Binding Shown}" FontSize="12.5" Classes.up="{Binding IsUp}"
+                                   Classes.busy="{Binding IsComingUp}" Classes.bad="{Binding IsInTrouble}" Classes.paused="{Binding IsPaused}" />
                     </StackPanel>
                     <TextBlock Grid.Column="4" Classes="cell" Text="{Binding Apps}" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="5" Classes="cell mono" FontSize="12" Text="{Binding Usage}" VerticalAlignment="Center"
@@ -635,9 +635,9 @@
                                 </Border>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Classes="state" Text="{Binding RunState}" FontSize="12"
-                                           Classes.up="{Binding IsRunning}" Classes.bad="{Binding RunStateFailed}"
-                                           Classes.paused="{Binding RunStatePaused}" />
+                                <TextBlock Classes="state" Text="{Binding RunStateShown}" FontSize="12"
+                                           Classes.up="{Binding RunStateUp}" Classes.busy="{Binding RunStateComingUp}"
+                                           Classes.bad="{Binding RunStateInTrouble}" Classes.paused="{Binding RunStatePaused}" />
                                 <TextBlock Text="{Binding Selected.Branch}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
                                 <TextBlock Text="{Binding Selected.PortsLine}" FontSize="12"
                                            Foreground="{StaticResource MutedBrush}" />

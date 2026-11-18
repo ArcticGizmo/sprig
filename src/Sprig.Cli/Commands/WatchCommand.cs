@@ -100,7 +100,7 @@ sealed class WatchText(TextWriter output)
                 if (snapshot.Workspaces.Count == 0) output.WriteLine("No workspaces.");
                 foreach (var w in snapshot.Workspaces)
                 {
-                    output.WriteLine($"{w.Key} ({w.Label})  {w.State}");
+                    output.WriteLine($"{w.Key} ({w.Label})  {State(w)}");
                     foreach (var app in (w.Apps ?? []).Where(a => a.State != WatchLines.Off)) output.WriteLine($"  {app.Name}  {Describe(app)}");
                 }
                 break;
@@ -108,7 +108,7 @@ sealed class WatchText(TextWriter output)
                 output.WriteLine($"{now}  the sprig host has stopped");
                 break;
             case WatchWorkspace w:
-                output.WriteLine($"{now}  {w.Key} ({w.Label})  {w.State}");
+                output.WriteLine($"{now}  {w.Key} ({w.Label})  {State(w)}");
                 break;
             case WatchApp app:
                 output.WriteLine($"{now}  {app.Workspace}  {app.Name}  {Describe(app)}");
@@ -120,6 +120,19 @@ sealed class WatchText(TextWriter output)
                 output.WriteLine($"{now}  {removed.Workspace}  {removed.Name} removed");
                 break;
         }
+    }
+
+    /// <summary>As the app shows it: starting while running with apps on their way up, and what's down while it's in trouble.</summary>
+    static string State(WatchWorkspace w)
+    {
+        var r = w.Readiness;
+        if (w.State != "running") return w.State;
+        return r.Health switch
+        {
+            "starting" => r.Started == 0 ? "starting (running its jobs)" : $"starting ({r.Ready} of {r.Started} ready)",
+            "trouble" => $"running ({string.Join(", ", r.Down)} down)",
+            _ => "running",
+        };
     }
 
     static string Describe(WatchApp app)

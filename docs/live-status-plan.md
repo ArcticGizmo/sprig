@@ -59,6 +59,8 @@ An app line can also carry `pid`, `exit`, `error` and, with `--usage`, `usage` (
 
 ## Pieces
 
+Pieces 1–3 are built. The client side is `HostClient.SubscribeAsync`, plus `Follow` for callers that block. It connects with a 500 ms timeout. It falls back to polling `list` when a host from before `subscribe` answers "unknown request". `LiveStatus` (records, plans and `RunState`) is left for piece 4, its first user.
+
 1. **Engine, host:**
    - A `Changed` signal on `Supervisor`, pulsed from `Runner.Status`'s setter and from every add to or removal from `_runners`.
    - A `subscribe` op in `HostServer` (`usage` flag) that holds the connection and writes the runner list on each change, coalesced.

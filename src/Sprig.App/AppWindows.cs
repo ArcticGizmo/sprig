@@ -13,19 +13,15 @@ using Sprig.Interop;
 namespace Sprig.App;
 
 /// <summary>
-/// Every sprig window in this process, and the polls they share. Someone who keeps a project per virtual desktop wants
-/// sprig on each, and one process with several windows keeps one host poll, one tray and one quit that stops every
-/// app, where a process per window would each have their own.
+/// Every sprig window in this process, and what they share. Someone who keeps a project per virtual desktop wants
+/// sprig on each, and one process with several windows keeps one host subscription, one tray and one quit that stops
+/// every app, where a process per window would each have their own.
 /// </summary>
 public sealed class AppWindows
 {
-    static readonly TimeSpan Shown = TimeSpan.FromSeconds(1);
-    static readonly TimeSpan Unseen = TimeSpan.FromSeconds(5);
-
     readonly IClassicDesktopStyleApplicationLifetime _desktop;
     readonly AppServices _services;
     readonly List<MainWindow> _windows = [];
-    readonly DispatcherTimer _hostPoll = new() { Interval = Unseen };
     UpdateCheckResult? _update;
     bool _checkedForUpdates;
     bool _quitting;
@@ -39,10 +35,8 @@ public sealed class AppWindows
         _services = services;
         // Closing the last window leaves sprig in the tray while apps run; quitting is always asked for.
         desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        // Hidden in the tray it still polls, so the tray's count of running apps stays true, just less often.
-        _hostPoll.Tick += (_, _) => _ = _services.HostStatus.PollAsync();
-        _hostPoll.Start();
-        _ = _services.HostStatus.PollAsync();
+        // Hidden in the tray it still follows the host, so the tray's count of running apps stays true.
+        _services.HostStatus.Follow(apply => Dispatcher.UIThread.Post(apply));
     }
 
     public IReadOnlyList<MainWindow> All => _windows;
@@ -123,13 +117,8 @@ public sealed class AppWindows
         else _desktop.Shutdown();
     }
 
-    /// <summary>The polls go at a window's pace while any window shows, and docker is only asked while one does.</summary>
-    void Follow()
-    {
-        var shown = _windows.Any(w => w.IsShown);
-        _hostPoll.Interval = shown ? Shown : Unseen;
-        _services.InfraUsage.WindowShown = shown;
-    }
+    /// <summary>Docker is only asked while a window shows.</summary>
+    void Follow() => _services.InfraUsage.WindowShown = _windows.Any(w => w.IsShown);
 
     static bool? OnCurrentDesktop(Window window) => VirtualDesktops.IsOnCurrent(window.TryGetPlatformHandle()?.Handle ?? 0);
 

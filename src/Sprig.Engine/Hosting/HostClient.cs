@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Sprig.Engine.Store;
@@ -64,27 +65,141 @@ public sealed class HostClient(ISprigPaths paths)
         if (before is not { Length: > 0 }) return [];
 
         TrySend(new HostRequest("stop", Workspace: workspace, Name: name));
-        var deadline = Stopwatch.StartNew();
         var last = before.Select(r => r with { State = RunnerState.Stopping }).ToDictionary(r => r.Name);
-        while (deadline.Elapsed < Supervisor.Grace + TimeSpan.FromSeconds(15))
+        // The host carries on stopping them; only the waiting is given up.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        deadline.CancelAfter(Supervisor.Grace + TimeSpan.FromSeconds(15));
+        foreach (var runners in Follow(deadline.Token))
         {
-            // The host carries on stopping them; only the waiting is given up.
-            cancellation.ThrowIfCancellationRequested();
-            var now = TrySend(new HostRequest("list"))?.Runners?.Where(Mine).ToDictionary(r => r.Name);
-            if (now is null)
+            if (runners is null)
             {
                 // Its apps went with it (their jobs close with the host), but that's not the stop that was asked for.
                 foreach (var key in last.Keys.ToArray().Where(n => last[n].State == RunnerState.Stopping))
                     last[key] = last[key] with { State = RunnerState.Stopped, Error = "the sprig host stopped answering; its apps ended with it" };
                 break;
             }
+            var now = runners.Where(Mine).ToDictionary(r => r.Name);
             foreach (var r in before.Where(b => now.ContainsKey(b.Name))) last[r.Name] = now[r.Name];
             // A whole-workspace stop forgets each runner once it has stopped, so gone counts as stopped.
             foreach (var r in before.Where(b => !now.ContainsKey(b.Name))) last[r.Name] = last[r.Name] with { State = RunnerState.Stopped };
             if (last.Values.All(r => r.State != RunnerState.Stopping)) break;
-            Thread.Sleep(150);
         }
+        cancellation.ThrowIfCancellationRequested();
         return last.Values.ToArray();
+    }
+
+    /// <summary>How long a follower waits before looking for a host again while none answers. A look for a missing pipe
+    /// costs next to nothing, but it isn't instant: the connect waits out its timeout.</summary>
+    public static readonly TimeSpan LookAgain = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// The host's runner list now, then each time it changes; null whenever no host is running, which means nothing is.
+    /// Never starts a host, so following one never keeps it alive; while none answers it looks again every
+    /// <paramref name="retry"/> (default <see cref="LookAgain"/>). Ends, without throwing, when
+    /// <paramref name="cancellation"/> fires.
+    /// </summary>
+    /// <param name="usage">Include what each runner uses, sent with every sample.</param>
+    public async IAsyncEnumerable<IReadOnlyList<RunnerStatus>?> SubscribeAsync(bool usage = false, TimeSpan? retry = null,
+        [EnumeratorCancellation] CancellationToken cancellation = default)
+    {
+        bool? hostWas = null;
+        while (!cancellation.IsCancellationRequested)
+        {
+            await using (var pipe = await ConnectAsync(cancellation))
+            {
+                if (pipe is not null && await WriteLineAsync(pipe, new HostRequest("subscribe", Usage: usage), cancellation))
+                {
+                    var reader = new StreamReader(pipe, leaveOpen: true);
+                    while (await ReadAnswerAsync(reader, cancellation) is { } answer)
+                    {
+                        if (!answer.Ok)
+                        {
+                            // A host from before subscribing could be asked (still running after an update); it can only
+                            // be polled, until it ends.
+                            await foreach (var runners in PollAsync(usage, retry ?? LookAgain, cancellation))
+                            {
+                                hostWas = true;
+                                yield return runners;
+                            }
+                            break;
+                        }
+                        hostWas = true;
+                        yield return answer.Runners ?? [];
+                    }
+                }
+            }
+            if (cancellation.IsCancellationRequested) yield break;
+            if (hostWas != false)
+            {
+                hostWas = false;
+                yield return null;
+            }
+            await DelayAsync(retry ?? LookAgain, cancellation);
+        }
+    }
+
+    /// <summary><see cref="SubscribeAsync"/> for a caller that waits on a thread of its own, as the CLI does.</summary>
+    public IEnumerable<IReadOnlyList<RunnerStatus>?> Follow(CancellationToken cancellation, bool usage = false)
+        => SubscribeAsync(usage, cancellation: cancellation).ToBlockingEnumerable(cancellation);
+
+    /// <summary>Each changed answer to <c>list</c> while the host gives one.</summary>
+    async IAsyncEnumerable<IReadOnlyList<RunnerStatus>> PollAsync(bool usage, TimeSpan every, [EnumeratorCancellation] CancellationToken cancellation)
+    {
+        IReadOnlyList<RunnerStatus>? sent = null;
+        while (!cancellation.IsCancellationRequested && TrySend(new HostRequest("list"))?.Runners is { } runners)
+        {
+            if (!usage) runners = runners.Select(r => r with { Usage = null }).ToArray();
+            if (sent is null || usage || !runners.SequenceEqual(sent)) yield return sent = runners;
+            await DelayAsync(every, cancellation);
+        }
+    }
+
+    async Task<NamedPipeClientStream?> ConnectAsync(CancellationToken cancellation)
+    {
+        var pipe = new NamedPipeClientStream(".", HostProtocol.PipeName(paths), PipeDirection.InOut,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        try
+        {
+            await pipe.ConnectAsync(500, cancellation);
+            return pipe;
+        }
+        catch (Exception e) when (e is TimeoutException or IOException or OperationCanceledException)
+        {
+            await pipe.DisposeAsync();
+            return null;
+        }
+    }
+
+    static async Task<bool> WriteLineAsync(Stream pipe, HostRequest request, CancellationToken cancellation)
+    {
+        try
+        {
+            await pipe.WriteAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, HostProtocol.Json) + "\n"), cancellation);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Null once the host has gone, or sent something that isn't an answer.</summary>
+    static async Task<HostResponse?> ReadAnswerAsync(StreamReader reader, CancellationToken cancellation)
+    {
+        try
+        {
+            return await reader.ReadLineAsync(cancellation) is { } line ? JsonSerializer.Deserialize<HostResponse>(line, HostProtocol.Json) : null;
+        }
+        catch (Exception e) when (e is IOException or OperationCanceledException or JsonException or ObjectDisposedException)
+        {
+            return null;
+        }
+    }
+
+    static async Task DelayAsync(TimeSpan wait, CancellationToken cancellation)
+    {
+        try { await Task.Delay(wait, cancellation); }
+        catch (OperationCanceledException) { }
     }
 
     static bool Alive(RunnerStatus r) => r.State.IsAlive() || r.State == RunnerState.Stopping;

@@ -24,6 +24,28 @@ public class HostStatusTests
     }
 
     [Fact]
+    public async Task Following_the_host_hears_there_is_none_without_starting_one_and_a_poll_then_stays_out_of_its_way()
+    {
+        using var store = new TempStore();
+        var services = new AppServices(store.Root);
+        var heard = new List<IReadOnlyList<RunnerStatus>?>();
+        var first = new TaskCompletionSource();
+        services.HostStatus.Changed += runners =>
+        {
+            lock (heard) heard.Add(runners);
+            first.TrySetResult();
+        };
+
+        services.HostStatus.Follow(apply => apply());
+        await first.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await services.HostStatus.PollAsync();
+        services.HostStatus.Unfollow();
+
+        lock (heard) Assert.Equal([null], heard);
+        Assert.Null(services.Host.TrySend(new HostRequest("ping"), TimeSpan.FromMilliseconds(100)));
+    }
+
+    [Fact]
     public void The_workspaces_page_shows_each_answer_including_one_from_before_it_was_made()
     {
         using var store = new TempStore();

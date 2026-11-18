@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Workspaces;
@@ -161,19 +160,19 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
     {
         var watched = specs.Select(x => x.Name).ToHashSet();
         var seen = new Dictionary<string, RunnerState>();
-        var clock = Stopwatch.StartNew();
         IReadOnlyList<RunnerStatus> mine = [];
-        while (!cancellation.IsCancellationRequested)
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        limit.CancelAfter(TimeSpan.FromMinutes(5));
+        // With no host, nothing is running: the empty list settles it, as it should.
+        foreach (var runners in cli.Host.Follow(limit.Token))
         {
-            mine = (cli.Host.Send(new HostRequest("list")).Runners ?? []).Where(r => r.Workspace == workspace && watched.Contains(r.Name)).ToArray();
+            mine = (runners ?? []).Where(r => r.Workspace == workspace && watched.Contains(r.Name)).ToArray();
             foreach (var r in mine.Where(r => !seen.TryGetValue(r.Name, out var was) || was != r.State))
             {
                 seen[r.Name] = r.State;
                 if (!json) Report(cli, r);
             }
             if (mine.All(r => r.State.Satisfies() || r.State.IsSettled())) break;
-            if (clock.Elapsed > TimeSpan.FromMinutes(5)) break;
-            Thread.Sleep(300);
         }
         if (!json)
             foreach (var r in mine.Where(r => !r.State.Satisfies())) cli.Ansi.MarkupLine($"[dim]  log: {Markup.Escape(r.LogFile)}[/]");

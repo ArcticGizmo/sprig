@@ -16,6 +16,7 @@ This is what `sprig docs agent` prints: how an agent makes a repo ready for spri
 | `slot-busy` | Another sprig (another agent, say) is checking out that slot or branch right now | Wait for it, or leave `--slot` out to use another slot |
 | `start-failed` | Apps didn't become ready; `failed` lists each with `Why`, `ReadyWhen` (the check it had to pass) and `LastLines` of its log | Read those, fix the definition or the app, and start again |
 | `start-timed-out` | Apps were still starting when sprig stopped waiting (five minutes); `failed` as above | Look at `LastLines`: a slow first build, or a health check that never answers |
+| `not-running` | `sprig wait` was asked about apps that aren't running; `notRunning` lists them | Start them, then wait again |
 | `problems` | The definitions don't plan; `problems` lists each with file and line | Fix them (see below) |
 | `error` | Anything else; `error` says what | Read it |
 
@@ -44,6 +45,7 @@ Keep the definition plain: every key in it is checked, unknown keys are errors, 
 | Check a branch out in a slot, ready to run, starting nothing | `sprig checkout -b <branch> --json` |
 | Run a workspace that's checked out | `sprig up <branch> --json` (`--group <name>` for a slice); in its folder, `sprig up --json` |
 | Start, and wait until ready | `sprig start [app…] --json` |
+| Start now, and wait later when the apps are needed | `sprig start [app…] --json --no-wait`, later `sprig wait [app…] --json` (`--timeout <seconds>`) |
 | Restart after a code change | `sprig restart --json` (`--jobs` to run migrations again) |
 | Stop | `sprig stop [app…]` (nothing named: everything; data is kept) |
 | Free up the machine for a while, then put it back as it was | `sprig pause`, later `sprig resume --json` |

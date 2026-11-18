@@ -151,18 +151,25 @@ public sealed class StartCommand(CliContext cli) : Command<StartCommand.Settings
         if (!answer.Ok) throw new InvalidOperationException(answer.Error ?? "the host wouldn't start the apps");
     }
 
+    /// <summary>How long a start waits for its apps before saying they timed out.</summary>
+    internal static readonly TimeSpan WaitLimit = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// Until each of <paramref name="specs"/> is ready (or, for a job, finished) or has settled some other way, printing
     /// each change of state, and where to read the log of each that didn't make it. Gives up after five minutes.
     /// </summary>
     internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string workspace, IReadOnlyList<RunnerSpec> specs, bool json,
         CancellationToken cancellation)
+        => WaitUntilReady(cli, workspace, specs.Select(x => x.Name).ToHashSet(), json, WaitLimit, cancellation);
+
+    /// <summary>As above, for apps by name; one the host isn't running is left out of what's returned.</summary>
+    internal static IReadOnlyList<RunnerStatus> WaitUntilReady(CliContext cli, string workspace, IReadOnlySet<string> watched, bool json,
+        TimeSpan within, CancellationToken cancellation)
     {
-        var watched = specs.Select(x => x.Name).ToHashSet();
         var seen = new Dictionary<string, RunnerState>();
         IReadOnlyList<RunnerStatus> mine = [];
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        limit.CancelAfter(TimeSpan.FromMinutes(5));
+        limit.CancelAfter(within);
         // With no host, nothing is running: the empty list settles it, as it should.
         foreach (var runners in cli.Host.Follow(limit.Token))
         {

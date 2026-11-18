@@ -101,6 +101,7 @@ public static class CliApp
         config.AddCommand<PauseCommand>("pause");
         config.AddCommand<ResumeCommand>("resume");
         config.AddCommand<PsCommand>("ps");
+        config.AddCommand<WaitCommand>("wait");
         config.AddCommand<WatchCommand>("watch");
         config.AddCommand<LogsCommand>("logs");
 

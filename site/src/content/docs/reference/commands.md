@@ -29,6 +29,7 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 | `sprig stop` | Stop what a workspace runs: the apps or infra you name, or with none named, everything. Containers keep their data. |
 | `sprig pause` | Stop everything a workspace runs, keeping its data, and remember what was running. |
 | `sprig resume` | Start again what was running when the workspace was paused, and wait until each is ready. |
+| `sprig wait` | Wait until a workspace's apps are ready, as after `sprig start --no-wait`. With none named, every app it has going. |
 | `sprig ps` | List the apps that are running and the workspaces' containers, with their CPU and memory. |
 | `sprig logs` | Print the end of an app's log. |
 | `sprig watch` | Follow what workspaces and their apps are doing as it changes. With `--json`, one line per change for other tools; `--usage` adds CPU and memory. |

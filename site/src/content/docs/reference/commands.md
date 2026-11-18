@@ -31,6 +31,7 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 | `sprig resume` | Start again what was running when the workspace was paused, and wait until each is ready. |
 | `sprig ps` | List the apps that are running and the workspaces' containers, with their CPU and memory. |
 | `sprig logs` | Print the end of an app's log. |
+| `sprig watch` | Follow what workspaces and their apps are doing as it changes. With `--json`, one line per change for other tools; `--usage` adds CPU and memory. |
 
 ## Inputs
 

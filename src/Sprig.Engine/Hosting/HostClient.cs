@@ -102,6 +102,14 @@ public sealed class HostClient(ISprigPaths paths)
     public async IAsyncEnumerable<IReadOnlyList<RunnerStatus>?> SubscribeAsync(bool usage = false, TimeSpan? retry = null,
         [EnumeratorCancellation] CancellationToken cancellation = default)
     {
+        await foreach (var answer in SubscribeAnswersAsync(usage, retry, cancellation)) yield return answer?.Runners;
+    }
+
+    /// <summary>As <see cref="SubscribeAsync"/>, with the host's whole answer: its pid and version too (null from a host
+    /// from before subscribing), and <see cref="HostResponse.Runners"/> never null.</summary>
+    public async IAsyncEnumerable<HostResponse?> SubscribeAnswersAsync(bool usage = false, TimeSpan? retry = null,
+        [EnumeratorCancellation] CancellationToken cancellation = default)
+    {
         bool? hostWas = null;
         while (!cancellation.IsCancellationRequested)
         {
@@ -119,12 +127,12 @@ public sealed class HostClient(ISprigPaths paths)
                             await foreach (var runners in PollAsync(usage, retry ?? LookAgain, cancellation))
                             {
                                 hostWas = true;
-                                yield return runners;
+                                yield return new HostResponse(true, Runners: runners);
                             }
                             break;
                         }
                         hostWas = true;
-                        yield return answer.Runners ?? [];
+                        yield return answer with { Runners = answer.Runners ?? [] };
                     }
                 }
             }

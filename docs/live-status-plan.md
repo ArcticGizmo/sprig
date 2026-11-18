@@ -52,6 +52,8 @@ Other tools want to know what sprig is running as it changes: Perch's overlay fi
 {"type":"workspace","key":"storefront/2","state":"stopped","paused":true, … }
 
 {"type":"workspace-removed","key":"storefront/3"}
+// Its plan no longer has the app, and the host isn't running it.
+{"type":"app-removed","workspace":"storefront/2","name":"shop/old"}
 {"type":"host","running":false}
 ```
 
@@ -59,7 +61,10 @@ An app line can also carry `pid`, `exit`, `error` and, with `--usage`, `usage` (
 
 ## Pieces
 
-Pieces 1–3 are built. The client side is `HostClient.SubscribeAsync`, plus `Follow` for callers that block. It connects with a 500 ms timeout. It falls back to polling `list` when a host from before `subscribe` answers "unknown request". `LiveStatus` (records, plans and `RunState`) is left for piece 4, its first user.
+Pieces 1–4 are built.
+
+- **Client side:** `HostClient.SubscribeAsync`, with `SubscribeAnswersAsync` for the host's pid and version and `Follow` for callers that block. It connects with a 500 ms timeout. It falls back to polling `list` when a host from before `subscribe` answers "unknown request".
+- **`sprig watch`:** `Sprig.Engine.Live` holds the line types and `WatchDiff`, and `LiveStatus` merges the feed with the store watcher. Stdin only counts as closed when it's redirected, because a parent that gives no stdin would otherwise end `watch` at once. Without `--json`, `watch` prints the same changes for a person to read.
 
 1. **Engine, host:**
    - A `Changed` signal on `Supervisor`, pulsed from `Runner.Status`'s setter and from every add to or removal from `_runners`.

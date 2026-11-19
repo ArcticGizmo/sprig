@@ -33,7 +33,11 @@ public partial class SettingsViewModel : PageViewModel
 
     [ObservableProperty] private bool _showChangelogOnUpdate;
     [ObservableProperty] private bool _pauseOnQuit;
+    [ObservableProperty] private bool _startAtSignIn;
+    [ObservableProperty] private string _startAtSignInError = "";
     bool _loadingSettings;
+
+    public bool StartAtSignInSupported => SignInStart.Supported;
 
     static readonly StartAtOnceChoice[] OfferedStartAtOnce =
     [
@@ -65,6 +69,7 @@ public partial class SettingsViewModel : PageViewModel
         _loadingSettings = true;
         ShowChangelogOnUpdate = s.ShowChangelogOnUpdate;
         PauseOnQuit = s.PauseOnQuit;
+        StartAtSignIn = SignInStart.Enabled;
         // A number saved by hand that isn't on the list still shows, as itself.
         StartAtOnceChoices = OfferedStartAtOnce.Any(c => c.Limit == s.StartAtOnce) ? OfferedStartAtOnce
             : [.. OfferedStartAtOnce, new StartAtOnceChoice(s.StartAtOnce, $"{s.StartAtOnce} at a time")];
@@ -96,6 +101,24 @@ public partial class SettingsViewModel : PageViewModel
         var s = _services.Settings.Get();
         s.PauseOnQuit = value;
         _services.Settings.Save(s);
+    }
+
+    // Windows holds this one, so it's read back rather than trusted: the box shows what will happen at sign-in.
+    partial void OnStartAtSignInChanged(bool value)
+    {
+        if (_loadingSettings) return;
+        try
+        {
+            SignInStart.Set(value);
+            StartAtSignInError = "";
+        }
+        catch (System.Exception e) when (e is System.UnauthorizedAccessException or System.Security.SecurityException or System.IO.IOException)
+        {
+            StartAtSignInError = $"Windows wouldn't change it: {e.Message}";
+        }
+        _loadingSettings = true;
+        StartAtSignIn = SignInStart.Enabled;
+        _loadingSettings = false;
     }
 
     [RelayCommand]

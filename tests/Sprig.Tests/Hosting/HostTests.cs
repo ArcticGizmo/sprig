@@ -592,12 +592,25 @@ public sealed class HostFollowingTests : IDisposable
     }
 
     [Fact]
+    public void Asking_when_no_host_runs_answers_at_once_rather_than_waiting_out_the_connect()
+    {
+        var client = new HostClient(_store.Paths);
+        var clock = Stopwatch.StartNew();
+
+        Assert.False(client.Running);
+        Assert.Null(client.TrySend(new HostRequest("list"), TimeSpan.FromSeconds(5)));
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), $"took {clock.Elapsed.TotalMilliseconds:0} ms");
+    }
+
+    [Fact]
     public async Task A_host_from_before_subscribing_is_polled_instead()
     {
         using var stop = new CancellationTokenSource();
         var state = RunnerState.Starting;
         var oldHost = Task.Run(async () =>
         {
+            using var single = new Mutex(initiallyOwned: true, HostProtocol.MutexName(_store.Paths));
             while (!stop.IsCancellationRequested)
             {
                 await using var pipe = new System.IO.Pipes.NamedPipeServerStream(HostProtocol.PipeName(_store.Paths), System.IO.Pipes.PipeDirection.InOut,

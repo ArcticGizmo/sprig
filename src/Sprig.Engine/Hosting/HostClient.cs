@@ -15,6 +15,7 @@ public sealed class HostClient(ISprigPaths paths)
     /// dropped the connection unanswered).</summary>
     public HostResponse? TrySend(HostRequest request, TimeSpan? timeout = null)
     {
+        if (!Running) return null;
         using var pipe = new NamedPipeClientStream(".", HostProtocol.PipeName(paths), PipeDirection.InOut,
             PipeOptions.CurrentUserOnly);
         try { pipe.Connect((int)(timeout ?? TimeSpan.FromMilliseconds(500)).TotalMilliseconds); }
@@ -88,8 +89,7 @@ public sealed class HostClient(ISprigPaths paths)
         return last.Values.ToArray();
     }
 
-    /// <summary>How long a follower waits before looking for a host again while none answers. A look for a missing pipe
-    /// costs next to nothing, but it isn't instant: the connect waits out its timeout.</summary>
+    /// <summary>How long a follower waits before looking for a host again while none answers.</summary>
     public static readonly TimeSpan LookAgain = TimeSpan.FromSeconds(2);
 
     /// <summary>
@@ -162,8 +162,32 @@ public sealed class HostClient(ISprigPaths paths)
         }
     }
 
+    /// <summary>
+    /// Whether this store's host is running, answered at once. A connect to a pipe nobody serves waits out its whole
+    /// timeout, and the app in the tray asks every second or two for as long as it's open. The host holds its mutex for
+    /// its whole life, so the mutex says what the pipe can't without waiting. Just after a host starts the mutex can be
+    /// there before the pipe is; a connect then waits for it as before.
+    /// </summary>
+    public bool Running
+    {
+        get
+        {
+            try
+            {
+                if (!Mutex.TryOpenExisting(HostProtocol.MutexName(paths), out var mutex)) return false;
+                mutex.Dispose();
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return true;
+            }
+        }
+    }
+
     async Task<NamedPipeClientStream?> ConnectAsync(CancellationToken cancellation)
     {
+        if (!Running) return null;
         var pipe = new NamedPipeClientStream(".", HostProtocol.PipeName(paths), PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try

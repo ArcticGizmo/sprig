@@ -20,7 +20,12 @@ internal static class Program
             velopack
                 .OnAfterInstallFastCallback(_ => ShellInstall.Ensure(AppContext.BaseDirectory))
                 .OnAfterUpdateFastCallback(_ => ShellInstall.Ensure(AppContext.BaseDirectory))
-                .OnBeforeUninstallFastCallback(_ => ShellInstall.Remove(AppContext.BaseDirectory));
+                .OnBeforeUninstallFastCallback(_ =>
+                {
+                    ShellInstall.Remove(AppContext.BaseDirectory);
+                    try { SignInStart.Set(false); }
+                    catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
+                });
         }
 
         velopack.Run();
@@ -49,8 +54,11 @@ internal static class Program
         }
 
         App.StartWorkspace = WorkspaceArg(args);
-        using var instance = SingleInstance.Claim(new Sprig.Engine.Store.SprigPaths(null), App.StartWorkspace);
+        App.StartInTray = args.Contains(SignInStart.TrayFlag);
+        using var instance = SingleInstance.Claim(new Sprig.Engine.Store.SprigPaths(null), App.StartWorkspace, quietly: App.StartInTray);
         if (instance is null) return 0;
+        try { SignInStart.Refresh(); }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
     }

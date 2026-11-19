@@ -55,7 +55,7 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 | Command | What it does |
 | --- | --- |
 | `sprig open [id] [workspace]` | Launch the desktop app, or bring a window of it to the virtual desktop you're on. Name a workspace to open its page in a window of its own. |
-| `sprig update` | Install a newer release in place. `--check` only reports. |
+| `sprig update` | Install a newer release in place. `--check` only reports. If sprig is open or apps are running, it asks before quitting them; `--yes` skips the question, and is needed where it can't ask. |
 | `sprig host status \| stop` | The background process that runs workspaces' apps. |
 | `sprig shell install \| shims` | Shell integration: PATH entries and shims. |
 

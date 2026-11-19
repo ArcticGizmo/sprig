@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.12] - 2026-11-19
+
+Sprig moves into the tray permanently, like every chat app you've ever tried to close.
+
+### Changed
+- **Sprig stays in the tray** — closing the last window never quits. Quit does.
+- **Start in the tray at sign-in** — opt-in, in Settings.
+- **`sprig update` asks before quitting sprig** — apps paused, `--yes` to skip asking.
+- **Sprig returns to the tray after an update.**
+- **No host, no waiting** — finding nothing no longer takes half a second.
+- **Dev builds wear an inverted icon** — magenta, for telling them apart.
+
+---
+
 ## [v0.9.11] - 2026-11-18
 
 Green used to mean "something's alive". It now means "it actually works".

@@ -25,6 +25,10 @@ public sealed class SingleInstance : IDisposable
     /// thread.</summary>
     public static event Action<string?>? OpenRequested;
 
+    /// <summary>The CLI asked sprig to quit, as <c>sprig update</c> does once it's been told it may. Raised on a
+    /// background thread.</summary>
+    public static event Action? QuitRequested;
+
     SingleInstance(Mutex mutex, string pipe)
     {
         _mutex = mutex;
@@ -32,24 +36,25 @@ public sealed class SingleInstance : IDisposable
         _ = ListenAsync();
     }
 
-    /// <summary>This launch's claim on the store; null when another sprig already has it and has been asked for a
-    /// window, so this one should exit.</summary>
+    /// <summary>This launch's claim on the store; null when another sprig already has it, so this one should exit. That
+    /// one is asked for a window unless <paramref name="quietly"/>, as a start at sign-in finding sprig already up.</summary>
     /// <param name="workspace">The workspace this launch was asked to open, by its key; null for none.</param>
-    public static SingleInstance? Claim(ISprigPaths paths, string? workspace = null)
+    public static SingleInstance? Claim(ISprigPaths paths, string? workspace = null, bool quietly = false)
     {
         var pipe = AppInstance.PipeName(paths);
         var mutex = new Mutex(initiallyOwned: true, AppInstance.MutexName(paths), out var mine);
         if (mine) return new SingleInstance(mutex, pipe);
         mutex.Dispose();
+        if (quietly) return null;
         // One that holds the claim but won't answer is stuck; better a second window than none.
-        return Signal(pipe, Message(workspace)) ? null : new SingleInstance(new Mutex(), pipe + "-" + Environment.ProcessId);
+        return AppInstance.Tell(pipe, Message(workspace)) ? null : new SingleInstance(new Mutex(), pipe + "-" + Environment.ProcessId);
     }
 
     /// <summary>What a launch says to the sprig already running: one line, with any workspace key after it.</summary>
     internal static string Message(string? workspace)
         => string.IsNullOrWhiteSpace(workspace) ? Show : OpenPrefix + workspace.Trim();
 
-    /// <summary>The workspace key a message asks for; null for any window; false when it isn't a message at all.</summary>
+    /// <summary>The workspace key a message asks for; null for any window; false when it isn't a request for a window.</summary>
     internal static bool TryRead(string? line, out string? workspace)
     {
         workspace = null;
@@ -58,21 +63,6 @@ public sealed class SingleInstance : IDisposable
         workspace = line[OpenPrefix.Length..].Trim();
         if (workspace.Length == 0) workspace = null;
         return true;
-    }
-
-    static bool Signal(string pipe, string message)
-    {
-        try
-        {
-            using var client = new NamedPipeClientStream(".", pipe, PipeDirection.Out, PipeOptions.CurrentUserOnly);
-            client.Connect(2000);
-            client.Write(System.Text.Encoding.UTF8.GetBytes(message + "\n"));
-            return true;
-        }
-        catch (Exception e) when (e is TimeoutException or IOException)
-        {
-            return false;
-        }
     }
 
     async Task ListenAsync()
@@ -85,7 +75,9 @@ public sealed class SingleInstance : IDisposable
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await server.WaitForConnectionAsync(_stop.Token);
                 using var reader = new StreamReader(server);
-                if (TryRead(await reader.ReadLineAsync(_stop.Token), out var workspace)) OpenRequested?.Invoke(workspace);
+                var line = await reader.ReadLineAsync(_stop.Token);
+                if (line == AppInstance.QuitMessage) QuitRequested?.Invoke();
+                else if (TryRead(line, out var workspace)) OpenRequested?.Invoke(workspace);
             }
             catch (OperationCanceledException)
             {

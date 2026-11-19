@@ -16,16 +16,20 @@ public partial class App : Application
     /// <summary>The workspace the first window opens on, by its key (<c>sprig open storefront 2</c>); null for Home.</summary>
     public static string? StartWorkspace { get; set; }
 
+    /// <summary>Start in the tray with no window, as at sign-in.</summary>
+    public static bool StartInTray { get; set; }
+
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var services = new AppServices();
             var windows = new AppWindows(desktop, services);
-            var main = windows.Open(StartWorkspace);
-            var tray = new Tray(this, desktop, windows, services, main.Icon);
+            // What's new waits for a window to show on, however long sprig sits in the tray first.
+            windows.FirstOpened += main => MaybeShowChangelog(services, main);
+            if (!StartInTray) windows.Open(StartWorkspace);
+            var tray = new Tray(this, desktop, windows, services);
             TerminalStop.Listen(() => Avalonia.Threading.Dispatcher.UIThread.Post(tray.Quit));
-            MaybeShowChangelog(services, main);
         }
         base.OnFrameworkInitializationCompleted();
     }

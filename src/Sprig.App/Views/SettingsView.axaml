@@ -88,6 +88,18 @@
                 </StackPanel>
             </Border>
 
+            <Border Classes="panel" IsVisible="{Binding StartAtSignInSupported}">
+                <StackPanel Spacing="10">
+                    <TextBlock Classes="phead" Text="SIGNING IN" />
+                    <TextBlock Classes="help"
+                               Text="Closing sprig's last window leaves it in the tray until you quit it. With this on, it's already there when you sign in to Windows, so opening it is instant." />
+                    <CheckBox IsChecked="{Binding StartAtSignIn}"
+                              Content="Start sprig in the tray when I sign in" Foreground="{StaticResource FgBrush}" />
+                    <TextBlock Classes="status err" Text="{Binding StartAtSignInError}" FontSize="13" TextWrapping="Wrap"
+                               IsVisible="{Binding StartAtSignInError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
             <Border Classes="panel">
                 <StackPanel Spacing="10">
                     <TextBlock Classes="phead" Text="QUITTING" />

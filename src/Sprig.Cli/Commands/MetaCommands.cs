@@ -56,17 +56,21 @@ public sealed class OpenCommand(CliContext cli) : Command<WorkspaceSettings>
     }
 }
 
-[Description("Install a newer release in place (--check only reports)")]
-public sealed class UpdateCommand : Command<UpdateCommand.Settings>
+[Description("Install a newer release in place (--check only reports). Sprig open in the tray, and any apps it runs, are quit first, once you say yes")]
+public sealed class UpdateCommand(CliContext cli) : Command<UpdateCommand.Settings>
 {
     public sealed class Settings : GlobalSettings
     {
         [CommandOption("--check")]
         [Description("Only report whether an update is available")]
         public bool Check { get; set; }
+
+        [CommandOption("-y|--yes")]
+        [Description("Quit sprig and its apps for the update without asking")]
+        public bool Yes { get; set; }
     }
 
-    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation) => CliUpdater.Run(s.Check);
+    protected override int Execute(CommandContext context, Settings s, CancellationToken cancellation) => CliUpdater.Run(cli, s.Check, s.Yes, s.Json);
 }
 
 /// <summary>A Unicode tick, or an ASCII '+' where the console can't draw one.</summary>

@@ -33,7 +33,8 @@ public sealed class AppWindows
     {
         _desktop = desktop;
         _services = services;
-        // Closing the last window leaves sprig in the tray while apps run; quitting is always asked for.
+        // Closing the last window leaves sprig in the tray, so opening it again is a window coming forward rather than a
+        // cold start. It ends only when asked to quit.
         desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         // Hidden in the tray it still follows the host, so the tray's count of running apps stays true.
         _services.HostStatus.Follow(apply => Dispatcher.UIThread.Post(apply));
@@ -41,8 +42,9 @@ public sealed class AppWindows
 
     public IReadOnlyList<MainWindow> All => _windows;
 
-    /// <summary>Raised when the last window has closed with apps still running, so sprig carries on in the tray.</summary>
-    public event Action? AllClosed;
+    /// <summary>Raised once, when the first window opens, which needn't be at launch: sprig can start in the tray.</summary>
+    public event Action<MainWindow>? FirstOpened;
+    bool _opened;
 
     /// <summary>A new window, on a workspace by its key, or on Home.</summary>
     public MainWindow Open(string? workspace = null)
@@ -62,7 +64,7 @@ public sealed class AppWindows
         vm.NewWindow = key => Open(key);
         if (workspace is not null) vm.ShowWorkspace(workspace);
 
-        var window = new MainWindow { DataContext = vm };
+        var window = new MainWindow { DataContext = vm, Icon = AppIcon.Current };
         // Each new window steps down and right of the one in front, so it doesn't land exactly on top of it.
         if (_windows.OrderByDescending(w => w.LastActivated).FirstOrDefault() is { } front && front.IsShown && OnCurrentDesktop(front) != false)
         {
@@ -76,6 +78,11 @@ public sealed class AppWindows
         window.Show();
         window.Activate();
         Follow();
+        if (!_opened)
+        {
+            _opened = true;
+            FirstOpened?.Invoke(window);
+        }
         return window;
     }
 
@@ -112,15 +119,10 @@ public sealed class AppWindows
         vm.Dispose();
         if (ReferenceEquals(_desktop.MainWindow, window)) _desktop.MainWindow = _windows.FirstOrDefault();
         Follow();
-        if (_windows.Count > 0 || _quitting) return;
-        if (AnyAlive()) AllClosed?.Invoke();
-        else _desktop.Shutdown();
     }
 
     /// <summary>Docker is only asked while a window shows.</summary>
     void Follow() => _services.InfraUsage.WindowShown = _windows.Any(w => w.IsShown);
 
     static bool? OnCurrentDesktop(Window window) => VirtualDesktops.IsOnCurrent(window.TryGetPlatformHandle()?.Handle ?? 0);
-
-    bool AnyAlive() => _services.HostStatus.Runners?.Any(r => r.State.IsAlive() || r.State == RunnerState.Stopping) == true;
 }

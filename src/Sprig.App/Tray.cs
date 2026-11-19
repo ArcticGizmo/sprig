@@ -10,10 +10,10 @@ using Sprig.Engine.Hosting;
 namespace Sprig.App;
 
 /// <summary>
-/// Apps run in the sprig host, not in a window, so closing the last window while they run would leave them going with
-/// nothing on screen to stop them. Instead sprig stays in the notification area, where a window can be opened again or
-/// sprig quit. Quitting always stops the apps first: apps left running with no sprig to show them are orphans nobody
-/// asked for.
+/// Sprig lives in the notification area from launch until it's quit, as a chat app does, so a window is always one click
+/// away, for a person or for Perch. Apps run in the sprig host, not in a window, and this is where they can still be
+/// seen and stopped with every window closed. Quitting always stops the apps first: apps left running with no sprig to
+/// show them are orphans nobody asked for.
 /// </summary>
 public sealed class Tray
 {
@@ -26,7 +26,7 @@ public sealed class Tray
     bool _quitting;
     int _alive;
 
-    public Tray(Application app, IClassicDesktopStyleApplicationLifetime desktop, AppWindows windows, AppServices services, WindowIcon? icon)
+    public Tray(Application app, IClassicDesktopStyleApplicationLifetime desktop, AppWindows windows, AppServices services)
     {
         _desktop = desktop;
         _windows = windows;
@@ -39,8 +39,8 @@ public sealed class Tray
         _quit.Click += (_, _) => Quit();
         _icon = new TrayIcon
         {
-            Icon = icon,
-            ToolTipText = "sprig",
+            Icon = AppIcon.Current,
+            ToolTipText = Name,
             Menu = new NativeMenu { Items = { open, another, _status, new NativeMenuItemSeparator(), _quit } },
         };
         _icon.Clicked += (_, _) => _windows.ShowHere();
@@ -55,7 +55,10 @@ public sealed class Tray
             services.Host.ShutdownIfIdle();
         };
         SingleInstance.OpenRequested += workspace => Dispatcher.UIThread.Post(() => _windows.ShowHere(workspace));
+        SingleInstance.QuitRequested += () => Dispatcher.UIThread.Post(Quit);
     }
+
+    static string Name => "sprig" + Sprig.Engine.Store.AppProfile.DisplaySuffix.ToLowerInvariant();
 
     void Apply(IReadOnlyList<RunnerStatus>? runners)
     {
@@ -66,7 +69,7 @@ public sealed class Tray
         var summary = _alive == 0 ? "No apps running"
             : $"{_alive} app{(_alive == 1 ? "" : "s")} running in {workspaces} workspace{(workspaces == 1 ? "" : "s")}";
         _status.Header = summary;
-        _icon.ToolTipText = $"sprig · {summary.ToLowerInvariant()}";
+        _icon.ToolTipText = $"{Name} · {summary.ToLowerInvariant()}";
         _quit.Header = _alive == 0 ? "Quit" : _services.Settings.Get().PauseOnQuit ? "Pause everything and quit" : "Stop all apps and quit";
     }
 
@@ -82,7 +85,7 @@ public sealed class Tray
         if (_alive > 0)
         {
             _status.Header = "Stopping every app…";
-            _icon.ToolTipText = "sprig · stopping every app…";
+            _icon.ToolTipText = $"{Name} · stopping every app…";
         }
         await AppServices.RunAsync(() =>
         {

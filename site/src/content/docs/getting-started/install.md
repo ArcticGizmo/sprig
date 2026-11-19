@@ -41,7 +41,14 @@ Every update after the first install happens in place: in the app, **About → C
 ```sh
 sprig update           # install a newer release
 sprig update --check   # only say whether there is one
+sprig update --yes     # don't ask before quitting sprig and its apps
 ```
+
+The update replaces the files the app and its apps run from, so if sprig is open, even just in the tray, `sprig update` says so and asks before quitting it. Its apps are paused (or stopped, if you've turned off **Pause workspaces when sprig quits**), and sprig comes back in the tray once the update is in.
+
+## Starting at sign-in
+
+Closing sprig's last window leaves it in the tray, like a chat app, until you choose **Quit**. To have it there from the moment you sign in, turn on **Settings → Start sprig in the tray when I sign in**. It's an ordinary Windows startup entry, so it also shows in Task Manager's **Startup apps**, where you can switch it off too.
 
 ## What it needs
 

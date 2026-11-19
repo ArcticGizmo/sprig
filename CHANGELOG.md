@@ -9,6 +9,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.13] - 2026-11-19
+
+Health checks learn the letter s.
+
+### Fixed
+- **Health checks on https ports** — untrusted dev certs welcome.
+
+---
+
 ## [v0.9.12] - 2026-11-19
 
 Sprig moves into the tray permanently, like every chat app you've ever tried to close.

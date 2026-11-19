@@ -289,7 +289,7 @@ public class DefinitionReaderTests
           web:
             run: node
             ports: { metrics: { host: any, health: /ready } }
-        """, 6, "isn't http; give it scheme: http")]
+        """, 6, "isn't http or https; give it scheme: http or scheme: https")]
     [InlineData("""
         schema: 1
         repo: shop

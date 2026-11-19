@@ -197,11 +197,14 @@ public sealed class Supervisor(ISprigPaths paths) : IAsyncDisposable
         // The shells sprig starts apps through, and the console host Windows gives each one; neither is the app.
         static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase) { "cmd", "conhost", "sh" };
 
+        // Any certificate passes: a health check only connects to loopback and only asks whether the app is up, and
+        // an app serving https locally usually has a dev certificate this machine may not trust.
         static readonly HttpClient Http = new(new SocketsHttpHandler
         {
             UseProxy = false,
             AllowAutoRedirect = true,
             ConnectCallback = ConnectLoopbackAsync,
+            SslOptions = { RemoteCertificateValidationCallback = (_, _, _, _) => true },
         })
         {
             Timeout = TimeSpan.FromSeconds(2),

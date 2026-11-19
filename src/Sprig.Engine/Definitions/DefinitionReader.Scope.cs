@@ -232,7 +232,7 @@ public static partial class DefinitionReader
                 if (!inContainer && file.Text(fields["health"], $"port '{name}''s health") is { } path)
                 {
                     if (!path.StartsWith('/')) file.Error(fields["health"]!, $"port '{name}''s health is a path on it, starting with /");
-                    else if (scheme is not ("http" or "https")) file.Error(fields["health"]!, $"port '{name}' has a health path but isn't http; give it scheme: http");
+                    else if (scheme is not ("http" or "https")) file.Error(fields["health"]!, $"port '{name}' has a health path but isn't http or https; give it scheme: http or scheme: https");
                     else health = path;
                 }
                 if (inContainer && container is null && fields["container"] is null)

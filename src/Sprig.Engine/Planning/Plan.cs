@@ -185,7 +185,7 @@ public static partial class HeardPort
 }
 
 /// <summary>A path on one of an app's endpoints that answers with a success status once the app is ready.</summary>
-public sealed record PlannedHealth(string Endpoint, string Path);
+public sealed record PlannedHealth(string Endpoint, string Path, string Scheme = "http");
 
 /// <summary>A host port mapped to a port inside a container.</summary>
 public sealed record PlannedMapping(string Endpoint, int? Host, int Target)

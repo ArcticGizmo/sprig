@@ -44,7 +44,7 @@ ports:
   grpc: { host: any, scheme: http }
 ```
 
-The value says where on this machine the port may be. A map says more: `host` (the same any / number / list), `container` (the port inside a container, required for containers and compose services) and `scheme`. An app's port can also have `health`: a path on that port that must answer with success before the app is ready, as in `admin: { host: any, scheme: http, health: /healthz }`. A port named `http` or `https` has that scheme; any other has none unless it says so, and so has no url.
+The value says where on this machine the port may be. A map says more: `host` (the same any / number / list), `container` (the port inside a container, required for containers and compose services) and `scheme`. An app's port can also have `health`: a path on that port that must answer with success before the app is ready, as in `admin: { host: any, scheme: http, health: /healthz }`. On an https port it's asked over https, and any certificate passes, so an untrusted dev certificate is fine. A port named `http` or `https` has that scheme; any other has none unless it says so, and so has no url.
 
 ### In the main checkout
 

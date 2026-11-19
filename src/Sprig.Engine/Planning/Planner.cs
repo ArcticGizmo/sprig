@@ -353,9 +353,9 @@ public static class Planner
             {
                 if (!endpoint.Health!.StartsWith('/') || !Uri.TryCreate("http://localhost" + endpoint.Health, UriKind.Absolute, out _))
                     Problem($"'{app.Name}' has a health path '{endpoint.Health}' on {endpoint.Name}; it must be a path starting with /, e.g. /health", endpoint.Location);
-                else if (endpoint.Scheme != "http")
-                    Problem($"'{app.Name}' has a health path on {endpoint.Name}, which isn't an HTTP endpoint", endpoint.Location);
-                else health.Add(new PlannedHealth(endpoint.Name, endpoint.Health));
+                else if (endpoint.Scheme is not ("http" or "https"))
+                    Problem($"'{app.Name}' has a health path on {endpoint.Name}, which isn't an http or https endpoint", endpoint.Location);
+                else health.Add(new PlannedHealth(endpoint.Name, endpoint.Health, endpoint.Scheme));
             }
             return health;
         }

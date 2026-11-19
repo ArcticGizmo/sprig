@@ -587,6 +587,31 @@ public class PlannerTests
     }
 
     [Fact]
+    public void A_health_path_on_an_https_port_is_checked_over_https()
+    {
+        var f = new Fixture();
+        f.Add("../r", """
+            schema: 1
+            repo: r
+            apps:
+              api:
+                run: dotnet
+                ports: { https: any }
+                health: /health
+              admin:
+                run: dotnet
+                ports:
+                  secure: { host: any, scheme: https, health: /ready }
+            """);
+
+        var plan = f.Plan();
+
+        Assert.Empty(plan.Problems);
+        Assert.Equal([new PlannedHealth("https", "/health", "https")], plan.Apps.Single(a => a.Name == "api").Health);
+        Assert.Equal([new PlannedHealth("secure", "/ready", "https")], plan.Apps.Single(a => a.Name == "admin").Health);
+    }
+
+    [Fact]
     public void Quick_links_resolve_to_each_workspaces_ports_without_making_one_app_wait_for_another()
     {
         var f = new Fixture();

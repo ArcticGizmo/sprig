@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Workspaces;
@@ -369,6 +372,18 @@ public sealed class HostTests : IDisposable
     }
 
     [Fact]
+    public void An_app_serving_https_with_a_certificate_this_machine_does_not_trust_still_passes_its_health_check()
+    {
+        using var health = new HealthServer(200, tls: true);
+        var spec = Spec("shop/api", Wait(30)) with { Port = health.Port, HealthUrls = [$"https://localhost:{health.Port}/health"] };
+
+        _client.Send(new HostRequest("start", [spec]));
+
+        var ready = Await("shop/api", r => r.State == RunnerState.Ready);
+        Assert.Contains($"sprig: ready: https://localhost:{health.Port}/health answered 200", ReadShared(ready.LogFile));
+    }
+
+    [Fact]
     public void An_app_that_keeps_failing_is_restarted_with_backoff_then_left_exited()
     {
         _client.Send(new HostRequest("start", [Spec("shop/api", Exit(3)) with { Restart = new RestartSpec(Always: false, Max: 2) }]));
@@ -461,17 +476,29 @@ public sealed class HostTests : IDisposable
         Assert.Empty(_client.Send(new HostRequest("list")).Runners!);
     }
 
-    /// <summary>Answers every request with <see cref="Status"/>, which a test can change while it runs.</summary>
+    /// <summary>Answers every request with <see cref="Status"/>, which a test can change while it runs. With
+    /// <c>tls</c>, it serves https with a self-signed certificate, as an app with an untrusted dev certificate would.</summary>
     sealed class HealthServer : IDisposable
     {
         readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         readonly CancellationTokenSource _stop = new();
+        readonly X509Certificate2? _certificate;
 
-        public HealthServer(int status)
+        public HealthServer(int status, bool tls = false)
         {
             Status = status;
+            if (tls) _certificate = SelfSigned();
             _listener.Start();
             _ = Task.Run(ServeAsync);
+        }
+
+        // Exported and loaded again because Windows' SslStream can't serve with an ephemeral key.
+        static X509Certificate2 SelfSigned()
+        {
+            using var key = RSA.Create(2048);
+            var request = new CertificateRequest("CN=localhost", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddHours(1));
+            return X509CertificateLoader.LoadPkcs12(cert.Export(X509ContentType.Pfx), null);
         }
 
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -485,7 +512,13 @@ public sealed class HostTests : IDisposable
                 try
                 {
                     using var client = await _listener.AcceptTcpClientAsync(_stop.Token);
-                    var stream = client.GetStream();
+                    Stream stream = client.GetStream();
+                    if (_certificate is not null)
+                    {
+                        var ssl = new SslStream(stream);
+                        await ssl.AuthenticateAsServerAsync(_certificate);
+                        stream = ssl;
+                    }
                     var reader = new StreamReader(stream);
                     while (!string.IsNullOrEmpty(await reader.ReadLineAsync(_stop.Token))) { }
                     var reply = $"HTTP/1.1 {Status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -494,6 +527,7 @@ public sealed class HostTests : IDisposable
                 catch (OperationCanceledException) { return; }
                 catch (IOException) { }
                 catch (SocketException) { }
+                catch (System.Security.Authentication.AuthenticationException) { }
             }
         }
 
@@ -501,6 +535,7 @@ public sealed class HostTests : IDisposable
         {
             _stop.Cancel();
             _listener.Stop();
+            _certificate?.Dispose();
         }
     }
 }
@@ -650,10 +685,10 @@ public class RunnerSpecsTests
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         PlannedEnv Env(string key, string value) => new(key, new PlannedValue(value, value, []), "Properties/launchSettings.json", At, "launchSettings", "sprig");
         var plan = new Plan("storefront", "x", "stable", "main",
-            [new PlannedPort("shop-services", "api", "http", 8001, null, null)],
+            [new PlannedPort("shop-services", "api", "http", 8001, null, null), new PlannedPort("shop-services", "api", "https", 8002, null, null)],
             [
                 new PlannedApp("shop-services", "../shop-services", "api", "dotnet", "src/Api", [Env("Urls", "http://localhost:8001")], null, [],
-                    Health: [new PlannedHealth("http", "/health")], Restart: new RestartModel("always", 2, At)),
+                    Health: [new PlannedHealth("http", "/health"), new PlannedHealth("https", "/ready", "https")], Restart: new RestartModel("always", 2, At)),
                 new PlannedApp("shop-services", "../shop-services", "web", "node", "web", [], null, []),
                 new PlannedApp("shop-services", "../shop-services", "tool", "app", ".", [], new PlannedValue("go run .", "go run .", []), []),
             ],
@@ -669,7 +704,7 @@ public class RunnerSpecsTests
         Assert.Equal(Path.GetFullPath(@"C:\tb\sf--x\shop-services\src\Api"), api.WorkingDirectory);
         Assert.Equal(8001, api.Port);
         Assert.Equal("storefront/x", api.Workspace);
-        Assert.Equal(["http://localhost:8001/health"], api.HealthUrls);
+        Assert.Equal(["http://localhost:8001/health", "https://localhost:8002/ready"], api.HealthUrls);
         Assert.Equal(new RestartSpec(Always: true, Max: 2), api.Restart);
         Assert.Null(specs.Single(s => s.Name == "shop-services/web").Restart);
 

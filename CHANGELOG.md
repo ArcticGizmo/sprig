@@ -7,8 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [v0.9.13] - 2026-11-19
+
+Health checks learn the letter s.
+
 ### Fixed
-- **Health checks on https ports** — a `health:` path on an https port is asked over https, and any certificate passes, so apps on `dotnet dev-certs` are allowed to be ready.
+- **Health checks on https ports** — untrusted dev certs welcome.
 
 ---
 

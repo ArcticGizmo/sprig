@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **"Create a worktree with sprig" moves the session in** — the `sprig-workspaces` skill sends Claude to `EnterWorktree`, so the slot comes with the session in it.
+
 ---
 
 ## [v0.9.13] - 2026-11-19

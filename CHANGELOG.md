@@ -7,8 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [v0.9.14] - 2026-11-23
+
+Asking for a worktree now gets you into it, not just near it.
+
 ### Fixed
-- **"Create a worktree with sprig" moves the session in** — the `sprig-workspaces` skill sends Claude to `EnterWorktree`, so the slot comes with the session in it.
+- **"Create a worktree with sprig" moves the session in** — Claude goes through `EnterWorktree`.
 
 ---
 

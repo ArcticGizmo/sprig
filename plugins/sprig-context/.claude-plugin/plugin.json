@@ -1,6 +1,6 @@
 {
   "name": "sprig-context",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "description": "Each session starts knowing what its folder is to sprig: the repo or slot, its branch, and where its apps listen",
   "author": { "name": "arcticgizmo" },
   "homepage": "https://arcticgizmo.github.io/sprig/",

@@ -116,7 +116,7 @@ public class UsageHistoryTests
     public void Usage_rows_carry_their_workspace_s_trend_and_an_open_row_its_parts_trends()
     {
         using var temp = new TempStore();
-        var services = new AppServices(temp.Root);
+        var services = new AppServices(temp.Root, () => At.UtcDateTime);
         var store = new WorkspaceStore(services.Paths);
         var record = new WorkspaceRecord("shop", "shop.orchestration.yaml", "1", "feat", "stable", [], [], [], WorkspaceState.Up, At, At);
         store.Save(record);

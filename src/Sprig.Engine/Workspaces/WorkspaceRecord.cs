@@ -16,6 +16,23 @@ public enum WorkspaceState { Starting, Up, Down, Failed, Released }
 /// <param name="Infra">By <see cref="InfraTarget.Key"/>, every container that was running, used by an app or not.</param>
 public sealed record PausedRun(IReadOnlyList<string> Apps, IReadOnlyList<string> Infra, DateTimeOffset At);
 
+/// <summary>
+/// Inputs a workspace takes from another workspace's outputs, kept on the workspace that uses them. Every input with
+/// the name of one of the target's outputs takes it, unless the workspace sets that input itself.
+/// </summary>
+/// <param name="Orchestration">The target's repo or orchestration ID.</param>
+/// <param name="Workspace">The target's name: a slot number, or <see cref="WorkspaceRecord.MainName"/>.</param>
+/// <param name="OrchestrationPath">The target's definition, so a main that has never come up can be planned.</param>
+/// <param name="Inputs">Inputs pointed at an output of another name, input → output.</param>
+public sealed record WorkspaceLink(string Orchestration, string Workspace, string OrchestrationPath,
+    IReadOnlyDictionary<string, string>? Inputs = null)
+{
+    public string Key => WorkspaceRecord.KeyOf(Orchestration, Workspace);
+
+    /// <summary>The output <paramref name="input"/> takes.</summary>
+    public string OutputFor(string input) => Inputs?.GetValueOrDefault(input) ?? input;
+}
+
 public sealed record WorkspaceRepo(string RepoPath, string Name, string Source, string Dir, bool Worktree, bool BranchCreated, string? From = null);
 
 /// <summary>What sprig knows about one workspace: where its repos are, what it wrote, and the compose projects it
@@ -61,6 +78,9 @@ public sealed record WorkspaceRecord(
 
     /// <summary>What was up when it was paused, for Resume to start again; null when it isn't paused.</summary>
     public PausedRun? Paused { get; init; }
+
+    /// <summary>The workspaces it takes inputs from; null when it has none.</summary>
+    public IReadOnlyList<WorkspaceLink>? Links { get; init; }
 
     public bool InPlace => Branch is null && Folder is null;
 

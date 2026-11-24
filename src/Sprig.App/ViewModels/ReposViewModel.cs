@@ -47,6 +47,9 @@ public sealed record FactLine(string Label, string? Text, IReadOnlyList<string>?
 /// <param name="Where">"in place", or the branch its worktree is on.</param>
 public sealed record RepoWorkspaceRow(string Key, string Name, string Where, string State, bool IsUp, bool IsFailed);
 
+/// <summary>What a repo's page shows under its workspaces: its graph, or one kind of thing its definition describes.</summary>
+public enum RepoTab { Graph, Runs, Infra, Inputs, Offers }
+
 /// <summary>
 /// The Repos page: every repo sprig knows by ID, what each one runs, offers and needs, and where its definition is
 /// kept. A repo is described here once; orchestrations only pick repos and fill what they need.
@@ -261,6 +264,7 @@ public partial class ReposViewModel : PageViewModel
     partial void OnSelectedChanged(RepoItem? value)
     {
         ConfirmingRemove = false;
+        Tab = RepoTab.Graph;
         UsedBy.Clear();
         ClearModel();
         ListWorkspaces(value);
@@ -276,6 +280,7 @@ public partial class ReposViewModel : PageViewModel
         Infra.Clear();
         Offers.Clear();
         Settings.Clear();
+        ClearGraph();
         HasModel = false;
         NeedsApproval = false;
         _pending = null;
@@ -287,7 +292,30 @@ public partial class ReposViewModel : PageViewModel
         OnPropertyChanged(nameof(HasOffers));
         OnPropertyChanged(nameof(HasSettings));
         OnPropertyChanged(nameof(HasInfra));
+        OnPropertyChanged(nameof(RunsTabLabel));
+        OnPropertyChanged(nameof(InfraTabLabel));
+        OnPropertyChanged(nameof(InputsTabLabel));
+        OnPropertyChanged(nameof(OffersTabLabel));
     }
+
+    /// <summary>One kind of thing at a time, so the page doesn't say everything at once. Each repo opens on its graph.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OnGraphTab), nameof(OnRunsTab), nameof(OnInfraTab), nameof(OnInputsTab), nameof(OnOffersTab))]
+    private RepoTab _tab = RepoTab.Graph;
+
+    public bool OnGraphTab => Tab == RepoTab.Graph;
+    public bool OnRunsTab => Tab == RepoTab.Runs;
+    public bool OnInfraTab => Tab == RepoTab.Infra;
+    public bool OnInputsTab => Tab == RepoTab.Inputs;
+    public bool OnOffersTab => Tab == RepoTab.Offers;
+
+    public string RunsTabLabel => $"Runs ({Runs.Count})";
+    public string InfraTabLabel => $"Infra ({Infra.Count})";
+    public string InputsTabLabel => $"Inputs ({Settings.Count})";
+    public string OffersTabLabel => $"Offers ({Offers.Count})";
+
+    [RelayCommand]
+    private void ShowTab(RepoTab tab) => Tab = tab;
 
     /// <summary>Run the repo's definition on its own and show what it describes, so a mistake shows before any
     /// orchestration uses it.</summary>
@@ -308,6 +336,7 @@ public partial class ReposViewModel : PageViewModel
             case Evaluated { Model: RepoModel model }:
                 Show(model);
                 Say("", bad: false);
+                await PreviewAsync(repo);
                 break;
             case Evaluated:
                 Say("Its definition describes an orchestration, not a repo (it starts with orchestration:).", bad: true);

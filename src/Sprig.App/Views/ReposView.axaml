@@ -117,6 +117,50 @@
             <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,monospace" />
             <Setter Property="FontSize" Value="12" />
         </Style>
+        <!-- The page's tabs, as on the Orchestrations page -->
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontSize" Value="13.5" />
+        </Style>
+        <Style Selector="Button.tab.on">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- The graph's choices, as on a workspace's Graph tab -->
+        <Style Selector="Border.segmented">
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="2" />
+        </Style>
+        <Style Selector="Button.segment">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="10,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        </Style>
+        <Style Selector="Button.segment:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#262633" />
+            <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+        </Style>
+        <Style Selector="Button.segment:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource ButtonBgBrush}" />
+        </Style>
+        <Style Selector="Button.segment.on /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1E3550" />
+            <Setter Property="Foreground" Value="#DBEAFE" />
+        </Style>
+        <Style Selector="Button.segment.on:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#24405F" />
+        </Style>
     </UserControl.Styles>
 
     <UserControl.Resources>
@@ -298,25 +342,123 @@
                     </StackPanel>
 
                     <!-- What its definition describes, one card per thing, so each has room for its details. -->
-                    <StackPanel Spacing="20" IsVisible="{Binding HasModel}">
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="phead" Text="RUNS" />
-                            <ItemsControl ItemsSource="{Binding Runs}" ItemTemplate="{StaticResource FactCard}" ItemsPanel="{StaticResource CardWrap}" />
+                    <StackPanel Spacing="14" IsVisible="{Binding HasModel}">
+                        <!-- One kind of thing at a time; each repo opens on its graph -->
+                        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <Button Classes="tab" Classes.on="{Binding OnGraphTab}" Content="Graph" AutomationProperties.AutomationId="repo:tab-graph"
+                                        Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:RepoTab.Graph}" />
+                                <Button Classes="tab" Classes.on="{Binding OnRunsTab}" Content="{Binding RunsTabLabel}" AutomationProperties.AutomationId="repo:tab-runs"
+                                        Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:RepoTab.Runs}" />
+                                <Button Classes="tab" Classes.on="{Binding OnInfraTab}" Content="{Binding InfraTabLabel}" AutomationProperties.AutomationId="repo:tab-infra"
+                                        Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:RepoTab.Infra}" />
+                                <Button Classes="tab" Classes.on="{Binding OnInputsTab}" Content="{Binding InputsTabLabel}" AutomationProperties.AutomationId="repo:tab-inputs"
+                                        Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:RepoTab.Inputs}" />
+                                <Button Classes="tab" Classes.on="{Binding OnOffersTab}" Content="{Binding OffersTabLabel}" AutomationProperties.AutomationId="repo:tab-offers"
+                                        Command="{Binding ShowTabCommand}" CommandParameter="{x:Static vm:RepoTab.Offers}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- How it all relates, drawn as its workspaces' Graph tab would draw it, before anything runs -->
+                        <StackPanel Spacing="10" IsVisible="{Binding OnGraphTab}">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasGraph}">
+                                <TextBlock Classes="label" VerticalAlignment="Center" TextWrapping="Wrap"
+                                           Text="Tags under a node are the infra and inputs it uses. Point at a node for all its links." />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Classes="label" Text="Group by" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <Border Classes="segmented">
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <Button Classes="segment" Classes.on="{Binding GraphByRepo}" Content="Repo"
+                                                        Command="{Binding GroupGraphByRepoCommand}" AutomationProperties.AutomationId="repo:graph-by-repo"
+                                                        ToolTip.Tip="One box for the repo's apps and infra" />
+                                                <Button Classes="segment" Classes.on="{Binding GraphByStartGroup}" Content="Start group"
+                                                        Command="{Binding GroupGraphByStartGroupCommand}" IsVisible="{Binding CanGroupByStartGroup}"
+                                                        AutomationProperties.AutomationId="repo:graph-by-start-group"
+                                                        ToolTip.Tip="A box for each group Start can start; infra goes with its group when only one uses it" />
+                                                <Button Classes="segment" Classes.on="{Binding GraphByRole}" Content="Role"
+                                                        Command="{Binding GroupGraphByRoleCommand}" AutomationProperties.AutomationId="repo:graph-by-role"
+                                                        ToolTip.Tip="A box for each kind of thing: web, APIs, workers, databases, queues…" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <Border Classes="segmented" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <Button Classes="segment" Classes.on="{Binding GraphLayered}" Content="Layered"
+                                                    Command="{Binding ShowLayeredGraphCommand}"
+                                                    ToolTip.Tip="In rows: what uses something sits above it, with infra along the bottom" />
+                                            <Button Classes="segment" Classes.on="{Binding GraphForce}" Content="Force"
+                                                    Command="{Binding ShowForceGraphCommand}"
+                                                    ToolTip.Tip="Pushed and pulled into clusters; drag a node to keep it somewhere" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Button Classes="small" Content="Fit" Command="{Binding FitGraphCommand}" Padding="10,3"
+                                            ToolTip.Tip="Fit the whole graph in view" />
+                                    <Button Classes="small" Content="Reset layout" Command="{Binding ResetGraphLayoutCommand}" Padding="10,3"
+                                            IsVisible="{Binding GraphForce}"
+                                            ToolTip.Tip="Forget where nodes were dragged, here and in this repo's workspaces" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Classes="cell bad" Text="{Binding GraphNote}" IsVisible="{Binding HasGraphNote}" />
+                            <Border Background="{StaticResource PanelBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="12" ClipToBounds="True" IsVisible="{Binding HasGraph}">
+                                <Grid ColumnDefinitions="*,260" Height="560">
+                                    <controls:WorkspaceGraphCanvas Graph="{Binding Graph}" AutomationProperties.AutomationId="repo:graph" />
+                                    <!-- The picked node: what it is, what it uses and what uses it -->
+                                    <Border Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel Margin="14,12" Spacing="10">
+                                                <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasGraphPicked}"
+                                                           Text="Pick a node to see what it uses and what uses it. Ports are given out when a workspace is made, so none show here." />
+                                                <StackPanel Spacing="10" DataContext="{Binding GraphPicked}" x:DataType="vm:GraphNode"
+                                                            IsVisible="{Binding $parent[UserControl].((vm:ReposViewModel)DataContext).HasGraphPicked, FallbackValue=False}">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"
+                                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                                        <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" Text="{Binding KindLabel}" />
+                                                        <TextBlock Classes="cell" Text="{Binding StateDetail}"
+                                                                   IsVisible="{Binding StateDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="3" IsVisible="{Binding HasUses}">
+                                                        <TextBlock Classes="phead" Text="USES" />
+                                                        <ItemsControl ItemsSource="{Binding Uses}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="x:String">
+                                                                    <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                    <StackPanel Spacing="3" IsVisible="{Binding HasUsedBy}">
+                                                        <TextBlock Classes="phead" Text="USED BY" />
+                                                        <ItemsControl ItemsSource="{Binding UsedBy}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="x:String">
+                                                                    <TextBlock Classes="cell mono" FontSize="11.5" Text="{Binding}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Border>
                         </StackPanel>
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="phead" Text="INFRA" />
+                        <ItemsControl ItemsSource="{Binding Runs}" ItemTemplate="{StaticResource FactCard}" ItemsPanel="{StaticResource CardWrap}"
+                                      IsVisible="{Binding OnRunsTab}" />
+                        <StackPanel Spacing="10" IsVisible="{Binding OnInfraTab}">
                             <TextBlock Classes="cell" Text="None" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasInfra}" />
                             <ItemsControl ItemsSource="{Binding Infra}" ItemTemplate="{StaticResource FactCard}" ItemsPanel="{StaticResource CardWrap}" />
                         </StackPanel>
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="phead" Text="INPUTS" />
+                        <StackPanel Spacing="10" IsVisible="{Binding OnInputsTab}">
                             <TextBlock Classes="cell" Text="None" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasSettings}" />
                             <TextBlock Classes="cell" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding HasSettings}"
                                        Text="A value set on the workspace, or given by an orchestration, wins over the default." />
                             <ItemsControl ItemsSource="{Binding Settings}" ItemTemplate="{StaticResource FactCard}" ItemsPanel="{StaticResource CardWrap}" />
                         </StackPanel>
-                        <StackPanel Spacing="10">
-                            <TextBlock Classes="phead" Text="OFFERS" />
+                        <StackPanel Spacing="10" IsVisible="{Binding OnOffersTab}">
                             <TextBlock Classes="cell" Text="Nothing" Foreground="{StaticResource MutedBrush}" IsVisible="{Binding !HasOffers}" />
                             <ItemsControl ItemsSource="{Binding Offers}" ItemTemplate="{StaticResource FactCard}" ItemsPanel="{StaticResource CardWrap}" />
                         </StackPanel>

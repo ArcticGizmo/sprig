@@ -41,6 +41,8 @@ Run `sprig <command> --help` for a command's options. Most commands work out the
 | `sprig inputs` | List each input, its value, and where the value comes from. |
 | `sprig set` | Give a workspace's inputs values, kept for next time. |
 | `sprig unset` | Clear values set on a workspace, so the default applies again. |
+| `sprig link <id> [workspace]` | Have a workspace take its inputs from another workspace's outputs of the same name, such as your branch of a web app against `main` of the API it calls. `--input name=output` points an input at an output of another name. One workspace of each repo at a time: linking to another replaces it. Kept for next time. |
+| `sprig unlink [id]` | Stop a workspace taking inputs from a repo's workspace, or from every one, so the defaults apply again. |
 
 ## Repos, orchestrations and approval
 

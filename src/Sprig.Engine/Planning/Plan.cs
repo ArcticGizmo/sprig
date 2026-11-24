@@ -10,6 +10,7 @@ public sealed record PlanProblem(ProblemSeverity Severity, string Message, Sourc
 
 /// <summary>Everything a workspace of an orchestration would get: ports, env vars, containers and compose changes, each
 /// with the value it resolves to and where that value came from.</summary>
+/// <param name="Linked">What links gave its inputs, so a change in a linked workspace can be told from no change.</param>
 public sealed record Plan(
     string Orchestration,
     string Workspace,
@@ -25,8 +26,14 @@ public sealed record Plan(
     IReadOnlyList<PlannedAsk>? Asks = null,
     IReadOnlyDictionary<string, string>? SettingRoles = null,
     IReadOnlyList<string>? SecretSettings = null,
-    IReadOnlyList<PlannedCdTarget>? CdTargets = null)
+    IReadOnlyList<PlannedCdTarget>? CdTargets = null,
+    IReadOnlyList<PlannedOutput>? Outputs = null,
+    IReadOnlyDictionary<string, LinkedValue>? Linked = null)
 {
+    /// <summary>The output <paramref name="name"/> of the plan's one repo that has it; null when none or several do.</summary>
+    public PlannedOutput? Output(string name)
+        => (Outputs ?? []).Where(o => o.Name == name).ToArray() is [var one] ? one : null;
+
     /// <summary>The role a repo gave a setting (<c>role: queue</c>), by the setting's name.</summary>
     public string? RoleOfSetting(string name) => SettingRoles?.GetValueOrDefault(name);
 
@@ -49,6 +56,18 @@ public sealed record Plan(
         .ToArray();
 }
 
+/// <summary>A value a repo gives others, kept with the plan so a workspace linked to this one can read it without
+/// planning this one again.</summary>
+/// <param name="Owner">The repo that outputs it.</param>
+public sealed record PlannedOutput(string Owner, string Name, string Type, PlannedValue Value);
+
+/// <summary>A value an input takes from another workspace it's linked to (see <see cref="Sprig.Engine.Workspaces.WorkspaceLink"/>).</summary>
+/// <param name="From">The workspace it comes from, as people know it (<c>shop-services--2</c>).</param>
+/// <param name="Workspace">That workspace's key (<see cref="Sprig.Engine.Workspaces.WorkspaceRecord.Key"/>).</param>
+/// <param name="Output">The output it is there.</param>
+/// <param name="Type">The output's type, for checking against the input's.</param>
+public sealed record LinkedValue(string Value, string From, string Workspace, string Output, string Type);
+
 /// <summary>A setting with no value from the workspace, the orchestration or the repo's default.</summary>
 /// <param name="Owner">The repo that has the setting.</param>
 /// <param name="Type">Its value type, such as <c>url</c> or <c>secret</c>.</param>
@@ -70,7 +89,8 @@ public sealed record PlannedWire(string ConsumerOwner, string Consumer, string K
 /// <param name="Resource">The app, container or service whose endpoint it reached; null for a literal value supplied
 /// through a setting.</param>
 /// <param name="Setting">The setting it crossed through, as the app that asked for it names it.</param>
-public sealed record ValueSource(string? Owner, string? Resource, string? Endpoint, string? Setting)
+/// <param name="FromWorkspace">The key of the linked workspace it came from, when it crossed a link.</param>
+public sealed record ValueSource(string? Owner, string? Resource, string? Endpoint, string? Setting, string? FromWorkspace = null)
 {
     /// <summary>The owner of a value set on the workspace itself.</summary>
     public const string Workspace = "this workspace";

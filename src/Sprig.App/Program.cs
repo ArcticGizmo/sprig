@@ -39,6 +39,9 @@ internal static class Program
         if (args.Length > 2 && args[0] == "render-orchestrations")
             return Rendering.HeadlessRenderer.RenderOrchestrations(args[1], args[2]);
 
+        if (args.Length > 2 && args[0] == "render-repo")
+            return Rendering.HeadlessRenderer.RenderRepo(args[1], args[2]);
+
         if (args.Length > 2 && args[0] == "render-workspaces")
             return Rendering.HeadlessRenderer.RenderWorkspaces(args[1], args[2]);
 

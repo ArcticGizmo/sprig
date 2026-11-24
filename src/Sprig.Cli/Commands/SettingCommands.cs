@@ -69,18 +69,34 @@ static class ValuesChange
     /// values (starting nothing), then say which apps to restart.</summary>
     public static int Apply(CliContext cli, ValuesSettings s, IReadOnlyDictionary<string, string> set, IReadOnlyCollection<string> unset)
     {
-        var (id, workspace) = s.Target(cli);
-        if (workspace == WorkspaceRecord.MainName)
+        if (s.Target(cli).Workspace == WorkspaceRecord.MainName)
             throw new InvalidOperationException("main runs the checkout as it is and takes no values; check a branch out in a slot to set your own values: sprig checkout -b <branch> --set name=value");
+        var changed = string.Join(", ", set.Keys.Concat(unset));
+        return Change(cli, s, $"give it values as it's checked out: sprig checkout{{0}} -b <branch> --set name=value",
+            record => cli.Workspaces.SetValues(record.Orchestration, record.Name, set, unset),
+            record => $"{changed} kept on {record.Key}; it uses them next time it starts",
+            record => $"{changed} set on {record.Key}, and its files rewritten",
+            record => new { values = s.UnmaskSecrets ? record.Values : Masked(record, cli) });
+    }
+
+    /// <summary>
+    /// Change what the workspace keeps with <paramref name="change"/> and, when it's ready, make it ready again so its
+    /// files have the change (starting nothing), then say which apps to restart.
+    /// </summary>
+    /// <param name="notMade">What to do instead when the workspace hasn't been made; <c>{0}</c> takes " &lt;id&gt;" when the
+    /// ID was given.</param>
+    public static int Change(CliContext cli, ValuesSettings s, string notMade, Func<WorkspaceRecord, WorkspaceRecord> change,
+        Func<WorkspaceRecord, string> kept, Func<WorkspaceRecord, string> done, Func<WorkspaceRecord, object> payload)
+    {
+        var (id, workspace) = s.Target(cli);
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return 1;
         if (cli.Workspaces.Get(loaded.Id, workspace) is not { } record)
-            throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; give it values as it's checked out: sprig checkout {(s.Id is null ? "" : $"{loaded.Id} ")}-b <branch> --set name=value");
+            throw new InvalidOperationException($"{loaded.Id} has no workspace '{workspace}' yet; " + string.Format(notMade, s.Id is null ? "" : $" {loaded.Id}"));
 
         var before = cli.Workspaces.LastPlan(record.Orchestration, record.Name);
-        record = cli.Workspaces.SetValues(record.Orchestration, record.Name, set, unset);
-        var changed = string.Join(", ", set.Keys.Concat(unset));
+        record = change(record);
         if (record.State != WorkspaceState.Up)
-            return CliOutput.Ok(s.Json, $"{changed} kept on {record.Key}; it uses them next time it starts", new { ok = true, values = s.UnmaskSecrets ? record.Values : Masked(record, cli) });
+            return CliOutput.Ok(s.Json, kept(record), Merged(payload(record), null));
 
         try
         {
@@ -88,25 +104,29 @@ static class ValuesChange
         }
         catch (WorkspaceException e)
         {
-            Console.Error.WriteLine($"error: kept, but {record.Key} couldn't take them: {e.Message}");
+            Console.Error.WriteLine($"error: kept, but {record.SlotName} couldn't take it: {e.Message}");
+            foreach (var problem in e.Problems) Console.Error.WriteLine($"  {problem.Message}");
             if (e.Asks.Count > 0) cli.Ansi.MarkupLine("[dim]Give it the rest with sprig set, or start it with: sprig up --set name=value[/]");
             return 1;
         }
         var after = cli.Workspaces.LastPlan(record.Orchestration, record.Name)!;
-        var restart = Changed(before, after);
-        if (s.Json) { CliOutput.Json(new { ok = true, values = s.UnmaskSecrets ? record.Values : Masked(record, cli), restart }); return 0; }
-        CliOutput.Success($"{changed} set on {record.Key}, and its files rewritten");
+        var restart = WorkspaceService.ChangedApps(before, after);
+        if (s.Json) { CliOutput.Json(Merged(payload(record), restart)); return 0; }
+        CliOutput.Success(done(record));
         if (restart.Count > 0)
             cli.Ansi.MarkupLine($"[dim]Restart what uses them: sprig start {Markup.Escape(string.Join(" ", restart))}{(s.Id is null && s.Workspace is null ? "" : $" (with {Markup.Escape(UpCommand.Words(record))} first)")}[/]");
         return 0;
     }
 
-    /// <summary>Apps whose values differ between the two plans, by name.</summary>
-    static IReadOnlyList<string> Changed(Plan? before, Plan after) => after.Apps
-        .Where(a => before?.Apps.FirstOrDefault(b => b.Key == a.Key) is not { } old
-                    || !old.Env.Select(e => (e.Key, e.File, e.Value.Value)).SequenceEqual(a.Env.Select(e => (e.Key, e.File, e.Value.Value))))
-        .Select(a => a.Name)
-        .ToArray();
+    /// <summary>The command's own payload with ok and, when it was made ready again, the apps to restart beside it.</summary>
+    static Dictionary<string, object?> Merged(object payload, IReadOnlyList<string>? restart)
+    {
+        var merged = new Dictionary<string, object?> { ["ok"] = true };
+        foreach (var p in payload.GetType().GetProperties())
+            merged[char.ToLowerInvariant(p.Name[0]) + p.Name[1..]] = p.GetValue(payload);
+        if (restart is not null) merged["restart"] = restart;
+        return merged;
+    }
 
     public static IReadOnlyDictionary<string, string> Masked(WorkspaceRecord record, CliContext cli)
         => SecretValues.Trimmed(record.Values, cli.Workspaces.LastPlan(record.Orchestration, record.Name)) ?? new Dictionary<string, string>();
@@ -167,8 +187,13 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
     {
         if (OrchestrationLoad.Load(cli, id, s, workspace) is not { } loaded) return null;
         var record = cli.Workspaces.Get(loaded.Id, workspace);
+        var problems = new List<PlanProblem>();
+        var linked = record is null ? null : cli.Workspaces.ResolveLinks(loaded, record, problems);
         var plan = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, workspace, cli.Settings.Get(), new HashSet<int>(),
-            Values: record?.Values));
+            Values: record?.Values, Linked: linked));
+        if (!s.Json)
+            foreach (var problem in problems)
+                cli.Ansi.MarkupLine($"{(problem.Severity == ProblemSeverity.Error ? "[red]error[/]" : "[yellow]warning[/]")}: {Markup.Escape(problem.Message)}");
         return (loaded, record, Rows(loaded, plan, record, s).ToArray());
     }
 
@@ -184,7 +209,7 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
             table.AddRow(new Markup(Markup.Escape(r.Repo)), new Markup(Markup.Escape(r.Name)), new Markup($"[dim]{Markup.Escape(r.Type)}[/]"),
                 new Markup(r.Value is null ? "[yellow]to ask[/]" : Markup.Escape(r.Value)), new Markup($"[dim]{Markup.Escape(r.From)}[/]"));
         cli.Ansi.Write(table);
-        cli.Ansi.MarkupLine("[dim]Change one with: sprig set name=value. Clear it with: sprig unset name[/]");
+        cli.Ansi.MarkupLine("[dim]Change one with: sprig set name=value. Clear it with: sprig unset name. Take them from another workspace with: sprig link <id> [[branch]][/]");
     }
 
     static IEnumerable<Row> Rows(LoadedOrchestration loaded, Plan plan, WorkspaceRecord? record, GlobalSettings s)
@@ -193,6 +218,8 @@ public sealed class SettingsCommand(CliContext cli) : Command<ValuesSettings>
             foreach (var setting in repo.Settings)
             {
                 var from = record?.Values?.ContainsKey(setting.Name) == true ? "this workspace"
+                    : plan.Linked?.GetValueOrDefault(setting.Name) is { } linked
+                        ? "🔗 " + (linked.Output == setting.Name ? linked.From : $"{linked.From}'s {linked.Output}")
                     : loaded.Orchestration!.Bindings.Any(b => b.Setting == setting.Name) ? "the orchestration"
                     : loaded.Repos.Values.Where(r => r != repo && r.Exports.Any(e => e.Name == setting.Name)).Select(r => r.Name).FirstOrDefault() is { } exporter ? exporter
                     : setting.Default is not null ? "its default"

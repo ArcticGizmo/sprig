@@ -380,6 +380,65 @@ internal static partial class HeadlessRenderer
         }
     }
 
+    /// <summary>The Repos page on the repo at <paramref name="repoFolder"/>, in a throwaway store where its sprig.yaml is
+    /// approved up front: its graph as drawn, then with its most-linked node picked.</summary>
+    public static int RenderRepo(string outFile, string repoFolder)
+    {
+        var store = Path.Combine(Path.GetTempPath(), "sprig-render-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            AppBuilder.Configure<App>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .WithInterFont()
+                .SetupWithoutStarting();
+
+            var services = new AppServices(store);
+            var folder = Path.GetFullPath(repoFolder);
+            var file = Path.Combine(folder, "sprig.yaml");
+            services.Trust.Approve(file, Sprig.Engine.Definitions.DefinitionHash.Of(File.ReadAllText(file)));
+            var entry = services.Authoring.AddRepo(folder, Path.GetFileName(folder));
+
+            var vm = new MainWindowViewModel(services, checkForUpdates: false);
+            vm.NavigateCommand.Execute(vm.Repos);
+            var window = new MainWindow { DataContext = vm, Width = 1440, Height = 1000 };
+            window.Show();
+            vm.Repos.Show(entry.Id);
+            var clock = Stopwatch.StartNew();
+            while (vm.Repos.Graph is null && clock.Elapsed < TimeSpan.FromSeconds(60)) Pump(TimeSpan.FromMilliseconds(100));
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, outFile);
+
+            if (vm.Repos.Graph is { } graph && graph.Nodes.OrderByDescending(n => n.Uses.Count + n.UsedBy.Count).FirstOrDefault() is { } busiest)
+            {
+                graph.Select(busiest.Key);
+                Pump(TimeSpan.FromMilliseconds(300));
+                Save(window, Sibling(outFile, "picked"));
+            }
+            vm.Repos.GroupGraphByRoleCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "by-role"));
+            vm.Repos.GroupGraphByRepoCommand.Execute(null);
+            vm.Repos.ShowTabCommand.Execute(RepoTab.Runs);
+            Pump(TimeSpan.FromMilliseconds(300));
+            Save(window, Sibling(outFile, "runs"));
+            window.Close();
+
+            Console.WriteLine($"rendered {Path.GetFullPath(outFile)} (nodes: {vm.Repos.Graph?.Nodes.Count ?? 0}, links: {vm.Repos.Graph?.Links.Count ?? 0}, "
+                + $"note: '{vm.Repos.GraphNote}', check: '{vm.Repos.Check}'), -picked and -by-role");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"headless render failed: {ex}");
+            return 1;
+        }
+        finally
+        {
+            try { Directory.Delete(store, recursive: true); } catch { /* temp store */ }
+        }
+    }
+
     static void Wait(System.Threading.Tasks.Task task)
     {
         var clock = Stopwatch.StartNew();

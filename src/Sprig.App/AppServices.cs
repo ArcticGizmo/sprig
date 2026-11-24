@@ -38,7 +38,8 @@ public sealed class AppServices
     public UiState Ui { get; }
 
     /// <param name="root">Store root; null means this profile's store.</param>
-    public AppServices(string? root = null)
+    /// <param name="now">For tests: the clock <see cref="History"/> counts its steps by, so a step can't turn mid-test.</param>
+    public AppServices(string? root = null, Func<DateTime>? now = null)
     {
         Paths = new SprigPaths(root);
         Settings = new FileSettingsStore(Paths, dev: root is null && AppProfile.IsDev);
@@ -57,7 +58,7 @@ public sealed class AppServices
         Workspaces = new WorkspaceService(new WorkspaceStore(Paths), new PortLeases(Paths), Settings,
             git, new DockerCompose(processes), host: Host, loader: Loader);
         InfraUsage = new InfraUsage(Workspaces);
-        History = new UsageHistory(HostStatus, InfraUsage);
+        History = new UsageHistory(HostStatus, InfraUsage, now);
     }
 
     /// <summary>The last ten minutes of what everything used, recorded from the host's and docker's answers.</summary>

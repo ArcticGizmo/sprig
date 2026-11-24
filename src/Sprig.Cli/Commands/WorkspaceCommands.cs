@@ -711,7 +711,7 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
         {
             var table = new Table().Border(TableBorder.Rounded).Title("Workspaces").AddColumns("ID", "Slot", "Branch", "State", "Folder", "Updated");
             foreach (var r in others)
-                table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.SlotName),
+                table.AddRow(Markup.Escape(r.Orchestration), Markup.Escape(r.SlotName) + Links(r),
                     r.InPlace ? "[dim](in place)[/]" : r.Branch is { } b ? Markup.Escape(b) : "[dim](detached)[/]", State(r),
                     Folder(r), r.UpdatedAt.LocalDateTime.ToString("g"));
             cli.Ansi.Write(table);
@@ -719,6 +719,13 @@ public sealed class WorkspacesCommand(CliContext cli) : Command<WorkspacesComman
         return 0;
 
         static string Folder(WorkspaceRecord r) => Markup.Escape((r.Folder ?? string.Join(", ", r.Repos.Select(x => x.Dir))).Replace('\\', '/'));
+
+        // A link to a workspace that's gone is shown in red, since making this one ready fails until it's sorted.
+        string Links(WorkspaceRecord r) => r.Links is not { Count: > 0 } links ? ""
+            : " [dim]🔗[/] " + string.Join(", ", links.Select(l =>
+                l.Workspace != WorkspaceRecord.MainName && cli.Workspaces.Get(l.Orchestration, l.Workspace) is null
+                    ? $"[red]{Markup.Escape(cli.Workspaces.LinkLabel(l))} (gone)[/]"
+                    : $"[dim]{Markup.Escape(cli.Workspaces.LinkLabel(l))}[/]"));
     }
 }
 

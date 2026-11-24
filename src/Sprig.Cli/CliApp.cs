@@ -86,6 +86,8 @@ public static class CliApp
         config.AddCommand<HookCommand>("hook");
         config.AddCommand<SetCommand>("set");
         config.AddCommand<UnsetCommand>("unset");
+        config.AddCommand<LinkCommand>("link");
+        config.AddCommand<UnlinkCommand>("unlink");
         config.AddCommand<SettingsCommand>("inputs").WithAlias("settings");
         config.AddCommand<InfoCommand>("info");
         config.AddCommand<DownCommand>("down");

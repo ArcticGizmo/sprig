@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.15] - 2026-11-24
+
+Workspaces can lean on each other now, and repos show their shape before they run.
+
+### Added
+- **Linked workspaces** — `sprig link` feeds one workspace's inputs from another's outputs (your web branch against `main` of the API).
+- `--input name=output` for names that don't match; `sprig unlink` undoes it.
+- Links follow changes: linked workspaces get fresh files and a list of apps to restart. Nothing restarts behind your back.
+- 🔗 in `sprig inputs` and `sprig workspaces`; a link to a vanished workspace shows red.
+- Circular links are refused before they chase their own tail.
+- **Repo graph** — the Repos page opens on the graph, drawn from the definition alone.
+- Repo details in tabs with counts: Runs, Infra, Inputs, Offers.
+
+---
+
 ## [v0.9.14] - 2026-11-23
 
 Asking for a worktree now gets you into it, not just near it.

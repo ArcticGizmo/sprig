@@ -96,6 +96,9 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     /// <summary>Its workspace's pause remembers it, so while it's stopped it reads as paused rather than stopped.</summary>
     public bool Paused { get; init; }
 
+    /// <summary>Drawn from a definition alone, with no workspace to say how it's doing, so its line says what it is.</summary>
+    public bool Preview { get; init; }
+
     /// <summary>Taken with others as a tag: drawn without its links unless it, or what uses it, is in focus.</summary>
     public bool IsTag => IsInfra || IsOutside;
 
@@ -106,6 +109,21 @@ public sealed partial class GraphNode(TopologyNode node, WorkspaceAppRow? app, I
     /// <summary>Show what the host last said about the app.</summary>
     public void Refresh()
     {
+        // Kept to a word: the layout makes room for a node's name, and a longer line runs into its neighbour's.
+        if (Preview)
+        {
+            (State, StateDetail) = node.Kind switch
+            {
+                TopologyKind.App => (Role ?? "app", ""),
+                TopologyKind.Job => ("job", "runs to the end, then what waits for it starts"),
+                TopologyKind.Container => ("container", ""),
+                TopologyKind.ComposeService => ("compose", ""),
+                TopologyKind.Outside => ("outside", ValueOrNothing(node.Detail)),
+                _ => ("asked for", "a workspace is given it when it's made"),
+            };
+            (Health, IsAlive) = (NodeHealth.Unknown, false);
+            return;
+        }
         if (node.Kind == TopologyKind.Outside) (State, StateDetail, Health) = ("outside", ValueOrNothing(node.Detail), NodeHealth.Unknown);
         else if (node.Kind == TopologyKind.Missing) (State, StateDetail, Health) = ("no value yet", "give it one in the workspace's Inputs", NodeHealth.Bad);
         else if (IsInfra && State.Length == 0) (State, Health) = ("checking…", NodeHealth.Unknown);

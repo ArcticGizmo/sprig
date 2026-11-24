@@ -278,13 +278,14 @@ public sealed partial class WorkspaceService(
         }
         var problems = new List<PlanProblem>();
         var allValues = MergeValues(existing?.Values, values);
+        var linked = existing is null ? null : ResolveLinks(loaded, existing with { Values = allValues }, problems);
         var main = workspace == WorkspaceRecord.MainName;
         var listening = _listening();
         // Main always wants the same ports, so while it's up it's what's listening on them.
         if (main && existing is { State: not (WorkspaceState.Down or WorkspaceState.Released) })
             listening = listening.Except(leases.Get(existing.Key).Values).ToHashSet();
         var dryPlan = Planner.Build(new PlanInput(orchestration, loaded.Repos, workspace, settingsNow, listening,
-            ComposeFiles: loaded.ComposeFiles(problems), Values: allValues, Main: main));
+            ComposeFiles: loaded.ComposeFiles(problems), Values: allValues, Main: main, Linked: linked));
         problems.AddRange(dryPlan.Problems);
         if (!dryPlan.HasErrors) problems.AddRange(CheckFiles(dryPlan, loaded.ReadFrom));
         if (!inPlace) problems.AddRange(CheckCopies(loaded, loaded.ReadFrom));
@@ -348,7 +349,14 @@ public sealed partial class WorkspaceService(
             }
 
             step.Start("Ports");
-            var plan = LeasePorts(loaded, record, existing, dirs, settingsNow);
+            // Read again, since the branch's definitions can have inputs the main checkout's didn't.
+            if (record.Links is { Count: > 0 })
+            {
+                var linkProblems = new List<PlanProblem>();
+                linked = ResolveLinks(loaded, record, linkProblems);
+                if (linkProblems.Any(p => p.Severity == ProblemSeverity.Error)) throw new WorkspaceException("its links have problems", linkProblems);
+            }
+            var plan = LeasePorts(loaded, record, existing, dirs, settingsNow, linked);
             step.Done(string.Join(", ", plan.Ports.Select(p => $"{p.Resource}.{p.Endpoint} {p.Port}")));
 
             step.Start("Files");
@@ -369,6 +377,13 @@ public sealed partial class WorkspaceService(
             var upAt = DateTimeOffset.UtcNow;
             record = record with { State = WorkspaceState.Up, UpdatedAt = upAt, LastUpAt = upAt, ReadyFrom = ReadyFromFiles(loaded) };
             store.Save(record);
+            foreach (var refreshed in RefreshLinked(record, cancellation))
+            {
+                step.Start($"Linked {refreshed.Record.SlotName}");
+                step.Done(refreshed.Error is { } error ? $"couldn't take the change: {error}"
+                    : refreshed.Restart.Count > 0 ? $"files rewritten; restart {string.Join(", ", refreshed.Restart)}"
+                    : "files rewritten");
+            }
             return record;
         }
         catch (Exception e) when (e is not OperationCanceledException)
@@ -1104,7 +1119,8 @@ public sealed partial class WorkspaceService(
             .Select(d => WorktreeBlocker(loaded.Repos.TryGetValue(d.Reference.Path, out var repo) ? repo.Name : d.Reference.Path, d.Source, d.Dir, branch, clearing))
             .FirstOrDefault(b => b is not null);
 
-    Plan LeasePorts(LoadedOrchestration loaded, WorkspaceRecord record, WorkspaceRecord? existing, IReadOnlyDictionary<string, string> dirs, SprigSettings settingsNow)
+    Plan LeasePorts(LoadedOrchestration loaded, WorkspaceRecord record, WorkspaceRecord? existing, IReadOnlyDictionary<string, string> dirs,
+        SprigSettings settingsNow, IReadOnlyDictionary<string, LinkedValue>? linked)
     {
         var problems = new List<PlanProblem>();
         var compose = loaded.ComposeFiles(problems, dirs);
@@ -1123,7 +1139,8 @@ public sealed partial class WorkspaceService(
             var inUse = listening.Where(p => !(wasUp && mine.Values.Contains(p))).ToHashSet();
             var built = Planner.Build(new PlanInput(loaded.Orchestration!, loaded.Repos, record.Name, settingsNow, inUse,
                 Leased: keep ? mine : null, ComposeFiles: compose, Random: record.PortPolicy == "random" ? Random.Shared : null,
-                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values, Held: Holders(others), Main: record.IsMain));
+                PortPolicy: record.PortPolicy, WorktreesFrom: WorktreesFrom(record), Values: record.Values, Held: Holders(others), Main: record.IsMain,
+                Linked: linked));
             if (built.HasErrors || built.ToAsk.Count > 0) return (built, null);
             return (built, built.Ports.Where(p => p.Port is not null).ToDictionary(p => p.Key, p => p.Port!.Value));
         });

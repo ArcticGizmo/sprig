@@ -157,9 +157,9 @@ Compose files the repo already has, by path. Under each, `services` names the se
 
 ### `inputs` and `outputs`
 
-An input is a value the repo can be given: by the workspace, an orchestration, or another repo's output of the same name. `type` is `url`, `connection-string`, `host-port`, `secret` or `text` (the default). `default` is used when nothing gives one; without one, sprig asks when a workspace is made. `role` says what it points at, for how it's drawn.
+An input is a value the repo can be given: by the workspace, another workspace it's linked to (`sprig link`), an orchestration, or another repo's output of the same name. `type` is `url`, `connection-string`, `host-port`, `secret` or `text` (the default). `default` is used when nothing gives one; without one, sprig asks when a workspace is made. `role` says what it points at, for how it's drawn.
 
-An output is a value the repo gives to others: `type` and `value`.
+An output is a value the repo gives to others: `type` and `value`. A workspace linked to this repo's workspace takes it into each of its inputs of the same name.
 
 ### `files`
 

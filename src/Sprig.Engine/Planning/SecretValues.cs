@@ -76,6 +76,11 @@ public static partial class SecretValues
                 Overrides = c.Overrides.Select(o => o with { Value = Value(o.Value, LooksSecret(o.Path)) }).ToArray(),
             }).ToArray(),
             Links = plan.Links?.Select(l => l with { Url = ValueMask.Apply(l.Url) }).ToArray(),
+            Outputs = plan.Outputs?.Select(o => o with
+            {
+                Value = Value(o.Value, o.Type == "secret" || LooksSecret(o.Name) || (o.Value.Sources ?? []).Any(s => s.Setting is { } name && plan.IsSecretSetting(name))),
+            }).ToArray(),
+            Linked = plan.Linked?.ToDictionary(l => l.Key, l => l.Value with { Value = Trim(l.Value.Value, l.Value.Type == "secret" || IsSecret(plan, l.Key))! }),
         };
     }
 

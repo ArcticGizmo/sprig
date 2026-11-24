@@ -19,6 +19,8 @@ namespace Sprig.Engine.Planning;
 /// <paramref name="PortsInUse"/> are avoided whoever holds them.</param>
 /// <param name="Main">The plan is a main checkout's, which runs the repos as they are: on their own ports, with nothing
 /// written into them and nothing asked for.</param>
+/// <param name="Linked">Values inputs take from the workspaces this one is linked to, by setting name. Only the
+/// workspace's own <paramref name="Values"/> win over them.</param>
 public sealed record PlanInput(
     OrchestrationModel Orchestration,
     IReadOnlyDictionary<string, RepoModel> Repos,
@@ -32,7 +34,8 @@ public sealed record PlanInput(
     string? WorktreesFrom = null,
     IReadOnlyDictionary<string, string>? Values = null,
     IReadOnlyDictionary<int, PortHolder>? Held = null,
-    bool Main = false);
+    bool Main = false,
+    IReadOnlyDictionary<string, LinkedValue>? Linked = null);
 
 /// <summary>The services in a repo's compose file.</summary>
 /// <param name="FixedNames">Services with a <c>container_name</c>, which would clash between workspaces.</param>
@@ -101,10 +104,28 @@ public static class Planner
                 .SelectMany(s => (s.Repo!.CdTargets ?? []).Select(t => new PlannedCdTarget(s.Owner, s.RepoPath!, t.Name, t.Path)))
                 .ToArray();
 
+            var links = PlanLinks(_orchestration, input.Orchestration.Links);
+            var outputs = PlanOutputs();
             return new Plan(
                 input.Orchestration.Name, input.Workspace, input.PortPolicy, input.WorktreesFrom,
-                _ports, Order(apps), containers, compose, groups, _problems, PlanLinks(_orchestration, input.Orchestration.Links),
-                _asks.Count > 0 ? _asks : null, SettingRoles(), secrets.Length > 0 ? secrets : null, cd.Length > 0 ? cd : null);
+                _ports, Order(apps), containers, compose, groups, _problems, links,
+                _asks.Count > 0 ? _asks : null, SettingRoles(), secrets.Length > 0 ? secrets : null, cd.Length > 0 ? cd : null,
+                outputs.Count > 0 ? outputs : null, input.Linked is { Count: > 0 } ? input.Linked : null);
+        }
+
+        /// <summary>Every repo's outputs, filled in. An output nothing in the workspace uses mustn't make it ask for a
+        /// value or fail, so what resolving them adds to the problems and asks is taken back out; one that can't be
+        /// filled in is kept with no value.</summary>
+        List<PlannedOutput> PlanOutputs()
+        {
+            var outputs = new List<PlannedOutput>();
+            var (problems, asks) = (_problems.Count, _asks.Count);
+            foreach (var scope in _scopes.Where(s => s.Repo is not null))
+                foreach (var export in scope.Repo!.Exports)
+                    outputs.Add(new PlannedOutput(scope.Owner, export.Name, export.Type, Resolve(scope, export.Value, export.Location)));
+            _problems.RemoveRange(problems, _problems.Count - problems);
+            _asks.RemoveRange(asks, _asks.Count - asks);
+            return outputs;
         }
 
         /// <summary>A value under a name that says it's secret, which no input of <c>type: secret</c> gives: sprig masks
@@ -640,6 +661,7 @@ public static class Planner
         /// <summary>The workspace sets it, the orchestration binds it, or another repo exports it.</summary>
         bool FilledElsewhere(string repoPath, string name)
             => input.Values?.ContainsKey(name) == true
+               || input.Linked?.ContainsKey(name) == true
                || input.Orchestration.Bindings.Any(b => b.Setting == name)
                || input.Repos.Any(r => r.Key != repoPath && r.Value.Exports.Any(e => e.Name == name));
 
@@ -784,6 +806,17 @@ public static class Planner
 
             if (input.Values?.TryGetValue(name, out var set) == true)
                 return new Resolved(set, [$"input {name} ← this workspace"], [new ValueSource(ValueSource.Workspace, null, null, name)]);
+
+            if (input.Linked?.TryGetValue(name, out var linked) == true)
+            {
+                if (declared is not null && declared.Type != linked.Type && declared.Type != "text" && linked.Type != "text")
+                {
+                    Problem($"{scope.Owner}'s input '{name}' is a {declared.Type}, but {linked.From} outputs {linked.Output} as {linked.Type}", at);
+                    return null;
+                }
+                var label = linked.Output == name ? linked.From : $"{linked.From}'s {linked.Output}";
+                return new Resolved(linked.Value, [$"input {name} ← {label}"], [new ValueSource(linked.From, null, null, name, linked.Workspace)]);
+            }
 
             var binding = input.Orchestration.Bindings.FirstOrDefault(b => b.Setting == name);
             if (binding is not null)

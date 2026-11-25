@@ -9,6 +9,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.16] - 2026-11-25
+
+Finding the workspace you meant, without scrolling for it.
+
+### Added
+- `sprig cd -s <text>` finds a workspace by ID, folder or branch; `sprig path -s` too.
+- Every search word must match. One match goes straight there.
+- Typing in the `sprig cd` lists hides what doesn't match.
+- Escape clears the search first, then backs out.
+
+---
+
 ## [v0.9.15] - 2026-11-24
 
 Workspaces can lean on each other now, and repos show their shape before they run.

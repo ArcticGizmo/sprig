@@ -17,6 +17,10 @@ public class PlaceSettings : WorkspaceSettings
     [Description("Where in the workspace: root (its own folder), a repo, or a folder its repos name under cd: (default: root)")]
     public string? Place { get; set; }
 
+    [CommandOption("-s|--search <text>")]
+    [Description("Find the workspace by any part of its ID, folder name or branch (or 'free'); each word must match. One match goes straight there, more are listed to pick from. An ID before it keeps the search to that repo; a word after it is the place")]
+    public string? Search { get; set; }
+
     // A word that isn't one of the ID's workspaces is the place, so `sprig cd api` stays in this workspace.
     protected override bool TakesApps => true;
 }
@@ -30,8 +34,13 @@ static class PlaceTarget
         var named = !string.IsNullOrEmpty(s.Orchestration) || !string.IsNullOrEmpty(s.Workspace) || s.Place is not null;
         WorkspaceRecord record;
         var words = new List<string>();
+        if (!string.IsNullOrWhiteSpace(s.Search))
+        {
+            if (Searched(cli, s, words, interactive) is not { } found) return null;
+            record = found;
+        }
         // A gap is always asked about, even with one answer, so the same keys do the same thing every time.
-        if (!named && interactive)
+        else if (!named && interactive)
         {
             var here = Here.TryFind(cli);
             var choices = Choices(cli, here?.Id);
@@ -73,6 +82,42 @@ static class PlaceTarget
             throw new DirectoryNotFoundException($"{chosen.Dir} isn't there; {record.SlotName} may need making ready again: sprig up {record.Orchestration} {record.Name}");
         return (record, chosen);
     }
+
+    /// <summary>
+    /// The workspace <c>--search</c> finds: every workspace's, or the named ID's, that match each of its words. Unlike a
+    /// gap, a search that leaves one answer takes it, since narrowing to one is what it was for; without a terminal to
+    /// pick at, more than one is refused, naming them. Words that aren't the ID are added to <paramref name="words"/>.
+    /// </summary>
+    static WorkspaceRecord? Searched(CliContext cli, PlaceSettings s, List<string> words, bool interactive)
+    {
+        string? id = null;
+        if (!string.IsNullOrEmpty(s.Orchestration))
+        {
+            if (cli.Orchestrations.Resolve(s.Orchestration) is not null && !File.Exists(s.Orchestration)) id = s.Orchestration;
+            else words.Add(s.Orchestration);
+        }
+        if (!string.IsNullOrEmpty(s.Workspace)) words.Add(s.Workspace);
+
+        // This repo's main is searched too before it has ever come up, as the list without a search would show it.
+        var here = Here.TryFind(cli);
+        var pool = Choices(cli, id);
+        if (id is null && here is { } inRepo)
+            pool = [.. pool, .. Choices(cli, inRepo.Id).Where(c => pool.All(p => p.Key != c.Key))];
+        var matches = Matching(pool, s.Search!);
+        var within = id is null ? "" : $" of {id}";
+        if (matches.Count == 0)
+            throw new InvalidOperationException($"no workspace{within} matches '{s.Search}'; see them with: sprig workspaces{(id is null ? "" : $" {id}")}");
+        if (matches.Count == 1) return matches[0];
+        if (!interactive)
+            throw new InvalidOperationException($"'{s.Search}' matches {matches.Count} workspaces{within}: {string.Join(", ", matches.Select(m => Describe(m, markup: false)))}; add a word to narrow it");
+        var current = here is { } h ? Record(cli, h.Id, h.Workspace ?? WorkspaceRecord.MainName) : null;
+        return PickWorkspace(cli, matches, current, showId: id is null);
+    }
+
+    /// <summary>Those whose ID, folder name or branch (or "free") contains every word of <paramref name="search"/>, in
+    /// any case and any order.</summary>
+    internal static IReadOnlyList<WorkspaceRecord> Matching(IEnumerable<WorkspaceRecord> records, string search)
+        => records.Where(r => SearchWords.Match($"{r.Orchestration} {Describe(r, markup: false)}", search)).ToArray();
 
     /// <summary>The workspace's stored record; for main, which exists before it has ever come up, one made for it.</summary>
     public static WorkspaceRecord? Record(CliContext cli, string id, string workspace)
@@ -126,22 +171,10 @@ static class PlaceTarget
     static WorkspacePlace? PickPlace(CliContext cli, WorkspaceRecord record, IReadOnlyList<WorkspacePlace> places)
         => PickOrNone(cli, $"Where in {Describe(record)}?", places, p => $"{Markup.Escape(p.Name)}  [dim]{Markup.Escape(p.What)}[/]");
 
-    /// <summary>A list that ends in "none", which Escape also picks, so backing out never needs Ctrl+C.</summary>
+    /// <summary>A list that ends in "none", which Escape also picks, so backing out never needs Ctrl+C. Typing narrows
+    /// it, for when there are more workspaces than fit on a page.</summary>
     static T? PickOrNone<T>(CliContext cli, string title, IEnumerable<T> choices, Func<T, string> describe) where T : class
-    {
-        var none = new Choice<T>(null);
-        return cli.Ansi.Prompt(new SelectionPrompt<Choice<T>>()
-            .Title(title)
-            .PageSize(15)
-            .UseConverter(c => c.Value is { } v ? describe(v) : "[dim]none[/]")
-            .AddChoices(choices.Select(c => new Choice<T>(c)).Append(none))
-            .AddCancelResult(none)).Value;
-    }
-
-    sealed class Choice<T>(T? value) where T : class
-    {
-        public T? Value => value;
-    }
+        => FilterPrompt.Pick(cli.Ansi, title, choices, describe);
 }
 
 [Description("Print the folder of a workspace, or of a place in it (for scripts): root, a repo, or a folder its repos name under cd:")]
@@ -166,7 +199,7 @@ public sealed class PathCommand(CliContext cli) : Command<PlaceSettings>
 /// otherwise opens a new terminal window there, in the shell it came from (under Windows Terminal, a new Windows
 /// Terminal window), or elsewhere than Windows prints the folder.
 /// </summary>
-[Description("Go to a workspace's folder, or a place in it: root, a repo, or a folder its repos name under cd:. With nothing named at a terminal, pick from a list that shows each workspace's branch, or that it's free")]
+[Description("Go to a workspace's folder, or a place in it: root, a repo, or a folder its repos name under cd:. With nothing named at a terminal, pick from a list that shows each workspace's branch, or that it's free (type to narrow it); find one by part of its name or branch with --search")]
 public sealed class CdCommand(CliContext cli) : Command<CdCommand.Settings>
 {
     public sealed class Settings : PlaceSettings

@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.17] - 2026-11-26
+
+Finding the slots you finished with weeks ago, without asking GitHub.
+
+### Added
+- **Tidy up** on the Workspaces page finds slots whose branch is done.
+- Spots merged branches, squash and rebase merges included.
+- Flags branches whose remote was deleted before they were merged.
+- Shows each fetch and check as it goes.
+- "Select the N merged" ticks them, ready to Free or Remove.
+- Only runs when asked (fetching every repo isn't free).
+
+---
+
 ## [v0.9.16] - 2026-11-25
 
 Finding the workspace you meant, without scrolling for it.

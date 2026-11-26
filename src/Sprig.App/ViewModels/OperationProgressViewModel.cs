@@ -80,6 +80,7 @@ public partial class OperationProgressViewModel(string heading) : ViewModelBase
             StepState.Running => ProgressState.Running,
             StepState.Done => ProgressState.Done,
             StepState.Skipped => ProgressState.Done,
+            StepState.Warning => ProgressState.Warning,
             _ => ProgressState.Error,
         };
         if (e.Detail is { Length: > 0 } detail) step.Detail = detail;

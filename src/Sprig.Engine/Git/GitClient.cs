@@ -9,6 +9,22 @@ public sealed record GitBranch(string Name, string? Remote)
     public string Ref => Remote is null ? Name : $"{Remote}/{Name}";
 }
 
+/// <summary>What has become of a branch, as git alone can tell.</summary>
+public enum BranchFate
+{
+    /// <summary>Its work isn't in the default branch, and the remote it tracks (if any) still has it.</summary>
+    Live,
+    /// <summary>No commits of its own and never pushed: just made, so there's nothing to say yet.</summary>
+    Empty,
+    /// <summary>Everything on it is in the default branch, however it got there: merged, squashed or rebased.</summary>
+    Merged,
+    /// <summary>The remote it tracked deleted it, but its work isn't in the default branch.</summary>
+    Gone,
+}
+
+/// <param name="Into">The branch it was checked against, e.g. <c>origin/main</c>.</param>
+public sealed record BranchCheck(string Branch, BranchFate Fate, string? Into);
+
 /// <summary>The git operations a workspace needs, by shelling out to <c>git</c>.</summary>
 public sealed class GitClient(IProcessRunner runner)
 {
@@ -104,6 +120,52 @@ public sealed class GitClient(IProcessRunner runner)
             if (BranchExists(repo, name)) return name;
         var current = Run(repo, "symbolic-ref", "--quiet", "--short", "HEAD");
         return current.Success && current.StdOut.Trim() is { Length: > 0 } branch ? branch : null;
+    }
+
+    /// <summary>
+    /// Bring every remote's branches up to date and drop the ones the remotes deleted, so a branch whose remote went reads
+    /// as gone. False when it couldn't, such as offline or past <paramref name="timeout"/>; what was fetched before still
+    /// answers.
+    /// </summary>
+    public bool FetchPrune(string repo, TimeSpan timeout, CancellationToken cancellation = default)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        limit.CancelAfter(timeout);
+        try
+        {
+            return runner.Run("git", ["-C", repo, "fetch", "--all", "--prune", "--quiet"], repo, limit.Token).Success;
+        }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="branch"/> has been merged or its remote deleted, read from refs already fetched (see
+    /// <see cref="FetchPrune"/>), so nothing here talks to a remote. Merged means merging it into the default branch would
+    /// change nothing, which holds for squash and rebase merges too, not only merge commits.
+    /// </summary>
+    public BranchCheck CheckBranch(string repo, string branch)
+    {
+        var tracking = Run(repo, "for-each-ref", "--format=%(upstream)|%(upstream:track)", $"refs/heads/{branch}").StdOut.Trim();
+        var pushed = !tracking.StartsWith('|') && tracking.Length > 0;
+        var gone = tracking.EndsWith("[gone]", StringComparison.Ordinal);
+
+        var into = DefaultBranch(repo) is { } name ? RemoteBranch(repo, name, "origin") ?? RemoteBranch(repo, name) ?? name : null;
+        if (into is null || !RefExists(repo, branch)) return new BranchCheck(branch, gone ? BranchFate.Gone : BranchFate.Live, into);
+
+        // Its tip is already in the default branch: either merged as it stood, or made and never committed to.
+        if (Run(repo, "merge-base", "--is-ancestor", branch, into).Success)
+            return new BranchCheck(branch, pushed ? BranchFate.Merged : BranchFate.Empty, into);
+
+        // A squash or rebase leaves the branch's commits out of the default branch but its changes in; merging it again
+        // then gives back the default branch's own tree. A conflict exits 1, which means there's work still to land.
+        var merged = Run(repo, "merge-tree", "--write-tree", "--no-messages", into, branch);
+        var target = Run(repo, "rev-parse", $"{into}^{{tree}}");
+        var landed = merged.Success && target.Success
+            && merged.StdOut.Split('\n')[0].Trim() == target.StdOut.Trim();
+        return new BranchCheck(branch, landed ? BranchFate.Merged : gone ? BranchFate.Gone : BranchFate.Live, into);
     }
 
     public bool IsValidBranchName(string name)

@@ -9,7 +9,8 @@ using Sprig.Model;
 
 namespace Sprig.Engine.Workspaces;
 
-public enum StepState { Running, Done, Skipped, Failed, Output }
+/// <summary><see cref="Warning"/>: finished, but with something to look at before going on.</summary>
+public enum StepState { Running, Done, Skipped, Failed, Output, Warning }
 
 /// <summary>Progress from <see cref="WorkspaceService"/>: a step starting or ending, or a line of a tool's output.</summary>
 public sealed record WorkspaceEvent(string Step, StepState State, string? Detail = null);
@@ -1633,6 +1634,13 @@ public sealed partial class WorkspaceService(
         {
             if (_current is null) return;
             progress?.Report(new WorkspaceEvent(_current, StepState.Done, detail));
+            _current = null;
+        }
+
+        public void Warn(string why)
+        {
+            if (_current is null) return;
+            progress?.Report(new WorkspaceEvent(_current, StepState.Warning, why));
             _current = null;
         }
 

@@ -1492,7 +1492,11 @@ public partial class WorkspacesViewModel : PageViewModel
 
     /// <summary>Run one operation off the UI thread, reporting into a progress window.</summary>
     /// <param name="retry">Run again once the user approves definitions the operation found unapproved.</param>
-    async Task<bool> RunAsync(string heading, Action<IProgress<WorkspaceEvent>, CancellationToken> work, string success, Func<Task>? retry = null)
+    Task<bool> RunAsync(string heading, Action<IProgress<WorkspaceEvent>, CancellationToken> work, string success, Func<Task>? retry = null)
+        => RunAsync(heading, work, () => success, retry);
+
+    /// <param name="success">Read once the work is done, so the window can end on what it found.</param>
+    async Task<bool> RunAsync(string heading, Action<IProgress<WorkspaceEvent>, CancellationToken> work, Func<string> success, Func<Task>? retry = null)
     {
         var window = new OperationProgressViewModel(heading);
         var progress = new Progress<WorkspaceEvent>(window.Apply);
@@ -1504,7 +1508,7 @@ public partial class WorkspacesViewModel : PageViewModel
             await FinishedOrAbandoned(running, window.Cancellation);
             // Progress<T> posts its reports, so let the last ones land before the summary.
             await Task.Yield();
-            window.Finish(success, ProgressState.Done);
+            window.Finish(success(), ProgressState.Done);
             return true;
         }
         catch (OperationCanceledException)

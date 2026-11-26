@@ -13,6 +13,7 @@ using Avalonia.VisualTree;
 using Sprig.App.Logs;
 using Sprig.App.ViewModels;
 using Sprig.App.Views;
+using Sprig.Engine.Git;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Planning;
 using Sprig.Engine.Workspaces;
@@ -408,6 +409,45 @@ internal static partial class HeadlessRenderer
             vm.Workspaces.SelectStaleCommand.Execute(null);
             Pump(TimeSpan.FromMilliseconds(500));
             Save(window, Sibling(outFile, "overview-ticked"));
+            vm.Workspaces.ClearCheckedCommand.Execute(null);
+
+            // What Tidy up would find: two merged (one with changes still in its worktree), one whose remote went unmerged.
+            static SlotTidiness Found(string branch, BranchFate fate, bool dirty = false)
+                => new($"storefront/{branch}", branch, fate, [new BranchCheck(branch, fate, "origin/main")], dirty);
+            var tidy = new TidyReport([
+                Found("feat-b", BranchFate.Live), Found("feat-c", BranchFate.Merged), Found("hotfix-12", BranchFate.Merged, dirty: true),
+                Found("spike-cache", BranchFate.Gone)], []);
+
+            // The window Tidy up opens, with the steps the engine reports.
+            var tidying = new OperationProgressViewModel("Tidying up");
+            foreach (var (step, detail) in new[]
+            {
+                ("Find slots with a branch", "4 to check; 6 passed over (main checkouts, free slots, in place)"),
+                ("Fetch shop-web", "up to date, deleted remote branches pruned"),
+                ("Fetch shop-services", "up to date, deleted remote branches pruned"),
+                ("Check storefront--feat-b (feat-b)", "not in origin/main yet; still in use"),
+                ("Check storefront--feat-c (feat-c)", "merged into origin/main; can be freed"),
+                ("Check storefront--hotfix-12 (hotfix-12)", "merged into origin/main, but a worktree has changes that aren't committed; keep it"),
+                ("Check storefront--spike-cache (spike-cache)", "its remote branch was deleted, but origin/main doesn't have all of it; look before freeing"),
+            })
+            {
+                tidying.Apply(new WorkspaceEvent(step, StepState.Running));
+                tidying.Apply(new WorkspaceEvent(step, detail.Contains("keep it") || detail.Contains("look before") ? StepState.Warning : StepState.Done, detail));
+            }
+            tidying.Finish(WorkspacesViewModel.TidyMessage(tidy), ProgressState.Done);
+            var tidyDialog = new OperationProgressWindow { DataContext = tidying };
+            tidyDialog.Show();
+            Pump(TimeSpan.FromMilliseconds(400));
+            Save(tidyDialog, Sibling(outFile, "tidy-progress"));
+            tidyDialog.Close();
+
+            vm.Workspaces.ShowTidyReport(tidy);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "overview-tidy"));
+            vm.Workspaces.SelectTidyCommand.Execute(null);
+            Pump(TimeSpan.FromMilliseconds(500));
+            Save(window, Sibling(outFile, "overview-tidy-ticked"));
+            Console.WriteLine($"Tidy up: {vm.Workspaces.TidySummary} Ticked: {string.Join(", ", vm.Workspaces.OverviewRows.Where(r => r.IsChecked).Select(r => r.Name))}");
             vm.Workspaces.ClearCheckedCommand.Execute(null);
 
             // The Usage page, with two more workspaces running something so there's an order to see.

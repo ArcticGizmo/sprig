@@ -482,6 +482,9 @@
                                    TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Branch}" FontSize="11.5" Foreground="{StaticResource MutedBrush}"
                                    TextTrimming="CharacterEllipsis" />
+                        <TextBlock Classes="state" Text="{Binding Tidy}" FontSize="11.5" IsVisible="{Binding HasTidy}"
+                                   Classes.up="{Binding TidyCanGo}" Classes.paused="{Binding TidyWarn}" ToolTip.Tip="{Binding TidyTip}"
+                                   TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <TextBlock Grid.Column="2" Classes="cell" Text="{Binding Orchestration}" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
@@ -512,7 +515,7 @@
         <!-- Every workspace, for seeing them all at once and clearing out old ones -->
         <DockPanel IsVisible="{Binding !HasSelection}">
             <Border DockPanel.Dock="Top" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,18,24,14">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="16">
                     <StackPanel Spacing="2" VerticalAlignment="Center">
                         <TextBlock Text="Workspaces" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}" />
                         <TextBlock Text="{Binding OverviewSummary}" FontSize="12" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
@@ -534,7 +537,11 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <Button Grid.Column="2" Content="+ New workspace" Command="{Binding OpenAddCommand}" IsEnabled="{Binding !IsWorking}"
+                    <Button Grid.Column="2" Content="{Binding TidyButtonText}" Command="{Binding TidyUpCommand}"
+                            IsEnabled="{Binding !Tidying}" IsVisible="{Binding !IsEmpty}" VerticalAlignment="Center" Padding="12,6"
+                            AutomationProperties.AutomationId="tidy-up"
+                            ToolTip.Tip="Fetch every slot's repos and find the branches that are merged, or whose remote branch was deleted. Nothing is changed." />
+                    <Button Grid.Column="3" Content="+ New workspace" Command="{Binding OpenAddCommand}" IsEnabled="{Binding !IsWorking}"
                             Background="{StaticResource AccentBrush}" Foreground="#0B1220" FontWeight="SemiBold" Padding="12,6"
                             VerticalAlignment="Center" />
                 </Grid>
@@ -551,10 +558,16 @@
                 <Panel Grid.Column="1">
                     <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding NoneChecked}" VerticalAlignment="Center">
                         <TextBlock Text="Double-click a workspace to open it. Tick workspaces to start, stop, free or remove several at once." FontSize="12.5"
-                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   IsVisible="{Binding !HasTidySummary}" />
                         <Button Classes="flat" Command="{Binding SelectStaleCommand}" IsVisible="{Binding HasStale}" HorizontalAlignment="Left">
                             <TextBlock Text="{Binding StaleLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
                         </Button>
+                        <Button Classes="flat" Command="{Binding SelectTidyCommand}" IsVisible="{Binding HasTidyPicks}" HorizontalAlignment="Left">
+                            <TextBlock Text="{Binding TidyPickLabel}" FontSize="12.5" Foreground="{StaticResource AccentBrush}" />
+                        </Button>
+                        <TextBlock Text="{Binding TidySummary}" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" />
                     </StackPanel>
                     <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8" IsVisible="{Binding HasChecked}">
                         <TextBlock Text="{Binding CheckedLabel}" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"

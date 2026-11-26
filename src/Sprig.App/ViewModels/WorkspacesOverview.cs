@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Sprig.Engine.Git;
 using Sprig.Engine.Hosting;
 using Sprig.Engine.Workspaces;
 
@@ -70,6 +71,40 @@ public sealed partial class OverviewRow(WorkspaceRecord record, Action checkedCh
     [ObservableProperty] private bool _isChecked;
 
     partial void OnIsCheckedChanged(bool value) => checkedChanged();
+
+    /// <summary>What Tidy up found of its branch; empty until it's asked, or when there's nothing to say.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasTidy))]
+    private string _tidy = "";
+
+    [ObservableProperty] private string? _tidyTip;
+    [ObservableProperty] private bool _tidyWarn;
+
+    /// <summary>Freeing it loses nothing.</summary>
+    [ObservableProperty] private bool _tidyCanGo;
+
+    public bool HasTidy => Tidy.Length > 0;
+
+    public void ShowTidy(SlotTidiness? found)
+    {
+        TidyCanGo = found?.CanGo == true;
+        TidyWarn = found is { Fate: BranchFate.Gone } || found is { Fate: BranchFate.Merged, Dirty: true };
+        Tidy = found switch
+        {
+            null => "",
+            { Fate: BranchFate.Merged, Dirty: true } => "merged, but has changes",
+            { Fate: BranchFate.Merged } => "merged",
+            { Fate: BranchFate.Gone } => "remote deleted, not merged",
+            _ => "",
+        };
+        TidyTip = found is null || Tidy.Length == 0 ? null : string.Join("\n", found.Repos.Select(c => c.Fate switch
+        {
+            BranchFate.Merged => $"{c.Into}: has everything on it",
+            BranchFate.Gone => $"{c.Into}: is missing some of it, and its remote branch was deleted",
+            BranchFate.Empty => $"{c.Into}: nothing committed on it here",
+            _ => $"{c.Into}: is missing some of it",
+        }));
+    }
 }
 
 /// <summary>A count of workspaces in one state, which filters the table to them.</summary>
@@ -171,6 +206,8 @@ public partial class WorkspacesViewModel
                 row.Ports = ports.Length == 0 ? "" : ports.Min() == ports.Max() ? $"{ports.Min()}" : $"{ports.Min()}–{ports.Max()}";
                 row.LastUsed = IsUnmade(record) ? null : record.LastUpAt is { } up && up > record.UpdatedAt ? up : record.UpdatedAt;
                 row.Worktrees = record.IsMain ? "the checkout, as it is" : record.InPlace ? "in place" : "…";
+                // Still true only while the slot holds the branch that was checked.
+                row.ShowTidy(_tidy.GetValueOrDefault(record.Key) is { } found && found.Branch == record.Branch ? found : null);
                 return row;
             }).ToList();
         _overviewNow = now;
@@ -180,6 +217,7 @@ public partial class WorkspacesViewModel
         StaleLabel = stale == 1 ? "Select the 1 unused for over a week" : $"Select the {stale} unused for over a week";
         FilterOverview();
         CheckedChanged();
+        CountTidy();
     }
 
     /// <summary>Stopped and untouched long enough to be worth removing; main is always there, so it never is.</summary>
@@ -351,6 +389,92 @@ public partial class WorkspacesViewModel
     private void SelectStale()
     {
         foreach (var row in _overview) row.IsChecked = Stale(row, Clock());
+    }
+
+    IReadOnlyDictionary<string, SlotTidiness> _tidy = new Dictionary<string, SlotTidiness>();
+
+    /// <summary>Tidy up is checking: fetching every slot's repos, then looking at each branch.</summary>
+    [ObservableProperty] private bool _tidying;
+
+    /// <summary>What the last Tidy up found, in a line; empty before one has run.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasTidySummary))]
+    private string _tidySummary = "";
+
+    public bool HasTidySummary => TidySummary.Length > 0;
+
+    [ObservableProperty] private bool _hasTidyPicks;
+    [ObservableProperty] private string _tidyPickLabel = "";
+
+    public string TidyButtonText => Tidying ? "Checking…" : "Tidy up";
+
+    partial void OnTidyingChanged(bool value) => OnPropertyChanged(nameof(TidyButtonText));
+
+    /// <summary>
+    /// Fetch every slot's repos and see which branches are merged or had their remote deleted, so the slots done with can
+    /// be ticked and freed. Only on asking: fetching is a round trip per repo, too slow to run on every refresh.
+    /// </summary>
+    [RelayCommand]
+    private async Task TidyUp()
+    {
+        if (Tidying) return;
+        Tidying = true;
+        try
+        {
+            var records = _overview.Select(r => r.Record).ToArray();
+            TidyReport? report = null;
+            await RunAsync("Tidying up", (progress, cancellation) => report = _services.Workspaces.TidyUp(records, progress, cancellation),
+                () => TidyMessage(report!));
+            if (report is not null) ShowTidyReport(report);
+        }
+        finally
+        {
+            Tidying = false;
+        }
+    }
+
+    /// <summary>The progress window's last word: what was found, and what to do next.</summary>
+    internal static string TidyMessage(TidyReport report)
+    {
+        var free = report.Slots.Count(s => s.CanGo);
+        var look = report.Slots.Count(s => s.Fate == BranchFate.Gone || s is { Fate: BranchFate.Merged, Dirty: true });
+        return TidySummaryOf(report)
+            + (free > 0 ? $"\nClose this and use “Select the {free} merged” to tick {(free == 1 ? "it" : "them")}, then Free or Remove." : "")
+            + (look > 0 ? $"\n{look} marked in amber {(look == 1 ? "needs" : "need")} a look before freeing." : "")
+            + (free + look == 0 ? "\nNothing to tidy." : "");
+    }
+
+    static string TidySummaryOf(TidyReport report)
+    {
+        var merged = report.Slots.Count(s => s.Fate == BranchFate.Merged);
+        var gone = report.Slots.Count(s => s.Fate == BranchFate.Gone);
+        return (report.Slots.Count == 0 ? "No slots have a branch to check."
+                : merged + gone == 0 ? $"Checked {report.Slots.Count}: every branch is still in use."
+                : $"Checked {report.Slots.Count}: {merged} merged, {gone} with the remote deleted but not merged.")
+            + (report.Unfetched.Count == 0 ? "" : $" Couldn't reach the remote of {string.Join(", ", report.Unfetched)}, so those may be out of date.");
+    }
+
+    public void ShowTidyReport(TidyReport report)
+    {
+        _tidy = report.Slots.ToDictionary(s => s.Key);
+        foreach (var row in _overview)
+            row.ShowTidy(_tidy.GetValueOrDefault(row.Key) is { } found && found.Branch == row.Record.Branch ? found : null);
+        CountTidy();
+        TidySummary = TidySummaryOf(report);
+    }
+
+    void CountTidy()
+    {
+        var count = _overview.Count(r => r.TidyCanGo);
+        HasTidyPicks = count > 0;
+        TidyPickLabel = count == 1 ? "Select the 1 merged" : $"Select the {count} merged";
+    }
+
+    /// <summary>Tick the slots whose branches are merged, ready to free or remove.</summary>
+    [RelayCommand]
+    private void SelectTidy()
+    {
+        foreach (var row in _overview) row.IsChecked = row.TidyCanGo;
     }
 
     [RelayCommand]

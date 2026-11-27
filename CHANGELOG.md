@@ -9,6 +9,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v0.9.18] - 2026-11-27
+
+A sharper tray icon, for those who run at 125 % and squint.
+
+### Fixed
+- Tray icon no longer blurs at 125 % and 175 % display scale.
+- Dev build's inverted tray icon is sharper too.
+
+---
+
 ## [v0.9.17] - 2026-11-26
 
 Finding the slots you finished with weeks ago, without asking GitHub.

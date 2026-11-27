@@ -10,6 +10,7 @@ using Svg;
 //
 //   src/Sprig.App/Assets/sprig.png    256x256 PNG — general/window icon
 //   src/Sprig.App/Assets/sprig.ico    multi-resolution ICO (16..256) — window + .exe ApplicationIcon
+//   src/Sprig.App/Assets/tray.png     32x32 PNG — the tray icon
 //   landing-icon.png                   512x512 PNG — the README header logo
 //   src/Sprig.App/Icons/SprigLogo.g.cs vector data the in-app logo is drawn from (Skia via Avalonia)
 //
@@ -55,6 +56,9 @@ int[] icoSizes = { 16, 24, 32, 48, 64, 128, 256 };
 string assetsDir = Path.Combine(repoRoot, "src", "Sprig.App", "Assets");
 WritePng(doc, fit, Path.Combine(assetsDir, "sprig.png"), 256);
 WritePng(doc, fit, Path.Combine(repoRoot, "landing-icon.png"), 512);
+// Avalonia hands the tray an .ico frame without resizing it, so at 125 % and 175 % Explorer stretches a 16 or 24 px
+// frame and it blurs. One 32 px image is only ever shrunk, which stays sharp at every scale up to 200 %.
+WritePng(doc, fit, Path.Combine(assetsDir, "tray.png"), 32);
 WriteIco(doc, fit, Path.Combine(assetsDir, "sprig.ico"), icoSizes);
 
 // The in-app logo draws as a native Avalonia vector (Avalonia rasterises it through Skia at the

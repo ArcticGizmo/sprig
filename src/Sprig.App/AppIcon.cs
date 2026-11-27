@@ -14,16 +14,31 @@ namespace Sprig.App;
 /// </summary>
 public static class AppIcon
 {
-    static readonly Lazy<WindowIcon> Loaded = new(() => AppProfile.IsDev ? Inverted() : new WindowIcon(Open("sprig.ico")));
+    static readonly Lazy<WindowIcon> LoadedWindow = new(() => AppProfile.IsDev ? FromBitmap("sprig.png") : new WindowIcon(Open("sprig.ico")));
 
-    public static WindowIcon Current => Loaded.Value;
+    static readonly Lazy<WindowIcon> LoadedTray = new(() => FromBitmap("tray.png"));
+
+    public static WindowIcon Current => LoadedWindow.Value;
+
+    /// <summary>
+    /// A 32 px image that Explorer only ever shrinks. Avalonia gives the tray an .ico frame unresized, so a 16 or 24 px
+    /// frame gets stretched and blurs at 125 % and 175 %. It goes in as a decoded bitmap, as Shrike's does, because
+    /// Windows doesn't handle a PNG passed straight through correctly.
+    /// </summary>
+    public static WindowIcon Tray => LoadedTray.Value;
 
     static System.IO.Stream Open(string asset)
         => AssetLoader.Open(new Uri($"avares://{typeof(AppIcon).Assembly.GetName().Name}/Assets/{asset}"));
 
-    static WindowIcon Inverted()
+    static WindowIcon FromBitmap(string asset)
     {
-        using var source = new Bitmap(Open("sprig.png"));
+        var source = new Bitmap(Open(asset));
+        if (!AppProfile.IsDev) return new WindowIcon(source);
+        using (source) return new WindowIcon(Inverted(source));
+    }
+
+    static WriteableBitmap Inverted(Bitmap source)
+    {
         var size = source.PixelSize;
         var alpha = source.AlphaFormat ?? AlphaFormat.Premul;
         var inverted = new WriteableBitmap(size, source.Dpi, source.Format ?? PixelFormat.Bgra8888, alpha);
@@ -36,7 +51,7 @@ public static class AppIcon
             Invert(pixels, premultiplied: alpha == AlphaFormat.Premul);
             Marshal.Copy(pixels, 0, frame.Address, length);
         }
-        return new WindowIcon(inverted);
+        return inverted;
     }
 
     /// <summary>Each colour channel of 32-bit pixels with alpha last, inverted against its alpha when premultiplied so

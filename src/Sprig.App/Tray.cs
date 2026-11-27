@@ -39,7 +39,7 @@ public sealed class Tray
         _quit.Click += (_, _) => Quit();
         _icon = new TrayIcon
         {
-            Icon = AppIcon.Current,
+            Icon = AppIcon.Tray,
             ToolTipText = Name,
             Menu = new NativeMenu { Items = { open, another, _status, new NativeMenuItemSeparator(), _quit } },
         };

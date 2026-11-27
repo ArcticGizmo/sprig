@@ -3,6 +3,7 @@
 #
 #   src/Sprig.App/Assets/sprig.png     256x256 PNG    (general/window icon)
 #   src/Sprig.App/Assets/sprig.ico     multi-res ICO  (window + .exe ApplicationIcon)
+#   src/Sprig.App/Assets/tray.png      32x32 PNG      (tray icon)
 #   landing-icon.png                    512x512 PNG    (README header)
 #   src/Sprig.App/Icons/SprigLogo.g.cs  vector data for the in-app logo (drawn via Skia)
 #
